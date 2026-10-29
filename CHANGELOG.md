@@ -18,6 +18,15 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- Schedule complete Linux pytest discovery in four shards per interpreter,
+  preserving whole-module fixtures and using one shared immutable duration
+  snapshot. Missing history retains deterministic full discovery; invalid history
+  and mixed worker snapshots fail. Publish fresh observed timings only after
+  the unchanged complete coverage gate succeeds. Hosted speedup requires a
+  successful measured run.
+
 ## [0.99.39] - 2026-10-29
 
 - Supervise long-running `synapse lock` commands with fenced renewal of the

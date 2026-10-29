@@ -21,6 +21,15 @@ from typing import Any, cast
 from coverage import Coverage
 from coverage.exceptions import CoverageException
 
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.pytest_shard_schedule import (
+    load_shard_timings,
+    partition_test_modules,
+    validate_module_durations,
+)
+
 NATIVE_PREFIX = "tests/fixtures/opencode/metadata_denial_linux.py::"
 
 
@@ -46,21 +55,49 @@ def _ids(record: dict[str, Any], key: str) -> list[str]:
     return cast("list[str]", value)
 
 
+def _coordinates(record: dict[str, Any]) -> tuple[int, int]:
+    """Validate a bounded actual worker index before using it in either gate."""
+    index, count = record.get("index"), record.get("count")
+    if (
+        type(index) is not int
+        or type(count) is not int
+        or not 1 <= count <= 128
+        or not 0 <= index < count
+    ):
+        raise ValueError("incomplete or misidentified pytest shard")
+    return index, count
+
+
+def _expected_selection(record: dict[str, Any], inventory: list[str]) -> list[str]:
+    """Recompute a worker's exact partition from its validated scheduling input."""
+    index, count = _coordinates(record)
+    schedule = record.get("schedule")
+    expected = inventory[index::count]
+    if schedule is not None:
+        if (
+            not isinstance(schedule, dict)
+            or set(schedule) != {"algorithm", "timings_sha256", "weights"}
+            or schedule["algorithm"] != "module-lpt-v1"
+            or not isinstance(schedule["timings_sha256"], str)
+            or len(schedule["timings_sha256"]) != 64
+        ):
+            raise ValueError("invalid indexed timing schedule")
+        partitions = partition_test_modules(inventory, count, schedule["weights"])
+        expected = list(partitions[index])
+    return expected
+
+
 def _completed(record: dict[str, Any]) -> None:
     """Require the exact partition and every actual completed pytest execution."""
     inventory = _ids(record, "inventory")
     selected = _ids(record, "selected")
-    index, count = record.get("index"), record.get("count")
+    expected = _expected_selection(record, inventory)
     if (
         record.get("schema") != 1
         or record.get("success") is not True
         or record.get("exitstatus") != 0
-        or type(index) is not int
-        or type(count) is not int
-        or not 1 <= count <= 128
-        or not 0 <= index < count
         or not selected
-        or selected != inventory[index::count]
+        or selected != expected
         or _ids(record, "completed") != selected
     ):
         raise ValueError("incomplete or misidentified pytest shard")
@@ -136,7 +173,9 @@ def _profile(
             raise ValueError("shard count or complete collection differs")
         union.extend(main["selected"])
     if sorted(union) != reference:
-        raise ValueError("shard union omitted or duplicated tests")
+        raise ValueError(
+            "shard union omitted or duplicated tests: incomplete or misidentified pytest shard"
+        )
     return selected
 
 
@@ -162,13 +201,39 @@ def _bound_artifact(record: dict[str, Any], expected: dict[str, str], pythons: l
     main = record.get("main")
     if record.get("schema") != 1 or not isinstance(main, dict):
         raise ValueError("invalid artifact schema")
-    _completed(main)
+    _coordinates(main)
+    _ids(main, "inventory")
+    _ids(main, "selected")
     _native(main, record.get("native"))
     if (
         any(main.get(key) != value for key, value in expected.items())
         or main.get("python") not in pythons
     ):
         raise ValueError("artifact source, run, configuration or interpreter does not match")
+
+
+def _shared_timings(record: dict[str, Any], timings: Path | None) -> None:
+    """Bind timed workers to the single snapshot selected for this invocation."""
+    if timings is not None:
+        digest, weights = load_shard_timings(timings, record["main"]["python"])
+        if record["main"].get("schedule") != {
+            "algorithm": "module-lpt-v1",
+            "timings_sha256": digest,
+            "weights": weights,
+        }:
+            raise ValueError("shard used a different shared timing snapshot")
+
+
+def _timing_history(records: list[tuple[Path, dict[str, Any]]]) -> dict[str, dict[str, float]]:
+    """Collect genuine completed module durations before publishing the next history."""
+    profiles: dict[str, dict[str, float]] = {}
+    for _, record in records:
+        profile = profiles.setdefault(record["main"]["python"], {})
+        for module, seconds in validate_module_durations(
+            record["main"]["module_durations"]
+        ).items():
+            profile[module] = profile.get(module, 0.0) + seconds
+    return profiles
 
 
 def verify(
@@ -182,6 +247,7 @@ def verify(
     config: Path,
     output: Path,
     fail_under: float = 98,
+    timings: Path | None = None,
 ) -> None:
     """Refuse incomplete, failed or foreign artifacts before measuring their full union.
 
@@ -203,6 +269,9 @@ def verify(
         New combined data and authoritative report directory.
     fail_under : float, optional
         Original whole-package threshold; defaults to 98 percent.
+    timings : Path or None, optional
+        Exact shared scheduling snapshot; when supplied, every main shard must
+        bind its digest and interpreter weights. Native follow-ups remain independent.
     """
     paths = sorted(root.glob("*/artifact.json"))
     if len(paths) != len(pythons) * count or len(set(pythons)) != len(pythons):
@@ -217,9 +286,11 @@ def verify(
     }
     for _, record in records:
         _bound_artifact(record, expected, pythons)
+        _shared_timings(record, timings)
     coverage_paths = []
     for python in pythons:
         for directory, record in _profile(records, python, count):
+            _completed(record["main"])
             if python == coverage_python:
                 path = directory / "coverage.data"
                 if (
@@ -234,7 +305,11 @@ def verify(
                 raise ValueError("unexpected coverage interpreter")
     if coverage_python not in pythons or not 0 <= fail_under <= 100:
         raise ValueError("invalid coverage profile")
+    profiles = _timing_history(records)
     _coverage(coverage_paths, config, output, fail_under)
+    (output / "timings.json").write_text(
+        json.dumps({"schema": 1, "profiles": profiles}, sort_keys=True) + "\n"
+    )
 
 
 def main() -> int:
@@ -255,6 +330,7 @@ def main() -> int:
     check.add_argument("--count", type=int, required=True)
     check.add_argument("--coverage-python", default="3.12")
     check.add_argument("--fail-under", type=float, default=98)
+    check.add_argument("--timings", type=Path)
     args = parser.parse_args()
     try:
         if args.command == "pack":
@@ -271,6 +347,7 @@ def main() -> int:
                 args.coverage_config,
                 args.output,
                 args.fail_under,
+                args.timings,
             )
     except (OSError, ValueError, KeyError, TypeError, CoverageException) as error:
         print(f"CI shard refused: {error}", file=sys.stderr)

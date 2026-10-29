@@ -19,6 +19,8 @@ from typing import cast
 
 import pytest
 
+from tools.pytest_shard_schedule import load_shard_timings, partition_test_modules
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Register an explicit, all-or-nothing indexed shard profile."""
@@ -26,6 +28,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--shard-index", type=int)
     group.addoption("--shard-count", type=int)
     group.addoption("--shard-output", type=Path)
+    group.addoption("--shard-timings", type=Path)
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -33,7 +36,8 @@ def pytest_configure(config: pytest.Config) -> None:
     index = cast("int | None", config.getoption("shard_index"))
     count = cast("int | None", config.getoption("shard_count"))
     output = cast("Path | None", config.getoption("shard_output"))
-    if index is None and count is None and output is None:
+    timings = cast("Path | None", config.getoption("shard_timings"))
+    if index is None and count is None and output is None and timings is None:
         return
     source = os.environ.get("GITHUB_SHA", "")
     if (
@@ -45,14 +49,28 @@ def pytest_configure(config: pytest.Config) -> None:
         or re.fullmatch(r"[0-9a-f]{40}", source) is None
     ):
         raise pytest.UsageError("shards require an index, count, output and exact GITHUB_SHA")
-    config.pluginmanager.register(ShardRecorder(config, index, count, output, source))
+    try:
+        schedule = (
+            load_shard_timings(timings, f"{sys.version_info.major}.{sys.version_info.minor}")
+            if timings
+            else None
+        )
+    except (OSError, ValueError) as error:
+        raise pytest.UsageError(f"invalid shared shard timings: {error}") from error
+    config.pluginmanager.register(ShardRecorder(config, index, count, output, source, schedule))
 
 
 class ShardRecorder:
     """Keep the complete collection and require teardown completion for every selected ID."""
 
     def __init__(
-        self, config: pytest.Config, index: int, count: int, output: Path, source: str
+        self,
+        config: pytest.Config,
+        index: int,
+        count: int,
+        output: Path,
+        source: str,
+        schedule: tuple[str, dict[str, float]] | None = None,
     ) -> None:
         self.config = config
         self.index = index
@@ -65,14 +83,20 @@ class ShardRecorder:
         self.skipped: set[str] = set()
         self.called: set[str] = set()
         self.failed = False
+        self.schedule = schedule
+        self.module_durations: dict[str, float] = {}
 
     @pytest.hookimpl(trylast=True)
     def pytest_collection_modifyitems(self, items: list[pytest.Item]) -> None:
-        """Round-robin the complete sorted native collection without changing item order."""
+        """Partition complete discovery without changing native execution order."""
         self.inventory = sorted(item.nodeid for item in items)
         if len(set(self.inventory)) != len(self.inventory):
             raise pytest.UsageError("shard inventory contains duplicate node IDs")
-        self.selected = self.inventory[self.index :: self.count]
+        self.selected = (
+            list(partition_test_modules(self.inventory, self.count, self.schedule[1])[self.index])
+            if self.schedule is not None
+            else self.inventory[self.index :: self.count]
+        )
         if not self.selected:
             raise pytest.UsageError("shard has no collected tests")
         chosen = set(self.selected)
@@ -83,6 +107,8 @@ class ShardRecorder:
     def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
         """Observe actual pytest outcomes, including setup and teardown failures."""
         self.failed |= report.failed
+        module = report.nodeid.split("::", 1)[0]
+        self.module_durations[module] = self.module_durations.get(module, 0.0) + report.duration
         if report.skipped:
             self.skipped.add(report.nodeid)
         if report.when == "call":
@@ -117,6 +143,13 @@ class ShardRecorder:
             "skipped": sorted(self.skipped),
             "success": success,
             "exitstatus": int(session.exitstatus),
+            "module_durations": self.module_durations,
         }
+        if self.schedule is not None:
+            record["schedule"] = {
+                "algorithm": "module-lpt-v1",
+                "timings_sha256": self.schedule[0],
+                "weights": self.schedule[1],
+            }
         self.output.parent.mkdir(parents=True, exist_ok=True)
         self.output.write_text(json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")

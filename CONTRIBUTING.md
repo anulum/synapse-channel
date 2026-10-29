@@ -60,11 +60,19 @@ The `Makefile` wraps the common tasks (`make help` lists them):
 
 ## Complete CI shards
 
-The Linux matrix runs two indexed pytest shards for each supported interpreter.
-Pytest first collects its full native inventory, sorts node IDs and assigns
-alternating IDs to the two runners. Every runner keeps the same native backends
-and interpreter-specific host prerequisites. Shard zero also executes the
-explicit Linux metadata-refusal follow-up; each interpreter runs it once.
+The Linux matrix runs four indexed pytest shards for each supported interpreter,
+with at most twelve matrix jobs running concurrently. Pytest collects the full
+current inventory before scheduling whole modules, longest estimated duration
+first, onto the least-loaded worker. Modules retain their shared fixtures.
+Every runner uses one identical immutable timing snapshot selected from the
+latest successful main-branch CI run. Missing history uses deterministic current
+test counts; new tests always enter collection and removed modules stay absent.
+Malformed or nonfinite timing data fails before test execution. Timing history
+controls placement only and never acts as a test allowlist.
+
+Every runner keeps the same native backends and interpreter-specific host
+prerequisites. Shard zero also executes the explicit Linux metadata-refusal
+follow-up; each interpreter runs it once.
 
 `tools.pytest_shard` records the complete inventory, selected IDs and actual
 completed outcomes, bound to the source SHA, run, interpreter and configuration.
@@ -77,8 +85,10 @@ A shard has no individual coverage floor because it measures only its partition.
 Missing, failed, skipped, duplicate, foreign or altered artifacts fail the gate.
 The required `ci` job includes both the matrix and the complete-union gate.
 
-Focused runner/artifact checks live in `tests/test_ci_shard_artifacts.py` and use
-real pytest and coverage subprocesses. Hosted timing comparisons must include
+Focused runner/artifact checks live in `tests/test_ci_shard_artifacts.py` and
+`tests/test_pytest_shard_schedule.py` and use real pytest and coverage subprocesses.
+The aggregate also checks the common timing snapshot and publishes newly observed
+module durations only after the complete coverage gate passes. Hosted timing comparisons must include
 setup and queue time; sharding alone is not evidence of measured improvement.
 
 ## Standards a change must meet
