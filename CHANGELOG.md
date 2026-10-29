@@ -20,6 +20,14 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Hand over work state that the receiver can check, never authority.
+  `synapse work-state build` pins input files by SHA-256 and repositories by
+  commit, and records completed steps, unknown-outcome operations, remaining
+  conditions and claims labelled `agent_claim`, `tool_result` or
+  `verified_artefact`, each subject named by its absolute path.
+  `synapse work-state verify` re-checks those subjects now and says which
+  claims rest on an unchanged subject; the claim text itself is never
+  checked. A packet that carries a lease, epoch, token or grant is refused.
 - Bring uncertain wakes to an operational end. `synapse waker uncertain` lists
   each uncertain wake that no operator has resolved, with its age, whether
   repeating the transport would make a second effect, the operator's options

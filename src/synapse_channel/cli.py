@@ -56,6 +56,7 @@ The ``synapse`` command exposes these subcommands:
 * ``health`` — probe the hub and report reachability as the exit code;
 * ``verify-release`` — run declared checks and write an observed release receipt;
 * ``verify-result`` — verify a requested result (file, git, deployment, migration);
+* ``work-state`` — hand over verifiable work state for a task, never authority;
 * ``policy-check`` — evaluate a release receipt against a policy file (advisory);
 * ``identity`` — inventory and audit declared agent identities;
 * ``acl`` — shadow-mode (non-blocking) ACL evaluation of candidate accesses;
@@ -199,6 +200,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_git_claim_check:add_parser", ("git-claim-check",)),
     ("synapse_channel.cli_verify_release:add_parsers", ("verify-release",)),
     ("synapse_channel.cli_verify_result:add_parsers", ("verify-result",)),
+    ("synapse_channel.cli_work_state:add_parsers", ("work-state",)),
     ("synapse_channel.cli_policy_check:add_parsers", ("policy-check",)),
     ("synapse_channel.cli_identity:add_parsers", ("identity",)),
     ("synapse_channel.cli_acl_shadow:add_parsers", ("acl",)),

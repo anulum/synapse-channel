@@ -253,6 +253,23 @@ manual TTL choices remain authoritative.
   exclusion as a direct claim: it is refused if the moved scope would collide
   with a live claim held by an agent other than the recipient, so the hub does
   not grant overlapping ownership through handoff.
+- A **work-state packet** (`synapse work-state build`) hands over what the next
+  agent needs to check, not what it is told:
+  - input files with their SHA-256 and repositories at their exact commit,
+    each named by its absolute path so the packet means the same files
+    wherever it is verified; a path is either an input or an artefact;
+  - completed steps, operation ids whose outcome is unknown, and the
+    remaining conditions;
+  - claims labelled by origin: `agent_claim`, `tool_result`, or
+    `verified_artefact` resting on one of those inputs.
+
+  `synapse work-state verify` re-checks every input and artefact now. A
+  `verified_artefact` claim is reported as resting on an unchanged subject or
+  as no longer supported; only the subject's bytes or commit are checked,
+  never the claim's text, which stays the previous agent's word. It exits 0
+  only when nothing changed. A packet never carries authority: a lease, epoch, token or grant
+  field is refused, and the receiver claims the task from the current hub
+  state.
 - An **LLM-free supervisor** watches the plan and re-offers tasks that stall (no
   progress while in progress, or blocked with every dependency finished). Its
   in-progress rule keeps the fixed idle threshold as the operator ceiling and
