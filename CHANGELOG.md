@@ -27,6 +27,15 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Resolve editor claim scopes through bounded native Git discovery, refusing
+  unverifiable roots and foreign worktrees. Preserve ordinary non-Git workspace
+  scopes and repository names with meaningful trailing spaces.
+
+- Verify both reviewed brace-expansion and Undici package bytes after Pi's
+  upstream shrinkwrap installation. Preserve the admitted Pi host and unrelated
+  dependencies, enforce bounded authenticated archives, and refuse launch after
+  an unsuccessful verification. Refresh the JavaScript dependency locks.
+
 - Refresh the hash-locked Python dependency graphs, including certificate
   roots, build backends, telemetry and audit tooling. Audit and pre-commit
   dependencies use their supported Python 3.11+ marker, while product tests

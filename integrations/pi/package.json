@@ -18,5 +18,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "test": "node --experimental-strip-types --test index.test.mjs"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.12",
+    "undici": "8.12.3"
   }
 }

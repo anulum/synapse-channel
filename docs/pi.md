@@ -20,7 +20,7 @@ process image. Qualification also needs the actual host/package artifact and
 recorded runtime profile.
 
 For the repository's Pi host, install dependencies and verify the installed
-security pin before launching it:
+security pins before launching it:
 
 ```bash
 cd integrations/pi
@@ -28,12 +28,24 @@ npm ci --ignore-scripts
 python ../../tools/sync_pi_dependency_pins.py
 ```
 
-Pi 0.87.1 ships an upstream shrinkwrap that can install brace-expansion 5.0.9
-even when the outer lock and its audit report 5.0.12. The verification command
-checks the reviewed registry archive against the outer lock's SHA-512 digest,
-then installs only that package's exact files. It does not resolve the remaining
-dependencies or change the admitted Pi version. CI runs this verification after
-each Pi installation. Run it after a fresh `npm ci` and before starting Pi.
+Pi 0.87.1 ships an upstream shrinkwrap that can reinstall brace-expansion 5.0.9
+and Undici 8.10.2 despite newer outer-lock entries. The verification command
+checks both reviewed registry archives against the outer lock's SHA-512 digests,
+then installs the exact files of brace-expansion 5.0.12 and Undici 8.12.3. It
+preserves the admitted Pi version and unrelated dependencies. CI runs this
+verification after each Pi installation; run it after a fresh `npm ci` and before
+starting Pi, with Pi and other installers stopped. A refusal exits nonzero, so
+Pi must remain stopped. Directory replacement uses two renames and the target
+can be temporarily absent. A failed publication restores the original when its
+name is available; a concurrent entry that prevents rollback leaves the original
+in `.synapse-pin-*/original` for recovery and preserves the concurrent entry.
+
+Each compressed archive is limited to 2 MiB and 1,024 members. Unpacked files
+are limited to 2 MiB for brace-expansion and 4 MiB for Undici. The latter's actual
+reviewed package exceeds 2 MiB. Links, escaping paths, duplicate files and wrong
+package identities are refused before installing that dependency. Use
+`--dependency brace-expansion` or `--dependency undici` to select one contract;
+`--archive PATH` requires an explicit dependency and verifies the same digest.
 
 Without an explicit claim binding, pi runs with **no tools**. This is useful for
 model-only turns and for testing the provider and session contract:

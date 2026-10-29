@@ -9,8 +9,9 @@
 /** Bind file mutations to an exact canonical repository root and relative path. */
 
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, parse, relative, sep } from "node:path";
+import { spawnSync } from "node:child_process";
+import { lstatSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 
 /** Exact claim inputs safe to send after a live protocol handshake. */
 export interface WorkspaceClaimRequest {
@@ -57,18 +58,34 @@ function canonicalFilePath(path: string): string | undefined {
   }
 }
 
-function repositoryRoot(workspaceRoot: string): string {
-  let cursor = workspaceRoot;
-  const filesystemRoot = parse(cursor).root;
-  while (true) {
-    if (existsSync(join(cursor, ".git"))) {
-      return cursor;
-    }
-    if (cursor === filesystemRoot) {
-      return workspaceRoot;
-    }
-    cursor = dirname(cursor);
+function repositoryRoot(workspaceRoot: string): string | undefined {
+  const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: "C" };
+  for (const name of [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_COMMON_DIR",
+    "GIT_PREFIX",
+  ]) {
+    delete env[name];
   }
+  const result = spawnSync("git", ["-C", workspaceRoot, "rev-parse", "--show-toplevel"], {
+    encoding: "utf8",
+    env,
+    timeout: 1000,
+    killSignal: "SIGKILL",
+    maxBuffer: 65_536,
+    windowsHide: true,
+  });
+  if (result.error !== undefined) return undefined;
+  if (result.status !== 0) {
+    return result.status === 128 && result.stderr.includes("not a git repository")
+      ? workspaceRoot : undefined;
+  }
+  const output = result.stdout.replace(/\r?\n$/, "");
+  const root = canonicalPath(output);
+  return root !== undefined && isWithin(root, workspaceRoot) ? root : undefined;
 }
 
 /** Resolve an editor file against the narrowest containing workspace root. */
@@ -89,6 +106,9 @@ export function workspaceFileScope(
     return undefined;
   }
   const worktree = repositoryRoot(workspaceRoot);
+  if (worktree === undefined) {
+    return undefined;
+  }
   const path = relative(worktree, file).split(sep).join("/");
   return path.length > 0 && isWithin(worktree, file) ? { worktree, path } : undefined;
 }

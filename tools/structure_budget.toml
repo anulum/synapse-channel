@@ -230,7 +230,6 @@ names = ["argparse._SubParsersAction"]
 "tools/opencode_compatibility_contract.py::load_compatibility" = 138
 "tools/opencode_compatibility_smoke.py::smoke_binary" = 98
 "tools/opencode_compatibility_workflow_contract.py::assert_compatibility_workflow_contract" = 68
-"tools/sync_pi_dependency_pins.py::synchronize" = 71
 "tools/vendor_discovery.py::collect" = 150
 "tools/vendor_discovery.py::reconcile" = 235
 
@@ -410,7 +409,6 @@ names = ["argparse._SubParsersAction"]
 "tools/opencode_compatibility_smoke.py::_validate_initialize" = 20
 "tools/opencode_compatibility_smoke.py::smoke_binary" = 17
 "tools/repack_sdist.py::_checked_members" = 19
-"tools/sync_pi_dependency_pins.py::synchronize" = 35
 "tools/vendor_discovery.py::collect" = 39
 "tools/vendor_discovery.py::load_inputs" = 40
 "tools/vendor_discovery.py::parse_mcp" = 21

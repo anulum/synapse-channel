@@ -45,6 +45,9 @@ not qualify the current source or an independently downloaded VSIX.
   incompatible protocol, identity mismatch, and offline state.
 - **Exact claims** — claims the active file in its canonical Git worktree.
   Identical relative paths in different workspace roots remain independent.
+  File claims and releases require Git on the extension host's PATH. Git validates the
+  worktree; an ordinary workspace outside Git keeps its workspace root.
+  Discovery errors or a one-second timeout withhold the claim.
 - **Exact release** — releases only the active file's task; other claims held by
   the same identity remain active.
 - **Shared board** — presents declared tasks and their current state in the
