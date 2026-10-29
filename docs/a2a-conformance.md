@@ -20,6 +20,9 @@ it to bind its reply to the exact continuation. Legacy replies retain protocol
 handling with an unknown execution outcome. Neither protocol completion nor
 local task cancellation verifies external effects or remote stop.
 
+[Protocol conformance tests](protocol-conformance-tests.md) names the tests
+behind each A2A and MCP feature and the protocol version each one exercises.
+
 Comparison sources:
 
 - A2A Protocol Specification `1.0.0`:

@@ -20,6 +20,14 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Publish which A2A and MCP protocol versions and features the tests exercise,
+  naming each test, in `docs/protocol-conformance-tests.md`; a test refuses a
+  page that names a missing test. New real-surface tests show that neither an
+  A2A client bearer nor an HTTP MCP bearer reaches any frame the hub receives,
+  pin A2A authentication and version refusals on the stream, subscribe,
+  push-configuration and JSON-RPC routes, show that cancelling twice sends
+  nothing to the hub, and pin MCP version negotiation and JSON-RPC error codes,
+  including two known deviations of MCP SDK 1.30.0.
 - Durable protected execution frontiers and immutable observation verification:
   interrupted or undeclared step histories refuse completion and never grant a
   retry. Checksummed credential-bound counters persist across restarts and refuse

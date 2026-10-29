@@ -140,6 +140,7 @@ nav:
   - A2A validation receipts: a2a-validation-receipts.md
   - A2A deployment threat model: a2a-deployment-threat-model.md
   - A2A conformance matrix: a2a-conformance.md
+  - Protocol conformance tests: protocol-conformance-tests.md
   - Benchmarks: benchmarks.md
   - API reference: api.md
   - Troubleshooting: troubleshooting.md

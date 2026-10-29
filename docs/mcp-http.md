@@ -185,6 +185,10 @@ guarantee of availability against denial-of-service or compromised native hosts.
 
 ## Client qualification profiles and limits
 
+[Protocol conformance tests](protocol-conformance-tests.md) names the tests
+behind each HTTP MCP feature, the negotiated protocol versions and the known
+deviations of the pinned SDK.
+
 | Client surface | Evidence / support boundary |
 | --- | --- |
 | MCP Inspector CLI 2.8.0 | Qualification target: initialize at 2025-11-25, list tools, declare, claim, resource read and release over verified HTTPS; check effects in the native hub and retain the exact run/artifact evidence. |
