@@ -27,6 +27,10 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Provision the supported Python 3.12 pre-commit tool for the Python 3.10
+  mutation-status CLI journey, retaining the real Git hook installation and
+  product subprocesses on the interpreter under test.
+
 - Keep the Python 3.10 documentation renderer compatible with its supported
   mkdocstrings release by constraining PyMdown Extensions below 12.2 only on
   that interpreter. Newer Python profiles retain the current highlighter API.

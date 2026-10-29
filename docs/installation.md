@@ -111,7 +111,10 @@ development, documentation, and benchmark extras.
 
 The audit and pre-commit toolchain requires Python 3.11 or newer because its
 patched dependencies no longer support Python 3.10. CI runs those tools on
-Python 3.12 and continues to test the product on Python 3.10 and newer. The
+Python 3.12 and continues to test the product on Python 3.10 and newer. For
+the Python 3.10 CLI journey, CI installs the real pre-commit tool from its
+hash-locked Python 3.12 graph. `SYNAPSE_TEST_PRE_COMMIT_BIN` selects that
+executable while the product and its CLI subprocesses remain on Python 3.10. The
 development lock retains the appropriate interpreter markers; the drift checker
 evaluates them for the active Python, platform and requested extra.
 

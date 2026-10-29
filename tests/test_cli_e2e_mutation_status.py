@@ -24,7 +24,9 @@ from synapse_channel import cli
 from synapse_channel.mutation_governance import inspect_mutation_governance
 
 _SYNAPSE_BIN = Path(sys.executable).with_name("synapse")
-_PRE_COMMIT_BIN = Path(sys.executable).with_name("pre-commit")
+_PRE_COMMIT_BIN = Path(
+    os.environ.get("SYNAPSE_TEST_PRE_COMMIT_BIN", str(Path(sys.executable).with_name("pre-commit")))
+)
 
 
 def _run(*args: str, cwd: Path) -> CliResult:
@@ -221,7 +223,7 @@ def test_real_generated_provider_configs_and_precommit_gate_are_detected(
 """,
         encoding="utf-8",
     )
-    installed = subprocess.run(  # noqa: S603 - exact venv tool and isolated repo
+    installed = subprocess.run(  # noqa: S603 - configured real tool and isolated repo
         [str(_PRE_COMMIT_BIN), "install", "--config", str(precommit_config)],
         cwd=repo,
         capture_output=True,

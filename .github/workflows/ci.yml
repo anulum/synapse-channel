@@ -70,6 +70,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: matrix.python-version == '3.10'
+        id: hook-tools-python
+        with:
+          python-version: "3.12"
+      - name: Install the supported pre-commit tool for Python 3.10 journeys
+        if: matrix.python-version == '3.10'
+        env:
+          HOOK_TOOLS_PYTHON: ${{ steps.hook-tools-python.outputs.python-path }}
+        run: |
+          set -euo pipefail
+          "$HOOK_TOOLS_PYTHON" -m pip install --require-hashes -r .github/requirements/requirements-tools.txt
+          tool_bin="$(dirname "$HOOK_TOOLS_PYTHON")/pre-commit"
+          test -x "$tool_bin"
+          printf 'SYNAPSE_TEST_PRE_COMMIT_BIN=%s\n' "$tool_bin" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
