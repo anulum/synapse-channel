@@ -20,6 +20,13 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Check mechanically that the trusted core (`synapse_channel.core`) imports no
+  edge module: integrations, adapters, protocol bridges, the dashboard and the
+  CLI build on the core, never the reverse. The check runs as a pre-commit and
+  pre-push hook. `docs/invariant-conformance.md` now lists the modules that
+  identity, authority, claims, the operation life cycle, the durable record and
+  outcome truth depend on, names the guarantees that still rest on modules
+  outside the core, and states what each hub profile assumes about agents.
 - Publish which A2A and MCP protocol versions and features the tests exercise,
   naming each test, in `docs/protocol-conformance-tests.md`; a test refuses a
   page that names a missing test. New real-surface tests show that neither an
