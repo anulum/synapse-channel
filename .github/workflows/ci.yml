@@ -66,6 +66,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -164,7 +165,7 @@ jobs:
           test "$("$bin_dir/opencode" --version)" = "1.18.32"
           tmux -V
           echo "OPENCODE_BIN=$bin_dir/opencode" >> "$GITHUB_ENV"
-      - name: Run the full suite with the exact coverage gate
+      - name: Run a complete indexed coverage shard
         if: matrix.python-version == '3.12'
         env:
           DISABLE_TELEMETRY: "1"
@@ -172,41 +173,89 @@ jobs:
           SYNAPSE_TEST_CODEX_BIN: ${{ github.workspace }}/integrations/codex-cli/node_modules/.bin/codex
           SYNAPSE_TEST_PI_BIN: ${{ github.workspace }}/integrations/pi/node_modules/.bin/pi
         run: >-
-          python -m pytest tests
+          python -m pytest tests -p tools.pytest_shard
+          --shard-index=${{ matrix.shard }} --shard-count=2 --shard-output=shard-main.json
           -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py'
-          --cov=synapse_channel --cov-report=term-missing --cov-report=xml --cov-report=json
-      - name: Run the full version-compatibility suite
+          --cov=synapse_channel --cov-report= --cov-fail-under=0
+      - name: Run a complete indexed compatibility shard
         if: matrix.python-version != '3.12'
         run: >-
-          python -m pytest tests
+          python -m pytest tests -p tools.pytest_shard
+          --shard-index=${{ matrix.shard }} --shard-count=2 --shard-output=shard-main.json
           -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py'
       - name: Native Linux metadata refusal with accumulated coverage
-        if: matrix.python-version == '3.12'
+        if: matrix.python-version == '3.12' && matrix.shard == 0
         run: >-
-          python -m pytest tests/fixtures/opencode/metadata_denial_linux.py
-          --cov=synapse_channel --cov-append
-          --cov-report=term-missing --cov-report=xml --cov-report=json
+          python -m pytest tests/fixtures/opencode/metadata_denial_linux.py -p tools.pytest_shard
+          --shard-index=0 --shard-count=1 --shard-output=shard-native.json
+          --cov=synapse_channel --cov-append --cov-report= --cov-fail-under=0
       - name: Native Linux metadata refusal across Python versions
-        if: matrix.python-version != '3.12'
-        run: python -m pytest tests/fixtures/opencode/metadata_denial_linux.py
-      - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.12'
+        if: matrix.python-version != '3.12' && matrix.shard == 0
+        run: >-
+          python -m pytest tests/fixtures/opencode/metadata_denial_linux.py -p tools.pytest_shard
+          --shard-index=0 --shard-count=1 --shard-output=shard-native.json
+      - name: Import check
+        run: python -c "import synapse_channel; assert synapse_channel.__version__"
+      - name: Bind all mandatory successful observations into the indexed artifact
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+          PYTHON_PROFILE: ${{ matrix.python-version }}
+        run: |
+          args=(--manifest shard-main.json --output ci-shard-artifact)
+          if [ "$SHARD_INDEX" = 0 ]; then args+=(--native-manifest shard-native.json); fi
+          if [ "$PYTHON_PROFILE" = 3.12 ]; then args+=(--coverage-file .coverage); fi
+          python tools/ci_shard_artifacts.py pack "${args[@]}"
+      - name: Publish authoritative shard only after every mandatory command passes
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pytest-shard-${{ github.sha }}-${{ matrix.python-version }}-${{ matrix.shard }}
+          path: ci-shard-artifact/
+          if-no-files-found: error
+
+  test-complete:
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: always()
+    steps:
+      - name: Require every matrix shard to succeed
+        env:
+          SHARD_RESULT: ${{ needs.test.result }}
+        run: test "$SHARD_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
+      - run: python -m pip install -e . --no-deps
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: pytest-shard-${{ github.sha }}-*
+          path: ci-shards
+          merge-multiple: false
+      - name: Verify every interpreter inventory and apply the full coverage gate
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: >-
+          python tools/ci_shard_artifacts.py verify --root ci-shards
+          --source "$SOURCE_SHA" --run-id "$RUN_ID" --attempt "$RUN_ATTEMPT"
+          --python 3.10 3.11 3.12 3.13 --count 2 --coverage-python 3.12
+          --coverage-config pyproject.toml --fail-under 98 --output ci-coverage
+      - name: Upload complete coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
+          files: ./ci-coverage/coverage.xml
           fail_ci_if_error: false
-      - name: Preserve the measured coverage reports
-        if: always() && matrix.python-version == '3.12' && hashFiles('coverage.json') != ''
+      - name: Preserve the authoritative complete coverage reports
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: python-coverage-${{ github.sha }}
           path: |
-            coverage.json
-            coverage.xml
+            ci-coverage/coverage.json
+            ci-coverage/coverage.xml
           if-no-files-found: error
-      - name: Import check
-        run: python -c "import synapse_channel; assert synapse_channel.__version__"
 
   reuse:
     runs-on: ubuntu-latest
@@ -390,7 +439,7 @@ jobs:
   # each individual job as a required context.
   ci:
     name: ci
-    needs: [lint, typecheck, test, reuse, audit, git-hooks, pi-integration, marketplace-action, python-lock-audit, node-lock-audit]
+    needs: [lint, typecheck, test, test-complete, reuse, audit, git-hooks, pi-integration, marketplace-action, python-lock-audit, node-lock-audit]
     if: always()
     runs-on: ubuntu-latest
     steps:

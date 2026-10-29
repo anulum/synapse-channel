@@ -27,6 +27,11 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Run the complete Linux test matrix in two indexed shards per interpreter.
+  Verify all shard inventories and mandatory native follow-ups before applying
+  the existing coverage threshold to their complete union. Missing or foreign
+  artifacts fail the required CI gate.
+
 - Refresh immutable GitHub Actions pins for Python setup, CodeQL, container
   registry login and Python package publication. Retain existing workflow
   permissions, admission checks and required gates.

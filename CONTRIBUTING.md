@@ -58,6 +58,29 @@ The `Makefile` wraps the common tasks (`make help` lists them):
 | `make reuse` | SPDX/REUSE licensing compliance |
 | `make preflight` | exhaustive opt-in local gate when resources are explicitly reserved |
 
+## Complete CI shards
+
+The Linux matrix runs two indexed pytest shards for each supported interpreter.
+Pytest first collects its full native inventory, sorts node IDs and assigns
+alternating IDs to the two runners. Every runner keeps the same native backends
+and interpreter-specific host prerequisites. Shard zero also executes the
+explicit Linux metadata-refusal follow-up; each interpreter runs it once.
+
+`tools.pytest_shard` records the complete inventory, selected IDs and actual
+completed outcomes, bound to the source SHA, run, interpreter and configuration.
+`tools/ci_shard_artifacts.py pack` refuses unsuccessful or incomplete receipts.
+Only successful shards publish authoritative indexed artifacts. `test-complete`
+requires every shard, verifies identical interpreter inventories and an exact
+union without omissions or duplicates, combines actual Python 3.12 branch and
+subprocess coverage, then applies the original whole-package 98% threshold.
+A shard has no individual coverage floor because it measures only its partition.
+Missing, failed, skipped, duplicate, foreign or altered artifacts fail the gate.
+The required `ci` job includes both the matrix and the complete-union gate.
+
+Focused runner/artifact checks live in `tests/test_ci_shard_artifacts.py` and use
+real pytest and coverage subprocesses. Hosted timing comparisons must include
+setup and queue time; sharding alone is not evidence of measured improvement.
+
 ## Standards a change must meet
 
 The CLI release compatibility tests run the complete published 0.48.0 and
