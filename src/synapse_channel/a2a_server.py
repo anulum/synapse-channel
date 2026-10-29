@@ -21,7 +21,7 @@ import time
 import uuid
 from collections.abc import Callable, Coroutine, Sequence
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 from synapse_channel import a2a_errors
 from synapse_channel.a2a import JsonMap
@@ -48,12 +48,6 @@ from synapse_channel.a2a_push_delivery import (
     validate_retry_delays,
 )
 from synapse_channel.a2a_rpc import dispatch_json_rpc
-from synapse_channel.a2a_scenario_responses import (
-    ScenarioKind,
-    build_completed_task_with_artifact,
-    build_direct_message_response,
-    resolve_scenario,
-)
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.a2a_task_flow import (
     build_working_task,
@@ -222,7 +216,19 @@ class SynapseAgentRuntime:
 
 
 class A2ABridge:
-    """Translate A2A HTTP operations into SYNAPSE operations."""
+    """Translate A2A HTTP operations into SYNAPSE operations.
+
+    Notes
+    -----
+    A production bridge forwards every send into SYNAPSE. Canned official TCK
+    residual answers exist only in the separate
+    :class:`synapse_channel.a2a_conformance_backend.ConformanceA2ABridge`,
+    selected once at start; message ids, metadata and send configuration
+    cannot switch them on.
+    """
+
+    conformance_backend: ClassVar[bool] = False
+    """Whether this bridge class answers TCK residual scenarios without forwarding."""
 
     def __init__(
         self,
@@ -353,22 +359,16 @@ class A2ABridge:
     ) -> JsonMap:
         """Handle an A2A ``message:send`` request.
 
-        Default behaviour returns a working Task and forwards into SYNAPSE.
-        When the payload matches a structured scenario (official TCK residual
-        ``messageId`` prefixes or explicit ``a2aScenario`` metadata), the bridge
-        answers immediately with either a direct Message or a completed Task
-        that carries the required Artifact shape.
+        A working Task is returned and the message is forwarded into SYNAPSE.
+        Only the separate conformance bridge, chosen at start, answers
+        official TCK residual scenarios with canned results; request content
+        alone can never select that path.
         """
         message, configuration = self._validated_send_inputs(payload)
-        scenario = resolve_scenario(message, configuration)
-        if scenario is ScenarioKind.MESSAGE_RESPONSE:
-            return build_direct_message_response(message)
-        if scenario is not None:
-            task = self._create_scenario_completed_task(message, scenario)
-            self._store_request_push_config(payload, task_id=str(task["id"]))
-            return {"task": task}
+        answer = self._conformance_answer(payload, message, configuration)
+        if answer is not None:
+            return answer
         task = self._send_message_task(
-            payload,
             protocol_version=protocol_version,
             message=message,
             operation_timeout_seconds=operation_timeout_seconds,
@@ -377,22 +377,30 @@ class A2ABridge:
         return {"task": task}
 
     def stream_message(self, payload: JsonMap, *, protocol_version: str | None = None) -> JsonMap:
-        """Handle an A2A ``message:stream`` request as an immediate lifecycle stream."""
+        """Handle an A2A ``message:stream`` request as an immediate lifecycle stream.
+
+        Scenario answers follow the same start-time rule as :meth:`send_message`.
+        """
         message, configuration = self._validated_send_inputs(payload)
-        scenario = resolve_scenario(message, configuration)
-        if scenario is ScenarioKind.MESSAGE_RESPONSE:
-            return build_direct_message_response(message)
-        if scenario is not None:
-            task = self._create_scenario_completed_task(message, scenario)
-            self._store_request_push_config(payload, task_id=str(task["id"]))
-            return {"task": task}
+        answer = self._conformance_answer(payload, message, configuration)
+        if answer is not None:
+            return answer
         task = self._send_message_task(
-            payload,
             protocol_version=protocol_version,
             message=message,
         )
         self._store_request_push_config(payload, task_id=str(task["id"]))
         return {"task": task}
+
+    def _conformance_answer(
+        self, payload: JsonMap, message: JsonMap, configuration: JsonMap | None
+    ) -> JsonMap | None:
+        """Return no canned answer: a production bridge forwards every send.
+
+        :class:`~synapse_channel.a2a_conformance_backend.ConformanceA2ABridge`
+        overrides this hook for an explicit conformance run.
+        """
+        return None
 
     def _validated_send_inputs(self, payload: JsonMap) -> tuple[JsonMap, JsonMap | None]:
         """Validate the send envelope and return ``(message, configuration)``."""
@@ -411,41 +419,15 @@ class A2ABridge:
             raise a2a_errors.A2AValidationError("configuration must be an object")
         return message, configuration if isinstance(configuration, dict) else None
 
-    def _create_scenario_completed_task(self, message: JsonMap, scenario: ScenarioKind) -> JsonMap:
-        """Persist a completed Task with the structured artifact for ``scenario``."""
-        with self._task_creation_lock:
-            self._gc_retained_tasks()
-            raw_task_id = message.get("taskId")
-            raw_context_id = message.get("contextId")
-            task_id = str(raw_task_id or uuid.uuid4())
-            context_id = str(raw_context_id or uuid.uuid4())
-            if raw_task_id is not None and self.store.get(task_id) is not None:
-                raise a2a_errors.A2AConflictError("message.taskId already exists")
-            target = resolve_target(message, default=self.target)
-            task = build_completed_task_with_artifact(
-                message,
-                kind=scenario,
-                task_id=task_id,
-                context_id=context_id,
-                target=target,
-                now=time.time(),
-            )
-            stored = self.store.put(task)
-            self._publish_task_update(stored, deliver_push=False)
-            return stored
-
     def _send_message_task(
         self,
-        payload: JsonMap,
         *,
         protocol_version: str | None = None,
-        message: JsonMap | None = None,
+        message: JsonMap,
         operation_timeout_seconds: float | None = None,
     ) -> JsonMap:
-        """Validate a send payload and return the created working task."""
+        """Create the working task for an already validated send message."""
         with self._task_creation_lock:
-            if message is None:
-                message, _configuration = self._validated_send_inputs(payload)
             task_id = message.get("taskId")
             existing = self.store.get(str(task_id)) if task_id is not None else None
             if protocol_version == "1.0" and task_id is not None:
@@ -564,9 +546,8 @@ class A2ABridge:
         if message is not None:
             status["message"] = message
         task["status"] = status
-        metadata = task.setdefault("metadata", {})
-        if isinstance(metadata, dict):
-            metadata["updatedAt"] = time.time()
+        # protocol_observation always attaches a detached metadata dict.
+        task["metadata"]["updatedAt"] = time.time()
         stored = self.store.put(task)
         if publish:
             self._publish_task_update(stored)

@@ -12,7 +12,8 @@ The official A2A TCK (commit ``5996b79``) residual suite is:
 * four artifact scenarios (text, raw file, file URL, structured data)
 * one direct Message response (not a Task wrapper)
 
-These tests drive :meth:`A2ABridge.send_message` and the live HTTP+JSON edge
+These tests drive :meth:`A2ABridge.send_message` on the separate
+:class:`ConformanceA2ABridge` profile and the live HTTP+JSON edge
 so residual claims are grounded in shipped handlers, not a parallel mock.
 """
 
@@ -26,6 +27,7 @@ from typing import Any
 import pytest
 
 from a2a_server_helpers import HandlerHarness, RecordingAgent
+from synapse_channel.a2a_conformance_backend import ConformanceA2ABridge
 from synapse_channel.a2a_scenario_responses import (
     TCK_DATA_ARTIFACT_BODY,
     TCK_DIRECT_MESSAGE_BODY,
@@ -57,7 +59,7 @@ def _send_body(message_id: str) -> dict[str, Any]:
 
 
 def _bridge() -> A2ABridge:
-    return A2ABridge(
+    return ConformanceA2ABridge(
         agent=RecordingAgent(),
         agent_card={"name": "residual-bridge"},
         target="WORKER",

@@ -2768,6 +2768,11 @@ Operational boundaries:
   one queued update for that wait. Persisted task recovery restores task
   snapshots only; it does not rebuild durable subscription streams across
   restarts or bridge replicas.
+- `--conformance-backend` (default off) enables the canned official A2A TCK
+  residual answers for a conformance run. It is fixed at start: without it no
+  `messageId`, metadata or send configuration can produce a canned Message or a
+  completed Task, and every send is forwarded into SYNAPSE. The bridge prints a
+  warning when it is on. Never enable it on a bridge that serves real work.
 - `--max-concurrent-requests` (default `32`) is the hard ceiling on concurrent
   in-flight A2A HTTP handlers. Extra accepted connections receive deterministic
   `503 Service Unavailable` with reason `A2A_HTTP_CAPACITY_EXHAUSTED` and never
@@ -2831,9 +2836,10 @@ Unsupported or externally gated:
 - Independent evidence includes an official `a2a-sdk==1.1.0`
   discovery/send/get/list/cancel lifecycle and an official A2A TCK HTTP+JSON
   MUST run (historically 55 passed, 5 structured-response failures, 175
-  skipped). Residual structured Message/Artifact scenarios are now answered by
-  shipped handlers (TCK messageId prefixes / `a2aScenario`). This remains
-  partial validation, not certification or full conformance.
+  skipped). Residual structured Message/Artifact scenarios are answered only by
+  the opt-in `a2a-serve --conformance-backend` profile (TCK messageId prefixes /
+  `a2aScenario`); a production bridge forwards them like any other send. This
+  remains partial validation, not certification or full conformance.
 - An outbound external-server pass, remote public webhook and reverse-proxy
   production receipts, durable replay, and operator deployment sign-off remain
   open. Native HTTPS bind + dual interop-trace runs are covered in-repo.

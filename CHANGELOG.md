@@ -18,6 +18,15 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Security
+
+- Keep the canned A2A TCK residual answers out of the production path. A bridge
+  now forwards every `message:send` and `message:stream` into SYNAPSE as a
+  working Task; `tck-*` message ids and `a2aScenario` / `synapseScenario` /
+  `scenario` metadata or configuration no longer produce a completed Task or a
+  direct Message without work. The answers exist only behind the start-time
+  `synapse a2a-serve --conformance-backend` profile, which prints a warning.
+
 ### Changed
 
 - Schedule complete Linux pytest discovery in four shards per interpreter,

@@ -212,6 +212,7 @@ or exactly-once guarantee.
 
 | Abuse case | Expected result |
 | --- | --- |
+| Client sends a TCK-shaped `messageId` (`tck-artifact-*`, `tck-message-response-*`) or `a2aScenario` / `synapseScenario` / `scenario` metadata or configuration to obtain a "completed" result without work. | A production bridge ignores them and forwards the send into SYNAPSE as a working Task. Canned answers exist only when the operator started the bridge with `--conformance-backend`, which prints a warning. |
 | Client sends an over-large JSON body. | Bridge returns `413 Request body too large` before dispatch. |
 | Client sends deeply nested JSON. | Bridge rejects the body through bounded JSON parsing before dispatch. |
 | Client opens more concurrent HTTP requests than the configured ceiling. | Bridge admits at most `--max-concurrent-requests` in-flight handlers and answers extras with deterministic `503` (`A2A_HTTP_CAPACITY_EXHAUSTED`) without starting additional worker threads. Capacity is released on normal completion, parse error, timeout, disconnect, and handler exception. |

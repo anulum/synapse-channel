@@ -20,10 +20,29 @@ from _platform_caps import requires_posix_mode_bits
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_a2a
 from synapse_channel.a2a_conformance import SPEC_VERSION
+from synapse_channel.a2a_server import SynapseAgentRuntime
 from synapse_channel.cli_a2a_conformance import _cmd_a2a_conformance, _status_filter
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
+
+
+class _StartedRuntime:
+    """Hub runtime stand-in for ``a2a-serve``: starts, closes submitted work, records stop."""
+
+    def __init__(self, agent: Any, events: list[str] | None = None) -> None:
+        self.agent = agent
+        self.events = [] if events is None else events
+
+    def start(self) -> bool:
+        return True
+
+    def run(self, coro: Any) -> Any:
+        coro.close()
+        return None
+
+    def stop(self) -> None:
+        self.events.append("runtime-stop")
 
 
 def test_parser_a2a_card() -> None:
@@ -414,21 +433,11 @@ def test_cmd_a2a_serve_starts_bridge_and_stops_runtime(
     async def manifest(**_: Any) -> list[dict[str, Any]]:
         return [{"agent": "WORKER", "description": "worker", "skills": ["chat"]}]
 
-    class Runtime:
-        def __init__(self, agent: Any) -> None:
-            self.agent = agent
-
+    class Runtime(_StartedRuntime):
         def start(self) -> bool:
-            events.append("start")
+            self.events.append("start")
             asyncio.run(self.agent.callback({"type": "chat", "payload": "early"}))
             return True
-
-        def run(self, coro: Any) -> Any:
-            coro.close()
-            return None
-
-        def stop(self) -> None:
-            events.append("stop")
 
     def serve(**kwargs: Any) -> None:
         bridge = kwargs["bridge"]
@@ -436,10 +445,11 @@ def test_cmd_a2a_serve_starts_bridge_and_stops_runtime(
         assert bridge.agent_card["capabilities"]["pushNotifications"] is True
         assert bridge.agent_card["capabilities"]["extendedAgentCard"] is True
         assert bridge.auth_token == "a2a-secret"
+        bindings = [
+            item.get("protocolBinding") for item in bridge.agent_card["supportedInterfaces"]
+        ]
+        assert "GRPC" not in bindings, "default a2a-serve must not start gRPC"
         raise KeyboardInterrupt
-
-    def unexpected_grpc(**_: Any) -> tuple[Any, Any]:
-        raise AssertionError("default a2a-serve must not start gRPC")
 
     token_file = tmp_path / "a2a.token"
     token_file.write_text("a2a-secret\n", encoding="utf-8")
@@ -459,14 +469,15 @@ def test_cmd_a2a_serve_starts_bridge_and_stops_runtime(
         cli_a2a._cmd_a2a_serve(
             ns,
             manifest_fetcher=manifest,
-            runtime_factory=Runtime,
+            runtime_factory=lambda agent: Runtime(agent, events),
             server_runner=serve,
-            grpc_server_starter=unexpected_grpc,
         )
         == 0
     )
-    assert events == ["start", "stop"]
-    assert "A2A bridge listening" in capsys.readouterr().out
+    assert events == ["start", "runtime-stop"]
+    out = capsys.readouterr().out
+    assert "A2A bridge listening" in out
+    assert "A2A gRPC binding" not in out
 
 
 @requires_posix_mode_bits
@@ -503,20 +514,6 @@ def test_cmd_a2a_serve_composes_grpc_policy_and_closes_listener(
 
     async def manifest(**_: Any) -> list[dict[str, Any]]:
         return []
-
-    class Runtime:
-        def __init__(self, agent: Any) -> None:
-            self.agent = agent
-
-        def start(self) -> bool:
-            return True
-
-        def run(self, coro: Any) -> Any:
-            coro.close()
-            return None
-
-        def stop(self) -> None:
-            events.append("runtime-stop")
 
     class GrpcServer:
         def stop(self, *, grace: None) -> None:
@@ -556,7 +553,7 @@ def test_cmd_a2a_serve_composes_grpc_policy_and_closes_listener(
         cli_a2a._cmd_a2a_serve(
             ns,
             manifest_fetcher=manifest,
-            runtime_factory=Runtime,
+            runtime_factory=lambda agent: _StartedRuntime(agent, events),
             server_runner=serve,
             grpc_server_starter=start_grpc,
         )
@@ -584,20 +581,6 @@ def test_cmd_a2a_serve_grpc_start_failure_closes_runtime(
     async def manifest(**_: Any) -> list[dict[str, Any]]:
         return []
 
-    class Runtime:
-        def __init__(self, agent: Any) -> None:
-            self.agent = agent
-
-        def start(self) -> bool:
-            return True
-
-        def run(self, coro: Any) -> Any:
-            coro.close()
-            return None
-
-        def stop(self) -> None:
-            events.append("runtime-stop")
-
     def fail_grpc(_bridge: Any, **_: Any) -> tuple[Any, Any]:
         raise RuntimeError("listener bind failed")
 
@@ -614,7 +597,7 @@ def test_cmd_a2a_serve_grpc_start_failure_closes_runtime(
         cli_a2a._cmd_a2a_serve(
             ns,
             manifest_fetcher=manifest,
-            runtime_factory=Runtime,
+            runtime_factory=lambda agent: _StartedRuntime(agent, events),
             grpc_server_starter=fail_grpc,
         )
         == 2
@@ -636,30 +619,21 @@ def test_cmd_a2a_serve_refuses_non_finite_read_timeout_before_runtime(
         ]
     )
 
-    def unexpected_runtime(_agent: Any) -> Any:
-        raise AssertionError("invalid timeout must fail before runtime creation")
+    created: list[_StartedRuntime] = []
 
-    assert cli_a2a._cmd_a2a_serve(ns, runtime_factory=unexpected_runtime) == 2
+    assert (
+        cli_a2a._cmd_a2a_serve(
+            ns, runtime_factory=lambda agent: created.append(_StartedRuntime(agent))
+        )
+        == 2
+    )
+    assert created == [], "invalid timeout must fail before runtime creation"
     assert "--request-read-timeout must be finite and > 0" in capsys.readouterr().err
 
 
 def test_cmd_a2a_serve_tolerates_non_mapping_capabilities() -> None:
     async def manifest(**_: Any) -> list[dict[str, Any]]:
         return []
-
-    class Runtime:
-        def __init__(self, agent: Any) -> None:
-            self.agent = agent
-
-        def start(self) -> bool:
-            return True
-
-        def run(self, coro: Any) -> Any:
-            coro.close()
-            return None
-
-        def stop(self) -> None:
-            return None
 
     def card_from_manifest(*_: Any, **__: Any) -> dict[str, Any]:
         return {"name": "Bridge", "capabilities": "bad"}
@@ -677,7 +651,7 @@ def test_cmd_a2a_serve_tolerates_non_mapping_capabilities() -> None:
             ns,
             manifest_fetcher=manifest,
             card_builder=card_from_manifest,
-            runtime_factory=Runtime,
+            runtime_factory=_StartedRuntime,
             server_runner=serve,
         )
         == 0
@@ -709,3 +683,128 @@ def test_cmd_a2a_serve_reports_runtime_start_failure(
     assert cli_a2a._cmd_a2a_serve(ns, manifest_fetcher=manifest, runtime_factory=Runtime) == 1
     assert events == ["stop"]
     assert "Could not establish persistent hub connection" in capsys.readouterr().err
+
+
+def test_cmd_a2a_serve_refuses_a_zero_request_ceiling(capsys: pytest.CaptureFixture[str]) -> None:
+    """A concurrency ceiling below one is refused before the hub is contacted."""
+    ns = cli.build_parser().parse_args(
+        [
+            "a2a-serve",
+            "--endpoint-url",
+            "http://127.0.0.1:8877",
+            "--max-concurrent-requests",
+            "0",
+        ]
+    )
+
+    assert cli_a2a._cmd_a2a_serve(ns) == 2
+    assert "--max-concurrent-requests must be >= 1" in capsys.readouterr().err
+
+
+def test_cmd_a2a_serve_reports_an_unusable_mutual_tls_configuration(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Missing certificate files for mutual TLS end in a configuration refusal."""
+    ns = cli.build_parser().parse_args(
+        [
+            "a2a-serve",
+            "--endpoint-url",
+            "https://127.0.0.1:8877",
+            "--tls-certfile",
+            str(tmp_path / "absent-cert.pem"),
+            "--tls-keyfile",
+            str(tmp_path / "absent-key.pem"),
+            "--mtls-client-ca-file",
+            str(tmp_path / "absent-ca.pem"),
+        ]
+    )
+
+    assert cli_a2a._cmd_a2a_serve(ns) == 2
+    assert "A2A TLS configuration error" in capsys.readouterr().err
+
+
+def test_cmd_a2a_serve_bounds_the_real_runtime_and_stops_it_when_the_hub_is_absent(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The real runtime receives the read timeout; an unreachable hub stops it cleanly."""
+    created: list[SynapseAgentRuntime] = []
+
+    async def manifest(**_: Any) -> list[dict[str, Any]]:
+        return []
+
+    def runtime_factory(agent: Any) -> SynapseAgentRuntime:
+        runtime = SynapseAgentRuntime(agent)
+        created.append(runtime)
+        return runtime
+
+    port = _free_port()
+    ns = cli.build_parser().parse_args(
+        [
+            "a2a-serve",
+            "--endpoint-url",
+            "http://127.0.0.1:8877",
+            "--uri",
+            f"ws://127.0.0.1:{port}",
+            "--request-read-timeout",
+            "4.5",
+        ]
+    )
+
+    assert (
+        cli_a2a._cmd_a2a_serve(ns, manifest_fetcher=manifest, runtime_factory=runtime_factory) == 1
+    )
+    assert created[0].operation_timeout_seconds == pytest.approx(4.5)
+    assert "Could not establish persistent hub connection" in capsys.readouterr().err
+
+
+def test_cmd_a2a_serve_keeps_a_non_list_interface_field_untouched_for_grpc(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A card whose interface field is not a list is not rewritten by the gRPC binding."""
+    seen: dict[str, Any] = {}
+    events: list[str] = []
+
+    async def manifest(**_: Any) -> list[dict[str, Any]]:
+        return []
+
+    def card_builder(_manifest: Any, **_: Any) -> dict[str, Any]:
+        return {"name": "bridge", "supportedInterfaces": "advertised-elsewhere"}
+
+    class GrpcServer:
+        def stop(self, *, grace: None) -> None:
+            seen["grpc-stopped"] = grace is None
+
+    def start_grpc(bridge: Any, **_: Any) -> tuple[GrpcServer, object]:
+        return GrpcServer(), object()
+
+    def serve(**kwargs: Any) -> None:
+        bridge = kwargs["bridge"]
+        seen["interfaces"] = bridge.agent_card["supportedInterfaces"]
+        sent = bridge.send_message(
+            {"message": {"messageId": "m-1", "role": "ROLE_USER", "parts": [{"text": "work"}]}}
+        )
+        seen["state"] = sent["task"]["status"]["state"]
+        raise KeyboardInterrupt
+
+    ns = cli.build_parser().parse_args(
+        ["a2a-serve", "--endpoint-url", "http://127.0.0.1:8877", "--grpc-port", "50052"]
+    )
+
+    assert (
+        cli_a2a._cmd_a2a_serve(
+            ns,
+            manifest_fetcher=manifest,
+            card_builder=card_builder,
+            runtime_factory=lambda agent: _StartedRuntime(agent, events),
+            server_runner=serve,
+            grpc_server_starter=start_grpc,
+        )
+        == 0
+    )
+    assert seen == {
+        "interfaces": "advertised-elsewhere",
+        "state": "TASK_STATE_WORKING",
+        "grpc-stopped": True,
+    }
+    assert events == ["runtime-stop"]
+    assert "A2A gRPC binding on grpc://127.0.0.1:50052" in capsys.readouterr().out

@@ -185,4 +185,24 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "maximum required deadline for one optional gRPC call."
         ),
     )
+    _register_serve_profile(serve)
+
+
+def _register_serve_profile(serve: argparse.ArgumentParser) -> None:
+    """Register the start-time bridge profile and bind the serve command.
+
+    Parameters
+    ----------
+    serve : argparse.ArgumentParser
+        The ``a2a-serve`` subparser.
+    """
+    serve.add_argument(
+        "--conformance-backend",
+        action="store_true",
+        help=(
+            "Answer official A2A TCK residual scenarios with canned Messages and "
+            "completed Tasks instead of forwarding them into SYNAPSE. For a "
+            "conformance run only; never enable it on a bridge that serves real work."
+        ),
+    )
     serve.set_defaults(func=_cmd_a2a_serve)

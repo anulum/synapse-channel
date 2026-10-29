@@ -104,10 +104,10 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
             "and residual TCK structured Message/Artifact scenario handlers."
         ),
         limitation=(
-            "Default sends still return an asynchronous working Task (SYNAPSE-forward). "
-            "Direct Message and completed structured-Artifact responses are supported for "
-            "named scenarios (official TCK messageId prefixes and explicit a2aScenario "
-            "metadata/configuration), not as the default for every ordinary chat send."
+            "Every send returns an asynchronous working Task (SYNAPSE-forward). Canned "
+            "direct Message and completed structured-Artifact answers for the official TCK "
+            "residual scenarios exist only on a bridge started with a2a-serve "
+            "--conformance-backend; message ids, metadata and configuration cannot select them."
         ),
         spec_reference="A2A 1.0.0 §3.1.1 and §3.2.2",
     ),
@@ -210,9 +210,9 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
             "with present browser Origins independently default-denied."
         ),
         limitation=(
-            "In-repo residual structured Message/Artifact handlers close the five TCK "
-            "content scenarios; re-running the external TCK for a fresh receipt remains "
-            "optional evidence. Reverse-proxy production sign-off stays external."
+            "The opt-in --conformance-backend profile answers the five TCK content "
+            "scenarios for a conformance run; re-running the external TCK for a fresh "
+            "receipt remains optional evidence. Reverse-proxy production sign-off stays external."
         ),
         spec_reference="A2A 1.0.0 §11",
     ),

@@ -19,6 +19,7 @@ from typing import Any
 
 from synapse_channel.a2a import agent_card_from_manifest
 from synapse_channel.a2a_bind_exposure import a2a_bind_problems, a2a_endpoint_scheme_warnings
+from synapse_channel.a2a_conformance_backend import ConformanceA2ABridge
 from synapse_channel.a2a_credentials import resolve_a2a_token
 from synapse_channel.a2a_http import serve_a2a_http
 from synapse_channel.a2a_http_protocol import endpoint_authorities, normalise_origin
@@ -83,6 +84,34 @@ async def _a2a_inbound_handler(bridge_ref: dict[str, Any], data: dict[str, Any])
     bridge = bridge_ref.get("bridge")
     if bridge is not None:
         bridge.handle_synapse_frame(data)
+
+
+def _profile_bridge_factory(
+    args: argparse.Namespace, bridge_factory: BridgeFactory
+) -> BridgeFactory:
+    """Return the bridge class chosen once at start.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed ``a2a-serve`` arguments.
+    bridge_factory : BridgeFactory
+        Production bridge factory.
+
+    Returns
+    -------
+    BridgeFactory
+        ``bridge_factory`` for real work, or the separate conformance bridge when
+        ``--conformance-backend`` was given; the latter is announced on stderr.
+    """
+    if not getattr(args, "conformance_backend", False):
+        return bridge_factory
+    print(
+        f"[{args.name}] WARNING: conformance backend enabled; TCK scenario requests "
+        "receive canned answers and are not forwarded into SYNAPSE.",
+        file=sys.stderr,
+    )
+    return ConformanceA2ABridge
 
 
 def _cmd_a2a_serve(
@@ -210,7 +239,7 @@ def _cmd_a2a_serve(
         print(f"[{args.name}] Could not establish persistent hub connection.", file=sys.stderr)
         runtime.stop()
         return 1
-    bridge = bridge_factory(
+    bridge = _profile_bridge_factory(args, bridge_factory)(
         agent=agent,
         agent_card=agent_card,
         target=args.target,

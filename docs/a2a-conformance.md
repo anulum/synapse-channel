@@ -106,14 +106,19 @@ missing original package/run artifacts are recorded in
 [validation receipts](a2a-validation-receipts.md); they do not qualify a current
 build or constitute a fresh TCK pass.
 
-The bridge now answers those residual scenarios on the shipped
-`message:send` path when the request matches official TCK `messageId`
+A production bridge forwards every `message:send` and `message:stream` into
+SYNAPSE and returns an asynchronous working Task; request content cannot change
+that. The canned answers for the residual scenarios exist only in a separate
+conformance profile, enabled once at start with `synapse a2a-serve
+--conformance-backend`. With it, requests that match official TCK `messageId`
 prefixes (`tck-artifact-text-*`, `tck-artifact-file-*`,
 `tck-artifact-file-url-*`, `tck-artifact-data-*`, `tck-message-response-*`)
-or an explicit `a2aScenario` / `synapseScenario` metadata or configuration
-value. Ordinary chat sends still return an asynchronous working Task and
-forward into SYNAPSE. A fresh official TCK re-run is optional evidence —
-these claims rest on in-repo residual tests of production dispatch.
+or an explicit `a2aScenario` / `synapseScenario` / `scenario` metadata or
+configuration value receive a direct Message or a completed Task with the
+required Artifact, without forwarding. Use that profile only for a conformance
+run, never on a bridge that serves real work. A fresh official TCK re-run is
+optional evidence — these claims rest on in-repo residual tests of the shipped
+dispatch with the profile enabled.
 
 Outbound `synapse a2a-client` and the in-tree `synapse a2a-interop-trace` provide deterministic second
 client stack for discovery, `message:send`, and `GET /tasks/{id}` over
