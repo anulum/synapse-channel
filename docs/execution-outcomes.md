@@ -57,6 +57,37 @@ These Python adapter surfaces do not add a new native hub protocol verb or
 automatically execute the operations catalogue. The catalogue remains a
 read-only list/describe interface; a listed vendor operation is not a runner.
 
+## Verifying the result
+
+An outcome says that a boundary finished. `synapse verify-result` checks
+whether the requested result exists, and records three facts separately in a
+`synapse.result-verification.v1` record:
+
+| Field | Values |
+| --- | --- |
+| `communication` | The boundary state from `--outcome` (an execution-outcome report), or `not_supplied` |
+| `effect` | `observed`, `absent` (looked, not there) or `unknown` (could not look) |
+| `result` | `verified` only when the observed effect is exactly the requested one; otherwise `not_verified` or `not_checked` |
+
+```bash
+synapse worker-session --identity P/worker --outcome-file run.json -- ./make-report
+synapse verify-result file --outcome run.json --path report.txt --sha256 <hex> -- pytest tests/test_report.py
+synapse verify-result git --operation-id publish-1 --remote origin --branch main --commit <40 hex>
+```
+
+`file` reads the file without following a final symbolic link and compares
+its SHA-256. It runs the given test argv, without a shell, only when the
+content matches. `git` reads the remote branch head with `git ls-remote`. The
+result is verified when the head is the commit, or when the head is available
+locally and contains the commit. When the head is not available locally, the
+result is `not_checked`; fetch and verify again. Neither verifier fetches,
+pushes, retries or repairs anything.
+
+A worker that exits 0 and writes the wrong content is reported as
+`communication: confirmed_done`, `effect: observed`, `result: not_verified`.
+No verifier exists yet for deployments or database migrations; their results
+remain unverified.
+
 ## A2A correlation and retained state
 
 The bridge persists task intent before forwarding. A failed or interrupted

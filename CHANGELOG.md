@@ -20,6 +20,13 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Verify the requested result, not only the exchange. `synapse verify-result
+  file` checks a file's exact SHA-256 and then the change's tests;
+  `synapse verify-result git` checks that a commit is on a remote branch. Each
+  prints a `synapse.result-verification.v1` record that keeps the boundary
+  state, the observed effect and the verified result apart, so a worker that
+  exits 0 next to a wrong or absent effect is not reported as verified.
+  Verifiers only read; they never retry or repair.
 - Check mechanically that the trusted core (`synapse_channel.core`) imports no
   edge module: integrations, adapters, protocol bridges, the dashboard and the
   CLI build on the core, never the reverse. The check runs as a pre-commit and
