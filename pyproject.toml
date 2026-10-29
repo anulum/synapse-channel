@@ -57,8 +57,10 @@ dev = [
   "prometheus-client>=0.20",
   "hypothesis>=6.100",
   "bandit>=1.7",
-  "pip-audit>=2.7",
-  "pre-commit>=4.0",
+  # Patched audit/hook dependencies require Python 3.11+. CI runs these
+  # tools on 3.12; product tests still run on every supported interpreter.
+  "pip-audit>=2.7; python_version >= '3.11'",
+  "pre-commit>=4.0; python_version >= '3.11'",
   "reuse>=6.0",
   "tomli>=2.4.1; python_version < '3.11'",
   "mcp==1.30.0",

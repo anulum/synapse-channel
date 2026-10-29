@@ -27,6 +27,12 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Refresh the hash-locked Python dependency graphs, including certificate
+  roots, build backends, telemetry and audit tooling. Audit and pre-commit
+  dependencies use their supported Python 3.11+ marker, while product tests
+  retain Python 3.10 support. The development drift checker evaluates PEP 508
+  markers for the active interpreter, platform and selected extra.
+
 - Linux CI exercises adapter publication under a real child-only metadata
   refusal policy, including descriptor cleanup and preservation of existing
   configuration. The explicit profile requires the native libseccomp runtime.

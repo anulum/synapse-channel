@@ -8,5 +8,5 @@
 # Keep the version and SHA-256 aligned with requirements-dev.txt. The direct
 # artifact avoids a transient empty PyPI Simple-index response while retaining
 # hash verification; the complete universal lock remains authoritative.
-python-pkcs11 @ https://files.pythonhosted.org/packages/e7/9b/526ababb217fe70f5647bf66b9bc569fdf1ac158f4ed8d3136de15bdd811/python_pkcs11-0.10.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl \
-    --hash=sha256:c741453966ed6db462c443d30ed7ef048e33ba95f5eb68ee1e93f565ff32105b
+python-pkcs11 @ https://files.pythonhosted.org/packages/d7/40/2c558bf2e67af8d2d9e6cb89ea149e249ca9aae22228c72e0bf13a69ccad/python_pkcs11-0.10.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl \
+    --hash=sha256:431ab2da60074f08e0a96b6cb4aa61816feebf620a93625f7a0f6579dfc7ef5a

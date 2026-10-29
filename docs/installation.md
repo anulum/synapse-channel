@@ -103,8 +103,15 @@ commands, below the public limit of eight, with no optional extra and no
 implicitly started persistent service.
 
 For a contributor checkout, the local `.venv` should mirror the declared
-development, documentation, and benchmark extras. Verify that before running
-larger local gates:
+development, documentation, and benchmark extras.
+
+The audit and pre-commit toolchain requires Python 3.11 or newer because its
+patched dependencies no longer support Python 3.10. CI runs those tools on
+Python 3.12 and continues to test the product on Python 3.10 and newer. The
+development lock retains the appropriate interpreter markers; the drift checker
+evaluates them for the active Python, platform and requested extra.
+
+Verify the environment before running larger local gates:
 
 ```bash
 .venv/bin/python tools/check_dev_dependency_drift.py --check

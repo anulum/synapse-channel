@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -32,6 +34,7 @@ def _run_checker(*args: str) -> subprocess.CompletedProcess[str]:
         check=False,
         capture_output=True,
         text=True,
+        timeout=15,
     )
 
 
@@ -78,6 +81,38 @@ dev = ["pytest>=999.0"]
     assert "pytest" in result.stderr
 
 
+@pytest.mark.parametrize(
+    ("marker", "applies"),
+    [
+        (f"python_version == '{sys.version_info.major}.{sys.version_info.minor}'", True),
+        (f"python_version != '{sys.version_info.major}.{sys.version_info.minor}'", False),
+        (f"sys_platform == '{sys.platform}'", True),
+        (f"sys_platform != '{sys.platform}'", False),
+        (f"os_name == '{os.name}' and extra == 'dev'", True),
+        ("extra == 'docs'", False),
+        ("python_version < '3.0' or extra == 'dev'", True),
+    ],
+)
+def test_cli_checks_only_requirements_applicable_to_its_environment(
+    tmp_path: Path, marker: str, applies: bool
+) -> None:
+    """The actual CLI enforces applicable tools and ignores foreign marker branches."""
+    pyproject = tmp_path / "pyproject.toml"
+    requirement = f"definitely-missing-synapse-tool>=999.0; {marker}"
+    pyproject.write_text(
+        "[project.optional-dependencies]\ndev = [" + json.dumps(requirement) + "]\n",
+        encoding="utf-8",
+    )
+    result = _run_checker("--check", "--pyproject", str(pyproject), "--extra", "dev")
+    assert result.returncode == (1 if applies else 0), result.stderr + result.stdout
+    if applies:
+        assert "missing: dev: definitely-missing-synapse-tool>=999.0" in result.stderr
+        assert result.stdout == ""
+    else:
+        assert "0 requirement(s) across dev" in result.stdout
+        assert result.stderr == ""
+
+
 def test_dev_dependency_drift_docs_and_preflight_are_wired() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     install = (REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
@@ -86,6 +121,29 @@ def test_dev_dependency_drift_docs_and_preflight_are_wired() -> None:
     assert "check_dev_dependency_drift.py --check" in readme
     assert "check_dev_dependency_drift.py --check" in install
     assert "check_dev_dependency_drift.py --check" in preflight
+
+
+def test_cli_ignores_installed_metadata_without_a_distribution_name(tmp_path: Path) -> None:
+    """An actual malformed metadata directory cannot break the environment inventory."""
+    metadata = tmp_path / "unnamed-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text("Metadata-Version: 2.1\nVersion: 1.0\n")
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[project.optional-dependencies]\ndev = ["packaging>=1"]\n')
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(tmp_path) + os.pathsep + env.get("PYTHONPATH", "")
+    result = subprocess.run(
+        [sys.executable, str(CHECKER), "--pyproject", str(pyproject), "--extra", "dev"],
+        env=env,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "1 requirement(s) across dev" in result.stdout
+    assert result.stderr == ""
 
 
 def test_requirement_parser_normalises_supported_lower_bounds() -> None:

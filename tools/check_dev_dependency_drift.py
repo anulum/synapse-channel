@@ -10,9 +10,9 @@
 
 The checker compares selected ``[project.optional-dependencies]`` groups from
 ``pyproject.toml`` with distributions installed in the interpreter that runs the
-checker. It is intentionally local and dependency-free: only lower-bound
-requirements of the form ``package>=version`` are enforced, matching the way this
-repository declares its development, documentation, and benchmark toolchain.
+checker. Only lower-bound requirements of the form ``package>=version`` are
+enforced. PEP 508 markers are evaluated with the development toolchain's
+``packaging`` library for the active interpreter, platform and selected extra.
 """
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
+
+from packaging.requirements import Requirement as DependencyRequirement
 
 if sys.version_info >= (3, 11):  # pragma: no cover - version branch.
     import tomllib
@@ -89,10 +91,12 @@ def _version_key(version: str) -> tuple[object, ...]:
 
 
 def parse_requirement(extra: str, raw: str) -> Requirement | None:
-    """Parse one supported ``package>=version`` requirement string."""
-    requirement = raw.split(";", maxsplit=1)[0].strip()
-    match = REQUIREMENT_PATTERN.match(requirement)
+    """Parse an applicable lower bound using the active PEP 508 environment."""
+    match = REQUIREMENT_PATTERN.match(raw)
     if match is None:
+        return None
+    dependency = DependencyRequirement(raw)
+    if dependency.marker is not None and not dependency.marker.evaluate({"extra": extra}):
         return None
     return Requirement(
         extra=extra,
