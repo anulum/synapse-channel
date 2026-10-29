@@ -39,6 +39,15 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Hand A2A sends to the hub outside the bridge-wide task-creation lock. The
+  bridge reserves the task id and durably records the working state in a short
+  critical section, then forwards the message; a second send that reuses a
+  reserved id is still refused at once. Hand-offs to the same target stay in
+  send order, because fallback reply correlation pairs a sender's replies with
+  its pending tasks in that order. With one hand-off held for 0.5 s, accepting
+  a task for another target took a median 501.43 ms before and 0.54 ms after
+  (n = 20 each, one loaded workstation, not an isolated benchmark).
+
 - Schedule complete Linux pytest discovery in four shards per interpreter,
   preserving whole-module fixtures and using one shared immutable duration
   snapshot. Missing history retains deterministic full discovery; invalid history

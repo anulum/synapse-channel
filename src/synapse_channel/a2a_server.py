@@ -215,6 +215,19 @@ class SynapseAgentRuntime:
             await asyncio.gather(*pending, return_exceptions=True)
 
 
+class _TargetLocks:
+    """One lock per SYNAPSE target, created on first use."""
+
+    def __init__(self) -> None:
+        self._locks: dict[str, threading.Lock] = {}
+        self._guard = threading.Lock()
+
+    def for_target(self, target: str) -> threading.Lock:
+        """Return the lock that orders hand-offs to ``target``."""
+        with self._guard:
+            return self._locks.setdefault(target, threading.Lock())
+
+
 class A2ABridge:
     """Translate A2A HTTP operations into SYNAPSE operations.
 
@@ -274,6 +287,10 @@ class A2ABridge:
         self.task_timeout_seconds = max(task_timeout_seconds, 0.0)
         self.subscribe_wait_seconds = max(subscribe_wait_seconds, 0.0)
         self._pending_by_target: dict[str, list[str]] = {}
+        # Fallback reply correlation pairs a sender's replies with its pending
+        # tasks in send order, so hand-offs to one target stay serialised while
+        # other targets and task reservation proceed independently.
+        self._target_locks = _TargetLocks()
         # Durable event history is shared with the task store so a restarted
         # bridge can replay prior lifecycle snapshots for open tasks.
         self._events = A2ATaskEvents(durable_store=self.store)
@@ -339,12 +356,12 @@ class A2ABridge:
                 target=resolved_target,
                 now=time.time(),
             )
-            return self.execution.send(
-                task,
-                message,
-                target=resolved_target,
-                operation_timeout_seconds=operation_timeout_seconds,
-            )
+            # The task id is reserved once its working state is durable; the
+            # slow hand-off then runs without blocking unrelated task creation.
+            prepared = self.execution.prepare(task, message, target=resolved_target)
+        return self.execution.forward_prepared(
+            prepared, operation_timeout_seconds=operation_timeout_seconds
+        )
 
     def create_completed_task(self, message: JsonMap, *, target: str | None = None) -> JsonMap:
         """Create a task for compatibility with older callers."""
@@ -427,23 +444,22 @@ class A2ABridge:
         operation_timeout_seconds: float | None = None,
     ) -> JsonMap:
         """Create the working task for an already validated send message."""
-        with self._task_creation_lock:
-            task_id = message.get("taskId")
-            existing = self.store.get(str(task_id)) if task_id is not None else None
-            if protocol_version == "1.0" and task_id is not None:
-                if existing is None:
-                    raise a2a_errors.A2ANotFoundError(f"Unknown task: {task_id}")
-                return self._continue_working_task(
-                    existing,
-                    message,
-                    operation_timeout_seconds=operation_timeout_seconds,
-                )
-            if task_id is not None and existing is not None:
-                raise a2a_errors.A2AConflictError("message.taskId already exists")
-            return self.create_working_task(
+        task_id = message.get("taskId")
+        existing = self.store.get(str(task_id)) if task_id is not None else None
+        if protocol_version == "1.0" and task_id is not None:
+            if existing is None:
+                raise a2a_errors.A2ANotFoundError(f"Unknown task: {task_id}")
+            return self._continue_working_task(
+                existing,
                 message,
                 operation_timeout_seconds=operation_timeout_seconds,
             )
+        if task_id is not None and existing is not None:
+            raise a2a_errors.A2AConflictError("message.taskId already exists")
+        return self.create_working_task(
+            message,
+            operation_timeout_seconds=operation_timeout_seconds,
+        )
 
     def _continue_working_task(
         self,
@@ -473,25 +489,26 @@ class A2ABridge:
         operation_timeout_seconds: float | None = None,
     ) -> None:
         """Forward one task-bound message and maintain fallback correlation."""
-        pending = self._pending_by_target.setdefault(target, [])
-        if task_id not in pending:
-            pending.append(task_id)
-        text = render_message_text(message)
-        if text:
-            self._run(
-                self.agent.chat(
-                    text,
-                    target=target,
-                    metadata={
-                        A2A_METADATA_TASK_ID: task_id,
-                        A2A_METADATA_CONTEXT_ID: context_id,
-                        OPERATION_KEY: execution_id(
-                            {"id": task_id, "contextId": context_id}, message
-                        ),
-                    },
-                ),
-                timeout_seconds=operation_timeout_seconds,
-            )
+        with self._target_locks.for_target(target):
+            pending = self._pending_by_target.setdefault(target, [])
+            if task_id not in pending:
+                pending.append(task_id)
+            text = render_message_text(message)
+            if text:
+                self._run(
+                    self.agent.chat(
+                        text,
+                        target=target,
+                        metadata={
+                            A2A_METADATA_TASK_ID: task_id,
+                            A2A_METADATA_CONTEXT_ID: context_id,
+                            OPERATION_KEY: execution_id(
+                                {"id": task_id, "contextId": context_id}, message
+                            ),
+                        },
+                    ),
+                    timeout_seconds=operation_timeout_seconds,
+                )
 
     def _store_request_push_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:
         """Store a send-time push notification config when one is present."""

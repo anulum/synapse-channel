@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from typing import Protocol
 
 from synapse_channel.a2a import JsonMap
@@ -56,6 +57,25 @@ class PublishTask(Protocol):
         """Publish one task snapshot."""
 
 
+@dataclass(frozen=True)
+class PreparedExchange:
+    """A durably recorded working task waiting for its single hand-off.
+
+    Attributes
+    ----------
+    task : JsonMap
+        Committed working task.
+    message : JsonMap
+        Message to forward (the continued message for an existing task).
+    target : str
+        SYNAPSE target of the hand-off.
+    """
+
+    task: JsonMap
+    message: JsonMap
+    target: str
+
+
 class A2AExecution:
     """Own write-before-send ordering without assuming cancellation stopped work."""
 
@@ -90,6 +110,40 @@ class A2AExecution:
         reply received while sending is in flight must not be overwritten by a
         later local working state.
         """
+        prepared = self.prepare(task, message, target=target, continue_existing=continue_existing)
+        return self.forward_prepared(prepared, operation_timeout_seconds=operation_timeout_seconds)
+
+    def prepare(
+        self,
+        task: JsonMap,
+        message: JsonMap,
+        *,
+        target: str,
+        continue_existing: bool = False,
+    ) -> PreparedExchange:
+        """Durably record the working state of one exchange before any hand-off.
+
+        Parameters
+        ----------
+        task : JsonMap
+            New task, or the request's view of an existing task to continue.
+        message : JsonMap
+            Validated user message to forward.
+        target : str
+            Default SYNAPSE target.
+        continue_existing : bool, optional
+            Continue the stored task under A2A 1.0 task-id semantics.
+
+        Returns
+        -------
+        PreparedExchange
+            The committed working task with the message and target to forward.
+
+        Raises
+        ------
+        A2ANotFoundError
+            When an existing task to continue is no longer stored.
+        """
         with self.transition_lock:
             if continue_existing:
                 current = self.store.get(str(task["id"]))
@@ -105,6 +159,33 @@ class A2AExecution:
                 publish=False,
             )
             self.publish(stored, deliver_push=False)
+        return PreparedExchange(stored, message, target)
+
+    def forward_prepared(
+        self, prepared: PreparedExchange, *, operation_timeout_seconds: float | None = None
+    ) -> JsonMap:
+        """Hand one prepared exchange to SYNAPSE without holding any bridge lock.
+
+        Parameters
+        ----------
+        prepared : PreparedExchange
+            Result of :meth:`prepare`.
+        operation_timeout_seconds : float or None, optional
+            Caller deadline for the hand-off.
+
+        Returns
+        -------
+        JsonMap
+            The task as stored after the hand-off, which may already carry a reply.
+
+        Raises
+        ------
+        A2AStoreError
+            When the task state vanished after forwarding; the outcome is unknown.
+        Exception
+            The forwarding failure, after a non-terminal task is marked failed.
+        """
+        stored, message, target = prepared.task, prepared.message, prepared.target
         task_id = str(stored["id"])
         try:
             self.forward(
