@@ -20,6 +20,16 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Verify deployments and database migrations by their result.
+  `synapse verify-result deployment` checks that a JSON health report names
+  the requested revision and says `health: ok`. It reads the report, not the
+  running service, so it is independent evidence only when the deployed
+  service wrote the report; the record keeps the report SHA-256 and mtime.
+  `synapse verify-result migration` opens a SQLite database read-only,
+  requires the migration identity in its migrations table and compares a
+  defined schema digest; `--print-schema-sha256` prints that digest from a
+  reference database. A worker that exits 0 with the wrong revision or schema
+  stays `not_verified`. Neither command deploys, migrates or repairs.
 - Generate a guarantee register (`docs/guarantee-register.md`,
   `docs/_generated/guarantee_register.json`) from
   `tools/guarantee_register.toml`. For each capability it shows the last stage

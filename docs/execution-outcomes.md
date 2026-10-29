@@ -73,6 +73,8 @@ whether the requested result exists, and records three facts separately in a
 synapse worker-session --identity P/worker --outcome-file run.json -- ./make-report
 synapse verify-result file --outcome run.json --path report.txt --sha256 <hex> -- pytest tests/test_report.py
 synapse verify-result git --operation-id publish-1 --remote origin --branch main --commit <40 hex>
+synapse verify-result deployment --operation-id deploy-1 --revision abc123 --report health.json
+synapse verify-result migration --operation-id migrate-1 --database app.db --migration 0001_init --schema-sha256 <hex>
 ```
 
 `file` reads the file without following a final symbolic link and compares
@@ -80,13 +82,30 @@ its SHA-256. It runs the given test argv, without a shell, only when the
 content matches. `git` reads the remote branch head with `git ls-remote`. The
 result is verified when the head is the commit, or when the head is available
 locally and contains the commit. When the head is not available locally, the
-result is `not_checked`; fetch and verify again. Neither verifier fetches,
-pushes, retries or repairs anything.
+result is `not_checked`; fetch and verify again. `deployment` checks what a
+JSON report says. It is verified only when that report's `revision` is the
+requested token and `health` is exactly `ok`. The observation is
+`report_names_revision_and_ok`. This is independent evidence only when the
+deployed service wrote the report, not when the deploying worker did. The
+evidence records `report_sha256` and `report_mtime_ns` of the judged bytes.
+`migration` opens a SQLite file read-only and does not follow a final link. The
+inode checked with `O_NOFOLLOW` must still be the resolved path after connect.
+It requires the migration identity in `schema_migrations.version` (or the named
+table and column). A missing column is `migration_column_absent` and
+`not_verified`. The schema digest is the SHA-256 of this exact UTF-8 text: for
+each `sqlite_master` row with SQL, excluding names that start with `sqlite_`,
+ordered by type then name, one block `{type}\t{name}\n{sql}\n`. The SQL is
+copied as SQLite stored it, so different whitespace is a different digest.
+`synapse verify-result migration --print-schema-sha256 --database ref.db`
+prints that digest and exits 0 with no verdict. A WAL database in a directory
+the reader cannot write may fail to open, or may miss frames that need a
+writable `-shm`; that is `database_not_readable`, not a verified schema. None
+of the verifiers fetches, pushes, deploys, migrates, retries or repairs
+anything.
 
-A worker that exits 0 and writes the wrong content is reported as
-`communication: confirmed_done`, `effect: observed`, `result: not_verified`.
-No verifier exists yet for deployments or database migrations; their results
-remain unverified.
+A worker that exits 0 and writes the wrong content, the wrong revision, or
+the wrong schema is reported as `communication: confirmed_done` with a result
+of `not_verified`.
 
 ## A2A correlation and retained state
 

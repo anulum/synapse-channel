@@ -24,11 +24,14 @@ That does not say the requested work happened, or happened correctly. A
     ``not_verified`` when it is not, and ``not_checked`` when the verifier
     could not decide.
 
-Two verifiers are provided:
+Two verifiers are provided here:
 
 * :func:`verify_file_change` checks a file's exact content by SHA-256 and can
   also run the change's own tests.
 * :func:`verify_git_publication` checks that a commit is on a remote branch.
+
+Deployment and database-migration checks live in
+:mod:`synapse_channel.result_verification_effects`. They only read as well.
 
 A successful exit or a "done" reply never makes a result verified on its own.
 Verifiers only read; they never repeat or repair the work.

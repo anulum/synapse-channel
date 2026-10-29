@@ -55,7 +55,7 @@ The ``synapse`` command exposes these subcommands:
 * ``conflicts`` — predict merge conflicts between branch-scoped claims on different branches;
 * ``health`` — probe the hub and report reachability as the exit code;
 * ``verify-release`` — run declared checks and write an observed release receipt;
-* ``verify-result`` — verify a requested result (file content, git publication);
+* ``verify-result`` — verify a requested result (file, git, deployment, migration);
 * ``policy-check`` — evaluate a release receipt against a policy file (advisory);
 * ``identity`` — inventory and audit declared agent identities;
 * ``acl`` — shadow-mode (non-blocking) ACL evaluation of candidate accesses;
