@@ -58,6 +58,10 @@ digest and successful matching run before claiming that artifact passed.
 | `cloud-hsm` | Boto3-backed cloud-HSM wrapping adapters. |
 | `all` | Aggregate runtime extras; it excludes contributor-only `dev`, `docs`, and `benchmark`. |
 
+On Python 3.10, the `docs` extra selects PyMdown Extensions below 12.2 to
+match the last supported mkdocstrings highlighter. Python 3.11 and newer
+retain the current highlighter API. Both profiles build the full API reference.
+
 Install one or more with, for example:
 
 ```bash

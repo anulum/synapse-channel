@@ -27,6 +27,10 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Keep the Python 3.10 documentation renderer compatible with its supported
+  mkdocstrings release by constraining PyMdown Extensions below 12.2 only on
+  that interpreter. Newer Python profiles retain the current highlighter API.
+
 - Keep configured ownership and generated-dependency builders local to one
   command invocation, preserving later default API and semantic companion maps.
 

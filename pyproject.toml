@@ -161,6 +161,9 @@ all = [
 docs = [
   "mkdocs-material>=9.5",
   "mkdocstrings[python]>=0.26",
+  # mkdocstrings 1.0.6 is the last Python 3.10 release; its highlighter
+  # predates the required Markdown argument introduced by pymdownx 12.2.
+  "pymdown-extensions<12.2; python_version < '3.11'",
 ]
 
 [project.scripts]
