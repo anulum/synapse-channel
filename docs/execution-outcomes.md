@@ -161,6 +161,10 @@ confirms only `wake_transport`; a cached acceptance is historical evidence,
 not proof that the current model read the inbox. An uncertain delivery or
 interrupted adapter effect stays unknown and does not trigger another adapter.
 An actual refusal can follow the existing refusal-only fallback policy.
+`synapse waker uncertain` lists unresolved uncertain wakes with their age,
+evidence and later wakes of the same seat, and turns an aged one into an
+operator question; `synapse waker resolve` records the answer without waking
+again. See [uncertain wakes](wake-relay.md#uncertain-wakes-reach-an-end).
 
 ## Worker launch and read-only inquiry
 

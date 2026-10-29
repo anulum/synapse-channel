@@ -36,7 +36,13 @@ once" true for two processes.
 
 Marks are kept until :func:`prune` removes the oldest of a seat. A message
 whose marks were removed could be woken for again if the hub delivered it
-again, so prune keeps the newest ones and is given a generous number.
+again, so prune keeps the newest ones and is given a generous number. Prune
+never removes a wake whose uncertainty an operator has not yet resolved.
+
+An operator resolves an uncertain wake with :func:`resolve`, which writes
+``<wake id>/resolution.json`` once: the operator says whether the seat read
+the message or the wake is abandoned. A resolution never runs an adapter
+again; it only ends the question.
 """
 
 from __future__ import annotations
@@ -63,6 +69,14 @@ SCHEMA = "wake-mark-v1"
 
 OPEN = "attempt"
 """State of an attempt that has no outcome mark."""
+
+RESOLUTION_SCHEMA = "wake-resolution-v1"
+"""Schema name written into a resolution mark."""
+
+RESOLUTIONS = frozenset({"read", "abandoned"})
+"""What an operator can decide about an uncertain wake."""
+
+_RESOLUTION_NAME = "resolution.json"
 
 _UNSAFE = re.compile(r"[^0-9A-Za-z._-]+")
 _MARK_NAME = re.compile(r"(\d{2,})-([a-z][a-z0-9_]{0,31})\.(attempt|outcome)\.json")
@@ -230,18 +244,146 @@ def read(directory: Path, seat: str, wake_id: int) -> tuple[Mark, ...]:
     return tuple(marks)
 
 
+def is_uncertain(marks: tuple[Mark, ...]) -> bool:
+    """Return whether these marks leave the wake uncertain: open or answered uncertain."""
+    return any(mark.state in {OPEN, UNCERTAIN} for mark in marks)
+
+
+def resolution(directory: Path, seat: str, wake_id: int) -> dict[str, str] | None:
+    """Return the operator's resolution of one wake, or ``None`` when there is none.
+
+    Raises
+    ------
+    WakeMarkError
+        A resolution mark exists but is not one this module wrote for exactly
+        this seat and wake: a copied or misplaced resolution never closes
+        another wake's question.
+    """
+    path = _wake_dir(directory, seat, wake_id) / _RESOLUTION_NAME
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise WakeMarkError("the resolution mark cannot be read") from exc
+    keys = {"schema", "seat", "wake_id", "decision", "operator", "at"}
+    if (
+        not isinstance(data, dict)
+        or set(data) != keys
+        or data["schema"] != RESOLUTION_SCHEMA
+        or not all(isinstance(data[key], str) for key in keys - {"wake_id"})
+        or type(data["wake_id"]) is not int
+        or data["decision"] not in RESOLUTIONS
+    ):
+        raise WakeMarkError("the resolution mark is not a known resolution")
+    if (data["seat"], data["wake_id"]) != (seat, wake_id):
+        raise WakeMarkError(
+            f"the resolution mark beside wake {wake_id} of {seat} resolves another wake"
+        )
+    return {key: str(value) for key, value in data.items()}
+
+
+def resolve(
+    directory: Path, seat: str, wake_id: int, decision: str, operator: str, *, now: datetime
+) -> None:
+    """Record, once, an operator's decision about one uncertain wake.
+
+    Parameters
+    ----------
+    directory : pathlib.Path
+        Directory of the durable marks.
+    seat : str
+        The exact seat.
+    wake_id : int
+        The hub's sequence number of the message.
+    decision : str
+        ``read`` when the operator saw that the seat read the message,
+        ``abandoned`` when the wake is given up.
+    operator : str
+        Who decides; kept in the mark.
+    now : datetime
+        Time of the decision.
+
+    Raises
+    ------
+    WakeMarkError
+        The decision or operator is not valid, or the wake is not uncertain.
+    FileExistsError
+        The wake was already resolved.
+    """
+    if decision not in RESOLUTIONS:
+        raise WakeMarkError(f"a resolution is one of {sorted(RESOLUTIONS)}")
+    if not operator.strip() or len(operator) > _MAX_TEXT or any(ord(c) < 32 for c in operator):
+        raise WakeMarkError("a resolution names its operator in printable text")
+    with seat_lock(directory, seat):
+        if not is_uncertain(read(directory, seat, wake_id)):
+            raise WakeMarkError("only an uncertain wake is resolved")
+        _create(
+            _wake_dir(directory, seat, wake_id) / _RESOLUTION_NAME,
+            {
+                "schema": RESOLUTION_SCHEMA,
+                "seat": seat,
+                "wake_id": wake_id,
+                "decision": decision,
+                "operator": operator,
+                "at": _stamp(now),
+            },
+        )
+
+
+def attempt_time(directory: Path, seat: str, wake_id: int, mark: Mark) -> str:
+    """Return when an attempt began, from its attempt mark; empty when it cannot be read."""
+    path = _wake_dir(directory, seat, wake_id) / f"{mark.order:02d}-{mark.adapter}.attempt.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return str(data.get("at") or "") if isinstance(data, dict) else ""
+
+
+def seats(directory: Path) -> tuple[str, ...]:
+    """Return every seat that has marks, read from the seat name in its attempt marks."""
+    found: set[str] = set()
+    if not directory.is_dir():
+        return ()
+    for attempt in sorted(directory.glob("*/*/*.attempt.json")):
+        try:
+            data = json.loads(attempt.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        seat = data.get("seat") if isinstance(data, dict) else None
+        if isinstance(seat, str) and attempt.parent.parent.name == seat_key(seat):
+            found.add(seat)
+    return tuple(sorted(found))
+
+
+def wake_ids(directory: Path, seat: str) -> tuple[int, ...]:
+    """Return a seat's wake ids that have marks, lowest first."""
+    base = directory / seat_key(seat)
+    if not base.is_dir():
+        return ()
+    return tuple(sorted(int(path.name) for path in base.iterdir() if path.name.isdigit()))
+
+
 def prune(directory: Path, seat: str, *, keep_newest: int) -> int:
     """Remove the marks of all but the ``keep_newest`` highest wake ids of a seat.
 
-    Done under the seat's lock, so no wake is at work meanwhile. Returns how
-    many messages' marks were removed.
+    Done under the seat's lock, so no wake is at work meanwhile. A wake that is
+    uncertain and not resolved is kept whatever its age: removing it would let
+    the message be woken for again. Returns how many messages' marks were
+    removed.
     """
     base = directory / seat_key(seat)
     if not base.is_dir():
         return 0
     with seat_lock(directory, seat):
-        ids = sorted(int(path.name) for path in base.iterdir() if path.name.isdigit())
-        old = ids[: max(len(ids) - keep_newest, 0)]
+        ids = wake_ids(directory, seat)
+        old = [
+            wake_id
+            for wake_id in ids[: max(len(ids) - keep_newest, 0)]
+            if not is_uncertain(read(directory, seat, wake_id))
+            or resolution(directory, seat, wake_id) is not None
+        ]
         for wake_id in old:
             shutil.rmtree(base / str(wake_id))
     return len(old)

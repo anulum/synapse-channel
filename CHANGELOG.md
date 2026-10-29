@@ -20,6 +20,19 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Bring uncertain wakes to an operational end. `synapse waker uncertain` lists
+  each uncertain wake that no operator has resolved, with its age, whether
+  repeating the transport would make a second effect, the operator's options
+  and its marks as evidence. It flags later wakes of the same seat as possible
+  second effects. Once a wake is older than `--question-after`, it becomes an
+  explicit operator question, and the command exits 3. `synapse waker resolve`
+  records the answer (`read` or `abandoned`) once; the wake is not run
+  again while its marks are kept.
+  Pruning no longer removes an unresolved uncertain wake. A relay that meets
+  an old unresolved uncertain wake returns its question in `operator_question`
+  and does not wake again. A resolution counts only for the exact seat and
+  wake it names.
+
 - Run the first catalogue operations end to end. `synapse ops run` takes one
   command-line row along one checked path: exact target and executable
   fingerprint, the qualification gate of the named profile, the operator's

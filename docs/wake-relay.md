@@ -84,7 +84,43 @@ replaces an existing name: a mark, once written, is not rewritten. The marks
 directory must be on a file system with hard links. Marks are kept until the
 oldest of a seat are pruned; pruning keeps the newest ones, because a message
 whose marks were removed could be woken for again if the hub delivered it
-again.
+again. Pruning never removes an uncertain wake that no operator has resolved.
+
+## Uncertain wakes reach an end
+
+An uncertain wake is never repeated, so it must not be forgotten either.
+`synapse waker uncertain` prints one JSON object for each uncertain wake that
+no operator has resolved. It never wakes anyone. Each object gives:
+
+| Field | Meaning |
+| --- | --- |
+| `seat`, `wake_id`, `adapter` | The wake and the transport that left it uncertain |
+| `state` | `uncertain` (the adapter gave no clear answer) or `interrupted` (an attempt with no outcome) |
+| `since`, `age_seconds` | When the attempt began or was answered, and its age; `null` when the time cannot be read |
+| `repeat` | `safe` for a passive notice (`harness_waiter`); `second_effect` for a transport whose repeat types or queues again |
+| `verifier` | No automatic verifier exists; only an operator can inspect the seat's session |
+| `operator_actions`, `safe_continuation` | What an operator may do, and when work on this wake continues safely |
+| `followed_by` | Later wakes of the same seat that ran while this one was unresolved. Each was a fresh request to the same seat and may have been a second effect |
+| `question`, `evidence` | Once the wake is older than `--question-after` seconds (default 900), or cannot be dated, an explicit operator question naming the marks directory as evidence |
+
+The relay itself carries the same question. When `synapse waker relay` meets
+an unresolved uncertain wake of the message it was asked to wake, it does not
+wake again, and its result names the question in `operator_question` (empty
+while the wake is younger than the default 900 seconds, or once it is resolved).
+
+The command exits with status 3 while any operator question is pending, so a
+supervisor or scheduler can raise it. An operator answers it with
+
+```bash
+synapse waker resolve --seat PROJECT/seat --wake-id 4711 --as read --operator alice
+synapse waker resolve --seat PROJECT/seat --wake-id 4711 --as abandoned --operator alice
+```
+
+`--as read` records that the seat read the message; `--as abandoned` gives the
+wake up. The resolution is written once, as `resolution.json` beside the
+marks; a second one is refused. It never runs an adapter again: the message
+stays in the mailbox, and the relay still finds the wake finished. Only an
+uncertain wake can be resolved.
 
 ## The pane bridge adapter
 

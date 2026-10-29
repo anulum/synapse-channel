@@ -1150,6 +1150,12 @@ and message sequence. See [wake relay](wake-relay.md#call-the-bound-relay) for t
 owner-only configuration, transport proof meanings and exit codes. This command
 does not change the supervised pane bridge's installed loop.
 
+`synapse waker uncertain` lists every uncertain wake no operator has resolved
+and exits 3 while one has aged into an operator question;
+`synapse waker resolve --seat ... --wake-id ... --as read|abandoned --operator ...`
+records the operator's answer once. Neither command wakes a seat. See
+[uncertain wakes](wake-relay.md#uncertain-wakes-reach-an-end).
+
 `waker install --opencode-editor-readback` persists the native OpenCode mini
 profile; `--no-opencode-editor-readback` disables it. Omitting both preserves an
 existing choice and defaults to disabled on a new configuration. Schema version

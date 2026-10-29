@@ -16,6 +16,7 @@ from pathlib import Path
 
 from synapse_channel.agent_tmux import DEFAULT_PANE_PROBE_INTERVAL, DEFAULT_SUBMIT_DELAY
 from synapse_channel.cli_waker_relay import add_parser as add_relay_parser
+from synapse_channel.cli_waker_uncertainty import add_parsers as add_uncertainty_parsers
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.waker_commands import DEFAULT_COMMAND_TIMEOUT
 from synapse_channel.waker_service import inhibit_waker, inspect_waker, install_waker, resume_waker
@@ -225,4 +226,5 @@ def _waker_subcommands(
     """Build the required lifecycle group and register the bound relay unit."""
     nested = group.add_subparsers(dest="waker_command", required=True)
     add_relay_parser(nested)
+    add_uncertainty_parsers(nested)
     return nested

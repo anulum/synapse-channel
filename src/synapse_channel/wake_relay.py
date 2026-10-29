@@ -68,6 +68,9 @@ class RelayResult:
     shows. ``sent_now`` is false when earlier
     marks decided the result and no adapter was asked in this call.
     ``passed_over`` lists adapters that were not available, with the reason.
+    ``operator_question`` is set when an earlier, still unresolved uncertain
+    wake of this message is old enough to need an operator's answer (see
+    :mod:`synapse_channel.wake_uncertainty`); the wake is not repeated.
     """
 
     state: str
@@ -77,6 +80,7 @@ class RelayResult:
     passed_over: tuple[tuple[str, str], ...] = ()
     sent_now: bool = False
     operation_id: str = ""
+    operator_question: str = ""
 
     @property
     def execution_outcome(self) -> ExecutionOutcome:
@@ -121,6 +125,21 @@ def _settled(marks: Sequence[wake_marks.Mark]) -> RelayResult | None:
         if mark.state != REFUSED:
             return RelayResult(mark.state, mark.adapter, mark.proves, tuple(marks))
     return None
+
+
+def _operator_question(marks_dir: Path, seat: str, wake_id: int, moment: datetime) -> str:
+    """Return the operator question of an unresolved uncertain wake, or nothing."""
+    # Imported here: wake_uncertainty reads the same marks and names this module.
+    from synapse_channel.wake_uncertainty import unresolved
+
+    try:
+        rows = unresolved(marks_dir, now=moment)
+    except wake_marks.WakeMarkError as exc:
+        return f"operator question: a wake mark in {marks_dir} cannot be trusted ({exc})"
+    for row in rows:
+        if (row.seat, row.wake_id) == (seat, wake_id):
+            return row.question
+    return ""
 
 
 def _ask(
@@ -177,7 +196,12 @@ def relay(
         operation_id = "wake-" + hashlib.sha256(identity).hexdigest()
         settled = _settled(earlier)
         if settled is not None:
-            return replace(settled, operation_id=operation_id)
+            question = (
+                _operator_question(marks_dir, target.seat, wake_id, now())
+                if settled.state == UNCERTAIN
+                else ""
+            )
+            return replace(settled, operation_id=operation_id, operator_question=question)
         refused = {mark.adapter for mark in earlier}
         prompt = prompt_for(target.seat)
         passed_over = []
