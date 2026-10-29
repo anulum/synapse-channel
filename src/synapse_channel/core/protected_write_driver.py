@@ -92,6 +92,33 @@ def _reference_verifier(
     return verify
 
 
+def _store_verified_observation(
+    evidence: bytes,
+    *,
+    prepared: PreparedProtectedWrite,
+    max_evidence_bytes: int,
+    store_evidence: Callable[[bytes], Mapping[str, object]],
+    read_evidence: Callable[[Mapping[str, object], int], bytes],
+) -> dict[str, object]:
+    """Require bounded immutable evidence custody and exact readback before completion."""
+    if len(evidence) > max_evidence_bytes:
+        raise ValueError("execution result evidence exceeds budget")
+    reference = dict(store_evidence(evidence))
+    validate_protected_write_content_reference(
+        reference, limits=prepared.policy.limits.operation_limits
+    )
+    verifier = prepared.policy.domain_verifiers[str(reference["domain"])]
+    if (
+        reference["size_bytes"] != len(evidence)
+        or verifier(evidence, str(reference["sha256"])) is not True
+    ):
+        raise ValueError("stored execution evidence verification failed")
+    retained = read_evidence(MappingProxyType(reference), len(evidence) + 1)
+    if type(retained) is not bytes or retained != evidence:
+        raise ValueError("execution evidence readback mismatch")
+    return reference
+
+
 def execute_prepared_protected_write(
     prepared: PreparedProtectedWrite,
     *,
@@ -195,6 +222,7 @@ def execute_prepared_protected_write(
                 root_identity=prepared.policy.enrolled_roots[key[0]],
                 max_bytes=limits.max_content_bytes,
                 allow_directory=True,
+                require_openat2=True,
             )
 
         for index, operation in enumerate(
@@ -227,6 +255,7 @@ def execute_prepared_protected_write(
                             owner_uid=owner_uid,
                             max_bytes=limits.max_content_bytes,
                             writable=operation["opcode"] == "write",
+                            require_openat2=True,
                         )
                     )
                     for key, actual in zip(keys, before, strict=True)
@@ -287,19 +316,13 @@ def execute_prepared_protected_write(
                         ensure_ascii=True,
                         allow_nan=False,
                     ).encode("ascii")
-                    if len(evidence) > max_evidence_bytes:
-                        raise ValueError("execution result evidence exceeds budget")
-                    reference = dict(store_evidence(evidence))
-                    validate_protected_write_content_reference(reference, limits=limits)
-                    verifier = prepared.policy.domain_verifiers[str(reference["domain"])]
-                    if (
-                        reference["size_bytes"] != len(evidence)
-                        or verifier(evidence, str(reference["sha256"])) is not True
-                    ):
-                        raise ValueError("stored execution evidence verification failed")
-                    retained = read_evidence(MappingProxyType(reference), len(evidence) + 1)
-                    if type(retained) is not bytes or retained != evidence:
-                        raise ValueError("execution evidence readback mismatch")
+                    reference = _store_verified_observation(
+                        evidence,
+                        prepared=prepared,
+                        max_evidence_bytes=max_evidence_bytes,
+                        store_evidence=store_evidence,
+                        read_evidence=read_evidence,
+                    )
                     completed = record_protected_execution_step(
                         prepared,
                         execution,

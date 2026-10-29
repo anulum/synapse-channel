@@ -243,6 +243,31 @@ and modeled unsupported-platform guards; those guards are not foreign-OS proof.
   posture and updates [`SECURITY.md`](SECURITY.md) or
   [`docs/paranoid-mode.md`](docs/paranoid-mode.md) when a control's contract moves.
 
+Five additional Linux profiles exercise durable protected execution:
+
+```bash
+python -m pytest \
+  tests/fixtures/protected_write_descriptor_filter_linux.py \
+  tests/fixtures/protected_write_sequence_linux.py \
+  tests/fixtures/protected_write_execution_frontier_linux.py \
+  tests/fixtures/protected_write_observation_effect_faults_linux.py \
+  tests/fixtures/protected_write_observation_topology_faults_linux.py
+```
+
+The descriptor-filter profile requires native Linux x86-64, seccomp and procfs.
+Irreversible filters run only in disposable children; real ancillary transfers,
+thread synchronization, `pidfd_getfd` denial and inherited filters are checked. The counter profile
+uses actual process/thread contention, restart, file replacement and child-only
+file-size limits. A descriptor-specific libseccomp rule produces a real child-only
+`fsync` refusal without substituting a syscall. Checksummed counter records reject real partial updates and
+stored mixed carry bytes rather than issuing a reused sequence. The remaining profiles use real SQLite journals and native
+`openat2` filesystem observations to reject incomplete or inconsistent execution
+evidence. Their fixtures exercise storage mechanics, without certifying installed
+writer isolation or quiescence. Missing native capabilities fail these profiles.
+Linux CI collects all five exact filenames alongside the existing two default
+filename patterns on Python 3.10–3.13; Python 3.12 includes their real subprocess
+coverage. They are outside default macOS and Windows collection.
+
 ### Changes to `core/*`
 
 The `core/` modules sit on the request, authentication, and durability hot paths,

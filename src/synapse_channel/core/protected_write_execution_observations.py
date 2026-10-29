@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protected_write_descriptors import hold_protected_path
 from synapse_channel.core.protected_write_execution_journal import (
-    verify_protected_execution_records,
+    ProtectedExecutionFrontier,
+    inspect_protected_execution_frontier,
 )
 from synapse_channel.core.protected_write_inspection import ProtectedFileInspection
 from synapse_channel.core.protected_write_json import decode_protected_write_json
@@ -155,40 +157,83 @@ class _Topology:
                 self.directories.add(identity)
 
 
-def verify_protected_execution_observations(
+@dataclass(frozen=True)
+class ProtectedExecutionPrefixEvidence:
+    """Verified historical completed prefix with its still-uncertain frontier.
+
+    Attributes
+    ----------
+    frontier : ProtectedExecutionFrontier
+        Exact retained execution boundary, without authority to retry.
+    observations : tuple of bytes
+        Verified canonical historical observation bytes for completed steps.
+        These do not establish live topology, writer exit or settlement.
+    """
+
+    frontier: ProtectedExecutionFrontier
+    observations: tuple[bytes, ...]
+
+
+def _decode_execution_observation(
+    content: bytes,
+    *,
+    prepared: PreparedProtectedWrite,
+    execution_start_sha256: str,
+    operation_id: str,
+    step_index: int,
+) -> dict[str, object]:
+    """Decode closed canonical bytes bound to one exact retained execution step."""
+    document = decode_protected_write_json(content, limits=prepared.policy.limits.json_limits)
+    if (
+        set(document) != {"domain", "execution_start_sha256", "operation_id", "step_index", "after"}
+        or _canonical(document) != content
+    ):
+        raise ValueError("unsupported or noncanonical execution observation")
+    if (
+        document["domain"] != "synapse-protected-write.execution-observation.v1"
+        or document["execution_start_sha256"] != execution_start_sha256
+        or document["operation_id"] != operation_id
+        or type(document["step_index"]) is not int
+        or document["step_index"] != step_index
+    ):
+        raise ValueError("execution observation belongs to another operation")
+    return document
+
+
+def verify_protected_execution_prefix_observations(
     prepared: PreparedProtectedWrite,
     begun: ProtectedWriteReservation,
     *,
     service_journal: EventStore,
     read_evidence: Callable[[Mapping[str, object], int], bytes],
     max_total_evidence_bytes: int,
-) -> tuple[bytes, ...]:
-    """Read and bind every observation to an exact complete execution chain.
+) -> ProtectedExecutionPrefixEvidence:
+    """Read and bind completed observations before an exact durable frontier.
 
     Parameters
     ----------
-    prepared:
+    prepared : PreparedProtectedWrite
         Trusted immutable preparation with enrolled domain verifiers and roots.
-    begun:
+    begun : ProtectedWriteReservation
         Exact trusted begin, not an arbitrary client-supplied reservation.
-    service_journal:
-        Existing enrolled journal containing the complete execution chain.
-    read_evidence:
+    service_journal : EventStore
+        Existing enrolled journal containing a complete or interrupted chain.
+    read_evidence : callable
         Bounded immutable-store reader. Reference paths are never resolved here.
         Receives a copied read-only ContentRef and declared size plus one byte.
-    max_total_evidence_bytes:
+    max_total_evidence_bytes : int
         Positive exact aggregate bound; counts every reference occurrence.
 
     Returns
     -------
-    tuple[bytes, ...]
-        Exact canonical historical observation bytes in executable operation order.
-        This return value is neither an activation receipt nor a write capability.
+    ProtectedExecutionPrefixEvidence
+        Canonical historical completed-prefix bytes and the durable frontier.
+        A started/failed/unknown frontier remains uncertain, never retry authority.
 
     Raises
     ------
     ValueError
-        On partial execution, bad reference/domain/bytes, noncanonical observation,
+        On damaged execution, bad reference/domain/bytes, noncanonical observation,
         wrong operation or declared postcondition, root or identity shape.
 
     Notes
@@ -196,19 +241,24 @@ def verify_protected_execution_observations(
     Trust in the enrolled store and writer is a prerequisite. Valid hashes and
     journal entries alone do not prove that historical observations were truthful.
     This verifies closed schema, declared effects and identity continuity from
-    preparation through every step, including root aliases and deferred parents.
+    preparation through each completed step, including root aliases and deferred parents.
     It does not verify current physical topology, final live contents, process
     termination or quiescence. Settlement must check those separately.
     No database write, network fetch, repair, cleanup or settlement is performed.
     """
     if type(max_total_evidence_bytes) is not int or not 0 < max_total_evidence_bytes < 2**53:
         raise ValueError("invalid aggregate execution evidence budget")
-    records = verify_protected_execution_records(prepared, begun, service_journal=service_journal)
+    frontier = inspect_protected_execution_frontier(
+        prepared, begun, service_journal=service_journal
+    )
+    records = (frontier.start, *frontier.completed)
     operations = json.loads(prepared.admission.proposal_bytes)["auxiliary_operations"]
     topology = _Topology(prepared)
     result = []
     total = 0
-    for index, (record, operation) in enumerate(zip(records[1:], operations, strict=True)):
+    for index, (record, operation) in enumerate(
+        zip(records[1:], operations[: len(frontier.completed)], strict=True)
+    ):
         reference = dict(record.response["evidence_reference"])
         size = validate_protected_write_content_reference(
             reference, limits=prepared.policy.limits.operation_limits
@@ -226,21 +276,13 @@ def verify_protected_execution_observations(
             or verifier(content, reference["sha256"]) is not True
         ):
             raise ValueError("retained execution evidence bytes differ from reference")
-        document = decode_protected_write_json(content, limits=prepared.policy.limits.json_limits)
-        if (
-            set(document)
-            != {"domain", "execution_start_sha256", "operation_id", "step_index", "after"}
-            or _canonical(document) != content
-        ):
-            raise ValueError("unsupported or noncanonical execution observation")
-        if (
-            document["domain"] != "synapse-protected-write.execution-observation.v1"
-            or document["execution_start_sha256"] != records[0].response_sha256
-            or document["operation_id"] != operation["operation_id"]
-            or type(document["step_index"]) is not int
-            or document["step_index"] != index
-        ):
-            raise ValueError("execution observation belongs to another operation")
+        document = _decode_execution_observation(
+            content,
+            prepared=prepared,
+            execution_start_sha256=records[0].response_sha256,
+            operation_id=operation["operation_id"],
+            step_index=index,
+        )
         after = document["after"]
         if not isinstance(after, list) or len(after) != len(operation["paths"]):
             raise ValueError("execution observation path count differs")
@@ -250,7 +292,58 @@ def verify_protected_execution_observations(
             )
         topology.advance(operation, after)
         result.append(content)
-    return tuple(result)
+    return ProtectedExecutionPrefixEvidence(frontier, tuple(result))
+
+
+def verify_protected_execution_observations(
+    prepared: PreparedProtectedWrite,
+    begun: ProtectedWriteReservation,
+    *,
+    service_journal: EventStore,
+    read_evidence: Callable[[Mapping[str, object], int], bytes],
+    max_total_evidence_bytes: int,
+) -> tuple[bytes, ...]:
+    """Require complete journal and verified immutable observations for every step.
+
+    Parameters
+    ----------
+    prepared:
+        Trusted immutable preparation with enrolled domain verifiers and roots.
+    begun:
+        Exact retained authority begin binding execution consumption.
+    service_journal:
+        Enrolled existing execution journal.
+    read_evidence:
+        Bounded immutable-store reader receiving a read-only ContentRef and cap.
+    max_total_evidence_bytes:
+        Positive aggregate bound across all referenced observations.
+
+    Returns
+    -------
+    tuple[bytes, ...]
+        Canonical verified historical observation bytes for every declared step.
+
+    Raises
+    ------
+    ValueError
+        On incomplete execution, damaged journal, reference or observation bytes.
+
+    Notes
+    -----
+    Uses the same exact-prefix verifier as recovery inspection. An interrupted
+    chain cannot become settlement evidence, regardless of its completed prefix.
+    Current files, writer quiescence and namespace custody are separate gates.
+    """
+    prefix = verify_protected_execution_prefix_observations(
+        prepared,
+        begun,
+        service_journal=service_journal,
+        read_evidence=read_evidence,
+        max_total_evidence_bytes=max_total_evidence_bytes,
+    )
+    if prefix.frontier.phase != "complete":
+        raise ValueError("execution chain is incomplete or uncertain")
+    return prefix.observations
 
 
 def verify_protected_execution_final_state(
@@ -358,6 +451,7 @@ def verify_protected_execution_final_state(
             expected,
             owner_uid=owner_uid,
             max_bytes=prepared.policy.limits.operation_limits.max_content_bytes,
+            require_openat2=True,
         ):
             result.append((key, expected))
     return tuple(result)

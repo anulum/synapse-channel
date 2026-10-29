@@ -631,6 +631,13 @@ files. The APIs check an independently declared path set and explicit byte
 budgets; they do not discover a complete runtime dependency closure or launch
 an isolated worker. See the [installation artifact contract](docs/coordination-spec.md#pinned-installation-artifacts-and-sealed-bytes).
 
+Protected execution library APIs durably consume a prepared begin, retain its
+exact completed-step frontier and verify immutable observations. Interrupted
+execution grants no retry. Checksummed writer counters refuse damaged records;
+the optional Linux x86-64 filter blocks ancillary descriptor and io_uring routes.
+These mechanisms require independently supervised custody and do not activate a
+writer service. See the [durable execution contract](docs/coordination-spec.md#durable-protected-execution-evidence).
+
 CLI hub queries and `task` writes return `0` only after a matching reply.
 Missing replies return `1` with an unconfirmed-outcome diagnostic. A write may
 already have committed: inspect `synapse board` and retain the same `--idem-key`
@@ -1866,8 +1873,8 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.39 |
 | Public API exports | 70 |
-| Package modules | 819 |
-| Classes | 1192 |
+| Package modules | 821 |
+| Classes | 1197 |
 | Wire message types | 114 |
 | CLI subcommands | 258 |
 | Test functions | 11816 |

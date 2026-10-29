@@ -28,6 +28,29 @@ remediation plan with a target timeline based on severity.
 
 ## Threat model and posture
 
+Protected execution consumes an exact admitted begin durably before any file
+effect. A retained interrupted prefix is evidence of uncertainty and grants no
+retry. Completion requires exact ordered journal records, bounded immutable
+observation readback, declared effects and physical identity continuity. These
+checks do not establish current filesystem state, writer termination or namespace
+custody; settlement requires those independent checks.
+
+The private writer sequence file binds a credential pair and persists each
+counter before use. Its closed version-two record checksums the full credential
+binding and counter; a torn write or damaged record refuses without older-value
+fallback or automatic reset. This relies on filesystem `fsync` and independent
+custody; a checksum cannot authenticate malicious rollback to a valid old record.
+Reopening preserves its floor; replacement, damage and exhaustion refuse.
+Damage can permanently disable the incarnation. Recovery requires separately
+enrolling a new key/incarnation at a fresh counter location while retaining the
+damaged state, never repairing or resetting the old credential.
+Creating a counter is enrollment for a new key/incarnation,
+never recovery permission to reset an existing credential. The Linux x86-64
+descriptor filter irreversibly denies ancillary-message, io_uring and `pidfd_getfd` entrypoints
+across synchronized threads and descendants. It does not constrain existing
+outside descriptor holders or already running kernel polling rings, and is not
+a complete syscall allowlist or an installed containment claim.
+
 Installation artifact capture traverses exact absolute paths without symlinks,
 requires root-owned ancestry and regular files without non-root write access,
 and compares complete captured bytes with independently enrolled digests.

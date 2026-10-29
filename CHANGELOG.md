@@ -18,6 +18,16 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- Durable protected execution frontiers and immutable observation verification:
+  interrupted or undeclared step histories refuse completion and never grant a
+  retry. Checksummed credential-bound counters persist across restarts and refuse
+  torn records without resetting their floor; the optional Linux x86-64 descriptor
+  filter denies ancillary-message, io_uring and `pidfd_getfd` routes in
+  disposable writers. These library mechanisms do not install isolation or a
+  supervisor.
+
 ### Security
 
 - Keep the canned A2A TCK residual answers out of the production path. A bridge

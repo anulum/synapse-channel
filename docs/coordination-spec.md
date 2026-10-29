@@ -367,6 +367,57 @@ they do not qualify a complete application installation or private credentials.
 
 ::: synapse_channel.core.protected_write_sealed_installation.retain_sealed_installation_artifacts
 
+### Durable protected execution evidence
+
+The library execution driver requires native Linux `openat2`; it does not use
+portable path-resolution fallbacks. It durably consumes the exact prepared begin once,
+before dispatching its declared file operations. Replayed or conflicting
+consumption performs no filesystem operation. Each started step has one ordered
+result bound to its predecessor and immutable observation bytes. A crash or
+failure leaves the retained frontier uncertain; inspection cannot authorize a
+retry, rollback, cleanup or settlement.
+
+`inspect_protected_execution_frontier` reads that exact completed prefix and its
+first missing, started, failed or unknown step. Undeclared keys and records beyond
+the frontier refuse. Observation verification additionally checks closed canonical
+bytes, exact operation and postcondition bindings, enrolled roots and physical
+identity continuity, including root aliases, creation, rename and absence.
+Final-state comparison is a separate sequential descriptor check, requiring
+independent writer quiescence and namespace custody before settlement.
+
+`ProtectedWriterSequence` retains a private credential-bound file and serializes
+allocations across threads and processes. A value is persisted before return;
+restart reopens the same inode and cannot reset its floor. Missing, replaced,
+damaged or exhausted state refuses. The operator must enroll creation for a new
+writer key/incarnation rather than recreate a lost counter for an old credential.
+Its closed version-two record checksums the credential binding and entire
+counter. A torn or damaged record refuses before issuing another value; it
+cannot fall back to an older value or automatically repair/reset state.
+This requires a filesystem honoring `fsync` and independent file custody;
+the checksum does not authenticate a maliciously rewritten valid record.
+A damaged counter permanently refuses that incarnation, including after reopen.
+Recovery means independent enrollment of a new key/incarnation and fresh counter
+location, retaining the damaged record; it never means repairing or resetting
+the old credential's floor.
+
+The disposable Linux x86-64 writer may install the irreversible descriptor filter
+after closing unapproved descriptors and before target access. It denies native
+ancillary-message, io_uring and `pidfd_getfd` entrypoints, synchronizes existing threads and is
+inherited by descendants; incompatible ABIs refuse or terminate. Existing outside
+holders and pre-existing kernel polling rings remain deployment obligations.
+These APIs are library mechanisms, without a new wire handler or installed
+supervisor. The native profiles in the
+[contributor guide](https://github.com/anulum/synapse-channel/blob/main/CONTRIBUTING.md) exercise
+actual kernel and storage behavior; they do not prove isolated installation.
+
+::: synapse_channel.core.protected_write_execution_journal
+
+::: synapse_channel.core.protected_write_execution_observations
+
+::: synapse_channel.core.protected_write_sequence
+
+::: synapse_channel.core.protected_write_descriptor_filter
+
 ### Retained filesystem observations
 
 `inspect_protected_file` observes a path relative to an enrolled borrowed root
