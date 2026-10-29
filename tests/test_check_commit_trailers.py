@@ -192,5 +192,5 @@ def test_repository_wires_local_and_remote_trailer_gates() -> None:
     assert GATE.POLICY_BASELINE in workflow
     assert "tools/check_commit_trailers.py --range" in workflow
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
-    assert "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97" in workflow
+    assert "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0" in workflow
     assert "check_commit_trailers.py" in preflight

@@ -27,6 +27,10 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Refresh immutable GitHub Actions pins for Python setup, CodeQL, container
+  registry login and Python package publication. Retain existing workflow
+  permissions, admission checks and required gates.
+
 - Resolve editor claim scopes through bounded native Git discovery, refusing
   unverifiable roots and foreign worktrees. Preserve ordinary non-Git workspace
   scopes and repository names with meaningful trailing spaces.
