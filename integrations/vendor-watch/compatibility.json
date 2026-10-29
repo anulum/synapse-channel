@@ -1,48 +1,48 @@
 {
   "schema": 1,
-  "review_owner": "SYNAPSE-CHANNEL/01a0f28e",
-  "reviewed_at": "2026-10-14",
+  "review_owner": "SYNAPSE-CHANNEL/claude-vendor-review-01a1824d",
+  "reviewed_at": "2026-10-29",
   "review_interval_days": 7,
   "surfaces": {
     "claude-code": {
       "verified_version": "2.1.284",
-      "reviewed_notes_sha256": "bb9082dbb6e35eca3c8c4fcd7a4bde9cbf9ca30633653ae79e915188c606d857",
+      "reviewed_notes_sha256": "9d4b2e43c12591836e0b1cd65c302e58fbf5ad6bf589643414d7158be0c75eb7",
       "verification": "Exact 2.1.284 Linux host validator, isolated plugin load, MCP hub/claim and allowed/denied hook test",
       "capability_class": "native",
       "owning_adapter": "integrations/claude-code",
-      "migration_decision": "2026-10-14 review: 2.1.299 changes fail-closed plugin/MCP hooks, sandbox symlink/plugin-dir boundaries, third-party key custody and resumed turns. 2.1.300 adds validated hook-updated inputs, removes ineffective remote-control sandbox flags, changes managed TLS/config ownership, background-command shutdown, workflow approval and sensitive request/transcript retention. Retain the exercised 2.1.284 local plugin/MCP profile; 2.1.299/2.1.300 host versions remain unqualified. Require exact-host allowed/denied hooks, plugin write boundaries, MCP policy, cancellation/resume and transcript handling before migration. No new sandbox, cloud, managed or Windows assurance is admitted; do not restart active history writers or claim old hosts received upstream fixes."
+      "migration_decision": "2026-10-14 review: 2.1.299 changes fail-closed plugin/MCP hooks, sandbox symlink/plugin-dir boundaries, third-party key custody and resumed turns. 2.1.300 adds validated hook-updated inputs, removes ineffective remote-control sandbox flags, changes managed TLS/config ownership, background-command shutdown, workflow approval and sensitive request/transcript retention. Retain the exercised 2.1.284 local plugin/MCP profile; 2.1.299/2.1.300 host versions remain unqualified. Require exact-host allowed/denied hooks, plugin write boundaries, MCP policy, cancellation/resume and transcript handling before migration. No new sandbox, cloud, managed or Windows assurance is admitted; do not restart active history writers or claim old hosts received upstream fixes. 2026-10-29 review (official anthropics/claude-code stable release API): 2.1.312 caps concurrent prompt/agent hooks per session with a 1 s timeout minimum, changes Write handling of large partially-read files, fixes resume reply loss and invalid command names blocking all commands (affects claude -p), and changes OTel fields. Retain exercised 2.1.284 local plugin/MCP profile. Installed 2.1.312 and intermediate releases stay unqualified; the earlier 2.1.299/2.1.300 acceptance list still applies. Before migration: exact-host plugin load, allowed/denied hooks under the new concurrency/timeout rules, MCP hub claim, resume and headless command loading. No cloud, sandbox or managed assurance; old hosts are not claimed to have upstream fixes."
     },
     "codex-cli": {
       "verified_version": "0.156.0",
-      "reviewed_notes_sha256": "50f8671b5adbd8e0035a385c1b61fb245d5ac8da85bb9541eec4dba119f19ad9",
+      "reviewed_notes_sha256": "ca2487ca0ed88cd77d499a2d7ea9bbf82880707bde94a79ca7d7958aa615fd0f",
       "verification": "Exact 0.156.0 isolated Linux Codex app-server: stdio tool inventory, live local-hub state, claim, conflicting-identity refusal and release",
       "capability_class": "manual",
       "owning_adapter": "src/synapse_channel/adapters",
-      "migration_decision": "2026-10-14 review: stable 0.162.1 notes are unchanged: multiline asynchronous TUI questions and explicit background-server feature compatibility. Retain exercised 0.156.0 Linux manual stdio profile. Exact-host tool inventory, live claim/release and queue/session permission acceptance are required before migration; no sandbox, cloud or remote MCP qualification follows from release-note review."
+      "migration_decision": "2026-10-14 review: stable 0.162.1 notes are unchanged: multiline asynchronous TUI questions and explicit background-server feature compatibility. Retain exercised 0.156.0 Linux manual stdio profile. Exact-host tool inventory, live claim/release and queue/session permission acceptance are required before migration; no sandbox, cloud or remote MCP qualification follows from release-note review. 2026-10-29 review: 0.165.0 adds a Vertex provider, experimental attached thread forks in app-server, memory v2 by default for fresh profiles and environment-scoped managed hooks. It honours server approval-reviewer defaults, makes queued agent messages respect interrupts and Plan mode, cancels dropped remote MCP tool requests and tightens marketplace URL host validation. Retain exercised 0.156.0 Linux manual stdio profile; installed 0.159.1 and 0.165.0 stay unqualified. Before migration: exact-host app-server tool inventory, live claim/release, conflicting identity, interrupt/queue and approval acceptance. No remote MCP, cloud or sandbox qualification."
     },
     "gemini-cli": {
       "verified_version": null,
-      "reviewed_notes_sha256": "1d46d65e3754f78e1b715f19d6997cfd27c1e669f65f04022ead6946446d06f6",
+      "reviewed_notes_sha256": "3d7bf324636dc49f8a9d16af40577bd44c3ef9046f5a568ccc2cd7d4c7652a16",
       "verification": "No packaged Gemini extension acceptance yet",
       "capability_class": "unsupported",
       "owning_adapter": "integration catalogue",
-      "migration_decision": "2026-10-14 review: 0.64.0 changes headless folder trust, A2A settings migration, ACP usage/exact-session/listener cleanup, atomic file/state writes, transcript delta retention, emergency cancellation and Windows extension/ConPTY handling. No packaged Gemini extension acceptance exists; retain unsupported classification. Require real-host permission/tool, session/usage, cancellation and recording-recovery acceptance before admission; no upgrade or authenticated provider call is implied."
+      "migration_decision": "2026-10-14 review: 0.64.0 changes headless folder trust, A2A settings migration, ACP usage/exact-session/listener cleanup, atomic file/state writes, transcript delta retention, emergency cancellation and Windows extension/ConPTY handling. No packaged Gemini extension acceptance exists; retain unsupported classification. Require real-host permission/tool, session/usage, cancellation and recording-recovery acceptance before admission; no upgrade or authenticated provider call is implied. 2026-10-29 review: 0.66.0 forwards termination signals to the child process, disables interactive git credential prompts, keeps user gitconfig, resolves settings placeholders after .env loading, verifies the active binary after update and adds opt-in private-network MCP OAuth endpoints, plus UI fixes. No packaged extension acceptance exists. Keep unsupported, verified_version null; installed 0.64.0 is not qualified. Admission still needs real-host permission/tool, session, cancellation and recovery acceptance; no upgrade or provider call implied."
     },
     "pi": {
       "verified_version": "0.87.1",
-      "reviewed_notes_sha256": "db472591d571fc1f38f099ca0545bce7e915e52f63b5ec0a0d1ce5ac0d8b04f6",
+      "reviewed_notes_sha256": "1cacb926fdc38f1b79262a8299c11a9c27342b2cda52c2de50f5ffb18d68acb7",
       "verification": "Exact 0.87.1 RPC, local Ollama turn and resume; native extension typecheck, host load, focused live-hub guard suite",
       "capability_class": "native",
       "owning_adapter": "integrations/pi",
-      "migration_decision": "2026-10-14 review: 1.2.0 breaks theme/schema and before_agent_start custom/user event contracts, changes busy/sendMessage queuing and MCP resource inventory, and fixes cancelled OAuth-delayed tool dispatch and unchecked issuer responses. It also changes thinking serialization, print-mode truncation exit codes, tool-result/failure shapes, Windows auth locks and request/stream timeout boundaries. Retain exercised 0.87.1 RPC/claim extension and 0.86.0 rollback. Exact-host extension/RPC, denied writes, cancellation/resume, OAuth issuer/cancellation and usage attribution need qualification before 1.x migration; no credentials, model calls or restart are authorised by discovery."
+      "migration_decision": "2026-10-14 review: 1.2.0 breaks theme/schema and before_agent_start custom/user event contracts, changes busy/sendMessage queuing and MCP resource inventory, and fixes cancelled OAuth-delayed tool dispatch and unchecked issuer responses. It also changes thinking serialization, print-mode truncation exit codes, tool-result/failure shapes, Windows auth locks and request/stream timeout boundaries. Retain exercised 0.87.1 RPC/claim extension and 0.86.0 rollback. Exact-host extension/RPC, denied writes, cancellation/resume, OAuth issuer/cancellation and usage attribution need qualification before 1.x migration; no credentials, model calls or restart are authorised by discovery. 2026-10-29 review: 1.4.0 narrows what before_provider_headers extension handlers see, makes generateSummary ignore reserveTokens, changes extension tool activation on resume and /tree, fixes concurrent extension dialogs, BOM-prefixed mcp.json, truncated tool-call recovery and grep config leakage, and queues codemode workers. Retain exercised 0.87.1 RPC/claim extension and 0.86.0 rollback. Before any 1.x migration the 1.2.0 acceptance list still applies, plus exact-host extension load/resume, header hooks, denied writes, cancellation and usage attribution. No credentials, model calls or restart authorised."
     },
     "opencode": {
       "verified_version": "1.18.32",
-      "reviewed_notes_sha256": "5e6de3371e0f53918b74e51346cd2887b2dbf47e86c83281d65c2c0d5dc23dff",
+      "reviewed_notes_sha256": "338309d70a83d4243ab2a293d616fa8f80028efa76e983f183ca84a8ce1fe5b0",
       "verification": "Exact 1.18.32 Linux JSONL, ACP, authenticated server, compatibility smoke and real hub claim-guard journeys",
       "capability_class": "native",
       "owning_adapter": "integrations/opencode",
-      "migration_decision": "2026-10-14 review: 1.19.0 notes are unchanged: PTY origins/tickets are validated before existence checks and updates require explicit /update or upgrade --major for version 2. Preserve exercised 1.18.32 Linux JSONL/ACP/authenticated-server and 1.18.31 rollback. Keep serving authenticated and loopback-only; old hosts gain no new PTY guarantee. Qualify exact-host JSONL/ACP/guard/cancellation and origin/ticket handling before upgrade; no implicit major migration."
+      "migration_decision": "2026-10-14 review: 1.19.0 notes are unchanged: PTY origins/tickets are validated before existence checks and updates require explicit /update or upgrade --major for version 2. Preserve exercised 1.18.32 Linux JSONL/ACP/authenticated-server and 1.18.31 rollback. Keep serving authenticated and loopback-only; old hosts gain no new PTY guarantee. Qualify exact-host JSONL/ACP/guard/cancellation and origin/ticket handling before upgrade; no implicit major migration. 2026-10-29 review: 1.19.5 only makes failed TUI worker requests return an error instead of hanging. Earlier 1.19.0 PTY origin/ticket and explicit major-update notes still apply. Keep exercised 1.18.32 Linux JSONL/ACP/authenticated-server profile and 1.18.31 rollback, with authenticated loopback-only serving. Before upgrade: exact-host JSONL/ACP, guard, cancellation and worker-failure handling. No implicit major migration and no new guarantee for old hosts."
     },
     "mcp-spec": {
       "verified_version": null,
@@ -50,7 +50,7 @@
       "verification": "Versioned remote MCP transport admission is separately unqualified; local stdio is separate",
       "capability_class": "manual",
       "owning_adapter": "src/synapse_channel/mcp_server",
-      "migration_decision": "2026-10-14 review: stable 2026-07-28 release notes are unchanged. Local stdio remains distinct from versioned remote-transport admission, which is separately unqualified; no remote protocol or security assurance is added."
+      "migration_decision": "2026-10-14 review: stable 2026-07-28 release notes are unchanged. Local stdio remains distinct from versioned remote-transport admission, which is separately unqualified; no remote protocol or security assurance is added. 2026-10-29 review: the stable 2026-07-28 release notes are byte-unchanged (digest matches). Local stdio stays separate from versioned remote-transport admission, which remains unqualified. No remote protocol or security assurance is added."
     }
   }
 }

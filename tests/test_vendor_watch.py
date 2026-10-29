@@ -39,10 +39,6 @@ def _release(tag: str, body: str = "Routine fix") -> bytes:
 
 def _source_payload(name: str, version: str, notes: str = "Routine fix") -> bytes:
     """Supply the official source's document shape for one release."""
-    if name == "claude-code":
-        return (
-            f'<Update label="{version}" description="September 19, 2026">\n{notes}\n</Update>'
-        ).encode()
     if name == "codex-cli":
         return _release(f"rust-v{version}", notes)
     return _release(version, notes)
@@ -50,7 +46,10 @@ def _source_payload(name: str, version: str, notes: str = "Routine fix") -> byte
 
 def test_official_document_parsers_refuse_missing_and_prerelease() -> None:
     """Recognise current release shapes and fail on ambiguous source evidence."""
-    assert parse_release("claude-markdown", _source_payload("claude-code", "2.1.278"))[:2] == (
+    historical_claude = (
+        b'<Update label="2.1.278" description="September 19, 2026">\nRoutine fix\n</Update>'
+    )
+    assert parse_release("claude-markdown", historical_claude)[:2] == (
         "2.1.278",
         "September 19, 2026",
     )
@@ -110,7 +109,9 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
     assert matrix["surfaces"]["opencode"]["verified_version"] == "1.18.32"
     assert matrix["surfaces"]["pi"]["verified_version"] == "0.87.1"
     matrix["surfaces"]["opencode"]["verified_version"] = "1.17.20"
-    same_notes = parse_release("claude-markdown", _source_payload("claude-code", "2.1.284"))[2]
+    same_notes = parse_release(
+        SOURCES["claude-code"][0], _source_payload("claude-code", "2.1.284")
+    )[2]
     matrix["surfaces"]["claude-code"]["reviewed_notes_sha256"] = hashlib.sha256(
         same_notes.encode()
     ).hexdigest()

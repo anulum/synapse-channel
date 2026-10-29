@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "review_owner": "SYNAPSE-CHANNEL/f636",
-  "reviewed_at": "2026-10-12",
+  "review_owner": "SYNAPSE-CHANNEL/claude-vendor-review-01a1824d",
+  "reviewed_at": "2026-10-29",
   "review_interval_days": 7,
   "max_source_age_days": 8,
   "aliases": {}

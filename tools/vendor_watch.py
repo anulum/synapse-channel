@@ -29,8 +29,8 @@ MAX_SOURCE_BYTES = 2_000_000
 MAX_VERSION_OUTPUT = 4096
 SOURCES: dict[str, tuple[str, str, tuple[str, ...] | None]] = {
     "claude-code": (
-        "claude-markdown",
-        "https://code.claude.com/docs/en/changelog.md",
+        "github-release",
+        "https://api.github.com/repos/anthropics/claude-code/releases/latest",
         ("claude", "--version"),
     ),
     "codex-cli": (

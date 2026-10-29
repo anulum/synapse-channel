@@ -27,6 +27,11 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Read Claude's stable release metadata from the official Anthropic repository
+  through the existing bounded release parser, and record the current vendor
+  and bounded discovery-source review. Host qualification and human candidate
+  admission remain separate requirements.
+
 - Provision the supported Python 3.12 pre-commit tool for the Python 3.10
   mutation-status CLI journey, retaining the real Git hook installation and
   product subprocesses on the interpreter under test.
