@@ -133,6 +133,7 @@ class ShardRecorder:
             "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
             "attempt": os.environ.get("GITHUB_RUN_ATTEMPT", "1"),
             "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+            "platform": sys.platform,
             "config_sha256": hashlib.sha256(config_bytes).hexdigest(),
             "index": self.index,
             "count": self.count,

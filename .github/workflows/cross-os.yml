@@ -23,23 +23,71 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
-  # A separate job name (not "ci") keeps this an ADVISORY status, never a
-  # branch-protection required check. Its purpose is to exercise real macOS (POSIX)
-  # and Windows (NT) filesystem and socket semantics — path separators, permission
-  # and O_NOFOLLOW behaviour, file locking, temp-dir layout, and asyncio transport
-  # differences — that the Linux-only `ci` matrix cannot surface. The Linux-only
-  # backends are intentionally absent here: sqlcipher3-binary ships manylinux wheels
-  # only and tpm2-pytss/PKCS#11 need Linux system libraries, so those suites skip on
-  # this lane, which is about OS filesystem/socket behaviour, not the crypto backends.
-  cross-os-filesystem:
-    runs-on: ${{ matrix.os }}
-    # Full pytest on Windows regularly exceeded 30 minutes (install + suite) and
-    # was cancelled mid-run. macOS finishes earlier; the higher bound is for NT.
+  macos-timings:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Select one immutable scheduling snapshot for every worker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p timing-input
+          previous="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/cross-os.yml/runs?branch=main&status=success&per_page=1"             --jq '.workflow_runs[0].id // empty')"
+          artifact=""
+          if [ -n "$previous" ]; then
+            artifact="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$previous/artifacts?per_page=100"               --jq '[.artifacts[] | select(.name == "macos-pytest-shard-timings" and .expired == false)] |
+                if length > 1 then error("duplicate timing history") else .[0].id // empty end')"
+          fi
+          if [ -n "$artifact" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > timing-history.zip
+          fi
+          python - <<'PY'
+          import json
+          import zipfile
+          from pathlib import Path
+          from tools.pytest_shard_schedule import load_shard_timings
+
+          archive = Path("timing-history.zip")
+          output = Path("timing-input/timings.json")
+          if archive.exists():
+              with zipfile.ZipFile(archive) as bundle:
+                  if bundle.namelist() != ["timings.json"]:
+                      raise ValueError("unexpected timing history members")
+                  entry = bundle.getinfo("timings.json")
+                  if entry.file_size > 16 * 1024 * 1024:
+                      raise ValueError("oversized timing history")
+                  with bundle.open(entry) as stream:
+                      raw = stream.read(16 * 1024 * 1024 + 1)
+                  if len(raw) > 16 * 1024 * 1024:
+                      raise ValueError("oversized timing history")
+                  output.write_bytes(raw)
+          else:
+              output.write_text(json.dumps({"schema": 1, "profiles": {}}) + "\n")
+          load_shard_timings(output, "3.12")
+          PY
+      - name: Distribute the exact common timing input
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: macos-timings-${{ github.sha }}-${{ github.run_attempt }}
+          path: timing-input/timings.json
+          if-no-files-found: error
+
+  macos-shard:
+    runs-on: macos-latest
+    needs: [macos-timings]
     timeout-minutes: 90
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
-        os: [macos-latest, windows-latest]
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -68,15 +116,111 @@ jobs:
           python -m pip download --require-hashes --no-deps --only-binary=:all:
           -r .github/requirements/requirements-release-admission.txt
           --dest .pytest_cache/legacy-release
-      # macOS: full suite (finishes cleanly on this advisory lane).
-      - name: Prepare the native foreign-owner fixture (macOS)
-        if: runner.os == 'macOS'
+      - name: Restore the exact common macOS timing snapshot
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: macos-timings-${{ github.sha }}-${{ github.run_attempt }}
+          path: timing-input
+      - name: Prepare the native foreign-owner fixture
         uses: ./.github/actions/native-file-owner
-      - name: Run the suite (macOS)
-        if: runner.os == 'macOS'
+      - name: Run a complete macOS module shard
         env:
           PYTHONUNBUFFERED: "1"
-        run: python -m pytest -q -p no:cacheprovider
+        run: >-
+          python -m pytest -q -p no:cacheprovider -p tools.pytest_shard
+          --shard-index=${{ matrix.shard }} --shard-count=4
+          --shard-output=shard-main.json --shard-timings=timing-input/timings.json
+      - name: Bind the successful result to the actual runner platform
+        run: >-
+          python tools/ci_portable_shards.py pack --manifest shard-main.json
+          --timings timing-input/timings.json --output ci-shard-artifact
+      - name: Publish only a fully successful macOS shard
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: macos-shard-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: ci-shard-artifact/
+          if-no-files-found: error
+
+  macos-complete:
+    name: cross-os-filesystem (macos-latest)
+    runs-on: ubuntu-latest
+    needs: [macos-timings, macos-shard]
+    if: always()
+    steps:
+      - name: Require every mandatory scheduling and test job
+        env:
+          TIMING_RESULT: ${{ needs.macos-timings.result }}
+          SHARD_RESULT: ${{ needs.macos-shard.result }}
+        run: |
+          set -euo pipefail
+          test "$TIMING_RESULT" = success
+          test "$SHARD_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: macos-shard-${{ github.sha }}-${{ github.run_attempt }}-*
+          path: macos-shards
+          merge-multiple: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: macos-timings-${{ github.sha }}-${{ github.run_attempt }}
+          path: timing-input
+      - name: Verify every complete macOS inventory and observed execution
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: >-
+          python tools/ci_portable_shards.py verify --root macos-shards
+          --source "$SOURCE_SHA" --run-id "$RUN_ID" --attempt "$RUN_ATTEMPT"
+          --platform darwin --python 3.12 --count 4 --config pyproject.toml
+          --timings timing-input/timings.json --output macos-complete
+      - name: Retain timing history only after complete successful qualification
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: macos-pytest-shard-timings
+          path: macos-complete/timings.json
+          if-no-files-found: error
+
+  # Preserve the existing advisory Windows check and its complete focused pack.
+  cross-os-filesystem:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            .github/requirements/requirements-dev.txt
+            .github/requirements/requirements-legacy-release.txt
+            .github/requirements/requirements-release-admission.txt
+      # Advisory lane uses the same universal hash-locked closure as required
+      # jobs (`uv pip compile … --universal --generate-hashes`). That pins the
+      # full dependency tree by SHA-256 for Scorecard Pinned-Dependencies and
+      # still resolves platform-appropriate wheels on macOS/Windows. The package
+      # itself is installed editable with --no-deps so the lockfile remains the
+      # sole supply-chain authority (mirrors ci.yml / pre-commit.yml).
+      - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
+      - run: python -m pip install -e . --no-deps
+      - name: Prepare the published no-receipt hub fixture
+        run: >-
+          python -m pip download --require-hashes --no-deps --only-binary=:all:
+          -r .github/requirements/requirements-legacy-release.txt
+          --dest .pytest_cache/legacy-release
+      - name: Prepare the published exact-confirmation admission fixture
+        run: >-
+          python -m pip download --require-hashes --no-deps --only-binary=:all:
+          -r .github/requirements/requirements-release-admission.txt
+          --dest .pytest_cache/legacy-release
       # Windows: full alphabetical suite dies at ~23-24% with KeyboardInterrupt
       # and zero F marks (runner/asyncio interrupt, not residual asserts). The
       # required Linux `ci` already owns full coverage; this lane's job is NT

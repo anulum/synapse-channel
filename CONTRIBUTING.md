@@ -91,6 +91,21 @@ The aggregate also checks the common timing snapshot and publishes newly observe
 module durations only after the complete coverage gate passes. Hosted timing comparisons must include
 setup and queue time; sharding alone is not evidence of measured improvement.
 
+The advisory cross-OS workflow also runs the complete default macOS collection
+in four module shards. All workers use one immutable snapshot from a successful
+cross-OS run and retain the same locked dependencies, released-hub fixtures and
+native foreign-owner fixture. Its original `cross-os-filesystem (macos-latest)`
+check always aggregates the workers and fails on any failed, skipped, absent,
+duplicate or foreign shard. `tools/ci_portable_shards.py` independently verifies
+the complete union and binds actual platform, interpreter, source, run attempt,
+configuration and shared timings. Existing test-level platform skips retain their
+original meaning. This portable result does not supply Linux native-follow-up or
+coverage evidence. The Windows focused pack and its check name remain unchanged.
+
+`tests/test_ci_portable_shards.py` exercises real portable runner/artifact journeys
+and the aggregate shell gate. Local Linux qualification does not certify native
+macOS behavior; a successful hosted macOS run is required for that result.
+
 ## Standards a change must meet
 
 The CLI release compatibility tests run the complete published 0.48.0 and

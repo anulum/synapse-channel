@@ -26,6 +26,10 @@ execution evidence when carrying a release claim forward.
   and mixed worker snapshots fail. Publish fresh observed timings only after
   the unchanged complete coverage gate succeeds. Hosted speedup requires a
   successful measured run.
+- Partition the full macOS suite into four timed module shards, preserving the
+  existing macOS check name through complete platform-bound aggregation. Every
+  shard must succeed and agree on source, run, collection and timing input before
+  fresh history is published. The Windows focused security-floor pack is retained.
 
 ## [0.99.39] - 2026-10-29
 
