@@ -27,6 +27,9 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Keep configured ownership and generated-dependency builders local to one
+  command invocation, preserving later default API and semantic companion maps.
+
 - Run the complete Linux test matrix in two indexed shards per interpreter.
   Verify all shard inventories and mandatory native follow-ups before applying
   the existing coverage threshold to their complete union. Missing or foreign

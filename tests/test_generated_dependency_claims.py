@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -223,3 +224,67 @@ def test_docs_wire_generated_dependency_claims_command() -> None:
 
     assert "tools/generated_dependency_claims.py --claim-args" in combined
     assert "generated-output dependency" in combined
+
+
+def test_configured_checkout_mapper_preserves_packaged_defaults_and_semantic_companions(
+    tmp_path: Path,
+) -> None:
+    """A real configured map must not replace subsequent default CLI/API claim surfaces."""
+    for name, text in {
+        "src/synapse_channel/worker.py": "def run():\n    return 1\n",
+        "tests/test_worker.py": (
+            "from synapse_channel.worker import run\ndef test_run():\n    assert run() == 1\n"
+        ),
+        "README.md": "# Project\n",
+        "docs/_generated/capability_manifest.json": "{}\n",
+        "custom.json": "{}\n",
+    }.items():
+        _write(tmp_path / name, text)
+    worker = """
+import contextlib
+import functools
+import io
+import json
+import sys
+from pathlib import Path
+from synapse_channel.git import generated_dependency_claims as packaged
+
+root = Path(sys.argv[1])
+original_builder = packaged.build_dependency_map
+original_root = packaged.REPO_ROOT
+from tools import generated_dependency_claims as checkout
+assert checkout.parse_args([]).repo_root == checkout.REPO_ROOT
+assert packaged.parse_args([]).repo_root == original_root
+rule = packaged.GeneratedRule(
+    "custom.json", ("src/synapse_channel/worker.py",), (), "configured map"
+)
+checkout.build_dependency_map = functools.partial(original_builder, rules=(rule,))
+custom = io.StringIO()
+with contextlib.redirect_stdout(custom):
+    assert checkout.main(["--repo-root", str(root), "--json"]) == 0
+assert json.loads(custom.getvalue())[0]["generated"] == "custom.json"
+default = io.StringIO()
+with contextlib.redirect_stdout(default):
+    assert packaged.main(["--repo-root", str(root), "--json"]) == 0
+assert [row["generated"] for row in json.loads(default.getvalue())] == [
+    "README.md", "docs/_generated/capability_manifest.json"
+]
+assert packaged.build_dependency_map is original_builder
+assert packaged.REPO_ROOT == original_root
+from synapse_channel.git.semantic_claims import companion_claim_paths
+assert companion_claim_paths(root, ("src/synapse_channel/worker.py",)) == (
+    "tests/test_worker.py", "README.md", "docs/_generated/capability_manifest.json"
+)
+print("configured, default and semantic companion surfaces preserved")
+"""
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", worker, str(tmp_path)],
+        cwd=tmp_path,
+        env=dict(os.environ, PYTHONPATH=os.pathsep.join([str(REPO_ROOT), str(REPO_ROOT / "src")])),
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "configured, default and semantic companion surfaces preserved" in result.stdout

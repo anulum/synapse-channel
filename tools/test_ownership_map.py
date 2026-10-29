@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -30,12 +31,10 @@ from synapse_channel.git.test_ownership_map import (  # noqa: E402,F401
     discover_sources,
     discover_tests,
     imported_modules,
-    parse_args,
     records_to_json,
     render_human,
 )
 
-_impl.REPO_ROOT = REPO_ROOT
 PACKAGE_NAME = _impl.PACKAGE_NAME
 DEFAULT_SOURCE_ROOT = _impl.DEFAULT_SOURCE_ROOT
 DEFAULT_TESTS_ROOT = _impl.DEFAULT_TESTS_ROOT
@@ -70,11 +69,14 @@ __all__ = [
 ]
 
 
+def parse_args(argv: Sequence[str] | None = None) -> CliArgs:
+    """Parse checkout arguments with its default root, leaving the packaged default intact."""
+    return _impl.parse_args(argv, default_root=REPO_ROOT)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the packaged ownership mapper from the checkout tool path."""
-    _impl.REPO_ROOT = REPO_ROOT
-    _impl.build_ownership_map = build_ownership_map
-    return _impl.main(argv)
+    return _impl.main(argv, default_root=REPO_ROOT, builder=build_ownership_map)
 
 
 if __name__ == "__main__":

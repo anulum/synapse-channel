@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,78 @@ assert _OWNERSHIP_SPEC.loader is not None
 ownership = importlib.util.module_from_spec(_OWNERSHIP_SPEC)
 sys.modules[_OWNERSHIP_SPEC.name] = ownership
 _OWNERSHIP_SPEC.loader.exec_module(ownership)
+
+
+def test_configured_checkout_ownership_preserves_default_api_and_companion_maps(
+    tmp_path: Path,
+) -> None:
+    """A real filtered ownership map cannot remove later default or semantic companions."""
+    for name in ["selected", "other"]:
+        source = tmp_path / f"src/synapse_channel/{name}.py"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("def run():\n    return 1\n")
+        test = tmp_path / f"tests/test_{name}.py"
+        test.parent.mkdir(parents=True, exist_ok=True)
+        test.write_text(
+            f"from synapse_channel.{name} import run\ndef test_run():\n    assert run() == 1\n"
+        )
+    (tmp_path / "README.md").write_text("# Project\n")
+    generated = tmp_path / "docs/_generated/capability_manifest.json"
+    generated.parent.mkdir(parents=True)
+    generated.write_text("{}\n")
+    worker = """
+import contextlib
+import io
+import json
+import sys
+from pathlib import Path
+from synapse_channel.git import test_ownership_map as packaged
+
+root = Path(sys.argv[1])
+original_builder = packaged.build_ownership_map
+original_root = packaged.REPO_ROOT
+from tools import test_ownership_map as checkout
+assert checkout.parse_args([]).repo_root == checkout.REPO_ROOT
+assert packaged.parse_args([]).repo_root == original_root
+
+def selected_builder(directory: Path) -> tuple[packaged.OwnershipRecord, ...]:
+    "Select one configured source from actual filesystem ownership records."
+    return tuple(
+        record for record in original_builder(directory) if record.source.endswith('/selected.py')
+    )
+
+checkout.build_ownership_map = selected_builder
+custom = io.StringIO()
+with contextlib.redirect_stdout(custom):
+    assert checkout.main(["--repo-root", str(root), "--json"]) == 0
+assert [row["source"] for row in json.loads(custom.getvalue())] == [
+    "src/synapse_channel/selected.py"
+]
+default = io.StringIO()
+with contextlib.redirect_stdout(default):
+    assert packaged.main(["--repo-root", str(root), "--json"]) == 0
+assert [row["source"] for row in json.loads(default.getvalue())] == [
+    "src/synapse_channel/other.py", "src/synapse_channel/selected.py"
+]
+assert packaged.build_ownership_map is original_builder
+assert packaged.REPO_ROOT == original_root
+from synapse_channel.git.semantic_claims import companion_claim_paths
+assert companion_claim_paths(root, ("src/synapse_channel/other.py",)) == (
+    "tests/test_other.py", "README.md", "docs/_generated/capability_manifest.json"
+)
+print("configured ownership, default API and semantic companions preserved")
+"""
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", worker, str(tmp_path)],
+        cwd=tmp_path,
+        env=dict(os.environ, PYTHONPATH=os.pathsep.join([str(REPO_ROOT), str(REPO_ROOT / "src")])),
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "configured ownership, default API and semantic companions preserved" in result.stdout
 
 
 def _write(path: Path, text: str) -> None:

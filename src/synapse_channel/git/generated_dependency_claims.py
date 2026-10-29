@@ -21,7 +21,7 @@ import argparse
 import fnmatch
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -253,13 +253,17 @@ def render_claim_args(records: Sequence[DependencyRecord]) -> str:
     return " ".join(shell_long_option("--paths", record.generated) for record in records)
 
 
-def parse_args(argv: Sequence[str] | None = None) -> CliArgs:
-    """Parse command-line arguments for the dependency mapper."""
+def parse_args(argv: Sequence[str] | None = None, *, default_root: Path | None = None) -> CliArgs:
+    """Parse mapper arguments using an invocation-local checkout fallback.
+
+    ``default_root`` overrides the packaged working-directory default without
+    mutating it. An explicit ``--repo-root`` always takes precedence.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--repo-root",
         type=Path,
-        default=REPO_ROOT,
+        default=REPO_ROOT if default_root is None else default_root,
         help="Repository root to inspect. Defaults to the current checkout.",
     )
     parser.add_argument(
@@ -309,11 +313,31 @@ def _report_unknown(unknown: Sequence[str]) -> int:
     return 2
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Run the generated dependency mapper and return a process exit code."""
-    args = parse_args(argv)
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    default_root: Path | None = None,
+    builder: Callable[[Path], Sequence[DependencyRecord]] | None = None,
+) -> int:
+    """Run a configured dependency mapper without replacing shared module defaults.
+
+    Parameters
+    ----------
+    argv : sequence of str or None, optional
+        Command arguments, or the process arguments when omitted.
+    default_root : Path or None, optional
+        Checkout wrapper's default; an explicit ``--repo-root`` takes precedence.
+    builder : callable or None, optional
+        Invocation-local configured map builder; the packaged builder is the default.
+
+    Returns
+    -------
+    int
+        Zero on success, one on validation failure, or two on an unknown selection.
+    """
+    args = parse_args(argv, default_root=default_root)
     repo_root = args.repo_root.resolve()
-    records = build_dependency_map(repo_root)
+    records = (build_dependency_map if builder is None else builder)(repo_root)
     selected_records, unknown = select_records(records, args.source, args.generated, repo_root)
     if unknown:
         return _report_unknown(unknown)

@@ -430,8 +430,9 @@ def test_a_real_skipped_native_followup_cannot_publish(
     root = tmp_path / "project"
     shutil.copytree(actual_artifacts, root)
     (root / NATIVE).write_text(
-        "import pytest\n@pytest.mark.skip(reason='negative native capability fixture')\n"
-        "def test_native_followup():\n    assert False\n"
+        "import pytest\ndef test_native_followup():\n"
+        "    pytest.importorskip('synapse_absent_negative_native_capability_01a1824d')\n"
+        "    assert False\n"
     )
     result = _run(
         root,

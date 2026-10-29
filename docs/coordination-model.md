@@ -134,6 +134,12 @@ Use those generated paths in the same file-scope claim and receipt. This
 generated-output dependency map is a coordination aid; freshness still comes from
 the owning generator's check command.
 
+The checkout ownership and generated-dependency commands pass their selected
+builder and default root to the packaged command for that invocation. A
+configured builder does not replace the packaged mapping function or its
+default root, so later API calls and semantic companion claims retain their
+ordinary maps.
+
 `python tools/semantic_claims.py --selector <kind:value> --claim-args` is the
 semantic claim resolver for local planning. It accepts module, symbol, API,
 source, test, generated, and migration selectors. Symbol and API selectors emit

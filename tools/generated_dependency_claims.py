@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -27,25 +28,26 @@ from synapse_channel.git.generated_dependency_claims import (  # noqa: E402,F401
     GeneratedRule,
     build_dependency_map,
     check_records,
-    parse_args,
     records_to_json,
     render_claim_args,
     render_human,
     select_records,
 )
 
-_impl.REPO_ROOT = REPO_ROOT
 _normalise_requested_path = _impl._normalise_requested_path
 _path_exists = _impl._path_exists
 _pattern_has_match = _impl._pattern_has_match
 _pattern_matches_path = _impl._pattern_matches_path
 
 
+def parse_args(argv: Sequence[str] | None = None) -> CliArgs:
+    """Parse checkout arguments with its default root, leaving the packaged default intact."""
+    return _impl.parse_args(argv, default_root=REPO_ROOT)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the packaged generated dependency mapper from the checkout tool path."""
-    _impl.REPO_ROOT = REPO_ROOT
-    _impl.build_dependency_map = build_dependency_map
-    return _impl.main(argv)
+    return _impl.main(argv, default_root=REPO_ROOT, builder=build_dependency_map)
 
 
 if __name__ == "__main__":

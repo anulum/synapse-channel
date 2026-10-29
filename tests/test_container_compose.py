@@ -226,7 +226,7 @@ def test_container_build_lock_contains_only_the_required_exact_toolchain() -> No
         "colorama": "0.4.6",
         "packaging": "26.3",
         "pyproject-hooks": "1.3.3",
-        "setuptools": "84.0.0",
+        "setuptools": "84.2.1",
         "wheel": "0.48.0",
     }
     requirements: dict[str, Requirement] = {}
