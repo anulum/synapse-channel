@@ -1,6 +1,6 @@
 {
   "schema": "operation-vocabulary-v1",
-  "revision": 1,
+  "revision": 2,
   "objects": {
     "account": "the user's account with the vendor, as the client knows it",
     "agent_definition": "a stored definition of an agent that the client can start; not a running agent",
@@ -74,6 +74,7 @@
     "list": "name the objects that exist; changes nothing",
     "read": "return one object or one aspect of it; changes nothing",
     "search": "name the objects that match a query; changes nothing",
-    "validate": "say whether a stored object is well formed; changes nothing"
+    "validate": "say whether a stored object is well formed; changes nothing",
+    "write": "set one object or aspect to the given value; changes state that writing the previous value restores"
   }
 }

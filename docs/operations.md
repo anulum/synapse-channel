@@ -225,7 +225,100 @@ component on that host, marked `unverified`, without evidence, fingerprint or
 qualified binding. Candidates are not added to the catalogue.
 
 Admission does not decide whether a person must be present; a row's
-`interactive` value says so, for whatever runs the operation.
+`interactive` value says so, for whatever runs the operation. Admission is
+also not authority: `synapse ops run` checks the caller's grants itself.
+
+## Running an operation
+
+`synapse ops run` runs one command-line row and nothing else. It is the only
+command here that has an effect, and every run takes the same checked path:
+
+1. **Exact target.** The row for exactly this host, vendor, component,
+   component version, operating system, transport and variant. The executable
+   is resolved on `PATH` and fingerprinted. The row is admitted only when its
+   qualification and that fingerprint agree (see *Admission*). A row that
+   needs a person's authority or can print credentials is never run.
+2. **Qualification gate.** The gate of the named `--profile` must pass:
+   `personal` rests on the operator's qualification; `production` needs a
+   signed bundle (`--bundle`), the trusted keys (`--trust`) and the
+   environment components the profile names (`--require-environment`).
+3. **Current authority.** The operator's grants file is read again just
+   before the run. It is `{"grants": [{"subject", "permissions", "component",
+   "expires_at"}]}`, owned by this user and writable by no one else. Every
+   permission the row's effects need must be held, unexpired, by
+   `--subject` for this component (or `*`). The gate is checked again too,
+   so a bundle that expired since planning refuses the run.
+4. **Qualified invocation.** The executable is fingerprinted again. A program
+   replaced since planning refuses the run.
+5. **Recorded start.** A start record is written and synced before the
+   component is invoked, and so is the entry of every directory on its path
+   that this user owns, even one another runner has just created.
+   An `--operation-id` that has a start is never run again, whatever
+   happened to it. A start that cannot be recorded refuses the run.
+6. **Effect.** The component runs without a shell, with a deadline
+   (`--timeout`, default 60 s). Its standard input and standard error are
+   not connected. Its standard output is read as it arrives, without a
+   helper thread: the first mebibyte is kept and returned, and every byte read
+   is hashed into the outcome record. `output_truncated` says that more was
+   read than kept. `output_complete` says the stream reached its end; output
+   that a process left behind by the component still holds open is read for
+   one more second after the component exits, then the pipe is closed and the
+   output is incomplete. Nothing of a run outlives it.
+7. **Verification or explicit uncertainty.** The outcome record keeps the
+   process result apart from the effect. With `--verify-file` and
+   `--verify-sha256` the requested file is checked
+   ([result verification](execution-outcomes.md)).
+
+```bash
+synapse ops run setting.write --host workstation --vendor acme --component cli \
+  --component-version 1.0.0 --os linux --arguments '{"key": "mode", "value": "strict"}' \
+  --operation-id set-mode-1 --subject PROJECT/seat --grants ~/.config/synapse/grants.json \
+  --profile personal --verify-file ~/.config/acme/config.json --verify-sha256 <sha256>
+synapse ops inquire --operation-id set-mode-1
+```
+
+A refusal (exit 2) happens before the start record, so a refused run had no
+effect, and a malformed `--verify-sha256` is refused there too. After the
+start nothing is reported as a refusal: an outcome that cannot be stored is
+`unknown` / `outcome_not_recorded`, a verifier that fails leaves the result
+unverified with `verification_error`, and output that cannot be read is
+named in `output_error` while the component is still waited for and its
+outcome recorded (exit 3 for each).
+
+The run's authority is the operator's local grants file, named in
+`authority` in the report and in both records. It is not a hub grant and does
+not authenticate the seat named by `--subject`.
+
+A plan is a snapshot. `execute` runs the row admitted when the run was
+planned and re-checks the grants, the gate and the program; it does not read
+the catalogue again, so a row changed or removed on disk after planning is
+not noticed. Plan again to pick up a changed catalogue. `synapse ops run`
+plans and executes in one call.
+The report is one JSON object with `state` (`confirmed_done`,
+`confirmed_failed`, `not_started`, `unknown`), `observation`,
+`external_effect` (`unknown` unless a verifier observed it),
+`verification_error`, `output_truncated`, `output_complete`, `output_error`,
+`authority` and
+`automatic_retry: false`.
+
+| Exit | Meaning |
+|---|---|
+| 0 | the component finished and, when a verifier is named, the result is verified |
+| 1 | the component failed, the result is not verified, or `inquire` finds no run |
+| 2 | refused; nothing was invoked |
+| 3 | the outcome or the result is unknown |
+
+**Interrupted and lost runs.** A run killed after its start (the runner
+crashed, the machine stopped) has a start without an outcome. A run whose
+component outlived its deadline has the outcome `unknown` /
+`deadline_passed`. In both cases the component may have had its effect.
+`synapse ops inquire` reports such a run as `unknown` and can verify its
+effect with the same `--verify-file` options, but it never runs it again.
+Running the same `--operation-id` again is refused.
+
+The journal is `$XDG_DATA_HOME/synapse/operations/runs/<operation id>/`
+(`--journal` names another). Records are created once, by a hard link from a
+synced temporary file, and never replaced.
 
 ## Reading a catalogue
 
@@ -265,7 +358,7 @@ not a catalogue exits `2` with the reason; that includes any value of the
 wrong kind inside a row and any name with an unregistered word.
 
 The catalogue file is plain data in the form
-`{"schema": "operation-catalogue-v2", "vocabulary_revision": 1, "operations": [...]}`.
+`{"schema": "operation-catalogue-v2", "vocabulary_revision": 2, "operations": [...]}`.
 A file made with a newer vocabulary than the reader has is refused.
 
 ## Files of the earlier schema

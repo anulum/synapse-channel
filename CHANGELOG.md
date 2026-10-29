@@ -20,6 +20,20 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Run the first catalogue operations end to end. `synapse ops run` takes one
+  command-line row along one checked path: exact target and executable
+  fingerprint, the qualification gate of the named profile, the operator's
+  grants read again just before the run, the program fingerprinted again, a
+  synced start record, the component without a shell and with a deadline,
+  then an outcome record and an optional result verification. A run
+  interrupted after its start, or cut off by its deadline, is `unknown`;
+  `synapse ops inquire` reports and verifies it but never runs it again, and
+  the same operation id is refused. The path to the start record is synced
+  before the component runs, even where another runner created it; the
+  output is read into a bounded buffer without a helper thread and the pipe
+  is closed before the run returns; a failure after the start is reported as
+  unknown, never as a refusal. The report names its authority, the operator's local grants
+  file. The vocabulary gains the action `write` (revision 2).
 - Verify deployments and database migrations by their result.
   `synapse verify-result deployment` checks that a JSON health report names
   the requested revision and says `health: ok`. It reads the report, not the

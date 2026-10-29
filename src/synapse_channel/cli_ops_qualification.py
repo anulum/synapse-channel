@@ -36,18 +36,19 @@ from synapse_channel.operations.row import OperationRow
 from synapse_channel.operations.spec import OperationSpecError
 
 
-def _json_file(path: Path) -> Any:
+def json_file(path: Path) -> Any:
+    """Read one JSON document, naming the file when it is not JSON."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise QualificationBundleError(f"{path.name} is not JSON") from exc
 
 
-def _trusted_keys(path: Path | None) -> dict[str, bytes]:
+def trusted_keys(path: Path | None) -> dict[str, bytes]:
     """Read ``{"keys": {key_id: base64 raw Ed25519 public key}}``."""
     if path is None:
         return {}
-    document = _json_file(path)
+    document = json_file(path)
     keys = document.get("keys") if isinstance(document, dict) else None
     if not isinstance(keys, dict) or not keys:
         raise QualificationBundleError("the trust file maps key ids to public keys")
@@ -86,13 +87,13 @@ def _cmd_gate(args: argparse.Namespace) -> int:
     """Print the gate verdict for one row."""
     try:
         row = _one_row(args)
-        envelope = _json_file(args.bundle) if args.bundle else None
+        envelope = json_file(args.bundle) if args.bundle else None
         verdict = gate(
             row,
             profile=args.profile,
             now=int(time.time()),
             envelope=envelope,
-            trusted_keys=_trusted_keys(args.trust),
+            trusted_keys=trusted_keys(args.trust),
             required_environment=args.require_environment,
         )
     except (OSError, QualificationBundleError, OperationSpecError) as exc:
@@ -112,7 +113,7 @@ def _cmd_sign(args: argparse.Namespace) -> int:
         key = load_pem_private_key(pem, password=None)
         if not isinstance(key, Ed25519PrivateKey):
             raise QualificationBundleError("the key file holds no Ed25519 private key")
-        envelope = sign_bundle(_json_file(args.bundle_body), key, args.key_id)
+        envelope = sign_bundle(json_file(args.bundle_body), key, args.key_id)
         args.out.write_text(json.dumps(envelope, indent=2, sort_keys=True) + "\n", "utf-8")
     except (OSError, ValueError, SecretFileError) as exc:
         print(f"synapse ops sign-qualification: {exc}", file=sys.stderr)

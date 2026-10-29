@@ -118,7 +118,7 @@ everything, since they need the whole command table.
 | `synapse native-record` | Record caller-reported native-message metadata and optional text; the hub journals the declaration, delivers nothing and does not independently verify vendor action. |
 | `synapse native-hook` | Record session-send tool calls from an agent client's hook: `claude` reads one call from standard input, spools it on disk and tries the hub, printing nothing and exiting `0`; `flush` tries the spool again; `status` counts its entries. |
 | `synapse native-seat` | Keep the local register of which seat a vendor's native session is (`register`/`resolve`/`list`). |
-| `synapse ops` | Read this host's catalogue of operations that vendor clients offer (`list`/`describe`); nothing is run. See [Operations catalogue](operations.md). |
+| `synapse ops` | This host's catalogue of operations that vendor clients offer: `list`/`describe` read it, `gate`/`sign-qualification` decide and sign qualification, `run` runs one admitted row along the checked path and `inquire` reports a run without repeating it. See [Operations catalogue](operations.md). |
 | `synapse workflow` | Validate and compile a declarative workflow into blackboard tasks (`validate`/`compile`/`plan`/`run`); `contention` weighs overlapping live claims involving the workflow's tasks. |
 
 `synapse conflicts` repeats its read-only snapshot request at most once if the
