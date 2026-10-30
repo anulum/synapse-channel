@@ -69,10 +69,16 @@ def _commit(repo: Path, name: str) -> str:
 
 @pytest.fixture
 def published(tmp_path: Path) -> tuple[Path, Path]:
-    """A work repository with one commit pushed to a local bare remote."""
+    """A work repository with one commit pushed to a local bare remote.
+
+    The bare repository's ``HEAD`` is ``refs/heads/main``, the branch this
+    fixture publishes. A later clone checks that name out. ``git init --bare``
+    without ``-b`` leaves ``HEAD`` on the host default branch, and a clone
+    cannot push ``main`` when that default is a different unpublished name.
+    """
     remote = tmp_path / "remote.git"
     work = tmp_path / "work"
-    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
     subprocess.run(["git", "init", "-q", "-b", "main", str(work)], check=True)
     _git(work, "remote", "add", "origin", str(remote))
     _commit(work, "first")
