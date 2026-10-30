@@ -66,9 +66,10 @@ printf 'Native test environment names: %s\n' "${environment_names[*]}"
 
 # Birth inside user@ delegation makes the common-ancestor cgroup permission real.
 # RuntimeMaxSec matches the existing six-hour GitHub Actions job limit.
+launch_umask=$(umask)
 original_exit=0
 systemd-run --user --wait --pipe --quiet --same-dir --unit="$unit" \
-    --property=Delegate=yes --property=KillMode=control-group \
+    --property=Delegate=yes --property=KillMode=control-group --property=UMask="$launch_umask" \
     --property=TimeoutStopSec=15s --property=RuntimeMaxSec=6h \
     /usr/bin/env -i "${environment[@]}" "$@" || original_exit=$?
 cleanup "$original_exit"
