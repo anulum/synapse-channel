@@ -49,7 +49,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import subprocess
+import subprocess  # nosec B404 # fixed git argv only, never a shell
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -201,7 +201,7 @@ def parse_manifest(text: str) -> tuple[Contract, ...]:
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
     """Run one read-only git command in ``repo`` without a shell."""
-    return subprocess.run(  # noqa: S603 - fixed git argv, never a shell
+    return subprocess.run(  # noqa: S603  # nosec B603 B607 # fixed git argv, no shell
         ["git", "-C", str(repo), *args],
         capture_output=True,
         check=False,

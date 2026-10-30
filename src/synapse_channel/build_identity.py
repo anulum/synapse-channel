@@ -21,7 +21,7 @@ import importlib.metadata
 import json
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 # fixed argv only, never a shell
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -178,7 +178,7 @@ def source_commit(root: Path | None = None) -> str:
     if not _is_this_source_checkout(root):
         return "unknown"
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # nosec B603 B607 # fixed git argv, never a shell
             ["git", "-C", str(root), "rev-parse", "HEAD"],
             capture_output=True,
             text=True,

@@ -47,7 +47,7 @@ import os
 import selectors
 import shutil
 import stat
-import subprocess
+import subprocess  # nosec B404 # admitted argv only, never a shell
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -391,7 +391,7 @@ def _run_bounded(argv: tuple[str, ...], timeout: float) -> _Captured:
     run outlives it.
     """
     try:
-        process = subprocess.Popen(  # noqa: S603 - an admitted argv, never a shell
+        process = subprocess.Popen(  # noqa: S603  # nosec B603 # admitted argv, no shell
             list(argv),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,

@@ -36,7 +36,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import subprocess
+import subprocess  # nosec B404 # fixed git argv only, never a shell
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -109,7 +109,7 @@ def repository_commit(repo: Path) -> str:
     WorkStateError
         If ``repo`` is not a git repository with a commit.
     """
-    done = subprocess.run(  # noqa: S603 - fixed git argv, never a shell
+    done = subprocess.run(  # noqa: S603  # nosec B603 B607 # fixed git argv, no shell
         ["git", "-C", str(repo), "rev-parse", "--verify", "HEAD^{commit}"],
         capture_output=True,
         text=True,
