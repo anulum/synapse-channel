@@ -30,10 +30,10 @@
     "restart",
     "duplicate delivery",
     "withdrawn authority",
-    "GPT6-C9"
+    "the reproducible public fault-and-effect benchmark (baseline, Core and Core with Fleet)"
   ],
   "schema": "synapse.verified-completion-benchmark.v2",
-  "seconds": 7.8267746162600815,
+  "seconds": 7.849132280796766,
   "sidecar": "off",
   "tasks_per_cohort": 4,
   "wrong_content": {

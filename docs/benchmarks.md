@@ -434,7 +434,7 @@ bytes and exits 0. `wrong_content` writes other bytes and exits 0.
 kills the session, so the report stays unknown while the file still verifies.
 The wake sidecar is off because arming needs a hub; this run does not measure
 it. It also does not measure network faults, restart, duplicate delivery, or
-withdrawn authority, and it is not GPT6-C9. Python only: there is no JS or Go
+withdrawn authority, and it is not the reproducible public fault-and-effect benchmark (baseline, Core and Core with Fleet). Python only: there is no JS or Go
 implementation. Reproduce with
 `PYTHONPATH=src python benchmarks/verified_completion_benchmark.py`. Counts and
 the host timing are in `benchmarks/results/verified_completion_benchmark.json`.

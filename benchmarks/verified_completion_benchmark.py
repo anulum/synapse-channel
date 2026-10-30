@@ -13,8 +13,9 @@ file and ``verified`` / ``not_verified`` from ``verify-result``. It does not
 write the effect or assign the boundary state.
 
 The wake sidecar is off (``--no-arm``). Arming needs a hub and is not part of
-this measurement. This is not GPT6-C9: no network fault, restart, duplicate,
-or withdrawn authority, and no publication claim.
+this measurement. This is not the reproducible public fault-and-effect
+benchmark (baseline, Core and Core with Fleet): no network fault, restart,
+duplicate, or withdrawn authority, and no publication claim.
 """
 
 from __future__ import annotations
@@ -301,7 +302,10 @@ def run(results: Path | None = None, *, tasks: int = DEFAULT_TASKS) -> dict[str,
                 "restart",
                 "duplicate delivery",
                 "withdrawn authority",
-                "GPT6-C9",
+                (
+                    "the reproducible public fault-and-effect benchmark "
+                    "(baseline, Core and Core with Fleet)"
+                ),
             ],
             "baseline": cohort(base / "baseline", "baseline", tasks),
             "wrong_content": cohort(base / "wrong", "wrong_content", tasks),

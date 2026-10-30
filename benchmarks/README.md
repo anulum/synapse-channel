@@ -248,7 +248,7 @@ The baseline matches. Wrong content and a missing file are reported done and
 are not verified. A crash after the write leaves the outcome unknown while the
 file still verifies. `--no-arm` keeps the hub sidecar out of the run. This does
 not measure network faults, restart, duplicate delivery, or withdrawn
-authority, and it is not GPT6-C9. Python only. Run
+authority, and it is not the reproducible public fault-and-effect benchmark (baseline, Core and Core with Fleet). Python only. Run
 `PYTHONPATH=src python benchmarks/verified_completion_benchmark.py`. The record
 is `results/verified_completion_benchmark.json`. Host timings live only in that
 file.

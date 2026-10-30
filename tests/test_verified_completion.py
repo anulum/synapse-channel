@@ -33,13 +33,20 @@ def test_the_module_is_not_shipped_in_the_package() -> None:
 
 
 def test_docs_name_the_limits() -> None:
-    """The docs say this is not the public C9 benchmark."""
-    for relative in ("docs/benchmarks.md", "benchmarks/README.md"):
+    """The public text names the benchmark this run does not replace."""
+    phrase = (
+        "the reproducible public fault-and-effect benchmark (baseline, Core and Core with Fleet)"
+    )
+    for relative in (
+        "docs/benchmarks.md",
+        "benchmarks/README.md",
+        "benchmarks/results/verified_completion_benchmark.json",
+    ):
         text = (_ROOT / relative).read_text(encoding="utf-8")
-        assert "worker-session" in text
-        assert "verify-result" in text
-        assert "not GPT6-C9" in text or "not C9" in text
-        assert "no network" in text or "network fault" in text
+        assert "worker-session" in text or relative.endswith(".json")
+        assert "verify-result" in text or relative.endswith(".json")
+        assert phrase in text
+        assert "network fault" in text or "network faults" in text
 
 
 def test_one_task_of_each_fault_shows_the_gap(tmp_path: Path) -> None:
@@ -156,6 +163,10 @@ def test_main_writes_one_task_of_each_cohort(tmp_path: Path) -> None:
     record = bench.run(tasks=1)
     written = json.loads(destination.read_text(encoding="utf-8"))
     assert written["schema"] == "synapse.verified-completion-benchmark.v2"
+    assert (
+        "the reproducible public fault-and-effect benchmark (baseline, Core and Core with Fleet)"
+        in written["not_measured"]
+    )
     assert written["sidecar"] == "off"
     assert written["tasks_per_cohort"] == 1
     assert written["baseline"]["verified"] == 1
@@ -166,3 +177,21 @@ def test_main_writes_one_task_of_each_cohort(tmp_path: Path) -> None:
     assert record["schema"] == written["schema"]
     assert isinstance(record["host"], dict)
     assert record["baseline"]["verified"] == 1
+
+
+def test_module_entry_prints_help() -> None:
+    """Running the benchmark file as the program reaches its console guard."""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join([str(_ROOT / "src"), env.get("PYTHONPATH", "")]).rstrip(
+        os.pathsep
+    )
+    completed = subprocess.run(  # noqa: S603 - fixed interpreter and module path
+        [sys.executable, str(_PATH), "--help"],
+        cwd=_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0
+    assert "usage:" in completed.stdout.lower()
