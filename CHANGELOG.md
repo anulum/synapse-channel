@@ -46,6 +46,19 @@ execution evidence when carrying a release claim forward.
   workflow refuse new commits without a stamp that matches their own
   configuration, which catches `--no-verify`, `git commit-tree` and worktrees
   without installed hooks. Commits made before this rule are unaffected.
+- Find API contract conflicts between branches that share no file.
+  `contracts.json` declares each contract's spec file and its dependents, and
+  each dependent records the spec digest it was built from.
+  `synapse contracts check --base main --branch A --branch B` reports a
+  dependent changed on one branch against another contract version than the
+  other branch's new spec (`stale_dependent`), and a spec change whose
+  dependents were not regenerated (`record_mismatch`). The decision rests on
+  exact SHA-256 versions; a whitespace-only spec change is flagged on
+  purpose. A declared spec missing at the base, a missing or damaged git
+  object, and a declared path that is not a regular file are refused, never
+  read as unchanged. The check is advisory and claims or blocks nothing. The
+  benchmark measures fifteen scenarios against real merges, including an
+  interface change, a client and a deployment on separate branches.
 - Hand over work state that the receiver can check, never authority.
   `synapse work-state build` pins input files by SHA-256 and repositories by
   commit, and records completed steps, unknown-outcome operations, remaining

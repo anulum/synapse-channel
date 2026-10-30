@@ -72,6 +72,7 @@ nav:
   - Wake relay: wake-relay.md
   - Execution outcomes: execution-outcomes.md
   - Operations catalogue: operations.md
+  - Contract conflicts: contract-conflicts.md
   - Installation: installation.md
   - Build identity: build-identity.md
   - Machine-readable setup: machine-readable-setup.md

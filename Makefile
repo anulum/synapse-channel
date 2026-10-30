@@ -73,6 +73,7 @@ bench: ## Run the committed benchmark harnesses
 	$(PY) benchmarks/a2a_bridge_benchmark.py
 	$(PY) benchmarks/coding_fleet_benchmark.py
 	$(PY) benchmarks/verified_completion_benchmark.py
+	$(PY) benchmarks/contract_conflict_benchmark.py
 
 vendor-watch: ## Check official vendor releases against verified host versions
 	$(PY) tools/vendor_watch.py --strict --report build/vendor-watch-report.json

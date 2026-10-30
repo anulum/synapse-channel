@@ -77,6 +77,15 @@ The older 59% byte result counted discarded auxiliary fields as a saving and is
 superseded. These figures are specific to this fixture — re-run against your own
 trace for a representative number.
 
+## `contract_conflict_benchmark.py`
+
+Measures `synapse contracts check` against real merges of labelled scenarios
+in disposable git repositories, including an interface change, a client and
+a deployment on separate branches. Outcomes: caught 4, missed 3, false block 5,
+clear 2, refused 1. Lost parallelism under a counterfactual "block on any
+finding" policy is 5 of 7 mergeable scenarios. These are chosen cases, not a
+rate. Details: [docs/benchmarks.md](../docs/benchmarks.md#contract-conflict-benchmark).
+
 ## `routing_benchmark.py`
 
 Measures how the task-class router (`synapse_channel.routing.classify`) sorts a

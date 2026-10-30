@@ -240,6 +240,30 @@ recovery. It does not measure model latency, editor integration latency, remote
 coding-agent services, GitHub PR throughput, or external A2A/MCP conformance.
 
 
+## Contract conflict benchmark
+
+`benchmarks/contract_conflict_benchmark.py` measures `synapse contracts check`
+against real merges. It builds fifteen labelled scenarios in disposable git
+repositories, runs the check first, then merges the branches in a scratch
+clone. An oracle independent of the digests decides whether the merged clients
+call, and the merged deployment routes, only endpoints the merged spec defines.
+Three composed scenarios put an interface change, a client built on the old
+version and a deployment on separate branches with no shared file.
+
+| Outcome | Count | Scenarios |
+| --- | ---: | --- |
+| caught | 4 | removed endpoint vs usage built on the old spec; spec change without regeneration; removed endpoint vs a deployment routing it, built on the old spec; the same with a client and a deployment both built on the old spec |
+| missed | 3 | a client not declared in `contracts.json`, including a sibling directory outside the declared path; a deployment not declared in `contracts.json` |
+| false block | 5 | added endpoint; whitespace-only spec change; usage that avoids the removed path; malformed record next to a correct regeneration; added endpoint vs a deployment that only scales |
+| clear | 2 | unrelated docs; two independent contracts |
+| refused | 1 | a branch that drops a declaration |
+
+Lost parallelism under a counterfactual "block on any finding" policy: 5 of
+the 7 mergeable scenarios. The check itself blocks nothing. These are chosen
+cases, not a sample of real work, and the counts are not a rate. Run with
+`PYTHONPATH=src python benchmarks/contract_conflict_benchmark.py`; the record
+is `benchmarks/results/contract_conflict_benchmark.json`.
+
 ## Socket chat and keyed lease handlers
 
 `PYTHONPATH=src python benchmarks/coordination_handlers_benchmark.py` runs

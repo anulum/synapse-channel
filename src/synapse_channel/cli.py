@@ -53,6 +53,7 @@ The ``synapse`` command exposes these subcommands:
 * ``git-hook`` — install git hooks that auto-release branch-scoped claims on commit/merge;
 * ``git-release`` — release branch-scoped claims whose paths were committed/merged (hook-invoked);
 * ``conflicts`` — predict merge conflicts between branch-scoped claims on different branches;
+* ``contracts`` — find API contract conflicts between branches that share no file;
 * ``health`` — probe the hub and report reachability as the exit code;
 * ``verify-release`` — run declared checks and write an observed release receipt;
 * ``verify-result`` — verify a requested result (file, git, deployment, migration);
@@ -198,6 +199,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "synapse_channel.cli_git:add_parsers",
         ("git-claim", "git-hook", "git-init", "git-release", "conflicts"),
     ),
+    ("synapse_channel.cli_contracts:add_parsers", ("contracts",)),
     ("synapse_channel.cli_git_claim_check:add_parser", ("git-claim-check",)),
     ("synapse_channel.cli_verify_release:add_parsers", ("verify-release",)),
     ("synapse_channel.cli_verify_result:add_parsers", ("verify-result",)),
