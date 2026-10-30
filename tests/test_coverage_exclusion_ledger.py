@@ -147,6 +147,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_codex_mcp_package.py": (10, "optional-dep-guard"),
     "tests/test_claim_coverage.py": (2, "platform-guard"),
     "tests/test_cli.py": (1, "platform-guard"),
+    # Embedded NT-only subprocess fixture verifies that real platform skips survive sharding.
+    "tests/test_ci_portable_shards.py": (1, "platform-guard"),
     "tests/test_cli_completions.py": (2, "platform-guard"),
     "tests/test_cli_claude_plugin.py": (8, "optional-dep-guard"),
     "tests/test_cli_doctor.py": (1, "platform-guard"),

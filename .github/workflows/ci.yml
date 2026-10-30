@@ -531,7 +531,7 @@ jobs:
   # each individual job as a required context.
   ci:
     name: ci
-    needs: [lint, typecheck, test, test-complete, reuse, audit, git-hooks, pi-integration, marketplace-action, python-lock-audit, node-lock-audit]
+    needs: [test-timings, lint, typecheck, test, test-complete, reuse, audit, git-hooks, pi-integration, marketplace-action, python-lock-audit, node-lock-audit]
     if: always()
     runs-on: ubuntu-latest
     steps:

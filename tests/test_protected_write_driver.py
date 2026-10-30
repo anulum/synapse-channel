@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 from collections.abc import Callable, Iterator, Mapping
 from copy import deepcopy
 from dataclasses import replace
@@ -36,7 +37,9 @@ from test_protected_write_effects import _plan
 from test_protected_write_inspection import _inspect
 from test_protected_write_preparation import _begun
 
-pytestmark = pytest.mark.skipif(os.name != "posix", reason="real protected POSIX driver")
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux", reason="real protected Linux openat2 driver"
+)
 
 
 @pytest.mark.parametrize("crash_point", ["before_effect", "after_effect"])
