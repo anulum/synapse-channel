@@ -265,7 +265,7 @@ def _applied_migration(
     if migration_column not in {str(row[1]) for row in described}:
         return "migration_column_absent", None
     found = connection.execute(
-        f"SELECT 1 FROM {migrations_table} WHERE {migration_column} = ? LIMIT 1",  # noqa: S608
+        f"SELECT 1 FROM {migrations_table} WHERE {migration_column} = ? LIMIT 1",  # noqa: S608 - identifiers validated by _IDENTIFIER before use
         (migration,),
     ).fetchone()
     return "", found
