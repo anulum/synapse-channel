@@ -18,6 +18,7 @@ _EXPECTED_HOOKS = {
     "pre-push-capability-manifest": "python tools/capability_manifest.py --check",
     "pre-push-commit-trailers": "python tools/check_commit_trailers.py",
     "pre-push-invariant-conformance": "python tools/invariant_conformance.py --check",
+    "pre-push-guarantee-register": "python tools/guarantee_register.py --check",
     "pre-push-version-sync": "python tools/check_version_sync.py",
 }
 _PRE_COMMIT_ONLY_HOOKS = (

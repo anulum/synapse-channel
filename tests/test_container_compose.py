@@ -194,8 +194,9 @@ def test_container_runtime_lock_matches_the_base_project_dependency() -> None:
     ``--require-identity-binding`` and ``--team-secure`` could not work in the image.
     """
     lock = CONTAINER_REQUIREMENTS.read_text(encoding="utf-8")
-    assert "websockets==17.1" in lock
-    assert "--hash=sha256:ff3e2ba7a9f0a110b0555452e9b5a03a34e11662544e01beea15f144b48ba7b7" in lock
+    assert "websockets==17.3" in lock
+    # The CPython 3.13 manylinux x86_64 wheel the container image installs.
+    assert "--hash=sha256:de2c12555bf05546f3ee75733f2c81de70aab7f530e86d0d2162b0ddcb3c39ae" in lock
     assert "sqlcipher3-binary==0.6.0" in lock
     assert "--hash=sha256:8a6afbdef7cbbb33b1228ce96edc1bfe7f15bdf2a5e8bdab87261ab52e4111e6" in lock
     assert "--extra sqlcipher --extra encryption" in lock

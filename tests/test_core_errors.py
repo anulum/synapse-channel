@@ -192,6 +192,14 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     "WakeMarkError": ("synapse_channel.wake_marks", "wake_mark", ValueError),
     "WakerConfigError": ("synapse_channel.waker_config", "waker_config", ValueError),
     "WakerLockError": ("synapse_channel.waker_lock", "waker_lock", ValueError),
+    "ContractError": ("synapse_channel.git.contract_conflicts", "contract", ValueError),
+    "QualificationBundleError": (
+        "synapse_channel.operations.qualification_bundle",
+        "qualification_bundle",
+        ValueError,
+    ),
+    "RunJournalError": ("synapse_channel.operations.runner_journal", "run_journal", ValueError),
+    "WorkStateError": ("synapse_channel.work_state", "work_state", ValueError),
     "WakerTransitionError": ("synapse_channel.waker_transition", "waker_transition", ValueError),
     "A2AClientError": (
         "synapse_channel.a2a_client",

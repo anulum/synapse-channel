@@ -54,6 +54,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from synapse_channel.core.errors import SynapseError
+
 MANIFEST = "contracts.json"
 """Repository-relative manifest that declares the contracts."""
 
@@ -67,8 +69,10 @@ _RECORD = re.compile(r"(?P<name>[A-Za-z0-9][A-Za-z0-9._-]{0,63}) (?P<digest>sha2
 _GIT_TIMEOUT_SECONDS = 30.0
 
 
-class ContractError(ValueError):
+class ContractError(SynapseError, ValueError):
     """The manifest, a record or a revision cannot be used."""
+
+    code = "contract"
 
 
 @dataclass(frozen=True, slots=True)

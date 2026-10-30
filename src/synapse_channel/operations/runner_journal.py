@@ -32,6 +32,8 @@ import secrets
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 SCHEMA = "synapse-operation-run-v1"
 """Schema name written into every record."""
 
@@ -41,8 +43,10 @@ STATES = frozenset({"not_started", "confirmed_done", "confirmed_failed", "unknow
 _OPERATION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
-class RunJournalError(ValueError):
+class RunJournalError(SynapseError, ValueError):
     """A record cannot be named, written or read as a run record."""
+
+    code = "run_journal"
 
 
 def run_directory(journal: Path, operation_id: str) -> Path:

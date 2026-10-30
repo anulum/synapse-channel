@@ -40,6 +40,7 @@ from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.operations.row import OperationRow
 from synapse_channel.operations.spec import RUNNABLE
 
@@ -75,8 +76,10 @@ _TEXT = re.compile(r"[^\x00-\x1f\x7f]{1,200}")
 _MAX_ITEMS = 64
 
 
-class QualificationBundleError(ValueError):
+class QualificationBundleError(SynapseError, ValueError):
     """A bundle, its signature or its trust material cannot be accepted."""
+
+    code = "qualification_bundle"
 
 
 @dataclass(frozen=True, slots=True)

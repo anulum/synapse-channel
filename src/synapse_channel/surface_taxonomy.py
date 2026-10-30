@@ -165,6 +165,9 @@ CLI_TAXONOMY: dict[str, str] = {
     "native-hook": EXPERIMENTAL,
     "native-seat": EXPERIMENTAL,
     "ops": EXPERIMENTAL,
+    "contracts": EXPERIMENTAL,
+    "verify-result": EXPERIMENTAL,
+    "work-state": EXPERIMENTAL,
 }
 """Every CLI subcommand mapped to exactly one stability tier."""
 

@@ -41,6 +41,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 SCHEMA = "synapse.work-state.v1"
 """Version of the hand-off packet."""
 
@@ -70,8 +72,10 @@ _DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 _MAX_ITEMS = 256
 
 
-class WorkStateError(ValueError):
+class WorkStateError(SynapseError, ValueError):
     """A work-state packet is malformed or tries to carry authority."""
+
+    code = "work_state"
 
 
 def _text(value: object, label: str) -> str:
