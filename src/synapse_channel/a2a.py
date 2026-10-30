@@ -19,6 +19,7 @@ import re
 from typing import Any
 
 from synapse_channel import __version__
+from synapse_channel.build_identity import development_mark_lines
 
 A2A_PROTOCOL_VERSION = "1.0"
 """A2A protocol version emitted by this projection."""
@@ -183,6 +184,9 @@ def agent_card_from_manifest(
         "defaultOutputModes": list(DEFAULT_OUTPUT_MODES),
         "skills": skills or [_fallback_skill()],
     }
+    marks = development_mark_lines()
+    if marks:
+        card["developmentMarks"] = list(marks)
     if bearer_auth:
         card["securitySchemes"] = {
             "synapseBearer": {

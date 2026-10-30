@@ -110,6 +110,7 @@ class HttpMcpServer(FastMCP[None]):
         reply_bytes: int = 262144,
         **settings: Any,
     ) -> None:
+        """Bound the remote limits and fill instructions from the build identity."""
         if not 0 < operation_timeout <= 60 or not 1024 <= reply_bytes <= 1048576:
             raise ValueError("invalid remote MCP operation limits")
         self.policy = policy
@@ -118,7 +119,12 @@ class HttpMcpServer(FastMCP[None]):
         self.operation_timeout = operation_timeout
         self.reply_bytes = reply_bytes
         self.dispatch = asyncio.Lock()
-        super().__init__("synapse", **settings)
+        from synapse_channel.build_identity import mcp_instructions
+
+        instructions = settings.pop("instructions", None)
+        if not isinstance(instructions, str) or not instructions.strip():
+            instructions = mcp_instructions()
+        super().__init__("synapse", instructions=instructions, **settings)
 
     def _bound(self, value: object) -> None:
         """Refuse an oversized reply before content is handed to the HTTP encoder."""

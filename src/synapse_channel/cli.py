@@ -101,7 +101,7 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
-from synapse_channel import __version__
+from synapse_channel.build_identity import identity_text
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 
 
@@ -126,7 +126,8 @@ class _VersionAction(argparse.Action):
         values: Any,
         option_string: str | None = None,
     ) -> None:
-        print(f"synapse-channel {__version__}")
+        """Print the build identity and any opt-in upgrade notice, then exit."""
+        print(identity_text())
         from synapse_channel.update_check import update_notice
 
         notice = update_notice()

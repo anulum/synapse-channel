@@ -20,6 +20,18 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Name the artefact that is running. `synapse --version` and
+  `synapse doctor` print the source commit, the wheel digest and the declared
+  profile. The digest is only the one `direct_url.json` recorded; otherwise
+  the line reads `installed from a wheel (digest not recorded)` or
+  `not a wheel`. The profile line reads `declared profile: <name>
+  (environment)` or `(package default)`, and `doctor --json` records
+  `declared_profile` and `profile_source`; that value is not qualification
+  evidence. A source checkout newer than the latest dated release, or with
+  notes under `[Unreleased]`, prints `development branch, not yet released`;
+  an installed wheel has no changelog beside it and prints no such mark. The
+  public A2A Agent Card carries only the version and development marks, not
+  the commit, the digest or the profile.
 - Measure verified completion separately from reported completion.
   `benchmarks/verified_completion_benchmark.py` runs real
   `synapse worker-session` tasks whose worker writes the requested file,

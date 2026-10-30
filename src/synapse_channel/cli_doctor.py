@@ -460,8 +460,11 @@ def doctor_report_to_json(code: int, diagnoses: list[Diagnosis]) -> dict[str, ob
     can read either signal; every verdict keeps its check name, status, detail,
     and remedy exactly as the text report prints them.
     """
+    from synapse_channel.build_identity import identity_mapping
+
     return {
         "healthy": code == 0,
+        "build": identity_mapping(),
         "diagnoses": [
             {
                 "check": diagnosis.check,
@@ -472,6 +475,28 @@ def doctor_report_to_json(code: int, diagnoses: list[Diagnosis]) -> dict[str, ob
             for diagnosis in diagnoses
         ],
     }
+
+
+def _report_after_build_identity(
+    diagnose: Callable[[], tuple[int, list[str], list[Diagnosis]]],
+) -> tuple[int, list[str], list[Diagnosis]]:
+    """Print the build identity, then return the doctor checks.
+
+    Parameters
+    ----------
+    diagnose : callable
+        Zero-argument runner for the text report. ``doctor --json`` does not
+        use it; that path puts the same identity in the JSON document.
+
+    Returns
+    -------
+    tuple of int, list of str, and list of Diagnosis
+        The exit code, report lines, and diagnoses from ``diagnose``.
+    """
+    from synapse_channel.build_identity import identity_text
+
+    print(identity_text())
+    return diagnose()
 
 
 def _cmd_doctor(
@@ -614,7 +639,7 @@ def _cmd_doctor(
             print(f"synapse doctor: {exc}", file=sys.stderr)
             return 2
 
-    code, lines, diagnoses = diagnose()
+    code, lines, diagnoses = _report_after_build_identity(diagnose)
     for line in lines:
         print(line)
     if getattr(args, "redeploy_checklist", False):

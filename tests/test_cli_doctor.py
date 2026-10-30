@@ -10,9 +10,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+from unittest.mock import Mock
 
 import pytest
 
@@ -66,12 +70,12 @@ def test_parser_accepts_mcp_config_trust_flags() -> None:
 def test_doctor_mcp_dependent_flags_require_config(
     flag_args: list[str], capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Dependent MCP flags exit 2 and never start diagnostics."""
     args = cli.build_parser().parse_args(["doctor", *flag_args])
+    diagnose = Mock()
 
-    async def should_not_run(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
-        raise AssertionError("diagnostics must not run for an invalid flag combination")
-
-    assert cli_doctor._cmd_doctor(args, diagnose_runner=should_not_run) == 2
+    assert cli_doctor._cmd_doctor(args, diagnose_runner=cast(Any, diagnose)) == 2
+    diagnose.assert_not_called()
     assert "requires --mcp-config" in capsys.readouterr().err
 
 
@@ -278,15 +282,15 @@ async def test_diagnose_reports_outbound_mcp_config_trust(tmp_path: Path) -> Non
     assert next(item for item in diagnoses if item.check == "mcp-config").status == "warn"
 
 
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX mode-bit loosen path; Windows uses NT DACL owner-only floor",
+)
 async def test_diagnose_fails_closed_on_loose_mcp_config(tmp_path: Path) -> None:
-    import os
+    """A group-readable MCP config fails closed where POSIX mode bits apply."""
 
     async def no_roster(**_: Any) -> list[str]:
         return []
-
-    # POSIX mode bits are not the owner-only floor on Windows (NT DACL is).
-    if os.name != "posix":
-        pytest.skip("POSIX mode-bit loosen path; Windows uses NT DACL owner-only floor")
 
     config = tmp_path / "mcp.json"
     config.write_text('{"version":1,"servers":[]}', encoding="utf-8")
@@ -471,22 +475,22 @@ def test_cmd_doctor_fix_never_touches_a_non_default_hub(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Against a remote hub --fix explains the gate and prints manual guidance only."""
-    installed: list[dict[str, Any]] = []
 
     async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
         return (1, ["[FAIL] hub: down"], [_fail("hub")])
 
-    def install_services(**kwargs: Any) -> list[str]:
-        installed.append(kwargs)
-        return []
-
+    installer = Mock(return_value=[])
     ns = _doctor_ns(uri="ws://10.0.0.5:8876", project="repo", fix=True)
     assert (
-        cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose, service_installer=install_services)
+        cli_doctor._cmd_doctor(
+            ns,
+            diagnose_runner=diagnose,
+            service_installer=cast(Callable[..., list[str]], installer),
+        )
         == 1
     )
     out = capsys.readouterr().out
-    assert installed == []
+    installer.assert_not_called()
     assert "not the default local hub" in out
     assert "synapse-arm@.service" in out  # manual setup commands still offered
 
@@ -494,22 +498,23 @@ def test_cmd_doctor_fix_never_touches_a_non_default_hub(
 def test_cmd_doctor_fix_reports_nothing_to_repair_when_healthy(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    installed: list[dict[str, Any]] = []
+    """A healthy ``--fix`` run reports that and does not install services."""
 
     async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
         return (0, ["synapse doctor: all clear"], [_pass("hub"), _pass("waiter")])
 
-    def install_services(**kwargs: Any) -> list[str]:
-        installed.append(kwargs)
-        return []
-
+    installer = Mock(return_value=[])
     ns = _doctor_ns(project="repo", identity="repo/ux", synapse_bin="/bin/synapse", fix=True)
     assert (
-        cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose, service_installer=install_services)
+        cli_doctor._cmd_doctor(
+            ns,
+            diagnose_runner=diagnose,
+            service_installer=cast(Callable[..., list[str]], installer),
+        )
         == 0
     )
     out = capsys.readouterr().out
-    assert installed == []
+    installer.assert_not_called()
     assert "[fix] nothing to auto-repair" in out
 
 
@@ -568,12 +573,110 @@ def test_cmd_doctor_installs_user_services(
     assert not home.exists()
 
 
+def test_cmd_doctor_reports_an_unsafe_detected_service_executable(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refuse install when the detected executable is not a systemd token."""
+
+    def unsafe() -> str:
+        """Return an executable path systemd must refuse."""
+        return "*unsafe"
+
+    monkeypatch.setattr("synapse_channel.service_setup.default_synapse_bin", unsafe)
+
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        """Return a healthy doctor report so the refusal is the only failure."""
+        return (0, ["synapse doctor: all clear"], [])
+
+    namespace = _doctor_ns(project="repo", install_user_services=True)
+    assert cli_doctor._cmd_doctor(namespace, diagnose_runner=diagnose) == 2
+    error = capsys.readouterr().err
+    assert error.startswith("synapse doctor: ")
+    assert "glob metacharacters" in error
+
+
+def test_cmd_doctor_fix_reports_an_unsafe_detected_service_executable(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refuse --fix repair before any unit file is written."""
+
+    def unsafe() -> str:
+        """Return an executable path systemd must refuse."""
+        return "*unsafe"
+
+    monkeypatch.setattr("synapse_channel.service_setup.default_synapse_bin", unsafe)
+
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        """Return a failing hub check so repair would run if the path were safe."""
+        return (1, ["[FAIL] hub: down"], [_fail("hub")])
+
+    namespace = _doctor_ns(uri="ws://localhost:8876", project="repo", fix=True)
+    assert cli_doctor._cmd_doctor(namespace, diagnose_runner=diagnose) == 2
+    captured = capsys.readouterr()
+    assert "[fix] auto-repairing hub" in captured.out
+    assert "re-check" not in captured.out
+    assert "glob metacharacters" in captured.err
+
+
+def test_doctor_mcp_policy_prints_the_posture(capsys: pytest.CaptureFixture[str]) -> None:
+    """``synapse doctor --mcp-policy`` reports claim-tool posture on the real CLI."""
+    code = cli.main(["doctor", "--mcp-policy", "--uri", "ws://127.0.0.1:1", "--project", "repo"])
+    report = capsys.readouterr().out
+    assert code == 1
+    assert "mcp_posture:" in report
+    assert "claim tools" in report
+
+
 def test_main_routes_to_doctor(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     port = _free_port()
     assert cli.main(["doctor", "--uri", f"ws://127.0.0.1:{port}", "--project", "repo"]) == 1
     assert "did not answer" in capsys.readouterr().out
+
+
+def test_public_main_continues_when_a_real_console_refuses_utf8(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``main(None)`` survives a real closed stdout that refuses reconfigure.
+
+    The refusal is ``TextIOWrapper.reconfigure`` raising ``ValueError`` on a
+    closed file. The private console helper is not called directly.
+    """
+    stdout = (tmp_path / "stdout.txt").open("w", encoding="utf-8")
+    stderr_path = tmp_path / "stderr.txt"
+    stderr = stderr_path.open("w+", encoding="utf-8")
+    stdout.close()
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+    monkeypatch.setattr(sys, "argv", ["synapse", "--not-a-real-flag"])
+    try:
+        with pytest.raises(SystemExit) as caught:
+            cli.main(None)
+    finally:
+        stderr.close()
+    assert caught.value.code == 2
+    assert "unrecognized arguments" in stderr_path.read_text(encoding="utf-8")
+
+
+def test_module_console_entry_prints_help() -> None:
+    """The CLI module's console guard runs in a traced child and prints help."""
+    root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join([str(root / "src"), env.get("PYTHONPATH", "")]).rstrip(
+        os.pathsep
+    )
+    env["SYNAPSE_NO_UPDATE_CHECK"] = "1"
+    completed = subprocess.run(  # noqa: S603 - fixed interpreter and module argv
+        [sys.executable, "-m", "synapse_channel.cli", "--help"],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0
+    assert "usage:" in completed.stdout.lower()
 
 
 # --- --json -------------------------------------------------------------------
