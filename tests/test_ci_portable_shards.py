@@ -26,7 +26,7 @@ SOURCE = "b" * 40
 PYTHON = f"{sys.version_info.major}.{sys.version_info.minor}"
 
 
-def _run(root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+def _run(root: Path, args: list[str], *, attempt: str = "2") -> subprocess.CompletedProcess[str]:
     env = dict(
         os.environ,
         PYTHONPATH=str(ROOT) + os.pathsep + str(root),
@@ -34,7 +34,7 @@ def _run(root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
         PYTHONDONTWRITEBYTECODE="1",
         GITHUB_SHA=SOURCE,
         GITHUB_RUN_ID="portable-runner-fixture",
-        GITHUB_RUN_ATTEMPT="2",
+        GITHUB_RUN_ATTEMPT=attempt,
     )
     return subprocess.run(
         [sys.executable, *args], cwd=root, env=env, capture_output=True, text=True, timeout=20
@@ -60,7 +60,7 @@ def _project(root: Path, history: bool = False) -> None:
     )
 
 
-def _worker(root: Path, index: int) -> subprocess.CompletedProcess[str]:
+def _worker(root: Path, index: int, *, attempt: str = "2") -> subprocess.CompletedProcess[str]:
     return _run(
         root,
         [
@@ -76,6 +76,7 @@ def _worker(root: Path, index: int) -> subprocess.CompletedProcess[str]:
             "--shard-output=main-" + str(index) + ".json",
             "--shard-timings=timings.json",
         ],
+        attempt=attempt,
     )
 
 
@@ -95,34 +96,36 @@ def _publish(root: Path, index: int) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _verify(root: Path) -> subprocess.CompletedProcess[str]:
-    return _run(
-        root,
-        [
-            str(TOOL),
-            "verify",
-            "--root",
-            "artifacts",
-            "--source",
-            SOURCE,
-            "--run-id",
-            "portable-runner-fixture",
-            "--attempt",
-            "2",
-            "--platform",
-            sys.platform,
-            "--python",
-            PYTHON,
-            "--count",
-            "4",
-            "--config",
-            "pyproject.toml",
-            "--timings",
-            "timings.json",
-            "--output",
-            "complete",
-        ],
-    )
+def _verify(
+    root: Path, *, attempt: str = "2", allow_earlier_attempts: bool = False
+) -> subprocess.CompletedProcess[str]:
+    args = [
+        str(TOOL),
+        "verify",
+        "--root",
+        "artifacts",
+        "--source",
+        SOURCE,
+        "--run-id",
+        "portable-runner-fixture",
+        "--attempt",
+        attempt,
+        "--platform",
+        sys.platform,
+        "--python",
+        PYTHON,
+        "--count",
+        "4",
+        "--config",
+        "pyproject.toml",
+        "--timings",
+        "timings.json",
+        "--output",
+        "complete",
+    ]
+    if allow_earlier_attempts:
+        args.append("--allow-earlier-attempts")
+    return _run(root, args, attempt=attempt)
 
 
 @pytest.fixture(scope="module")
@@ -417,3 +420,96 @@ def test_actual_macos_aggregate_shell_requires_every_job(
         timeout=5,
     )
     assert (result.returncode == 0) == (timing_result == shard_result == "success")
+
+
+def test_actual_aggregate_only_rerun_retains_successful_producer_attempts(
+    actual_portable_artifacts: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "project"
+    shutil.copytree(actual_portable_artifacts, root)
+    strict = _verify(root, attempt="3")
+    assert strict.returncode != 0
+    assert not (root / "complete").exists()
+    rerun = _verify(root, attempt="3", allow_earlier_attempts=True)
+    assert rerun.returncode == 0, rerun.stdout + rerun.stderr
+    assert (root / "complete/timings.json").is_file()
+    assert {
+        json.loads(path.read_text())["main"]["attempt"]
+        for path in (root / "artifacts").glob("*/artifact.json")
+    } == {"2"}
+
+
+def test_real_partial_worker_rerun_accepts_mixed_original_attempts(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    _project(root, history=True)
+    for index in range(4):
+        result = _worker(root, index, attempt=str(1 + index % 2))
+        assert result.returncode == 0, result.stdout + result.stderr
+        result = _publish(root, index)
+        assert result.returncode == 0, result.stdout + result.stderr
+    result = _worker(root, 1, attempt="3")
+    assert result.returncode == 0, result.stdout + result.stderr
+    shutil.rmtree(root / "artifacts/1")
+    result = _publish(root, 1)
+    assert result.returncode == 0, result.stdout + result.stderr
+    result = _verify(root, attempt="3", allow_earlier_attempts=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert {
+        json.loads(path.read_text())["main"]["attempt"]
+        for path in (root / "artifacts").glob("*/artifact.json")
+    } == {"1", "2", "3"}
+
+
+@pytest.mark.parametrize(
+    "kind", ["source", "run_id", "config_sha256", "different-timings", "missing", "failed"]
+)
+def test_rerun_keeps_foreign_incomplete_and_schedule_refusals(
+    actual_portable_artifacts: Path, tmp_path: Path, kind: str
+) -> None:
+    root = tmp_path / "project"
+    shutil.copytree(actual_portable_artifacts, root)
+    _damage(root, kind)
+    result = _verify(root, attempt="3", allow_earlier_attempts=True)
+    assert result.returncode != 0
+    assert not (root / "complete").exists()
+
+
+@pytest.mark.parametrize(
+    "value", ["0", "01", "-1", "4", "foreign", "", 2, True, None, "٢", "1" * 11]
+)
+def test_rerun_refuses_invalid_or_future_producer_attempt(
+    actual_portable_artifacts: Path, tmp_path: Path, value: object
+) -> None:
+    root = tmp_path / "project"
+    shutil.copytree(actual_portable_artifacts, root)
+    path = root / "artifacts/0/artifact.json"
+    record = json.loads(path.read_text())
+    record["main"]["attempt"] = value
+    path.write_text(json.dumps(record))
+    result = _verify(root, attempt="3", allow_earlier_attempts=True)
+    assert result.returncode != 0
+    assert not (root / "complete").exists()
+
+
+def test_workflow_rerun_names_follow_run_identity_and_replace_owned_artifacts() -> None:
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/cross-os.yml").read_text())
+    for name in ("macos-timings", "macos-shard", "macos-complete"):
+        for step in workflow["jobs"][name]["steps"]:
+            if "uses" not in step:
+                continue
+            inputs = step.get("with", {})
+            identity = inputs.get("name", inputs.get("pattern", ""))
+            if identity.startswith(("macos-timings-", "macos-shard-")):
+                assert "${{ github.run_id }}" in identity
+                assert "${{ github.run_attempt }}" not in identity
+            if step["uses"].startswith("actions/upload-artifact@"):
+                assert inputs["overwrite"] is True
+    aggregate = workflow["jobs"]["macos-complete"]
+    command = next(
+        step["run"]
+        for step in aggregate["steps"]
+        if "ci_portable_shards.py verify" in step.get("run", "")
+    )
+    assert "--allow-earlier-attempts" in command

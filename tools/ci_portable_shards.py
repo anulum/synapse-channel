@@ -133,6 +133,19 @@ def _bound(artifact: dict[str, Any], expected: dict[str, str], count: int) -> di
     return record
 
 
+def _attempt(value: object) -> int:
+    """Require an ordinary canonical positive hosted-attempt string."""
+    if (
+        type(value) is not str
+        or not value.isascii()
+        or not value.isdecimal()
+        or value.startswith("0")
+        or len(value) > 10
+    ):
+        raise ValueError("invalid portable hosted attempt")
+    return int(value)
+
+
 def _union(records: list[dict[str, Any]], count: int) -> None:
     """Check every actual index and independent full inventory union."""
     if len(records) != count or {record["index"] for record in records} != set(range(count)):
@@ -158,6 +171,8 @@ def verify(
     config: Path,
     timings: Path,
     output: Path,
+    *,
+    allow_earlier_attempts: bool = False,
 ) -> None:
     """Require every complete platform-bound shard before publishing observed timings.
 
@@ -166,7 +181,7 @@ def verify(
     root : Path
         Downloaded immutable artifact directories for this invocation.
     source, run_id, attempt : str
-        Exact checked-out source and hosted run identity.
+        Exact checked-out source, hosted run identity and aggregate attempt.
     platform, python : str
         Required actual operating-system identifier and interpreter major/minor.
     count : int
@@ -177,7 +192,12 @@ def verify(
         Common immutable scheduling input used by every worker.
     output : Path
         New result directory; no coverage certification is produced.
+    allow_earlier_attempts : bool
+        Accept successful producer attempts from this same run up to the current
+        aggregate attempt. Retained source, platform, configuration, schedule and
+        complete execution evidence must still match. Default requires exact attempt.
     """
+    current_attempt = _attempt(attempt)
     if type(count) is not int or not 1 <= count <= 128:
         raise ValueError("invalid expected portable shard count")
     expected = dict(
@@ -188,9 +208,15 @@ def verify(
         python=python,
         config_sha256=hashlib.sha256(config.read_bytes()).hexdigest(),
     )
+    if allow_earlier_attempts:
+        expected.pop("attempt")
     records = [
         _bound(_read(path), expected, count) for path in sorted(root.glob("*/artifact.json"))
     ]
+    for record in records:
+        producer_attempt = _attempt(record.get("attempt"))
+        if producer_attempt > current_attempt:
+            raise ValueError("portable producer attempt is newer than the aggregate")
     _union(records, count)
     observed: dict[str, float] = {}
     for record in records:
@@ -217,6 +243,7 @@ def main() -> int:
         check.add_argument("--" + name, required=True)
     check.add_argument("--platform", choices=("darwin", "linux", "win32"), required=True)
     check.add_argument("--count", type=int, required=True)
+    check.add_argument("--allow-earlier-attempts", action="store_true")
     args = parser.parse_args()
     try:
         if args.command == "pack":
@@ -233,6 +260,7 @@ def main() -> int:
                 args.config,
                 args.timings,
                 args.output,
+                allow_earlier_attempts=args.allow_earlier_attempts,
             )
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"Portable CI shard refused: {error}", file=sys.stderr)
