@@ -18,6 +18,8 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.40] - 2026-10-30
+
 ### Added
 
 - Name the artefact that is running. `synapse --version` and

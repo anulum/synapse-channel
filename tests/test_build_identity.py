@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from synapse_channel import __version__
 from synapse_channel.a2a import agent_card_from_manifest
 from synapse_channel.build_identity import (
     DEVELOPMENT_MARK,
@@ -39,10 +40,20 @@ from synapse_channel.client.diagnostics import Diagnosis
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _checkout_is_unreleased() -> tuple[str, bool]:
+    """Return the checkout's dated release and whether this tree is newer than it."""
+    released, notes = changelog_release((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+    return released, notes or __version__ != released
+
+
 def test_version_entry_prints_commit_profile_and_unreleased_mark(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``synapse --version`` prints the live checkout, not only the version number."""
+    """``synapse --version`` prints the live checkout and the mark its changelog implies.
+
+    A development tree prints the mark; a release cut, whose version equals the
+    latest dated heading and whose ``[Unreleased]`` section is empty, prints none.
+    """
     monkeypatch.setenv("SYNAPSE_NO_UPDATE_CHECK", "1")
     monkeypatch.delenv("SYNAPSE_QUALIFIED_PROFILE", raising=False)
     with pytest.raises(SystemExit):
@@ -56,10 +67,9 @@ def test_version_entry_prints_commit_profile_and_unreleased_mark(
     ).stdout.strip()
     assert f"source commit: {commit}" in text
     assert "declared profile: loopback (package default)" in text
-    released, unreleased = changelog_release((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
-    assert unreleased
-    assert f"published release {released}" in text
-    assert DEVELOPMENT_MARK in text
+    released, unreleased = _checkout_is_unreleased()
+    assert (f"published release {released}" in text) is unreleased
+    assert (DEVELOPMENT_MARK in text) is unreleased
     assert "wheel digest:" in text
 
 
@@ -141,13 +151,12 @@ def test_the_changelog_is_the_only_release_source() -> None:
     """Publishing moves the dated heading; the mark follows that heading."""
     released = published_release()
     assert released is not None
-    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert changelog_release(text)[0] == released
-    mark = development_mark_lines()
-    assert mark == (
+    assert _checkout_is_unreleased()[0] == released
+    development = (
         f"this build is newer than the published release {released}; "
         f"see CHANGELOG [Unreleased]; {DEVELOPMENT_MARK}",
     )
+    assert development_mark_lines() == (development if _checkout_is_unreleased()[1] else ())
     quiet = "## [Unreleased]\n\n## [1.2.3] - 2026-01-01\n\n- shipped\n"
     assert changelog_release(quiet) == ("1.2.3", False)
     assert development_mark_lines("1.2.3", changelog=quiet) == ()
@@ -252,18 +261,18 @@ def test_agent_card_omits_marks_when_the_build_is_the_release(
 
 
 def test_public_a2a_card_keeps_marks_and_omits_build_secrets() -> None:
-    """The unauthenticated card shows the mark and not the commit, wheel or profile."""
+    """The unauthenticated card mirrors the mark and omits the commit, wheel or profile."""
     card = agent_card_from_manifest([], endpoint_url="http://127.0.0.1:9/a2a")
-    marks = card["developmentMarks"]
-    assert isinstance(marks, list)
-    assert any(DEVELOPMENT_MARK in str(mark) for mark in marks)
+    marks = list(development_mark_lines())
+    assert card.get("developmentMarks", []) == marks
+    assert bool(marks) is _checkout_is_unreleased()[1]
     assert "source_commit" not in card
     assert "wheel_digest" not in card
     assert "qualified_profile" not in card
     assert "declared_profile" not in card
     assert "profile_source" not in card
     assert "build" not in card
-    assert DEVELOPMENT_MARK in mcp_instructions()
+    assert (DEVELOPMENT_MARK in mcp_instructions()) is bool(marks)
     assert "declared profile:" in mcp_instructions()
     assert source_commit(ROOT / "missing-root") == "unknown"
 
