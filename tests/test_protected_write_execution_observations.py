@@ -30,6 +30,10 @@ from synapse_channel.core.protected_write_lifecycle import ProtectedWriteReserva
 from synapse_channel.core.protected_write_preparation import PreparedProtectedWrite
 from test_protected_write_execution_journal import completed_execution as completed_execution
 
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux", reason="real Linux openat2 final-state observations"
+)
+
 Execution = tuple[
     PreparedProtectedWrite, ProtectedWriteReservation, EventStore, tuple[StoredOperation, ...]
 ]

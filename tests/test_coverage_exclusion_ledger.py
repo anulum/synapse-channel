@@ -187,6 +187,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_protected_write_driver.py": (1, "platform-guard"),
     "tests/test_pane_wake.py": (1, "optional-dep-guard"),
     "tests/test_protected_write_execution_journal.py": (1, "platform-guard"),
+    "tests/test_protected_write_execution_observations.py": (1, "platform-guard"),
     "tests/test_protected_write_execution_steps.py": (1, "platform-guard"),
     "tests/test_protected_write_inspection.py": (1, "platform-guard"),
     "tests/test_protected_write_preparation.py": (1, "platform-guard"),

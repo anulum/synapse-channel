@@ -35,6 +35,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import sys
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -226,7 +227,9 @@ def test_execution_consumption_refuses_changed_writer(tmp_path: Path, field: str
         authority.close()
 
 
-pytestmark = pytest.mark.skipif(os.name != "posix", reason="real prepared descriptor fixtures")
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux", reason="real prepared Linux openat2 descriptor fixtures"
+)
 
 
 def test_two_service_connections_consume_one_begin_once_and_reopen(tmp_path: Path) -> None:
