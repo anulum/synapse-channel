@@ -20,6 +20,13 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Measure verified completion separately from reported completion.
+  `benchmarks/verified_completion_benchmark.py` runs real
+  `synapse worker-session` tasks whose worker writes the requested file,
+  writes other bytes, writes nothing, or crashes after writing. It counts
+  the state the outcome file reports against what `synapse verify-result
+  file` finds. It does not measure network faults, restarts, duplicate
+  delivery or withdrawn authority.
 - Make the pre-commit hooks mandatory. The `commit-msg` hook runs only after
   every `pre-commit` hook has passed. It now stamps
   `Hooks-Verified: pre-commit sha256:<digest of the staged hook configuration>`

@@ -1,0 +1,46 @@
+{
+  "absent": {
+    "confirmed_done": 4,
+    "not_verified": 4,
+    "tasks": 4,
+    "unknown": 0,
+    "verified": 0
+  },
+  "baseline": {
+    "confirmed_done": 4,
+    "not_verified": 0,
+    "tasks": 4,
+    "unknown": 0,
+    "verified": 4
+  },
+  "crash_after_effect": {
+    "confirmed_done": 0,
+    "not_verified": 0,
+    "tasks": 4,
+    "unknown": 4,
+    "verified": 4
+  },
+  "host": {
+    "cpu": "x86_64",
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "not_measured": [
+    "network faults",
+    "restart",
+    "duplicate delivery",
+    "withdrawn authority",
+    "GPT6-C9"
+  ],
+  "schema": "synapse.verified-completion-benchmark.v2",
+  "seconds": 7.8267746162600815,
+  "sidecar": "off",
+  "tasks_per_cohort": 4,
+  "wrong_content": {
+    "confirmed_done": 4,
+    "not_verified": 4,
+    "tasks": 4,
+    "unknown": 0,
+    "verified": 0
+  }
+}

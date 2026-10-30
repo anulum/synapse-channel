@@ -230,3 +230,16 @@ before/after record is under
 `results/sustained_write_benchmark.json` →
 `storage_comparison.authenticated_write_probe`. It measures partial MAC-index
 maintenance on shared CPU/storage, without reading any enrolled operator key.
+
+## `verified_completion_benchmark.py`
+
+Runs real `worker-session` tasks and reads `verify-result file`. The worker
+performs the fault. `confirmed_done` and `unknown` come from the outcome file.
+The baseline matches. Wrong content and a missing file are reported done and
+are not verified. A crash after the write leaves the outcome unknown while the
+file still verifies. `--no-arm` keeps the hub sidecar out of the run. This does
+not measure network faults, restart, duplicate delivery, or withdrawn
+authority, and it is not GPT6-C9. Python only. Run
+`PYTHONPATH=src python benchmarks/verified_completion_benchmark.py`. The record
+is `results/verified_completion_benchmark.json`. Host timings live only in that
+file.

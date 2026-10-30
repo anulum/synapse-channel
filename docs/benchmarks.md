@@ -398,3 +398,20 @@ one shared-host pair does not isolate the cause or establish a performance
 guarantee. The overhead is retained rather than presented as a speedup. The
 pane workload uses a harmless composer, not a vendor client or model turn;
 these measurements do not qualify Windows, JS/Go clients or third-party A2A.
+
+## Verified completion under faults
+
+`verified_completion_benchmark.py` runs each task through `synapse worker-session`
+(`--no-arm`, `--outcome-file`) and counts `verified` from `synapse verify-result file`.
+The worker, not the counter, writes the file or skips it. `confirmed_done` and
+`unknown` are read from the outcome report. The baseline writes the requested
+bytes and exits 0. `wrong_content` writes other bytes and exits 0.
+`absent` exits 0 without the file. `crash_after_effect` writes the bytes and
+kills the session, so the report stays unknown while the file still verifies.
+The wake sidecar is off because arming needs a hub; this run does not measure
+it. It also does not measure network faults, restart, duplicate delivery, or
+withdrawn authority, and it is not GPT6-C9. Python only: there is no JS or Go
+implementation. Reproduce with
+`PYTHONPATH=src python benchmarks/verified_completion_benchmark.py`. Counts and
+the host timing are in `benchmarks/results/verified_completion_benchmark.json`.
+The timing is one shared-host run, not an isolated performance guarantee.
