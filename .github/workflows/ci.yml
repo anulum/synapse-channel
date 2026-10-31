@@ -118,6 +118,9 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    # Shards finish in 10-20 minutes; a hung test fails the job within the
+    # hour instead of holding the runner for the six-hour platform default.
+    timeout-minutes: 60
     needs: [test-timings]
     strategy:
       fail-fast: false
