@@ -20,6 +20,7 @@ from types import ModuleType
 import pytest
 from tools.mcp_registry_release import (
     OWNERSHIP_MARKER,
+    REGISTRY_MAX_PAGES,
     REGISTRY_NAME,
     ReleaseContractError,
     VerificationUnavailable,
@@ -364,6 +365,110 @@ def test_registry_response_without_a_server_list_fails_closed(tmp_path: Path) ->
         )
 
     assert result.errors == ("official registry has no exact-version server record",)
+
+
+_SEARCH = "/v0.1/servers?search=io.github.anulum%2Fsynapse-channel"
+
+
+def _page(servers: object, cursor: object | None = None) -> bytes:
+    metadata: dict[str, object] = {"count": len(servers) if isinstance(servers, list) else 0}
+    if cursor is not None:
+        metadata["nextCursor"] = cursor
+    return _json_payload({"servers": servers, "metadata": metadata})
+
+
+def _servers(registry: object) -> object:
+    assert isinstance(registry, dict)
+    return registry["servers"]
+
+
+def test_registry_phase_follows_the_cursor_to_a_record_beyond_the_first_page(
+    tmp_path: Path,
+) -> None:
+    # The live registry returns 30 records per page; release 31 sits on page two.
+    _write_contract(tmp_path)
+    contract = load_contract(tmp_path)
+    routes = _routes()
+    cursor = f"{REGISTRY_NAME}:0.99.6"
+    routes[_SEARCH] = (200, _page(_servers(_registry(version="0.99.6")), cursor))
+    routes[f"{_SEARCH}&cursor=io.github.anulum%2Fsynapse-channel%3A0.99.6"] = (
+        200,
+        _page(_servers(_registry())),
+    )
+    with _serve(routes) as base:
+        result = verify_distribution(
+            contract,
+            phase="registry",
+            pypi_api_base=f"{base}/pypi",
+            registry_api=f"{base}/v0.1/servers",
+        )
+
+    assert result.ok is True
+    assert result.registry_status == "active"
+    assert result.registry_url.endswith(_SEARCH)
+
+
+def test_registry_phase_reports_absence_only_after_the_last_page(tmp_path: Path) -> None:
+    _write_contract(tmp_path)
+    contract = load_contract(tmp_path)
+    routes = _routes()
+    routes[_SEARCH] = (200, _page(_servers(_registry(version="0.99.5")), "page-2"))
+    routes[f"{_SEARCH}&cursor=page-2"] = (200, _page(_servers(_registry(version="0.99.6"))))
+    with _serve(routes) as base:
+        result = verify_distribution(
+            contract,
+            phase="registry",
+            pypi_api_base=f"{base}/pypi",
+            registry_api=f"{base}/v0.1/servers",
+        )
+
+    assert result.errors == ("official registry has no exact-version server record",)
+
+
+@pytest.mark.parametrize(
+    ("second_page", "message"),
+    (
+        (_page([], "page-2"), "repeated cursor"),
+        (_page([], 7), "invalid registry page cursor"),
+        (_page([], ""), "invalid registry page cursor"),
+    ),
+)
+def test_registry_pagination_faults_are_unavailable_evidence(
+    tmp_path: Path, second_page: bytes, message: str
+) -> None:
+    _write_contract(tmp_path)
+    contract = load_contract(tmp_path)
+    routes = _routes()
+    routes[_SEARCH] = (200, _page([], "page-2"))
+    routes[f"{_SEARCH}&cursor=page-2"] = (200, second_page)
+    with _serve(routes) as base:
+        with pytest.raises(VerificationUnavailable, match=message):
+            verify_distribution(
+                contract,
+                phase="registry",
+                pypi_api_base=f"{base}/pypi",
+                registry_api=f"{base}/v0.1/servers",
+            )
+
+
+def test_registry_search_stops_at_the_page_bound(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_contract(tmp_path)
+    routes = _routes()
+    routes[_SEARCH] = (200, _page([], "c0"))
+    for index in range(REGISTRY_MAX_PAGES):
+        routes[f"{_SEARCH}&cursor=c{index}"] = (200, _page([], f"c{index + 1}"))
+    with _serve(routes) as base:
+        code = main(
+            ["--phase", "registry"],
+            root=tmp_path,
+            pypi_api_base=f"{base}/pypi",
+            registry_api=f"{base}/v0.1/servers",
+        )
+
+    assert code == 2
+    assert f"exceeded {REGISTRY_MAX_PAGES} result pages" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

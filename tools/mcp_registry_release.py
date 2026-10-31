@@ -33,6 +33,9 @@ PYPI_PACKAGE = "synapse-channel"
 OWNERSHIP_MARKER = f"mcp-name: {REGISTRY_NAME}"
 OFFICIAL_PYPI_API = "https://pypi.org/pypi"
 OFFICIAL_REGISTRY_API = "https://registry.modelcontextprotocol.io/v0.1/servers"
+# The registry pages search results (30 per page today); a long version history
+# moves the newest record off the first page, so the search follows the cursor.
+REGISTRY_MAX_PAGES = 100
 
 Phase = Literal["package", "registry"]
 JsonFetcher = Callable[[str, float], Mapping[str, object]]
@@ -219,10 +222,68 @@ def _pypi_url(base: str, contract: ReleaseContract) -> str:
     return f"{base.rstrip('/')}/{package}/{version}/json"
 
 
-def _registry_url(endpoint: str, contract: ReleaseContract) -> str:
+def _registry_url(endpoint: str, contract: ReleaseContract, cursor: str | None = None) -> str:
     """Return the official registry search endpoint for the exact server name."""
     separator = "&" if "?" in endpoint else "?"
-    return f"{endpoint}{separator}{urlencode({'search': contract.name})}"
+    query = {"search": contract.name}
+    if cursor is not None:
+        query["cursor"] = cursor
+    return f"{endpoint}{separator}{urlencode(query)}"
+
+
+def _exact_registry_entry(
+    payload: Mapping[str, object], contract: ReleaseContract
+) -> Mapping[str, object] | None:
+    """Return the record on one search page whose name and version both match."""
+    servers = payload.get("servers")
+    if not isinstance(servers, list):
+        return None
+    for value in servers:
+        entry = _mapping(value)
+        server = _mapping(entry.get("server")) if entry is not None else None
+        if (
+            server is not None
+            and server.get("name") == contract.name
+            and server.get("version") == contract.version
+        ):
+            return entry
+    return None
+
+
+def _next_registry_cursor(payload: Mapping[str, object], url: str) -> str | None:
+    """Return the opaque next-page cursor, or None on the last page."""
+    metadata = _mapping(payload.get("metadata"))
+    cursor = metadata.get("nextCursor") if metadata is not None else None
+    if cursor is None:
+        return None
+    if not isinstance(cursor, str) or not cursor:
+        raise VerificationUnavailable(f"invalid registry page cursor from {url}")
+    return cursor
+
+
+def _find_registry_entry(
+    contract: ReleaseContract,
+    *,
+    endpoint: str,
+    timeout: float,
+    fetcher: JsonFetcher,
+) -> Mapping[str, object] | None:
+    """Search every result page for the exact record; fail loudly on a cursor loop."""
+    cursor: str | None = None
+    seen: set[str] = set()
+    for _page in range(REGISTRY_MAX_PAGES):
+        url = _registry_url(endpoint, contract, cursor)
+        payload = fetcher(url, timeout)
+        exact = _exact_registry_entry(payload, contract)
+        if exact is not None:
+            return exact
+        cursor = _next_registry_cursor(payload, url)
+        if cursor is None:
+            return None
+        if cursor in seen:
+            raise VerificationUnavailable(f"registry pagination repeated cursor {cursor!r}")
+        seen.add(cursor)
+    raise VerificationUnavailable(f"registry search exceeded {REGISTRY_MAX_PAGES} result pages")
 
 
 def _verify_pypi(
@@ -273,20 +334,7 @@ def _verify_registry(
 ) -> tuple[str, str | None, bool | None, str | None, list[str]]:
     """Return official-registry evidence and exact immutable-record mismatches."""
     url = _registry_url(endpoint, contract)
-    payload = fetcher(url, timeout)
-    servers = payload.get("servers")
-    exact: Mapping[str, object] | None = None
-    if isinstance(servers, list):
-        for value in servers:
-            entry = _mapping(value)
-            server = _mapping(entry.get("server")) if entry is not None else None
-            if (
-                server is not None
-                and server.get("name") == contract.name
-                and server.get("version") == contract.version
-            ):
-                exact = entry
-                break
+    exact = _find_registry_entry(contract, endpoint=endpoint, timeout=timeout, fetcher=fetcher)
     if exact is None:
         return url, None, None, None, ["official registry has no exact-version server record"]
 

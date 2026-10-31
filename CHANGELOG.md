@@ -18,6 +18,16 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Fixed
+
+- `tools/verify_mcp_registry_release.py` now follows the registry's result
+  cursor. The official registry returns 30 records per search page, so the
+  31st published version (0.99.41) sat on page two and the post-publish
+  check reported "no exact-version server record" although the record was
+  active and latest. The search reads at most 100 pages; a repeated or
+  malformed cursor, or the page bound, is reported as unavailable evidence
+  (exit 2), not as an absent record.
+
 ## [0.99.41] - 2026-10-31
 
 ### Added
