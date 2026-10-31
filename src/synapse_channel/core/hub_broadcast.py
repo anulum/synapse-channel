@@ -67,6 +67,18 @@ class HubBroadcaster:
         """Serialise and send one message to a single socket."""
         await self._sender.send(websocket, json.dumps(data))
 
+    async def send_json_many(self, websocket: Any, frames: list[dict[str, Any]]) -> None:
+        """Send a replay backlog, holding live frames to this socket until it ends.
+
+        Parameters
+        ----------
+        websocket : Any
+            Socket that receives the backlog.
+        frames : list of dict
+            Replay frames in journal order.
+        """
+        await self._sender.send_backlog(websocket, [json.dumps(frame) for frame in frames])
+
     async def broadcast(self, data: dict[str, Any]) -> frozenset[str]:
         """Mirror and fan out one frame, returning successful bound socket names.
 

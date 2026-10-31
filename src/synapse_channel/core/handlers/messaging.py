@@ -759,6 +759,7 @@ async def _replay_directed_backlog(
     events = hub.journal.read_since(
         since_seq, kinds=(EventKind.CHAT,), limit=MAILBOX_REPLAY_READ_CAP
     )
+    frames: list[dict[str, Any]] = []
     for event in events:
         payload = event.payload
         target = str(payload.get("target") or "all")
@@ -770,6 +771,17 @@ async def _replay_directed_backlog(
         frame.pop("receipt_requested", None)
         frame["replayed"] = True
         frame["seq"] = event.seq
+        frames.append(frame)
+    if not frames:
+        return
+    # One backlog write holds live frames for this socket until the older
+    # sequences are written, so a live frame cannot land between them.
+    broadcaster = getattr(hub, "_broadcaster", None)
+    send_many = getattr(broadcaster, "send_json_many", None)
+    if send_many is not None:
+        await send_many(websocket, frames)
+        return
+    for frame in frames:
         await hub.send_json(websocket, frame)
 
 
