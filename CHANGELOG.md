@@ -32,6 +32,17 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- Directed messages reach a reconnecting agent in journal order. While the
+  hub replayed an agent's mailbox backlog, a concurrent live message to the
+  same connection could be written between backlog frames (for example
+  1, 4, 2, 3). The client's cursor and acknowledgement advance to the
+  highest sequence seen, so a disconnect in the middle of such a replay
+  could skip the rest of the backlog. Live frames for that connection now
+  wait until the replay finishes. A replay that is cancelled releases the
+  wait, a live frame whose sender has gone is not written, and only a
+  write that makes no progress within the drain deadline closes the
+  connection with 1013; frames still waiting then fail instead of being
+  written out of order. Releases up to 0.99.41 are affected.
 - `tools/verify_mcp_registry_release.py` now follows the registry's result
   cursor. The official registry returns 30 records per search page, so the
   31st published version (0.99.41) sat on page two and the post-publish
