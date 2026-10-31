@@ -65,7 +65,10 @@ async def test_registration_refuses_missing_or_mismatched_binding_then_rebinds(
         )
         async with claim_proxy(proxy) as uri:
             agent = SynapseAgent("binding/owner", uri=uri, verbose=False)
-            listener = await register_owner(agent, 0.3)
+            # The refusal arrives with the damaged snapshot, so a full budget
+            # costs nothing; a short one let a slow runner time out before the
+            # state request was even sent.
+            listener = await register_owner(agent, 2)
             assert listener is None and not agent.running
             assert proxy.requests.count("state_request") == 1
             assert "claim" not in proxy.requests and "release" not in proxy.requests
