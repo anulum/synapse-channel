@@ -71,6 +71,8 @@ A2A HTTP 인터페이스의 부분 검증 범위는 별도로 문서화되어 �
 python -m pip install synapse-channel && synapse demo
 ```
 
+`synapse demo --recovery`를 실행하면 실제 로컬 허브가 약 40초 동안 다음을 보여 줍니다. 겹치는 파일 claim과 소유자가 아닌 handoff는 거부되고, 변경 도중 중단된 에이전트의 lease는 만료될 때까지 유지되며, 두 번째 에이전트가 새 epoch로 가져가고, 다시 시작한 이전 소유자의 release는 거부되며, 결과 검증은 절반만 쓰인 파일을 잡아내고, 완성된 변경은 자체 테스트로 검증됩니다. 모델은 호출되지 않으며 실행 결과는 `recovery-demo.json`에 기록됩니다.
+
 <p align="center">
   <a href="https://pypi.org/project/synapse-channel/"><strong>Python 패키지 받기</strong></a>
   &nbsp;·&nbsp;

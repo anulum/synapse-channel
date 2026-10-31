@@ -18,6 +18,17 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- `synapse demo --recovery` runs one reproducible story on a real local hub:
+  a refused overlapping claim, a refused hand-off to a non-owner, an agent
+  that crashes mid-change, a lease that holds while it is live, a reclaim
+  under a new epoch, a refused release by the restarted old owner, result
+  verification that catches the half-written file, and a finished change
+  verified by its own test before release. It takes about 40 seconds
+  because the hub's minimum lease is 30 seconds, and writes
+  `recovery-demo.json`. The README now opens with it.
+
 ## [0.99.40] - 2026-10-30
 
 ### Added

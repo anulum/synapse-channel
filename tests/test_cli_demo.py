@@ -18,6 +18,7 @@ import pytest
 from synapse_channel import cli_demo
 from synapse_channel.demo import run_installed_demo
 from synapse_channel.demo_artifacts import DemoArtifacts
+from synapse_channel.demo_recovery import run_installed_recovery_demo
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,7 @@ class TestCmdDemo:
             )
 
         code = cli_demo._cmd_demo(
-            argparse.Namespace(output=tmp_path),
+            argparse.Namespace(output=tmp_path, recovery=False),
             demo_runner=_runner,
         )
         out = capsys.readouterr().out
@@ -64,11 +65,36 @@ class TestCmdDemo:
             raise RuntimeError("demo failed")
 
         with pytest.raises(RuntimeError, match="demo failed"):
-            cli_demo._cmd_demo(argparse.Namespace(output=None), demo_runner=_boom)
+            cli_demo._cmd_demo(argparse.Namespace(output=None, recovery=False), demo_runner=_boom)
 
     def test_default_runner_is_the_installed_demo(self) -> None:
-        default = inspect.signature(cli_demo._cmd_demo).parameters["demo_runner"].default
-        assert default is run_installed_demo
+        parameters = inspect.signature(cli_demo._cmd_demo).parameters
+        assert parameters["demo_runner"].default is run_installed_demo
+        assert parameters["recovery_runner"].default is run_installed_recovery_demo
+
+    def test_recovery_flag_runs_the_recovery_demo_only(
+        self, capsys: pytest.CaptureFixture[str], tmp_path: Path
+    ) -> None:
+        calls: list[Path | None] = []
+
+        def _recovery(output: Path | None) -> Path:
+            calls.append(output)
+            return tmp_path / "recovery-demo.json"
+
+        def _golden(output: Path | None) -> _FakeRun:
+            raise AssertionError("the golden demo must not run with --recovery")
+
+        code = cli_demo._cmd_demo(
+            argparse.Namespace(output=tmp_path, recovery=True),
+            demo_runner=_golden,
+            recovery_runner=_recovery,
+        )
+        out = capsys.readouterr().out
+        assert code == 0
+        assert calls == [tmp_path]
+        assert "=== SYNAPSE CHANNEL — conflict, crash and recovery demo ===" in out
+        assert f"evidence: {tmp_path / 'recovery-demo.json'}" in out
+        assert "success: recovery demo completed" in out
 
 
 class TestAddParsers:
@@ -81,3 +107,5 @@ class TestAddParsers:
         args = parser.parse_args(["demo", "--output", str(tmp_path)])
         assert args.func is cli_demo._cmd_demo
         assert args.output == tmp_path
+        assert args.recovery is False
+        assert parser.parse_args(["demo", "--recovery"]).recovery is True

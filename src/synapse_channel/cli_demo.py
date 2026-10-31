@@ -16,6 +16,7 @@ from typing import Protocol, cast
 
 from synapse_channel.demo import run_installed_demo
 from synapse_channel.demo_artifacts import DemoArtifacts
+from synapse_channel.demo_recovery import run_installed_recovery_demo
 
 
 class DemoRun(Protocol):
@@ -37,11 +38,15 @@ DemoRunner = Callable[[Path | None], DemoRun]
 
 _DEFAULT_DEMO_RUNNER = cast(DemoRunner, run_installed_demo)
 
+RecoveryRunner = Callable[[Path | None], Path]
+"""Callable that runs the crash-and-recovery demo and returns its evidence path."""
+
 
 def _cmd_demo(
     args: argparse.Namespace,
     *,
     demo_runner: DemoRunner = _DEFAULT_DEMO_RUNNER,
+    recovery_runner: RecoveryRunner = run_installed_recovery_demo,
 ) -> int:
     """Run the installed first-run demo and print a concrete success marker.
 
@@ -51,6 +56,8 @@ def _cmd_demo(
         Parsed CLI arguments containing the optional artifact output directory.
     demo_runner : DemoRunner, optional
         Injectable demo runner used by tests.
+    recovery_runner : RecoveryRunner, optional
+        Runner of the crash-and-recovery demo selected by --recovery.
 
     Returns
     -------
@@ -58,6 +65,12 @@ def _cmd_demo(
         Always ``0`` when the demo completes; exceptions from the runner are
         allowed to propagate so failures are visible.
     """
+    if args.recovery:
+        print("=== SYNAPSE CHANNEL — conflict, crash and recovery demo ===")
+        evidence = recovery_runner(args.output)
+        print(f"evidence: {evidence}")
+        print("success: recovery demo completed")
+        return 0
     print("=== SYNAPSE CHANNEL — five-minute golden demo ===")
     run = demo_runner(args.output)
     print(f"evidence: {run.artifacts.evidence_json}")
@@ -75,6 +88,17 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     demo.add_argument(
         "--output",
         type=Path,
-        help="Directory for golden-demo.json and golden-demo-dashboard.html.",
+        help=(
+            "Directory for golden-demo.json and golden-demo-dashboard.html, "
+            "or for recovery-demo.json with --recovery."
+        ),
+    )
+    demo.add_argument(
+        "--recovery",
+        action="store_true",
+        help=(
+            "Run the conflict, caught hand-off, crash and lease-recovery demo instead "
+            "(about 40 seconds; writes recovery-demo.json)."
+        ),
     )
     demo.set_defaults(func=_cmd_demo)

@@ -73,6 +73,8 @@ Pozri [MCP príručku](../mcp.md) a samostatne kvalifikovaný
 python -m pip install synapse-channel && synapse demo
 ```
 
+S `synapse demo --recovery` skutočný lokálny hub za približne 40 sekúnd ukáže, že prekrývajúci sa claim súboru aj odovzdanie od agenta, ktorý nie je vlastníkom, sú odmietnuté, že agent spadne uprostred zmeny a jeho lease drží až do vypršania, že druhý agent ho prevezme pod novým epochom, že release reštartovaného starého vlastníka je odmietnutý, že overenie výsledku zachytí napoly zapísaný súbor a že dokončenú zmenu potvrdí jej vlastný test. Nevolá sa žiadny model; beh zapíše `recovery-demo.json`.
+
 <p align="center">
   <a href="https://pypi.org/project/synapse-channel/"><strong>Získajte Python balík</strong></a>
   &nbsp;·&nbsp;

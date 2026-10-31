@@ -74,6 +74,8 @@ qualifié séparément.
 python -m pip install synapse-channel && synapse demo
 ```
 
+Avec `synapse demo --recovery`, un vrai hub local montre en une quarantaine de secondes qu'un claim de fichier chevauchant et une remise par un non-propriétaire sont refusés, qu'un agent s'arrête en plein changement et que son bail tient jusqu'à expiration, que le second agent le reprend sous une nouvelle époque, que la libération de l'ancien propriétaire redémarré est refusée, que la vérification du résultat détecte le fichier à moitié écrit et que le changement terminé est vérifié par son propre test. Aucun modèle n'est appelé ; l'exécution écrit `recovery-demo.json`.
+
 <p align="center">
   <a href="https://pypi.org/project/synapse-channel/"><strong>Obtenir le paquet Python</strong></a>
   &nbsp;·&nbsp;

@@ -64,6 +64,30 @@ one repository from receiving overlapping live authority. Documented provider
 hooks and the staged Git gate enforce that authority only on their covered
 mutation surfaces.
 
+### See it refuse, crash and recover
+
+```bash
+python -m pip install synapse-channel && synapse demo --recovery
+```
+
+Two scripted agents share one hub and one throwaway Git repository; no model
+or provider is called. In about 40 seconds the real hub shows that:
+
+1. the second agent's overlapping file claim is refused;
+2. its attempt to hand itself the first agent's task is refused;
+3. the first agent writes half of its change and crashes without releasing;
+4. while that lease is live, the second agent can neither claim nor write the file;
+5. when the lease runs out, the second agent claims the file under a new epoch,
+   and the restarted first agent's release is refused;
+6. result verification reports the half-written file as not done;
+7. the second agent finishes the change, its own test passes, and the hub
+   accepts the release.
+
+Each step prints what the hub or the verifier answered. The run writes
+`recovery-demo.json` with the package version, both lease epochs and both
+verification verdicts. `synapse demo` without the flag runs the shorter
+claim, conflict, handoff and receipt story.
+
 ### Watch the presentation
 
 [![SYNAPSE CHANNEL presentation video on YouTube](https://i.ytimg.com/vi/Dlyn7k0M_Xs/hqdefault.jpg)](https://www.youtube.com/watch?v=Dlyn7k0M_Xs)
@@ -1880,11 +1904,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.40 |
 | Public API exports | 70 |
-| Package modules | 841 |
-| Classes | 1222 |
+| Package modules | 842 |
+| Classes | 1225 |
 | Wire message types | 114 |
 | CLI subcommands | 274 |
-| Test functions | 12052 |
+| Test functions | 12056 |
 | Benchmark harnesses | 13 |
 | Documentation pages | 91 |
 | GitHub Actions workflows | 27 |

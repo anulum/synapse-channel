@@ -73,6 +73,8 @@ MCP リソースとして公開します。相互運用性はホストのバー�
 python -m pip install synapse-channel && synapse demo
 ```
 
+`synapse demo --recovery` を実行すると、実際のローカル hub が約 40 秒で次を示します。重なるファイル claim と所有者以外による handoff は拒否され、変更途中でクラッシュしたエージェントの lease は期限切れまで保持され、2 番目のエージェントが新しい epoch で取得し、再起動した旧所有者の release は拒否され、結果検証は書きかけのファイルを検出し、完成した変更は自身のテストで検証されます。モデルは呼び出されず、実行は `recovery-demo.json` を書き出します。
+
 <p align="center">
   <a href="https://pypi.org/project/synapse-channel/"><strong>Python パッケージを入手</strong></a>
   &nbsp;·&nbsp;

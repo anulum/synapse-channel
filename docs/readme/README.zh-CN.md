@@ -68,6 +68,8 @@ resources。互操作性取决于宿主版本、传输方式和配置；具体�
 python -m pip install synapse-channel && synapse demo
 ```
 
+运行 `synapse demo --recovery`，真实的本地 hub 会在约 40 秒内展示：重叠的文件 claim 和非所有者发起的 handoff 被拒绝；代理在修改中途崩溃，其 lease 在到期前一直有效；第二个代理以新的 epoch 认领；重启后的旧所有者的 release 被拒绝；结果验证发现写了一半的文件；完成的修改由其自身测试验证。不调用任何模型；运行会写出 `recovery-demo.json`。
+
 <p align="center">
   <a href="https://pypi.org/project/synapse-channel/"><strong>获取 Python 包</strong></a>
   &nbsp;·&nbsp;

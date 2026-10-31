@@ -75,6 +75,8 @@ optionalen Extras (`pip install 'synapse-channel[mcp]'`). Siehe den
 python -m pip install synapse-channel && synapse demo
 ```
 
+Mit `synapse demo --recovery` zeigt ein echter lokaler Hub in etwa 40 Sekunden: Eine überlappende Datei-Claim und eine fremde Übergabe werden abgelehnt, ein Agent stürzt mitten in einer Änderung ab, sein Lease hält, bis es abläuft, der zweite Agent übernimmt mit neuer Epoche, die Freigabe des neu gestarteten alten Besitzers wird abgelehnt, die Ergebnisprüfung erkennt die halb geschriebene Datei, und die fertige Änderung wird durch ihren eigenen Test bestätigt. Es wird kein Modell aufgerufen; der Lauf schreibt `recovery-demo.json`.
+
 <p align="center">
   <a href="https://pypi.org/project/synapse-channel/"><strong>Python-Paket holen</strong></a>
   &nbsp;·&nbsp;
