@@ -38,7 +38,9 @@ execution evidence when carrying a release claim forward.
   check reported "no exact-version server record" although the record was
   active and latest. The search reads at most 100 pages; a repeated or
   malformed cursor, or the page bound, is reported as unavailable evidence
-  (exit 2), not as an absent record.
+  (exit 2), not as an absent record. A page without a server list is also
+  unavailable evidence, and the reported `registry_url` names the page that
+  holds the record, or the last page read when none does.
 
 ## [0.99.41] - 2026-10-31
 

@@ -232,12 +232,12 @@ def _registry_url(endpoint: str, contract: ReleaseContract, cursor: str | None =
 
 
 def _exact_registry_entry(
-    payload: Mapping[str, object], contract: ReleaseContract
+    payload: Mapping[str, object], contract: ReleaseContract, url: str
 ) -> Mapping[str, object] | None:
     """Return the record on one search page whose name and version both match."""
     servers = payload.get("servers")
     if not isinstance(servers, list):
-        return None
+        raise VerificationUnavailable(f"registry page from {url} has no server list")
     for value in servers:
         entry = _mapping(value)
         server = _mapping(entry.get("server")) if entry is not None else None
@@ -267,19 +267,23 @@ def _find_registry_entry(
     endpoint: str,
     timeout: float,
     fetcher: JsonFetcher,
-) -> Mapping[str, object] | None:
-    """Search every result page for the exact record; fail loudly on a cursor loop."""
+) -> tuple[str, Mapping[str, object] | None]:
+    """Search every result page for the exact record; fail loudly on a cursor loop.
+
+    Returns the URL of the page that holds the record, or of the last page read
+    when no page holds it, together with the record or ``None``.
+    """
     cursor: str | None = None
     seen: set[str] = set()
     for _page in range(REGISTRY_MAX_PAGES):
         url = _registry_url(endpoint, contract, cursor)
         payload = fetcher(url, timeout)
-        exact = _exact_registry_entry(payload, contract)
+        exact = _exact_registry_entry(payload, contract, url)
         if exact is not None:
-            return exact
+            return url, exact
         cursor = _next_registry_cursor(payload, url)
         if cursor is None:
-            return None
+            return url, None
         if cursor in seen:
             raise VerificationUnavailable(f"registry pagination repeated cursor {cursor!r}")
         seen.add(cursor)
@@ -333,8 +337,7 @@ def _verify_registry(
     fetcher: JsonFetcher,
 ) -> tuple[str, str | None, bool | None, str | None, list[str]]:
     """Return official-registry evidence and exact immutable-record mismatches."""
-    url = _registry_url(endpoint, contract)
-    exact = _find_registry_entry(contract, endpoint=endpoint, timeout=timeout, fetcher=fetcher)
+    url, exact = _find_registry_entry(contract, endpoint=endpoint, timeout=timeout, fetcher=fetcher)
     if exact is None:
         return url, None, None, None, ["official registry has no exact-version server record"]
 

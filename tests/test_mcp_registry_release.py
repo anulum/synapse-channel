@@ -353,18 +353,21 @@ def test_registry_phase_refuses_to_infer_publication_from_an_older_record(tmp_pa
     assert result.errors == ("official registry has no exact-version server record",)
 
 
-def test_registry_response_without_a_server_list_fails_closed(tmp_path: Path) -> None:
+def test_registry_response_without_a_server_list_is_unavailable_evidence(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A malformed page proves nothing about the record, so it is not reported as absent.
     _write_contract(tmp_path)
-    contract = load_contract(tmp_path)
     with _serve(_routes(registry={"metadata": {"count": 0}})) as base:
-        result = verify_distribution(
-            contract,
-            phase="registry",
+        code = main(
+            ["--phase", "registry"],
+            root=tmp_path,
             pypi_api_base=f"{base}/pypi",
             registry_api=f"{base}/v0.1/servers",
         )
 
-    assert result.errors == ("official registry has no exact-version server record",)
+    assert code == 2
+    assert "has no server list" in capsys.readouterr().err
 
 
 _SEARCH = "/v0.1/servers?search=io.github.anulum%2Fsynapse-channel"
@@ -405,7 +408,9 @@ def test_registry_phase_follows_the_cursor_to_a_record_beyond_the_first_page(
 
     assert result.ok is True
     assert result.registry_status == "active"
-    assert result.registry_url.endswith(_SEARCH)
+    assert result.registry_url.endswith(
+        f"{_SEARCH}&cursor=io.github.anulum%2Fsynapse-channel%3A0.99.6"
+    )
 
 
 def test_registry_phase_reports_absence_only_after_the_last_page(tmp_path: Path) -> None:
@@ -423,6 +428,7 @@ def test_registry_phase_reports_absence_only_after_the_last_page(tmp_path: Path)
         )
 
     assert result.errors == ("official registry has no exact-version server record",)
+    assert result.registry_url.endswith(f"{_SEARCH}&cursor=page-2")
 
 
 @pytest.mark.parametrize(
