@@ -23,6 +23,31 @@ encode/decode time. Run `PYTHONPATH=src python benchmarks/coordination_wire_benc
 The committed result is `results/coordination_wire_benchmark.json`. It is a
 synthetic codec baseline, not a network or provider benchmark.
 
+## `causality_graph_benchmark.py`
+
+Measures `build_causal_graph` on a seeded synthetic claim/release log whose
+claims spread over 40 worktrees and mix legacy display scopes with canonical
+identities. Releases are filed by the worktree they can contend in, so a new
+claim is compared only with releases from that worktree. The baseline compares
+every new claim with every earlier release through the same exact predicate.
+The run fails unless both produce identical contention edges. Run
+`PYTHONPATH=src python benchmarks/causality_graph_benchmark.py --results benchmarks/results/causality_graph_benchmark.json`.
+
+The indexed figure is the whole graph build (lifecycle, dependency and
+contention edges); the baseline figure is the contention scan alone, so the
+comparison favours the baseline. Committed result, one wall-clock run per size
+(Python 3.12.3, x86_64, Intel Core i5-11600K):
+
+| Claims | Contention edges | Indexed graph build | Exhaustive contention scan |
+| --- | --- | --- | --- |
+| 1000 | 942 | 0.17 s | 1.21 s |
+| 4000 | 3942 | 0.34 s | 20.64 s |
+| 8000 | 7942 | 0.38 s | 84.47 s |
+
+The exhaustive scan grows with the product of claims and earlier releases; the
+indexed build grows with the releases per worktree. These figures qualify this
+fixture and host only.
+
 ## `relay_token_benchmark.py`
 
 Measures how much the lite relay encoding shrinks a channel feed for a

@@ -1,0 +1,35 @@
+{
+  "benchmark": "causality_graph",
+  "method": "seeded synthetic claim/release log; build_causal_graph with indexed contention edges versus an exhaustive scan through claim_scopes_conflict; single wall-clock run per size; edges must be identical",
+  "python": "3.12.3",
+  "machine": "x86_64",
+  "runs": [
+    {
+      "claims": 1000,
+      "worktrees": 40,
+      "seed": 7,
+      "events": 2000,
+      "contention_edges": 942,
+      "indexed_build_s": 0.1747,
+      "exhaustive_scan_s": 1.212
+    },
+    {
+      "claims": 4000,
+      "worktrees": 40,
+      "seed": 7,
+      "events": 8000,
+      "contention_edges": 3942,
+      "indexed_build_s": 0.3447,
+      "exhaustive_scan_s": 20.6374
+    },
+    {
+      "claims": 8000,
+      "worktrees": 40,
+      "seed": 7,
+      "events": 16000,
+      "contention_edges": 7942,
+      "indexed_build_s": 0.3763,
+      "exhaustive_scan_s": 84.4673
+    }
+  ]
+}

@@ -37,10 +37,10 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from synapse_channel.core.causality_release_index import ReleasedClaimIndex
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.path_identity import (
     ClaimScopeIdentity,
-    claim_scopes_conflict,
     parse_optional_claim_scope_identity,
 )
 from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -553,21 +553,23 @@ def _contention_edges(nodes: Sequence[CausalNode]) -> list[CausalEdge]:
     Walks events in order, tracking live claims and the claims that were just
     released. When a *fresh* claim (a task not currently held) acquires paths that
     overlap a recently released claim by another owner in the same worktree, the
-    release is recorded as the cause that let the claim proceed.
+    latest such release is recorded as the cause that let the claim proceed.
+    Releases are filed in a :class:`ReleasedClaimIndex`, so each claim is compared
+    only with releases from a worktree it can contend in.
     """
     edges: list[CausalEdge] = []
     live: dict[str, CausalNode] = {}
-    released: list[tuple[int, CausalNode]] = []
+    released = ReleasedClaimIndex()
     for node in nodes:
         if node.kind == EventKind.RELEASE:
             held = live.pop(node.task_id, None)
             if held is not None:
-                released.append((node.seq, held))
+                released.add(node.seq, held)
             continue
         if node.kind not in SNAPSHOT_KINDS:
             continue
         if node.task_id not in live:
-            blocker = _latest_overlapping_release(node, released)
+            blocker = released.latest_conflicting(node)
             if blocker is not None:
                 edges.append(
                     CausalEdge(
@@ -579,32 +581,6 @@ def _contention_edges(nodes: Sequence[CausalNode]) -> list[CausalEdge]:
                 )
         live[node.task_id] = node
     return edges
-
-
-def _latest_overlapping_release(
-    claim: CausalNode,
-    released: Sequence[tuple[int, CausalNode]],
-) -> int | None:
-    """Return the latest release sequence whose claim gated ``claim``.
-
-    ``released`` is built in event order, so its release sequences ascend; the last
-    overlapping entry is therefore the latest, and a running assignment suffices.
-    """
-    latest: int | None = None
-    for release_seq, freed in released:
-        if release_seq >= claim.seq or freed.owner == claim.owner:
-            continue
-        if not claim_scopes_conflict(
-            freed.worktree,
-            freed.paths,
-            freed.path_identity,
-            claim.worktree,
-            claim.paths,
-            claim.path_identity,
-        ):
-            continue
-        latest = release_seq
-    return latest
 
 
 def paths_overlap(left: Sequence[str], right: Sequence[str]) -> bool:

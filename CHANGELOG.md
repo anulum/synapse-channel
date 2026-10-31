@@ -39,6 +39,15 @@ execution evidence when carrying a release claim forward.
   excluded, are counted separately. Without the flag the output is
   unchanged.
 
+### Changed
+
+- Causality graphs file each released claim by the worktree it can contend
+  in, so a new claim is compared only with releases from that worktree instead
+  of every earlier release. The derived edges are unchanged. A graph over
+  54,363 recorded coordination events builds in about 42 s instead of not
+  finishing within 600 s. `benchmarks/causality_graph_benchmark.py` measures
+  the effect against an exhaustive scan and fails if their edges differ.
+
 ### Security
 
 - Move the development tooling off minimatch 10.2.6 (GHSA-g3hv-75wg-m249,
