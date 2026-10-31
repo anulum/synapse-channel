@@ -151,6 +151,54 @@ def _matches_waiter(
     )
 
 
+BURST_QUIET_SECONDS = 0.05
+"""Silence that ends a delivery burst: a frame arriving sooner joins the same wake."""
+
+BURST_LIMIT_SECONDS = 0.5
+"""Longest a wake waits for a burst to fall quiet before surfacing what it holds."""
+
+
+async def _settle_burst(
+    received: list[dict[str, Any]], connection: asyncio.Task[Any]
+) -> list[dict[str, Any]]:
+    """Let a delivery burst fall quiet, then snapshot it for one wake.
+
+    A replay or relayed burst can straddle a poll tick. Surfacing at the first
+    frame would then split the burst across wakes, and the persisted mailbox
+    cursor, which covers the highest surfaced sequence, could run ahead of a
+    lower frame of the same burst that the operator was not yet shown. The wake
+    therefore waits for :data:`BURST_QUIET_SECONDS` without a new frame, never
+    longer than :data:`BURST_LIMIT_SECONDS`, and stops at once if the
+    connection ends.
+
+    The cursor still relies on in-order delivery per connection, which the hub
+    provides; frames that have not arrived when the snapshot is taken are not
+    known here. The snapshot is taken before any later await, so a frame
+    arriving during the broadcast jitter sleep joins the next wake.
+
+    Parameters
+    ----------
+    received : list of dict
+        Frames collected so far, appended to by the connection callback.
+    connection : asyncio.Task
+        The waiter's connection task.
+
+    Returns
+    -------
+    list of dict
+        The frames to surface in this wake, in arrival order.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + BURST_LIMIT_SECONDS
+    collected = len(received)
+    while loop.time() < deadline and not connection.done():
+        await asyncio.sleep(BURST_QUIET_SECONDS)
+        if len(received) == collected:
+            break
+        collected = len(received)
+    return list(received)
+
+
 async def _wait(
     *,
     uri: str,
@@ -374,9 +422,7 @@ async def _wait(
                 await _refresh_registration()
             await asyncio.sleep(poll_interval)
         if received:
-            # Snapshot the burst BEFORE any await: a frame arriving during the
-            # jitter sleep joins the next wake, it is not half-consumed here.
-            to_surface = list(received)
+            to_surface = await _settle_burst(received, conn_task)
             target = str(to_surface[-1].get("target", "all")).strip()
             # A broadcast woke many terminals at the same instant; jitter the exit
             # so their agents do not all re-invoke (and hit the provider API)

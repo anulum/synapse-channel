@@ -1054,6 +1054,14 @@ rather than being replayed — and woken by — the whole retained backlog again
 off by default; a plain `arm` is unchanged, and against a hub older than wire version
 `2` the mailbox request is simply ignored.
 
+One wake surfaces a whole delivery burst. After the first matching message the
+waiter keeps collecting until 50 ms pass with no new message, for at most half a
+second, and stops at once if the connection ends. It then prints every collected
+message in arrival order. The cursor advances to the highest sequence it printed.
+The waiter cannot know about a message that has not arrived yet, so a message
+with a lower sequence that arrives later would fall behind the cursor. The hub
+delivers in sequence order on each connection, which keeps the cursor exact.
+
 ```bash
 synapse arm --name api-dev-rx --for api-dev --mailbox   # also wake on messages missed while offline
 ```

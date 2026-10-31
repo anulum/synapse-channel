@@ -50,6 +50,15 @@ execution evidence when carrying a release claim forward.
   finishing within 600 s. `benchmarks/causality_graph_benchmark.py` measures
   the effect against an exhaustive scan and fails if their edges differ.
 
+### Fixed
+
+- A waiter (`synapse wait`, `synapse arm`) surfaces a whole delivery burst in
+  one wake. It waits until 50 ms pass without a new message (at most half a
+  second) before printing, so a burst that straddled a poll tick is no longer
+  split. A split burst could move the mailbox cursor past a lower message of
+  the same burst. The cursor still relies on the hub's in-order delivery per
+  connection, which `docs/cli.md` now states.
+
 ### Security
 
 - Move the development tooling off minimatch 10.2.6 (GHSA-g3hv-75wg-m249,

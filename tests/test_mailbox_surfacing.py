@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from synapse_channel import cli_messaging_wait
 from synapse_channel.cli_arm import _arm
 from synapse_channel.cli_messaging_wait import _wait
 from synapse_channel.core.hub import SynapseHub
@@ -246,3 +247,145 @@ async def test_a_live_frame_the_filter_drops_does_not_advance_the_cursor(
 
     assert code == 2  # broadcast does not wake a directed-only waiter
     assert load_cursor(cursor) == 0, "an unsurfaced broadcast advanced the cursor"
+
+
+async def _online(hub: SynapseHub, name: str, waiter: asyncio.Task[int]) -> None:
+    """Wait until the real waiter registered, failing if it exits first."""
+    deadline = asyncio.get_running_loop().time() + 5
+    while name not in hub.online_agents():
+        assert not waiter.done(), "the waiter exited before registering"
+        assert asyncio.get_running_loop().time() < deadline
+        await asyncio.sleep(0.01)
+
+
+async def test_a_burst_straddling_a_poll_tick_surfaces_in_one_wake(
+    tmp_path: Path,
+    capsys: Any,
+    monkeypatch: Any,
+) -> None:
+    """A frame arriving inside the quiet window joins the wake of the first frame."""
+    monkeypatch.setattr(cli_messaging_wait, "BURST_QUIET_SECONDS", 0.3)
+    cursor = tmp_path / "cursor"
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+            waiter = asyncio.create_task(
+                _wait(
+                    uri=uri,
+                    name=f"{SEAT}-rx",
+                    for_name=SEAT,
+                    timeout=5.0,
+                    directed_only=True,
+                    mailbox=True,
+                    mailbox_cursor_path=cursor,
+                )
+            )
+            await _online(hub, f"{SEAT}-rx", waiter)
+            sender = await connect_agent("peer", uri)
+            try:
+                await sender.agent.chat("burst-one", target=SEAT)
+                await asyncio.sleep(0.15)
+                await sender.agent.chat("burst-two", target=SEAT)
+                code = await waiter
+            finally:
+                await close_agents(sender)
+            last_seq = max(event.seq for event in store.iter_events(kinds=frozenset({"chat"})))
+    finally:
+        store.close()
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert out.count("burst-one") == 1 and out.count("burst-two") == 1
+    assert load_cursor(cursor) == last_seq
+
+
+async def test_a_continuous_stream_is_surfaced_at_the_burst_limit(
+    tmp_path: Path,
+    capsys: Any,
+    monkeypatch: Any,
+) -> None:
+    """A stream that never falls quiet still wakes, covering only what it surfaced."""
+    monkeypatch.setattr(cli_messaging_wait, "BURST_QUIET_SECONDS", 0.05)
+    monkeypatch.setattr(cli_messaging_wait, "BURST_LIMIT_SECONDS", 0.3)
+    cursor = tmp_path / "cursor"
+    store = EventStore(tmp_path / "hub.db")
+    payloads = [f"stream-{index:02d}" for index in range(40)]
+    try:
+        async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+            waiter = asyncio.create_task(
+                _wait(
+                    uri=uri,
+                    name=f"{SEAT}-rx",
+                    for_name=SEAT,
+                    timeout=5.0,
+                    directed_only=True,
+                    mailbox=True,
+                    mailbox_cursor_path=cursor,
+                )
+            )
+            await _online(hub, f"{SEAT}-rx", waiter)
+            sender = await connect_agent("peer", uri)
+            try:
+                for payload in payloads:
+                    await sender.agent.chat(payload, target=SEAT)
+                    await asyncio.sleep(0.03)
+                code = await waiter
+            finally:
+                await close_agents(sender)
+            sequences = {
+                str(event.payload.get("payload")): event.seq
+                for event in store.iter_events(kinds=frozenset({"chat"}))
+            }
+    finally:
+        store.close()
+
+    out = capsys.readouterr().out
+    surfaced = [payload for payload in payloads if payload in out]
+    assert code == 0
+    assert surfaced and surfaced == payloads[: len(surfaced)]
+    assert payloads[-1] not in surfaced
+    assert load_cursor(cursor) == sequences[surfaced[-1]]
+
+
+async def test_a_closed_connection_ends_the_quiet_window_at_once(
+    tmp_path: Path,
+    capsys: Any,
+    monkeypatch: Any,
+) -> None:
+    """A burst still in progress when the hub goes away is surfaced, not awaited."""
+    monkeypatch.setattr(cli_messaging_wait, "BURST_QUIET_SECONDS", 0.4)
+    monkeypatch.setattr(cli_messaging_wait, "BURST_LIMIT_SECONDS", 30.0)
+    cursor = tmp_path / "cursor"
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+            waiter = asyncio.create_task(
+                _wait(
+                    uri=uri,
+                    name=f"{SEAT}-rx",
+                    for_name=SEAT,
+                    timeout=5.0,
+                    directed_only=True,
+                    mailbox=True,
+                    mailbox_cursor_path=cursor,
+                )
+            )
+            await _online(hub, f"{SEAT}-rx", waiter)
+            sender = await connect_agent("peer", uri)
+            try:
+                await sender.agent.chat("before-close-one", target=SEAT)
+                await asyncio.sleep(0.15)
+                await sender.agent.chat("before-close-two", target=SEAT)
+                await asyncio.sleep(0.05)
+            finally:
+                await close_agents(sender)
+        started = asyncio.get_running_loop().time()
+        code = await asyncio.wait_for(waiter, timeout=5)
+        elapsed = asyncio.get_running_loop().time() - started
+    finally:
+        store.close()
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "before-close-one" in out and "before-close-two" in out
+    assert elapsed < 5
