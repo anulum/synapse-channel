@@ -57,19 +57,21 @@ class OutboundSender:
                 transport.abort()
 
     async def send(self, websocket: Any, raw: str) -> None:
-        """Write one frame or close a stalled peer with code 1013.
+        """Write one frame, or wait until a replay on this socket writes it.
 
-        A write timeout first attempts a bounded close, then aborts the transport
-        and drains the write task. Caller cancellation also aborts an unfinished
-        write; no send task can outlive this call. Transport errors propagate to
-        callers, which must not count them as successful delivery.
+        A direct write that does not drain within ``send_timeout`` closes the
+        socket with 1013, then aborts the transport and drains the write task.
+        A frame queued behind a replay has no second deadline: the replay's
+        own writes are bounded one at a time, and a missed write fails this
+        frame. Caller cancellation aborts an unfinished direct write. Transport
+        errors propagate to callers, which must not count them as delivery.
         """
         hold = self._replay_holds.get(websocket)
         if hold is not None:
             future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
             hold.append((raw, future))
             try:
-                await self._await_held(websocket, future)
+                await self._await_held(future)
             finally:
                 if not future.done():
                     future.cancel()
@@ -93,7 +95,10 @@ class OutboundSender:
         Raises
         ------
         TimeoutError
-            If one backlog write or one held live frame does not drain in time.
+            If one backlog write does not drain within ``send_timeout``. The
+            head-of-line delay follows replay progress, one bounded write at a
+            time, not one deadline for the whole backlog. Frames still waiting
+            are failed and are not written.
         """
         if not raws:
             return
@@ -126,7 +131,7 @@ class OutboundSender:
             futures.append(future)
         try:
             for future in futures:
-                await self._await_held(websocket, future)
+                await self._await_held(future)
         finally:
             for future in futures:
                 if not future.done():
@@ -144,22 +149,31 @@ class OutboundSender:
                 continue
             try:
                 await self._write(websocket, raw)
-            except Exception as exc:
-                if not future.done():
-                    future.set_exception(exc)
+            except BaseException as exc:
+                self._fail_inflight(future, exc)
                 raise
             if not future.done():
                 future.set_result(None)
 
-    async def _await_held(self, websocket: Any, future: asyncio.Future[None]) -> None:
-        """Wait for one held frame, and close a socket that stays blocked."""
-        try:
-            await asyncio.wait_for(asyncio.shield(future), timeout=self.send_timeout)
-        except TimeoutError:
-            if not future.done():
-                future.cancel()
-            await self._close_stalled(websocket)
-            raise TimeoutError("outbound delivery timeout") from None
+    async def _await_held(self, future: asyncio.Future[None]) -> None:
+        """Wait until replay writes this frame or fails it.
+
+        A healthy backlog may take longer than ``send_timeout`` in total. Each
+        of its writes still has to finish within that deadline. A write with no
+        progress closes the socket with 1013 and fails frames that are waiting.
+        """
+        await future
+
+    def _fail_inflight(self, future: asyncio.Future[None], exc: BaseException) -> None:
+        """Fail one popped frame when its write does not finish."""
+        if future.done():
+            return
+        if isinstance(exc, Exception):
+            future.set_exception(exc)
+            return
+        future.set_exception(
+            ConnectionError("mailbox replay stopped before this frame was written")
+        )
 
     def _fail_held(self, held: list[tuple[str, asyncio.Future[None]]]) -> None:
         """Fail every live frame still waiting after the backlog stops."""
@@ -168,15 +182,6 @@ class OutboundSender:
             if not future.done():
                 future.set_exception(reason)
         held.clear()
-
-    async def _close_stalled(self, websocket: Any) -> None:
-        """Close one stalled socket with code 1013, then abort it."""
-        with suppress(Exception):
-            await asyncio.wait_for(
-                websocket.close(code=1013, reason="outbound delivery timeout"),
-                timeout=self.close_timeout,
-            )
-        self._abort(websocket)
 
     async def _write(self, websocket: Any, raw: str) -> None:
         """Write one frame or close a stalled peer with code 1013."""

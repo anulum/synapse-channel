@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -23,6 +24,15 @@ from synapse_channel.core.outbound_send import OutboundSender
 from synapse_channel.core.persistence import EventStore
 
 _SEAT = "ORDER/seat"
+
+
+async def _wait_until(ready: Callable[[], bool]) -> None:
+    """Poll until ``ready`` returns true, so a cancel hits a queued frame."""
+    for _ in range(50):
+        if ready():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("the frame was not queued")
 
 
 class _Socket:
@@ -184,10 +194,12 @@ async def test_cancelled_live_frame_is_not_written() -> None:
     backlog = asyncio.create_task(sender.send_backlog(socket, ["a"]))
     await asyncio.sleep(0)
     live = asyncio.create_task(sender.send(socket, "live"))
-    await asyncio.sleep(0)
+    await _wait_until(lambda: bool(sender._replay_holds.get(socket)))
+    queued = sender._replay_holds[socket][0][1]
     live.cancel()
     with pytest.raises(asyncio.CancelledError):
         await live
+    assert queued.cancelled()
     socket.gate.set()
     await backlog
     assert socket.writes == ["a"]
@@ -234,23 +246,38 @@ async def test_empty_backlog_returns() -> None:
     assert socket.writes == []
 
 
-@pytest.mark.asyncio
-async def test_held_send_times_out_and_closes() -> None:
-    """A live frame queued behind a replay does not wait past the send deadline.
+class _Slow:
+    """Every write completes in 10 ms and records a close if one happens."""
 
-    The hold is already active. A stalled backlog write uses the same deadline
-    and fails the queued frame itself, so this test does not start that write.
-    """
-    sender = OutboundSender(send_timeout=0.05, close_timeout=0.05)
-    socket = _Gate()
-    sender._replay_holds[socket] = []
-    with pytest.raises(TimeoutError, match="outbound delivery timeout"):
-        await sender.send(socket, "live")
-    assert 1013 in socket.closed
-    assert socket.writes == []
-    queued = sender._replay_holds[socket]
-    assert len(queued) == 1
-    assert queued[0][1].cancelled()
+    def __init__(self) -> None:
+        self.writes: list[str] = []
+        self.closed: list[int] = []
+        self.started = asyncio.Event()
+
+    async def send(self, raw: str) -> None:
+        """Take 10 ms, then record the frame."""
+        await asyncio.sleep(0.01)
+        self.writes.append(raw)
+        self.started.set()
+
+    async def close(self, code: int, reason: str) -> None:
+        """Record a close code. ``reason`` is accepted and ignored."""
+        del reason
+        self.closed.append(code)
+
+
+@pytest.mark.asyncio
+async def test_live_frame_survives_a_long_healthy_backlog() -> None:
+    """A healthy backlog longer than one write deadline still delivers the live frame."""
+    sender = OutboundSender(send_timeout=0.2, close_timeout=0.1)
+    socket = _Slow()
+    frames = [f"b{index}" for index in range(50)]
+    backlog = asyncio.create_task(sender.send_backlog(socket, frames))
+    await socket.started.wait()
+    await sender.send(socket, "live")
+    await backlog
+    assert socket.closed == []
+    assert socket.writes == [*frames, "live"]
 
 
 @pytest.mark.asyncio
@@ -260,7 +287,7 @@ async def test_stalled_backlog_write_fails_the_held_sender() -> None:
     socket = _Gate()
     backlog = asyncio.create_task(sender.send_backlog(socket, ["a"]))
     await asyncio.sleep(0)
-    with pytest.raises((TimeoutError, ConnectionError)):
+    with pytest.raises(ConnectionError, match="mailbox replay stopped"):
         await sender.send(socket, "live")
     result = await asyncio.gather(backlog, return_exceptions=True)
     assert isinstance(result[0], TimeoutError)
@@ -303,13 +330,47 @@ async def test_second_backlog_cancel_drops_its_frame() -> None:
     first = asyncio.create_task(sender.send_backlog(socket, ["a", "b"]))
     await asyncio.sleep(0)
     second = asyncio.create_task(sender.send_backlog(socket, ["c"]))
-    await asyncio.sleep(0)
+    await _wait_until(
+        lambda: any(raw == "c" for raw, _future in sender._replay_holds.get(socket, []))
+    )
+    queued = next(future for raw, future in sender._replay_holds[socket] if raw == "c")
     second.cancel()
     with pytest.raises(asyncio.CancelledError):
         await second
+    assert queued.cancelled()
     socket.gate.set()
     await first
     assert socket.writes == ["a", "b"]
+
+
+class _WaitFails(OutboundSender):
+    """Fail the wait itself so cleanup runs on an ordinary exception."""
+
+    async def _await_held(self, future: asyncio.Future[None]) -> None:
+        """Stop before the replay writes ``future``."""
+        del future
+        raise RuntimeError("wait failed")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_wait_cancels_the_queued_frame() -> None:
+    """A wait that fails does not leave its queued frame runnable."""
+    sender = _WaitFails()
+    socket = _Gate()
+    first = asyncio.create_task(sender.send_backlog(socket, ["a"]))
+    await asyncio.sleep(0)
+    with pytest.raises(RuntimeError, match="wait failed"):
+        await sender.send(socket, "live")
+    live_future = next(future for raw, future in sender._replay_holds[socket] if raw == "live")
+    assert live_future.cancelled()
+    with pytest.raises(RuntimeError, match="wait failed"):
+        await sender.send_backlog(socket, ["c"])
+    queued = next(future for raw, future in sender._replay_holds[socket] if raw == "c")
+    assert queued.cancelled()
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    socket.gate.set()
 
 
 class _FailLive:
@@ -388,27 +449,42 @@ async def test_flush_does_not_complete_a_waiter_that_already_left() -> None:
     assert isinstance(live_result, asyncio.CancelledError)
 
 
+class _BlockLive:
+    """Hold the backlog frame, then block while the live frame is being written."""
+
+    def __init__(self) -> None:
+        self.writes: list[str] = []
+        self.first = asyncio.Event()
+        self.release_first = asyncio.Event()
+        self.entered_live = asyncio.Event()
+        self.release_live = asyncio.Event()
+
+    async def send(self, raw: str) -> None:
+        """Release the test after ``a``, and wait on the live frame."""
+        if raw == "a":
+            self.writes.append(raw)
+            self.first.set()
+            await self.release_first.wait()
+            return
+        self.entered_live.set()
+        await self.release_live.wait()
+        self.writes.append(raw)
+
+
 @pytest.mark.asyncio
-async def test_held_timeout_leaves_a_finished_future() -> None:
-    """A timeout does not cancel a held future that already finished."""
+async def test_cancelled_flush_fails_the_inflight_frame() -> None:
+    """Cancelling a replay while it writes a queued frame fails that waiter."""
     sender = OutboundSender()
-    socket = _Gate()
-
-    async def _timeout(awaitable: object, timeout: float) -> None:
-        del timeout
-        close = getattr(awaitable, "close", None)
-        if close is not None:
-            close()
-        raise TimeoutError
-
-    future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-    future.set_result(None)
-    original = asyncio.wait_for
-    cast(Any, asyncio).wait_for = _timeout
-    try:
-        with pytest.raises(TimeoutError, match="outbound delivery timeout"):
-            await sender._await_held(socket, future)
-    finally:
-        cast(Any, asyncio).wait_for = original
-    assert future.done()
-    assert not future.cancelled()
+    socket = _BlockLive()
+    backlog = asyncio.create_task(sender.send_backlog(socket, ["a"]))
+    await socket.first.wait()
+    live = asyncio.create_task(sender.send(socket, "live"))
+    await asyncio.sleep(0)
+    socket.release_first.set()
+    await socket.entered_live.wait()
+    backlog.cancel()
+    backlog_result, live_result = await asyncio.gather(backlog, live, return_exceptions=True)
+    assert isinstance(backlog_result, asyncio.CancelledError)
+    assert isinstance(live_result, ConnectionError)
+    assert socket.writes == ["a"]
+    assert len(sender._replay_holds) == 0
