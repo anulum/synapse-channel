@@ -138,6 +138,28 @@ server-side writer incarnation. Replay without protected-write configuration,
 filtered replay and unsupported protected history remain refused. See the
 [durable enrollment contract](docs/coordination-spec.md#durable-protected-session-enrollment).
 
+`assemble_protected_write_authority` shares that control's current enrolment
+registry with every protected request handler. `serve_protected_write_authority`
+accepts two distinct root-bound Unix sockets under root-owned, non-writable
+ancestry. The trusted supervisor binds them without calling `listen`; the
+separate authority process becomes the actual listen caller. Linux
+`SO_PEERCRED` must identify that authority. A listener already started by a
+foreign principal is refused. The default role policy excludes root and UID
+1000 and requires separate authority, operator and enrolled request roles.
+The context closes and drains its owned commands, including interrupted
+startup and request shutdown. These APIs create no account, socket path or
+writer; installation identity, credential custody, descriptor and namespace
+isolation, and supervised writer recovery remain deployment prerequisites.
+
+`read_at_protected_write_boundary` returns detached immutable bytes only after
+two actor-ordered idle checks and a complete bounded journal interval with no
+protected mutation. Outstanding custody, incomplete recovery lineage, a
+replaced authority or a missed deadline refuses the read. The trusted collector
+must still authorise its caller, read through retained descriptors and verify
+the complete domain, content and settlement. This coherence check grants no
+read or write authority and establishes no operating-system exclusion of
+bypass writers.
+
 Causal-parent validation echoes only `TaskCausalParentInputError` messages
 chosen at deliberate refusal sites. Other parser exceptions return a fixed
 private error and stay in server logs. Both task write verbs refuse before

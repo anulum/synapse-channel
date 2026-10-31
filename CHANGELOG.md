@@ -18,6 +18,18 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- Assemble operator enrolment and the existing protected-write verbs around
+  one durable authority and current enrolment registry. Paired local Unix
+  listeners validate root-bound socket custody and separate dedicated role
+  UIDs before accepting requests, then drain owned commands during shutdown.
+  These library components do not install accounts, services or a writer.
+- Collect bounded immutable read snapshots between actor-ordered checks.
+  Outstanding write custody, incomplete reservation history, a changed
+  authority or an intervening protected mutation refuses the snapshot.
+  The caller's collector still owns authorisation and complete domain checks.
+
 ### Fixed
 
 - `tools/verify_mcp_registry_release.py` now follows the registry's result
