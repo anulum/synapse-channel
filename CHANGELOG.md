@@ -29,6 +29,19 @@ execution evidence when carrying a release claim forward.
   because the hub's minimum lease is 30 seconds, and writes
   `recovery-demo.json`. The README now opens with it.
 
+### Security
+
+- Move the development tooling off minimatch 10.2.6 (GHSA-g3hv-75wg-m249,
+  denial of service through glob-part amplification, fixed in 11.0.1). The
+  VS Code client overrides minimatch to 11.0.3 under `@vscode/vsce`. The Pi
+  host's vendor shrinkwrap still installs 10.2.6, so the outer lock records
+  11.0.3 and its new `@isaacs/nonrecursive-glob-match` 1.0.3 dependency, and
+  `tools/sync_pi_dependency_pins.py` installs the reviewed 11.0.3 bytes after
+  `npm ci`, as it already does for brace-expansion and Undici. The `pi`
+  executable runs Pi's own bundle, which embeds copies of minimatch and
+  brace-expansion that no pin can replace; `docs/pi.md` now says so. Neither
+  package ships in the Python wheel.
+
 ## [0.99.40] - 2026-10-30
 
 ### Added

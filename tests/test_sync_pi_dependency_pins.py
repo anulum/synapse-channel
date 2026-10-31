@@ -24,7 +24,8 @@ import pytest
 
 SCRIPT = Path(__file__).resolve().parent.parent / "tools/sync_pi_dependency_pins.py"
 RELATIVE = "node_modules/@earendil-works/pi-coding-agent/node_modules/"
-VERSIONS = {"brace-expansion": "5.0.12", "undici": "8.12.3"}
+VERSIONS = {"brace-expansion": "5.0.12", "minimatch": "11.0.3", "undici": "8.12.3"}
+SHRINKWRAPPED = {"brace-expansion": "5.0.9", "minimatch": "10.2.6", "undici": "8.10.2"}
 
 
 def _fixture(
@@ -70,7 +71,7 @@ def _fixture(
     relative = RELATIVE + dependency
     target = directory / relative
     target.mkdir(parents=True)
-    previous = "5.0.9" if dependency == "brace-expansion" else "8.10.2"
+    previous = SHRINKWRAPPED[dependency]
     (target / "package.json").write_text(json.dumps({"name": dependency, "version": previous}))
     (target / "index.js").write_bytes(b"original package bytes\n")
     (target.parent / "unrelated-package.txt").write_bytes(b"preserve\n")
@@ -189,7 +190,7 @@ def test_cli_refuses_ambiguous_archive_paths_without_changing_a_package(
 def test_cli_uses_a_separate_unpacked_budget_for_each_reviewed_dependency(
     tmp_path: Path, dependency: str
 ) -> None:
-    """The larger Undici release fits its bound without widening the brace bound."""
+    """The larger Undici release fits its bound without widening the 2 MiB bounds."""
     content = b"x" * (2 * 1024 * 1024 + 65_536)
     archive, target = _fixture(tmp_path, dependency=dependency, content=content)
     result = _run(tmp_path, archive, dependency=dependency)

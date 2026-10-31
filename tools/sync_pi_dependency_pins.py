@@ -60,6 +60,7 @@ class DependencyPin:
 
 PINS = {
     "brace-expansion": DependencyPin("brace-expansion", "5.0.12", LIMIT),
+    "minimatch": DependencyPin("minimatch", "11.0.3", LIMIT),
     "undici": DependencyPin("undici", "8.12.3", 4 * 1024 * 1024),
 }
 
