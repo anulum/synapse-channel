@@ -26,7 +26,11 @@ from fixtures.opencode.llm import ScriptedLlmServer
 from fixtures.opencode.process import find_opencode, isolated_environment
 from synapse_channel import agent_tmux as tmux_module
 from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxWakeResult, start_session
-from synapse_channel.opencode_composer_probe import ComposerSnapshot, inspect_editor_composer
+from synapse_channel.opencode_composer_probe import (
+    ComposerSnapshot,
+    footer_is_probeable,
+    inspect_editor_composer,
+)
 
 
 @dataclass(frozen=True)
@@ -85,8 +89,21 @@ class NativeComposer:
         time.sleep(0.1)
 
     def readback(self) -> ComposerSnapshot:
-        """Read exact native input using the production callback."""
-        return inspect_editor_composer(self.config, self.screen(), runner=subprocess.run)
+        """Read exact native input using the production callback.
+
+        A preceding control can leave the footer redrawing for a moment, and the
+        production reader refuses any screen without the normal-input footer.
+        The fixture therefore waits finitely for that footer and reads from the
+        very capture that showed it, as a production caller would.
+        """
+        captured: list[str] = []
+
+        def probeable() -> bool:
+            captured[:] = [self.screen()]
+            return footer_is_probeable(captured[0])
+
+        self.wait(probeable)
+        return inspect_editor_composer(self.config, captured[0], runner=subprocess.run)
 
     def seed(self) -> None:
         """Load a completed native turn whose transcript contains Thinking."""
