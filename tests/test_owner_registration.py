@@ -36,9 +36,13 @@ async def test_callbackless_registration_confirms_binding_and_preserves_a_live_o
             assert listener is not None and not listener.done()
             assert owner.name in hub.clients.agent_sockets
             contender = SynapseAgent(owner.name, uri=uri, token=token, verbose=False)
-            refused = await register_owner(contender, 0.3)
+            # The budget must cover the hub close. A timeout also returns None
+            # and leaves no close code, so the assertion is the close itself.
+            refused = await register_owner(contender, 2)
             await close_owner(contender, refused)
             assert refused is None
+            assert contender.last_close_code == 4009
+            assert contender.last_close_reason == "name conflict"
             assert owner.name in hub.clients.agent_sockets
             assert owner.running and not listener.done()
         finally:

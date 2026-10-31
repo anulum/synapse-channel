@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — real CLI mailbox replay duplication qualification
-"""Duplicate and reorder actual hub frames through an owned WebSocket fault relay."""
+"""Duplicate actual hub frames, in journal order, through one socket write."""
 
 from __future__ import annotations
 
@@ -32,7 +32,11 @@ from synapse_channel.mailbox_cursor import cursor_path, load_cursor
 async def duplicate_chat_relay(
     uri: str, seat: str, sequence: str
 ) -> AsyncIterator[tuple[str, list[int]]]:
-    """Forward actual protocol traffic while repeating a reordered three-chat burst."""
+    """Forward actual protocol traffic, repeating a three-chat burst in order.
+
+    The frames leave in one socket write, in the order the hub emitted them.
+    A wake then sees the whole burst without a silence gap between frames.
+    """
     observed: list[int] = []
 
     async def handler(client: ServerConnection) -> None:
@@ -63,16 +67,20 @@ async def duplicate_chat_relay(
                         pending.append(frame)
                         if len(pending) < 3:
                             continue
-                        for message in (pending[2], pending[0], pending[1]):
+                        encoded: list[bytes] = []
+                        for message in pending:
                             if sequence == "missing":
                                 message.pop("seq")
                             elif sequence == "boolean":
                                 message["seq"] = True
                             elif sequence == "zero":
                                 message["seq"] = 0
-                            encoded = json.dumps(message)
-                            await client.send(encoded)
-                            await client.send(encoded)
+                            raw = json.dumps(message).encode()
+                            encoded.append(raw)
+                            encoded.append(raw)
+                        async with client.send_context():
+                            for raw in encoded:
+                                client.protocol.send_text(raw)
                         pending.clear()
 
                 tasks = [asyncio.create_task(inbound()), asyncio.create_task(outbound())]
