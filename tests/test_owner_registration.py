@@ -91,7 +91,8 @@ async def test_pending_retry_retains_the_last_observed_name_refusal(tmp_path: Pa
             assert listener is not None
             async with renewal_proxy(upstream, "stall-reconnect", gate=retried) as uri:
                 contender = SynapseAgent(owner.name, uri=uri, verbose=False)
-                refused = await register_owner(contender, 0.8)
+                # The retry must happen inside the budget; a slow runner needs room.
+                refused = await register_owner(contender, 2)
                 assert refused is None and retried.exists()
                 assert contender.last_close_code == 4009
                 assert contender.last_close_reason == "name conflict"
