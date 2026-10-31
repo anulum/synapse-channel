@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import subprocess
@@ -226,13 +227,54 @@ def test_count_tests_uses_tracked_files_when_available(tmp_path: Path) -> None:
     assert cap._count_tests(tests_root) == 1
 
 
-def test_update_is_idempotent_when_current() -> None:
+def test_update_is_idempotent_when_current(tmp_path: Path) -> None:
+    """A second update of a current snapshot changes neither generated file.
+
+    It runs on a scratch repository: ``update`` always writes, so calling it on
+    the checkout would rewrite tracked files whenever the snapshot is stale.
+    ``test_check_is_up_to_date`` covers the checkout itself.
+    """
+    _write_manifest_repo(tmp_path)
     config = cap.load_config()
-    readme = cap.REPO_ROOT / config["readme"]["path"]
-    before = readme.read_text(encoding="utf-8")
-    metrics = cap.update(cap.REPO_ROOT, config)
-    assert readme.read_text(encoding="utf-8") == before  # already current -> no change
-    assert metrics["version"]
+    readme = tmp_path / config["readme"]["path"]
+    manifest = tmp_path / str(config["paths"]["json_output"])
+    cap.update(tmp_path, config)
+    assert cap.check(tmp_path, config) is True
+    before = (readme.read_bytes(), manifest.read_bytes())
+    metrics = cap.update(tmp_path, config)
+    assert (readme.read_bytes(), manifest.read_bytes()) == before
+    assert metrics["version"] == "1.2.3"
+
+
+def test_the_suite_never_writes_the_checkout_snapshot() -> None:
+    """No test in this module can regenerate the snapshot of the checkout.
+
+    Every ``cap.update`` call names a root other than ``cap.REPO_ROOT``, and
+    every ``cap.main`` call that passes ``--update`` names its ``root``; the
+    default root of ``main`` is the checkout.
+    """
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    writers = []
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "cap"
+        ):
+            continue
+        if node.func.attr == "update":
+            root = node.args[0] if node.args else None
+            writes_checkout = isinstance(root, ast.Attribute) and root.attr == "REPO_ROOT"
+        elif node.func.attr == "main":
+            argv = ast.unparse(node.args[0]) if node.args else ""
+            named_root = any(keyword.arg == "root" for keyword in node.keywords)
+            writes_checkout = "--update" in argv and not named_root
+        else:
+            continue
+        writers.append((node.lineno, writes_checkout))
+    assert writers, "the guard found no update or main calls to inspect"
+    assert [line for line, writes in writers if writes] == []
 
 
 def test_git_env_strips_inherited_git_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
