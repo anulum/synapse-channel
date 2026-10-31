@@ -551,3 +551,118 @@ def test_public_python_pack_api_retains_an_actual_successful_shard(
         root / "artifacts/1/artifact.json"
     ).read_bytes()
     assert (root / "api-artifact/coverage.data").read_bytes() == (root / "data-1").read_bytes()
+
+
+def _set_attempt(root: Path, index: int, attempt: str) -> None:
+    """Rewrite one published shard's hosted attempt, including its native receipt."""
+    path = root / f"artifacts/{index}/artifact.json"
+    record = json.loads(path.read_text())
+    record["main"]["attempt"] = attempt
+    native = record.get("native")
+    if isinstance(native, dict):
+        native["attempt"] = attempt
+    path.write_text(json.dumps(record))
+
+
+def _verify_attempt(root: Path, attempt: str, *, earlier: bool) -> subprocess.CompletedProcess[str]:
+    """Run the public union gate at one aggregate attempt."""
+    arguments = [
+        str(TOOL),
+        "verify",
+        "--root",
+        "artifacts",
+        "--source",
+        SOURCE,
+        "--run-id",
+        "actual-runner-fixture",
+        "--attempt",
+        attempt,
+        "--python",
+        PYTHON,
+        "--count",
+        "2",
+        "--coverage-python",
+        PYTHON,
+        "--coverage-config",
+        "pyproject.toml",
+        "--fail-under",
+        "98",
+        "--output",
+        "reports",
+    ]
+    if earlier:
+        arguments.append("--allow-earlier-attempts")
+    return _run(root, arguments)
+
+
+def test_partial_rerun_accepts_earlier_shards_from_the_same_run(
+    actual_artifacts: Path, tmp_path: Path
+) -> None:
+    """A later aggregate keeps successful shards and refuses a newer producer."""
+    root = tmp_path / "project"
+    shutil.copytree(actual_artifacts, root)
+    _set_attempt(root, 0, "2")
+    strict = _verify_attempt(root, "2", earlier=False)
+    assert strict.returncode != 0
+    assert "does not match" in strict.stderr
+    assert not (root / "reports").exists()
+    accepted = _verify_attempt(root, "2", earlier=True)
+    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+    shutil.rmtree(root / "reports")
+    _set_attempt(root, 0, "3")
+    newer = _verify_attempt(root, "2", earlier=True)
+    assert newer.returncode != 0
+    assert "newer than the aggregate" in newer.stderr
+    assert not (root / "reports").exists()
+    _set_attempt(root, 0, "1")
+    _set_attempt(root, 1, "01")
+    invalid = _verify_attempt(root, "2", earlier=True)
+    assert invalid.returncode != 0
+    assert "invalid hosted attempt" in invalid.stderr
+
+
+def test_ci_failed_job_rerun_reuses_this_run_and_states_the_matrix_result() -> None:
+    """A failed-job rerun finds this run's timings and says why coverage is unqualified."""
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    timings_upload = next(
+        step
+        for step in workflow["jobs"]["test-timings"]["steps"]
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+    )
+    shard_upload = next(
+        step
+        for step in workflow["jobs"]["test"]["steps"]
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+    )
+    assert timings_upload["with"]["name"] == "pytest-timings-${{ github.sha }}-${{ github.run_id }}"
+    assert "${{ github.run_attempt }}" not in timings_upload["with"]["name"]
+    assert timings_upload["with"]["overwrite"] is True
+    assert shard_upload["with"]["overwrite"] is True
+    downloads = [
+        step["with"]["name"]
+        for step in workflow["jobs"]["test"]["steps"] + workflow["jobs"]["test-complete"]["steps"]
+        if step.get("with", {}).get("name", "").startswith("pytest-timings-")
+    ]
+    assert downloads == [timings_upload["with"]["name"], timings_upload["with"]["name"]]
+    command = next(
+        step["run"]
+        for step in workflow["jobs"]["test-complete"]["steps"]
+        if "ci_shard_artifacts.py verify" in step.get("run", "")
+    )
+    assert "--allow-earlier-attempts" in command
+    gate = workflow["jobs"]["test-complete"]["steps"][0]["run"]
+    for result, code in (("success", 0), ("cancelled", 1), ("failure", 1), ("", 1)):
+        completed = subprocess.run(
+            ["bash", "-c", gate],
+            env=dict(os.environ, SHARD_RESULT=result),
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        assert completed.returncode == code
+        if code != 0:
+            assert (result or "empty") in completed.stdout
+            assert "Coverage is not qualified" in completed.stdout

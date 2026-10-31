@@ -236,6 +236,43 @@ def _timing_history(records: list[tuple[Path, dict[str, Any]]]) -> dict[str, dic
     return profiles
 
 
+def _attempt(value: object) -> int:
+    """Require an ordinary canonical positive hosted-attempt string."""
+    if (
+        type(value) is not str
+        or not value.isascii()
+        or not value.isdecimal()
+        or value.startswith("0")
+        or len(value) > 10
+    ):
+        raise ValueError("invalid hosted attempt")
+    return int(value)
+
+
+def _expected_run(
+    source: str, run_id: str, attempt: str, config_digest: str, allow_earlier: bool
+) -> dict[str, str]:
+    """Build the hosted identity every shard must match."""
+    expected = {
+        "source": source,
+        "run_id": run_id,
+        "attempt": attempt,
+        "config_sha256": config_digest,
+    }
+    if allow_earlier:
+        expected.pop("attempt")
+        _attempt(attempt)
+    return expected
+
+
+def _earlier_attempt(record: dict[str, Any], attempt: str, allow_earlier: bool) -> None:
+    """Accept a same-run producer that is not newer than the aggregate."""
+    if not allow_earlier:
+        return
+    if _attempt(record["main"].get("attempt")) > _attempt(attempt):
+        raise ValueError("shard attempt is newer than the aggregate")
+
+
 def verify(
     root: Path,
     source: str,
@@ -248,6 +285,8 @@ def verify(
     output: Path,
     fail_under: float = 98,
     timings: Path | None = None,
+    *,
+    allow_earlier_attempts: bool = False,
 ) -> None:
     """Refuse incomplete, failed or foreign artifacts before measuring their full union.
 
@@ -272,20 +311,20 @@ def verify(
     timings : Path or None, optional
         Exact shared scheduling snapshot; when supplied, every main shard must
         bind its digest and interpreter weights. Native follow-ups remain independent.
+    allow_earlier_attempts : bool, optional
+        Accept successful shards from this same run whose attempt is not newer
+        than the aggregate. Source, run, configuration and complete execution
+        evidence must still match. The default requires the exact attempt.
     """
     paths = sorted(root.glob("*/artifact.json"))
     if len(paths) != len(pythons) * count or len(set(pythons)) != len(pythons):
         raise ValueError("missing or extra shard artifacts")
     records = [(path.parent, _read(path)) for path in paths]
     config_digest = hashlib.sha256(config.read_bytes()).hexdigest()
-    expected = {
-        "source": source,
-        "run_id": run_id,
-        "attempt": attempt,
-        "config_sha256": config_digest,
-    }
+    expected = _expected_run(source, run_id, attempt, config_digest, allow_earlier_attempts)
     for _, record in records:
         _bound_artifact(record, expected, pythons)
+        _earlier_attempt(record, attempt, allow_earlier_attempts)
         _shared_timings(record, timings)
     coverage_paths = []
     for python in pythons:
@@ -331,6 +370,7 @@ def main() -> int:
     check.add_argument("--coverage-python", default="3.12")
     check.add_argument("--fail-under", type=float, default=98)
     check.add_argument("--timings", type=Path)
+    check.add_argument("--allow-earlier-attempts", action="store_true")
     args = parser.parse_args()
     try:
         if args.command == "pack":
@@ -348,6 +388,7 @@ def main() -> int:
                 args.output,
                 args.fail_under,
                 args.timings,
+                allow_earlier_attempts=args.allow_earlier_attempts,
             )
     except (OSError, ValueError, KeyError, TypeError, CoverageException) as error:
         print(f"CI shard refused: {error}", file=sys.stderr)

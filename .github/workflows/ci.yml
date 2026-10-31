@@ -112,9 +112,10 @@ jobs:
       - name: Distribute the exact common timing input
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: pytest-timings-${{ github.sha }}-${{ github.run_attempt }}
+          name: pytest-timings-${{ github.sha }}-${{ github.run_id }}
           path: timing-input/timings.json
           if-no-files-found: error
+          overwrite: true
 
   test:
     runs-on: ubuntu-latest
@@ -173,7 +174,7 @@ jobs:
       - name: Restore the common immutable scheduling input
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: pytest-timings-${{ github.sha }}-${{ github.run_attempt }}
+          name: pytest-timings-${{ github.sha }}-${{ github.run_id }}
           path: timing-input
       - name: Prepare the native foreign-owner fixture
         uses: ./.github/actions/native-file-owner
@@ -294,6 +295,7 @@ jobs:
           name: pytest-shard-${{ github.sha }}-${{ matrix.python-version }}-${{ matrix.shard }}
           path: ci-shard-artifact/
           if-no-files-found: error
+          overwrite: true
 
   test-complete:
     runs-on: ubuntu-latest
@@ -303,7 +305,12 @@ jobs:
       - name: Require every matrix shard to succeed
         env:
           SHARD_RESULT: ${{ needs.test.result }}
-        run: test "$SHARD_RESULT" = success
+        run: |
+          if [ "$SHARD_RESULT" = success ]; then
+            exit 0
+          fi
+          echo "::error::The test matrix result is ${SHARD_RESULT:-empty}. Coverage is not qualified. Re-run the failed test jobs; this run keeps successful shard artifacts and the original timing snapshot."
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -318,7 +325,7 @@ jobs:
       - name: Restore the common immutable scheduling input
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: pytest-timings-${{ github.sha }}-${{ github.run_attempt }}
+          name: pytest-timings-${{ github.sha }}-${{ github.run_id }}
           path: timing-input
       - name: Verify every interpreter inventory and apply the full coverage gate
         env:
@@ -328,6 +335,7 @@ jobs:
         run: >-
           python tools/ci_shard_artifacts.py verify --root ci-shards
           --source "$SOURCE_SHA" --run-id "$RUN_ID" --attempt "$RUN_ATTEMPT"
+          --allow-earlier-attempts
           --python 3.10 3.11 3.12 3.13 --count 4
           --timings timing-input/timings.json --coverage-python 3.12
           --coverage-config pyproject.toml --fail-under 98 --output ci-coverage
@@ -337,6 +345,7 @@ jobs:
           name: pytest-shard-timings
           path: ci-coverage/timings.json
           if-no-files-found: error
+          overwrite: true
       - name: Upload complete coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
@@ -351,6 +360,7 @@ jobs:
             ci-coverage/coverage.json
             ci-coverage/coverage.xml
           if-no-files-found: error
+          overwrite: true
 
   reuse:
     runs-on: ubuntu-latest

@@ -92,6 +92,9 @@ union without omissions or duplicates, combines actual Python 3.12 branch and
 subprocess coverage, then applies the original whole-package 98% threshold.
 A shard has no individual coverage floor because it measures only its partition.
 Missing, failed, skipped, duplicate, foreign or altered artifacts fail the gate.
+A failed-job rerun keeps this run's successful shard artifacts and its original
+timing snapshot. The aggregate accepts those earlier attempts from the same run
+and still refuses a newer attempt, a different run, or an incomplete shard.
 The required `ci` job includes both the matrix and the complete-union gate.
 
 Focused runner/artifact checks live in `tests/test_ci_shard_artifacts.py` and
