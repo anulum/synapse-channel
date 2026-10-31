@@ -18,6 +18,8 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.41] - 2026-10-31
+
 ### Added
 
 - `synapse demo --recovery` runs one reproducible story on a real local hub:
