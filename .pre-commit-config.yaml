@@ -9,7 +9,7 @@ default_install_hook_types: [pre-commit, commit-msg, pre-push]
 default_stages: [pre-commit]
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.9
+    rev: v0.17.3
     hooks:
       - id: ruff
         args: [--fix]
@@ -33,7 +33,7 @@ repos:
         args: [--maxkb=500]
         stages: [pre-commit]
   - repo: https://github.com/crate-ci/typos
-    rev: v1.50.2
+    rev: v1.51.1
     hooks:
       - id: typos
         args: [--config, _typos.toml]
