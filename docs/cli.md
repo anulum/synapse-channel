@@ -1652,6 +1652,7 @@ synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db --dot  # Gra
 synapse causality otel ./synapse.db --out spans.json                  # OpenTelemetry projection
 synapse causality otel ./synapse.db --endpoint http://127.0.0.1:4318/v1/traces  # OTLP push [otel]
 synapse causality otel ./synapse.db --out s.json --filter T1 --service-name hub-eu  # named tasks only
+synapse causality otel ./synapse.db --out s.json --correlate          # + model usage and claim denials
 synapse causality health ./synapse.db                                 # orphaned/dangling/stale claims
 synapse merkle root ./synapse.db
 synapse merkle prove ./synapse.db 142 --json > proof.json
@@ -2016,6 +2017,31 @@ $ synapse causality otel ~/synapse/hub.db --out spans.json \
     --service-name workstation-hub --filter OUTPUT-INTEGRITY-REAL-SURFACE --max-nodes 0
 exported 3 span(s) across 1 trace(s) to spans.json, 332 task(s) filtered out
 ```
+
+`--correlate` adds the two recorded facts an operator needs beside the
+coordination spans. Every usage note that `synapse accounting record` posted
+becomes a point span `model usage <model>` in its task's trace, carrying the
+OpenTelemetry GenAI attributes `gen_ai.request.model`,
+`gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` as integers, as
+the conventions type them, plus the integer `synapse.usage.calls` and, when the
+note recorded one, the float `synapse.usage.cost_usd`. Every durable claim
+denial becomes a point span `claim denied <task>` with
+`synapse.policy.decision=denied` and the recorded `synapse.policy.reason`.
+A denial row stores only the SHA-256 of the task id,
+so it is matched against the projected task ids and never guessed. Prompts,
+completions, messages and tool arguments are never read or emitted; the
+spans carry only what the notes and denial rows recorded, which is supplied
+evidence, not a provider bill. The exported resource names the schema the
+attribute names belong to (`https://opentelemetry.io/schemas/1.44.0`), and
+the JSON document gains `schema_url`, `uncorrelated_events` and
+`filtered_out_events`. Records that match no task the log records with
+coordination events are counted as `N usage/denial record(s) matched no
+task`; records of tasks that `--filter` excluded are counted apart, as
+`N usage/denial record(s) of filtered-out tasks`. Neither is silently
+dropped. They count toward `--max-nodes` like coordination events.
+Without the flag the projection, the JSON shape and the summary are
+unchanged. `--correlate` belongs to the `otel` mode only; any other mode
+refuses it with exit `2`.
 
 `--watch` turns the one-shot export into live coordination observability:
 the store is reread and the spans re-exported every `--interval` seconds

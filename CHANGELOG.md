@@ -28,6 +28,16 @@ execution evidence when carrying a release claim forward.
   verified by its own test before release. It takes about 40 seconds
   because the hub's minimum lease is 30 seconds, and writes
   `recovery-demo.json`. The README now opens with it.
+- `synapse causality otel --correlate` places recorded model usage and
+  claim denials into the task traces. A usage note becomes a
+  `model usage <model>` span with `gen_ai.request.model` and the integer
+  `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`; a claim
+  denial becomes a `claim denied <task>` span with
+  `synapse.policy.decision` and `synapse.policy.reason`. The resource names
+  schema `https://opentelemetry.io/schemas/1.44.0`. Content is never read or
+  emitted. Records that match no task, and records of tasks `--filter`
+  excluded, are counted separately. Without the flag the output is
+  unchanged.
 
 ### Security
 

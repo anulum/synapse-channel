@@ -162,8 +162,9 @@ to see what it is.
 
 Coordination causality exports to OpenTelemetry independently of this
 page: `synapse causality otel --out spans.json` writes span records with
-deterministic ids, `--endpoint` pushes OTLP/HTTP to a collector, and
-`--watch` keeps the projection live. See the CLI reference — that surface
+deterministic ids, `--endpoint` pushes OTLP/HTTP to a collector,
+`--watch` keeps the projection live, and `--correlate` places recorded model
+usage (`gen_ai.*` attributes) and claim denials into the task traces. See the CLI reference — that surface
 reads the retained durable log, so it belongs to the analytics plane and works
 with the hub down. Stable trace/span ids support correlation; they do not enforce
 collector deduplication, eventual storage or provider processing. Backend retention

@@ -109,6 +109,17 @@ HEALTH_MODE = "health"
 """Mode that flags anomalies in each task's recorded lifecycle."""
 
 
+def _uses_otel_only_options(args: argparse.Namespace) -> bool:
+    """Return whether any option that only the otel mode accepts was given."""
+    return bool(
+        args.out is not None
+        or args.endpoint is not None
+        or args.service_name is not None
+        or args.filter
+        or args.correlate
+    )
+
+
 def _cmd_causality(args: argparse.Namespace) -> int:
     """Answer a causality query against a sequence point and print it."""
     if args.hub_id and not args.peer:
@@ -117,15 +128,9 @@ def _cmd_causality(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    otel_only = (
-        args.out is not None
-        or args.endpoint is not None
-        or args.service_name is not None
-        or args.filter
-    )
-    if args.direction != OTEL_MODE and otel_only:
+    if args.direction != OTEL_MODE and _uses_otel_only_options(args):
         print(
-            "--out/--endpoint/--service-name/--filter belong to the otel mode",
+            "--out/--endpoint/--service-name/--filter/--correlate belong to the otel mode",
             file=sys.stderr,
         )
         return 2
@@ -272,6 +277,7 @@ def _otel_once(args: argparse.Namespace) -> int:
             service_name=args.service_name if args.service_name is not None else SERVICE_NAME,
             task_filter=args.filter or None,
             key_file=getattr(args, "db_key_file", None),
+            correlate=args.correlate,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -295,19 +301,16 @@ def _otel_once(args: argparse.Namespace) -> int:
             print(str(exc), file=sys.stderr)
             return 2
         destination = args.endpoint
-    skipped = (
-        f", {projection.skipped_events} taskless event(s) skipped"
-        if projection.skipped_events
-        else ""
+    counts = (
+        (projection.skipped_events, "taskless event(s) skipped"),
+        (projection.filtered_out_tasks, "task(s) filtered out"),
+        (projection.uncorrelated_events, "usage/denial record(s) matched no task"),
+        (projection.filtered_out_events, "usage/denial record(s) of filtered-out tasks"),
     )
-    filtered = (
-        f", {projection.filtered_out_tasks} task(s) filtered out"
-        if projection.filtered_out_tasks
-        else ""
-    )
+    suffix = "".join(f", {count} {text}" for count, text in counts if count)
     print(
         f"exported {len(projection.spans)} span(s) across {projection.trace_count} "
-        f"trace(s) to {destination}{skipped}{filtered}"
+        f"trace(s) to {destination}{suffix}"
     )
     return 0
 
@@ -557,6 +560,46 @@ def _cmd_contention(args: argparse.Namespace) -> int:
     return 1 if recommendations else 0
 
 
+def _add_otel_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the options that only the ``otel`` mode accepts."""
+    parser.add_argument(
+        "--out",
+        default=None,
+        metavar="FILE",
+        help="otel mode: write the span records as JSON to this file (no extra dependency).",
+    )
+    parser.add_argument(
+        "--endpoint",
+        default=None,
+        metavar="URL",
+        help="otel mode: push OTLP/HTTP to a collector's full traces URL "
+        "(e.g. http://localhost:4318/v1/traces); needs `pip install 'synapse-channel[otel]'`.",
+    )
+    parser.add_argument(
+        "--service-name",
+        default=None,
+        metavar="NAME",
+        help="otel mode: override the service.name resource on the exported spans "
+        f"(default: {SERVICE_NAME}); distinguishes hubs sharing one observability tenant.",
+    )
+    parser.add_argument(
+        "--filter",
+        action="append",
+        default=[],
+        metavar="TASK_ID",
+        help="otel mode: project only this task's trace (repeatable); a task the log "
+        "does not record is refused. Links into excluded tasks are kept and the "
+        "exclusions counted.",
+    )
+    parser.add_argument(
+        "--correlate",
+        action="store_true",
+        help="otel mode: also place recorded model usage (gen_ai token attributes, "
+        "calls, cost) and claim denials into their task traces and stamp the "
+        "OpenTelemetry 1.44.0 schema URL. Prompts and completions are never read.",
+    )
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``causality`` subparser."""
     causality = subparsers.add_parser(
@@ -620,35 +663,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=5.0,
         help="Federated queries: warn when |--clock-skew| exceeds this threshold.",
     )
-    causality.add_argument(
-        "--out",
-        default=None,
-        metavar="FILE",
-        help="otel mode: write the span records as JSON to this file (no extra dependency).",
-    )
-    causality.add_argument(
-        "--endpoint",
-        default=None,
-        metavar="URL",
-        help="otel mode: push OTLP/HTTP to a collector's full traces URL "
-        "(e.g. http://localhost:4318/v1/traces); needs `pip install 'synapse-channel[otel]'`.",
-    )
-    causality.add_argument(
-        "--service-name",
-        default=None,
-        metavar="NAME",
-        help="otel mode: override the service.name resource on the exported spans "
-        f"(default: {SERVICE_NAME}); distinguishes hubs sharing one observability tenant.",
-    )
-    causality.add_argument(
-        "--filter",
-        action="append",
-        default=[],
-        metavar="TASK_ID",
-        help="otel mode: project only this task's trace (repeatable); a task the log "
-        "does not record is refused. Links into excluded tasks are kept and the "
-        "exclusions counted.",
-    )
+    _add_otel_arguments(causality)
     causality.add_argument(
         "--watch",
         action="store_true",

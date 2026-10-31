@@ -147,10 +147,13 @@ def sdk_spans(
     Returns
     -------
     list
-        ``ReadableSpan`` objects, ids and links preserved from the records.
+        ``ReadableSpan`` objects, ids and links preserved from the records. A
+        correlated projection's schema URL is set on their shared resource.
     """
     otel = _require_otel() if modules is None else modules
-    resource = otel.resources.Resource.create({"service.name": projection.service_name})
+    resource = otel.resources.Resource.create(
+        {"service.name": projection.service_name}, schema_url=projection.schema_url or None
+    )
     return [_sdk_span(span, otel, resource) for span in projection.spans]
 
 

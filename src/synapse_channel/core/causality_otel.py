@@ -104,6 +104,12 @@ class SpanLinkRecord:
     detail: str
 
 
+SpanAttributeValue = str | int | float
+"""Value type of a span attribute: coordination values are strings, while
+correlated usage counts are ``int`` and cost is ``float``, as the OpenTelemetry
+GenAI conventions type them."""
+
+
 @dataclass(frozen=True)
 class OtelSpanRecord:
     """One span of the causality projection, independent of any OTel SDK.
@@ -122,8 +128,10 @@ class OtelSpanRecord:
         Start time in nanoseconds since the epoch (the event timestamp).
     end_ns : int
         End time in nanoseconds; equals ``start_ns`` for point events.
-    attributes : tuple[tuple[str, str], ...]
-        Sorted string attribute pairs (empty values omitted).
+    attributes : tuple[tuple[str, SpanAttributeValue], ...]
+        Attribute pairs sorted by key (empty values omitted). Coordination
+        values are strings; correlated token and call counts are ``int`` and
+        the recorded cost is ``float``.
     links : tuple[SpanLinkRecord, ...]
         Causal links to the spans of enabling events in other tasks.
     status : str
@@ -137,7 +145,7 @@ class OtelSpanRecord:
     name: str
     start_ns: int
     end_ns: int
-    attributes: tuple[tuple[str, str], ...]
+    attributes: tuple[tuple[str, SpanAttributeValue], ...]
     links: tuple[SpanLinkRecord, ...]
     status: str = SPAN_STATUS_UNSET
 
@@ -161,6 +169,15 @@ class OtelProjection:
     filtered_out_tasks : int
         Tasks present in the log but excluded by a ``task_filter``; ``0`` when
         no filter narrowed the projection.
+    schema_url : str
+        OpenTelemetry schema of the attribute names; set only when model usage
+        and policy denials were correlated, otherwise empty.
+    uncorrelated_events : int
+        Usage notes and claim denials that match no task the log records with
+        coordination events; ``0`` when correlation was not requested.
+    filtered_out_events : int
+        Usage notes and claim denials of tasks a ``task_filter`` excluded;
+        ``0`` without a filter or without correlation.
     """
 
     spans: tuple[OtelSpanRecord, ...]
@@ -168,6 +185,9 @@ class OtelProjection:
     skipped_events: int
     service_name: str = SERVICE_NAME
     filtered_out_tasks: int = 0
+    schema_url: str = ""
+    uncorrelated_events: int = 0
+    filtered_out_events: int = 0
 
 
 def trace_id_for_task(task_id: str) -> str:
@@ -192,6 +212,7 @@ def build_otel_projection(
     *,
     service_name: str = SERVICE_NAME,
     task_filter: Sequence[str] | None = None,
+    correlate: bool = False,
 ) -> OtelProjection:
     """Project an event log onto OpenTelemetry span records.
 
@@ -210,13 +231,18 @@ def build_otel_projection(
         are deterministic, so they resolve against any export that carried the
         other task — and the excluded tasks are counted, never silently
         truncated.
+    correlate : bool, optional
+        Also place recorded model usage and claim denials into their task
+        traces (see :mod:`synapse_channel.core.causality_otel_correlation`)
+        and stamp the projection with that schema. Defaults to ``False``.
 
     Returns
     -------
     OtelProjection
         One trace per task: a root span covering the task's recorded lifetime,
-        a child span per coordination event, and links for the cross-task
-        ``dependency``/``contention`` edges.
+        a child span per coordination event, links for the cross-task
+        ``dependency``/``contention`` edges and, when correlating, one span per
+        usage note or claim denial of that task.
 
     Raises
     ------
@@ -231,6 +257,7 @@ def build_otel_projection(
             by_task[node.task_id].append(node)
         else:
             skipped += 1
+    recorded_tasks = frozenset(by_task)
     filtered_out = 0
     if task_filter is not None:
         wanted = set(task_filter)
@@ -241,18 +268,35 @@ def build_otel_projection(
         filtered_out = len(by_task) - len(wanted)
         by_task = {task_id: nodes for task_id, nodes in by_task.items() if task_id in wanted}
     links = _links_by_destination(graph)
+    correlated: dict[str, tuple[OtelSpanRecord, ...]] = {}
+    uncorrelated = filtered_events = 0
+    schema_url = ""
+    if correlate:
+        from synapse_channel.core.causality_otel_correlation import (
+            CORRELATION_SCHEMA_URL,
+            correlation_spans,
+        )
+
+        correlated, uncorrelated, filtered_events = correlation_spans(
+            events, frozenset(by_task), service_name, recorded_task_ids=recorded_tasks
+        )
+        schema_url = CORRELATION_SCHEMA_URL
     spans: list[OtelSpanRecord] = []
     for task_id, nodes in by_task.items():
         spans.append(_root_span(task_id, nodes, service_name))
         spans.extend(
             _event_span(task_id, node, links.get(node.seq, ()), service_name) for node in nodes
         )
+        spans.extend(correlated.get(task_id, ()))
     return OtelProjection(
         spans=tuple(spans),
         trace_count=len(by_task),
         skipped_events=skipped,
         service_name=service_name,
         filtered_out_tasks=filtered_out,
+        schema_url=schema_url,
+        uncorrelated_events=uncorrelated,
+        filtered_out_events=filtered_events,
     )
 
 
@@ -263,6 +307,7 @@ def run_otel_projection(
     service_name: str = SERVICE_NAME,
     task_filter: Sequence[str] | None = None,
     key_file: str | Path | None = None,
+    correlate: bool = False,
 ) -> OtelProjection:
     """Build the span projection from an existing SQLite event store.
 
@@ -283,6 +328,9 @@ def run_otel_projection(
         is refused. See :func:`build_otel_projection`.
     key_file : str or pathlib.Path or None, optional
         Owner-only SQLCipher key for an encrypted event store.
+    correlate : bool, optional
+        Also read usage notes and claim denials and place them into their task
+        traces. They count toward ``max_nodes`` like coordination events.
 
     Returns
     -------
@@ -300,10 +348,15 @@ def run_otel_projection(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
+    kinds = set(GRAPH_KINDS)
+    if correlate:
+        from synapse_channel.core.causality_otel_correlation import CORRELATION_KINDS
+
+        kinds |= CORRELATION_KINDS
     store = EventStore(path, key_file=key_file)
     try:
         events: list[StoredEvent] = []
-        for event in store.iter_events(kinds=GRAPH_KINDS):
+        for event in store.iter_events(kinds=frozenset(kinds)):
             events.append(event)
             if max_nodes and len(events) > max_nodes:
                 msg = (
@@ -313,18 +366,30 @@ def run_otel_projection(
                 raise ValueError(msg)
     finally:
         store.close()
-    return build_otel_projection(events, service_name=service_name, task_filter=task_filter)
+    return build_otel_projection(
+        events, service_name=service_name, task_filter=task_filter, correlate=correlate
+    )
 
 
 def projection_to_json(projection: OtelProjection) -> dict[str, object]:
-    """Return a stable JSON-compatible representation of a span projection."""
-    return {
+    """Return a stable JSON-compatible representation of a span projection.
+
+    The schema URL and the uncorrelated and filtered-out record counts appear
+    only for a correlated projection, so an uncorrelated document keeps its
+    previous shape.
+    """
+    document: dict[str, object] = {
         "service_name": projection.service_name,
         "trace_count": projection.trace_count,
         "skipped_events": projection.skipped_events,
         "filtered_out_tasks": projection.filtered_out_tasks,
         "spans": [_span_to_json(span) for span in projection.spans],
     }
+    if projection.schema_url:
+        document["schema_url"] = projection.schema_url
+        document["uncorrelated_events"] = projection.uncorrelated_events
+        document["filtered_out_events"] = projection.filtered_out_events
+    return document
 
 
 def _links_by_destination(graph: CausalGraph) -> dict[int, tuple[SpanLinkRecord, ...]]:
