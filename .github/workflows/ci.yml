@@ -158,21 +158,8 @@ jobs:
               libtss2-dev tmux libseccomp2 bubblewrap dbus-user-session
           '
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
-      - name: Prepare the native cgroup test session
-        shell: bash
-        run: |
-          set -euo pipefail
-          runner_uid="$(id -u)"
-          sudo loginctl enable-linger "$USER"
-          export XDG_RUNTIME_DIR="/run/user/$runner_uid"
-          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
-          for _ in {1..30}; do
-            if systemctl --user show-environment >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          systemctl --user show-environment >/dev/null
-          printf 'XDG_RUNTIME_DIR=%s\n' "$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
-          printf 'DBUS_SESSION_BUS_ADDRESS=%s\n' "$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
+      - name: Prepare and verify the native Linux test session
+        uses: ./.github/actions/native-user-session
       - run: python -m pip install -e . --no-deps
       # The hash-locked dev cohort includes the shipped gRPC dependency. Keep the
       # capability fail-closed so the real loopback/TLS/mTLS tests cannot silently skip.
@@ -266,7 +253,8 @@ jobs:
           SYNAPSE_TEST_PI_BIN: ${{ github.workspace }}/integrations/pi/node_modules/.bin/pi
           SYNAPSE_TEST_COVERAGE_DIR: ${{ github.workspace }}/native-kernel-coverage
         run: >-
-          bash tools/run_delegated_tests.sh python -m pytest tests -p tools.pytest_shard
+          bash tools/run_delegated_tests.sh python -m pytest tests
+          -p tools.pytest_shard -p tools.pytest_native_coverage
           --shard-index=${{ matrix.shard }} --shard-count=4 --shard-output=shard-main.json
           --shard-timings=timing-input/timings.json
           -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py protected_write_cgroup_controls_linux.py protected_write_cgroup_parsing_linux.py protected_write_kernel_boundary_linux.py protected_write_kernel_capture_races_linux.py protected_write_mount_attributes_linux.py protected_write_mounts_linux.py protected_write_subtree_linux.py protected_write_subtree_membership_linux.py protected_write_subtree_stop_linux.py protected_write_descriptor_filter_linux.py protected_write_sequence_linux.py protected_write_execution_frontier_linux.py protected_write_observation_effect_faults_linux.py protected_write_observation_topology_faults_linux.py protected_write_recovery_admission_inputs_linux.py protected_write_recovery_candidate_linux.py protected_write_recovery_escaped_descriptor_linux.py protected_write_recovery_evidence_linux.py protected_write_recovery_snapshot_linux.py protected_write_recovery_topology_faults_linux.py'
@@ -299,7 +287,7 @@ jobs:
           args=(--manifest shard-main.json --output ci-shard-artifact)
           if [ "$SHARD_INDEX" = 0 ]; then args+=(--native-manifest shard-native.json); fi
           if [ "$PYTHON_PROFILE" = 3.12 ]; then
-            python -m coverage combine --append native-kernel-coverage
+            bash tools/combine_native_coverage.sh
             args+=(--coverage-file .coverage)
           fi
           python tools/ci_shard_artifacts.py pack "${args[@]}"

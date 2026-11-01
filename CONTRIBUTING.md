@@ -260,6 +260,24 @@ tables, and terminate only disposable owned process groups. Their transient user
 services have bounded lifetimes and resource limits. The Linux matrix prepares
 the runner's user bus and collects every profile in each indexed interpreter
 inventory; Python 3.12 includes their coverage in the complete 98% union.
+On disposable GitHub-hosted Linux runners, the native-session composite action
+loads a Bubblewrap-only AppArmor profile admitting user namespaces while leaving
+the global restriction unchanged. Before tests, a delegated unprivileged process
+must demonstrate separate user, mount, PID and network namespaces, a private
+procfs, a read-only root and a functioning isolated loopback. Missing capabilities
+fail setup. The profile is an ephemeral CI prerequisite, not a host installation
+recipe; the action refuses other environments.
+
+Native subprocess coverage is appended only when that shard produced native
+coverage files. A shard without such observations still requires its main
+coverage database, successful shard receipt and output directory. The coverage
+runner gives every native writer case a fresh SHA-256 node-ID directory before
+fixture setup. Each selected case must supply its own valid branch coverage
+file before any data is merged; extra observations from one case cannot replace
+a missing observation from another. Unassigned or invalid files fail the merge.
+The complete interpreter inventory and
+98% union gate remain mandatory; an empty native directory does not represent
+native qualification.
 Missing prerequisites fail the profiles. Default collection retains both
 portable filename patterns and excludes these explicitly named Linux profiles
 on other operating systems. Successful observations do not certify a dedicated

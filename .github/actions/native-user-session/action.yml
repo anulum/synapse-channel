@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — native Linux runner session
+name: Native Linux test session
+description: Admit Bubblewrap namespaces and verify the delegated unprivileged runner
+runs:
+  using: composite
+  steps:
+    - name: Admit only Bubblewrap to user namespaces on the disposable runner
+      shell: bash
+      run: |
+        set -euo pipefail
+        test "$GITHUB_ACTIONS" = true
+        test "$RUNNER_ENVIRONMENT" = github-hosted
+        test "$RUNNER_OS" = Linux
+        test "$(id -u)" != 0
+        test "$(command -v bwrap)" = /usr/bin/bwrap
+        test "$(stat -c %u /usr/bin/bwrap)" = 0
+        test "$(cat /sys/module/apparmor/parameters/enabled)" = Y
+        userns_policy="$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)"
+        sudo -n apparmor_parser --add --skip-cache <<'PROFILE'
+        abi <abi/4.0>,
+        profile synapse-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
+          userns,
+        }
+        PROFILE
+        test "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = "$userns_policy"
+    - name: Prepare the native cgroup test session
+      shell: bash
+      run: |
+        set -euo pipefail
+        runner_uid="$(id -u)"
+        sudo -n loginctl enable-linger "$USER"
+        export XDG_RUNTIME_DIR="/run/user/$runner_uid"
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+        for _ in {1..30}; do
+          if systemctl --user show-environment >/dev/null 2>&1; then break; fi
+          sleep 1
+        done
+        systemctl --user show-environment >/dev/null
+        printf 'XDG_RUNTIME_DIR=%s\n' "$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
+        printf 'DBUS_SESSION_BUS_ADDRESS=%s\n' "$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
+    - name: Require real user, mount, PID and network isolation before tests
+      shell: bash
+      run: |
+        set -euo pipefail
+        host_uid="$(id -u)"
+        host_namespaces=()
+        for kind in user mnt pid net; do
+          host_namespaces+=("$(readlink "/proc/self/ns/$kind")")
+        done
+        probe="$(cat <<'PY'
+        import fcntl
+        import os
+        import socket
+        import struct
+        import sys
+        from pathlib import Path
+
+        assert os.getuid() == os.getgid() == 0
+        assert Path('/proc/self/uid_map').read_text().split() == ['0', sys.argv[1], '1']
+        for kind, original in zip(('user', 'mnt', 'pid', 'net'), sys.argv[2:], strict=True):
+            assert os.readlink('/proc/self/ns/' + kind) != original, kind
+        assert Path('/proc/self/attr/current').read_text().strip() == 'synapse-ci-bwrap (unconfined)'
+        assert os.statvfs('/').f_flag & os.ST_RDONLY
+        assert Path('/proc/self/stat').read_text().startswith(str(os.getpid()) + ' ')
+        assert [name for _, name in socket.if_nameindex()] == ['lo']
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            flags = fcntl.ioctl(probe, 0x8913, struct.pack('16sH14x', b'lo', 0))
+        assert struct.unpack_from('H', flags, 16)[0] & 1
+        print('Native user/mount/PID/network isolation, read-only root and loopback verified')
+        PY
+        )"
+        bash tools/run_delegated_tests.sh timeout 15 /usr/bin/bwrap \
+          --die-with-parent --new-session --unshare-user --uid 0 --gid 0 \
+          --unshare-pid --unshare-net --ro-bind / / --proc /proc \
+          -- /usr/bin/python3 -c "$probe" "$host_uid" "${host_namespaces[@]}"
