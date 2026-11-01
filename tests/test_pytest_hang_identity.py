@@ -104,13 +104,16 @@ def test_watch_branches_are_deterministic() -> None:
     previous_stop = hang._session_stop.is_set()
     previous_arm = hang._arm
     previous_fd = hang._stderr_fd
-    was_alive = hang._session_thread is not None and hang._session_thread.is_alive()
+    live = hang._session_thread
+    was_alive = live is not None and live.is_alive()
     hang._stop_session_watcher()
     read_fd = -1
     write_fd = -1
     due: hang._Arm | None = None
     try:
-        assert hang._session_thread is None or not hang._session_thread.is_alive()
+        # _stop clears the global before join returns, so the global being
+        # None does not prove the watcher stopped. Check the thread itself.
+        assert live is None or not live.is_alive()
         hang._session_stop.set()
         assert hang._take_action(time.monotonic()) == ("halt", "")
         hang._session_stop.clear()
