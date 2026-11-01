@@ -583,30 +583,6 @@ def _contention_edges(nodes: Sequence[CausalNode]) -> list[CausalEdge]:
     return edges
 
 
-def paths_overlap(left: Sequence[str], right: Sequence[str]) -> bool:
-    """Return whether two path-scope sets overlap (an empty scope means the whole tree).
-
-    The same predicate the contention edges use; the yield-advice module weighs
-    overlapping live claims with it, so both surfaces agree on what "overlap" means.
-    """
-    if not left or not right:
-        return True
-    return any(
-        _path_pair_overlaps(left_path, right_path) for left_path in left for right_path in right
-    )
-
-
-def _path_pair_overlaps(left: str, right: str) -> bool:
-    """Return whether two repository-relative paths overlap."""
-    left_clean = left.rstrip("/")
-    right_clean = right.rstrip("/")
-    return (
-        left_clean == right_clean
-        or left_clean.startswith(f"{right_clean}/")
-        or right_clean.startswith(f"{left_clean}/")
-    )
-
-
 def _node_from_event(event: StoredEvent) -> CausalNode:
     """Project a stored event into a causality-graph node."""
     payload = event.payload
