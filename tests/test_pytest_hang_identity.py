@@ -145,7 +145,11 @@ def test_watch_branches_are_deterministic() -> None:
             os.close(write_fd)
         if read_fd >= 0:
             os.close(read_fd)
-        if watcher_stopped:
+        if not watcher_stopped:
+            # The join timed out. Keep the live thread recorded and leave
+            # stop set so a later test cannot start a second watcher.
+            hang._session_thread = live
+        else:
             hang._arm = previous_arm
             hang._stderr_fd = previous_fd
             if previous_stop:
