@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ import pytest
 from synapse_channel.core.at_rest import KEY_BYTES, generate_key_file, load_key_file
 from synapse_channel.core.at_rest_escrow import (
     ESCROW_SHARE_SCHEMA,
+    EscrowShare,
     load_escrow_share,
     recover_data_key,
     recover_key_file,
@@ -123,3 +125,72 @@ def test_split_key_file_rejects_bad_key(tmp_path: Path) -> None:
     bad.write_bytes(b"\x00" * 8)
     with pytest.raises(ValueError):
         split_key_file(bad, threshold=2, share_count=2, out_dir=tmp_path / "out")
+
+
+def test_split_refuses_more_than_255_shares() -> None:
+    """GF(2^8) has 255 non-zero evaluation points, so a 256th share cannot exist."""
+    with pytest.raises(ValueError, match="share_count must be <= 255"):
+        split_data_key(secrets.token_bytes(KEY_BYTES), threshold=2, share_count=256)
+
+
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [
+        ("threshold", "same threshold"),
+        ("share_count", "same share_count"),
+        ("payload", f"payload must be {KEY_BYTES} bytes"),
+        ("index", "index out of range"),
+    ],
+)
+def test_recover_refuses_shares_that_disagree_or_are_malformed(damage: str, message: str) -> None:
+    """Each inconsistency between shares, and an index outside 1..255, is refused."""
+    shares = list(split_data_key(secrets.token_bytes(KEY_BYTES), threshold=2, share_count=3))
+    if damage == "threshold":
+        shares[1] = replace(shares[1], threshold=3)
+    elif damage == "share_count":
+        shares[1] = replace(shares[1], share_count=4)
+    elif damage == "payload":
+        shares[1] = replace(shares[1], payload=b"short")
+    else:
+        shares[1] = replace(shares[1], index=256)
+    with pytest.raises(ValueError, match=message):
+        recover_data_key(shares)
+
+
+def test_recover_refuses_an_empty_share_list() -> None:
+    """Recovery without any share is refused before anything is read."""
+    with pytest.raises(ValueError, match="at least one escrow share is required"):
+        recover_data_key([])
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"index": "not-a-number"}, "malformed escrow share"),
+        ({"payload": "!!not base64!!"}, "malformed escrow share"),
+        ({"payload": "c2hvcnQ="}, "payload must be"),
+        ({"threshold": 1}, "invalid threshold/index"),
+        ({"share_count": 1}, "invalid threshold/index"),
+        ({"index": 0}, "invalid threshold/index"),
+    ],
+)
+def test_load_refuses_malformed_share_documents(
+    tmp_path: Path, change: dict[str, object], message: str
+) -> None:
+    """A share file with a bad field, payload or parameter is refused with its reason."""
+    share = split_data_key(secrets.token_bytes(KEY_BYTES), threshold=2, share_count=3)[0]
+    document = {**share.to_document(), **change}
+    path = tmp_path / "share.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        load_escrow_share(path)
+
+
+def test_recover_key_file_accepts_loaded_shares_and_paths_together(tmp_path: Path) -> None:
+    """Shares already in memory and share files on disk recover the same key."""
+    secret = secrets.token_bytes(KEY_BYTES)
+    first, second, _third = split_data_key(secret, threshold=2, share_count=3)
+    second_path = write_escrow_share(tmp_path / "second.json", second)
+    assert isinstance(first, EscrowShare)
+    out = recover_key_file([first, second_path], out_path=tmp_path / "recovered.key")
+    assert load_key_file(out) == secret
