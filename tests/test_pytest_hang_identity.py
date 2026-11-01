@@ -93,26 +93,53 @@ def test_faulthandler_timeout_prints_the_running_node_id(tmp_path: Path) -> None
 
 
 def test_watch_branches_are_deterministic() -> None:
-    """Stop, deadline, and the short sleep are separate decisions."""
+    """Halt, idle, wait, and report are direct decisions of one session watcher."""
     import tools.pytest_hang_identity as hang
 
-    stopped = threading.Event()
-    stopped.set()
-    hang._watch(stopped, time.monotonic() + 5, "node::stopped")
-    read_fd, write_fd = os.pipe()
+    previous_stop = hang._session_stop.is_set()
+    previous_arm = hang._arm
     previous_fd = hang._stderr_fd
-    hang._stderr_fd = write_fd
+    saved_thread = hang._session_thread
+    hang._session_thread = None
+    hang._join_session_thread()
+    hang._session_thread = saved_thread
+    hang._session_stop.set()
     try:
-        hang._watch(threading.Event(), time.monotonic() - 1, "node::due")
-        hang._watch(threading.Event(), time.monotonic() + 0.06, "node::slept")
+        assert hang._take_action(time.monotonic()) == ("halt", "")
+        hang._session_stop.clear()
+        hang._arm = None
+        assert hang._take_action(time.monotonic()) == ("idle", "")
+        stopped = hang._Arm("node::stopped", time.monotonic() + 5, stopped=True)
+        hang._arm = stopped
+        assert hang._take_action(time.monotonic()) == ("idle", "")
+        reported = hang._Arm("node::reported", time.monotonic() - 1, reported=True)
+        hang._arm = reported
+        assert hang._take_action(time.monotonic()) == ("idle", "")
+        waiting = hang._Arm("node::wait", time.monotonic() + 5)
+        hang._arm = waiting
+        assert hang._take_action(time.monotonic()) == ("wait", "")
+        read_fd, write_fd = os.pipe()
+        hang._stderr_fd = write_fd
+        due = hang._Arm("node::due", time.monotonic() - 1)
+        hang._arm = due
+        assert hang._take_action(time.monotonic()) == ("report", "node::due")
+        action, nodeid = hang._take_action(time.monotonic())
+        assert (action, nodeid) == ("idle", "")
+        hang._write_timeout("node::due")
     finally:
+        hang._arm = previous_arm
         hang._stderr_fd = previous_fd
+        if previous_stop:
+            hang._session_stop.set()
+        else:
+            hang._session_stop.clear()
+            if hang._session_thread is None or not hang._session_thread.is_alive():
+                hang._ensure_session_watcher()
         os.close(write_fd)
     text = os.read(read_fd, 4096).decode()
     os.close(read_fd)
-    assert "TIMEOUT nodeid=node::due" in text
-    assert "TIMEOUT nodeid=node::slept" in text
-    assert "node::stopped" not in text
+    assert text == "TIMEOUT nodeid=node::due\n"
+    assert due.reported is True
 
 
 def test_idle_hooks_and_a_bad_timeout_do_not_report(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -127,7 +154,7 @@ def test_idle_hooks_and_a_bad_timeout_do_not_report(monkeypatch: pytest.MonkeyPa
         assert hang._limit() == 0.0
         hang._write_timeout("node::silent")
         hang.pytest_runtest_logstart("node::idle", ("f", 1, "t"))
-        assert "node::idle" not in hang._active
+        assert hang._arm is None or hang._arm.nodeid != "node::idle"
         hang.pytest_runtest_logfinish("node::absent", ("f", 1, "t"))
 
         class _BadIni:
@@ -170,16 +197,38 @@ def test_idle_hooks_and_a_bad_timeout_do_not_report(monkeypatch: pytest.MonkeyPa
         hang._config = cast(pytest.Config, _NumericIni())
         hang._stderr_fd = -1
         hang.pytest_runtest_logstart("node::live", ("f", 1, "t"))
-        assert "node::live" in hang._active
-        hang.pytest_runtest_logfinish("node::live", ("f", 1, "t"))
-        assert "node::live" not in hang._active
+        assert hang._arm is not None and hang._arm.nodeid == "node::live"
+        time.sleep(0.05)
+        before = threading.active_count()
+        for number in range(5):
+            hang.pytest_runtest_logstart(f"node::live-{number}", ("f", 1, "t"))
+            hang.pytest_runtest_logfinish(f"node::live-{number}", ("f", 1, "t"))
+        time.sleep(0.05)
+        assert threading.active_count() == before
+        report_read, report_write = os.pipe()
+        hang._stderr_fd = report_write
+        with hang._arm_lock:
+            hang._arm = hang._Arm("node::overdue", time.monotonic() - 1)
+        time.sleep(0.15)
+        os.close(report_write)
+        reported = os.read(report_read, 4096).decode()
+        os.close(report_read)
+        assert reported == "TIMEOUT nodeid=node::overdue\n"
+        hang.pytest_runtest_logfinish("node::overdue", ("f", 1, "t"))
+        assert hang._arm is not None and hang._arm.stopped is True
         hang.pytest_configure(cast(pytest.Config, _NumericIni()))
         assert hang._stderr_fd >= 0
         hang.pytest_unconfigure(cast(pytest.Config, _NumericIni()))
         assert hang._stderr_fd == -1
+        assert hang._session_thread is None or not hang._session_thread.is_alive()
     finally:
         hang._config = previous_config
         hang._stderr_fd = previous_fd
+        if previous_config is not None and (
+            hang._session_thread is None or not hang._session_thread.is_alive()
+        ):
+            hang._session_stop.clear()
+            hang._ensure_session_watcher()
 
 
 def test_softhsm_setup_names_itself_and_times_out() -> None:

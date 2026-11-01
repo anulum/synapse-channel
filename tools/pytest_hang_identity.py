@@ -18,12 +18,28 @@ import os
 import sys
 import threading
 import time
+from dataclasses import dataclass
 
 import pytest
 
 _config: pytest.Config | None = None
 _stderr_fd = -1
-_active: dict[str, tuple[threading.Event, threading.Thread]] = {}
+_arm_lock = threading.Lock()
+_session_stop = threading.Event()
+_session_thread: threading.Thread | None = None
+
+
+@dataclass
+class _Arm:
+    """One test's deadline. The session watcher is re-armed, not replaced."""
+
+    nodeid: str
+    deadline: float
+    stopped: bool = False
+    reported: bool = False
+
+
+_arm: _Arm | None = None
 
 
 def _write_timeout(nodeid: str) -> None:
@@ -44,77 +60,108 @@ def _limit() -> float:
         return 0.0
 
 
+def _take_action(now: float) -> tuple[str, str]:
+    """Decide the session watcher's next step and mark a due test reported.
+
+    Returns ``halt``, ``idle``, ``wait``, or ``report`` plus the node id to
+    write. The caller sleeps outside this lock. One session thread is re-armed
+    per test so a finished test does not leave a thread behind.
+    """
+    with _arm_lock:
+        if _session_stop.is_set():
+            return ("halt", "")
+        arm = _arm
+        if arm is None:
+            return ("idle", "")
+        if arm.stopped:
+            return ("idle", "")
+        if arm.reported:
+            return ("idle", "")
+        if now >= arm.deadline:
+            arm.reported = True
+            return ("report", arm.nodeid)
+        return ("wait", "")
+
+
+def _session_loop() -> None:
+    """Re-arm the same thread for every test until the session stops."""
+    while True:
+        action, nodeid = _take_action(time.monotonic())
+        if action == "halt":
+            return
+        if action == "report":
+            _write_timeout(nodeid)
+            continue
+        time.sleep(0.05)
+
+
+def _ensure_session_watcher() -> None:
+    """Start the single daemon watcher if the session does not already have one."""
+    global _session_thread
+    if _session_thread is not None and _session_thread.is_alive():
+        return
+    _session_stop.clear()
+    _session_thread = threading.Thread(
+        target=_session_loop,
+        name="pytest-hang-identity",
+        daemon=True,
+    )
+    _session_thread.start()
+
+
+def _join_session_thread() -> None:
+    """Wait for the session watcher if one is recorded. A missing thread is idle."""
+    global _session_thread
+    thread = _session_thread
+    _session_thread = None
+    if thread is not None:
+        thread.join(timeout=1)
+
+
+def _stop_session_watcher() -> None:
+    """Ask the session watcher to exit and wait briefly. It is a daemon."""
+    _session_stop.set()
+    _join_session_thread()
+
+
 def pytest_configure(config: pytest.Config) -> None:
-    """Keep the config and a stderr fd that stays valid after capture starts."""
+    """Keep the config, a stderr fd, and the one session watcher."""
     global _config, _stderr_fd
     _config = config
     stream = sys.__stderr__
-    if stream is None:
-        return
-    try:
-        _stderr_fd = os.dup(stream.fileno())
-    except (AttributeError, OSError, ValueError):
-        _stderr_fd = -1
+    if stream is not None:
+        try:
+            _stderr_fd = os.dup(stream.fileno())
+        except (AttributeError, OSError, ValueError):
+            _stderr_fd = -1
+    _ensure_session_watcher()
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
-    """Close the stderr duplicate opened for hang reports."""
+    """Stop the session watcher and close the stderr duplicate."""
     del config
     global _stderr_fd
+    _stop_session_watcher()
     if _stderr_fd >= 0:
         os.close(_stderr_fd)
         _stderr_fd = -1
 
 
-def _watch(stop: threading.Event, deadline: float, nodeid: str) -> None:
-    """Wait until ``deadline`` and then name ``nodeid``, unless ``stop`` is set.
-
-    Short sleeps keep the watcher off ``Event.wait``. Parking there is only a
-    suspected interaction with faulthandler's watchdog on macOS; it was not
-    reproduced with a macOS sample. The old ``join(timeout=2)`` cannot explain
-    a 20 second overrun, because that join returns after two seconds.
-    """
-    while True:
-        if stop.is_set():
-            return
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        time.sleep(min(0.05, remaining))
-    _write_timeout(nodeid)
-
-
 def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) -> None:
-    """Start the hang watch for the test that is about to run."""
+    """Re-arm the session watcher for the test that is about to run."""
     del location
     limit = _limit()
     if limit <= 0:
         return
-    finished = threading.Event()
-    current = nodeid
-
-    def _report(
-        bound: float = limit,
-        stop: threading.Event = finished,
-        name: str = current,
-    ) -> None:
-        _watch(stop, time.monotonic() + bound, name)
-
-    watcher = threading.Thread(target=_report, name="pytest-hang-identity", daemon=True)
-    watcher.start()
-    _active[nodeid] = (finished, watcher)
+    _ensure_session_watcher()
+    with _arm_lock:
+        global _arm
+        _arm = _Arm(nodeid, time.monotonic() + limit)
 
 
 def pytest_runtest_logfinish(nodeid: str, location: tuple[str, int | None, str]) -> None:
-    """Stop the hang watch after the test, including its teardown, has finished.
-
-    The watcher is a daemon and is not joined. The previous join waited at
-    most two seconds, so leaving it out does not by itself explain the macOS
-    overrun. Not joining still lets the process exit without waiting for the
-    daemon.
-    """
+    """Disarm the session watcher. The thread itself stays for the next test."""
     del location
-    pair = _active.pop(nodeid, None)
-    if pair is None:
-        return
-    pair[0].set()
+    with _arm_lock:
+        if _arm is not None and _arm.nodeid == nodeid:
+            _arm.stopped = True
