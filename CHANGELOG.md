@@ -35,6 +35,11 @@ execution evidence when carrying a release claim forward.
   not as "not a regular file". A platform without owner-only file validation
   is named as such instead of asking for `chmod 600`, and any other key file
   that cannot be opened keeps the operating system's reason in the message.
+- A claim's file identity now includes the inode generation where the filesystem
+  reports one (Linux). Before, an editor's atomic replace could free a claimed
+  file's inode for an unrelated file, and the hub then refused claims on that
+  unrelated file as if it were the claimed one. Hard links still conflict.
+  Claims made before this release keep the old identity until renewed.
 
 ## [0.99.42] - 2026-11-01
 

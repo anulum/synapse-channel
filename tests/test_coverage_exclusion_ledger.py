@@ -133,6 +133,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_a2a_store.py": (3, "platform-guard"),
     "tests/test_external_surfaces_benchmark.py": (2, "optional-dep-guard"),
     "tests/test_hub_restart.py": (2, "platform-guard"),
+    "tests/test_path_identity_inode_reuse.py": (3, "platform-guard"),
     # Includes the real Linux executable-format fallback/process-image regression.
     "tests/test_launch_record.py": (7, "platform-guard"),
     "tests/test_read_owner_only_file_bytes.py": (3, "platform-guard"),
@@ -345,3 +346,16 @@ def test_public_skip_gate_refuses_actual_untracked_drifted_and_absent_sources(
     assert "tests/untracked_guard.py: 1 unledgered" in message
     assert "tests/_portable_exec.py: ledger says 1, tree has 2" in message
     assert "tests/protected_write_socket_examples.py: ledgered but clean in the tree" in message
+
+
+def test_the_ledger_diff_names_every_kind_of_disagreement() -> None:
+    """An unledgered file, a changed count and a stale row are each reported."""
+    problems = _diff(
+        {"new.py": 1, "changed.py": 2},
+        {"changed.py": (3, "platform-guard"), "stale.py": (1, "platform-guard")},
+    )
+    assert problems == [
+        "changed.py: ledger says 3, tree has 2",
+        "new.py: 1 unledgered — justify it here or remove it",
+        "stale.py: ledgered but clean in the tree — drop its stale row",
+    ]

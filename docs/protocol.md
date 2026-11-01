@@ -173,14 +173,14 @@ ignored by clients that only render the ordinary `worktree` and `paths` fields.
 {
   "version": 1,
   "worktree_path": "/canonical/repository",
-  "worktree_object_id": "device:object",
+  "worktree_object_id": "device:object:generation",
   "filesystem_namespace": "sha256:opaque-host-namespace",
   "case_sensitive": true,
   "paths": [
     {
       "git_path": "src/auth.py",
       "filesystem_path": "src/auth.py",
-      "object_id": "device:object",
+      "object_id": "device:object:generation",
       "object_scope": ""
     }
   ]
@@ -192,8 +192,12 @@ client-derived from the local Git index and filesystem. Comparison strings are
 repository-relative Unicode NFC; case folding occurs only for an insensitive
 worktree. Device/object values are compared only when both identities carry the
 same opaque filesystem namespace and worktree-root object key; this prevents
-coincident inode values on different hosts from aliasing. Empty object ids mean
-the path does not yet exist. The optional `object_scope` is empty or absent for
+coincident inode values on different hosts from aliasing. Where the filesystem
+reports an inode generation (Linux `FS_IOC_GETVERSION`), the key carries it as a
+third part; an inode number is reused after a file is removed, and the generation
+keeps a later file on that inode from looking like the claimed one, while hard
+links still share one key. Without a generation the key is `device:object`.
+Empty object ids mean the path does not yet exist. The optional `object_scope` is empty or absent for
 the whole object and otherwise carries a canonical semantic descendant. A whole
 object conflicts with every descendant, declaration ancestry conflicts, and
 sibling declarations remain independent across hard-link aliases. Object

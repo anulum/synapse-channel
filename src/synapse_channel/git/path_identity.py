@@ -21,9 +21,11 @@ import errno
 import hashlib
 import os
 import platform
+import stat
+import sys
 import unicodedata
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 from synapse_channel.core.path_identity import (
@@ -223,6 +225,69 @@ def _resolved_with_missing_tail(path: Path) -> Path:
     return resolved.joinpath(*reversed(missing))
 
 
+_Ioctl = Callable[[int, int, bytes], bytes]
+
+
+def _load_ioctl() -> _Ioctl | None:
+    """Return ``fcntl.ioctl`` where the platform has it.
+
+    Windows has no ``fcntl``; there ``st_ino`` already carries the NTFS
+    sequence number, which changes when a file record is reused.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        return None
+    return fcntl.ioctl
+
+
+_IOCTL = _load_ioctl()
+
+_FS_IOC_GETVERSION = 0x80087601
+"""Linux ioctl that reads an inode's generation number, which changes on inode reuse."""
+
+
+def _inode_generation(path: Path, metadata: os.stat_result) -> int | None:
+    """Return the inode generation of the object ``metadata`` describes, if known.
+
+    An inode number alone is reused after a file is removed, for example by an
+    editor's atomic replace, so a stored ``device:inode`` can later name a
+    different file. The generation number changes on reuse and is shared by
+    every hard link, so it separates a reused inode from an alias. Only regular
+    files and directories are opened, without following a final link; FIFOs,
+    sockets and devices are never opened. The descriptor must still be the
+    object ``metadata`` describes. A platform or filesystem without
+    generations, or any failure, yields ``None``.
+    """
+    if _IOCTL is None or not (stat.S_ISREG(metadata.st_mode) or stat.S_ISDIR(metadata.st_mode)):
+        return None
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        return None
+    try:
+        current = os.fstat(descriptor)
+        raw = _IOCTL(descriptor, _FS_IOC_GETVERSION, bytes(8))
+    except OSError:
+        return None
+    finally:
+        os.close(descriptor)
+    same_object = (current.st_dev, current.st_ino) == (metadata.st_dev, metadata.st_ino)
+    return int.from_bytes(raw[:4], sys.byteorder) if same_object else None
+
+
+def _object_key(path: Path, metadata: os.stat_result) -> str:
+    """Return ``device:inode[:generation]`` for an existing object, or ``""``.
+
+    A platform that reports no inode number gives no object identity at all.
+    """
+    if metadata.st_ino <= 0:
+        return ""
+    base = f"{metadata.st_dev:x}:{metadata.st_ino:x}"
+    generation = _inode_generation(path, metadata)
+    return base if generation is None else f"{base}:{generation:x}"
+
+
 def _object_id(path: Path) -> str:
     """Return a stable local object key for an existing file or directory."""
     try:
@@ -238,9 +303,7 @@ def _object_id(path: Path) -> str:
         if isinstance(exc, FileNotFoundError) or exc.errno == errno.ENAMETOOLONG:
             return ""
         raise PathIdentityError("claim path object identity could not be read") from exc
-    if metadata.st_ino <= 0:
-        return ""
-    return f"{metadata.st_dev:x}:{metadata.st_ino:x}"
+    return _object_key(path, metadata)
 
 
 def _semantic_filesystem_scope(relative: str, symbol: str) -> str:
@@ -265,7 +328,7 @@ def _semantic_object_identity(resolved: Path, symbol: str) -> tuple[str, str]:
         else:
             raise PathIdentityError("semantic claim source identity could not be read") from exc
     else:
-        object_id = f"{metadata.st_dev:x}:{metadata.st_ino:x}" if metadata.st_ino > 0 else ""
+        object_id = _object_key(resolved, metadata)
     encoded = semantic_scope_path("_", symbol)
     marker = "_/.synapse-symbol/"
     return object_id, encoded.removeprefix(marker)
@@ -349,9 +412,7 @@ def resolve_claim_scope_identity(
         raise PathIdentityError("claim worktree identity could not be read") from exc
     scope = ClaimScopeIdentity(
         worktree_path=comparison_worktree(canonical_root.as_posix(), case_sensitive=case_sensitive),
-        worktree_object_id=(
-            f"{root_metadata.st_dev:x}:{root_metadata.st_ino:x}" if root_metadata.st_ino > 0 else ""
-        ),
+        worktree_object_id=_object_key(canonical_root, root_metadata),
         filesystem_namespace=_filesystem_namespace(),
         case_sensitive=case_sensitive,
         paths=tuple(identities),
