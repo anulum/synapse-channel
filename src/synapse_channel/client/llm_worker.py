@@ -32,7 +32,7 @@ from synapse_channel.client.chat_backends import (
 )
 from synapse_channel.client.provider_budget import EstimatedSpendGuard, ProviderQuote
 from synapse_channel.client.provider_http import ProviderHTTPClient, ProviderWorkerBackend
-from synapse_channel.client.provider_profiles import PROFILES
+from synapse_channel.client.provider_profiles import PROFILES, provider_profile
 from synapse_channel.core.capability_card_signing import (
     DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
 )
@@ -212,7 +212,7 @@ class SynapseLLMWorker:
         if self.provider == "ollama":
             return self._http_client(self.model)
         if self.provider in PROFILES:
-            profile = PROFILES[self.provider]
+            profile = provider_profile(self.provider)
             key_env = self.api_key_env if self.api_key_env != "OPENAI_API_KEY" else profile.key_env
             key = os.getenv(key_env, "").strip()
             if not self.allow_paid_api or self.paid_budget_usd is None or not self.price_quote_file:

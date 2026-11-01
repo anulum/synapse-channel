@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL, SynapseLLMWorker
-from synapse_channel.client.provider_profiles import PROFILES
+from synapse_channel.client.provider_profiles import PROFILES, provider_profile
 from synapse_channel.core.identity_keys import IdentityKeyError
 from synapse_channel.core.logging_setup import configure_logging
 
@@ -72,9 +72,10 @@ def _cmd_worker(
     logging_configurator(log_format=args.log_format, level=args.log_level)
     name = f"{args.prefix}{args.name}"
     warning_base = args.base_url
-    if args.provider in PROFILES and PROFILES[args.provider].paid:
-        if warning_base == DEFAULT_OLLAMA_BASE_URL:
-            warning_base = PROFILES[args.provider].base_url
+    if args.provider in PROFILES:
+        profile = provider_profile(args.provider)
+        if profile.paid and warning_base == DEFAULT_OLLAMA_BASE_URL:
+            warning_base = profile.base_url
     warning = _egress_warning(args.provider, warning_base)
     if warning:
         print(f"[{name}] WARNING: {warning}.", file=sys.stderr)

@@ -192,3 +192,14 @@ def test_cmd_worker_prints_egress_warning_only_when_off_host(
     # A local backend starts silently.
     assert cli_processes._cmd_worker(_worker_ns(provider="rule"), runner=_close_runner) == 0
     assert "WARNING" not in capsys.readouterr().err
+
+
+def test_paid_provider_on_the_default_base_url_warns_with_its_own_endpoint(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A paid profile left on the Ollama default is reported with the provider's endpoint."""
+    assert _worker_ns(provider="anthropic").base_url == DEFAULT_OLLAMA_BASE_URL
+    assert cli_processes._cmd_worker(_worker_ns(provider="anthropic"), runner=_close_runner) == 2
+    err = capsys.readouterr().err
+    assert "SENDS recent channel context and the API key to https://api.anthropic.com/v1." in err
+    assert DEFAULT_OLLAMA_BASE_URL not in err
