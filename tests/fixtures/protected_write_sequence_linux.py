@@ -15,6 +15,7 @@ import struct
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from multiprocessing import get_context, get_start_method
 from pathlib import Path
 
 import pytest
@@ -44,17 +45,18 @@ def _open(
 
 def _allocate(root: Path, count: int) -> list[int]:
     """Allocate actual durable values in an independent worker process."""
+    assert get_start_method() == "spawn", "durable allocation requires a fresh interpreter"
     with _open(root) as sequence:
         return [sequence.next() for _ in range(count)]
 
 
 def test_sequence_survives_restart_and_concurrent_processes(tmp_path: Path) -> None:
-    """Every process receives unique increasing values from one retained inode."""
+    """Spawned interpreters receive unique durable values without forking live threads."""
     with _open(tmp_path, create=True) as sequence:
         assert [sequence.next(), sequence.next()] == [1, 2]
     with _open(tmp_path) as reopened:
         assert reopened.next() == 3
-    with ProcessPoolExecutor(max_workers=4) as pool:
+    with ProcessPoolExecutor(max_workers=4, mp_context=get_context("spawn")) as pool:
         batches = list(pool.map(_allocate, [tmp_path] * 4, [10] * 4))
     assert sorted(value for batch in batches for value in batch) == list(range(4, 44))
     with _open(tmp_path) as reopened:
