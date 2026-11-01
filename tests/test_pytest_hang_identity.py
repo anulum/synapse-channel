@@ -160,6 +160,33 @@ def test_watch_branches_are_deterministic() -> None:
                     hang._ensure_session_watcher()
 
 
+def test_session_watcher_ignores_patched_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A scripted clock must not be consumed or spun by the session watcher."""
+    import tools.pytest_hang_identity as hang
+
+    hang._ensure_session_watcher()
+    assert hang._session_thread is not None
+    assert hang._session_thread.is_alive()
+    monotonic_calls = 0
+    sleep_calls = 0
+
+    def fake_monotonic() -> float:
+        nonlocal monotonic_calls
+        monotonic_calls += 1
+        return 0.0
+
+    def fake_sleep(seconds: float) -> None:
+        nonlocal sleep_calls
+        del seconds
+        sleep_calls += 1
+
+    monkeypatch.setattr(time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(time, "sleep", fake_sleep)
+    threading.Event().wait(0.2)
+    assert monotonic_calls == 0
+    assert sleep_calls == 0
+
+
 def test_idle_hooks_and_a_bad_timeout_do_not_report(monkeypatch: pytest.MonkeyPatch) -> None:
     """A missing config, a bad ini value, and a closed stderr do not name a test."""
     import tools.pytest_hang_identity as hang

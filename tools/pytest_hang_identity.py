@@ -27,6 +27,10 @@ _stderr_fd = -1
 _arm_lock = threading.Lock()
 _session_stop = threading.Event()
 _session_thread: threading.Thread | None = None
+# Bound at import. Tests may replace time.monotonic and time.sleep; the
+# watcher must keep the real clock and must not consume a scripted one.
+_monotonic = time.monotonic
+_pause = threading.Event()
 
 
 @dataclass
@@ -86,13 +90,14 @@ def _take_action(now: float) -> tuple[str, str]:
 def _session_loop() -> None:
     """Re-arm the same thread for every test until the session stops."""
     while True:
-        action, nodeid = _take_action(time.monotonic())
+        action, nodeid = _take_action(_monotonic())
         if action == "halt":
             return
         if action == "report":
             _write_timeout(nodeid)
             continue
-        time.sleep(0.05)
+        _pause.wait(0.05)
+        _pause.clear()
 
 
 def _ensure_session_watcher() -> None:
@@ -101,6 +106,7 @@ def _ensure_session_watcher() -> None:
     if _session_thread is not None and _session_thread.is_alive():
         return
     _session_stop.clear()
+    _pause.clear()
     _session_thread = threading.Thread(
         target=_session_loop,
         name="pytest-hang-identity",
@@ -121,6 +127,7 @@ def _join_session_thread() -> None:
 def _stop_session_watcher() -> None:
     """Ask the session watcher to exit and wait briefly. It is a daemon."""
     _session_stop.set()
+    _pause.set()
     _join_session_thread()
 
 
@@ -156,7 +163,7 @@ def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) 
     _ensure_session_watcher()
     with _arm_lock:
         global _arm
-        _arm = _Arm(nodeid, time.monotonic() + limit)
+        _arm = _Arm(nodeid, _monotonic() + limit)
 
 
 def pytest_runtest_logfinish(nodeid: str, location: tuple[str, int | None, str]) -> None:
