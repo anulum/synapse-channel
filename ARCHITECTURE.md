@@ -28,7 +28,7 @@ can refuse that feature without qualifying an unrelated path.
   Multi-hub federation observes and merges append-only logs; it never
   arbitrates authority (see "Federation and multi-hub").
 - **Core transport-light; extras arm features.** Base runtime dependencies are
-  `websockets` and, on Python 3.10, `typing-extensions`.
+  `websockets`; supported interpreters provide the required typing APIs.
   Heavier features are gated behind optional extras (`encryption`, `sqlcipher`,
   `mcp`, `otel`, `wasm`, `tpm2`); each entry point documents its missing-extra
   diagnostic or refusal.

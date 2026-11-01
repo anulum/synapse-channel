@@ -34,7 +34,7 @@ SYNAPSE CHANNEL — repository overview
   <a href="https://github.com/sponsors/anulum"><img src="https://img.shields.io/badge/GitHub-Sponsors-ea4aaa?logo=githubsponsors" alt="Sponsor SYNAPSE CHANNEL on GitHub"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <a href="https://anulum.github.io/synapse-channel/commercial/"><img src="https://img.shields.io/badge/commercial%20licence-available-0a7d3c" alt="Commercial licence available"></a>
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <a href="https://codecov.io/gh/anulum/synapse-channel"><img src="https://codecov.io/gh/anulum/synapse-channel/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://api.reuse.software/info/github.com/anulum/synapse-channel"><img src="https://api.reuse.software/badge/github.com/anulum/synapse-channel" alt="REUSE status"></a>
   <a href="https://www.bestpractices.dev/projects/13565"><img src="https://www.bestpractices.dev/projects/13565/badge" alt="OpenSSF Best Practices: Passing"></a>
@@ -101,8 +101,8 @@ claim, conflict, handoff and receipt story.
 
 > **Project lineage:** SYNAPSE CHANNEL dates back to **September 2025**.
 
-The bus is transport-light (`websockets`, plus `typing-extensions` on Python
-3.10), hub-centric by design
+The bus requires Python 3.11 or newer and is transport-light (`websockets`),
+hub-centric by design
 (one place owns presence, leases, and history), and runs entirely on the local
 machine. Model workers reply on-channel through any OpenAI-compatible endpoint,
 including a local Ollama server, with a deterministic rule-based fallback for
@@ -115,7 +115,7 @@ read-only MCP resources. Host interoperability depends on the installed host
 version, transport and configuration; see the exact support boundaries in the
 [integration catalogue](docs/integration-catalog.md). The A2A HTTP surface has
 its separately stated partial qualification. The base runtime uses `websockets`
-and, on Python 3.10, `typing-extensions`; adapters use their declared optional
+on Python 3.11 or newer; adapters use their declared optional
 extras (`pip install
 'synapse-channel[mcp]'`). See the [MCP guide](docs/mcp.md) and the separately
 qualified [authenticated HTTP profile](docs/mcp-http.md).
@@ -271,8 +271,7 @@ tiered so the lean bus stays clear:
 The authoritative map is [`synapse_channel.surface_taxonomy`](src/synapse_channel/surface_taxonomy.py)
 and the generated operator view is [Public surface and stability](docs/public-surface.md).
 Adapters and lab surfaces can be installed and used from the same package, but
-the base dependency floor remains `websockets` plus `typing-extensions` on Python
-3.10. A tier or profile label grants no authority and does not promise read-only behaviour.
+the base dependency floor remains `websockets` on Python 3.11 or newer. A tier or profile label grants no authority and does not promise read-only behaviour.
 
 Six measurable discovery profiles keep those layers explicit without hiding or
 removing commands: `first-use`, `core`, `adapters`, `governance`, `labs`, and

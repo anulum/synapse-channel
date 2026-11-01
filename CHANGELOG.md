@@ -18,6 +18,18 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- Require Python 3.11 or newer for Core and the managed GitHub App package.
+  Python 3.10 reached end of life on 1 October 2026. Upgrade the interpreter
+  and recreate the package environment before upgrading Synapse; existing
+  installations are not upgraded automatically. CI and contributor environments
+  now start at 3.11, and the obsolete typing and TOML backports are
+  no longer direct dependencies.
+  Python 3.10 used distinct asyncio and builtin timeout exceptions, which
+  could bypass timeout handling in earlier builds. The earlier CI hang still
+  has no proven cause; retiring 3.10 does not claim to repair it.
+
 ### Added
 
 - Assemble operator enrolment and the existing protected-write verbs around
@@ -32,6 +44,9 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- Pass enrolled Unix authority socket paths to the WebSocket client as text.
+  This preserves path and kernel-peer checks and avoids the PosixPath
+  TypeError observed with Python 3.10 before its retirement.
 - Directed messages reach a reconnecting agent in journal order. While the
   hub replayed an agent's mailbox backlog, a concurrent live message to the
   same connection could be written between backlog frames (for example

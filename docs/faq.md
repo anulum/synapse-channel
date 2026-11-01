@@ -28,7 +28,7 @@ claims, presence, directed messages, shared plans, and durable coordination arou
 ## Does it need a cloud account or a hosted service?
 
 Base coordination needs no cloud account: it runs over a local WebSocket hub
-with `websockets`, plus `typing-extensions` on Python 3.10. Optional workers,
+with Python 3.11 or newer and `websockets`. Optional workers,
 adapters and external services have their own dependency, account, network and
 cost requirements. Core coordination does not implicitly emit telemetry;
 `synapse --version` is network-silent by default. Set `SYNAPSE_UPDATE_CHECK=1`

@@ -39,7 +39,7 @@ SYNAPSE CHANNEL — 仓库概览（简体中文翻译；英文原文为准）
   <a href="https://pepy.tech/project/synapse-channel"><img src="https://static.pepy.tech/badge/synapse-channel" alt="Total downloads"></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <a href="https://anulum.github.io/synapse-channel/commercial/"><img src="https://img.shields.io/badge/commercial%20licence-available-0a7d3c" alt="Commercial licence available"></a>
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <a href="https://codecov.io/gh/anulum/synapse-channel"><img src="https://codecov.io/gh/anulum/synapse-channel/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://api.reuse.software/info/github.com/anulum/synapse-channel"><img src="https://api.reuse.software/badge/github.com/anulum/synapse-channel" alt="REUSE status"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/anulum/synapse-channel"><img src="https://api.securityscorecards.dev/projects/github.com/anulum/synapse-channel/badge" alt="OpenSSF Scorecard"></a>
@@ -52,7 +52,7 @@ WebSocket 中枢共享 **presence**、**work claims**、**聊天**、**任务状
 **resource offers**。智能体跨项目通信并共享计划。中枢拒绝与其他所有者持有的
 已声明范围冲突的 claim。provider hook 和 Git 检查仅覆盖各自文档规定的修改边界。
 
-基础依赖为 `websockets`，在 Python 3.10 上还包括 `typing-extensions`。
+基础安装需要 Python 3.11 或更新版本以及 `websockets`。
 中枢管理 presence、leases 和历史记录；总线可以完全在本地运行。
 可选的模型 worker 使用已配置的 OpenAI 兼容端点，包括本地 Ollama；
 离线使用可选择确定性的规则回退。

@@ -11,7 +11,7 @@
 # for a local exhaustive run in the current turn, resources are explicitly
 # reserved, or an owner-authorised release needs local verification. Ordinary
 # pushes run seconds-scale metadata/history checks and let CI own the exhaustive
-# suite. The one residual gap is the matrix: CI tests Python 3.10–3.13, while this
+# suite. The one residual gap is the matrix: CI tests Python 3.11–3.13, while this
 # script uses only the local interpreter.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
@@ -48,7 +48,7 @@ run "bandit tooling audit" "$V/python" -m bandit -q tools/audit_dependency_tooli
   tools/check_dev_dependency_drift.py
 # ci.yml: typecheck
 run "mypy (strict)"        "$V/mypy"
-# ci.yml: test (single-version; CI runs the 3.10-3.13 matrix)
+# ci.yml: test (single-version; CI runs the 3.11-3.13 matrix)
 run "pytest + coverage"    "$V/python" -m pytest --cov=synapse_channel \
   --cov-report=term-missing --cov-report=xml -q
 # ci.yml: reuse

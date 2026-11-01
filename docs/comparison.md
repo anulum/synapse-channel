@@ -42,7 +42,7 @@ agent, SYNAPSE keeps a fleet of them off each other's work.
 | Event-driven wakeups | varies | core (`wait`); heartbeats and reconnect handling are separate |
 | Durable, replay-on-restart coordination | varies | configured healthy SQLite-WAL journal, within retention/key/lease boundaries |
 | Humans on the same channel | varies | core (the `syn` commands) |
-| Runtime dependencies | varies by framework | base `websockets`, plus `typing-extensions` on Python 3.10; optional surfaces have declared extras |
+| Runtime dependencies | varies by framework | base `websockets` on Python 3.11+; optional surfaces have declared extras |
 | Runs fully local, no cloud account | varies | base coordination can; provider workers and external services have separate requirements |
 
 ## Concrete differences you can verify

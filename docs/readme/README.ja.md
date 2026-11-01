@@ -39,7 +39,7 @@ SYNAPSE CHANNEL — リポジトリ概要（日本語訳。英語原文が正本
   <a href="https://pepy.tech/project/synapse-channel"><img src="https://static.pepy.tech/badge/synapse-channel" alt="Total downloads"></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <a href="https://anulum.github.io/synapse-channel/commercial/"><img src="https://img.shields.io/badge/commercial%20licence-available-0a7d3c" alt="Commercial licence available"></a>
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <a href="https://codecov.io/gh/anulum/synapse-channel"><img src="https://codecov.io/gh/anulum/synapse-channel/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://api.reuse.software/info/github.com/anulum/synapse-channel"><img src="https://api.reuse.software/badge/github.com/anulum/synapse-channel" alt="REUSE status"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/anulum/synapse-channel"><img src="https://api.securityscorecards.dev/projects/github.com/anulum/synapse-channel/badge" alt="OpenSSF Scorecard"></a>
@@ -54,7 +54,7 @@ SYNAPSE CHANNEL — リポジトリ概要（日本語訳。英語原文が正本
 宣言済み範囲と競合する claim を拒否します。プロバイダーフックと Git ゲートは、
 それぞれ文書化された変更範囲だけを対象にします。
 
-基本依存関係は `websockets` と、Python 3.10 では `typing-extensions` です。
+Python 3.11 以降と `websockets` が必要です。
 ハブが presence、leases、履歴を管理し、バスはすべてローカルで実行できます。
 任意で使用するモデルワーカーは、ローカル Ollama を含む設定済みの OpenAI 互換
 エンドポイントを使用します。オフライン用の決定論的なルールベースの

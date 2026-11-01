@@ -120,7 +120,7 @@ def _read_json(path: Path) -> Mapping[str, object]:
 
 
 def _read_toml(path: Path) -> Mapping[str, object]:
-    """Read TOML with the standard parser or the supported Python 3.10 backport."""
+    """Read TOML with the available standard or compatibility parser."""
     raw = path.read_text(encoding="utf-8")
     for module_name in ("tomllib", "tomli"):
         try:

@@ -15,6 +15,9 @@ SYNAPSE CHANNEL — security policy
 The latest released `0.x` line receives security fixes. Older lines are not
 maintained; upgrade to the latest version.
 
+Python 3.11 or newer is required. Python 3.10 reached end of life on
+1 October 2026 and is no longer supported. CI qualifies Python 3.11, 3.12 and 3.13.
+
 ## Reporting a vulnerability
 
 Please report security issues privately — do **not** open a public issue.
@@ -273,7 +276,7 @@ single switch (token, durable log, per-message auth, ACL, native WSS; query
 tokens and the off-loopback override disabled) and fails closed when any of them
 is absent. Combine both when a multi-seat hub is also network-exposed.
 
-The base runtime requires `websockets`, plus `typing-extensions` on Python 3.10.
+The base runtime requires Python 3.11 or newer and `websockets`.
 Several security-relevant features need an optional extra installed:
 
 | Capability | Extra |

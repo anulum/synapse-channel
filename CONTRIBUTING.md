@@ -13,6 +13,15 @@ SYNAPSE CHANNEL — contribution guide
 Thank you for considering a contribution. This guide covers how to set up a
 development environment and the standards a change must meet to be merged.
 
+## Python support and tooling
+
+The package and contributor environments require Python 3.11 or newer. Mypy
+checks the supported Python 3.11 floor. Ruff retains its established py310
+syntax and style target so a runtime support change does not require unrelated
+source modernisation. That conservative style target does not provide Python
+3.10 runtime support; package metadata and CI define the supported runtime.
+Ruff rules and the complete coverage gate remain unchanged.
+
 ## Getting started
 
 1. Fork and clone the repository.
@@ -277,7 +286,7 @@ stored mixed carry bytes rather than issuing a reused sequence. The remaining pr
 evidence. Their fixtures exercise storage mechanics, without certifying installed
 writer isolation or quiescence. Missing native capabilities fail these profiles.
 Linux CI collects all five exact filenames alongside the existing two default
-filename patterns on Python 3.10–3.13; Python 3.12 includes their real subprocess
+filename patterns on Python 3.11–3.13; Python 3.12 includes their real subprocess
 coverage. They are outside default macOS and Windows collection.
 
 ### Known-state recovery profiles

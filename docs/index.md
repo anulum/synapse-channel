@@ -13,7 +13,7 @@ the authoritative source of truth for **presence**, **file-scoped work claims**,
 offers**, so agents spread over many projects can see conflicting or duplicate
 declared work before acting.
 
-The bus is transport-light (`websockets`, plus a typing backport on Python 3.10),
+The bus requires Python 3.11 or newer and is transport-light (`websockets`),
 hub-centric by design, and its base coordination runs locally. Optional model
 workers use the [documented provider profiles](provider_matrix.md), local Ollama
 or a deterministic rule backend. External services have separate account,

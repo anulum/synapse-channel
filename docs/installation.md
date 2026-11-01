@@ -1,6 +1,6 @@
 # Installation
 
-SYNAPSE CHANNEL requires Python 3.10 or newer.
+SYNAPSE CHANNEL requires Python 3.11 or newer.
 
 ## From PyPI
 
@@ -58,9 +58,8 @@ digest and successful matching run before claiming that artifact passed.
 | `cloud-hsm` | Boto3-backed cloud-HSM wrapping adapters. |
 | `all` | Aggregate runtime extras; it excludes contributor-only `dev`, `docs`, and `benchmark`. |
 
-On Python 3.10, the `docs` extra selects PyMdown Extensions below 12.2 to
-match the last supported mkdocstrings highlighter. Python 3.11 and newer
-retain the current highlighter API. Both profiles build the full API reference.
+The `docs` extra uses the current mkdocstrings highlighter API on every
+supported interpreter and builds the full API reference.
 
 Install one or more with, for example:
 
@@ -109,14 +108,17 @@ implicitly started persistent service.
 For a contributor checkout, the local `.venv` should mirror the declared
 development, documentation, and benchmark extras.
 
-The audit and pre-commit toolchain requires Python 3.11 or newer because its
-patched dependencies no longer support Python 3.10. CI runs those tools on
-Python 3.12 and continues to test the product on Python 3.10 and newer. For
-the Python 3.10 CLI journey, CI installs the real pre-commit tool from its
-hash-locked Python 3.12 graph. `SYNAPSE_TEST_PRE_COMMIT_BIN` selects that
-executable while the product and its CLI subprocesses remain on Python 3.10. The
-development lock retains the appropriate interpreter markers; the drift checker
-evaluates them for the active Python, platform and requested extra.
+The product and contributor toolchain require Python 3.11 or newer. CI runs
+security and audit tools on Python 3.12 and tests the product on Python
+3.11, 3.12 and 3.13. The development lock retains platform and interpreter
+markers for these supported profiles; the drift checker evaluates them for
+the active Python, platform and requested extra.
+
+Python 3.10 reached end of life on 1 October 2026. Before upgrading, install
+a supported interpreter and recreate the virtual environment or use
+`pipx reinstall synapse-channel --python python3.11` for a pipx installation.
+Keep the hub database, signing keys and configuration at their existing paths;
+changing the interpreter does not migrate or reset durable coordination state.
 
 Verify the environment before running larger local gates:
 

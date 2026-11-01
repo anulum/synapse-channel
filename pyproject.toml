@@ -15,7 +15,7 @@ name = "synapse-channel"
 version = "0.99.41"
 description = "Local-first coordination bus for AI agents across one repository or a whole ecosystem: work claims, presence, chat, a shared plan, and resource sharing over a WebSocket hub"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE", "NOTICE.md", "LICENSES/*"]
 authors = [
@@ -26,15 +26,14 @@ classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Communications :: Chat",
   "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
   "websockets>=13.0",
-  "typing-extensions>=4.16.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -57,12 +56,10 @@ dev = [
   "prometheus-client>=0.20",
   "hypothesis>=6.100",
   "bandit>=1.7",
-  # Patched audit/hook dependencies require Python 3.11+. CI runs these
-  # tools on 3.12; product tests still run on every supported interpreter.
-  "pip-audit>=2.7; python_version >= '3.11'",
-  "pre-commit>=4.0; python_version >= '3.11'",
+  # Product tests include every supported interpreter; audit tools run on 3.12.
+  "pip-audit>=2.7",
+  "pre-commit>=4.0",
   "reuse>=6.0",
-  "tomli>=2.4.1; python_version < '3.11'",
   "mcp==1.30.0",
   "PyJWT>=2.15.0,<3",
   "uvicorn>=0.54.0,<1; sys_platform != 'emscripten'",
@@ -161,9 +158,6 @@ all = [
 docs = [
   "mkdocs-material>=9.5",
   "mkdocstrings[python]>=0.26",
-  # mkdocstrings 1.0.6 is the last Python 3.10 release; its highlighter
-  # predates the required Markdown argument introduced by pymdownx 12.2.
-  "pymdown-extensions<12.2; python_version < '3.11'",
 ]
 
 [project.scripts]
@@ -207,6 +201,7 @@ synapse_channel = [
 
 [tool.ruff]
 line-length = 100
+# Runtime and mypy require 3.11; retain the established syntax/style baseline.
 target-version = "py310"
 src = ["src", "tests", "benchmarks"]
 extend-exclude = ["legacy"]
@@ -228,7 +223,7 @@ convention = "numpy"
 
 [tool.mypy]
 strict = true
-python_version = "3.10"
+python_version = "3.11"
 mypy_path = "src"
 files = ["src/synapse_channel", "tests", "benchmarks", "tools", "examples"]
 exclude = ["legacy/"]
@@ -239,7 +234,6 @@ warn_return_any = true
 module = [
   "websockets.*",
   "tiktoken",
-  "tomli",
   "pysqlcipher3",
   "pysqlcipher3.*",
   "sqlcipher3",

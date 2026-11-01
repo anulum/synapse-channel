@@ -10,6 +10,8 @@ SYNAPSE GITHUB APP — managed-layer skeleton operator guide
 
 # SYNAPSE GitHub App skeleton
 
+Requires Python 3.11 or newer.
+
 This independently installable package is the hosting-neutral stage 2 of the
 Managed GitHub App plan. It verifies signed pull-request webhooks, authenticates
 as a GitHub App installation, reads bounded open-PR file inventories, reuses

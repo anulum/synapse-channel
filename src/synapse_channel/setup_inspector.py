@@ -162,16 +162,16 @@ async def inspect_setup(
         ),
         SetupCheck(
             "python",
-            "pass" if sys.version_info >= (3, 10) else "fail",
+            "pass" if sys.version_info >= (3, 11) else "fail",
             True,
             {
                 "executable": sys.executable,
                 "version": platform.python_version(),
             },
-            "The running interpreter satisfies Python >=3.10."
-            if sys.version_info >= (3, 10)
-            else "The running interpreter is older than Python 3.10.",
-            "" if sys.version_info >= (3, 10) else "Use Python 3.10 or newer.",
+            "The running interpreter satisfies Python >=3.11."
+            if sys.version_info >= (3, 11)
+            else "The running interpreter is older than Python 3.11.",
+            "" if sys.version_info >= (3, 11) else "Use Python 3.11 or newer.",
         ),
         SetupCheck(
             "platform",

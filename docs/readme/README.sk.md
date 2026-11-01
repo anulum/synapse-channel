@@ -39,7 +39,7 @@ SYNAPSE CHANNEL — prehľad repozitára (slovenský preklad; anglický originá
   <a href="https://pepy.tech/project/synapse-channel"><img src="https://static.pepy.tech/badge/synapse-channel" alt="Total downloads"></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <a href="https://anulum.github.io/synapse-channel/commercial/"><img src="https://img.shields.io/badge/commercial%20licence-available-0a7d3c" alt="Commercial licence available"></a>
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <a href="https://codecov.io/gh/anulum/synapse-channel"><img src="https://codecov.io/gh/anulum/synapse-channel/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://api.reuse.software/info/github.com/anulum/synapse-channel"><img src="https://api.reuse.software/badge/github.com/anulum/synapse-channel" alt="REUSE status"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/anulum/synapse-channel"><img src="https://api.securityscorecards.dev/projects/github.com/anulum/synapse-channel/badge" alt="OpenSSF Scorecard"></a>
@@ -54,7 +54,7 @@ naprieč projektmi a zdieľajú jeden plán. Hub odmieta konfliktné deklarovan�
 ktoré drží iný vlastník. Dokumentované provider hooky a Git gate kontrolujú len
 mutácie, ktoré pokrývajú.
 
-Základné závislosti sú `websockets` a na Pythone 3.10 aj `typing-extensions`.
+Základná inštalácia vyžaduje Python 3.11 alebo novší a `websockets`.
 Hub spravuje presence, leases a históriu; zbernica môže bežať celá lokálne.
 Voliteľní modeloví workeri používajú nakonfigurované OpenAI-kompatibilné endpointy
 vrátane lokálneho Ollama servera; na offline použitie je dostupný deterministický

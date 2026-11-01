@@ -38,8 +38,7 @@ still own their prompt/runtime/editor behavior; SYNAPSE only supplies shared
 coordination state through MCP tools and resources.
 
 The MCP SDK is an **optional extra** — the core install keeps its transport
-dependency `websockets`, plus the `typing-extensions` compatibility dependency
-on Python 3.10:
+dependency `websockets` on Python 3.11 or newer:
 
 ```bash
 pip install 'synapse-channel[mcp]'

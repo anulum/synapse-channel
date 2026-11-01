@@ -39,7 +39,7 @@ SYNAPSE CHANNEL — 저장소 개요 (한국어 번역본이며, 영어 원문�
   <a href="https://pepy.tech/project/synapse-channel"><img src="https://static.pepy.tech/badge/synapse-channel" alt="Total downloads"></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <a href="https://anulum.github.io/synapse-channel/commercial/"><img src="https://img.shields.io/badge/commercial%20licence-available-0a7d3c" alt="Commercial licence available"></a>
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <a href="https://codecov.io/gh/anulum/synapse-channel"><img src="https://codecov.io/gh/anulum/synapse-channel/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://api.reuse.software/info/github.com/anulum/synapse-channel"><img src="https://api.reuse.software/badge/github.com/anulum/synapse-channel" alt="REUSE status"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/anulum/synapse-channel"><img src="https://api.securityscorecards.dev/projects/github.com/anulum/synapse-channel/badge" alt="OpenSSF Scorecard"></a>
@@ -53,7 +53,7 @@ SYNAPSE CHANNEL — 저장소 개요 (한국어 번역본이며, 영어 원문�
 통신하고 플랜을 공유합니다. 허브는 다른 소유자가 보유한 선언된 범위와 충돌하는
 claim을 거부합니다. 프로바이더 훅과 Git 게이트는 각각 문서에 명시된 변경만 다룹니다.
 
-기본 의존성은 `websockets`와 Python 3.10에서 필요한 `typing-extensions`입니다.
+기본 설치에는 Python 3.11 이상과 `websockets`가 필요합니다.
 허브가 presence, leases, 기록을 관리하며 버스는 전부 로컬에서 실행할 수 있습니다.
 선택적 모델 워커는 로컬 Ollama를 포함한 설정된 OpenAI 호환 엔드포인트를 사용하며,
 오프라인용 결정론적 규칙 기반 폴백도 제공합니다.

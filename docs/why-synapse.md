@@ -28,8 +28,7 @@ state; nobody needs a database, a consensus protocol, or a cloud service to
 agree on who is doing what.
 
 It is deliberately **local-first and transport-light**: the core install has a
-WebSocket transport dependency (`websockets`) and a typing backport on Python
-3.10 (`typing-extensions`). This describes the base coordinator; optional
+WebSocket transport dependency (`websockets`) on Python 3.11 or newer. This describes the base coordinator; optional
 adapters, crypto, SQLCipher and WASM have their own declared dependencies.
 The hub runs on one machine, and optional client adapters connect existing
 agents within their documented host/version boundaries.

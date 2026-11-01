@@ -1307,7 +1307,7 @@ before sending still exits `1`.
 `--receipt-timeout` bounds the complete send and receipt exchange, including a
 blocked write: default 2 seconds, finite and greater than 0, at most 300. A send
 timeout or connection failure after an attempt also exits `3`. No automatic
-retransmission occurs. This includes asynchronous write timeouts on Python 3.10.
+retransmission occurs. This includes asynchronous write timeouts.
 After a failed or timed-out write, the one-shot sender aborts its own socket
 before joining the listener, so shutdown cannot wait on its remaining write
 buffer. Discarding local buffers does not settle the remote outcome.

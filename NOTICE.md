@@ -40,9 +40,7 @@ If you build on this work, attribution is appreciated. See
 
 The base runtime uses the
 [`websockets`](https://pypi.org/project/websockets/) library (BSD-3-Clause).
-On Python 3.10, [`typing_extensions`](https://pypi.org/project/typing-extensions/)
-(PSF-2.0) supplies `Unpack` for the typed legacy hub keyword interface;
-Python 3.11 and newer use the standard-library implementation. The
+Python 3.11 and newer supply the required typing APIs in the standard library. The
 benchmark extra additionally uses [`tiktoken`](https://pypi.org/project/tiktoken/)
 (MIT). Optional adapters, cryptography, SQLCipher and WASM use their declared
 extras; the standard-library statement applies to the base implementation

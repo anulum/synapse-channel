@@ -59,8 +59,8 @@ flowchart LR
 The managed package imports one existing local-core function:
 `find_conflicts`. The core imports nothing from this integration. GitHub auth,
 HTTP, webhooks, secrets, rate limits, and hosting are owned by this separately
-installed integration. The core's base dependencies remain `websockets` and,
-on Python 3.10, `typing-extensions`; optional core extras have their own dependencies.
+installed integration. Both packages require Python 3.11 or newer. The core's
+base dependency remains `websockets`; optional core extras have their own dependencies.
 
 The separate `review_webhook.py` decoder verifies the same raw-body HMAC before
 parsing submitted reviews or created inline comments. It returns bounded source

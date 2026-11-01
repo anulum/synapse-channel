@@ -39,7 +39,7 @@ SYNAPSE CHANNEL — visión general del repositorio (traducción al español; el
   <a href="https://pepy.tech/project/synapse-channel"><img src="https://static.pepy.tech/badge/synapse-channel" alt="Total downloads"></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <a href="https://anulum.github.io/synapse-channel/commercial/"><img src="https://img.shields.io/badge/commercial%20licence-available-0a7d3c" alt="Commercial licence available"></a>
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <a href="https://codecov.io/gh/anulum/synapse-channel"><img src="https://codecov.io/gh/anulum/synapse-channel/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://api.reuse.software/info/github.com/anulum/synapse-channel"><img src="https://api.reuse.software/badge/github.com/anulum/synapse-channel" alt="REUSE status"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/anulum/synapse-channel"><img src="https://api.securityscorecards.dev/projects/github.com/anulum/synapse-channel/badge" alt="OpenSSF Scorecard"></a>
@@ -54,7 +54,7 @@ Los agentes se comunican entre proyectos y comparten un plan. El hub rechaza
 ámbitos declarados en conflicto que mantiene otro propietario. Los hooks de
 proveedor y el gate de Git aplican controles solo a sus mutaciones documentadas.
 
-Las dependencias básicas son `websockets` y, en Python 3.10, `typing-extensions`.
+La instalación básica requiere Python 3.11 o posterior y `websockets`.
 El hub mantiene presence, leases e historial; el bus puede funcionar totalmente
 en local. Los workers de modelos opcionales usan endpoints OpenAI compatibles
 configurados, incluido Ollama local, con un fallback determinista basado en reglas

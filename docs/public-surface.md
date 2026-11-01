@@ -75,8 +75,7 @@ Core coordination commands under the versioned API and wire compatibility contra
 
 Bridges to other ecosystems and tools; optional extras, not core. These integrate
 Synapse with A2A, MCP, git, tmux-driven agents, and model workers; some require
-optional extras. The base runtime uses `websockets` and, on Python 3.10,
-`typing-extensions`.
+optional extras. The base runtime requires Python 3.11 or newer and uses `websockets`.
 
 `a2a-card`  `a2a-client`  `a2a-conformance`  `a2a-interop-trace`  `a2a-serve`  `adapters`  `agent-tmux`  `codex-tmux`  `git-claim`  `git-claim-check`  `git-hook`  `git-init`  `git-release`  `ingest`  `install-shell-hook`  `integrations`  `mcp`  `mcp-call`  `mcp-tools`  `shell-hook`  `waker`  `worker`  `worker-session`
 

@@ -117,7 +117,7 @@ synapse doctor --db-path ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 ```
 
 Without `[sqlcipher]` the base install keeps its WebSocket transport dependency
-(plus the Python 3.10 typing backport), and `--db-key-file`
+on Python 3.11 or newer, and `--db-key-file`
 fails closed with an install hint. Whole-file AES-GCM envelopes still apply to
 relay logs, A2A state, cursors, and archives — they are complementary, not a
 substitute for page encryption of a live open database. SQLCipher protects

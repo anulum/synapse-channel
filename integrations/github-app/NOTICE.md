@@ -48,9 +48,8 @@ The package has two direct runtime dependencies:
   Apache-2.0 OR BSD-3-Clause.
 - [`synapse-channel`](https://pypi.org/project/synapse-channel/)
   (AGPL-3.0-or-later), whose base runtime dependencies are
-  [`websockets`](https://pypi.org/project/websockets/) (BSD-3-Clause) and,
-  on Python 3.10, [`typing-extensions`](https://pypi.org/project/typing-extensions/)
-  (PSF-2.0). Optional core extras add their own separately distributed dependencies.
+  [`websockets`](https://pypi.org/project/websockets/) (BSD-3-Clause) on
+  Python 3.11 or newer. Optional core extras add their own separately distributed dependencies.
 
 No third-party code is vendored into this distribution. Direct and transitive
 dependencies remain separately distributed under their own licence terms.

@@ -50,7 +50,7 @@ _LOCAL_SINGLE_USER = SetupProfile(
             "Python satisfies the package's supported interpreter floor.",
             True,
             "running Python interpreter",
-            "Use Python 3.10 or newer.",
+            "Use Python 3.11 or newer.",
         ),
         SetupRequirement(
             "platform",
