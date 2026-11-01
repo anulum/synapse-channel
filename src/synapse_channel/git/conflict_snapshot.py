@@ -75,7 +75,7 @@ async def read_conflict_snapshot(
             await agent.request_state()
             try:
                 await asyncio.wait_for(received.wait(), timeout=budget / 2)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await agent.request_state()
                 await received.wait()
 

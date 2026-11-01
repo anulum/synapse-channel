@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from urllib.request import Request
@@ -116,7 +116,7 @@ def test_real_cli_fixture_persists_first_and_last_seen(tmp_path: Path) -> None:
     config_path = tmp_path / "review.json"
     config = json.loads(discovery.DEFAULT_CONFIG.read_text(encoding="utf-8"))
     config["review_owner"] = "fixture/reviewer"
-    config["reviewed_at"] = datetime.now(timezone.utc).date().isoformat()
+    config["reviewed_at"] = datetime.now(UTC).date().isoformat()
     config_path.write_text(json.dumps(config), encoding="utf-8")
     fixture_path = tmp_path / "fixture.json"
     fixture_path.write_text(json.dumps(_fixture()), encoding="utf-8")
@@ -166,12 +166,12 @@ def test_real_cli_fixture_persists_first_and_last_seen(tmp_path: Path) -> None:
 def test_alias_duplicate_rename_publisher_conflict_and_reappearance() -> None:
     """An alias never hides a changed publisher and a withdrawn item can return."""
     config, catalog = discovery.load_inputs(discovery.DEFAULT_CONFIG, discovery.DEFAULT_CATALOG)
-    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 19, tzinfo=UTC)
     rows, complete = _scan(_fixture(mcp_names=("acme/old",)), now)
     first, catalog = discovery.reconcile(config, catalog, rows, {}, complete, now=now)
     assert first["counts"]["observed"] == 3
     config["aliases"] = {"mcp:acme/new": "mcp:acme/old"}
-    later = datetime(2026, 9, 20, tzinfo=timezone.utc)
+    later = datetime(2026, 9, 20, tzinfo=UTC)
     rows, complete = _scan(_fixture(mcp_names=("acme/new",)), later)
     report, renamed = discovery.reconcile(config, catalog, rows, {}, complete, now=later)
     assert report["counts"]["observed"] == 3
@@ -207,7 +207,7 @@ def test_alias_duplicate_rename_publisher_conflict_and_reappearance() -> None:
 def test_partial_source_never_proves_removal_and_deleted_status_does() -> None:
     """A bounded search page is incomplete; the registry's explicit status is evidence."""
     config, catalog = discovery.load_inputs(discovery.DEFAULT_CONFIG, discovery.DEFAULT_CATALOG)
-    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 19, tzinfo=UTC)
     rows, complete = _scan(_fixture(host_total=1000), now)
     _, catalog = discovery.reconcile(config, catalog, rows, {}, complete, now=now)
     rows, complete = _scan(_fixture(host_names=(), host_total=1000), now)
@@ -230,7 +230,7 @@ def test_partial_source_never_proves_removal_and_deleted_status_does() -> None:
 def test_bad_source_staleness_and_catalog_validation(tmp_path: Path) -> None:
     """Malformed feed and an expired source become visible failures, not empty lists."""
     config, catalog = discovery.load_inputs(discovery.DEFAULT_CONFIG, discovery.DEFAULT_CATALOG)
-    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 19, tzinfo=UTC)
     fixture = _fixture()
     fixture["models_dev"] = {"bad": {"id": "wrong", "models": {}}}
     rows, errors, complete = discovery.collect(fixture=fixture, now=now)
@@ -317,7 +317,7 @@ def test_cli_refuses_overwrite_and_fails_strict_on_unavailable_feed(
     config_path = tmp_path / "review.json"
     config = json.loads(discovery.DEFAULT_CONFIG.read_text(encoding="utf-8"))
     config["review_owner"] = "fixture/reviewer"
-    config["reviewed_at"] = datetime.now(timezone.utc).date().isoformat()
+    config["reviewed_at"] = datetime.now(UTC).date().isoformat()
     config_path.write_text(json.dumps(config), encoding="utf-8")
     fixture_path = tmp_path / "feed.json"
     fixture_path.write_text(json.dumps(_fixture()), encoding="utf-8")
@@ -345,12 +345,12 @@ def test_cli_refuses_overwrite_and_fails_strict_on_unavailable_feed(
     assert discovery.main() == 0
     assert json.loads(state_path.read_text(encoding="utf-8"))["candidates"]
     config["reviewed_at"] = (
-        datetime.now(timezone.utc).date() - timedelta(days=config["review_interval_days"] + 1)
+        datetime.now(UTC).date() - timedelta(days=config["review_interval_days"] + 1)
     ).isoformat()
     config_path.write_text(json.dumps(config), encoding="utf-8")
     assert discovery.main() == 1
     assert json.loads(report_path.read_text(encoding="utf-8"))["review_overdue"] is True
-    config["reviewed_at"] = datetime.now(timezone.utc).date().isoformat()
+    config["reviewed_at"] = datetime.now(UTC).date().isoformat()
     config_path.write_text(json.dumps(config), encoding="utf-8")
     monkeypatch.setattr(
         sys, "argv", args[:-3] + ["--report", str(report_path), "--next-catalog", str(report_path)]
@@ -386,7 +386,7 @@ def test_cli_refuses_overwrite_and_fails_strict_on_unavailable_feed(
 
 def test_registry_pagination_and_repeated_cursor_are_bounded() -> None:
     """An incremental registry cursor advances only within the page bound."""
-    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 19, tzinfo=UTC)
     fixture = _fixture()
     fixture["mcp_registry"] = [
         {"servers": [_mcp("acme/one")], "metadata": {"nextCursor": "page2"}},
@@ -460,7 +460,7 @@ def test_live_fetch_path_uses_fixed_queries_and_rejects_bad_roots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The non-fixture collector constructs only the declared public URLs."""
-    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 19, tzinfo=UTC)
     fixture = _fixture()
     requested: list[str] = []
 
@@ -552,7 +552,7 @@ def test_malformed_review_state_cannot_be_admitted(
 
 def test_page_and_candidate_bounds_are_fail_closed() -> None:
     """Overlarge logical feeds and malformed page shape cannot extend a scan."""
-    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 19, tzinfo=UTC)
     fixture = _fixture()
     fixture["mcp_registry"] = "not pages"
     _, errors, _ = discovery.collect(fixture=fixture, now=now)

@@ -17,7 +17,7 @@ import re
 import subprocess  # nosec B404 - fixed version-only commands, never a shell
 import sys
 from collections.abc import Callable, Mapping
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -198,7 +198,7 @@ def build_report(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Compare all official sources, keeping failed checks distinct from no drift."""
-    stamp = now or datetime.now(timezone.utc)
+    stamp = now or datetime.now(UTC)
     if stamp.tzinfo is None:
         raise VendorWatchError("report time must include a timezone")
     due = stamp.date() > date.fromisoformat(matrix["next_review_at"])
@@ -248,7 +248,7 @@ def build_report(
         rows[name] = row
     return {
         "schema": 1,
-        "checked_at": stamp.astimezone(timezone.utc).isoformat(timespec="seconds"),
+        "checked_at": stamp.astimezone(UTC).isoformat(timespec="seconds"),
         "review_owner": matrix["review_owner"],
         "reviewed_at": matrix["reviewed_at"],
         "next_review_at": matrix["next_review_at"],

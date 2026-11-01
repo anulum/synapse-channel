@@ -22,7 +22,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from datetime import timezone
+from datetime import UTC
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -355,9 +355,9 @@ async def probe_federation_peer(
     except FederationDoctorError:
         raise
     except (
+        TimeoutError,
         OSError,
         ConnectionClosed,
-        asyncio.TimeoutError,
         MultiHubWireError,
         json.JSONDecodeError,
         ValueError,
@@ -434,7 +434,7 @@ def _peer_certificate_expires_at(socket: _Socket) -> float | None:
         return None
     not_after = getattr(certificate, "not_valid_after_utc", None)
     if not_after is None:
-        not_after = certificate.not_valid_after.replace(tzinfo=timezone.utc)
+        not_after = certificate.not_valid_after.replace(tzinfo=UTC)
     return float(not_after.timestamp())
 
 

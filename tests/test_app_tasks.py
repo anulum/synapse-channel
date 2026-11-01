@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -30,7 +30,7 @@ from synapse_channel.core.entitlement_store import append_event
 
 
 def _at() -> datetime:
-    return datetime(2026, 9, 22, 22, 0, tzinfo=timezone.utc)
+    return datetime(2026, 9, 22, 22, 0, tzinfo=UTC)
 
 
 def _ledger(path: Path, at: datetime) -> None:

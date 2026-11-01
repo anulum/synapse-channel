@@ -18,7 +18,7 @@ keeps unresolved uncertainty.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -41,7 +41,7 @@ from synapse_channel.wake_uncertainty import (
 )
 
 SEAT = "PROJECT/seat-uncertain"
-T0 = datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc)
+T0 = datetime(2026, 10, 29, 12, 0, 0, tzinfo=UTC)
 
 
 class CountingAdapter:

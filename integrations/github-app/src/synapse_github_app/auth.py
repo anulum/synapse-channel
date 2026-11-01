@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import jwt
@@ -37,7 +37,7 @@ def create_app_jwt(*, issuer: str, private_key_pem: bytes, now: datetime | None 
         raise AuthenticationError("App issuer must be a printable non-empty identifier")
     if not private_key_pem:
         raise AuthenticationError("App private key must not be empty")
-    instant = now or datetime.now(timezone.utc)
+    instant = now or datetime.now(UTC)
     if instant.tzinfo is None:
         raise AuthenticationError("JWT clock must be timezone-aware")
     issued_at = int(instant.timestamp()) - 60
@@ -70,4 +70,4 @@ def parse_installation_token(value: object) -> InstallationToken:
         raise PayloadError("installation token expiry is invalid") from exc
     if expires_at.tzinfo is None:
         raise PayloadError("installation token expiry must include a timezone")
-    return InstallationToken(value=token, expires_at=expires_at.astimezone(timezone.utc))
+    return InstallationToken(value=token, expires_at=expires_at.astimezone(UTC))

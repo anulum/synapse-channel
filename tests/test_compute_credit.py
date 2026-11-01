@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -30,7 +30,7 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.ledger import Blackboard
 from synapse_channel.core.persistence import EventStore
 
-AS_OF = datetime(2026, 9, 23, 12, tzinfo=timezone.utc)
+AS_OF = datetime(2026, 9, 23, 12, tzinfo=UTC)
 
 
 def _event(kind: str, event_id: str, **fields: object) -> dict[str, object]:
@@ -266,7 +266,7 @@ def test_expired_grant_and_authorisation_are_separate(tmp_path: Path) -> None:
     _ledger(ledger)
     task = {**_task(), "authorisation_expires_at": "2026-09-25T00:00:00Z"}
     _approve(hub, task)
-    after_grant = datetime(2026, 9, 24, 1, tzinfo=timezone.utc)
+    after_grant = datetime(2026, 9, 24, 1, tzinfo=UTC)
     result = suggest_compute_work(
         read_events(ledger),
         [task],

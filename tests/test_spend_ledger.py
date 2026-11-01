@@ -12,7 +12,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +22,7 @@ from synapse_channel.core.spend_ledger import NOT_ADMITTED, SpendLedger, SpendLe
 
 OWNER = "hub-owner"
 PEER = "hub-peer"
-T0 = datetime(2026, 10, 1, 12, tzinfo=timezone.utc)
+T0 = datetime(2026, 10, 1, 12, tzinfo=UTC)
 
 
 def _config(**overrides: Any) -> dict[str, Any]:

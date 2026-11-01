@@ -150,7 +150,7 @@ class _ReplyCorrelator:
         """Await the peer's reply, preferring a structured result over free text."""
         try:
             await asyncio.wait_for(self._first_signal(), reply_timeout)
-        except (TimeoutError, asyncio.TimeoutError):
+        except TimeoutError:
             return error_turn_result(
                 participant=participant,
                 channel=channel,
@@ -162,7 +162,7 @@ class _ReplyCorrelator:
         # Free text arrived first; give a structured result a short grace to still win.
         try:
             return await asyncio.wait_for(asyncio.shield(self._structured), freetext_grace)
-        except (TimeoutError, asyncio.TimeoutError):
+        except TimeoutError:
             return self._degraded(channel=channel, participant=participant, request=request)
 
     def _degraded(

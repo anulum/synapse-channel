@@ -18,7 +18,7 @@ import contextlib
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 
@@ -120,7 +120,7 @@ def utc_event_time(timestamp: float) -> datetime:
             or not math.isfinite(timestamp)
         ):
             raise ValueError("timestamp must be a finite number")
-        return datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=timestamp)
+        return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(seconds=timestamp)
     except (OverflowError, TypeError) as exc:
         raise ValueError("timestamp is outside the supported UTC calendar") from exc
 

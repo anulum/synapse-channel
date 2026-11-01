@@ -35,7 +35,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from synapse_channel.core.identity_keys import IdentityKeyError, load_signing_key
@@ -74,7 +74,7 @@ def _print(document: object) -> None:
 
 def _operator(args: argparse.Namespace) -> int:
     """Run one local operator command on the owner-only ledger."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     try:
         ledger = SpendLedger(args.ledger, owner_hub_id=args.hub_id)
         if args.spend_command == "configure":

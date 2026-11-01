@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -24,7 +24,7 @@ from synapse_channel.core.entitlement_advert import (
     window_ref,
 )
 
-AT = datetime(2026, 9, 19, 12, tzinfo=timezone.utc)
+AT = datetime(2026, 9, 19, 12, tzinfo=UTC)
 COMMON = {
     "recorded_at": "2026-09-19T12:00:00Z",
     "source": "operator:owner",

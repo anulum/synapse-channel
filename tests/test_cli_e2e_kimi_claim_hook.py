@@ -142,10 +142,7 @@ def test_printed_token_file_recipe_authenticates_secured_hub(tmp_path: Path) -> 
         # Extract the command string from the printed TOML. Drop the resolved
         # binary (here sys.executable, because the test passed --synapse-bin)
         # and run the remaining args through the test harness entrypoint.
-        if sys.version_info >= (3, 11):
-            import tomllib
-        else:  # pragma: no cover - exercised only on Python 3.10
-            import tomli as tomllib
+        import tomllib
 
         command_line = str(tomllib.loads(rendered_text)["hooks"][0]["command"])
         parsed = shlex.split(command_line)

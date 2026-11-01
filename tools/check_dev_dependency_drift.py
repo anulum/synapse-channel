@@ -25,12 +25,8 @@ from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
 
+import tomllib
 from packaging.requirements import Requirement as DependencyRequirement
-
-if sys.version_info >= (3, 11):  # pragma: no cover - version branch.
-    import tomllib
-else:  # pragma: no cover - covered on Python 3.10.
-    import tomli as tomllib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PYPROJECT = REPO_ROOT / "pyproject.toml"

@@ -23,10 +23,7 @@ from synapse_channel.kimi_hook_installer import (
 
 
 def test_render_hook_config_is_valid_toml_and_token_safe(tmp_path: Path) -> None:
-    if sys.version_info >= (3, 11):
-        import tomllib
-    else:  # pragma: no cover - exercised only on Python 3.10
-        import tomli as tomllib
+    import tomllib
 
     token_file = tmp_path / "hub.token"
     token_file.write_text("secret-token", encoding="utf-8")

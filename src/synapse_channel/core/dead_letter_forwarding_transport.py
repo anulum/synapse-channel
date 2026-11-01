@@ -123,7 +123,7 @@ async def forward_dead_letter(
     )
     try:
         await asyncio.wait_for(_transmit(envelope, uri, connector), timeout)
-    except (OSError, ConnectionClosed, asyncio.TimeoutError) as exc:
+    except (TimeoutError, OSError, ConnectionClosed) as exc:
         msg = f"forwarding a dead-letter signal to {uri!r} failed: {exc}"
         raise DeadLetterForwardError(msg) from exc
 

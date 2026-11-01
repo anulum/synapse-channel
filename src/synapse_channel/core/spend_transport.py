@@ -130,7 +130,7 @@ async def request_spend(
         return decode_spend_result(frame, action)
     except SpendTransportError:
         raise
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise SpendTransportTimeoutError(
             f"the spend owner at {uri!r} did not answer within {timeout:g}s; query by key"
         ) from exc

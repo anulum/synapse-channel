@@ -254,7 +254,7 @@ async def forward_message(
         result = decode_message_forward_result(frame)
     except (MessageForwardRejectedError, MessageForwardTransportError):
         raise
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         msg = f"peer {peer.uri!r} did not answer within {timeout:g}s"
         raise MessageForwardTransportError(msg) from exc
     except (OSError, ConnectionClosed, MessageForwardWireError, json.JSONDecodeError) as exc:

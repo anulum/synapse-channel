@@ -32,7 +32,7 @@ def certificate_authority(common_name: str) -> tuple[rsa.RSAPrivateKey, x509.Cer
     """Return a one-day self-signed CA key and certificate named ``common_name``."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     certificate = (
         x509.CertificateBuilder()
         .subject_name(name)
@@ -76,7 +76,7 @@ def issue_identity(
     """Issue an owner-only certificate and key signed by the CA; ``server`` adds localhost SANs."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)])
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     builder = (
         x509.CertificateBuilder()
         .subject_name(subject)

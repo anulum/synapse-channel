@@ -160,7 +160,7 @@ class DarkSeatMonitor:
             await self.check()
             try:
                 await asyncio.wait_for(stop.wait(), timeout=self._poll_seconds)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
     @asynccontextmanager

@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -70,7 +70,7 @@ def _balance(event_id: str, hour: int, remaining: str | None) -> dict[str, objec
 
 
 def _at(hour: int, minute: int = 10) -> datetime:
-    return datetime(2026, 9, 19, hour, minute, tzinfo=timezone.utc)
+    return datetime(2026, 9, 19, hour, minute, tzinfo=UTC)
 
 
 def test_burst_usage_lowers_forecast_confidence() -> None:
@@ -227,8 +227,6 @@ def test_out_of_order_arrival_and_new_window_reset() -> None:
             "ends_at": "2026-09-21T00:00:00Z",
         }
     )
-    new_period = forecast_window(
-        events, "window-2", as_of=datetime(2026, 9, 20, 1, tzinfo=timezone.utc)
-    )
+    new_period = forecast_window(events, "window-2", as_of=datetime(2026, 9, 20, 1, tzinfo=UTC))
     assert new_period.state == "insufficient_data"
     assert new_period.sample_size == 0

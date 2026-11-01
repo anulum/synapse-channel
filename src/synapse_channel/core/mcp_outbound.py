@@ -211,7 +211,7 @@ class OutboundMcpClient:
 
         try:
             listed = await asyncio.wait_for(discover(), timeout=spec.timeout_seconds)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise McpToolError(
                 f"tool discovery on server '{server}' timed out after "
                 f"{spec.timeout_seconds:g} seconds"
@@ -250,7 +250,7 @@ class OutboundMcpClient:
 
         try:
             result = await asyncio.wait_for(call(), timeout=spec.timeout_seconds)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise McpToolError(
                 f"tool '{tool}' on server '{server}' timed out after "
                 f"{spec.timeout_seconds:g} seconds"

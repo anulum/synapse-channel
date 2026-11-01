@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -51,7 +51,7 @@ def test_the_operator_configures_inspects_and_reconciles(
     assert _run(["spend", "configure", *base, "--file", _file(tmp_path / "p.json", _pool())]) == 0
     assert json.loads(capsys.readouterr().out) == {"pool_id": "pool-a", "revision": 1}
     ledger = SpendLedger(home / "ledger.sqlite3", owner_hub_id=OWNER)
-    grant = ledger.reserve(FOLLOWER, _reserve(), now=datetime.now(timezone.utc))
+    grant = ledger.reserve(FOLLOWER, _reserve(), now=datetime.now(UTC))
     assert _run(["spend", "status", *base, "--pool", "pool-a"]) == 0
     assert json.loads(capsys.readouterr().out)["outstanding"] == "20"
     reconcile = {

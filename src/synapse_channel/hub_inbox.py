@@ -207,7 +207,7 @@ async def read_hub_inbox(
         )
         save_hub_inbox_cursor(path, HubInboxCursor(page["hub_id"], page["cursor"]))
         return 0
-    except (OSError, ValueError, asyncio.TimeoutError, WebSocketException):
+    except (TimeoutError, OSError, ValueError, WebSocketException):
         print(
             json.dumps(
                 {

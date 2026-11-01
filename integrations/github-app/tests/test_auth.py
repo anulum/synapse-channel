@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
@@ -22,7 +22,7 @@ from synapse_github_app.errors import AuthenticationError, PayloadError
 def test_app_jwt_has_real_rs256_signature_and_bounded_claims() -> None:
     """Verify the signed JWT claims against the generated public key."""
     private_pem, public_pem = rsa_pem_pair()
-    now = datetime(2026, 7, 11, 14, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 11, 14, 0, tzinfo=UTC)
 
     encoded = create_app_jwt(issuer="Iv1.client", private_key_pem=private_pem, now=now)
     claims = jwt.decode(
@@ -68,7 +68,7 @@ def test_installation_token_is_opaque_and_expiry_is_normalized() -> None:
     parsed = parse_installation_token({"token": token, "expires_at": "2026-07-11T15:00:00Z"})
 
     assert parsed.value == token
-    assert parsed.expires_at == datetime(2026, 7, 11, 15, 0, tzinfo=timezone.utc)
+    assert parsed.expires_at == datetime(2026, 7, 11, 15, 0, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(

@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -222,10 +221,7 @@ def test_main_sync_wrapper_runs_async_query_for_ergonomics(
 
 
 def test_syn_locks_alias_is_packaged() -> None:
-    if sys.version_info >= (3, 11):
-        import tomllib
-    else:  # pragma: no cover - exercised only on Python 3.10
-        import tomli as tomllib
+    import tomllib
 
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     scripts: dict[str, Any] = pyproject["project"]["scripts"]

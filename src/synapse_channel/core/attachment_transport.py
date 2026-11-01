@@ -234,7 +234,7 @@ async def request_attachment(
 
     try:
         return await asyncio.wait_for(exchange(), timeout)
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise AttachmentError("attachment source request timed out") from exc
     except (OSError, WebSocketException, ValueError, TypeError, OverflowError) as exc:
         if isinstance(exc, AttachmentError):

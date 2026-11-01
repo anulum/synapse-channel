@@ -31,13 +31,13 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import importlib
 import json
 import subprocess
-import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
+
+import tomllib
 
 from tools.structure_measures import MEASURES, Figures, measure_roots
 
@@ -177,9 +177,8 @@ def parse_ledger(text: str) -> Ledger:
         When the text is not TOML, has another schema, names an unknown
         measure, holds a non-integer figure, or has an incomplete exception.
     """
-    reader = importlib.import_module("tomllib" if sys.version_info >= (3, 11) else "tomli")
     try:
-        data = reader.loads(text)
+        data = tomllib.loads(text)
     except ValueError as error:
         raise LedgerError(f"ledger_malformed: {error}") from error
     if data.get("schema") != SCHEMA:

@@ -68,7 +68,7 @@ import re
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -171,8 +171,8 @@ def _parse_timestamp(value: str) -> datetime:
         value = f"{value[:-1]}+00:00"
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def workflow_run_from_mapping(raw: Mapping[str, Any]) -> WorkflowRun:

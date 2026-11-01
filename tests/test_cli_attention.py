@@ -13,7 +13,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -230,7 +230,7 @@ def test_cli_projects_private_quota_without_previewing_account_name(tmp_path: Pa
     EventStore(hub_path).close()
     queue = tmp_path / "attention" / "queue.db"
     ledger = tmp_path / "entitlements" / "ledger.db"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     common = {
         "recorded_at": (now - timedelta(days=2)).isoformat(),
         "source": "operator:owner",

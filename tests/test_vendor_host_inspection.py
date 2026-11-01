@@ -13,7 +13,7 @@ import base64
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -86,7 +86,7 @@ def test_reviewed_hosts_rejected_by_public_cli(tmp_path: Path) -> None:
     config_path = tmp_path / "review.json"
     config = json.loads(discovery.DEFAULT_CONFIG.read_text(encoding="utf-8"))
     config["review_owner"] = "fixture/reviewer"
-    config["reviewed_at"] = datetime.now(timezone.utc).date().isoformat()
+    config["reviewed_at"] = datetime.now(UTC).date().isoformat()
     config_path.write_text(json.dumps(config), encoding="utf-8")
     api: dict[str, Any] = {}
     for name in REVIEWED_HOSTS:
@@ -220,7 +220,7 @@ def test_mcp_broken_repository_is_recorded_and_excluded() -> None:
         ],
         "github_api": {"https://api.github.com/repos/ee324/a2awire": {"_http_status": 404}},
     }
-    now = datetime(2026, 9, 23, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 23, tzinfo=UTC)
     rows, errors, complete = discovery.collect(fixture=fixture, now=now)
     assert errors == {}
     assert complete["mcp_repository_check"] is True

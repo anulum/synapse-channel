@@ -21,10 +21,7 @@ import re
 import sys
 from pathlib import Path
 
-if sys.version_info >= (3, 11):  # pragma: no cover - version branch.
-    import tomllib
-else:  # pragma: no cover - covered on Python 3.10.
-    import tomli as tomllib
+import tomllib
 
 ROOT = Path(__file__).resolve().parent.parent
 

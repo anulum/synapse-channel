@@ -65,10 +65,7 @@ def _rendered_command(provider: str, output: str) -> str:
         return str(json.loads(output)["hooks"]["PreToolUse"][0]["hooks"][0]["command"])
     if provider == "gemini-claim-hook":
         return str(json.loads(output)["hooks"]["BeforeTool"][0]["hooks"][0]["command"])
-    if sys.version_info >= (3, 11):
-        import tomllib
-    else:  # pragma: no cover - exercised only on Python 3.10
-        import tomli as tomllib
+    import tomllib
 
     return str(tomllib.loads(output)["hooks"][0]["command"])
 

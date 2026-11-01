@@ -23,7 +23,7 @@ import hashlib
 import json
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -99,7 +99,7 @@ def build_record(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
         "outcome": args.outcome,
         "sender_seat": args.seat if sent else args.peer_seat,
         "recipient_seat": args.peer_seat if sent else args.seat,
-        "sent_at": args.sent_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        "sent_at": args.sent_at or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
         "text_sha256": hashlib.sha256(encoded).hexdigest(),
         "text_bytes": len(encoded),
         "text": text,

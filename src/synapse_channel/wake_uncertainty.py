@@ -28,7 +28,7 @@ Nothing here runs an adapter, writes a mark or changes what the relay does.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from synapse_channel import wake_marks
@@ -85,7 +85,7 @@ def _parse(stamp: str) -> datetime | None:
         moment = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S.%fZ")
     except ValueError:
         return None
-    return moment.replace(tzinfo=timezone.utc)
+    return moment.replace(tzinfo=UTC)
 
 
 def _row(

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from synapse_github_app.auth import create_app_jwt
 from synapse_github_app.checks import build_check_run
@@ -81,7 +81,7 @@ class GitHubAppService:
         event = decode_pull_request(headers=headers, body=body, secret=self._webhook_secret)
         if event is None:
             return ServiceResult(action="ignored")
-        instant = now or datetime.now(timezone.utc)
+        instant = now or datetime.now(UTC)
         app_jwt = create_app_jwt(
             issuer=self._app_issuer,
             private_key_pem=self._private_key_pem,
@@ -91,7 +91,7 @@ class GitHubAppService:
             event.installation_id,
             app_jwt=app_jwt,
         )
-        if installation.expires_at <= instant.astimezone(timezone.utc):
+        if installation.expires_at <= instant.astimezone(UTC):
             raise AuthenticationError("GitHub returned an expired installation token")
         snapshots, pulls_truncated = self._snapshots(
             repository_token=installation.value,

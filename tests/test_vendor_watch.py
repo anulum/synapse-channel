@@ -13,7 +13,7 @@ import hashlib
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.request import Request
 
@@ -135,7 +135,7 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
         matrix,
         fetch=fetch,
         probe=lambda command: "2.1.273" if command and command[0] == "claude" else None,
-        now=datetime(2026, 9, 22, tzinfo=timezone.utc),
+        now=datetime(2026, 9, 22, tzinfo=UTC),
     )
     rows = report["surfaces"]
     assert rows["claude-code"]["status"] == "current"
@@ -157,7 +157,7 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
         matrix,
         fetch=fetch,
         probe=lambda command: None,
-        now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        now=datetime(2026, 9, 30, tzinfo=UTC),
     )
     assert overdue["review_overdue"] is True
     matrix["surfaces"]["claude-code"]["reviewed_notes_sha256"] = "0" * 64
@@ -165,7 +165,7 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
         matrix,
         fetch=fetch,
         probe=lambda command: None,
-        now=datetime(2026, 9, 22, tzinfo=timezone.utc),
+        now=datetime(2026, 9, 22, tzinfo=UTC),
     )
     assert changed_notes["surfaces"]["claude-code"]["status"] == "needs_review"
     with pytest.raises(VendorWatchError):
@@ -300,7 +300,7 @@ def test_installed_probe_and_strict_report_cli(
             next(name for name, source in SOURCES.items() if source[1] == url), "0.0.1"
         ),
         probe=lambda command: None,
-        now=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        now=datetime(2026, 10, 10, tzinfo=UTC),
     )
     target = tmp_path / "report.json"
     monkeypatch.setattr(watch, "build_report", lambda matrix: report)

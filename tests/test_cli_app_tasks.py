@@ -12,14 +12,14 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from test_app_tasks import _bundle, _ledger, _result
 
 
 def test_cli_offer_to_verified_history(tmp_path: Path) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ledger = tmp_path / "ledger" / "ledger.sqlite3"
     _ledger(ledger, now)
     store = tmp_path / "queue" / "queue.sqlite3"

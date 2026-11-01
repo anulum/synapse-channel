@@ -45,10 +45,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - Python 3.10 compatibility path.
-    import tomli as tomllib  # pragma: no cover
+import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO_ROOT / "tools" / "guarantee_register.toml"

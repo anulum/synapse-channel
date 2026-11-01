@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -173,7 +173,7 @@ def _event(kind: str, event_id: str, **fields: object) -> dict[str, object]:
     return {
         "event_id": event_id,
         "kind": kind,
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "recorded_at": datetime.now(UTC).isoformat(),
         "source": "operator:owner",
         "confidence": "operator",
         **fields,
@@ -182,7 +182,7 @@ def _event(kind: str, event_id: str, **fields: object) -> dict[str, object]:
 
 def test_real_cli_persists_shared_pool_without_double_count(tmp_path: Path) -> None:
     store = tmp_path / "private" / "ledger.sqlite3"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     records = [
         _event(
             "account", "a1", account_id="account-1", label="Confidential account", status="active"
@@ -277,7 +277,7 @@ def test_real_cli_compute_credit_reset_approval_and_suspension(
 ) -> None:
     store = tmp_path / "private" / "ledger.sqlite3"
     hub = tmp_path / "hub.db"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     first_start = now - timedelta(days=2)
     reset = now - timedelta(hours=1)
     second_end = now + timedelta(days=1)
@@ -521,7 +521,7 @@ def test_real_cli_correction_and_suspended_account(tmp_path: Path) -> None:
 
 def test_real_cli_imports_only_official_ollama_counts_once(tmp_path: Path) -> None:
     store = tmp_path / "private" / "ledger.sqlite3"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for record in (
         _event("account", "a1", account_id="a", label="Private", status="active"),
         _event("pool", "p1", pool_id="p", account_id="a", unit="tokens"),
@@ -599,7 +599,7 @@ def test_real_cli_refuses_partial_or_invalid_ollama_counts(tmp_path: Path) -> No
             json.dumps(
                 {
                     "model": "gemma3:1b",
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                     **record,
                 }
             ),

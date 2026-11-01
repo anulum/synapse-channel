@@ -15,7 +15,7 @@ import contextlib
 import hashlib
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -104,7 +104,7 @@ def _ollama_event(raw: bytes, window_id: str, window_event_id: str) -> dict[str,
         {
             "event_id": f"ollama-{digest}",
             "kind": "usage",
-            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "recorded_at": datetime.now(UTC).isoformat(),
             "source": f"ollama:/api/{endpoint}:{model}",
             "confidence": "official",
             "window_id": window_id,
@@ -152,7 +152,7 @@ def _show(args: argparse.Namespace) -> int:
     """Render current private account and pool evidence as JSON."""
     try:
         report = entitlement_view(
-            read_events(_store_path(args)), as_of=datetime.now(timezone.utc), private=True
+            read_events(_store_path(args)), as_of=datetime.now(UTC), private=True
         )
     except (EntitlementError, EntitlementStoreError, ValueError) as exc:
         print(f"entitlements: {exc}", file=sys.stderr)
@@ -228,7 +228,7 @@ def _suggest_compute(args: argparse.Namespace) -> int:
             approvals,
             board,
             reviewer=args.reviewer,
-            as_of=datetime.now(timezone.utc),
+            as_of=datetime.now(UTC),
             max_evidence_age_seconds=args.max_evidence_age_hours * 3600,
         )
     except (
@@ -251,7 +251,7 @@ def _advert(args: argparse.Namespace) -> dict[str, object] | None:
             read_events(_store_path(args)),
             pool_id=args.pool,
             alias=args.alias,
-            as_of=datetime.now(timezone.utc),
+            as_of=datetime.now(UTC),
         )
     except (EntitlementError, EntitlementStoreError, EntitlementAdvertError, ValueError) as exc:
         print(f"entitlements: {exc}", file=sys.stderr)

@@ -297,5 +297,5 @@ async def read_at_protected_write_boundary(
 
     try:
         return await asyncio.wait_for(read(), limits.timeout_seconds)
-    except asyncio.TimeoutError as error:
+    except TimeoutError as error:
         raise TimeoutError("protected read deadline expired") from error

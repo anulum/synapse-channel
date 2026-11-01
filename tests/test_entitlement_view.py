@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -56,7 +56,7 @@ def test_distinct_units_and_private_account_labels() -> None:
             "unit": "USD",
         },
     ]
-    at = datetime(2026, 9, 19, 12, tzinfo=timezone.utc)
+    at = datetime(2026, 9, 19, 12, tzinfo=UTC)
     owner = entitlement_view(events, as_of=at, private=True)
     assert [pool["unit"] for pool in owner["pools"]] == ["tokens", "USD"]
     assert owner["pools"][0]["account_usable"] is False
@@ -132,7 +132,7 @@ def test_observed_balance_and_later_usage_keep_source_evidence() -> None:
             "confidence": "official",
         },
     ]
-    at = datetime(2026, 9, 19, 12, tzinfo=timezone.utc)
+    at = datetime(2026, 9, 19, 12, tzinfo=UTC)
     window = entitlement_view(events, as_of=at, private=True)["pools"][0]["windows"][0]
     assert window["remaining"] == "75"
     assert window["balance_evidence"] == "observed_plus_recorded_usage"
@@ -158,7 +158,7 @@ def test_observed_balance_and_later_usage_keep_source_evidence() -> None:
     usage_only = entitlement_view(events, as_of=at, private=True)["pools"][0]["windows"][0]
     assert usage_only["balance_evidence"] == "incomplete_usage_estimate"
     assert usage_only["remaining"] == "95"
-    after = datetime(2026, 9, 20, 1, tzinfo=timezone.utc)
+    after = datetime(2026, 9, 20, 1, tzinfo=UTC)
     outside = entitlement_view(events, as_of=after, private=True)["pools"][0]["windows"][0]
     assert outside["remaining"] is None
     assert outside["balance_evidence"] == "outside_window"
@@ -200,9 +200,7 @@ def test_no_observation_is_unknown_and_naive_clock_is_refused() -> None:
             "price_revision": "r1",
         },
     ]
-    report = entitlement_view(
-        events, as_of=datetime(2026, 9, 19, 12, tzinfo=timezone.utc), private=True
-    )
+    report = entitlement_view(events, as_of=datetime(2026, 9, 19, 12, tzinfo=UTC), private=True)
     assert report["pools"][0]["windows"][0]["balance_evidence"] == "unknown"
     with pytest.raises(ValueError, match="UTC offset"):
         entitlement_view(events, as_of=datetime(2026, 9, 19, 12), private=True)

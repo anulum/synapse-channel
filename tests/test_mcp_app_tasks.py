@@ -13,7 +13,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -91,7 +91,7 @@ def _operator(action: str, task_id: str, *options: str) -> dict[str, Any]:
 
 async def test_real_stdio_mcp_task_journey(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     _seed_allowance(now)
     bundle = {
         "task_id": "mcp-human-1",
@@ -178,7 +178,7 @@ def test_missing_private_allowance_does_not_expose_store_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     bundle = {
         "task_id": "missing-ledger",
         "prompt": "Private prompt",

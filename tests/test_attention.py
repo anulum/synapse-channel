@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -200,7 +200,7 @@ def test_stale_quota_and_reset_omit_private_account_label(tmp_path: Path) -> Non
             "observed_at": "2026-09-19T00:00:00Z",
         },
     ]
-    at = datetime(2026, 9, 20, 12, tzinfo=timezone.utc)
+    at = datetime(2026, 9, 20, 12, tzinfo=UTC)
     report = project_quota_attention(
         events,
         at=at,
@@ -230,7 +230,7 @@ def test_stale_quota_and_reset_omit_private_account_label(tmp_path: Path) -> Non
     assert sync_evidence(queue, source="quota", evidence=fresh, now=101)["changed"] == 2
     assert queue_view(queue, now=101)["state"] == "quiet"
     after_window = project_quota_attention(
-        events, at=datetime(2026, 9, 22, tzinfo=timezone.utc), stale_after_seconds=3600
+        events, at=datetime(2026, 9, 22, tzinfo=UTC), stale_after_seconds=3600
     )
     assert after_window == ()
 
@@ -260,7 +260,7 @@ def test_attention_refuses_invalid_time_bounds() -> None:
     with pytest.raises(ValueError, match="review deadline"):
         project_hub_attention((), now=1, approval_ttl_seconds=0)
     with pytest.raises(ValueError, match="stale age"):
-        project_quota_attention((), at=datetime.now(timezone.utc), stale_after_seconds=0)
+        project_quota_attention((), at=datetime.now(UTC), stale_after_seconds=0)
 
 
 def test_queue_deduplicates_snoozes_and_reopens_on_new_hub_evidence(tmp_path: Path) -> None:

@@ -41,7 +41,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from synapse_channel.core.errors import SynapseError
@@ -182,5 +182,5 @@ def render_expiry(expires_at: float | None) -> str:
     """
     if expires_at is None:
         return "never"
-    stamp = datetime.fromtimestamp(expires_at, tz=timezone.utc)
+    stamp = datetime.fromtimestamp(expires_at, tz=UTC)
     return stamp.isoformat().replace("+00:00", "Z")

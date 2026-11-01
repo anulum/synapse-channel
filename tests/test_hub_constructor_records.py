@@ -10,14 +10,8 @@
 from __future__ import annotations
 
 import sqlite3
-import sys
 from pathlib import Path
-from typing import cast
-
-if sys.version_info >= (3, 11):
-    from typing import Unpack
-else:
-    from typing_extensions import Unpack
+from typing import Unpack, cast
 
 import pytest
 

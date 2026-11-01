@@ -203,9 +203,9 @@ async def fetch_federation_offer(
     except FederationFetchError:
         raise
     except (
+        TimeoutError,
         OSError,
         ConnectionClosed,
-        asyncio.TimeoutError,
         FederationWireError,
         json.JSONDecodeError,
     ) as exc:

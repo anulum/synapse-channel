@@ -32,10 +32,7 @@ def _args(*argv: str) -> argparse.Namespace:
 
 
 def test_render_config_is_valid_toml_shell_safe_and_token_safe(tmp_path: Path) -> None:
-    if sys.version_info >= (3, 11):
-        import tomllib
-    else:  # pragma: no cover - exercised only on Python 3.10
-        import tomli as tomllib
+    import tomllib
 
     token_file = tmp_path / "hub token"
     token_file.write_text("do-not-embed", encoding="utf-8")
@@ -92,10 +89,7 @@ async def test_evaluator_forwards_to_kimi_guard(monkeypatch: pytest.MonkeyPatch)
 def test_print_config_is_read_only_and_missing_binary_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    if sys.version_info >= (3, 11):
-        import tomllib
-    else:  # pragma: no cover - exercised only on Python 3.10
-        import tomli as tomllib
+    import tomllib
 
     monkeypatch.chdir(tmp_path)
     good = _args("--identity", "seat/one", "--print-config", "--synapse-bin", sys.executable)
@@ -160,10 +154,7 @@ def test_runtime_requires_identity_before_reading_stdin(
 def test_install_config_writes_marked_toml_block(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    if sys.version_info >= (3, 11):
-        import tomllib
-    else:  # pragma: no cover - exercised only on Python 3.10
-        import tomli as tomllib
+    import tomllib
 
     config_path = tmp_path / "config.toml"
     config_path.write_text('model = "x"\n', encoding="utf-8")

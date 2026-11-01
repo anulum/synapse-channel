@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -91,7 +91,7 @@ def run_hook(
     register_dir: Path,
     send: RecordSender,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
-    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> FlushReport | None:
     """Spool the record of one hook call, then flush the spool to the hub.
 

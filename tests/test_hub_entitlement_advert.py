@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +34,7 @@ from test_hub_identity_enrollment import Machines, _connected, _trust
 
 OWNER = "OPS/owner"
 WATCHER = "OPS/watcher"
-AT = datetime(2026, 9, 19, 12, tzinfo=timezone.utc)
+AT = datetime(2026, 9, 19, 12, tzinfo=UTC)
 
 
 def _hub(tmp_path: Path, machines: Machines, *, journal: bool = True, bound: bool = True) -> Any:

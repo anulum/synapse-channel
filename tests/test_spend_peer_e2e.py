@@ -19,7 +19,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import AsyncIterator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -55,7 +55,7 @@ NOT_ADMITTED = {"admitted": False, "reason": "not-admitted"}
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _pool(**overrides: Any) -> dict[str, Any]:

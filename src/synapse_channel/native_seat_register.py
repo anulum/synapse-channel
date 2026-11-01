@@ -23,7 +23,7 @@ import os
 import re
 import secrets
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from synapse_channel.core.errors import SynapseError
@@ -82,7 +82,7 @@ def register(
     SeatRegisterError
         A value is empty, too long or holds a control character.
     """
-    moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    moment = (now or datetime.now(UTC)).astimezone(UTC)
     entry = Registration(
         native_session=_clean(native_session, "native session"),
         seat=_clean(seat, "seat"),

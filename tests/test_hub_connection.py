@@ -298,7 +298,7 @@ async def test_unregister_of_an_unnamed_socket_is_silent() -> None:
 async def test_authenticate_or_close_times_out() -> None:
     clients = _registry()
     conn = _connection(clients, authenticator=TokenAuthenticator(["t"]), auth_timeout=0.05)
-    socket = _Socket(recv_exc=asyncio.TimeoutError())
+    socket = _Socket(recv_exc=TimeoutError())
 
     assert await conn.authenticate_or_close(socket) is False
     assert socket.closed == [(4012, "auth timeout")]
@@ -307,7 +307,7 @@ async def test_authenticate_or_close_times_out() -> None:
 async def test_authenticate_or_close_open_hub_registration_timeout() -> None:
     clients = _registry()
     conn = _connection(clients, authenticator=None, auth_timeout=0.05)
-    socket = _Socket(recv_exc=asyncio.TimeoutError())
+    socket = _Socket(recv_exc=TimeoutError())
 
     assert await conn.authenticate_or_close(socket) is False
     assert socket.closed == [(4012, "registration timeout")]
@@ -419,7 +419,7 @@ async def test_handler_open_hub_pumps_frames_then_unregisters() -> None:
 async def test_handler_open_hub_times_out_without_registration() -> None:
     clients = _registry()
     conn = _connection(clients, authenticator=None, auth_timeout=0.05)
-    socket = _Socket(recv_exc=asyncio.TimeoutError())
+    socket = _Socket(recv_exc=TimeoutError())
 
     await conn.handler(socket)
 

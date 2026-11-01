@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import jwt
 import pytest
@@ -24,7 +24,7 @@ from synapse_github_app.models import PullRequestSeed, Repository
 from synapse_github_app.service import GitHubAppService
 
 SECRET = b"service-webhook-secret"
-NOW = datetime(2026, 7, 11, 14, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 11, 14, 0, tzinfo=UTC)
 PULLS_PATH = "/repos/anulum/synapse-channel/pulls?state=open&per_page=100&page=1"
 
 

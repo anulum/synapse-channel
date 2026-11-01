@@ -28,7 +28,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from synapse_channel.core.native_message import MAX_NATIVE_TEXT_BYTES, MAX_TOOL_RESULT_BYTES
@@ -143,7 +143,7 @@ def record_from_hook(
     sender = seat_of_session(registrations, session) if session else None
     recipient = seat_of_name(registrations, recipient_name(address)) if address else None
     message_id = response.get("msg_id") if isinstance(response, dict) else None
-    moment = captured_at.astimezone(timezone.utc)
+    moment = captured_at.astimezone(UTC)
     record: dict[str, Any] = {
         "channel": CHANNEL,
         "direction": "sent",

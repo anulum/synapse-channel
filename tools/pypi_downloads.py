@@ -36,10 +36,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # Python 3.10 has no tomllib in the standard library
-    import tomli as tomllib
+import tomllib
 
 PYPISTATS_OVERALL = "https://pypistats.org/api/packages/{package}/overall"
 """The pypistats endpoint returning the full available per-day download series."""
