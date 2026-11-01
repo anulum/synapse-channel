@@ -134,6 +134,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_external_surfaces_benchmark.py": (2, "optional-dep-guard"),
     "tests/test_hub_restart.py": (2, "platform-guard"),
     "tests/test_path_identity_inode_reuse.py": (3, "platform-guard"),
+    "tests/test_worker_session_waiter_cleanup.py": (1, "platform-guard"),
     # Includes the real Linux executable-format fallback/process-image regression.
     "tests/test_launch_record.py": (7, "platform-guard"),
     "tests/test_read_owner_only_file_bytes.py": (3, "platform-guard"),
