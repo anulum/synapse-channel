@@ -50,6 +50,84 @@ def _assert_success(returncode: int, stdout: str, stderr: str) -> None:
     assert returncode == 0, f"stdout:\n{stdout[-2000:]}\nstderr:\n{stderr[-4000:]}"
 
 
+def _attached_stdout_is_the_server_turn(stdout: str, answer: str) -> None:
+    """Accept an early return or the drained 1.18.32 JSON turn, and nothing else."""
+    if not stdout:
+        return
+    outcome = parse_opencode_stream(stdout.splitlines())
+    assert outcome.is_error is False
+    assert outcome.subtype == "success"
+    assert outcome.answer == answer
+
+
+def _ci_event(event_type: str, part: dict[str, object]) -> dict[str, object]:
+    """One Linux CI attach event. The session is the hosted 3.12 shard value."""
+    session = "ses_e6b9b7003ffe0d3hH2GGlgol75"
+    return {
+        "type": event_type,
+        "timestamp": 1793490982137,
+        "sessionID": session,
+        "part": {"sessionID": session, **part},
+    }
+
+
+_CI_DRAINED_ATTACH_STREAM = (
+    "\n".join(
+        json.dumps(event)
+        for event in (
+            _ci_event(
+                "step_start",
+                {
+                    "id": "prt_1946494b9001DyhjmLsvrg6N2o",
+                    "messageID": "msg_1946492ef001Q87jjkB4Qi2x9w",
+                    "type": "step-start",
+                },
+            ),
+            _ci_event(
+                "text",
+                {
+                    "id": "prt_1946494bd0017nbXDRjvC4RWXp",
+                    "messageID": "msg_1946492ef001Q87jjkB4Qi2x9w",
+                    "type": "text",
+                    "text": "attached server response",
+                    "time": {"start": 1793490982077, "end": 1793490982081},
+                },
+            ),
+            _ci_event(
+                "step_finish",
+                {
+                    "id": "prt_1946494c6001i5b8NHPkZtZx1d",
+                    "reason": "stop",
+                    "messageID": "msg_1946492ef001Q87jjkB4Qi2x9w",
+                    "type": "step-finish",
+                    "tokens": {
+                        "total": 3,
+                        "input": 2,
+                        "output": 1,
+                        "reasoning": 0,
+                        "cache": {"write": 0, "read": 0},
+                    },
+                    "cost": 0,
+                },
+            ),
+        )
+    )
+    + "\n"
+)
+
+
+def test_drained_attach_stream_is_the_enqueued_answer() -> None:
+    """The Linux CI attach stream is the server turn, and noise still fails."""
+    assert _CI_DRAINED_ATTACH_STREAM != ""
+    _attached_stdout_is_the_server_turn(_CI_DRAINED_ATTACH_STREAM, "attached server response")
+    _attached_stdout_is_the_server_turn("", "attached server response")
+    try:
+        _attached_stdout_is_the_server_turn('{"type":"error"}\n', "attached server response")
+    except AssertionError:
+        return
+    raise AssertionError("a drifted attach stream was accepted")
+
+
 def test_real_cli_jsonl_emitter_and_acp_handshake(tmp_path: Path) -> None:
     binary = find_opencode()
     home = tmp_path / "home"
@@ -165,10 +243,9 @@ def test_real_authenticated_server_attach_and_direct_api(tmp_path: Path) -> None
                 env=attached_environment,
             )
             _assert_success(attached.returncode, attached.stdout, attached.stderr)
-            # OpenCode 1.18.32 returns from non-interactive attach after the prompt
-            # POST instead of draining its subscribed event stream. Prove the remote
-            # execution reached the server; use the direct API path below for results.
-            assert attached.stdout == ""
+            # OpenCode 1.18.32 sometimes returns after the prompt POST, before it
+            # drains the event stream. When it does drain, stdout is that JSON turn.
+            _attached_stdout_is_the_server_turn(attached.stdout, "attached server response")
             assert len(llm.prompt_requests) == 1
             assert "exercise attach mode" in json.dumps(llm.prompt_requests[0])
             assert password not in attached.stdout + attached.stderr
