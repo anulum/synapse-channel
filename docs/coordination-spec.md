@@ -481,6 +481,38 @@ actual kernel and storage behavior; they do not prove isolated installation.
 
 ::: synapse_channel.core.protected_write_descriptor_filter
 
+### Kernel-checked execution composition
+
+`execute_kernel_checked_protected_write` binds the prepared admission to the
+existing durable driver, a concrete signed current-status client and the
+enrolled immutable execution-evidence store. Evidence operation limits MUST
+equal the prepared limits. The copied root-descriptor mapping MUST contain
+exactly the enrolled root names; each fresh capture MUST match the prepared
+device/inode identities and the independently enrolled kernel policy.
+
+The composition supplies fresh actual capture at every driver isolation check,
+including before consumption and immediately before an effect. It does not
+accept a caller-provided positive isolation predicate. The driver retains its
+one-time consumption, ordered step history, bounded evidence readback and
+uncertain-frontier semantics. Borrowed descriptors and stores remain caller
+owned on both success and refusal.
+
+The caller MUST run this API only inside an independently qualified trusted
+writer launch. The expected kernel policy, authority endpoint and verification
+key, persistent sequence source, execution journal, root and subtree
+descriptors MUST be enrolled independently of the writer's own declarations.
+Source integrity, separate principals, syscall confinement, descriptor custody
+and exclusion of outside writable holders remain launch obligations. Signed
+current status is a point-in-time read, not revocation fencing. This API
+installs no writer or service and grants no settlement or recovery permission.
+
+The [Linux profiles](https://github.com/anulum/synapse-channel/blob/main/CONTRIBUTING.md#kernel-checked-execution-and-authority-ipc-profiles)
+exercise pre-effect refusal, signed status under the descriptor filter, durable
+enrolment revocation, delayed-begin refusal and owned process cancellation.
+Their component results do not certify an installed writer profile.
+
+::: synapse_channel.core.protected_write_kernel_execution
+
 ### Known-state recovery inputs and evidence
 
 `inspect_protected_recovery_snapshot` compares every enrolled path with the

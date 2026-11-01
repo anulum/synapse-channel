@@ -104,6 +104,17 @@ requires an actually absent leaf when no object descriptor is supplied. A
 missing kernel/ABI or refused path never falls back to portable traversal for
 an explicitly restricted request. Default POSIX inspection remains diagnostic.
 
+`execute_kernel_checked_protected_write` composes the retained execution driver
+with fresh native kernel capture, an enrolled signed authority-status client
+and the bounded immutable evidence store. It copies the root-descriptor mapping,
+checks its exact prepared scope and identities, and rechecks the enrolled kernel
+policy at each existing driver isolation boundary. A caller-supplied positive
+isolation callback cannot replace those captures. The authority read remains a
+point-in-time observation, not revocation fencing. The trusted launcher must
+independently establish installation integrity, separate principals, closed
+descriptors, syscall confinement and exclusion of outside writable holders.
+This library API grants no settlement, retry, recovery or deployment authority.
+
 `ProtectedPathDescriptors.read_bytes()` captures only the expected regular
 file's bounded bytes using positional reads, then revalidates the retained
 topology and content. Substituting the external root pathname cannot redirect

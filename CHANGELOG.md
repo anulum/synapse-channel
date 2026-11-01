@@ -20,6 +20,11 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Compose live Linux kernel checks, signed current authority status and the
+  durable protected-execution driver through one trusted writer API. Root and
+  evidence scope mismatches refuse before consumption or filesystem effects.
+  The caller still owns the independently qualified launch and descriptor
+  custody; the API installs no writer or service.
 - Native Linux cgroup control ancestry, retained process-subtree observations,
   bounded subtree termination, mount-table verification and private root-stage
   mount restrictions. These APIs expose explicit observations and preconditions;

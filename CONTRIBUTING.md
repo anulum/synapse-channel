@@ -346,6 +346,32 @@ Linux CI collects all five exact filenames alongside the existing two default
 filename patterns on Python 3.11–3.13; Python 3.12 includes their real subprocess
 coverage. They are outside default macOS and Windows collection.
 
+### Kernel-checked execution and authority IPC profiles
+
+Three Linux profiles exercise the composed writer entry point and its actual
+authority transport:
+
+```bash
+python -m pytest \
+  tests/fixtures/protected_write_kernel_execution_linux.py \
+  tests/fixtures/protected_write_filtered_status_ipc_linux.py \
+  tests/fixtures/protected_write_prebegin_race_linux.py
+```
+
+They require Linux cgroup v2, procfs, `openat2`, Unix peer credentials and,
+for the filtered writer, the Linux x86-64 seccomp backend. The composition
+profile verifies refusal before a status request, execution consumption or
+filesystem effect when root scope, evidence scope, root identity or the live
+kernel boundary differs. The transport profiles use real processes, signed
+WebSocket messages and durable authority state to observe enrollment revocation
+and refuse a delayed begin after revocation. These component checks do not
+certify a dedicated installed writer, revocation fencing or recovery custody.
+
+Both Linux interpreter commands collect the exact profile filenames alongside
+the existing inventory; Python 3.12 includes their actual subprocess coverage
+in the unchanged complete 98% gate. Missing prerequisites fail the profiles.
+Default macOS and Windows collection does not include these native profiles.
+
 ### Known-state recovery profiles
 
 The recovery handler's authenticated loopback and key-conflict journeys use
