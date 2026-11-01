@@ -154,8 +154,7 @@ async def test_live_origin_less_native_client_connects() -> None:
 async def test_live_hostile_origin_refused_before_upgrade() -> None:
     async with running_hub(SynapseHub(hub_id="syn-hs")) as (_, uri):
         with pytest.raises(InvalidStatus) as exc_info:
-            async with connect(uri, additional_headers={"Origin": "https://evil.example"}):
-                pass
+            await connect(uri, additional_headers={"Origin": "https://evil.example"})
         assert exc_info.value.response.status_code == 403
 
 
@@ -201,8 +200,7 @@ async def test_malformed_origin_header_refused_live() -> None:
         uri,
     ):
         with pytest.raises(InvalidStatus) as exc_info:
-            async with connect(uri, additional_headers={"Origin": "null"}):
-                pass
+            await connect(uri, additional_headers={"Origin": "null"})
         assert exc_info.value.response.status_code == 403
 
 
@@ -326,3 +324,67 @@ async def test_live_repeated_boundary_header_is_refused_403_not_500(
         # The refusal leaves the hub serving: a well-formed upgrade still succeeds.
         status, _ = await _raw_upgrade(uri, [f"Host: {authority}"])
         assert status == b"HTTP/1.1 101 Switching Protocols"
+
+
+def test_concrete_and_named_binds_trust_only_their_own_authority() -> None:
+    """A concrete address or host name is trusted as itself; bind-all and zoned ones are not."""
+    assert trusted_host_authorities(bind_host="192.0.2.10", bind_port=8876) == (
+        "192.0.2.10",
+        "192.0.2.10:8876",
+    )
+    assert trusted_host_authorities(bind_host="hub.internal", bind_port=8876) == (
+        "hub.internal",
+        "hub.internal:8876",
+    )
+    assert trusted_host_authorities(bind_host="[::]", bind_port=8876) == ()
+    assert trusted_host_authorities(bind_host="fe80::1%eth0", bind_port=8876) == ()
+
+
+@pytest.mark.parametrize(
+    ("advertised", "expected"),
+    [
+        ("   ", ()),
+        ("https://hub.example:8443", ("hub.example:8443",)),
+        ("https://", ()),
+        ("bad host", ()),
+        ("hub.example:99999", ()),
+    ],
+)
+def test_advertised_host_is_trusted_only_when_it_names_one_valid_authority(
+    advertised: str, expected: tuple[str, ...]
+) -> None:
+    """Blank, malformed or out-of-range advertised hosts add nothing to the trusted set."""
+    assert (
+        trusted_host_authorities(bind_host="0.0.0.0", bind_port=8876, advertised_host=advertised)
+        == expected
+    )
+
+
+def test_advertised_host_without_port_skips_an_impossible_bind_port() -> None:
+    """With a bind port no Host header can carry, only the bare advertised name is trusted."""
+    assert trusted_host_authorities(
+        bind_host="0.0.0.0", bind_port=70000, advertised_host="hub.example"
+    ) == ("hub.example",)
+
+
+def test_handshake_refuses_without_trusted_authorities_or_with_a_malformed_host() -> None:
+    """No trusted authority refuses every request; a malformed Host header is refused."""
+    assert not handshake_allowed(
+        origin_header=None,
+        host_header="127.0.0.1:8876",
+        allowed_origins=(),
+        trusted_authorities=(),
+    )
+    trusted = trusted_host_authorities(bind_host="127.0.0.1", bind_port=8876)
+    assert not handshake_allowed(
+        origin_header=None,
+        host_header="bad host:8876",
+        allowed_origins=(),
+        trusted_authorities=trusted,
+    )
+    assert handshake_allowed(
+        origin_header=None,
+        host_header="127.0.0.1:8876",
+        allowed_origins=(),
+        trusted_authorities=trusted,
+    )
