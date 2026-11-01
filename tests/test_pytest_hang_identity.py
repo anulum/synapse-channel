@@ -11,7 +11,12 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
+from typing import cast
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 # The probe really sleeps longer than pytest's faulthandler timeout. The outer
@@ -25,14 +30,13 @@ _OUTER_BOUND_SECONDS = _HANG_SLEEP_SECONDS + _FAULT_TIMEOUT_SECONDS + 45.0
 def test_faulthandler_timeout_prints_the_running_node_id(tmp_path: Path) -> None:
     """A real hang prints its node id, then the child exits and is reaped.
 
-    macOS runners were exceeding a fixed 20 second outer bound even though the
-    child only sleeps for 2 seconds. The watcher used to park on
-    ``Event.wait``, which holds a condition lock, and the finish hook joined
-    that thread while faulthandler's watchdog dumped it. On macOS that leaves
-    ``cancel_dump_traceback_later`` waiting for the dumper, so the process
-    never exits. The watcher now sleeps without that lock and is not joined, so
-    the dump can finish and the child can exit after the sleep. Linux and
-    macOS both pass for that reason, not because the outer bound grew.
+    The macOS shard exceeded a fixed 20 second outer bound. The cause is not
+    established: the old watcher join used ``timeout=2``, so that join cannot
+    block for 20 seconds, and there is no macOS stack sample. Sleeping in
+    slices instead of ``Event.wait`` is only a suspected way to stay clear of
+    the faulthandler watchdog. The outer bound also has room for a slow
+    runner, so a pass can come from that room alone. The hosted cross-os run
+    on the pushed head is the macOS proof.
     """
     test_file = tmp_path / "test_hang_identity_probe.py"
     test_file.write_text(
@@ -86,6 +90,96 @@ def test_faulthandler_timeout_prints_the_running_node_id(tmp_path: Path) -> None
     assert any(line.endswith("::test_hangs") or "::test_hangs" in line for line in hang_lines)
     assert all(not line.endswith("::test_fast") for line in hang_lines)
     assert process.returncode == 0
+
+
+def test_watch_branches_are_deterministic() -> None:
+    """Stop, deadline, and the short sleep are separate decisions."""
+    import tools.pytest_hang_identity as hang
+
+    stopped = threading.Event()
+    stopped.set()
+    hang._watch(stopped, time.monotonic() + 5, "node::stopped")
+    read_fd, write_fd = os.pipe()
+    previous_fd = hang._stderr_fd
+    hang._stderr_fd = write_fd
+    try:
+        hang._watch(threading.Event(), time.monotonic() - 1, "node::due")
+        hang._watch(threading.Event(), time.monotonic() + 0.06, "node::slept")
+    finally:
+        hang._stderr_fd = previous_fd
+        os.close(write_fd)
+    text = os.read(read_fd, 4096).decode()
+    os.close(read_fd)
+    assert "TIMEOUT nodeid=node::due" in text
+    assert "TIMEOUT nodeid=node::slept" in text
+    assert "node::stopped" not in text
+
+
+def test_idle_hooks_and_a_bad_timeout_do_not_report(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing config, a bad ini value, and a closed stderr do not name a test."""
+    import tools.pytest_hang_identity as hang
+
+    previous_config = hang._config
+    previous_fd = hang._stderr_fd
+    try:
+        hang._config = None
+        hang._stderr_fd = -1
+        assert hang._limit() == 0.0
+        hang._write_timeout("node::silent")
+        hang.pytest_runtest_logstart("node::idle", ("f", 1, "t"))
+        assert "node::idle" not in hang._active
+        hang.pytest_runtest_logfinish("node::absent", ("f", 1, "t"))
+
+        class _BadIni:
+            def getini(self, name: str) -> str:
+                del name
+                return "nope"
+
+        hang._config = cast(pytest.Config, _BadIni())
+        assert hang._limit() == 0.0
+
+        class _EmptyIni:
+            def getini(self, name: str) -> str:
+                del name
+                return ""
+
+        hang._config = cast(pytest.Config, _EmptyIni())
+        assert hang._limit() == 0.0
+
+        monkeypatch.setattr(sys, "__stderr__", None)
+        hang.pytest_configure(cast(pytest.Config, _EmptyIni()))
+        assert hang._stderr_fd == -1
+
+        def _boom(fd: int) -> int:
+            del fd
+            raise OSError("dup failed")
+
+        monkeypatch.setattr(os, "dup", _boom)
+        monkeypatch.setattr(sys, "__stderr__", sys.stderr)
+        hang.pytest_configure(cast(pytest.Config, _EmptyIni()))
+        assert hang._stderr_fd == -1
+        hang.pytest_unconfigure(cast(pytest.Config, _EmptyIni()))
+        assert hang._stderr_fd == -1
+
+        class _NumericIni:
+            def getini(self, name: str) -> str:
+                del name
+                return "0.4"
+
+        monkeypatch.undo()
+        hang._config = cast(pytest.Config, _NumericIni())
+        hang._stderr_fd = -1
+        hang.pytest_runtest_logstart("node::live", ("f", 1, "t"))
+        assert "node::live" in hang._active
+        hang.pytest_runtest_logfinish("node::live", ("f", 1, "t"))
+        assert "node::live" not in hang._active
+        hang.pytest_configure(cast(pytest.Config, _NumericIni()))
+        assert hang._stderr_fd >= 0
+        hang.pytest_unconfigure(cast(pytest.Config, _NumericIni()))
+        assert hang._stderr_fd == -1
+    finally:
+        hang._config = previous_config
+        hang._stderr_fd = previous_fd
 
 
 def test_softhsm_setup_names_itself_and_times_out() -> None:

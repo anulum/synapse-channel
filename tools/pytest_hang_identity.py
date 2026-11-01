@@ -66,6 +66,24 @@ def pytest_unconfigure(config: pytest.Config) -> None:
         _stderr_fd = -1
 
 
+def _watch(stop: threading.Event, deadline: float, nodeid: str) -> None:
+    """Wait until ``deadline`` and then name ``nodeid``, unless ``stop`` is set.
+
+    Short sleeps keep the watcher off ``Event.wait``. Parking there is only a
+    suspected interaction with faulthandler's watchdog on macOS; it was not
+    reproduced with a macOS sample. The old ``join(timeout=2)`` cannot explain
+    a 20 second overrun, because that join returns after two seconds.
+    """
+    while True:
+        if stop.is_set():
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(0.05, remaining))
+    _write_timeout(nodeid)
+
+
 def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) -> None:
     """Start the hang watch for the test that is about to run."""
     del location
@@ -73,22 +91,14 @@ def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) 
     if limit <= 0:
         return
     finished = threading.Event()
+    current = nodeid
 
-    def _report(bound: float = limit, stop: threading.Event = finished) -> None:
-        # Sleep in short slices. Event.wait holds a condition lock, and
-        # faulthandler's watchdog thread dumps every thread when the timeout
-        # fires. On macOS, dumping a thread parked on that lock and then
-        # joining it from logfinish leaves cancel_dump_traceback_later waiting
-        # for the dumper, so the pytest process never exits.
-        deadline = time.monotonic() + bound
-        while time.monotonic() < deadline:
-            if stop.is_set():
-                return
-            remaining = deadline - time.monotonic()
-            time.sleep(min(0.05, remaining))
-        if stop.is_set():
-            return
-        _write_timeout(nodeid)
+    def _report(
+        bound: float = limit,
+        stop: threading.Event = finished,
+        name: str = current,
+    ) -> None:
+        _watch(stop, time.monotonic() + bound, name)
 
     watcher = threading.Thread(target=_report, name="pytest-hang-identity", daemon=True)
     watcher.start()
@@ -98,8 +108,10 @@ def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) 
 def pytest_runtest_logfinish(nodeid: str, location: tuple[str, int | None, str]) -> None:
     """Stop the hang watch after the test, including its teardown, has finished.
 
-    The watcher is a daemon and is not joined. Joining it while the
-    faulthandler watchdog is dumping that thread deadlocks on macOS.
+    The watcher is a daemon and is not joined. The previous join waited at
+    most two seconds, so leaving it out does not by itself explain the macOS
+    overrun. Not joining still lets the process exit without waiting for the
+    daemon.
     """
     del location
     pair = _active.pop(nodeid, None)
