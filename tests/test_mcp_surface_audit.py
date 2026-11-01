@@ -143,14 +143,30 @@ def test_mcp_surface_audit_rejects_package_extra_constraint_drift(
     assert "extra must declare exactly mcp==1.30.0" in result.stderr
 
 
+@pytest.mark.parametrize(
+    ("required_phrase", "drifted_phrase"),
+    (
+        ("mcp==1.30.0` runtime hint", "mcp>=1.28.0` runtime hint"),
+        (
+            "dependency `websockets` on Python 3.11 or newer:",
+            "dependency `websockets` on Python 3.10 or newer:",
+        ),
+        (
+            "dependency `websockets` on Python 3.11 or newer:",
+            "dependency `mcp` on Python 3.11 or newer:",
+        ),
+    ),
+    ids=("optional-sdk-pin", "python-floor", "core-dependency"),
+)
 def test_mcp_surface_audit_rejects_documented_runtime_constraint_drift(
     tmp_path: Path,
+    required_phrase: str,
+    drifted_phrase: str,
 ) -> None:
+    """The real audit CLI rejects SDK pin, Python floor and core dependency drift."""
     drifted_docs = tmp_path / "mcp.md"
     drifted_docs.write_text(
-        DOCS.read_text(encoding="utf-8").replace(
-            "mcp==1.30.0` runtime hint", "mcp>=1.28.0` runtime hint"
-        ),
+        DOCS.read_text(encoding="utf-8").replace(required_phrase, drifted_phrase),
         encoding="utf-8",
     )
 
@@ -158,3 +174,4 @@ def test_mcp_surface_audit_rejects_documented_runtime_constraint_drift(
 
     assert result.returncode == 1
     assert "missing boundary phrases:" in result.stderr
+    assert required_phrase in result.stderr

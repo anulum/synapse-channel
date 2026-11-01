@@ -125,7 +125,8 @@ def test_readme_and_public_surface_map_core_to_optional_layers() -> None:
     assert "Core and Optional Layers" in readme
     assert "Core Versus Optional Layers" in public_surface
     assert "base dependency floor" in readme
-    assert "typing-extensions" in readme
+    assert "base dependency floor remains `websockets` on Python 3.11 or newer" in readme
+    assert "Python 3.11 or newer and uses `websockets`" in public_surface
     assert "do not pull heavy dependencies into the core" in public_surface
 
     for tier in TIERS:

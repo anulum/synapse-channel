@@ -170,7 +170,6 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_opencode_compatibility_smoke.py": (2, "operator-smoke"),
     "tests/test_operator_sqlcipher_readers.py": (1, "optional-dep-guard"),
     "tests/test_ordinary_claim_scope.py": (1, "filesystem-capability"),
-    "tests/test_packaging_extras.py": (1, "optional-dep-guard"),
     "tests/test_participant_api_ollama_smoke.py": (1, "operator-smoke"),
     "tests/test_participant_codex_smoke.py": (1, "operator-smoke"),
     "tests/test_participant_grok_smoke.py": (1, "operator-smoke"),
