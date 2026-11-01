@@ -392,3 +392,51 @@ def test_rekey_sqlcipher_cli_rotates_real_store(
     enc = EventStore(db, key_file=new)
     assert enc.read_all()[0].payload == {"via": "cli-rekey"}
     enc.close()
+
+
+def test_rekey_sqlcipher_cli_refuses_missing_store_and_unchanged_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A missing store and a rekey to the same key both exit 1 before any page changes."""
+    from synapse_channel.core.at_rest import generate_key_file
+
+    key = generate_key_file(tmp_path / "hub.key")
+    parser = cli.build_parser()
+    missing = tmp_path / "absent.db"
+    absent = parser.parse_args(
+        [
+            "encrypt-key",
+            "rekey-sqlcipher",
+            "--db",
+            str(missing),
+            "--old-key",
+            str(key),
+            "--new-key",
+            str(key),
+        ]
+    )
+    assert absent.func(absent) == 1
+    assert capsys.readouterr().out == (
+        f"sqlcipher rekey problem: encrypted event store not found: {missing}\n"
+    )
+    assert not missing.exists()
+
+    store = tmp_path / "hub.db"
+    store.write_bytes(b"encrypted pages stay untouched")
+    same = parser.parse_args(
+        [
+            "encrypt-key",
+            "rekey-sqlcipher",
+            "--db",
+            str(store),
+            "--old-key",
+            str(key),
+            "--new-key",
+            str(key),
+        ]
+    )
+    assert same.func(same) == 1
+    assert capsys.readouterr().out == (
+        "sqlcipher rekey problem: old and new SQLCipher keys must differ\n"
+    )
+    assert store.read_bytes() == b"encrypted pages stay untouched"
