@@ -83,7 +83,8 @@ with at most twelve matrix jobs running concurrently. Pytest collects the full
 current inventory before scheduling whole modules, longest estimated duration
 first, onto the least-loaded worker. Modules retain their shared fixtures.
 Every runner uses one identical immutable timing snapshot selected from the
-latest successful main-branch CI run. Missing history uses deterministic current
+latest successful CI run of a push to main; pull-request and manually
+dispatched runs never seed it. Missing history uses deterministic current
 test counts; new tests always enter collection and removed modules stay absent.
 Malformed or nonfinite timing data fails before test execution. Timing history
 controls placement only and never acts as a test allowlist.
@@ -113,8 +114,8 @@ module durations only after the complete coverage gate passes. Hosted timing com
 setup and queue time; sharding alone is not evidence of measured improvement.
 
 The advisory cross-OS workflow also runs the complete default macOS collection
-in four module shards. All workers use one immutable snapshot from a successful
-cross-OS run and retain the same locked dependencies, released-hub fixtures and
+in four module shards. All workers use one immutable snapshot from the latest
+successful cross-OS run of a push to main and retain the same locked dependencies, released-hub fixtures and
 native foreign-owner fixture. Its original `cross-os-filesystem (macos-latest)`
 check always aggregates the workers and fails on any failed, skipped, absent,
 duplicate or foreign shard. `tools/ci_portable_shards.py` independently verifies

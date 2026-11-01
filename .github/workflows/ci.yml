@@ -76,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p timing-input
-          previous="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&status=success&per_page=1"             --jq '.workflow_runs[0].id // empty')"
+          previous="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1"             --jq '.workflow_runs[0].id // empty')"
           artifact=""
           if [ -n "$previous" ]; then
             artifact="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$previous/artifacts?per_page=100"               --jq '[.artifacts[] | select(.name == "pytest-shard-timings" and .expired == false)] |
