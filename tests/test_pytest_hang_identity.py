@@ -107,13 +107,14 @@ def test_watch_branches_are_deterministic() -> None:
     live = hang._session_thread
     was_alive = live is not None and live.is_alive()
     hang._stop_session_watcher()
+    watcher_stopped = live is None or not live.is_alive()
     read_fd = -1
     write_fd = -1
     due: hang._Arm | None = None
     try:
-        # _stop clears the global before join returns, so the global being
-        # None does not prove the watcher stopped. Check the thread itself.
-        assert live is None or not live.is_alive()
+        # _stop clears the global before join returns. A join timeout leaves
+        # the watcher alive, so fail here before any shared-state change.
+        assert watcher_stopped, "session watcher did not stop"
         hang._session_stop.set()
         assert hang._take_action(time.monotonic()) == ("halt", "")
         hang._session_stop.clear()
@@ -140,18 +141,19 @@ def test_watch_branches_are_deterministic() -> None:
         assert text == "TIMEOUT nodeid=node::due\n"
         assert due.reported is True
     finally:
-        hang._arm = previous_arm
-        hang._stderr_fd = previous_fd
         if write_fd >= 0:
             os.close(write_fd)
         if read_fd >= 0:
             os.close(read_fd)
-        if previous_stop:
-            hang._session_stop.set()
-        else:
-            hang._session_stop.clear()
-        if was_alive:
-            hang._ensure_session_watcher()
+        if watcher_stopped:
+            hang._arm = previous_arm
+            hang._stderr_fd = previous_fd
+            if previous_stop:
+                hang._session_stop.set()
+            else:
+                hang._session_stop.clear()
+                if was_alive:
+                    hang._ensure_session_watcher()
 
 
 def test_idle_hooks_and_a_bad_timeout_do_not_report(monkeypatch: pytest.MonkeyPatch) -> None:
