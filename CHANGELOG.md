@@ -18,6 +18,8 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.42] - 2026-11-01
+
 ### Changed
 
 - Require Python 3.11 or newer for Core and the managed GitHub App package.
