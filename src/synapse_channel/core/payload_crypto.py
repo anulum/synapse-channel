@@ -25,10 +25,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import os
 import re
 import secrets
-import stat
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -153,40 +151,58 @@ def load_payload_key(path: str | Path) -> bytes:
             expected_size=KEY_BYTES,
         )
     except SecurePathError as exc:
-        message = str(exc)
-        if "does not exist" in message:
-            raise PayloadCryptoError(f"payload key file does not exist: {target}") from exc
-        if "not a regular" in message:
-            raise PayloadCryptoError(f"payload key file is not a regular file: {target}") from exc
-        # POSIX O_NOFOLLOW leaf symlinks surface as ELOOP ("Too many levels of
-        # symbolic links"); Windows open_nofollow_leaf refuses with "symlink".
-        if (
-            "symlink" in message
-            or "Too many levels of symbolic links" in message
-            or "symbolic link" in message
-        ):
-            raise PayloadCryptoError(f"payload key file must not be a symlink: {target}") from exc
-        if "exactly" in message and "bytes" in message:
-            raise PayloadCryptoError(
-                f"payload key file must hold exactly {KEY_BYTES} bytes: {target}"
-            ) from exc
-        if "not owned by the effective user" in message or "not owned" in message:
-            raise PayloadCryptoError(
-                f"payload key file must be owned by the current user: {target}"
-            ) from exc
-        if "owner-only" in message or "accessible by other" in message:
-            raise PayloadCryptoError(
-                f"payload key file must be owner-only (chmod 600): {target}"
-            ) from exc
-        # Windows often fails to open a directory as a secret file with a
-        # generic "cannot open" message (not "not a regular file"). Map that
-        # fail-closed to the regular-file rejection rather than the symlink
-        # wording; genuine leaf-symlink opens still match above.
-        if "cannot open" in message:
-            raise PayloadCryptoError(f"payload key file is not a regular file: {target}") from exc
-        raise PayloadCryptoError(
-            f"payload key file must be owner-only (chmod 600): {target} ({exc})"
-        ) from exc
+        raise _key_read_error(str(exc), target) from exc
+
+
+def _key_read_error(message: str, target: Path) -> PayloadCryptoError:
+    """Return the refusal for one secure-read failure of a payload key file.
+
+    Parameters
+    ----------
+    message : str
+        Text of the :class:`~synapse_channel.core.secure_path.SecurePathError`.
+    target : pathlib.Path
+        The key-file path the caller asked for.
+
+    Returns
+    -------
+    PayloadCryptoError
+        A refusal naming the reason; unknown reasons fail closed with the
+        original text kept.
+    """
+    if "does not exist" in message:
+        return PayloadCryptoError(f"payload key file does not exist: {target}")
+    if "not a regular" in message:
+        return PayloadCryptoError(f"payload key file is not a regular file: {target}")
+    # POSIX O_NOFOLLOW leaf symlinks surface as ELOOP ("Too many levels of
+    # symbolic links"); Windows open_nofollow_leaf refuses with "symlink".
+    if (
+        "symlink" in message
+        or "Too many levels of symbolic links" in message
+        or "symbolic link" in message
+    ):
+        return PayloadCryptoError(f"payload key file must not be a symlink: {target}")
+    if "exactly" in message and "bytes" in message:
+        return PayloadCryptoError(f"payload key file must hold exactly {KEY_BYTES} bytes: {target}")
+    if "not owned by the effective user" in message or "not owned" in message:
+        return PayloadCryptoError(f"payload key file must be owned by the current user: {target}")
+    # Windows refuses to open a directory with a generic "cannot open"; on
+    # POSIX a directory without search permission does the same.
+    if "cannot open" in message and target.is_dir():
+        return PayloadCryptoError(f"payload key file is not a regular file: {target}")
+    if "Permission denied" in message:
+        return PayloadCryptoError(f"payload key file cannot be read: {target}")
+    if "unavailable on this platform" in message:
+        return PayloadCryptoError(
+            f"payload key file cannot be checked as owner-only on this platform: {target}"
+        )
+    if "owner-only" in message or "accessible by other" in message:
+        return PayloadCryptoError(f"payload key file must be owner-only (chmod 600): {target}")
+    # Anything else could not be opened as a key file, such as a socket
+    # node on Linux. Fail closed and keep the original reason.
+    return PayloadCryptoError(
+        f"payload key file is not a regular file it can open: {target} ({message})"
+    )
 
 
 def payload_key_fingerprint(key: bytes) -> str:
@@ -377,18 +393,6 @@ def _require_key(key: bytes) -> None:
     """Raise when ``key`` is not exactly one AES-256-GCM key."""
     if len(key) != KEY_BYTES:
         raise PayloadCryptoError(f"payload key must be {KEY_BYTES} bytes, got {len(key)}")
-
-
-def _validate_key_stat(info: os.stat_result, target: Path) -> None:
-    """Validate key-file stat data."""
-    if not stat.S_ISREG(info.st_mode):
-        raise PayloadCryptoError(f"payload key file is not a regular file: {target}")
-    if info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-        raise PayloadCryptoError(f"payload key file must be owner-only (chmod 600): {target}")
-    if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
-        raise PayloadCryptoError(f"payload key file must be owned by the current user: {target}")
-    if info.st_size != KEY_BYTES:
-        raise PayloadCryptoError(f"payload key file must hold exactly {KEY_BYTES} bytes: {target}")
 
 
 def _normalise_recipients(recipients: Sequence[str]) -> list[str]:

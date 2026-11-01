@@ -31,6 +31,10 @@ execution evidence when carrying a release claim forward.
   `[2001:db8::1]`, now also trusts the `Host` form with the bind port. Before,
   the colons inside the brackets were read as a port, so only the bare form was
   trusted and clients sending `[2001:db8::1]:<port>` were refused.
+- A payload key file that its owner cannot read is now reported as unreadable,
+  not as "not a regular file". A platform without owner-only file validation
+  is named as such instead of asking for `chmod 600`, and any other key file
+  that cannot be opened keeps the operating system's reason in the message.
 
 ## [0.99.42] - 2026-11-01
 
