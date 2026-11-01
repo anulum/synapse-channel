@@ -248,3 +248,30 @@ async def test_evidence_failure_never_weakens_the_guard_denial(
     assert "new.py" in verdict.reason
     assert "RuntimeError" in caplog.text
     assert "evidence transport unavailable" not in caplog.text
+
+
+async def test_a_target_name_that_cannot_be_a_claim_path_is_refused(tmp_path: Path) -> None:
+    """A control character in a target name refuses the edit before any claim state is read."""
+    repo = git_repo(tmp_path / "repo")
+    verdict = await evaluate_mutation_request(
+        MutationRequest("session", "tool", repo, (Path("bad\x01name.py"),)),
+        provider="Provider",
+        identity="seat/one",
+        uri="ws://hub",
+        token=None,
+        timeout=0.1,
+    )
+    assert not verdict.allowed
+    assert verdict.reason_code == "GUARD_TARGET_INVALID"
+    assert verdict.reason == "claim paths must be bounded repository-relative paths"
+
+
+def test_a_worktree_without_case_evidence_uses_gits_ignorecase_setting(tmp_path: Path) -> None:
+    """With no letter to toggle in the root or its entries, Git's core.ignorecase decides."""
+    root = tmp_path / "4567"
+    root.mkdir()
+    (root / "123").write_text("x\n", encoding="utf-8")
+    request = MutationRequest("session", "tool", root, (Path("123"),))
+    (target,) = resolve_repository_targets(request, provider="Provider", runner=_runner(root))
+    assert target.path_identity is not None
+    assert target.path_identity.case_sensitive is True
