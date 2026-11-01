@@ -10,7 +10,11 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 import socket
+import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -26,17 +30,32 @@ def _refusal(path: Path) -> str:
     return str(caught.value)
 
 
-def test_a_socket_node_is_not_a_key_file(tmp_path: Path) -> None:
-    """A socket in place of the key file cannot be opened and is not a regular file."""
-    node = tmp_path / "payload.sock"
+def test_a_socket_node_is_not_a_key_file() -> None:
+    """A socket in place of the key file is refused as not a regular file.
+
+    The socket lives in a short directory: macOS limits AF_UNIX paths to 104 bytes.
+    """
+    short_root = "/tmp" if os.path.isdir("/tmp") else tempfile.gettempdir()
+    directory = Path(tempfile.mkdtemp(prefix="pk-", dir=short_root))
+    node = directory / "k.sock"
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         listener.bind(str(node))
         refusal = _refusal(node)
-        assert refusal.startswith(f"payload key file is not a regular file it can open: {node} (")
-        assert "cannot open" in refusal
+        linux = sys.platform.startswith("linux")
+        # Linux opens the socket and fails (ENXIO): the fallback keeps the OS reason.
+        # Other platforms may refuse it earlier as a non-regular file.
+        expected = (
+            f"payload key file is not a regular file it can open: {node} ("
+            if linux
+            else "payload key file is not a regular file"
+        )
+        assert refusal.startswith(expected)
+        assert str(node) in refusal
+        assert "cannot open" in refusal or not linux
     finally:
         listener.close()
+        shutil.rmtree(directory)
 
 
 def test_an_unreadable_key_is_named_as_unreadable(tmp_path: Path) -> None:
