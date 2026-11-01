@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -15,11 +16,13 @@ from typing import Any
 import pytest
 
 from synapse_channel.claim_state import ClaimStateError
+from synapse_channel.file_claim_guard import MutationRequest
 from synapse_channel.shell_claim_guard import (
     ShellClaimGuardError,
     ShellRepository,
     ShellRequest,
     decide_shell_from_snapshot,
+    evaluate_provider_request,
     evaluate_shell_request,
     resolve_shell_repository,
 )
@@ -192,3 +195,106 @@ async def test_evaluation_converts_state_failure_to_denial(tmp_path: Path) -> No
     )
     assert not verdict.allowed
     assert verdict.reason == "hub unavailable"
+
+
+def test_resolve_shell_repository_names_each_unusable_worktree(tmp_path: Path) -> None:
+    """A NUL in the cwd, a non-Git directory, odd Git output and an escape are all refused."""
+    request = ShellRequest("session", "tool", tmp_path)
+    with pytest.raises(ShellClaimGuardError, match="not a valid path"):
+        resolve_shell_repository(
+            ShellRequest("session", "tool", tmp_path / "bad\0name"),
+            provider="Provider",
+            runner=_runner(tmp_path),
+        )
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    with pytest.raises(ShellClaimGuardError, match="not inside a readable Git worktree"):
+        resolve_shell_repository(ShellRequest("session", "tool", plain), provider="Provider")
+    with pytest.raises(ShellClaimGuardError, match="invalid worktree or branch context"):
+        resolve_shell_repository(request, provider="Provider", runner=lambda _args: "only-root")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    with pytest.raises(ShellClaimGuardError, match="escapes its Git worktree"):
+        resolve_shell_repository(request, provider="Provider", runner=_runner(elsewhere))
+    with pytest.raises(ShellClaimGuardError, match="escapes its Git worktree"):
+        resolve_shell_repository(request, provider="Provider", runner=_runner(tmp_path / "gone"))
+
+
+def _decide(snapshot: dict[str, Any], root: Path) -> bool:
+    return decide_shell_from_snapshot(
+        snapshot,
+        identity="seat/one",
+        provider="Provider",
+        repository=ShellRepository(root, "main"),
+    ).allowed
+
+
+@pytest.mark.parametrize(
+    ("snapshot_of", "message"),
+    [
+        (lambda _root: {"active_claims": "none"}, "no valid active_claims list"),
+        (lambda _root: {"active_claims": ["claim"]}, "malformed claim"),
+        (lambda _root: {"active_claims": [{"worktree": 7}]}, "invalid claim worktree"),
+        (lambda _root: {"active_claims": [{"worktree": "/bad\0tree"}]}, "invalid claim worktree"),
+        (lambda root: {"active_claims": [{**_claim(root), "owner": ""}]}, "malformed claim owner"),
+        (lambda root: {"active_claims": [{**_claim(root), "status": 3}]}, "malformed claim status"),
+    ],
+)
+def test_shell_refuses_a_malformed_hub_snapshot(
+    tmp_path: Path, snapshot_of: Callable[[Path], dict[str, Any]], message: str
+) -> None:
+    """Every malformed part of the hub's claim snapshot fails closed with its reason."""
+    with pytest.raises(ShellClaimGuardError, match=message):
+        _decide(snapshot_of(tmp_path), tmp_path)
+
+
+def test_shell_ignores_claims_without_a_worktree_and_refuses_an_invalid_own_root(
+    tmp_path: Path,
+) -> None:
+    """Claims with no or blank worktree do not count; an invalid repository root is refused."""
+    unscoped = [{**_claim(tmp_path), "worktree": None}, {**_claim(tmp_path), "worktree": "  "}]
+    assert not _decide({"active_claims": unscoped}, tmp_path)
+    assert _decide({"active_claims": [*unscoped, _claim(tmp_path)]}, tmp_path)
+    other = tmp_path / "other-worktree"
+    other.mkdir()
+    foreign = _claim(other, owner="seat/two", status="stale")
+    assert _decide({"active_claims": [foreign, _claim(tmp_path)]}, tmp_path)
+    with pytest.raises(ShellClaimGuardError, match="Shell claim worktree is invalid"):
+        _decide({"active_claims": [_claim(tmp_path)]}, tmp_path / "bad\0root")
+
+
+async def test_provider_dispatch_sends_shell_and_file_calls_to_their_own_policy(
+    tmp_path: Path,
+) -> None:
+    """In a real repository, one path claim admits the file edit but not a shell call."""
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    for args in (
+        ["init", "-q", "-b", "main"],
+        ["config", "user.name", "Test"],
+        ["config", "user.email", "test@example.invalid"],
+    ):
+        subprocess.run(["git", "-C", str(repo), *args], check=True)
+    (repo / "src" / "owned.py").write_text("x = 1\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "base"], check=True)
+    root = repo.resolve()
+
+    async def snapshot(**_kwargs: object) -> dict[str, Any]:
+        return {"active_claims": [_claim(root, paths=["src/owned.py"])]}
+
+    common: dict[str, Any] = {
+        "provider": "Provider",
+        "identity": "seat/one",
+        "uri": "ws://hub",
+        "token": None,
+        "timeout": 0.1,
+        "state_fetcher": snapshot,
+    }
+    shell = await evaluate_provider_request(ShellRequest("session", "tool", root), **common)
+    assert not shell.allowed
+    assert "whole-worktree claim required" in (shell.reason or "")
+    edit = await evaluate_provider_request(
+        MutationRequest("session", "tool", root, (Path("src/owned.py"),)), **common
+    )
+    assert edit.allowed, edit.reason
