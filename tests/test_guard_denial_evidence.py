@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import functools
 import json
 from pathlib import Path
 from typing import Any
@@ -16,9 +18,11 @@ import pytest
 from websockets.asyncio.client import connect
 
 from hub_e2e_helpers import read_until_type, running_hub, send_json
+from synapse_channel import SynapseAgent
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.durable_ingress import DurableIngressQuota
 from synapse_channel.core.guard_evidence import GuardEvidenceError, parse_guard_denial
+from synapse_channel.core.handlers.guard_evidence import handle_guard_denial
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
@@ -235,4 +239,177 @@ async def test_one_shot_reporter_requires_token_and_records_on_real_hub(tmp_path
         )
 
     assert len(_guard_events(store)) == 1
+    store.close()
+
+
+def _report(uri: str, **overrides: Any) -> dict[str, Any]:
+    arguments: dict[str, Any] = {
+        "provider": "codex",
+        "identity": ACTOR,
+        "session_id": SESSION,
+        "tool_use_id": CALL,
+        "paths": [RAW_PATH],
+        "reason_code": "GUARD_NO_CLAIM",
+        "uri": uri,
+        "token": TOKEN,
+        "timeout": 2.0,
+    }
+    arguments.update(overrides)
+    return arguments
+
+
+@pytest.mark.parametrize("timeout", ["soon", None, float("nan"), float("inf"), 0.0, -1.0, 30.5])
+async def test_reporter_refuses_an_unusable_timeout_before_connecting(
+    tmp_path: Path, timeout: object
+) -> None:
+    """A timeout outside (0, 30] fails closed before any agent exists, even on a ready hub."""
+    store = EventStore(tmp_path / "timeout.db")
+    hub = SynapseHub(
+        hub_id="guard-test",
+        authenticator=TokenAuthenticator([TOKEN]),
+        journal=store,
+    )
+    built: list[str] = []
+
+    def recording_factory(name: str, *args: Any, **kwargs: Any) -> SynapseAgent:
+        built.append(name)
+        return SynapseAgent(name, *args, **kwargs)
+
+    async with running_hub(hub) as (_, uri):
+        assert await submit_guard_denial(
+            **_report(uri, timeout=1.0), agent_factory=recording_factory
+        )
+        assert len(built) == 1
+        # A different call, so only the timeout can stop a second record.
+        assert not await submit_guard_denial(
+            **_report(uri, timeout=timeout, session_id="other-session", tool_use_id="other-call"),
+            agent_factory=recording_factory,
+        )
+
+    assert len(built) == 1
+    assert len(_guard_events(store)) == 1
+    store.close()
+
+
+async def test_reporter_reports_false_when_the_hub_refuses_the_credential_or_the_evidence(
+    tmp_path: Path,
+) -> None:
+    """A wrong token and an unknown reason are both answered by the hub and recorded nowhere."""
+    store = EventStore(tmp_path / "refused.db")
+    hub = SynapseHub(
+        hub_id="guard-test",
+        authenticator=TokenAuthenticator([TOKEN]),
+        journal=store,
+    )
+    async with running_hub(hub) as (_, uri):
+        assert not await submit_guard_denial(**_report(uri, token="not-the-token"))
+        assert not await submit_guard_denial(**_report(uri, reason_code="UNKNOWN"))
+
+    assert _guard_events(store) == []
+    store.close()
+
+
+async def test_reporter_reports_false_when_no_hub_listens(unused_tcp_port: int) -> None:
+    """An unreachable hub ends the attempt at once instead of waiting for the timeout."""
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    assert not await submit_guard_denial(**_report(f"ws://127.0.0.1:{unused_tcp_port}"))
+    assert loop.time() - started < 1.5
+
+
+async def test_reporter_reports_false_for_a_malformed_hub_address() -> None:
+    """An address that is not a WebSocket URI fails closed and leaves no task running."""
+    before = asyncio.all_tasks()
+    assert not await submit_guard_denial(**_report("not a websocket uri"))
+    assert asyncio.all_tasks() == before
+
+
+async def test_reporter_gives_up_when_the_hub_never_completes_the_handshake() -> None:
+    """A listener that accepts TCP but never answers ends the attempt at the phase timeout."""
+    release = asyncio.Event()
+
+    async def _stall(_reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await release.wait()
+        writer.close()
+
+    listener = await asyncio.start_server(_stall, "127.0.0.1", 0)
+    port = int(listener.sockets[0].getsockname()[1])
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    try:
+        assert not await submit_guard_denial(**_report(f"ws://127.0.0.1:{port}", timeout=0.3))
+    finally:
+        release.set()
+        listener.close()
+        await listener.wait_closed()
+    assert loop.time() - started < 2.0
+
+
+async def test_reporter_contains_a_misconfigured_agent_factory() -> None:
+    """A real agent that refuses its own configuration is reported as False, not raised."""
+    misconfigured = functools.partial(SynapseAgent, capability_card_lifetime_seconds=0.0)
+    before = asyncio.all_tasks()
+    assert not await submit_guard_denial(**_report("ws://127.0.0.1:9"), agent_factory=misconfigured)
+    assert asyncio.all_tasks() == before
+
+
+async def test_evidence_without_an_idempotency_key_is_journalled_directly(tmp_path: Path) -> None:
+    """A frame without idem_key takes the direct journal path and reports its sequence."""
+    store = EventStore(tmp_path / "direct.db")
+    hub = SynapseHub(
+        hub_id="guard-test",
+        authenticator=TokenAuthenticator([TOKEN]),
+        journal=store,
+    )
+    frame = _frame()
+    del frame["idem_key"]
+    async with running_hub(hub) as (_, uri):
+        async with connect(uri) as websocket:
+            await send_json(
+                websocket,
+                sender=frame["sender"],
+                type="heartbeat",
+                payload="online",
+                token=TOKEN,
+            )
+            await read_until_type(websocket, "welcome")
+            await websocket.send(json.dumps(frame))
+            recorded = await read_until_type(websocket, "guard_denial_recorded")
+
+    events = [event for event in store.read_all() if event.kind == EventKind.GUARD_DENIAL]
+    assert len(events) == 1
+    assert recorded["audit_seq"] == events[0].seq
+    assert recorded["call_sha256"] == frame["call_sha256"]
+    store.close()
+
+
+class _DirectHub(SynapseHub):
+    """A real hub whose replies are kept, for a handler call that bypasses network ingress."""
+
+    def __init__(self, store: EventStore) -> None:
+        super().__init__(
+            hub_id="guard-direct",
+            authenticator=TokenAuthenticator([TOKEN]),
+            journal=store,
+        )
+        self.sent: list[dict[str, Any]] = []
+
+    async def send_json(self, _websocket: Any, data: dict[str, Any]) -> None:
+        self.sent.append(data)
+
+
+async def test_direct_call_without_token_provenance_is_refused(tmp_path: Path) -> None:
+    """A handler call whose socket never passed token ingress gets no evidence record.
+
+    Network ingress always binds an ``auth-token:`` principal on an authenticated hub;
+    a direct integration that skips it falls back to a legacy principal, which cannot
+    attest the record's provenance and so is refused.
+    """
+    store = EventStore(tmp_path / "direct-call.db")
+    hub = _DirectHub(store)
+    frame = _frame()
+    await handle_guard_denial(hub, frame["sender"], frame, object())
+
+    assert hub.sent[-1]["error_code"] == "guard_evidence_unauthenticated"
+    assert _guard_events(store) == []
     store.close()
