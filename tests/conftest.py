@@ -8,13 +8,42 @@
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import os
+import sys
 from collections.abc import Iterator
+from pathlib import Path
+from types import ModuleType
 
 import pytest
 
-pytest_plugins = ["tools.pytest_hang_identity"]
+_HANG_IDENTITY_NAME = "synapse_pytest_hang_identity"
+_HANG_IDENTITY_PLUGIN = Path(__file__).resolve().parents[1] / "tools" / "pytest_hang_identity.py"
+
+
+def _hang_identity_module() -> ModuleType:
+    """Load the hang-identity watcher from its source file.
+
+    The pytest console script does not put the repository root on ``sys.path``.
+    Importing the watcher as a package under ``tools`` therefore fails before
+    collection. The file path is relative to this conftest and does not depend
+    on ``PYTHONPATH``.
+    """
+    spec = importlib.util.spec_from_file_location(_HANG_IDENTITY_NAME, _HANG_IDENTITY_PLUGIN)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load the hang-identity plugin from {_HANG_IDENTITY_PLUGIN}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_HANG_IDENTITY_NAME] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Register the hang-identity watcher for every caller of this conftest."""
+    if config.pluginmanager.has_plugin(_HANG_IDENTITY_NAME):
+        return
+    config.pluginmanager.register(_hang_identity_module(), _HANG_IDENTITY_NAME)
 
 
 @pytest.fixture(autouse=True, scope="session")

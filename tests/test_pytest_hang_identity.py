@@ -71,4 +71,37 @@ def test_softhsm_setup_names_itself_and_times_out() -> None:
     assert "3.10" not in workflow
     assert "Python 3.10 journeys" not in workflow
     conftest = (ROOT / "tests/conftest.py").read_text(encoding="utf-8")
-    assert 'pytest_plugins = ["tools.pytest_hang_identity"]' in conftest
+    assert 'pytest_plugins = ["tools.pytest_hang_identity"]' not in conftest
+    assert '"pytest_hang_identity.py"' in conftest
+    assert "pluginmanager.register" in conftest
+
+
+def test_bare_pytest_loads_hang_identity_without_pythonpath() -> None:
+    """The console-script pytest used by the OpenCode workflows can collect.
+
+    Those jobs invoke ``pytest`` with no ``PYTHONPATH``. The repository root is
+    then absent from ``sys.path``, and a ``tools.*`` plugin import fails before
+    collection. One file from each of those command lines is enough to prove
+    the shared conftest loads the watcher.
+    """
+    pytest_bin = Path(sys.executable).with_name("pytest")
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    commands = (
+        [str(pytest_bin), "tests/test_opencode_compatibility_contract.py"],
+        [str(pytest_bin), "tests/test_opencode_plugin.py"],
+        [str(pytest_bin), "tests/test_opencode_editor_workflow_contract.py"],
+    )
+    for command in commands:
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        output = completed.stdout + completed.stderr
+        assert "No module named tools" not in output, output[-2000:]
+        assert completed.returncode == 0, output[-2000:]
