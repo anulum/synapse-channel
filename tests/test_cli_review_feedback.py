@@ -21,8 +21,11 @@ from pathlib import Path
 import pytest
 
 from hub_e2e_helpers import connect_agent, running_hub
+from synapse_channel.core.approvals import APPROVAL_NOTE_KIND, format_approval_note
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.review_feedback_store import get_finding, mark_routed
 
 AUTHOR = "SYNAPSE-CHANNEL/codex-2970473"
 REVIEWER = "CEO/claude"
@@ -578,3 +581,200 @@ def test_bad_webhook_signature_is_not_stored(tmp_path: Path) -> None:
     assert intake.returncode == 2
     assert "signature" in intake.stderr
     assert not store.exists()
+
+
+def _cli_without_app(*args: str) -> subprocess.CompletedProcess[str]:
+    """Run the CLI as an installation without the separate GitHub App package."""
+    return subprocess.run(
+        [sys.executable, "-m", "synapse_channel.cli", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+
+
+def _ingest_args(webhook: Path, headers: Path, secret: Path, store: Path) -> tuple[str, ...]:
+    return (
+        "review-feedback",
+        "ingest",
+        "--webhook-file",
+        str(webhook),
+        "--headers-file",
+        str(headers),
+        "--secret-file",
+        str(secret),
+        "--severity",
+        "high",
+        "--evidence",
+        "source.txt:1 differs",
+        "--verify",
+        "Run the public CLI against corrected input",
+        "--store",
+        str(store),
+    )
+
+
+def test_intake_refuses_inexact_headers_a_missing_adapter_and_an_unsubmitted_review(
+    tmp_path: Path,
+) -> None:
+    """Each refused intake exits 2 with its reason and stores nothing."""
+    commit = _repo(tmp_path / "repo")
+    store = tmp_path / "private" / "reviews.db"
+    webhook, headers, secret = _webhook(tmp_path, commit)
+
+    extra = json.loads(headers.read_text())
+    extra["X-Extra"] = "1"
+    loose = _private(tmp_path / "loose-headers.json", json.dumps(extra).encode())
+    refused = _cli(*_ingest_args(webhook, loose, secret, store))
+    assert refused.returncode == 2
+    assert "exact signed event fields" in refused.stderr
+
+    missing = _cli_without_app(*_ingest_args(webhook, headers, secret, store))
+    assert missing.returncode == 2
+    assert "install the separate synapse-github-app package" in missing.stderr
+
+    edited = json.loads(webhook.read_bytes())
+    edited["action"] = "edited"
+    body = json.dumps(edited, sort_keys=True).encode()
+    edited_webhook = _private(tmp_path / "edited.json", body)
+    edited_headers = json.loads(headers.read_text())
+    edited_headers["X-Hub-Signature-256"] = (
+        "sha256=" + hmac.new(SECRET, body, hashlib.sha256).hexdigest()
+    )
+    signed = _private(tmp_path / "edited-headers.json", json.dumps(edited_headers).encode())
+    unsubmitted = _cli(*_ingest_args(edited_webhook, signed, secret, store))
+    assert unsubmitted.returncode == 2
+    assert "not a submitted review" in unsubmitted.stderr
+    assert not store.exists() or get_finding(store, KEY) is None
+
+
+def _decide(hub_db: Path, subject: str, *, actor: str, state: str) -> int:
+    events = EventStore(hub_db)
+    try:
+        seq = events.append(
+            EventKind.LEDGER_PROGRESS,
+            {
+                "author": actor,
+                "kind": APPROVAL_NOTE_KIND,
+                "task_id": subject,
+                "text": format_approval_note(subject=subject, state=state),
+            },
+            durable=True,
+        )
+    finally:
+        events.close()
+    return seq
+
+
+def _status_args(hub_db: Path, store: Path, key: str = KEY) -> tuple[str, ...]:
+    return (
+        "review-feedback",
+        "status",
+        key,
+        "--hub-db",
+        str(hub_db),
+        "--reviewer-seat",
+        REVIEWER,
+        "--store",
+        str(store),
+    )
+
+
+def test_status_names_a_missing_finding_and_a_missing_hub_store(tmp_path: Path) -> None:
+    """Status exits 2 when the finding or the hub's approval store does not exist."""
+    _repo_path, _commit, store, _subject = _prepare(tmp_path)
+    hub_db = tmp_path / "hub.db"
+    unknown = _cli(*_status_args(hub_db, store, key=f"{REPOSITORY}:pull_request_review:404"))
+    assert unknown.returncode == 2
+    assert "review finding is missing" in unknown.stderr
+    no_hub = _cli(*_status_args(hub_db, store))
+    assert no_hub.returncode == 2
+    assert "hub approval event store is missing" in no_hub.stderr
+
+
+def test_status_shows_untrusted_text_and_the_session_only_when_asked(tmp_path: Path) -> None:
+    """The reviewer body and the author session appear only behind their explicit flags."""
+    _repo_path, _commit, store, _subject = _prepare(tmp_path)
+    hub_db = tmp_path / "hub.db"
+    EventStore(hub_db).close()
+    plain = _cli(*_status_args(hub_db, store))
+    assert plain.returncode == 0, plain.stderr
+    assert "untrusted_body" not in json.loads(plain.stdout)
+    assert "native-session-81" not in plain.stdout
+    shown = _cli(*_status_args(hub_db, store), "--show-untrusted-body", "--show-author-session")
+    assert shown.returncode == 0, shown.stderr
+    report = json.loads(shown.stdout)
+    assert report["untrusted_body"].startswith("untrusted reviewer text")
+    assert report["author_session"] == "native-session-81"
+
+
+def _route_args(repo: Path, commit: str, hub_db: Path, store: Path, uri: str) -> tuple[str, ...]:
+    return (
+        "review-feedback",
+        "route",
+        KEY,
+        "--hub-db",
+        str(hub_db),
+        "--reviewer-seat",
+        REVIEWER,
+        "--repo-path",
+        str(repo),
+        "--current-commit",
+        commit,
+        "--store",
+        str(store),
+        "--name",
+        "SYNAPSE-CHANNEL/review-router",
+        "--uri",
+        uri,
+    )
+
+
+def test_route_needs_a_decision_and_keeps_its_message_identity(
+    tmp_path: Path, unused_tcp_port: int
+) -> None:
+    """No decision refuses; a recorded receipt with another identity refuses; nothing is sent."""
+    repo, commit, store, subject = _prepare(tmp_path)
+    hub_db = tmp_path / "hub.db"
+    unused = f"ws://127.0.0.1:{unused_tcp_port}"
+    EventStore(hub_db).close()
+    undecided = _cli(*_route_args(repo, commit, hub_db, store, unused))
+    assert undecided.returncode == 2
+    assert "latest independent review decision is missing" in undecided.stderr
+
+    decision_seq = _decide(hub_db, subject, actor=REVIEWER, state="approved")
+    assert mark_routed(
+        store, KEY, msg_id="review-other-identity", decision_seq=decision_seq, at=1.0
+    )
+    changed = _cli(*_route_args(repo, commit, hub_db, store, unused))
+    assert changed.returncode == 2
+    assert "route identity changed" in changed.stderr
+
+
+def test_route_to_an_unreachable_hub_is_not_recorded_as_delivered(
+    tmp_path: Path, unused_tcp_port: int
+) -> None:
+    """When no hub answers, route exits 1 and leaves the finding unrouted."""
+    repo, commit, store, subject = _prepare(tmp_path)
+    hub_db = tmp_path / "hub.db"
+    _decide(hub_db, subject, actor=REVIEWER, state="approved")
+    routed = _cli(*_route_args(repo, commit, hub_db, store, f"ws://127.0.0.1:{unused_tcp_port}"))
+    assert routed.returncode == 1, routed.stderr
+    assert json.loads(routed.stdout)["delivered"] is False
+    found = get_finding(store, KEY)
+    assert found is not None and found[1]["routed_at"] is None
+
+
+@pytest.mark.real_hub
+async def test_route_to_an_offline_author_is_not_recorded_as_delivered(tmp_path: Path) -> None:
+    """A decided finding whose author seat is offline is not marked routed."""
+    repo, commit, store, subject = _prepare(tmp_path)
+    hub_db = tmp_path / "hub.db"
+    _decide(hub_db, subject, actor=REVIEWER, state="approved")
+    async with running_hub(SynapseHub(journal=EventStore(tmp_path / "live.db"))) as (_hub, uri):
+        routed = await asyncio.to_thread(_cli, *_route_args(repo, commit, hub_db, store, uri))
+    assert routed.returncode == 1, routed.stderr
+    assert json.loads(routed.stdout)["delivered"] is False
+    found = get_finding(store, KEY)
+    assert found is not None and found[1]["routed_at"] is None

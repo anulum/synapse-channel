@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import sqlite3
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -19,6 +21,7 @@ import pytest
 
 from synapse_channel.core.approvals import (
     APPROVAL_NOTE_KIND,
+    AWAITING,
     format_approval_note,
     run_approval_report,
 )
@@ -35,6 +38,7 @@ from synapse_channel.core.review_feedback import (
     review_subject,
 )
 from synapse_channel.core.review_feedback_store import (
+    default_review_store,
     get_binding,
     get_finding,
     list_findings,
@@ -286,4 +290,204 @@ def test_only_latest_independent_hub_decision_controls_finding(tmp_path: Path) -
     assert (
         independent_decision(finding, binding, run_approval_report(hub), reviewer_seat=REVIEWER)
         == "rejected"
+    )
+
+
+def test_default_review_store_lives_in_the_owner_state_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absolute XDG_STATE_HOME is used; otherwise the store is under ~/.local/state."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    tail = Path("synapse-channel") / "review-feedback" / "reviews.sqlite3"
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    assert default_review_store() == tmp_path / "state" / tail
+    monkeypatch.setenv("XDG_STATE_HOME", "relative/state")
+    assert default_review_store() == home / ".local" / "state" / tail
+    monkeypatch.delenv("XDG_STATE_HOME")
+    assert default_review_store() == home / ".local" / "state" / tail
+
+
+def _private_dir(tmp_path: Path) -> Path:
+    directory = tmp_path / "private"
+    directory.mkdir(mode=0o700)
+    return directory
+
+
+def test_store_refuses_a_symlink_a_foreign_version_and_a_non_database(tmp_path: Path) -> None:
+    """Each unusable store is refused with a named reason and is never rewritten."""
+    directory = _private_dir(tmp_path)
+    target = directory / "real.sqlite3"
+    link = directory / "link.sqlite3"
+    link.symlink_to(target)
+    with pytest.raises(ReviewFeedbackError, match="must not be a symlink"):
+        get_binding(link, repository="anulum/synapse-channel", commit="0" * 40)
+    assert not target.exists()
+
+    newer = directory / "newer.sqlite3"
+    with sqlite3.connect(newer) as db:
+        db.execute("PRAGMA user_version=5")
+    db.close()
+    os.chmod(newer, 0o600)
+    with pytest.raises(ReviewFeedbackError, match="unsupported review store version 5"):
+        list_findings(newer)
+    with sqlite3.connect(newer) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+    db.close()
+
+    garbage = directory / "garbage.sqlite3"
+    garbage.write_bytes(b"not a database, " * 64)
+    os.chmod(garbage, 0o600)
+    with pytest.raises(ReviewFeedbackError, match="cannot open private review store"):
+        list_findings(garbage)
+    assert garbage.read_bytes() == b"not a database, " * 64
+
+
+def test_store_refuses_a_file_others_can_read(tmp_path: Path) -> None:
+    """A store that is not owner-only is refused before SQLite opens it."""
+    directory = _private_dir(tmp_path)
+    exposed = directory / "reviews.sqlite3"
+    sqlite3.connect(exposed).close()
+    os.chmod(exposed, 0o644)
+    with pytest.raises(ReviewFeedbackError, match="cannot open private review store"):
+        list_findings(exposed)
+
+
+def test_store_refuses_a_damaged_database(tmp_path: Path) -> None:
+    """A store whose pages no longer pass SQLite's quick check is refused, not read."""
+    repo = tmp_path / "repo"
+    _, commit = _repo(repo)
+    db_path = _private_dir(tmp_path) / "reviews.sqlite3"
+    body = b"signed review source"
+    finding = _finding(commit, body)
+    assert save_finding(
+        db_path, finding, webhook_body=body, webhook_signature="sha256=" + "a" * 64, observed_at=1
+    )
+    with sqlite3.connect(db_path) as db:
+        page_size = int(db.execute("PRAGMA page_size").fetchone()[0])
+        pages = int(db.execute("PRAGMA page_count").fetchone()[0])
+    db.close()
+    assert pages >= 3
+    with open(db_path, "r+b") as handle:
+        handle.seek(page_size * (pages - 1) + 8)
+        handle.write(b"\xff" * 64)
+    with pytest.raises(ReviewFeedbackError, match="integrity check failed"):
+        get_finding(db_path, finding.key)
+
+
+def test_unknown_findings_and_invalid_route_receipts_are_refused(tmp_path: Path) -> None:
+    """Reading an unknown key returns None; routing it, or routing with a bad receipt, fails."""
+    db_path = _private_dir(tmp_path) / "reviews.sqlite3"
+    assert get_finding(db_path, "no-such-review") is None
+    for msg_id, decision_seq, at in (
+        ("", 1, 1.0),
+        ("m" * 129, 1, 1.0),
+        ("review-1", 0, 1.0),
+        ("review-1", 1, 0.0),
+    ):
+        with pytest.raises(ReviewFeedbackError, match="route receipt is invalid"):
+            mark_routed(db_path, "no-such-review", msg_id=msg_id, decision_seq=decision_seq, at=at)
+    with pytest.raises(ReviewFeedbackError, match="review finding is missing"):
+        mark_routed(db_path, "no-such-review", msg_id="review-1", decision_seq=1, at=1.0)
+
+
+def _commit(repo: Path, message: str, *extra: str) -> str:
+    _git(repo, "commit", "-q", *extra, "-m", message, "-m", "Seat: 2970473")
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def test_commit_evidence_refuses_an_empty_and_an_oversized_commit(
+    tmp_path: Path,
+) -> None:
+    """A commit without a patch, or with a patch over the 4 MiB bound, gives no evidence."""
+    repo = tmp_path / "repo"
+    _repo(repo)
+    empty = _commit(repo, "chore: nothing", "--allow-empty")
+    with pytest.raises(ReviewFeedbackError, match="has no diff"):
+        inspect_commit(repo, empty)
+
+    (repo / "large.txt").write_text(("line of review evidence\n") * 200_000)
+    _git(repo, "add", "large.txt")
+    oversized = _commit(repo, "feat: add a large file")
+    with pytest.raises(ReviewFeedbackError, match="exceeds its bound"):
+        inspect_commit(repo, oversized)
+
+
+def test_commit_evidence_needs_a_git_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without git on PATH the evidence is refused with a named reason."""
+    repo = tmp_path / "repo"
+    _, commit = _repo(repo)
+    empty_bin = tmp_path / "no-git-here"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    with pytest.raises(ReviewFeedbackError, match="Git executable is unavailable"):
+        inspect_commit(repo, commit)
+
+
+def test_subject_refuses_a_binding_for_other_work_and_accepts_an_anonymous_author(
+    tmp_path: Path,
+) -> None:
+    """A binding for another commit cannot decide a finding; a missing GitHub author is allowed."""
+    repo = tmp_path / "repo"
+    base, commit = _repo(repo)
+    binding = bind_author(
+        repo,
+        repository="anulum/synapse-channel",
+        commit=commit,
+        task_id="TASK-7",
+        author_seat=SEAT,
+        author_session="native-session-7",
+    )
+    anonymous = replace(_finding(commit), github_author=None)
+    assert review_subject(anonymous, binding).startswith("review-feedback:")
+    with pytest.raises(ReviewFeedbackError, match="do not refer to the same work"):
+        review_subject(replace(anonymous, reviewed_commit=base, observed_head=base), binding)
+
+
+def test_a_reviewer_reopening_the_request_leaves_the_finding_undecided(tmp_path: Path) -> None:
+    """After a rejection, the reviewer's new request makes the finding await a decision again."""
+    repo = tmp_path / "repo"
+    _, commit = _repo(repo)
+    binding = bind_author(
+        repo,
+        repository="anulum/synapse-channel",
+        commit=commit,
+        task_id="TASK-7",
+        author_seat=SEAT,
+        author_session="native-session-7",
+    )
+    finding = _finding(commit)
+    hub = tmp_path / "hub.db"
+    _approval(hub, finding, binding, actor=REVIEWER, state="rejected")
+    rejected = run_approval_report(hub)
+    assert independent_decision(finding, binding, rejected, reviewer_seat=REVIEWER) == "rejected"
+    _approval(hub, finding, binding, actor=REVIEWER, state="requested")
+    reopened = run_approval_report(hub)
+    assert independent_decision(finding, binding, reopened, reviewer_seat=REVIEWER) == (
+        "awaiting_independent_decision"
+    )
+
+
+def test_a_decision_in_no_known_final_state_never_accepts(tmp_path: Path) -> None:
+    """A report naming the reviewer with a non-final state fails closed to awaiting."""
+    repo = tmp_path / "repo"
+    _, commit = _repo(repo)
+    binding = bind_author(
+        repo,
+        repository="anulum/synapse-channel",
+        commit=commit,
+        task_id="TASK-7",
+        author_seat=SEAT,
+        author_session="native-session-7",
+    )
+    finding = _finding(commit)
+    hub = tmp_path / "hub.db"
+    _approval(hub, finding, binding, actor=REVIEWER, state="approved")
+    report = run_approval_report(hub)
+    (status,) = report.statuses
+    inconsistent = replace(report, statuses=(replace(status, current_state=AWAITING),))
+    assert independent_decision(finding, binding, inconsistent, reviewer_seat=REVIEWER) == (
+        "awaiting_independent_decision"
     )
