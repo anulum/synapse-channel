@@ -32,7 +32,11 @@ from collections import defaultdict
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
-from synapse_channel.core.path_identity import claim_scopes_conflict, comparison_worktree
+from synapse_channel.core.path_identity import (
+    claim_scopes_conflict,
+    comparison_worktree,
+    object_key_base,
+)
 
 if TYPE_CHECKING:
     from synapse_channel.core.causality import CausalNode
@@ -78,7 +82,7 @@ class ReleasedClaimIndex:
         self._identity_by_folded[folded].append(entry)
         self._identity_by_label[(identity.case_sensitive, identity.worktree_path)].append(entry)
         if identity.filesystem_namespace and identity.worktree_object_id:
-            key = (identity.filesystem_namespace, identity.worktree_object_id)
+            key = (identity.filesystem_namespace, object_key_base(identity.worktree_object_id))
             self._identity_by_object[key].append(entry)
 
     def latest_conflicting(self, claim: CausalNode) -> int | None:
@@ -137,6 +141,6 @@ class ReleasedClaimIndex:
             self._legacy_by_label.get((identity.case_sensitive, identity.worktree_path), []),
         ]
         if identity.filesystem_namespace and identity.worktree_object_id:
-            key = (identity.filesystem_namespace, identity.worktree_object_id)
+            key = (identity.filesystem_namespace, object_key_base(identity.worktree_object_id))
             buckets.append(self._identity_by_object.get(key, []))
         return buckets

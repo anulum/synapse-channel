@@ -45,6 +45,12 @@ execution evidence when carrying a release claim forward.
   file's inode for an unrelated file, and the hub then refused claims on that
   unrelated file as if it were the claimed one. Hard links still conflict.
   Claims made before this release keep the old identity until renewed.
+- Claims from a client older than the inode-generation change again match a
+  newer client's view of the same worktree. Commit 722efadb added the
+  generation to the worktree-root key and compared it exactly, so a claim made
+  by an installed older client no longer covered or conflicted with the same
+  paths as seen by a newer hook. A key without a generation now matches on its
+  device and inode.
 
 ## [0.99.42] - 2026-11-01
 

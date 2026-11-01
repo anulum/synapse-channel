@@ -256,6 +256,27 @@ def parse_optional_claim_scope_identity(
     return ClaimScopeIdentity.from_dict(raw)
 
 
+def object_key_base(value: str) -> str:
+    """Return the ``device:inode`` part of an object key, without any generation.
+
+    Clients before the inode generation sent ``device:inode``; newer clients send
+    ``device:inode:generation`` where the filesystem reports one. A worktree root
+    is compared on this base so claims from both stay comparable.
+    """
+    return ":".join(value.split(":")[:2])
+
+
+def _same_worktree_key(left: str, right: str) -> bool:
+    """Return whether two worktree-root keys name one root across client versions.
+
+    Two keys that both carry a generation must match exactly; a legacy key without
+    one matches a newer key on its ``device:inode`` base.
+    """
+    if left.count(":") >= 2 and right.count(":") >= 2:
+        return left == right
+    return object_key_base(left) == object_key_base(right)
+
+
 def claim_worktrees_match(
     display_a: str,
     identity_a: ClaimScopeIdentity | None,
@@ -283,7 +304,7 @@ def claim_worktrees_match(
         ):
             return False
         if identity_a.worktree_object_id and identity_b.worktree_object_id:
-            return identity_a.worktree_object_id == identity_b.worktree_object_id
+            return _same_worktree_key(identity_a.worktree_object_id, identity_b.worktree_object_id)
         return True
     known = cast(
         ClaimScopeIdentity,
@@ -304,7 +325,8 @@ def claim_object_ids_comparable(
         and identity_a.filesystem_namespace
         and identity_a.filesystem_namespace == identity_b.filesystem_namespace
         and identity_a.worktree_object_id
-        and identity_a.worktree_object_id == identity_b.worktree_object_id
+        and identity_b.worktree_object_id
+        and _same_worktree_key(identity_a.worktree_object_id, identity_b.worktree_object_id)
     )
 
 
