@@ -16,6 +16,7 @@ import pytest
 from synapse_channel import cli
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.merkle import proof_to_json, run_proof, run_root
+from synapse_channel.core.merkle_checkpoint import MerkleCheckpointStore, checkpoint_path_for
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.receipt_signing import load_receipt_verification_key
 
@@ -258,3 +259,71 @@ def test_merkle_keygen_refuses_to_overwrite_an_existing_key(
     capsys.readouterr()
     assert cli.main(["merkle", "keygen", str(key_path)]) == 2
     assert "cannot write receipt-signing key" in capsys.readouterr().err
+
+
+def _checkpointed(tmp_path: Path, *, record: bool) -> Path:
+    """Seed a store and create its checkpoint store, with or without one checkpoint."""
+    db = tmp_path / "hub.db"
+    _seed(db)
+    checkpoints = MerkleCheckpointStore(checkpoint_path_for(db))
+    try:
+        if record:
+            committed = run_root(db)
+            checkpoints.append(committed.tree_size, committed.root)
+    finally:
+        checkpoints.close()
+    return db
+
+
+def test_checkpoint_verify_json_is_clean_before_any_checkpoint_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no checkpoint store, a JSON verify reports a clean first run."""
+    db = tmp_path / "hub.db"
+    _seed(db)
+    assert cli.main(["merkle", "checkpoint", str(db), "--verify", "--json"]) == 0
+    verdict = json.loads(capsys.readouterr().out)
+    assert verdict["valid"] is True
+    assert verdict["seq"] == -1
+
+
+def test_checkpoint_store_without_a_checkpoint(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An empty checkpoint store has nothing to show, and verifies as a clean first run."""
+    db = _checkpointed(tmp_path, record=False)
+    assert cli.main(["merkle", "checkpoint", str(db)]) == 1
+    assert "no checkpoint recorded in" in capsys.readouterr().err
+    assert cli.main(["merkle", "checkpoint", str(db), "--verify"]) == 0
+    assert "first run is clean by construction" in capsys.readouterr().out
+    assert cli.main(["merkle", "checkpoint", str(db), "--verify", "--json"]) == 0
+    verdict = json.loads(capsys.readouterr().out)
+    assert verdict["valid"] is True
+    assert verdict["seq"] == -1
+
+
+def test_checkpoint_text_output_shows_and_verifies_the_latest_checkpoint(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without --json the latest checkpoint is printed, and the log verifies against it."""
+    db = _checkpointed(tmp_path, record=True)
+    root = run_root(db).root
+    assert cli.main(["merkle", "checkpoint", str(db)]) == 0
+    shown = capsys.readouterr().out
+    assert "latest checkpoint: seq 7" in shown
+    assert f"root:            {root}" in shown
+    assert "prev_hash:       (genesis)" in shown
+    assert cli.main(["merkle", "checkpoint", str(db), "--verify"]) == 0
+    assert capsys.readouterr().out.strip() == f"log verified against checkpoint seq 7: root {root}"
+
+
+def test_checkpoint_verify_reports_an_event_store_it_cannot_open(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A missing database key file is reported, and verification exits 2."""
+    db = _checkpointed(tmp_path, record=True)
+    missing = tmp_path / "missing.key"
+    assert (
+        cli.main(["merkle", "checkpoint", str(db), "--verify", "--db-key-file", str(missing)]) == 2
+    )
+    assert "key file does not exist" in capsys.readouterr().err
