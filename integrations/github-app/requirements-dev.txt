@@ -981,9 +981,9 @@ pip-requirements-parser==32.0.1 \
     --hash=sha256:4659bc2a667783e7a15d190f6fccf8b2486685b6dba4c19c3876314769c57526 \
     --hash=sha256:b4fa3a7a0be38243123cf9d1f3518da10c51bdb165a2b2985566247f9155a7d3
     # via pip-audit
-platformdirs==4.14.2 \
-    --hash=sha256:6d13b4c1d66b7548dcec9e3db13c1ba9d9adb65041b5d07869313afc07e6e41b \
-    --hash=sha256:dc1f93390f2a9265e44e5afc8667ec7faf737739604e39bc538fec889720c36b
+platformdirs==4.14.3 \
+    --hash=sha256:021add1ab113483edbcd4694f5fbb2d688b893ea30d35e1155bb371cf4be0be8 \
+    --hash=sha256:cba2d05fe5e18b26b1fa6f376b8e6234c012abe1f8696c486fface7d0054e931
     # via pip-audit
 pluggy==1.7.0 \
     --hash=sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec \
@@ -1166,9 +1166,9 @@ stevedore==5.9.1 \
     --hash=sha256:5c8ff3a9f336cc1a06ac0f597bc79d11a2f950bfd32e290ca56b5a301fafafbf \
     --hash=sha256:e97a2667923efda926e8713fde6a73616df68210a3cbc6f02b48967b676fd8bf
     # via bandit
-synapse-channel==0.99.41 \
-    --hash=sha256:566793f5a4f90dd04fef9ea7249f79fc9d50d63c7e5821bd61778099e30cc90c \
-    --hash=sha256:8ed0e2dfffca12d8767fc79dc4da88db180e580516bf1b5ca453af86e6910bfe
+synapse-channel==0.99.42 \
+    --hash=sha256:06cf454899b3c4d69108832a199548c951e83ea80a678d3b624dff5ec5ab7d5c \
+    --hash=sha256:d62b224f21e3734fc71b74b98428b5f693e7fe7de76b26f9b1833d27a14ecfbb
     # via synapse-github-app (pyproject.toml)
 tomli==2.5.0 \
     --hash=sha256:069435bd5480429b98c5e5afb02ab21c219b6f0064680671c6dc0d46817346ea \
