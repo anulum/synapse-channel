@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -21,6 +22,7 @@ from synapse_channel.core.delivery_modes import (
     DeliveryStage,
     parse_delivery_intent,
 )
+from synapse_channel.core.delivery_persistence import DELIVERY_ACCEPTED, DELIVERY_TRANSITION
 from synapse_channel.core.persistence import EventStore
 
 
@@ -353,3 +355,84 @@ def test_reopen_refuses_damaged_indexes_and_outbox(
     with pytest.raises(DeliveryRefusal) as failure:
         EventStore(path)
     assert failure.value.code == "replay_incompatible"
+
+
+def _insert_event(path: Path, kind: str, payload: dict[str, Any]) -> None:
+    """Append one forged delivery event outside the hub."""
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO events (ts, kind, payload) VALUES (1.0, ?, ?)",
+            (kind, json.dumps(payload)),
+        )
+
+
+def test_reopen_refuses_a_second_request_reusing_the_idempotency_key(tmp_path: Path) -> None:
+    """A forged second admission with its own request id but the same idempotency key fails."""
+    path = tmp_path / "hub.db"
+    _seed(path)
+    with sqlite3.connect(path) as connection:
+        row = connection.execute("SELECT payload FROM events WHERE seq = 1").fetchone()
+    assert row is not None
+    forged = json.loads(row[0])
+    request = forged["request"]
+    request["request_id"] = "req-2"
+    forged["operation_key"] = hashlib.sha256(
+        json.dumps(
+            [request["origin_hub"], request["sender"], "req-2"],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+    ).hexdigest()
+    digest_request = {field: value for field, value in request.items() if field != "profile"}
+    forged["digest"] = hashlib.sha256(
+        json.dumps(digest_request, sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode(
+            "ascii"
+        )
+    ).hexdigest()
+    _insert_event(path, DELIVERY_ACCEPTED, forged)
+    with pytest.raises(DeliveryRefusal, match="duplicate delivery idempotency key"):
+        EventStore(path)
+
+
+def test_reopen_refuses_a_transition_without_a_queued_request(tmp_path: Path) -> None:
+    """A transition for an operation the stream never admitted fails."""
+    path = tmp_path / "hub.db"
+    _seed(path)
+    _insert_event(
+        path,
+        DELIVERY_TRANSITION,
+        {"profile": 4, "operation_key": "f" * 64, "ordinal": 2, "prior_stage": "queued"},
+    )
+    with pytest.raises(DeliveryRefusal, match="lacks a queued predecessor"):
+        EventStore(path)
+
+
+def test_reopen_refuses_a_transition_to_an_unknown_stage(tmp_path: Path) -> None:
+    """A contiguous transition naming a stage outside the lifecycle fails."""
+    path = tmp_path / "hub.db"
+    key = _seed(path)
+    _insert_event(
+        path,
+        DELIVERY_TRANSITION,
+        {
+            "profile": 4,
+            "operation_key": key,
+            "ordinal": 2,
+            "prior_stage": "queued",
+            "stage": "teleported",
+            "mutation_id": "mutation-1",
+            "mutation_digest": "a" * 64,
+        },
+    )
+    with pytest.raises(DeliveryRefusal, match="delivery transition violates its lifecycle"):
+        EventStore(path)
+
+
+def test_reopen_refuses_a_missing_aggregate_row(tmp_path: Path) -> None:
+    """Deleting the indexed aggregate of an admitted request is detected."""
+    path = tmp_path / "hub.db"
+    key = _seed(path)
+    with sqlite3.connect(path) as connection:
+        connection.execute("DELETE FROM delivery_requests WHERE operation_key = ?", (key,))
+    with pytest.raises(DeliveryRefusal, match="aggregate count differs"):
+        EventStore(path)
