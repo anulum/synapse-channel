@@ -240,7 +240,7 @@ class ProtectedWriteUnixExchange:
             raise ValueError("invalid protected authority request size")
         self._check_path()
         with unix_connect(
-            path=self._path,
+            path=str(self._path),
             uri="ws://localhost/",
             open_timeout=self._timeout,
             close_timeout=self._timeout,
