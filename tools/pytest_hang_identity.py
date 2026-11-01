@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 
 import pytest
 
@@ -73,8 +74,19 @@ def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) 
         return
     finished = threading.Event()
 
-    def _report(bound: float = limit) -> None:
-        if finished.wait(bound):
+    def _report(bound: float = limit, stop: threading.Event = finished) -> None:
+        # Sleep in short slices. Event.wait holds a condition lock, and
+        # faulthandler's watchdog thread dumps every thread when the timeout
+        # fires. On macOS, dumping a thread parked on that lock and then
+        # joining it from logfinish leaves cancel_dump_traceback_later waiting
+        # for the dumper, so the pytest process never exits.
+        deadline = time.monotonic() + bound
+        while time.monotonic() < deadline:
+            if stop.is_set():
+                return
+            remaining = deadline - time.monotonic()
+            time.sleep(min(0.05, remaining))
+        if stop.is_set():
             return
         _write_timeout(nodeid)
 
@@ -84,10 +96,13 @@ def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) 
 
 
 def pytest_runtest_logfinish(nodeid: str, location: tuple[str, int | None, str]) -> None:
-    """Stop the hang watch after the test, including its teardown, has finished."""
+    """Stop the hang watch after the test, including its teardown, has finished.
+
+    The watcher is a daemon and is not joined. Joining it while the
+    faulthandler watchdog is dumping that thread deadlocks on macOS.
+    """
     del location
     pair = _active.pop(nodeid, None)
     if pair is None:
         return
     pair[0].set()
-    pair[1].join(timeout=2)

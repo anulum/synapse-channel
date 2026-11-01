@@ -14,49 +14,78 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# The probe really sleeps longer than pytest's faulthandler timeout. The outer
+# bound is that sleep, the faulthandler timeout, and room for a slow macOS
+# runner to start pytest. A child that never exits still fails and is reaped.
+_FAULT_TIMEOUT_SECONDS = 0.4
+_HANG_SLEEP_SECONDS = 2.0
+_OUTER_BOUND_SECONDS = _HANG_SLEEP_SECONDS + _FAULT_TIMEOUT_SECONDS + 45.0
 
 
 def test_faulthandler_timeout_prints_the_running_node_id(tmp_path: Path) -> None:
-    """A test that outlives the timeout prints its node id and a fast test does not."""
+    """A real hang prints its node id, then the child exits and is reaped.
+
+    macOS runners were exceeding a fixed 20 second outer bound even though the
+    child only sleeps for 2 seconds. The watcher used to park on
+    ``Event.wait``, which holds a condition lock, and the finish hook joined
+    that thread while faulthandler's watchdog dumped it. On macOS that leaves
+    ``cancel_dump_traceback_later`` waiting for the dumper, so the process
+    never exits. The watcher now sleeps without that lock and is not joined, so
+    the dump can finish and the child can exit after the sleep. Linux and
+    macOS both pass for that reason, not because the outer bound grew.
+    """
     test_file = tmp_path / "test_hang_identity_probe.py"
     test_file.write_text(
         "import time\n\n"
         "def test_fast():\n"
         "    assert True\n\n"
         "def test_hangs():\n"
-        "    time.sleep(2)\n",
+        f"    time.sleep({_HANG_SLEEP_SECONDS!r})\n",
         encoding="utf-8",
     )
     env = dict(os.environ)
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            str(test_file),
-            "--noconftest",
-            "-p",
-            "tools.pytest_hang_identity",
-            "-p",
-            "no:cacheprovider",
-            "-o",
-            "faulthandler_timeout=0.4",
-            "-q",
-        ],
+    command = [
+        sys.executable,
+        "-m",
+        "pytest",
+        str(test_file),
+        "--noconftest",
+        "-p",
+        "tools.pytest_hang_identity",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        f"faulthandler_timeout={_FAULT_TIMEOUT_SECONDS}",
+        "-q",
+    ]
+    process = subprocess.Popen(
+        command,
         cwd=ROOT,
         env=env,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=20,
-        check=False,
     )
-    output = completed.stdout + completed.stderr
+    try:
+        stdout, stderr = process.communicate(timeout=_OUTER_BOUND_SECONDS)
+    except subprocess.TimeoutExpired as expired:
+        process.kill()
+        stdout, stderr = process.communicate()
+        output = (stdout or "") + (stderr or "")
+        raise AssertionError(
+            "inner pytest did not exit after the hang sleep\n" + output[-2500:]
+        ) from expired
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+    output = stdout + stderr
     hang_lines = [line for line in output.splitlines() if "TIMEOUT nodeid=" in line]
     assert hang_lines, output[-2500:]
     assert any(line.endswith("::test_hangs") or "::test_hangs" in line for line in hang_lines)
     assert all(not line.endswith("::test_fast") for line in hang_lines)
-    assert completed.returncode == 0
+    assert process.returncode == 0
 
 
 def test_softhsm_setup_names_itself_and_times_out() -> None:
