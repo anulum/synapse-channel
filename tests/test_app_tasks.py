@@ -336,3 +336,82 @@ def test_unknown_transition_missing_task_and_unverified_correction_refuse(tmp_pa
     with pytest.raises(AppTaskError, match="bounded reason"):
         correct_usage(store, "bound", "1", " ", now=at)
     assert get(store, "bound", now=at)["state"] == "offered"
+
+
+def test_offer_refuses_an_unknown_or_closed_allowance_window(tmp_path: Path) -> None:
+    """A window id the ledger lacks, or a window that has ended, accepts no work."""
+    at = _at()
+    ledger = tmp_path / "ledger" / "ledger.sqlite3"
+    _ledger(ledger, at)
+    store = tmp_path / "queue" / "queue.sqlite3"
+    with pytest.raises(AppTaskError, match="^allowance window not found$"):
+        offer(store, {**_bundle("unknown", at), "window_id": "w2"}, ledger=ledger, now=at)
+    later = at + timedelta(days=2)
+    with pytest.raises(AppTaskError, match="^allowance window is not currently usable$"):
+        offer(store, _bundle("closed", later), ledger=ledger, now=later)
+    with sqlite3.connect(store) as db:
+        assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
+
+
+def test_store_refuses_foreign_bytes_and_a_failed_integrity_check(tmp_path: Path) -> None:
+    """A shared directory, a non-database file and a damaged task index all refuse the store."""
+    at = _at()
+    shared_dir = tmp_path / "shared"
+    shared_dir.mkdir(mode=0o700)
+    shared_dir.chmod(0o755)
+    with pytest.raises(
+        AppTaskError, match=r"app task directory: .* \(mode 755\); must be owner-only"
+    ):
+        get(shared_dir / "queue.sqlite3", "any", now=at)
+    assert list(shared_dir.iterdir()) == []
+
+    foreign_dir = tmp_path / "foreign"
+    foreign_dir.mkdir(mode=0o700)
+    foreign = foreign_dir / "queue.sqlite3"
+    foreign.write_bytes(b"not an app task store " * 8)
+    foreign.chmod(0o600)
+    with pytest.raises(AppTaskError, match="^cannot open private app task store: file is not"):
+        get(foreign, "any", now=at)
+
+    ledger = tmp_path / "ledger" / "ledger.sqlite3"
+    _ledger(ledger, at)
+    store = tmp_path / "queue" / "queue.sqlite3"
+    for index in range(3):
+        offer(store, _bundle(f"task-{index}", at), ledger=ledger, now=at)
+    with sqlite3.connect(store) as db:
+        page_size = db.execute("PRAGMA page_size").fetchone()[0]
+        (root,) = db.execute(
+            "SELECT rootpage FROM sqlite_master WHERE name = 'sqlite_autoindex_tasks_1'"
+        ).fetchone()
+    db.close()
+    damaged = bytearray(store.read_bytes())
+    # Offset 3 of a b-tree page header is its cell count; an impossible count is
+    # caught by PRAGMA quick_check while the file header still opens normally.
+    offset = (root - 1) * page_size + 3
+    damaged[offset : offset + 2] = b"\xff\xff"
+    store.write_bytes(bytes(damaged))
+    with pytest.raises(AppTaskError, match="^app task store integrity check failed$"):
+        get(store, "task-1", now=at)
+
+
+def test_expiry_refuses_a_task_that_vanishes_inside_the_transition(tmp_path: Path) -> None:
+    """A store trigger that deletes the task during expiry cannot yield a stale row."""
+    at = _at()
+    ledger = tmp_path / "ledger" / "ledger.sqlite3"
+    _ledger(ledger, at)
+    store = tmp_path / "queue" / "queue.sqlite3"
+    offer(store, _bundle("vanishing", at, seconds=60), ledger=ledger, now=at)
+    with sqlite3.connect(store) as db:
+        db.execute(
+            "CREATE TRIGGER vanish AFTER INSERT ON events WHEN NEW.action = 'expire' BEGIN "
+            "DELETE FROM events WHERE task_id = NEW.task_id; "
+            "DELETE FROM tasks WHERE task_id = NEW.task_id; END"
+        )
+    db.close()
+    with pytest.raises(AppTaskError, match="^task disappeared during expiry transition$"):
+        get(store, "vanishing", now=at + timedelta(minutes=5))
+    with sqlite3.connect(store) as db:
+        assert db.execute("SELECT state FROM tasks WHERE task_id = 'vanishing'").fetchone() == (
+            "offered",
+        )
+    db.close()
