@@ -1,11 +1,11 @@
 {
   "metrics": {
     "benchmark_harnesses": 14,
-    "classes": 1240,
+    "classes": 1250,
     "cli_subcommands": 274,
     "documentation_pages": 91,
     "optional_dependency_groups": 14,
-    "package_modules": 858,
+    "package_modules": 865,
     "public_api_exports": 70,
     "tests": 12185,
     "version": "0.99.42",

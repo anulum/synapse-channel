@@ -155,9 +155,24 @@ jobs:
               /etc/apt/sources.list.d/azure-cli.sources
             sudo apt-get update
             sudo apt-get install -y softhsm2 swtpm swtpm-tools tpm2-tools \
-              libtss2-dev tmux libseccomp2
+              libtss2-dev tmux libseccomp2 bubblewrap dbus-user-session
           '
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
+      - name: Prepare the native cgroup test session
+        shell: bash
+        run: |
+          set -euo pipefail
+          runner_uid="$(id -u)"
+          sudo loginctl enable-linger "$USER"
+          export XDG_RUNTIME_DIR="/run/user/$runner_uid"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          for _ in {1..30}; do
+            if systemctl --user show-environment >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          systemctl --user show-environment >/dev/null
+          printf 'XDG_RUNTIME_DIR=%s\n' "$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
+          printf 'DBUS_SESSION_BUS_ADDRESS=%s\n' "$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
       - run: python -m pip install -e . --no-deps
       # The hash-locked dev cohort includes the shipped gRPC dependency. Keep the
       # capability fail-closed so the real loopback/TLS/mTLS tests cannot silently skip.
@@ -239,6 +254,9 @@ jobs:
           test "$("$bin_dir/opencode" --version)" = "1.18.32"
           tmux -V
           echo "OPENCODE_BIN=$bin_dir/opencode" >> "$GITHUB_ENV"
+      - name: Prepare isolated kernel coverage output
+        if: matrix.python-version == '3.12'
+        run: mkdir -p native-kernel-coverage
       - name: Run a complete indexed coverage shard
         if: matrix.python-version == '3.12'
         env:
@@ -246,11 +264,12 @@ jobs:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
           SYNAPSE_TEST_CODEX_BIN: ${{ github.workspace }}/integrations/codex-cli/node_modules/.bin/codex
           SYNAPSE_TEST_PI_BIN: ${{ github.workspace }}/integrations/pi/node_modules/.bin/pi
+          SYNAPSE_TEST_COVERAGE_DIR: ${{ github.workspace }}/native-kernel-coverage
         run: >-
           bash tools/run_delegated_tests.sh python -m pytest tests -p tools.pytest_shard
           --shard-index=${{ matrix.shard }} --shard-count=4 --shard-output=shard-main.json
           --shard-timings=timing-input/timings.json
-          -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py protected_write_descriptor_filter_linux.py protected_write_sequence_linux.py protected_write_execution_frontier_linux.py protected_write_observation_effect_faults_linux.py protected_write_observation_topology_faults_linux.py protected_write_recovery_admission_inputs_linux.py protected_write_recovery_candidate_linux.py protected_write_recovery_escaped_descriptor_linux.py protected_write_recovery_evidence_linux.py protected_write_recovery_snapshot_linux.py protected_write_recovery_topology_faults_linux.py'
+          -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py protected_write_cgroup_controls_linux.py protected_write_cgroup_parsing_linux.py protected_write_kernel_boundary_linux.py protected_write_kernel_capture_races_linux.py protected_write_mount_attributes_linux.py protected_write_mounts_linux.py protected_write_subtree_linux.py protected_write_subtree_membership_linux.py protected_write_subtree_stop_linux.py protected_write_descriptor_filter_linux.py protected_write_sequence_linux.py protected_write_execution_frontier_linux.py protected_write_observation_effect_faults_linux.py protected_write_observation_topology_faults_linux.py protected_write_recovery_admission_inputs_linux.py protected_write_recovery_candidate_linux.py protected_write_recovery_escaped_descriptor_linux.py protected_write_recovery_evidence_linux.py protected_write_recovery_snapshot_linux.py protected_write_recovery_topology_faults_linux.py'
           --cov=synapse_channel --cov-report= --cov-fail-under=0
       - name: Run a complete indexed compatibility shard
         if: matrix.python-version != '3.12'
@@ -258,7 +277,7 @@ jobs:
           bash tools/run_delegated_tests.sh python -m pytest tests -p tools.pytest_shard
           --shard-index=${{ matrix.shard }} --shard-count=4 --shard-output=shard-main.json
           --shard-timings=timing-input/timings.json
-          -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py protected_write_descriptor_filter_linux.py protected_write_sequence_linux.py protected_write_execution_frontier_linux.py protected_write_observation_effect_faults_linux.py protected_write_observation_topology_faults_linux.py protected_write_recovery_admission_inputs_linux.py protected_write_recovery_candidate_linux.py protected_write_recovery_escaped_descriptor_linux.py protected_write_recovery_evidence_linux.py protected_write_recovery_snapshot_linux.py protected_write_recovery_topology_faults_linux.py'
+          -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py protected_write_cgroup_controls_linux.py protected_write_cgroup_parsing_linux.py protected_write_kernel_boundary_linux.py protected_write_kernel_capture_races_linux.py protected_write_mount_attributes_linux.py protected_write_mounts_linux.py protected_write_subtree_linux.py protected_write_subtree_membership_linux.py protected_write_subtree_stop_linux.py protected_write_descriptor_filter_linux.py protected_write_sequence_linux.py protected_write_execution_frontier_linux.py protected_write_observation_effect_faults_linux.py protected_write_observation_topology_faults_linux.py protected_write_recovery_admission_inputs_linux.py protected_write_recovery_candidate_linux.py protected_write_recovery_escaped_descriptor_linux.py protected_write_recovery_evidence_linux.py protected_write_recovery_snapshot_linux.py protected_write_recovery_topology_faults_linux.py'
       - name: Native Linux metadata refusal with accumulated coverage
         if: matrix.python-version == '3.12' && matrix.shard == 0
         run: >-
@@ -279,7 +298,10 @@ jobs:
         run: |
           args=(--manifest shard-main.json --output ci-shard-artifact)
           if [ "$SHARD_INDEX" = 0 ]; then args+=(--native-manifest shard-native.json); fi
-          if [ "$PYTHON_PROFILE" = 3.12 ]; then args+=(--coverage-file .coverage); fi
+          if [ "$PYTHON_PROFILE" = 3.12 ]; then
+            python -m coverage combine --append native-kernel-coverage
+            args+=(--coverage-file .coverage)
+          fi
           python tools/ci_shard_artifacts.py pack "${args[@]}"
       - name: Publish authoritative shard only after every mandatory command passes
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

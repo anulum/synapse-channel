@@ -239,6 +239,32 @@ two default pytest filename patterns, measuring the complete native population
 in the initial coverage invocation. Default collection keeps portable enrollment
 and modeled unsupported-platform guards; those guards are not foreign-OS proof.
 
+The cgroup, mount and process-subtree profiles require native Linux cgroup v2,
+a working systemd user session, procfs and Bubblewrap user namespaces:
+
+```bash
+python -m pytest \
+  tests/fixtures/protected_write_cgroup_controls_linux.py \
+  tests/fixtures/protected_write_cgroup_parsing_linux.py \
+  tests/fixtures/protected_write_kernel_boundary_linux.py \
+  tests/fixtures/protected_write_kernel_capture_races_linux.py \
+  tests/fixtures/protected_write_mount_attributes_linux.py \
+  tests/fixtures/protected_write_mounts_linux.py \
+  tests/fixtures/protected_write_subtree_linux.py \
+  tests/fixtures/protected_write_subtree_membership_linux.py \
+  tests/fixtures/protected_write_subtree_stop_linux.py
+```
+
+They capture real retained descriptors, migration controls and namespace mount
+tables, and terminate only disposable owned process groups. Their transient user
+services have bounded lifetimes and resource limits. The Linux matrix prepares
+the runner's user bus and collects every profile in each indexed interpreter
+inventory; Python 3.12 includes their coverage in the complete 98% union.
+Missing prerequisites fail the profiles. Default collection retains both
+portable filename patterns and excludes these explicitly named Linux profiles
+on other operating systems. Successful observations do not certify a dedicated
+installed authority, migration exclusion or recovery custody.
+
 - **Tests.** Every new module, function, and branch ships with tests. Aggregate
   coverage stays above the 98% floor; a change must not lower it.
 - **Test taxonomy.** Reserve the `e2e` name and real-runtime CI mental

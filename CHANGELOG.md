@@ -18,6 +18,13 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- Native Linux cgroup control ancestry, retained process-subtree observations,
+  bounded subtree termination, mount-table verification and private root-stage
+  mount restrictions. These APIs expose explicit observations and preconditions;
+  they do not install a supervisor or grant recovery authority.
+
 ## [0.99.42] - 2026-11-01
 
 ### Changed

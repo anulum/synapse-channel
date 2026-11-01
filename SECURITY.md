@@ -82,6 +82,21 @@ prove quiescence. Privileged installation custody and complete dependency,
 principal, namespace and syscall enrollment remain separate requirements.
 No installation, account, ownership or credential changes are made by these APIs.
 
+Native cgroup observations retain inode identity, recursive population and
+migration-control ancestry. Mount and process observations compare an enrolled
+principal, namespace, root descriptors and an exact data-only writable mount set.
+These are sampled facts: a valid record does not independently prove source,
+descriptor custody, admission exclusion or an installed authority.
+
+`stop_protected_writer_subtree` writes only an independently retained exact
+cgroup's kill control and waits boundedly for recursive emptiness. The supervisor
+must close admission and retain custody throughout; a timeout or failed read is
+uncertainty, never a recovery permit. Private mount restrictions require an
+already separate, single-threaded root-stage child with dedicated enrolled data
+owners. They change only that child's per-mount attributes and abort on failure.
+Host namespace custody, correct privilege drop, syscall policy and outside-writer
+exclusion remain separate operator requirements.
+
 Protected filesystem observations can explicitly require Linux `openat2` with
 `RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS` and `RESOLVE_NO_XDEV`. This compares
 kernel-resolved parent and leaf identities against retained descriptors and

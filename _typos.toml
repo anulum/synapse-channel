@@ -7,6 +7,8 @@
 # SYNAPSE CHANNEL — typos configuration
 
 [default.extend-words]
+# Linux /proc/<pid>/status capability field names (CapInh, CapPrm, CapEff, CapAmb).
+inh = "inh"
 # Domain terms that are not typos.
 ndjson = "ndjson"
 tiktoken = "tiktoken"

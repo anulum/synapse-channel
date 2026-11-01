@@ -367,6 +367,69 @@ they do not qualify a complete application installation or private credentials.
 
 ::: synapse_channel.core.protected_write_sealed_installation.retain_sealed_installation_artifacts
 
+### Native process and mount observations
+
+These Linux APIs are components for an independently supervised writer. They do
+not install accounts, a supervisor or a recovery service.
+
+`capture_protected_cgroup_controls` traverses retained directory descriptors to
+the actual cgroup v2 root. It captures control ownership and ordinary-domain
+type; `verify_protected_cgroup_controls` refuses non-root or writable migration
+and delegation controls. Parsed bytes alone establish representation, not
+kernel origin or physical custody.
+
+`capture_protected_writer_subtree` binds the current process membership to the
+retained subtree inode. `inspect_protected_writer_subtree` samples recursive
+population and freeze state without signalling. `stop_protected_writer_subtree`
+requires the independently enrolled identity and a finite deadline, writes
+`cgroup.kill`, then waits for observed recursive emptiness. The caller MUST
+exclude new admission and migration throughout stop and recovery. An empty
+sample or a missing leader PID alone MUST NOT release recovery custody.
+
+Kernel capture reads one process-status sample. It cross-checks the real,
+effective and saved IDs and supplementary groups against current process
+credentials, and retains filesystem IDs, capabilities, no-new-privileges and
+seccomp state from that sample. It does not detect later capability or
+filesystem-ID changes; the caller must keep credential state fixed throughout.
+Descriptor, subtree, namespace and mount-table comparisons refuse changes
+observed across their capture. Verification requires the exact independently
+enrolled profile, root-owned migration controls, a read-only base and the exact
+private data-only writable mounts. It does not authenticate a caller-constructed
+observation or independently certify the installation and syscall programme.
+
+`inspect_protected_writer_mount_targets` requires exact retained mountpoint
+descriptors, private leaf ownership and root-owned non-writable ancestors.
+`apply_protected_writer_mount_restrictions` MUST run only inside an already
+separate, single-threaded trusted root-stage child. It recursively makes the
+base and submounts private/read-only, then clears read-only only for the exact
+enrolled data mounts while setting nosuid/nodev/noexec. It refuses the retained
+host namespace and has no legacy remount fallback. A partial failure MUST abort
+the child; borrowed descriptors remain owned by the supervisor. The result is
+root-stage observation, never proof of the later dedicated writer's admission.
+
+The explicit Linux profiles require procfs, cgroup v2, a systemd user session
+and Bubblewrap. Owned transient groups and private namespaces test real
+population, termination, descriptor races and mount changes. Controlled
+malformed files are bound only in disposable private namespaces to exercise
+capture refusals; those files are not represented as genuine kernel evidence.
+Successful component tests do not qualify a complete installed authority.
+
+#### Native process and mount APIs
+
+::: synapse_channel.core.protected_write_cgroup_parsing
+
+::: synapse_channel.core.protected_write_cgroup_controls
+
+::: synapse_channel.core.protected_write_subtree
+
+::: synapse_channel.core.protected_write_subtree_stop
+
+::: synapse_channel.core.protected_write_mounts
+
+::: synapse_channel.core.protected_write_kernel_boundary
+
+::: synapse_channel.core.protected_write_mount_attributes
+
 ### Durable protected execution evidence
 
 The library execution driver requires native Linux `openat2`; it does not use

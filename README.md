@@ -654,6 +654,14 @@ files. The APIs check an independently declared path set and explicit byte
 budgets; they do not discover a complete runtime dependency closure or launch
 an isolated worker. See the [installation artifact contract](docs/coordination-spec.md#pinned-installation-artifacts-and-sealed-bytes).
 
+Linux supervisor embedders can inspect cgroup control ancestry, recursive
+population, process membership and mount topology through retained descriptors.
+The stop API targets only the enrolled cgroup and waits for its recursive
+population to clear. A separate root-stage API restricts mounts in an already
+private namespace before credential drop. These primitives require independent
+supervisor custody and post-drop qualification; see the [native process and
+mount contracts](docs/coordination-spec.md#native-process-and-mount-observations).
+
 Protected execution library APIs durably consume a prepared begin, retain its
 exact completed-step frontier and verify immutable observations. Interrupted
 execution grants no retry. Checksummed writer counters refuse damaged records;
@@ -1903,8 +1911,8 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.42 |
 | Public API exports | 70 |
-| Package modules | 858 |
-| Classes | 1240 |
+| Package modules | 865 |
+| Classes | 1250 |
 | Wire message types | 114 |
 | CLI subcommands | 274 |
 | Test functions | 12185 |
