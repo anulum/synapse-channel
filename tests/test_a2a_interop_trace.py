@@ -8,11 +8,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import ssl
 import stat
 import sys
 import threading
-from http.server import ThreadingHTTPServer
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -33,14 +36,14 @@ from synapse_channel.a2a_interop_trace import (
 from synapse_channel.a2a_outbound_response import A2A_MAX_JSON_MEMBERS
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
+from synapse_channel.core.tls import build_server_ssl_context
+from test_a2a_https_interop import _write_server_tls_pair
 
 
 def _serve_bridge(bridge: A2ABridge) -> tuple[ThreadingHTTPServer, int, threading.Thread]:
     port = _free_port()
     bridge.allowed_authorities = (f"127.0.0.1:{port}",)
-    interfaces = bridge.agent_card.get("supportedInterfaces")
-    if isinstance(interfaces, list) and interfaces and isinstance(interfaces[0], dict):
-        interfaces[0]["url"] = f"http://127.0.0.1:{port}"
+    bridge.agent_card["supportedInterfaces"][0]["url"] = f"http://127.0.0.1:{port}"
     server = make_a2a_http_server(bridge=bridge, host="127.0.0.1", port=port)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -223,8 +226,8 @@ def test_cli_a2a_interop_trace_writes_receipt(
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["schema"] == RECEIPT_SCHEMA
     assert data["task_lifecycle"]["task_id"]
-    if sys.platform != "win32":
-        assert stat.S_IMODE(out.stat().st_mode) == 0o600
+    # Windows has no POSIX mode bits; elsewhere the receipt is owner-only.
+    assert sys.platform == "win32" or stat.S_IMODE(out.stat().st_mode) == 0o600
 
 
 def test_cli_a2a_interop_refuses_remote_plaintext_bearer_before_io(
@@ -266,3 +269,160 @@ def test_conformance_marks_independent_interop_partial() -> None:
     # stdlib transport string (http.client is an implementation detail).
     assert "a2a-client" in row.evidence or "a2a-sdk" in row.evidence
     assert "interop" in row.evidence.lower() or "TCK" in row.evidence
+
+
+class _ScriptedPeer:
+    """A real loopback HTTP(S) peer that answers with fixed replies, in order."""
+
+    def __init__(
+        self, replies: list[tuple[int, object]], tls: ssl.SSLContext | None = None
+    ) -> None:
+        self.replies = list(replies)
+        self.requests: list[tuple[str, str]] = []
+        peer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def _reply(self) -> None:
+                length = int(self.headers.get("Content-Length") or 0)
+                self.rfile.read(length)
+                peer.requests.append((self.command, self.path))
+                status, body = peer.replies.pop(0)
+                text = body if isinstance(body, str) else json.dumps(body)
+                kind = "text/plain" if isinstance(body, str) else "application/json"
+                data = text.encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", kind)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            do_GET = _reply
+            do_POST = _reply
+
+            def log_message(self, *_args: object) -> None:
+                return None
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        if tls is not None:
+            self.server.socket = tls.wrap_socket(self.server.socket, server_side=True)
+        self.port = int(self.server.server_address[1])
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@contextlib.contextmanager
+def _peer(
+    replies: list[tuple[int, object]], tls: ssl.SSLContext | None = None
+) -> Iterator[_ScriptedPeer]:
+    peer = _ScriptedPeer(replies, tls)
+    try:
+        yield peer
+    finally:
+        peer.close()
+
+
+def _tls_server_context(tmp_path: Path) -> tuple[ssl.SSLContext, Path]:
+    certfile, keyfile = _write_server_tls_pair(tmp_path)
+    context = build_server_ssl_context(certfile=certfile, keyfile=keyfile)
+    assert context is not None
+    return context, certfile
+
+
+def test_interop_refuses_an_unsupported_scheme() -> None:
+    """Only http and https endpoints can be traced."""
+    with pytest.raises(ValueError, match="unsupported interop scheme"):
+        run_local_interop_trace(scheme="ftp")
+
+
+def test_https_trace_honours_insecure_and_verifies_by_default(tmp_path: Path) -> None:
+    """--tls-insecure reaches a self-signed peer; the default refuses its certificate."""
+    context, _certfile = _tls_server_context(tmp_path)
+    with _peer([(503, "unavailable")], tls=context) as peer:
+        with pytest.raises(A2AInteropTraceError, match="discovery failed: HTTP 503"):
+            run_local_interop_trace(port=peer.port, scheme="https", tls_insecure=True)
+        assert peer.requests == [("GET", "/.well-known/agent-card.json")]
+        with pytest.raises(ssl.SSLCertVerificationError):
+            run_local_interop_trace(port=peer.port, scheme="https")
+        assert len(peer.requests) == 1
+
+
+def test_trace_uses_the_path_prefix_for_every_request() -> None:
+    """A mounted A2A endpoint is discovered and called under its prefix."""
+    message = "probe"
+    sent = {
+        "task": {
+            "id": "task-1",
+            "status": {"message": {"parts": [{"text": message}]}},
+            "history": "not-a-list",
+        }
+    }
+    with _peer([(200, {"name": "card"}), (200, sent), (200, {"task": {"id": "task-1"}})]) as peer:
+        receipt = run_local_interop_trace(port=peer.port, path_prefix="/a2a/", message_text=message)
+    assert peer.requests == [
+        ("GET", "/a2a/.well-known/agent-card.json"),
+        ("POST", "/a2a/message:send"),
+        ("GET", "/a2a/tasks/task-1"),
+    ]
+    assert receipt["discovery"]["path"] == "/a2a/.well-known/agent-card.json"
+
+
+@pytest.mark.parametrize(
+    ("send_reply", "message"),
+    [
+        ((500, "error"), "message:send failed: HTTP 500"),
+        ((200, ["not", "an", "object"]), "message:send failed: HTTP 200"),
+        ((200, {"task": {"status": {}}}), "missing a task id"),
+    ],
+)
+def test_trace_refuses_a_failed_or_malformed_send(
+    send_reply: tuple[int, object], message: str
+) -> None:
+    """A send that fails, is not an object, or names no task is refused."""
+    with _peer([(200, {"name": "card"}), send_reply]) as peer:
+        with pytest.raises(A2AInteropTraceError, match=message):
+            run_local_interop_trace(port=peer.port, message_text="probe")
+
+
+def test_trace_reads_text_past_malformed_history_entries() -> None:
+    """Non-object history items and parts are skipped; the sent text is still found."""
+    message = "probe"
+    sent = {
+        "task": {
+            "id": "task-2",
+            "status": {"state": "TASK_STATE_WORKING"},
+            "history": [
+                "not-an-object",
+                {"parts": ["not-an-object", {"text": ""}, {"text": message}]},
+            ],
+        }
+    }
+    with _peer([(200, {"name": "card"}), (200, sent), (200, {"id": "task-2"})]) as peer:
+        receipt = run_local_interop_trace(port=peer.port, message_text=message)
+    assert receipt["task_lifecycle"]["task_id"] == "task-2"
+
+
+def test_trace_refuses_a_failed_task_get() -> None:
+    """A task that cannot be read back after a good send is refused."""
+    message = "probe"
+    sent = {"task": {"id": "task-3", "history": [{"parts": [{"text": message}]}]}}
+    with _peer([(200, {"name": "card"}), (200, sent), (404, "missing")]) as peer:
+        with pytest.raises(A2AInteropTraceError, match="GET task failed: HTTP 404"):
+            run_local_interop_trace(port=peer.port, message_text=message)
+
+
+def test_https_trace_records_tls_without_the_plaintext_limitation(tmp_path: Path) -> None:
+    """A complete https trace against a trusted CA is recorded as TLS, with no plaintext note."""
+    context, certfile = _tls_server_context(tmp_path)
+    message = "probe"
+    sent = {"task": {"id": "task-4", "history": [{"parts": [{"text": message}]}]}}
+    card = {"name": "card", "supportedInterfaces": ["not-an-object"]}
+    with _peer([(200, card), (200, sent), (200, {"id": "task-4"})], tls=context) as peer:
+        receipt = run_local_interop_trace(
+            port=peer.port, scheme="https", ca_file=certfile, message_text=message
+        )
+    assert receipt["endpoint"]["scheme"] == "https"
+    assert receipt["discovery"]["protocol_binding"] == ""
+    assert not any("Plaintext HTTP" in item for item in receipt["limitations"])
