@@ -155,7 +155,10 @@ async def test_actual_host_paired_startup_refuses_before_listening(
                     await owned.enter_async_context(context)
         for listener, original_name in zip((operator, requests), original_names, strict=True):
             assert listener.fileno() >= 0
-            assert listener.getsockopt(socket.SOL_SOCKET, socket.SO_ACCEPTCONN) == 0
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.settimeout(10)
+                with pytest.raises(ConnectionRefusedError):
+                    probe.connect(original_name)
             assert listener.getsockname() == original_name
     assert store.read_all() == [] and store.read_operations() == ()
 
