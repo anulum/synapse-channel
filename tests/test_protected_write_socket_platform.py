@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import os
 import socket
 import sys
@@ -87,6 +88,28 @@ def authority(tmp_path: Path) -> Iterator[tuple[ProtectedWriteAuthority, EventSt
         yield assembled, store
 
 
+def _assert_not_listening(listener: socket.socket) -> None:
+    """Read the kernel's non-listening state without a network connection attempt."""
+    listener.setblocking(False)
+    with pytest.raises(OSError) as refusal:
+        listener.accept()
+    assert refusal.value.errno == errno.EINVAL
+    if sys.platform == "linux":
+        assert listener.getsockopt(socket.SOL_SOCKET, socket.SO_ACCEPTCONN) == 0
+
+
+def test_kernel_accept_distinguishes_bound_and_listening_socket() -> None:
+    """The actual kernel distinguishes an inert endpoint from an empty accept queue."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.setblocking(False)
+        _assert_not_listening(listener)
+        listener.listen()
+        with pytest.raises(BlockingIOError) as empty:
+            listener.accept()
+        assert empty.value.errno in {errno.EAGAIN, errno.EWOULDBLOCK}
+
+
 @pytest.mark.asyncio
 async def test_actual_host_ingress_refuses_unsupported_credentials_before_resources(
     authority: tuple[ProtectedWriteAuthority, EventStore],
@@ -155,10 +178,7 @@ async def test_actual_host_paired_startup_refuses_before_listening(
                     await owned.enter_async_context(context)
         for listener, original_name in zip((operator, requests), original_names, strict=True):
             assert listener.fileno() >= 0
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-                probe.settimeout(10)
-                with pytest.raises(ConnectionRefusedError):
-                    probe.connect(original_name)
+            _assert_not_listening(listener)
             assert listener.getsockname() == original_name
     assert store.read_all() == [] and store.read_operations() == ()
 
