@@ -25,6 +25,13 @@ execution evidence when carrying a release claim forward.
   mount restrictions. These APIs expose explicit observations and preconditions;
   they do not install a supervisor or grant recovery authority.
 
+### Fixed
+
+- A hub advertised under a bracketed IPv6 address without a port, such as
+  `[2001:db8::1]`, now also trusts the `Host` form with the bind port. Before,
+  the colons inside the brackets were read as a port, so only the bare form was
+  trusted and clients sending `[2001:db8::1]:<port>` were refused.
+
 ## [0.99.42] - 2026-11-01
 
 ### Changed

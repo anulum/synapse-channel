@@ -237,8 +237,11 @@ def _authorities_from_advertised(advertised: str, bind_port: int) -> frozenset[s
     except ValueError:
         return frozenset()
     values = {primary}
-    # When the operator omitted a port, also admit the bind port form.
-    if ":" not in candidate.rstrip("]").rsplit("]", 1)[-1]:
+    # When the operator omitted a port, also admit the bind port form. A bracketed
+    # IPv6 literal carries its port after the closing bracket; its own colons are
+    # not a port separator.
+    after_host = candidate.rsplit("]", 1)[-1] if candidate.startswith("[") else candidate
+    if ":" not in after_host:
         try:
             values.add(normalise_authority(f"{candidate}:{bind_port}"))
         except ValueError:

@@ -388,3 +388,29 @@ def test_handshake_refuses_without_trusted_authorities_or_with_a_malformed_host(
         allowed_origins=(),
         trusted_authorities=trusted,
     )
+
+
+@pytest.mark.parametrize(
+    ("advertised", "expected"),
+    [
+        ("[2001:db8::1]", ("[2001:db8::1]", "[2001:db8::1]:8876")),
+        ("[2001:db8::1]:8443", ("[2001:db8::1]:8443",)),
+        ("https://[2001:db8::1]", ("[2001:db8::1]", "[2001:db8::1]:8876")),
+        ("[fe80::1%eth0]", ()),
+    ],
+)
+def test_advertised_bracketed_ipv6_gets_the_bind_port_only_when_it_has_none(
+    advertised: str, expected: tuple[str, ...]
+) -> None:
+    """A bracketed IPv6 host without a port is trusted with and without the bind port."""
+    trusted = trusted_host_authorities(
+        bind_host="0.0.0.0", bind_port=8876, advertised_host=advertised
+    )
+    assert trusted == expected
+    if expected:
+        assert handshake_allowed(
+            origin_header=None,
+            host_header=expected[-1],
+            allowed_origins=(),
+            trusted_authorities=trusted,
+        )
