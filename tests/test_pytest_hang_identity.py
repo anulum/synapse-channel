@@ -93,18 +93,25 @@ def test_faulthandler_timeout_prints_the_running_node_id(tmp_path: Path) -> None
 
 
 def test_watch_branches_are_deterministic() -> None:
-    """Halt, idle, wait, and report are direct decisions of one session watcher."""
+    """Halt, idle, wait, and report are direct decisions of one session watcher.
+
+    Stop and join the live session watcher before changing its arm. Clearing
+    the thread pointer and joining None leaves that thread alive, and it can
+    mark the due arm reported before this assertion reads it.
+    """
     import tools.pytest_hang_identity as hang
 
     previous_stop = hang._session_stop.is_set()
     previous_arm = hang._arm
     previous_fd = hang._stderr_fd
-    saved_thread = hang._session_thread
-    hang._session_thread = None
-    hang._join_session_thread()
-    hang._session_thread = saved_thread
-    hang._session_stop.set()
+    was_alive = hang._session_thread is not None and hang._session_thread.is_alive()
+    hang._stop_session_watcher()
+    read_fd = -1
+    write_fd = -1
+    due: hang._Arm | None = None
     try:
+        assert hang._session_thread is None or not hang._session_thread.is_alive()
+        hang._session_stop.set()
         assert hang._take_action(time.monotonic()) == ("halt", "")
         hang._session_stop.clear()
         hang._arm = None
@@ -126,20 +133,22 @@ def test_watch_branches_are_deterministic() -> None:
         action, nodeid = hang._take_action(time.monotonic())
         assert (action, nodeid) == ("idle", "")
         hang._write_timeout("node::due")
+        text = os.read(read_fd, 4096).decode()
+        assert text == "TIMEOUT nodeid=node::due\n"
+        assert due.reported is True
     finally:
         hang._arm = previous_arm
         hang._stderr_fd = previous_fd
+        if write_fd >= 0:
+            os.close(write_fd)
+        if read_fd >= 0:
+            os.close(read_fd)
         if previous_stop:
             hang._session_stop.set()
         else:
             hang._session_stop.clear()
-            if hang._session_thread is None or not hang._session_thread.is_alive():
-                hang._ensure_session_watcher()
-        os.close(write_fd)
-    text = os.read(read_fd, 4096).decode()
-    os.close(read_fd)
-    assert text == "TIMEOUT nodeid=node::due\n"
-    assert due.reported is True
+        if was_alive:
+            hang._ensure_session_watcher()
 
 
 def test_idle_hooks_and_a_bad_timeout_do_not_report(monkeypatch: pytest.MonkeyPatch) -> None:
