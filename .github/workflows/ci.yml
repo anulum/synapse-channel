@@ -127,25 +127,10 @@ jobs:
       fail-fast: false
       max-parallel: 12
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
         shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        if: matrix.python-version == '3.10'
-        id: hook-tools-python
-        with:
-          python-version: "3.12"
-      - name: Install the supported pre-commit tool for Python 3.10 journeys
-        if: matrix.python-version == '3.10'
-        env:
-          HOOK_TOOLS_PYTHON: ${{ steps.hook-tools-python.outputs.python-path }}
-        run: |
-          set -euo pipefail
-          "$HOOK_TOOLS_PYTHON" -m pip install --require-hashes -r .github/requirements/requirements-tools.txt
-          tool_bin="$(dirname "$HOOK_TOOLS_PYTHON")/pre-commit"
-          test -x "$tool_bin"
-          printf 'SYNAPSE_TEST_PRE_COMMIT_BIN=%s\n' "$tool_bin" >> "$GITHUB_ENV"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
@@ -160,11 +145,17 @@ jobs:
       # The runner ships Microsoft/Azure apt sources whose signing intermittently breaks
       # ("repository is no longer signed"), which fails apt-get update; none of the packages below
       # come from them, so drop those sources first to keep the setup resilient to that flake.
-      - run: >-
-          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
-          /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
-          && sudo apt-get update && sudo apt-get install -y
-          softhsm2 swtpm swtpm-tools tpm2-tools libtss2-dev tmux libseccomp2
+      - name: Install SoftHSM and the software TPM
+        run: |
+          set -euo pipefail
+          timeout 300 bash -c '
+            sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list \
+              /etc/apt/sources.list.d/azure-cli.list \
+              /etc/apt/sources.list.d/azure-cli.sources
+            sudo apt-get update
+            sudo apt-get install -y softhsm2 swtpm swtpm-tools tpm2-tools \
+              libtss2-dev tmux libseccomp2
+          '
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
       - run: python -m pip install -e . --no-deps
       # The hash-locked dev cohort includes the shipped gRPC dependency. Keep the
@@ -336,7 +327,7 @@ jobs:
           python tools/ci_shard_artifacts.py verify --root ci-shards
           --source "$SOURCE_SHA" --run-id "$RUN_ID" --attempt "$RUN_ATTEMPT"
           --allow-earlier-attempts
-          --python 3.10 3.11 3.12 3.13 --count 4
+          --python 3.11 3.12 3.13 --count 4
           --timings timing-input/timings.json --coverage-python 3.12
           --coverage-config pyproject.toml --fail-under 98 --output ci-coverage
       - name: Retain observed timings only after complete successful qualification

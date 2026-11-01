@@ -14,6 +14,8 @@ from collections.abc import Iterator
 
 import pytest
 
+pytest_plugins = ["tools.pytest_hang_identity"]
+
 
 @pytest.fixture(autouse=True, scope="session")
 def _isolated_machine_identity(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
