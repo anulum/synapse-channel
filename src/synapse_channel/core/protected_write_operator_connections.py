@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
+import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 from synapse_channel.core.protected_write_enrollment_control import ProtectedEnrollmentControl
 from synapse_channel.core.protected_write_operator_socket import handle_operator_connection
+from synapse_channel.core.protected_write_unix_exchange import require_native_unix_credentials
 
 OperatorConnectionHandler = Callable[[asyncio.StreamReader, asyncio.StreamWriter], None]
 _LOGGER = logging.getLogger(__name__)
@@ -52,6 +55,9 @@ async def retain_operator_connections(
     ------
     ValueError
         If the concurrent request bound is invalid.
+    OSError
+        Unless the actual host supplies Linux SO_PEERCRED. No accept callback or
+        request task is created on an unsupported native credential backend.
 
     Notes
     -----
@@ -63,6 +69,7 @@ async def retain_operator_connections(
     """
     if type(max_connections) is not int or not 0 < max_connections <= 128:
         raise ValueError("invalid operator connection bound")
+    require_native_unix_credentials(sys.platform, hasattr(socket, "SO_PEERCRED"))
     tasks: set[asyncio.Task[None]] = set()
     accepting = True
 

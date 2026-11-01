@@ -44,6 +44,15 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- Protected authority Unix endpoints refuse unavailable Linux peer credentials
+  before accepting requests or reading operator commands. Unsupported platforms
+  receive an explicit error; native peer authentication remains Linux-only.
+  An owner-approved qualification exception permits this compatibility fix
+  before fresh native requalification of `serve_operator_listener` in the
+  changed module: 13 statements and four branch arcs remain open. Its body is
+  unchanged from the previously qualified implementation. Coverage gates and
+  exclusions remain unchanged. The remaining native lifecycle cases are due
+  at the next admitted host slot; any failure receives fix-forward priority.
 - Pass enrolled Unix authority socket paths to the WebSocket client as text.
   This preserves path and kernel-peer checks and avoids the PosixPath
   TypeError observed with Python 3.10 before its retirement.

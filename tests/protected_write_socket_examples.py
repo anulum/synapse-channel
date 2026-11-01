@@ -10,11 +10,31 @@
 from __future__ import annotations
 
 import os
+import socket
 import sys
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
+requires_linux_peer_credentials = pytest.mark.skipif(
+    sys.platform != "linux" or not hasattr(socket, "SO_PEERCRED"),
+    reason="protected authority peer authentication requires Linux SO_PEERCRED",
+)
+"""Enroll only real Linux peer-credential tests; portable protocol tests stay collected."""
+
+
+@pytest.fixture
+def short_unix_socket_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Use a short relative endpoint under a deliberately long private test directory.
+
+    Only test-local cwd changes; no global temporary-directory fallback is used.
+    This portable pathname fixture supplies no peer identity or authority proof.
+    """
+    directory = tmp_path / ("socket-owner-" + "x" * 108)
+    directory.mkdir(mode=0o700)
+    monkeypatch.chdir(directory)
+    return Path("endpoint.sock")
 
 
 @pytest.fixture

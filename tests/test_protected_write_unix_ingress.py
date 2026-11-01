@@ -27,6 +27,7 @@ from websockets.asyncio.server import serve, unix_serve
 from websockets.exceptions import ConnectionClosed
 
 from protected_write_socket_examples import private_unix_directory as private_unix_directory
+from protected_write_socket_examples import requires_linux_peer_credentials
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.message_auth import (
     MessageAuthKey,
@@ -127,6 +128,7 @@ def test_invalid_peer_and_capacity_policy_refuses_before_ingress(
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_real_foreign_unix_peer_and_tcp_are_refused(
     authority: tuple[ProtectedWriteAuthority, EventStore], private_unix_directory: Path
 ) -> None:
@@ -151,6 +153,7 @@ async def test_real_foreign_unix_peer_and_tcp_are_refused(
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_owned_request_capacity_shutdown_and_late_connections(
     authority: tuple[ProtectedWriteAuthority, EventStore], private_unix_directory: Path
 ) -> None:
@@ -181,6 +184,7 @@ async def test_owned_request_capacity_shutdown_and_late_connections(
     "failure", ["shared_peer", "duplicate_socket", "shared_operator", "operator_as_request_peer"]
 )
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_paired_listener_refuses_unapproved_roles_and_endpoint_aliases(
     authority: tuple[ProtectedWriteAuthority, EventStore],
     private_unix_directory: Path,
@@ -222,6 +226,7 @@ async def test_paired_listener_refuses_unapproved_roles_and_endpoint_aliases(
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_allowed_peer_requires_current_session_and_fresh_signed_request(
     authority: tuple[ProtectedWriteAuthority, EventStore], private_unix_directory: Path
 ) -> None:
@@ -343,6 +348,7 @@ async def test_allowed_peer_requires_current_session_and_fresh_signed_request(
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_native_peer_gate_refuses_before_http_handshake(
     authority: tuple[ProtectedWriteAuthority, EventStore], private_unix_directory: Path
 ) -> None:
@@ -375,6 +381,7 @@ async def test_native_peer_gate_refuses_before_http_handshake(
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_unfinished_handshakes_consume_capacity_and_release_on_disconnect(
     authority: tuple[ProtectedWriteAuthority, EventStore], private_unix_directory: Path
 ) -> None:

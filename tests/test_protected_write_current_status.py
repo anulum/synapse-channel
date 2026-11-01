@@ -24,6 +24,7 @@ from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect
 
 from protected_write_socket_examples import private_unix_directory as private_unix_directory
+from protected_write_socket_examples import requires_linux_peer_credentials
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import replay
 from synapse_channel.core.message_auth import MessageAuthKey, MessageReplayCache, sign_frame
@@ -100,7 +101,9 @@ async def _status_exchange(
             yield exchange
 
 
-@pytest.mark.parametrize("transport", ["unix", "tcp"])
+@pytest.mark.parametrize(
+    "transport", [pytest.param("unix", marks=requires_linux_peer_credentials), "tcp"]
+)
 @pytest.mark.asyncio
 async def test_writer_checks_fresh_signed_actor_status_and_revoked_session(
     tmp_path: Path, private_unix_directory: Path, transport: str

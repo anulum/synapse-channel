@@ -149,6 +149,13 @@ separate authority process becomes the actual listen caller. Linux
 `SO_PEERCRED` must identify that authority. A listener already started by a
 foreign principal is refused. The default role policy excludes root and UID
 1000 and requires separate authority, operator and enrolled request roles.
+The peer-authenticated operator and request endpoints are Linux-only. Their
+constructors and serving contexts require the actual Linux `SO_PEERCRED`
+backend before publishing an accept callback or creating a request task. A
+direct operator handler on an unsupported host closes its supplied connection
+and raises `OSError` before reading a command; it emits no receipt or mutation.
+Portable signed-frame, journal and TCP protocol checks do not confer native
+peer-credential support on macOS or Windows.
 The context closes and drains its owned commands, including interrupted
 startup and request shutdown. These APIs create no account, socket path or
 writer; installation identity, credential custody, descriptor and namespace

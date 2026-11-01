@@ -25,6 +25,7 @@ from synapse_channel.core.protected_write_listener import (
 from synapse_channel.core.protected_write_listener import (
     validate_protected_authority_listener as validate_protected_authority_listener,
 )
+from synapse_channel.core.protected_write_unix_exchange import require_native_unix_credentials
 
 _MAX_REQUEST_BYTES = 16_384
 _READ_TIMEOUT_SECONDS = 5.0
@@ -100,6 +101,9 @@ async def handle_operator_connection(
     ------
     asyncio.CancelledError
         After any in-flight durable mutation has drained under the actor.
+    OSError
+        On an unsupported native credential backend, before reading any frame.
+        The supplied connection is closed without a response or mutation.
     Exception
         On unexpected storage or transport failure; no result is fabricated.
 
@@ -113,6 +117,7 @@ async def handle_operator_connection(
     """
     response: bytes | None = None
     try:
+        require_native_unix_credentials(sys.platform, hasattr(socket, "SO_PEERCRED"))
         try:
             if _peer_uid(writer) != operator_uid:
                 raise ValueError("operator peer UID mismatch")

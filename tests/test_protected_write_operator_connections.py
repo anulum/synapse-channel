@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from protected_write_socket_examples import requires_linux_peer_credentials
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import UnsupportedProtectedWriteHistoryError
 from synapse_channel.core.persistence import EventStore
@@ -45,6 +46,7 @@ def _socket_working_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 @pytest.mark.parametrize("interruption", ["peer_eof", "owner_cancel", "owner_repeated_cancel"])
 @pytest.mark.parametrize("operation", ["issue", "revoke"])
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_interrupted_operator_durable_append_preserves_registry_and_replay(
     tmp_path: Path, interruption: str, operation: str
 ) -> None:
@@ -195,7 +197,14 @@ async def test_interrupted_operator_durable_append_preserves_registry_and_replay
 
 
 @pytest.mark.parametrize(
-    ("bound", "accepted"), [(True, False), (0, False), (1, True), (128, True), (129, False)]
+    ("bound", "accepted"),
+    [
+        (True, False),
+        (0, False),
+        pytest.param(1, True, marks=requires_linux_peer_credentials),
+        pytest.param(128, True, marks=requires_linux_peer_credentials),
+        (129, False),
+    ],
 )
 @pytest.mark.asyncio
 async def test_operator_capacity_bound_refuses_or_serves_an_actual_request(
@@ -218,7 +227,7 @@ async def test_operator_capacity_bound_refuses_or_serves_an_actual_request(
                 with pytest.raises(ValueError, match="invalid operator connection bound"):
                     await refused.enter_async_context(
                         retain_operator_connections(
-                            control=control, operator_uid=os.geteuid(), max_connections=bound
+                            control=control, operator_uid=1, max_connections=bound
                         )
                     )
         else:
@@ -242,6 +251,7 @@ async def test_operator_capacity_bound_refuses_or_serves_an_actual_request(
 
 @pytest.mark.parametrize("exceptional_exit", [False, True])
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_partial_command_capacity_and_shutdown_refuse_mutation(
     tmp_path: Path, exceptional_exit: bool
 ) -> None:
@@ -309,6 +319,7 @@ async def test_partial_command_capacity_and_shutdown_refuse_mutation(
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_cancelling_authority_owner_drains_partial_command(tmp_path: Path) -> None:
     """Real owner-task cancellation closes a stalled request before store teardown."""
     with EventStore(tmp_path / "cancelled.db") as store:
@@ -366,6 +377,7 @@ async def test_cancelling_authority_owner_drains_partial_command(tmp_path: Path)
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_storage_failure_is_drained_and_logged_without_command_values(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

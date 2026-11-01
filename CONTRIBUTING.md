@@ -206,6 +206,18 @@ the existing POSIX platform guards; it does not collect these Linux-only cases
 on macOS or Windows. The modeled architecture-refusal test proves only the
 guard's rejection behavior, while the explicit profile proves Linux behavior.
 
+Protected authority peer authentication requires Linux `SO_PEERCRED`. The
+shared `requires_linux_peer_credentials` marker in
+`tests/protected_write_socket_examples.py` enrolls only tests that require that
+native credential backend, and its conditional guard is tracked in
+`tests/test_coverage_exclusion_ledger.py`. Invalid-policy cases and signed TCP
+status remain in every platform inventory.
+`tests/test_protected_write_socket_platform.py` exercises actual unsupported-host
+refusal before accept callbacks, tasks or listening sockets, and a real portable
+Unix stream uses a short relative path beneath a deliberately long private
+pytest directory. Only that POSIX asyncio stream case excludes Windows.
+These checks use the actual host; Linux runs do not certify macOS or Windows.
+
 Installation capture and sealed-byte custody have three dedicated Linux profiles:
 
 ```bash

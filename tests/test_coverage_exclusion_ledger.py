@@ -62,7 +62,11 @@ Justification classes
 
 from __future__ import annotations
 
+import runpy
+import shutil
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -119,6 +123,9 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
 SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/_platform_caps.py": (8, "platform-guard"),
     "tests/_portable_exec.py": (1, "platform-guard"),
+    # Only Linux SO_PEERCRED journeys use this marker; signed TCP tests stay portable.
+    "tests/protected_write_socket_examples.py": (1, "platform-guard"),
+    "tests/test_protected_write_socket_platform.py": (1, "platform-guard"),
     "tests/fixtures/opencode/process.py": (2, "optional-dep-guard"),
     "tests/test_a2a_grpc.py": (1, "optional-dep-guard"),
     "tests/test_a2a_grpc_security_profiles.py": (1, "optional-dep-guard"),
@@ -305,3 +312,36 @@ def test_the_ledgers_carry_no_unconditional_skips() -> None:
         reason_class for _, reason in SKIP_LEDGER.values() for reason_class in reason.split(" + ")
     }
     assert observed <= allowed
+
+
+def test_public_skip_gate_refuses_actual_untracked_drifted_and_absent_sources(
+    tmp_path: Path,
+) -> None:
+    """Run the public ledger gate against real source drift in a disposable repository.
+
+    The scanner must refuse all three inventory failures introduced together:
+    an untracked guard, a changed guard count and an absent ledgered source.
+    The actual checker bytes are copied unchanged; production sources stay intact.
+    """
+    repository = tmp_path / "ledger-repository"
+    shutil.copytree(
+        REPO_ROOT / "tests",
+        repository / "tests",
+        ignore=shutil.ignore_patterns("__pycache__", "protected_write_socket_examples.py"),
+    )
+    checker = repository / "checkers" / "ledger.py"
+    checker.parent.mkdir()
+    shutil.copyfile(Path(__file__), checker)
+    assert checker.read_bytes() == Path(__file__).read_bytes()
+    guard = "pytest.mark." + "skipif(False, reason='native capability fixture')\n"
+    (repository / "tests" / "untracked_guard.py").write_text(guard, encoding="utf-8")
+    drifted = repository / "tests" / "_portable_exec.py"
+    with drifted.open("a", encoding="utf-8") as stream:
+        stream.write("\n" + guard)
+    namespace = runpy.run_path(str(checker))
+    with pytest.raises(AssertionError) as refused:
+        namespace["test_every_conditional_skip_is_ledgered_with_a_justification"]()
+    message = str(refused.value)
+    assert "tests/untracked_guard.py: 1 unledgered" in message
+    assert "tests/_portable_exec.py: ledger says 1, tree has 2" in message
+    assert "tests/protected_write_socket_examples.py: ledgered but clean in the tree" in message

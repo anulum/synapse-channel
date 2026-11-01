@@ -24,6 +24,7 @@ from websockets.asyncio.server import unix_serve
 from websockets.exceptions import ConnectionClosed
 
 from protected_write_socket_examples import private_unix_directory as private_unix_directory
+from protected_write_socket_examples import requires_linux_peer_credentials
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.message_auth import (
     MessageAuthKey,
@@ -60,6 +61,7 @@ async def _operator(path: Path, command: dict[str, object]) -> bytes:
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_operator_issue_revoke_controls_same_signed_ingress(
     tmp_path: Path, private_unix_directory: Path
 ) -> None:

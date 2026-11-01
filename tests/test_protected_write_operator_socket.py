@@ -14,11 +14,13 @@ import json
 import os
 import socket
 import struct
+import sys
 from contextlib import AsyncExitStack
 from pathlib import Path
 
 import pytest
 
+from protected_write_socket_examples import requires_linux_peer_credentials
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protected_write_enrollment_control import ProtectedEnrollmentControl
@@ -50,6 +52,7 @@ async def _exchange(path: Path, command: bytes) -> bytes:
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_real_unix_peer_issue_revoke_and_restart(
     tmp_path: Path, private_socket_path: Path
 ) -> None:
@@ -92,6 +95,7 @@ async def test_real_unix_peer_issue_revoke_and_restart(
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_real_unix_peer_refusals_preserve_event_store(
     tmp_path: Path, private_socket_path: Path
 ) -> None:
@@ -136,6 +140,7 @@ async def test_real_unix_peer_refusals_preserve_event_store(
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_nested_operator_json_refuses_without_an_unhandled_parser_error(
     tmp_path: Path, private_socket_path: Path
 ) -> None:
@@ -179,6 +184,7 @@ async def test_nested_operator_json_refuses_without_an_unhandled_parser_error(
     ],
 )
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_mutation_stage_errors_close_without_a_refusal(
     tmp_path: Path, private_socket_path: Path, command: bytes, error_message: str
 ) -> None:
@@ -214,25 +220,33 @@ async def test_tcp_peer_cannot_use_operator_handler(tmp_path: Path) -> None:
     with EventStore(tmp_path / "tcp.db") as store:
         hub = SynapseHub(journal=store, protected_write_policies={}, anti_rollback_checkpoint=False)
         control = ProtectedEnrollmentControl(hub=hub, sealed_keys={}, clock=lambda: 1.0)
-        server = await asyncio.start_server(
-            lambda reader, writer: handle_operator_connection(
-                reader, writer, control=control, operator_uid=os.getuid()
-            ),
-            "127.0.0.1",
-            0,
-        )
+        failures: list[OSError] = []
+
+        async def accepted(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            """Retain the actual unsupported-host error from the public connection handler."""
+            try:
+                await handle_operator_connection(reader, writer, control=control, operator_uid=1)
+            except OSError as error:
+                failures.append(error)
+
+        server = await asyncio.start_server(accepted, "127.0.0.1", 0)
         async with server:
             address = server.sockets[0].getsockname()
             reader, writer = await asyncio.open_connection(address[0], address[1])
-            writer.write(struct.pack("!I", 2) + b"{}")
-            await writer.drain()
-            assert await reader.readline() == b'{"ok":false}\n'
+            response = await asyncio.wait_for(reader.readline(), 2)
+            if sys.platform == "linux" and hasattr(socket, "SO_PEERCRED"):
+                assert response == b'{"ok":false}\n'
+                assert failures == []
+            else:
+                assert response == b""
+                assert len(failures) == 1 and "Linux SO_PEERCRED" in str(failures[0])
             writer.close()
             await writer.wait_closed()
             assert list(store.iter_events()) == []
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_foreign_uid_is_refused_before_command_read(
     tmp_path: Path, private_socket_path: Path
 ) -> None:
@@ -253,6 +267,7 @@ async def test_foreign_uid_is_refused_before_command_read(
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_prebound_listener_keeps_its_supervisor_owned_path_after_close(
     tmp_path: Path, private_socket_path: Path
 ) -> None:
@@ -290,6 +305,7 @@ async def test_prebound_listener_keeps_its_supervisor_owned_path_after_close(
 
 
 @pytest.mark.asyncio
+@requires_linux_peer_credentials
 async def test_deployment_listener_refuses_shared_uid(
     tmp_path: Path, private_socket_path: Path
 ) -> None:

@@ -12,10 +12,12 @@ from __future__ import annotations
 import asyncio
 import socket
 import struct
+import sys
 
 from websockets.asyncio.server import ServerConnection
 
 from synapse_channel.core.protected_write_transport import ProtectedWriteTransport
+from synapse_channel.core.protected_write_unix_exchange import require_native_unix_credentials
 
 
 class ProtectedWriteUnixIngress:
@@ -53,7 +55,8 @@ class ProtectedWriteUnixIngress:
         The caller owns the protected transport. Construction opens no listener
         and starts no request tasks. Raise ValueError unless the UID set is a
         nonempty bounded frozenset of native nonnegative integers and capacity is
-        a native integer from one through 128.
+        a native integer from one through 128. Raise OSError unless the actual
+        host supplies Linux SO_PEERCRED, before any listener or task is created.
         """
         if (
             type(allowed_uids) is not frozenset
@@ -63,6 +66,7 @@ class ProtectedWriteUnixIngress:
             or not 0 < max_connections <= 128
         ):
             raise ValueError("invalid protected Unix ingress peer or capacity policy")
+        require_native_unix_credentials(sys.platform, hasattr(socket, "SO_PEERCRED"))
         self._ingress = ingress
         self._uids = allowed_uids
         self._maximum = max_connections
