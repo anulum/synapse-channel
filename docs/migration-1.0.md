@@ -40,7 +40,7 @@ The stable contract is guarded in CI:
 - Capability counts: `tools/capability_manifest.py --check`.
 
 The wire-protocol integer is independent from the package version. A 1.0 package
-may still speak wire protocol `2`; only wire-incompatible changes bump
+may still speak wire protocol `7`; only wire-incompatible changes bump
 `WIRE_PROTOCOL_VERSION`.
 
 ## Before upgrading
@@ -138,6 +138,9 @@ Before declaring a 1.0 upgrade complete:
 - `tests/test_public_api.py` passes with the exact export list.
 - `tests/test_wire_surface_freeze.py` passes with the exact wire map.
 - `tests/test_federation_consumer_contract.py` passes.
+- `tests/test_surface_taxonomy.py` passes with the classified CLI tiers.
+- `tests/test_core_errors.py` passes with the error-code map.
+- `tests/test_verb_registry.py` and `tests/test_verb_registry_runtime.py` pass.
 - `tools/capability_manifest.py --check` passes.
 - `mkdocs build --strict` includes this guide.
 - The fleet's hub and waiters report the intended package version.
