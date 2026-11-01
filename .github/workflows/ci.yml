@@ -149,6 +149,7 @@ jobs:
         run: |
           set -euo pipefail
           timeout 300 bash -c '
+            set -euo pipefail
             sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list \
               /etc/apt/sources.list.d/azure-cli.list \
               /etc/apt/sources.list.d/azure-cli.sources

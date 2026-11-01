@@ -64,6 +64,8 @@ def test_softhsm_setup_names_itself_and_times_out() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "name: Install SoftHSM and the software TPM" in workflow
     assert "timeout 300 bash -c" in workflow
+    inner = workflow.split("timeout 300 bash -c '", 1)[1].split("'", 1)[0]
+    assert inner.lstrip().startswith("set -euo pipefail")
     assert 'python-version: ["3.11", "3.12", "3.13"]' in workflow
     assert "--python 3.11 3.12 3.13 --count 4" in workflow
     assert "3.10" not in workflow
