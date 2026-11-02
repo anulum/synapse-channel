@@ -5,4 +5,4 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — exact TPM 2.0 CI capability input
-tpm2-pytss==2.3.0
+tpm2-pytss==3.0.0

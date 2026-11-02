@@ -52,6 +52,15 @@ execution evidence when carrying a release claim forward.
     subject turned stale. The three audit rows are also universal receipts.
   See [Verdicts and corrections](docs/verdicts.md).
 
+### Changed
+
+- The hash-locked TPM 2.0 CI capability now builds tpm2-pytss 3.0.0 instead of
+  2.3.0. On Ubuntu 26.04, GCC 15 compiles C23 by default, so its `stddef.h`
+  declares `nullptr_t`, which the binding's header parser cannot read; 2.3.0
+  ran the preprocessor without a C standard and failed to build. 3.0.0 passes
+  `-std=c99`. The lock no longer needs asn1crypto or PyYAML. The `[tpm2]` extra
+  still accepts tpm2-pytss 2.3 or later.
+
 ## [0.99.43] - 2026-11-02
 
 ### Security
