@@ -36,6 +36,12 @@ def validate_endpoint(endpoint: str, *, allow_insecure_http: bool = False) -> st
         raise OpenCodeAuthError("OpenCode endpoint must not embed credentials.")
     if parsed.query or parsed.fragment:
         raise OpenCodeAuthError("OpenCode endpoint must not contain a query or fragment.")
+    try:
+        _ = parsed.port  # urlsplit validates the range only when asked
+    except ValueError as exc:
+        raise OpenCodeAuthError(
+            "OpenCode endpoint port must be an integer from 0 to 65535."
+        ) from exc
     if (
         parsed.scheme == "http"
         and parsed.hostname.lower() not in LOOPBACK_HOSTS

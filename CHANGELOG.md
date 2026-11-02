@@ -83,6 +83,10 @@ execution evidence when carrying a release claim forward.
   intent was settled. Re-binding the same local receipt is still an
   idempotent no-op in the store, but it no longer decrements the
   counter a second time.
+- OpenCode participants now refuse an endpoint whose port is out of
+  range or not a number (for example `http://127.0.0.1:65536`) when they
+  are configured. Previously such an endpoint was accepted and only
+  failed on the first request, as an unavailable health result.
 
 ## [0.99.42] - 2026-11-01
 
