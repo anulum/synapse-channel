@@ -39,7 +39,7 @@ def test_corruption_interruption_quota_and_path_rejection(
         digest=digest,
         length=4,
         media_type="text/plain",
-        provenance="claim:C12",
+        provenance="claim:ATTACH-1",
         expires_at=expiry,
     )
     store.chunk(token, SENDER, 0, b"bad!")
@@ -52,7 +52,7 @@ def test_corruption_interruption_quota_and_path_rejection(
             digest=digest,
             length=4,
             media_type="text/plain",
-            provenance="claim:C12",
+            provenance="claim:ATTACH-1",
             expires_at=expiry,
         )
     monkeypatch.setattr(module, "MAX_SCOPE_BYTES", 3)
@@ -63,7 +63,7 @@ def test_corruption_interruption_quota_and_path_rejection(
             digest=digest,
             length=4,
             media_type="text/plain",
-            provenance="claim:C12",
+            provenance="claim:ATTACH-1",
             expires_at=expiry,
         )
     monkeypatch.setattr(module, "MAX_SCOPE_BYTES", 256 * 1024 * 1024)
@@ -73,7 +73,7 @@ def test_corruption_interruption_quota_and_path_rejection(
         digest=digest,
         length=4,
         media_type="text/plain",
-        provenance="claim:C12",
+        provenance="claim:ATTACH-1",
         expires_at=expiry,
     )
     store.chunk(token, SENDER, 0, b"sa")
@@ -93,7 +93,7 @@ def test_corruption_interruption_quota_and_path_rejection(
         ("digest", "../objects/secret"),
         ("media_type", "text/html\nX-Evil: true"),
         ("provenance", "<img src=x>"),
-        ("provenance", "claim:\u202eC12"),
+        ("provenance", "claim:\u202eATTACH-1"),
         ("length", -1),
         ("length", True),
         ("expires_at", float("nan")),
@@ -108,7 +108,7 @@ def test_hostile_metadata_is_rejected(tmp_path: Path, field: str, value: Any) ->
         "digest": hashlib.sha256(b"x").hexdigest(),
         "length": 1,
         "media_type": "text/plain",
-        "provenance": "claim:C12",
+        "provenance": "claim:ATTACH-1",
         "expires_at": time.time() + 60,
     }
     metadata[field] = value
@@ -131,7 +131,7 @@ def test_committed_file_corruption_is_never_read(tmp_path: Path) -> None:
             digest=digest,
             length=4,
             media_type="text/plain",
-            provenance="claim:C12",
+            provenance="claim:ATTACH-1",
             expires_at=time.time() + 60,
         )
         store.chunk(upload_id, SENDER, 0, b"safe")
@@ -219,7 +219,7 @@ def test_active_upload_limit_and_abort(tmp_path: Path) -> None:
                     digest=digest,
                     length=1,
                     media_type="text/plain",
-                    provenance="claim:C12",
+                    provenance="claim:ATTACH-1",
                     expires_at=time.time() + 60,
                 )
             )
@@ -230,7 +230,7 @@ def test_active_upload_limit_and_abort(tmp_path: Path) -> None:
                 digest=hashlib.sha256(b"fifth").hexdigest(),
                 length=1,
                 media_type="text/plain",
-                provenance="claim:C12",
+                provenance="claim:ATTACH-1",
                 expires_at=time.time() + 60,
             )
         with pytest.raises(AttachmentError, match="unknown upload"):
@@ -287,7 +287,7 @@ def test_staging_and_published_length_corruption_are_refused(tmp_path: Path) -> 
             digest=digest,
             length=4,
             media_type="text/plain",
-            provenance="claim:C12",
+            provenance="claim:ATTACH-1",
             expires_at=time.time() + 60,
         )
         (store.staging / upload_id).write_bytes(b"unexpected")
@@ -324,7 +324,7 @@ def test_reservation_database_failure_removes_staging_file(tmp_path: Path) -> No
                 digest=hashlib.sha256(b"safe").hexdigest(),
                 length=4,
                 media_type="text/plain",
-                provenance="claim:C12",
+                provenance="claim:ATTACH-1",
                 expires_at=time.time() + 60,
             )
         assert list(store.staging.iterdir()) == []
@@ -346,7 +346,7 @@ def test_commit_database_failure_removes_unpublished_object(
             digest=digest,
             length=4,
             media_type="text/plain",
-            provenance="claim:C12",
+            provenance="claim:ATTACH-1",
             expires_at=time.time() + 60,
         )
         store.chunk(upload_id, SENDER, 0, b"safe")

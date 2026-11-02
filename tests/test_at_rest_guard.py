@@ -8,7 +8,7 @@
 
 """An exposed hub refuses a plaintext ``--db`` event store by default.
 
-Proportionate to exposure, mirroring the R4 bind flip: a loopback / single-owner
+Proportionate to exposure, mirroring the hub bind refusal: a loopback / single-owner
 hub keeps a plaintext store exactly as before; only an off-loopback bind that
 keeps a plaintext ``--db`` is refused, because the durable coordination log would
 then sit unencrypted on a networked host's disk. These tests pin that posture —

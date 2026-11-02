@@ -35,7 +35,7 @@ def _public(task: dict[str, Any]) -> str:
 
 
 def offer(bundle: dict[str, Any], actor: str) -> str:
-    """Queue a caller-supplied prompt using the private C04 ledger."""
+    """Queue a caller-supplied prompt using the private entitlement ledger."""
     try:
         return _public(app_tasks.offer(app_tasks.default_app_task_store(), bundle, actor=actor))
     except app_tasks.AppTaskError as exc:

@@ -62,7 +62,7 @@ class EventAuthentication:
         """Insert one event row in the caller's transaction and return its sequence.
 
         Every writer of the ``events`` table goes through here, so with a row key
-        enabled each row carries its MAC from the moment it exists (K4-REPLAY).
+        enabled each row carries its MAC from the moment it exists.
         """
         cursor = self.storage.connection.execute(
             "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", (ts, kind, payload)

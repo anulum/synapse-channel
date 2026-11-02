@@ -4,10 +4,10 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — M3 collector: attestation classification of main history
-"""Classify main-history advances as attested or unattested (the M3 collector).
+# SYNAPSE_CHANNEL — main-move collector: attestation classification of main history
+"""Classify main-history advances as attested or unattested (main-move collector).
 
-:mod:`synapse_channel.core.governance_metrics` defines the M1–M4 governance
+:mod:`synapse_channel.core.governance_metrics` defines the four governance
 metrics as a pure computation over observed events; this module is the first
 real collector behind that contract. It walks a repository's first-parent main
 history, gathers attestation evidence from a directory of audit artifacts
@@ -22,8 +22,8 @@ order of ``16**-7`` — negligible, though an all-letter English word such as
 "defaced" scans as a hex token and could in principle collide the same way.
 Evidence gathering is deliberately conservative in the other direction too:
 only files under the artifact directory are read, so a hash cited nowhere reads
-as unattested even if a human could vouch for it. This measures the M3 rate on
-the evidence trail we actually keep, which is the point of the wedge.
+as unattested even if a human could vouch for it. This measures the unattested
+main-move rate on the evidence trail we actually keep, which is the point.
 
 The git subprocess is injectable (``runner``) so classification is
 unit-testable without a real repository, matching
@@ -227,7 +227,7 @@ def main_history_metrics(
     limit: int | None = None,
     runner: GitRunner = _default_git_runner,
 ) -> tuple[GovernanceMetrics, tuple[MainMoveRecord, ...]]:
-    """Measure M3 on a real repository against a real evidence trail.
+    """Measure the unattested main-move rate on a real repository and evidence trail.
 
     Parameters
     ----------
@@ -245,7 +245,7 @@ def main_history_metrics(
     Returns
     -------
     tuple[GovernanceMetrics, tuple[MainMoveRecord, ...]]
-        The computed metrics (only the M3 family is populated — this collector
+        The computed metrics (only the main-move family is populated — this collector
         observes no edit, push, or claim-violation events) and the per-move
         records behind them.
 

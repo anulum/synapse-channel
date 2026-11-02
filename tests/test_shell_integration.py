@@ -74,7 +74,7 @@ def test_render_shell_hook_auto_arms_and_wraps_default_providers() -> None:
 
 
 def test_shell_hooks_prefer_private_cache_over_shared_tmp() -> None:
-    """SCH-H-NEW-09: no world-shared /tmp/synapse-shell when XDG runtime is absent."""
+    """No world-shared /tmp/synapse-shell when XDG runtime is absent."""
     for shell in ("bash", "zsh", "fish"):
         hook = render_shell_hook(shell=shell, provider_commands=())
         assert '/tmp/synapse-shell"' not in hook
@@ -200,7 +200,7 @@ def test_render_shell_hook_fish_uses_prompt_event() -> None:
 
 
 def test_shell_hook_repairs_and_guards_a_precreated_runtime_dir() -> None:
-    """F6b: ``mkdir -m 700`` is not enough — a pre-existing runtime dir is repaired
+    """``mkdir -m 700`` is not enough — a pre-existing runtime dir is repaired
     and a foreign-owned or symlinked one is refused, in every generated dialect."""
     bash = render_shell_hook(shell="bash", provider_commands=())
     zsh = render_shell_hook(shell="zsh", provider_commands=())
@@ -519,7 +519,7 @@ def test_render_shell_hook_rejects_an_unsupported_shell() -> None:
         render_shell_hook(shell="powershell")
 
 
-# --- delivery-integrity DEL-INT-C: distinct session identities by default ----
+# --- delivery integrity: distinct session identities by default ----
 #
 # The 2026-07-16 incident shape: environment layering (tmux server env,
 # systemd user env) carried another session's auto identity into new shells
@@ -652,7 +652,7 @@ def test_fish_hook_carries_the_foreign_auto_identity_guard() -> None:
 
 
 def test_hooks_treat_missing_proc_as_foreign_for_terminal_auto_identities() -> None:
-    """Without /proc, terminal-* auto identities re-mint (AUD-E2E-03 fail-closed)."""
+    """Without /proc, terminal-* auto identities re-mint."""
     bash = render_shell_hook(shell="bash", provider_commands=())
     fish = render_shell_hook(shell="fish", provider_commands=())
     zsh = render_shell_hook(shell="zsh", provider_commands=())

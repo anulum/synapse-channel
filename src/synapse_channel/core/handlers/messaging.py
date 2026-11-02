@@ -386,7 +386,7 @@ async def _retry_chat(
             report=report_refusal,
         )
     if retry.original is not None:
-        # K4-WF8: the first copy was accepted; tell the sender instead of routing it
+        # Duplicate chat: the first copy was accepted; tell the sender instead of routing it
         # again. A system notice, since clients drop chat frames bearing their name.
         hub.counters.chat_duplicates_suppressed += 1
         await hub.send_json(

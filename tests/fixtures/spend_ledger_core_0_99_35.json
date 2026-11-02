@@ -2,7 +2,7 @@
  "provenance": {
   "producer": "released synapse-channel 0.99.35 public SpendLedger API",
   "wheel_sha256": "2cacb09dc8a076901b04ae152e6cebf0dd27823b93261c42e3558a318e348709",
-  "generator": "make_v1_ledger.py, recorded with the F02 review-fix evidence"
+  "generator": "make_v1_ledger.py, recorded with the spend-ledger review-fix evidence"
  },
  "user_version": 1,
  "schema": [

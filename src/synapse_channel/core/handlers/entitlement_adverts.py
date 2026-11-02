@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — record an owner's redacted pool advertisement (F03 option A)
+# SYNAPSE_CHANNEL — record an owner's redacted pool advertisement (journal-only)
 """Handle ``entitlement_advert``: journal one redacted pool advertisement.
 
 The owner builds the advertisement from the private ledger

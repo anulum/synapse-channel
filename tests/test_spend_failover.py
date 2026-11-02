@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — fencing a failed pool owner and handing the pool over (F02 phase 5)
+# SYNAPSE CHANNEL — fencing a failed pool owner and handing the pool over
 """An operator-signed revocation, an exact ledger copy and an attestation hand a pool over."""
 
 from __future__ import annotations

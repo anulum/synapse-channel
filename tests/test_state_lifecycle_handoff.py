@@ -120,7 +120,7 @@ def test_handoff_rejects_stale_epoch() -> None:
 
 
 def test_handoff_refuses_when_recipient_is_at_claim_cap() -> None:
-    """BUG-7: handoff must not grow a recipient past max_claims_per_agent."""
+    """Handoff must not grow a recipient past max_claims_per_agent."""
     state = SynapseState(default_ttl_seconds=10_000.0, max_claims_per_agent=2)
     assert state.claim("A", "SOURCE", now=0.0, worktree="wtA")[0]
     assert state.claim("B", "B0", now=0.0, worktree="wtB0")[0]

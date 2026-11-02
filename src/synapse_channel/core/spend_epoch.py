@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — fence a pool owner's epoch and hand the pool to a new owner (F02 phase 5)
+# SYNAPSE CHANNEL — fence a pool owner's epoch and hand the pool to a new owner
 """Revoke a pool owner's epoch with an operator signature, and prove the ledger handed over.
 
 A pool owner can fail. The reviewed contract fences it with three pieces of
@@ -23,7 +23,7 @@ evidence, all required:
 
 A heartbeat timeout, a database copy on its own, or a replicated balance never
 suffices. Grants of epoch n remain outstanding exposure in epoch n+1 until they are
-settled or reconciled (review correction C1).
+settled or reconciled.
 """
 
 from __future__ import annotations

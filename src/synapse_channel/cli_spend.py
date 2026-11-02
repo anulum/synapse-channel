@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — `synapse spend`: operate a pool owner's ledger and ask an owner (F02)
+# SYNAPSE CHANNEL — `synapse spend`: operate a pool owner's ledger and ask an owner
 """``synapse spend``: the pool owner's local operator commands, and one peer request.
 
 The operator commands act on the owner-only ledger file on the owner host. They are

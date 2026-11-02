@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — K4-WF8: a retried chat is accepted once by a real hub
+# SYNAPSE_CHANNEL — a retried chat is accepted once by a real hub
 """A chat retried with the same ``client_msg_id`` is stored and delivered once.
 
 Reproduced before the change on a real hub with a journal: two sends of the same

@@ -359,7 +359,7 @@ class SynapseHub(HubConfigView):
         Source-owned exact recipient hub, scope, digest and expiry grants. Reloaded
         before every peer read. Requires attachments and a peer serving policy.
     spend_ledger : SpendLedger or None, optional
-        The owner-only ledger that makes this hub the owner of shared pools (F02).
+        The owner-only ledger that makes this hub the owner of shared pools.
         ``None`` (the default) refuses every ``spend_request`` uniformly. A peer is
         served only when ``multihub_serving_policy`` authorises it.
     namespace_ownership : NamespaceOwnership or None, optional

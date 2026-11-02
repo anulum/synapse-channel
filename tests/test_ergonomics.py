@@ -58,7 +58,7 @@ def test_syn_project_env_over_cwd() -> None:
 
 
 def test_a_lone_syn_identity_is_never_a_silent_source() -> None:
-    """P-A: ambient identity without an agreeing ``$SYN_PROJECT`` is dropped.
+    """Ambient identity without an agreeing ``$SYN_PROJECT`` is dropped.
 
     The shell hook exports the SYN_PROJECT/SYN_IDENTITY pair together; a lone
     SYN_IDENTITY is the borrowed-shell signature, so the resolution falls back
@@ -124,7 +124,7 @@ def test_disagreeing_syn_project_and_identity_drops_the_borrowed_identity() -> N
 
 
 def test_foreign_identity_over_the_contested_user_project_is_implausible() -> None:
-    # BUG-1: a shell keeps the ambient SYN_PROJECT=user while a command prefixes a
+    # A shell keeps the ambient SYN_PROJECT=user while a command prefixes a
     # real seat's SYN_IDENTITY. The disagreeing identity is dropped (as always), but
     # the "user" fallback must now be flagged implausible so the caller refuses
     # instead of silently coordinating as the shared "user" name.
@@ -227,7 +227,7 @@ def test_arm_argv_broadcasts_drops_directed_only_and_keeps_extra() -> None:
     assert argv[-2:] == ["--timeout", "5"]
 
 
-# The 2026-07-16 delivery-integrity incident (DEL-INT-A): injecting the ambient
+# The 2026-07-16 delivery-integrity incident: injecting the ambient
 # pair under an explicit pass-through --name cross-bound the waiter — it
 # connected under the explicit name while the argparse-surviving ambient --for
 # kept it waking on the shared ambient identity's messages, so a seat that
@@ -322,7 +322,7 @@ def test_ask_argv_waits_and_requires_recipient_by_default() -> None:
 
 
 def test_say_argv_explicit_passthrough_name_replaces_the_sender() -> None:
-    # DEL-INT-A: one --name in the final argv, the explicit one — the ambient
+    # One --name in the final argv, the explicit one — the ambient
     # sender must not ride along and rely on argparse last-wins ordering.
     argv = say_argv(
         _ident(project="user", identity="user/terminal-14753"),
@@ -493,7 +493,7 @@ def test_main_arm_builds_a_directed_only_waiter(captured_cli: CapturedCalls) -> 
 def test_main_arm_explicit_name_under_ambient_env_binds_only_the_explicit_seat(
     captured_cli: CapturedCalls,
 ) -> None:
-    # DEL-INT-A end-to-end at the alias front door: a seat peeling off a shared
+    # End-to-end at the alias front door: a seat peeling off a shared
     # ambient identity with an explicit --name must not stay bound to it.
     rc = ergonomics.main(
         ["arm", "--name", "quantum/claude-7f3a"],
@@ -1251,7 +1251,7 @@ def test_main_inbox_env_aliases_apply_without_flags(captured_cli: CapturedCalls)
     assert captured_cli[1][2:4] == ["--for", "SYNAPSE-CHANNEL/coordinator"]
 
 
-# --- P-A: ambient SYN_IDENTITY is never a silent source (env-never-silent) ---
+# --- ambient SYN_IDENTITY is never a silent source (env-never-silent) ---
 
 
 def test_poisoned_shell_with_plausible_cwd_proceeds_locally_and_says_so(
@@ -1294,7 +1294,7 @@ def test_poisoned_shell_with_an_accidental_fallback_refuses(
 def test_foreign_identity_over_the_contested_user_project_refuses(
     captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """BUG-1: a foreign SYN_IDENTITY atop the contested SYN_PROJECT=user refuses.
+    """A foreign SYN_IDENTITY atop the contested SYN_PROJECT=user refuses.
 
     The shell keeps ambient ``SYN_PROJECT=user`` while a command prefixes a real
     seat's ``SYN_IDENTITY``. The disagreeing identity is dropped, and because the
@@ -1341,7 +1341,7 @@ def test_syn_name_reports_the_ignored_ambient_identity(
 
 
 async def test_poisoned_shell_says_as_the_local_identity_against_a_live_hub() -> None:
-    """P-A live proof: the production say path never borrows the ambient identity.
+    """Live proof: the production say path never borrows the ambient identity.
 
     A real hub runs, a real observer socket listens, and the full ``syn say``
     production path (ergonomics dispatch into the package CLI, real WebSocket

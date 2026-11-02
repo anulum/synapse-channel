@@ -317,7 +317,7 @@ def test_cmd_hub_no_role_grants_by_default() -> None:
 
 
 def _bound_identity(tmp_path: Path) -> dict[str, Any]:
-    """Provisioned identity a declared multi-seat hub needs to start (K4-F2)."""
+    """Provisioned identity a declared multi-seat hub needs to start."""
     trust = tmp_path / "identity-trust.json"
     _write_identity_trust(trust)
     return {"identity_trust": str(trust), "require_identity_binding": True}

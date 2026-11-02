@@ -82,7 +82,7 @@ def _api(name: str) -> dict[str, Any]:
 
 
 def test_reviewed_hosts_rejected_by_public_cli(tmp_path: Path) -> None:
-    """Each reviewed lure is excluded from C15 by its inspectable structure."""
+    """Each reviewed lure is excluded from host integration by its inspectable structure."""
     config_path = tmp_path / "review.json"
     config = json.loads(discovery.DEFAULT_CONFIG.read_text(encoding="utf-8"))
     config["review_owner"] = "fixture/reviewer"

@@ -217,7 +217,7 @@ def test_matrix_validation_and_network_allowlist(tmp_path: Path) -> None:
     matrix["surfaces"]["pi"] = {
         "verified_version": None,
         "capability_class": "unknown",
-        "owning_adapter": "C03",
+        "owning_adapter": "integrations/pi",
         "migration_decision": "Review later",
     }
     path.write_text(json.dumps(matrix), encoding="utf-8")
@@ -228,7 +228,7 @@ def test_matrix_validation_and_network_allowlist(tmp_path: Path) -> None:
     path.write_text(json.dumps(matrix), encoding="utf-8")
     with pytest.raises(VendorWatchError):
         load_matrix(path)
-    matrix["surfaces"]["pi"]["owning_adapter"] = "C03"
+    matrix["surfaces"]["pi"]["owning_adapter"] = "integrations/pi"
     matrix["surfaces"]["pi"]["migration_decision"] = ""
     path.write_text(json.dumps(matrix), encoding="utf-8")
     with pytest.raises(VendorWatchError):

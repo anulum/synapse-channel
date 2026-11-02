@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — auto-enable rate-policy decision for exposed hubs
-"""Auto-enable flood-limit decision for exposed hubs (REV-SEC-06).
+"""Auto-enable flood-limit decision for exposed hubs.
 
 A hub left with flood limits disabled — the local-first default — is safe on a
 single-seat loopback bind, but an off-loopback, token-guarded, or bridge-exposed

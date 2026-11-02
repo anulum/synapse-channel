@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — handle the governed identity-key enrolment verbs (SOL4-ID-01)
+# SYNAPSE_CHANNEL — handle the governed identity-key enrolment verbs
 """Handle ``identity_enroll`` and ``identity_revoke`` under a proven operator.
 
 The order of gates and the pure policy live in

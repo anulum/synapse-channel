@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — bounded setup doctor and one-use plan-store tests
-"""Prove F9 planning remains bounded, expiring, single-use, and effect-free."""
+"""Prove setup planning remains bounded, expiring, single-use, and effect-free."""
 
 from __future__ import annotations
 

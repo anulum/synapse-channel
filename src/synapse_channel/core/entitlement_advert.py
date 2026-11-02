@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — the redacted, opt-in pool advertisement a fleet may see (F03 option A)
+# SYNAPSE_CHANNEL — the redacted, opt-in pool advertisement a fleet may see (journal-only)
 """Build and validate the only entitlement facts that may leave the owner's ledger.
 
 Entitlement facts are private: the ledger is owner-only and nothing in it is

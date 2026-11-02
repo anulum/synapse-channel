@@ -158,7 +158,7 @@ FENCING_EPOCH_REQUIRED = (
     "Fencing epoch required: this hub runs with --require-fencing-epoch, so a lease "
     "mutation must carry the 'epoch' from your claim_granted frame."
 )
-"""Refusal for a covered lease mutation that carries no fencing epoch (FENCE-01)."""
+"""Refusal for a covered lease mutation that carries no fencing epoch."""
 
 
 async def _refuse_unfenced(

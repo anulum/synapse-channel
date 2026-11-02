@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — doctor finds Synapse-named MCP servers and unguarded hosts
-"""K4-MCP-INBOUND (a)+(b): ``doctor`` names impostor-shaped MCP servers and missing guards.
+"""``doctor`` names impostor-shaped MCP servers and missing guards.
 
 Every case writes real host files under a temporary home and project — Claude's
 ``.claude.json`` and ``.mcp.json``, a real Synapse plugin install, the Codex

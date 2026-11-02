@@ -121,7 +121,7 @@ and preservation of durable success after commit.
 
 This evidence establishes message transport for the recorded pair. The original
 physical run failed expiry acceptance. It does not establish direct LAN
-federation, Windows or ML350 coverage, 100-terminal capacity, provider execution,
+federation, Windows or additional-server coverage, 100-terminal capacity, provider execution,
 an SLA or exactly-once external effects. A new physical run with the published
 correction is required before declaring the whole federation acceptance passed.
 Dashboard consumers must keep reachability, queue state, boundary delivery,

@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — K3-F5: a replayed encrypted envelope is opened once
+# SYNAPSE_CHANNEL — a replayed encrypted envelope is opened once
 """Version 2 envelopes bind a replay identity; the receiver's ledger opens each once.
 
 Reproduced before the change on a real hub: the same captured encrypted chat,
@@ -69,7 +69,7 @@ def _envelope(text: str = "deploy", *, created_at_ms: int | None = None) -> dict
 
 
 def _legacy_envelope(text: str) -> dict[str, Any]:
-    """Build a version 1 envelope exactly as a client before K3-F5 did."""
+    """Build a version 1 envelope exactly as a client before replay protection did."""
     aad = json.dumps(
         {
             "channel": "",

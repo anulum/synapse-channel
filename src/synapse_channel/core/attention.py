@@ -286,7 +286,7 @@ def project_quota_attention(
     Parameters
     ----------
     events : Sequence[Mapping[str, object]]
-        Validated C04 private-ledger records.
+        Validated private entitlement-ledger records.
     at : datetime
         Offset-aware evaluation time.
     stale_after_seconds : float

@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — exposed or multi-seat hubs refuse to start without provisioned identity
-"""K4-F2 / SOL4-ID-01: identity is provisioned wherever more than one owner can reach the hub.
+"""Identity is provisioned wherever more than one owner can reach the hub.
 
 The pure decision is tested directly; the start-up behaviour goes through
 ``_cmd_hub`` with the real argument namespace, so the refusal, the explicit

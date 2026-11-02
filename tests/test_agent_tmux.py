@@ -845,7 +845,7 @@ def test_registry_dir_falls_back_to_runtime_dir_then_tmp(
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     parent = registry_path(config).parent
     assert parent.name == "synapse-agent-tmux"
-    # SCH-H-NEW-12: private cache, not shared /tmp/synapse-agent-tmux
+    # Private cache, not shared /tmp/synapse-agent-tmux
     assert parent == tmp_path / "home" / ".cache" / "synapse-agent-tmux"
 
 

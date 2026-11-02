@@ -272,7 +272,7 @@ def _recall_policy() -> AclPolicy:
 
 
 async def test_acl_refuses_history_recall_without_a_recall_grant() -> None:
-    # The F1 secure default: a deny-by-default hub no longer serves its full chat
+    # The secure default: a deny-by-default hub no longer serves its full chat
     # history to an authenticated agent that holds no recall grant.
     gates, rec = _gates(require_acl=True, acl_policy=_acl_policy())
 

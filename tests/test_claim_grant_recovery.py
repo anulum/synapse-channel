@@ -5,9 +5,9 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — grant-broadcast recovery and advisory-wait gate contract
-"""BUG-5 actor follow-up: recover a committed claim whose grant broadcast is lost.
+"""Serialized-actor follow-up: recover a committed claim whose grant broadcast is lost.
 
-BUG-5 makes a durable claim mutation atomic — the serialized actor appends to the
+The serialized actor makes a durable claim mutation atomic — the serialized actor appends to the
 journal and publishes the live claim before it returns, and an in-flight
 cancellation still waits for the authoritative append
 (``test_cancellation_waits_for_authoritative_append_before_propagating``). The

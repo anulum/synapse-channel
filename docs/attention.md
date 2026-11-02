@@ -46,7 +46,7 @@ An explicit local resolution only clears the alert at its current source
 revision. A fresh request or other new evidence reopens it. A deferred
 delivery acknowledgement replaces the failed-delivery alert with one
 time-bounded recovery item. Snoozes hide the alert until their deadline;
-source changes cancel the snooze. An absent C04 observation is stale, while a
+source changes cancel the snooze. An absent entitlement-ledger observation is stale, while a
 fresh observation clears that stale alert. `--stale-hours` sets its threshold.
 
 Run `sync` regularly to keep the observer current. `list` reports the last

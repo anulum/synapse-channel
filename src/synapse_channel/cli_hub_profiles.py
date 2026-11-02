@@ -83,7 +83,7 @@ def _hub_bridge_exposed(args: argparse.Namespace) -> bool:
 
 
 def _apply_auto_rate_policy(args: argparse.Namespace) -> None:
-    """Fill disabled flood limits when the hub starts in an exposed posture (REV-SEC-06).
+    """Fill disabled flood limits when the hub starts in an exposed posture.
 
     Pure decision from :mod:`synapse_channel.core.rate_policy` is applied back onto
     ``args`` so the existing limiter construction path stays unchanged. When

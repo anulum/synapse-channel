@@ -182,7 +182,7 @@ bound that compatibility residual. Durable command idempotency is separate: a
 journal-backed hub may replay an already-applied mutating response by
 idempotency key without restoring per-message-auth nonce memory.
 
-### Optional durable nonces and sequence floors (REV-SEC-07)
+### Optional durable nonces and sequence floors
 
 The hub CLI attaches `DurableMessageAuthReplayStore` automatically when
 `--require-message-auth` and `--db` are both present. Embedders may attach the

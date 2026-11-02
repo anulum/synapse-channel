@@ -4,18 +4,18 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — Studio design-system reference page (A0)
+# SYNAPSE_CHANNEL — Studio design-system reference page
 """The Studio design-system reference page.
 
-This is the A0 foundation of the operator Studio: a single self-contained page that
+This is the design-system foundation of the operator Studio: a single self-contained page that
 exercises every component in `dashboard_assets/studio.css` — the verdict pills, status
 dots, panels, cards, mono data rows, display numerals, and the navigation rail — in
 the instrument-panel language the command centre will be built in. It is served at
 ``/studio`` and works with the hub offline (it renders no live data), so it doubles as
-the visual reference Stage B assembles the real command centre from, and as a preview
+the visual reference the real command centre is assembled from, and as a preview
 of where the dashboard is heading.
 
-It deliberately renders *static* sample content: A0 ships the look, Stage B wires the
+It deliberately renders *static* sample content: this page ships the look; the live Studio wires the
 live ``/studio.json`` projection into the same components.
 """
 

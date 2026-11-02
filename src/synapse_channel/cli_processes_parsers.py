@@ -442,7 +442,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default="",
         metavar="FILE",
         help="Owner-only spend ledger that makes this hub the owner of shared pools "
-        "(F02). Peers authorised by --multihub-serving-policy may reserve, settle and "
+        "Peers authorised by --multihub-serving-policy may reserve, settle and "
         "query; pools are configured locally with `synapse spend configure`. Requires "
         "--hub-id and --multihub-serving-policy.",
     )

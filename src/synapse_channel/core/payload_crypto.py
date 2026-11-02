@@ -15,7 +15,7 @@ only after verifying that the visible route metadata matches the envelope AAD.
 
 Version 2 envelopes also bind a random ``message_id`` (128 bits, hex), the
 sender's ``created_at_ms`` clock and the ``key_id`` into the AAD, so a receiver
-can refuse a captured envelope replayed later under the same route (K3-F5). The
+can refuse a captured envelope replayed later under the same route. The
 replay ledger that uses them lives in :mod:`synapse_channel.core.payload_replay`.
 Version 1 envelopes still decrypt; they carry no replay identity.
 """

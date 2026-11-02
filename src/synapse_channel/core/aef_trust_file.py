@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — standalone AEF trust-input file (K4-AEF-SURFACE)
+# SYNAPSE_CHANNEL — standalone AEF trust-input file
 """Read and write the file an independent verifier trusts AEF receipts under.
 
 An auditor verifies a hub's AEF receipts offline, without the hub, against a

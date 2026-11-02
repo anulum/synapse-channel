@@ -52,7 +52,7 @@ def test_claim_cap_honours_a_custom_limit() -> None:
 
 
 def test_handoff_obeys_the_same_claim_cap_as_direct_acquisition() -> None:
-    """BUG-7: recipient at the live-claim bound cannot accept a handoff."""
+    """A recipient at the live-claim bound cannot accept a handoff."""
     state = SynapseState(default_ttl_seconds=10_000.0, max_claims_per_agent=1)
     assert state.claim("donor", "GIFT", now=0.0, worktree="wt-donor")[0] is True
     assert state.claim("full", "HELD", now=0.0, worktree="wt-full")[0] is True

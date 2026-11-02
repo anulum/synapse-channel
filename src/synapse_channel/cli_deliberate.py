@@ -9,13 +9,13 @@
 
 ``deliberate conclude`` reads a deliberation spec (JSON), builds the validated
 :class:`~synapse_channel.core.deliberation.ExportPackage`, and — when a receipt
-key is supplied — seals it into a verifiable G7 receipt, then writes the document
+key is supplied — seals it into a verifiable signed receipt, then writes the document
 to an owner-only output file (never replacing an existing one). ``deliberate
 verify`` checks a sealed package against a receipt trust key.
 
 The output is written ``0600`` (owner-only): an export package may carry
 pre-redaction deliberation content, so it fails safe to the author until redaction
-(G1b) and an explicit sharing step widen it. This is the first consumer that wires
+and an explicit sharing step widen it. This is the first consumer that wires
 :mod:`synapse_channel.core.deliberation` into the CLI.
 """
 
@@ -153,7 +153,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--receipt-key",
         default="",
         metavar="PRIVATE.pem",
-        help="Receipt-signing key; when given, the package is sealed as a G7 receipt.",
+        help="Receipt-signing key; when given, the package is sealed as a signed receipt.",
     )
     conclude.add_argument(
         "--out", required=True, metavar="FILE", help="Create this file; never replace."

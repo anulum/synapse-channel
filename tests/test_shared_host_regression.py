@@ -25,7 +25,7 @@ Covered attacks:
 * DNS-rebinding / SSRF on an outbound webhook target
   (:func:`resolve_pinned_endpoints`);
 * smuggled claim paths (the stable claim-identity floor; cross-platform case
-  collision itself is tracked by REV-SEC-05).
+  collision itself is tracked as a separate gap).
 """
 
 from __future__ import annotations
@@ -178,8 +178,8 @@ def test_webhook_allows_a_local_target_only_when_explicitly_opted_in() -> None:
 def test_claim_path_floor_refuses_a_smuggled_path(smuggled: str) -> None:
     # A staged path that escapes the worktree, is absolute, or carries control
     # characters cannot become a claim identity. (Cross-platform case-fold
-    # collision — src/Foo.py vs src/foo.py — is a distinct gap tracked by
-    # REV-SEC-05 and is not asserted here.)
+    # collision — src/Foo.py vs src/foo.py — is a distinct gap tracked
+    # separately and is not asserted here.)
     with pytest.raises(GitError):
         _normalise_staged_path(smuggled)
 

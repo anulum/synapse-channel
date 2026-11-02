@@ -42,6 +42,21 @@ execution evidence when carrying a release claim forward.
   mount restrictions. These APIs expose explicit observations and preconditions;
   they do not install a supervisor or grant recovery authority.
 
+### Changed
+
+- `GovernanceMetrics` fields are named for what they measure:
+  `unclaimed_edit_rate`, `ungated_self_push_rate`, `unattested_main_move_rate`
+  and `max_time_to_detect_seconds`. The numbered field names are removed with
+  no alias; callers that read them must use the new names.
+- The vendor-discovery review queue names its suggested lane by
+  responsibility: `provider-adapter`, `host-integration` or
+  `mcp-inspection+host-integration`.
+- Help text, docstrings, documentation and earlier changelog entries describe
+  behaviour directly instead of citing internal planning and review
+  identifiers. Two documentation anchors changed with their headings:
+  `secure-mode.md#auto-flood-enable-without-secure` and the durable nonces
+  section of `per-message-authentication.md`.
+
 ### Fixed
 
 - A hub advertised under a bracketed IPv6 address without a port, such as
@@ -1099,8 +1114,8 @@ execution evidence when carrying a release claim forward.
   registration. Source reads now require a successful bounded private audit write;
   the owner ledger retains the latest 256 decisions across restarts without content.
 
-- **F02 spend ledger: findings from an independent correctness review and its
-  follow-up** (SCPN-PHASE-ORCHESTRATOR/codex-01a0eea6, 2026-09-30). Enforcement
+- **Spend ledger: findings from an independent correctness review and its
+  follow-up** (2026-09-30). Enforcement
   is still not activated.
   - **Exact arithmetic.** Amounts, exposures, sums, signs and comparisons used
     the default Decimal context (28 digits). A small fixed fee could therefore be
@@ -1140,7 +1155,7 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
-- **Shared-pool reservations with one authoritative owner (F02, not yet
+- **Shared-pool reservations with one authoritative owner (not yet
   enforced).**
   - `synapse hub --spend-ledger FILE` makes a hub the owner of shared pools. It
     requires `--hub-id` and `--multihub-serving-policy`.
@@ -1209,7 +1224,7 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
-- **Opt-in pool advertisements for fleet planning (F03 option A).**
+- **Opt-in pool advertisements for fleet planning (journal-only).**
   - `synapse entitlements advertise --pool ID --alias NAME` shares one pool of
     the private ledger with fleet planners. It carries the alias, unit,
     capabilities and eligibility, and per window a remaining-balance bucket.
@@ -1222,7 +1237,7 @@ execution evidence when carrying a release claim forward.
   - `--dry-run` prints the exact payload.
   - Wire: `entitlement_advert` and `entitlement_advert_result`.
 
-- **Peer hubs can prove their id with a signature (PEER-SIGNED-REGISTRATION).**
+- **Peer hubs can prove their id with a signature.**
   - `synapse hub --peer-identity-key FILE --peer-identity-key-id ID` signs
     every first frame this hub sends to a multi-hub peer: watch pulls,
     forwarded claims and messages, operator relays and dead-letter forwards.
@@ -1237,7 +1252,7 @@ execution evidence when carrying a release claim forward.
     `*Peer` route records and `MultiHubWatch`. It is keyword-only with a
     `None` default, so existing callers are unchanged.
 
-- **Governed online identity enrolment (SOL4-ID-01).**
+- **Governed online identity enrolment.**
   - `synapse hub --identity-enrollments FILE` lets an operator add or rotate
     identity keys on a live hub with `synapse identity enroll`, instead of
     editing the `--identity-trust` file and restarting. The trust file is never
@@ -1262,7 +1277,7 @@ execution evidence when carrying a release claim forward.
   - **Wire.** New wire types `identity_enroll`, `identity_revoke` and their
     `_result` verdicts.
 
-- **Opt-in strict lease fencing (FENCE-01 narrow slice).**
+- **Opt-in strict lease fencing (first, narrow slice).**
   - `synapse hub --require-fencing-epoch` refuses a task update, release,
     handoff or checkpoint that names no lease epoch. Previously such a
     mutation was checked only against the owner name, so a writer holding a
@@ -1327,7 +1342,7 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
-- **`synapse aef`: offline AEF evidence verification (K4-AEF-SURFACE).**
+- **`synapse aef`: offline AEF evidence verification.**
   Anyone can verify a hub's native AEF receipts from files, without the hub.
   - `aef trust` writes the trust file from the hub's public key and hub id.
     `aef-trust-v0.1` is a strict, documented contract: keys with revocation,
@@ -1343,7 +1358,7 @@ execution evidence when carrying a release claim forward.
 
 ### Security
 
-- **Encrypted payloads are opened once (K3-F5).** Before this change, an
+- **Encrypted payloads are opened once.** Before this change, an
   envelope captured on a route could be sent again on the same route and
   decrypted again; the route-bound AAD cannot tell.
   - `synapse send --encrypt-key-file` now writes version 2 envelopes. The AAD
@@ -1369,8 +1384,7 @@ execution evidence when carrying a release claim forward.
   `SECURITY.md` requires for that posture. It also states that a peer hub or
   Fleet follower proving its id by client certificate needs direct WSS/mTLS or
   TCP/TLS passthrough, because the certificate stops at the proxy.
-- **A restarted client passes strict sequence floors
-  (CLIENT-SEQUENCE-PERSIST).** The Python client numbered per-message-auth
+- **A restarted client passes strict sequence floors.** The Python client numbered per-message-auth
   frames from 1 in every process, so a hub with
   `--message-auth-sequence-floor-mode strict` refused a restarted agent
   (`sequence_mismatch`).
@@ -1541,7 +1555,7 @@ execution evidence when carrying a release claim forward.
 
 ### Security
 
-- Authenticate every durable event row (K4-REPLAY).
+- Authenticate every durable event row.
   - A `--db` hub MACs each row it writes (HMAC-SHA256 over `seq`, `ts`, `kind` and
     payload) with a key kept outside the log, in `DB.rowmac.key` (owner-only,
     created on first start) or at `--row-mac-key-file`.
@@ -1677,13 +1691,13 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
-- Add an owner-local attention queue over approval, delivery and optional C04
-  quota evidence, with observer freshness, deduplicated alert revisions,
-  snooze/resolution, bounded generic desktop previews, a CLI and an
+- Add an owner-local attention queue over approval, delivery and optional
+  entitlement-ledger quota evidence, with observer freshness, deduplicated
+  alert revisions, snooze/resolution, bounded generic desktop previews, a CLI and an
   authenticated cockpit feed. Long approval subjects and dead-letter targets
   use bounded digest keys so one durable event cannot stall later sync.
 
-- Add an owner-local human app task queue with C04 allowance snapshots,
+- Add an owner-local human app task queue with entitlement-ledger allowance snapshots,
   explicit CLI and stdio MCP handoff states, result provenance, fixed
   task-specific verification and manual usage correction. MCP exposes offer,
   status and same-offerer result attachment; human handoff and verification
@@ -2398,11 +2412,11 @@ execution evidence when carrying a release claim forward.
   8.5.18+).
 - Shell integration treats a default-shape `*/terminal-<pid>` auto identity
   as foreign when `/proc` is missing (fail-closed re-mint), instead of
-  fail-open keeping a possibly layered foreign seat (DEL-INT-C class).
+  fail-open keeping a possibly layered foreign seat (the shared-session identity class).
   Provider sessions (`SYN_TMUX_PROVIDER=1`) and manual identities are
   unchanged. Applies to Bash, Zsh, and Fish hooks.
 - `synapse a2a-serve` now refuses a non-loopback bind that enables
-  `--bearer-auth` over plaintext HTTP (hub R4 parity). The bearer and
+  `--bearer-auth` over plaintext HTTP (same rule as the hub bind). The bearer and
   protected A2A traffic would otherwise ride the LAN in the clear. Prefer a
   loopback bind behind a TLS-terminating reverse proxy **or** native HTTPS;
   `--insecure-off-loopback` remains the single explicit override for both the
@@ -2977,11 +2991,12 @@ execution evidence when carrying a release claim forward.
   any post-signing mutation. Land, audit, and research council patterns share
   one schema, including audit findings with severities and dispositions.
 - Governance metrics define the measurable coordination-discipline wedge:
-  `core/governance_metrics` computes the M1–M4 rates (unclaimed edits, ungated
+  `core/governance_metrics` computes four rates (unclaimed edits, ungated
   self-pushes, unattested main moves, detection latency) as a pure function
-  over observed events, and the `git/attested_history` collector measures M3
-  on a real repository by classifying every first-parent main advance against
-  the hexadecimal citations kept in an audit-artifact tree.
+  over observed events, and the `git/attested_history` collector measures the
+  unattested main-move rate on a real repository by classifying every
+  first-parent main advance against the hexadecimal citations kept in an
+  audit-artifact tree.
 
 ### Security
 
@@ -4014,7 +4029,7 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
-- **Zero-config trust-on-first-use identity** (ownership keystone P-C). The
+- **Zero-config trust-on-first-use identity** (identity-ownership keystone). The
   first command that connects auto-provisions one Ed25519 keypair for the
   whole machine under `$XDG_DATA_HOME/synapse/identity/` (owner-only,
   exclusive-create, race-safe); the production waiter signs its registration
@@ -4037,7 +4052,7 @@ execution evidence when carrying a release claim forward.
   and identity refusals — clients disambiguate on the reason text
   (`is_identity_refused_close`).
 
-- **Hub-authoritative name-ownership lease** (ownership keystone P-B). A name
+- **Hub-authoritative name-ownership lease** (identity-ownership keystone). A name
   now has exactly one owner across reconnects, not merely per socket: a
   registration that declares `lease: true` on a free name is granted an opaque
   `owner_lease` token in a directed `lease_granted` frame (the hub keeps only
@@ -4058,14 +4073,14 @@ execution evidence when carrying a release claim forward.
   actionable message), not a retry. `SynapseAgent` exposes the same opt-in
   (`request_lease`/`owner_lease`/`on_lease_granted`) for any embedder;
   ephemeral one-shot verbs stay classic until the zero-config TOFU keypair
-  (P-C) covers every verb uniformly. Fully additive on the wire: a pre-lease
+  covers every verb uniformly. Fully additive on the wire: a pre-lease
   hub ignores the fields and a pre-lease client is never locked out of its
   own names.
 
 ### Changed
 
-- **Ambient `$SYN_IDENTITY` is never a silent identity source** (ownership
-  keystone P-A). It is honoured only when `$SYN_PROJECT` is also set and
+- **Ambient `$SYN_IDENTITY` is never a silent identity source** (identity-ownership
+  keystone). It is honoured only when `$SYN_PROJECT` is also set and
   agrees with its project segment — the pair the shell hook exports together
   is the opt-in. An unqualified `syn` command in a shell carrying a lone or
   disagreeing `SYN_IDENTITY` (the borrowed-shell signature behind the
@@ -6430,7 +6445,7 @@ execution evidence when carrying a release claim forward.
   receipt. Every command and its output were captured from a real end-to-end run; the guide
   uses a digest placeholder (each build differs) rather than a fixed digest. Linked from the
   nav and README, with a doc test that keeps its commands parseable by the live CLI and its
-  documented verbs in sync. (KIMI v0.71.0 gap closed.)
+  documented verbs in sync. (Closes a gap found in a review of v0.71.0.)
 - Added `synapse sandbox test` — a dry-run pre-flight that loads a `.wasm` tool and verifies
   it against its manifest *without running it*: `core/wasm_sandbox.py` compiles the module
   (validating its structure) and reads its exported functions but never instantiates or
@@ -6440,8 +6455,8 @@ execution evidence when carrying a release claim forward.
   matches its manifest digest, and what it would be granted, with a single `ok` verdict the
   CLI maps to exit `0` (ready), `1` (pre-flight ran, tool not ready), or `2` (could not
   pre-flight). A cheap gate before `sandbox run --approve`. Behind the optional `[wasm]`
-  extra; 100% line+branch on the new code. (KIMI v0.71.0 gap closed.)
-- Added the live Studio command centre `/studio/command` (Studio Stage B): the operator
+  extra; 100% line+branch on the new code. (Closes a gap found in a review of v0.71.0.)
+- Added the live Studio command centre `/studio/command`: the operator
   view that reads `/studio.json` and renders it in the instrument-panel design system. Its
   signature instrument is the **Coordination Clock** — a radial gauge where every claim is a
   segment around the dial, coloured by lease health (green fresh, amber ageing, red stale),
@@ -6531,7 +6546,7 @@ execution evidence when carrying a release claim forward.
   database — write-latency distribution and throughput for the `synchronous=NORMAL`
   commit and the `durable=True` fsync path, the `read_since(0)` replay cost as the log
   grows, and how compaction lowers read cost. Committed results, `make bench` wiring, a
-  README section, and focused tests. (KIMI v0.70.0 surfaced this gap — the existing
+  README section, and focused tests. (A review of v0.70.0 surfaced this gap — the existing
   harnesses measure coordination/replay, not sustained durable-write latency.)
 - Added a two-hub "observe a peer" walkthrough to the
   [multi-hub docs](docs/multi-hub-sync.md): run two hubs with separate event stores,
@@ -6544,7 +6559,7 @@ execution evidence when carrying a release claim forward.
   (advisory — claims are never granted across hubs), or `--json`. Read-only by
   construction — it reads the peer store through the same `read_since` seam (SQLite WAL
   allows a concurrent reader beside the live peer hub) and exits. Classified `analysis` in
-  the surface taxonomy; 100% line+branch. (KIMI v0.70.0 surfaced this as a gap — the
+  the surface taxonomy; 100% line+branch. (A review of v0.70.0 surfaced this as a gap — the
   follower was library-only.)
 - Added `synapse federation import/list/revoke` ([docs](docs/federated-trust-model.md)):
   the operator-facing layer over the federation policy bundle. `import` reads an
@@ -6602,7 +6617,7 @@ execution evidence when carrying a release claim forward.
   the per-hub high-water cursor a follower resumes from. Pure and I/O-free; it folds no
   state and grants no claims (claims are mutual exclusion, never merged). 100%
   line+branch. The state fold and the network follower are the remaining slices.
-- Added the Studio design system (A0) and its reference page ([docs](docs/studio.md)):
+- Added the Studio design system and its reference page ([docs](docs/studio.md)):
   the dashboard begins growing from a read-only cockpit into an operator Studio. A new
   dependency-free `dashboard_assets/studio.css` carries the instrument-panel language —
   an ink-navy base, an indigo-violet brand hue, and red/amber/green reserved for

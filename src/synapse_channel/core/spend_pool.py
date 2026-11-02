@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — shared-pool configuration, requests and exposure projection (F02)
+# SYNAPSE CHANNEL — shared-pool configuration, requests and exposure projection
 """Validate shared-pool configuration and reservations, and project a pool's exposure.
 
 A shared pool has one authoritative owner hub. The owner configures the pool (an
@@ -48,7 +48,7 @@ from typing import Any
 from synapse_channel.core.errors import SynapseError
 
 TAX_BASES = ("pre_tax", "post_tax", "not_applicable")
-"""Declared tax treatment of every quantity in a pool (review correction C2)."""
+"""Declared tax treatment of every quantity in a pool."""
 
 PROVENANCES = ("measured", "billed")
 """Evidence class of a settlement amount."""
@@ -218,7 +218,7 @@ class PoolConfig:
         return f"{self.window_starts_at.isoformat()}/{self.window_ends_at.isoformat()}"
 
     def exposure(self, upper_bound: Decimal) -> Decimal:
-        """Return the exposure a call with ``upper_bound`` reserves (C2), exactly."""
+        """Return the exposure a call with ``upper_bound`` reserves, exactly."""
         with localcontext(EXACT):
             return max(upper_bound, self.minimum_charge) + self.fixed_fee
 
@@ -424,7 +424,7 @@ class PoolState:
             )
 
     def outstanding(self) -> Decimal:
-        """Return exposure still held by open reservations of any window (C1, C3)."""
+        """Return exposure still held by open reservations of any window."""
         with localcontext(EXACT):
             return sum((item.open_exposure() for item in self.reservations.values()), Decimal(0))
 

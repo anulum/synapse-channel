@@ -359,7 +359,7 @@ async def test_a_pinned_name_stays_usable_by_default_constructed_agents(
     """The incident 2026-07-10T1603 regression, end to end on a real hub.
 
     An arm-style connect (explicit machine kwargs) pins the name on first use.
-    Before F9 slice 0, every OTHER verb built its agent without the machine
+    Before zero-config signing, every OTHER verb built its agent without the machine
     identity and was then refused ``signature missing`` — the seat locked
     itself out of its own name. A plain default construction must now present
     the same machine key and be admitted; only a deliberate opt-out is still

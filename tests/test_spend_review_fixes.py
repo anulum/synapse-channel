@@ -4,8 +4,8 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — F02 review findings R1, R2 and R4 on real ledgers
-"""Exact arithmetic (R1), expiry at the use boundary (R2), window scope and migration (R4)."""
+# SYNAPSE CHANNEL — spend-ledger review findings on real ledgers
+"""Exact arithmetic, expiry at the use boundary, window scope and migration."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def _reasons(ledger: SpendLedger) -> list[str]:
 
 
 def test_a_fee_that_default_precision_would_round_away_is_counted(tmp_path: Path) -> None:
-    """R1: at precision 28, 100000000000 + 1E-18 rounds to the bound; exactly, it exceeds it."""
+    """At precision 28, 100000000000 + 1E-18 rounds to the bound; exactly, it exceeds it."""
     ledger = _ledger(
         tmp_path,
         hard_bound="100000000000",
@@ -127,7 +127,7 @@ def test_a_legacy_row_outside_the_domain_fails_closed(tmp_path: Path) -> None:
 
 
 def test_an_expired_grant_is_never_usable_to_start_work(tmp_path: Path) -> None:
-    """R2: expiry blocks new consumption even when the answer is replayed or queried later."""
+    """Expiry blocks new consumption even when the answer is replayed or queried later."""
     ledger = _ledger(tmp_path)
     grant = ledger.reserve(PEER, _request(wall_seconds=60), now=T0)
     late = T0 + timedelta(seconds=120)
@@ -137,7 +137,7 @@ def test_an_expired_grant_is_never_usable_to_start_work(tmp_path: Path) -> None:
     assert usable_grant(grant, [], now=T0, min_remaining_seconds=59) is True
     assert usable_grant(grant, [], now=T0, min_remaining_seconds=60) is False  # skew margin
     assert usable_grant(replay, [], now=late) is False
-    assert ledger.status("pool-a", now=late)["outstanding"] == "11"  # expiry keeps exposure (C3)
+    assert ledger.status("pool-a", now=late)["outstanding"] == "11"  # expiry keeps exposure
     assert usable_grant({**grant, "expires_at": "soon"}, [], now=T0) is False
     assert (
         usable_grant({key: v for key, v in grant.items() if key != "expires_at"}, [], now=T0)
@@ -150,7 +150,7 @@ def test_an_expired_grant_is_never_usable_to_start_work(tmp_path: Path) -> None:
 
 
 def test_a_new_window_has_its_own_bound_keys_and_keeps_old_open_exposure(tmp_path: Path) -> None:
-    """R4: idempotency and settled usage are per window; unresolved exposure carries over."""
+    """Idempotency and settled usage are per window; unresolved exposure carries over."""
     ledger = _ledger(tmp_path)
     spent = ledger.reserve(PEER, _request(key="k1", upper_bound="50"), now=T0)
     ledger.settle(PEER, _settle(str(spent["reservation_id"]), amount="45"), now=T0)
@@ -181,7 +181,7 @@ def test_a_new_window_has_its_own_bound_keys_and_keeps_old_open_exposure(tmp_pat
 
 
 def test_the_pool_identity_cannot_change_under_unresolved_reservations(tmp_path: Path) -> None:
-    """R4: no silent unit or billing change while old amounts are still open."""
+    """No silent unit or billing change while old amounts are still open."""
     ledger = _ledger(tmp_path)
     grant = ledger.reserve(PEER, _request(), now=T0)
     for change in (
@@ -243,7 +243,7 @@ TINY_FEE = "0.000000000000000001"
 
 
 def test_headroom_is_exact_even_under_a_rounding_ambient_context(tmp_path: Path) -> None:
-    """Review follow-up F2: the sign of an operand must not round outside EXACT."""
+    """The sign of an operand must not round outside EXACT."""
     ledger = _ledger(
         tmp_path,
         hard_bound=BIG + ".000000000000000001",
@@ -262,7 +262,7 @@ def test_headroom_is_exact_even_under_a_rounding_ambient_context(tmp_path: Path)
 def test_a_settlement_overrun_is_reported_exactly_and_replayed_identically(
     tmp_path: Path,
 ) -> None:
-    """Review follow-up F2: the stored settle answer agrees with the folded overrun."""
+    """The stored settle answer agrees with the folded overrun."""
     ledger = _ledger(
         tmp_path,
         hard_bound=BIG,
@@ -324,7 +324,7 @@ def _legacy_ledger(tmp_path: Path) -> tuple[SpendLedger, dict[str, Any]]:
 
 
 def test_a_core_0_99_35_ledger_is_migrated_without_losing_an_answer(tmp_path: Path) -> None:
-    """Review follow-up F1: a retry after the upgrade replays; it never grants twice."""
+    """A retry after the upgrade replays; it never grants twice."""
     ledger, dump = _legacy_ledger(tmp_path)
     answers = dump["answers"]
     assert dump["user_version"] == 1

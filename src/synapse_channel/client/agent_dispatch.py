@@ -20,7 +20,7 @@ from synapse_channel.core.protocol import MessageType, read_protocol_version
 MessageCallback = Callable[[dict[str, Any]], Awaitable[None]]
 """Preferred inbound callback: ``async def callback(data) -> None``.
 
-Runtime compatibility (K3-B1): a synchronous callable that returns ``None`` is
+Runtime compatibility: a synchronous callable that returns ``None`` is
 also accepted by :func:`invoke_message_callback`, which awaits only when
 :func:`inspect.isawaitable` is true. Type checkers still see the preferred
 async contract so Protocol structural typing for :class:`SynapseAgent` stays
@@ -148,14 +148,14 @@ class AgentDispatchMixin:
             await invoke_message_callback(self.callback, data)
 
     def _track_lease_epoch(self: _DispatchAgent, data: dict[str, Any]) -> None:
-        """Remember the fencing epoch of each lease this agent holds (FENCE-01).
+        """Remember the fencing epoch of each lease this agent holds.
 
         A claim or handoff granted to this agent records the lease epoch, so a
         later update, release, handoff or checkpoint carries it without the
         caller naming it. A release, or a handoff to another agent, forgets
         it, so the map holds only leases this agent still owns. With a lease
         epoch store the same record is kept on disk under the hub's id, so a
-        later process of this identity finds it (FENCE-01b).
+        later process of this identity finds it.
         """
         task_id = data.get("task_id")
         if not isinstance(task_id, str):

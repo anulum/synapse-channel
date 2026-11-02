@@ -260,7 +260,7 @@ def _project_from_identity(identity: str) -> str:
 
 
 def _registry_dir(config: AgentTmuxConfig) -> Path:
-    """Return the registry directory for ``config`` (SCH-H-NEW-12 / REV-SEC-10).
+    """Return the registry directory for ``config`` (private, never world-writable).
 
     Materialises the directory through
     :func:`~synapse_channel.core.private_dir.ensure_private_dir` so a pre-existing

@@ -417,7 +417,7 @@ network-exposed, [`--secure`](secure-mode.md) composes both profiles and adds
 bounded per-agent, per-host, and per-host-connection flood limits in one switch.
 Without `--secure`, the hub still auto-fills disabled flood limits when the
 startup posture is exposed (off-loopback bind, connect token, multi-seat intent,
-or bridge exposed) — see [Auto flood-enable](secure-mode.md#auto-flood-enable-without-secure-rev-sec-06).
+or bridge exposed) — see [Auto flood-enable](secure-mode.md#auto-flood-enable-without-secure).
 Pass **`--expect-multi-seat`** when multi-seat is intended without the trust
 profile flags, and **`--bridge-exposed`** when `synapse a2a-serve` or
 `synapse mcp` runs against the hub (default off; not auto-detected). Use the

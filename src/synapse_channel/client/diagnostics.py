@@ -276,7 +276,7 @@ def check_mcp_posture(
     git_toplevel: str | None = None,
     mcp_extra_available: bool | None = None,
 ) -> Diagnosis:
-    """Report MCP security posture for operators (SCH-H-NEW-03).
+    """Report MCP security posture for operators.
 
     Parameters
     ----------
@@ -369,7 +369,7 @@ def check_mcp_posture(
 
 
 def check_a2a_origin_policy(*, allow_origins: tuple[str, ...] = ()) -> Diagnosis:
-    """Report the effective A2A Origin/Host browser-boundary policy (SCH-H-NEW-04).
+    """Report the effective A2A Origin/Host browser-boundary policy.
 
     Host authority is always enforced. Opaque ``null`` and every other present
     Origin are denied unless an exact allow-list entry is supplied.
@@ -447,7 +447,7 @@ def check_a2a_bind_posture(
     insecure_off_loopback: bool = False,
     endpoint_url: str | None = None,
 ) -> Diagnosis:
-    """Report the A2A bind exposure matrix (R4 + native TLS).
+    """Report the A2A bind exposure matrix (hub bind posture + native TLS).
 
     Mirrors :func:`synapse_channel.a2a_bind_exposure.a2a_bind_problems` so
     operators can diagnose a planned ``a2a-serve`` posture without starting the

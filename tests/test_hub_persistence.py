@@ -411,7 +411,7 @@ async def test_wait_clears_only_when_the_waited_task_is_claimed() -> None:
             await send_json(ws_b, sender="B", type="wait_request", task_id="T1")
             await read_until_type(ws_b, "wait_granted")
             assert hub.waits["B"] == {"T1"}
-            # An unrelated claim must NOT erase the still-open wait (WF-4).
+            # An unrelated claim must NOT erase the still-open wait.
             await send_json(ws_b, sender="B", type="claim", task_id="T3", paths=["docs"])
             await _read_claim_grant(ws_b, "T3", "B")
             assert hub.waits["B"] == {"T1"}

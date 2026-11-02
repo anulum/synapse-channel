@@ -280,7 +280,7 @@ def test_a2a_serve_allows_exposed_bearer_auth_without_override(
 ) -> None:
     """Plaintext bearer on a non-loopback bind is refused without the override.
 
-    R4 parity: a bearer token on cleartext HTTP off-loopback is network-readable,
+    Same rule as the hub bind: a bearer token on cleartext HTTP off-loopback is network-readable,
     so a2a-serve fails closed unless --insecure-off-loopback or native TLS is set.
     """
     fetched: list[bool] = []

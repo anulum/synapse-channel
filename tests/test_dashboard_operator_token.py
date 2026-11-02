@@ -29,7 +29,7 @@ class TestResolveDashboardToken:
             _resolve_dashboard_token(dashboard_token="")
 
     def test_a_tokenless_caller_gets_a_generated_read_gating_token(self) -> None:
-        # F3: reads are never left open, so a caller that supplies no token gets a
+        # Reads are never left open, so a caller that supplies no token gets a
         # generated one that gates live/page reads (on loopback too).
         token, generated, protects_reads = _resolve_dashboard_token(dashboard_token=None)
         assert generated is True
@@ -87,7 +87,7 @@ async def test_operator_dashboard_on_loopback_gets_a_generated_token() -> None:
 
 
 async def test_read_only_dashboard_on_loopback_gets_a_read_gating_token() -> None:
-    # F3: even a read-only loopback dashboard gates its live reads with a generated
+    # Even a read-only loopback dashboard gates its live reads with a generated
     # token, so a same-host process cannot pull the cockpit's data without presenting it.
     async with running_hub(SynapseHub()) as (_hub, uri):
         server = _server(uri, operator=False)
@@ -102,7 +102,7 @@ async def test_read_only_dashboard_on_loopback_gets_a_read_gating_token() -> Non
 
 
 async def test_operator_loopback_gates_both_reads_and_writes() -> None:
-    # F3 + REV-SEC-04: on loopback a live read and an operator write each require the
+    # On loopback a live read and an operator write each require the
     # generated token; a same-host non-browser process is refused both without it. The
     # validated React shell stays the only public exception so its unlock veil can load.
     async with running_hub(SynapseHub()) as (_hub, uri):

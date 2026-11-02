@@ -4,10 +4,10 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — AOT deliberation result and sealed export package
-"""AOT deliberation result and its sealed, verifiable export package.
+# SYNAPSE_CHANNEL — deliberation result and sealed export package
+"""Deliberation result and its sealed, verifiable export package.
 
-The CHANNEL AOT foundation (AOT-D1): a council — Land, Audit, or Research — ends
+The deliberation foundation: a council — Land, Audit, or Research — ends
 with a structured :class:`DeliberationResult`; that result is packaged into an
 :class:`ExportPackage` carrying licence, retention, and train-eligibility tags,
 and the package is **sealed** into a tamper-evident, verifiable receipt.
@@ -18,7 +18,7 @@ that commitment is signed with the deployment's Ed25519 receipt key through
 :func:`~synapse_channel.core.receipt_signing.sign_merkle_commitment`, and the
 signature is verified through
 :func:`~synapse_channel.core.receipt_signing.check_receipt_merkle_signature`. An
-export package therefore *is* a G7 receipt: signed, provenance-bound, and
+export package therefore *is* a signed receipt: signed, provenance-bound, and
 independently checkable, with no new verifier.
 
 Verification is deny-by-default and binds the signature to the content: a sealed
@@ -26,7 +26,7 @@ package is authentic only when the receipt-key signature over the commitment
 verifies **and** the commitment root still equals the root recomputed from the
 package body, so altering the body after signing fails closed.
 
-This module is CHANNEL-native and has no cross-plane dependency. Remanentia
+This module is native to Synapse Channel and has no cross-plane dependency. Remanentia
 ingest and Director training consume an export package later; neither is required
 here, and ``train_eligible`` defaults to ``False`` until a Director policy exists.
 """
@@ -79,7 +79,7 @@ class DeliberationError(SynapseError, ValueError):
 
 @dataclass(frozen=True)
 class GateCheck:
-    """One G0–G7 gate outcome bound to its evidence.
+    """One deliberation gate outcome bound to its evidence.
 
     Attributes
     ----------

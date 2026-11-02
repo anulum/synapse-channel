@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — `synapse deliberate` conclude/verify CLI regressions (AOT-D1)
+# SYNAPSE_CHANNEL — `synapse deliberate` conclude/verify CLI regressions
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ _SPEC: dict[str, Any] = {
     "deliberation_id": "land-7ed25d6-2026-07-16",
     "pattern": "land_council",
     "project": "SYNAPSE-CHANNEL",
-    "thesis": "land the AOT foundation",
+    "thesis": "land the deliberation foundation",
     "resolution": "PASS",
     "actions": ["non-force FF"],
     "gate_checks": [{"gate": "G7_seal", "status": "sealed", "evidence": "receipt:x"}],

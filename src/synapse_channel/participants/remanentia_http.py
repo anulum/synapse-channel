@@ -171,7 +171,7 @@ class RemanentiaHttpRecall:
         return self._parse(payload, query, top_k)
 
     def _token(self) -> str | None:
-        """Return the bearer from an owner-only token file (SCH-H-NEW-11).
+        """Return the bearer from an owner-only token file.
 
         Uses the shared secret floor (O_NOFOLLOW, euid owner, group/other bits
         clear) so memory credentials match hub token-file discipline. Errors
@@ -184,7 +184,7 @@ class RemanentiaHttpRecall:
             token = read_secret_file(path, flag="memory-token-file")
         except SecretFileError as exc:
             # Classify on fixed English suffixes only — never on free "empty"/"UTF-8"
-            # substrings that could appear in a user-chosen path (SCH-H-NEW-11b).
+            # substrings that could appear in a user-chosen path.
             message = str(exc)
             if " is empty; expected one secret value" in message:
                 raise ValueError("memory token file is empty or exceeds its size limit") from None

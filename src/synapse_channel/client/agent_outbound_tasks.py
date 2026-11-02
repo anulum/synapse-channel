@@ -19,7 +19,7 @@ __all__ = ["AgentTaskMutationMixin"]
 
 
 def _fence_epoch(agent: _OutboundAgent, task_id: str, epoch: int | None) -> int | None:
-    """Return the epoch a lease mutation names (FENCE-01, FENCE-01b).
+    """Return the epoch a lease mutation names, from memory or the on-disk store.
 
     An explicit ``epoch`` wins. Otherwise the epoch this agent remembers from
     its own grant, first in memory, then in the on-disk store a previous

@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — FENCE-01 narrow slice: opt-in strict lease-epoch fencing
+# SYNAPSE_CHANNEL — opt-in strict lease-epoch fencing
 """A lease mutation without its epoch is unchecked by default and refused under strict fencing.
 
 The epoch is the lease's fencing token: a writer that names a superseded epoch

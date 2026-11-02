@@ -261,7 +261,7 @@ end
 function __synapse_identity_is_foreign_auto
   # 0 when $argv[1] is a default-shape auto identity (<project>/terminal-<pid>)
   # minted by a shell OUTSIDE this session's lineage — the shared-name
-  # collision of the 2026-07-16 delivery-integrity incident (DEL-INT-C).
+  # collision of the 2026-07-16 delivery-integrity incident.
   # Manual and provider identities are never judged foreign; an explicit
   # provider session (SYN_TMUX_PROVIDER=1) keeps its handed-down identity.
   # Without /proc lineage cannot be proven, so a terminal-* auto identity is
@@ -490,7 +490,7 @@ __synapse_identity_is_foreign_auto() {{
   # (tmux server env, systemd user env) carries such an identity into
   # unrelated sessions while the mint-guard variable diverges, so every seat
   # on the workstation silently coordinates under one shared name — the
-  # 2026-07-16 delivery-integrity incident (DEL-INT-C). Manual and provider
+  # 2026-07-16 delivery-integrity incident. Manual and provider
   # identities (non-terminal shapes, non-numeric ids) are never judged
   # foreign; an explicit provider session (SYN_TMUX_PROVIDER=1) keeps its
   # handed-down identity. Without /proc, lineage cannot be proven, so a

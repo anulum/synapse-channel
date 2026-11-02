@@ -973,7 +973,7 @@ class SynapseState:
         if self._protected_scope_held(task, claim.worktree, claim.paths, claim.path_identity):
             return False, f"Task '{task}' conflicts with outstanding protected custody."
         # Same live-claim cap as direct acquisition: a handoff must not grow the
-        # recipient past max_claims_per_agent (BUG-7). Refuse before mutation so
+        # recipient past max_claims_per_agent. Refuse before mutation so
         # ownership and journal stay consistent.
         if self._claims_owned_by(target) >= self.max_claims_per_agent:
             return (

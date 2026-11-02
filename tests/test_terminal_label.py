@@ -41,7 +41,7 @@ _FULL = TerminalDetails(
     focus="terminal labels",
     vendor="claude",
     model="claude-opus-5-5",
-    seat="SYNAPSE-CHANNEL/claude-f636",
+    seat="SYNAPSE-CHANNEL/claude-7f3a",
     session_name="anulum-ff",
     native_session="d2b65cca-a4a8-481d-b1bb-9e1348d67e0e",
     terminal_identity="user/terminal-1485372",
@@ -82,14 +82,14 @@ def test_connection_names_of_one_seat_give_that_seat(connection: str, seat: str)
 
 
 def test_identity_and_profile_establish_group_project_and_seat_only() -> None:
-    assert details_for(" SYNAPSE-CHANNEL/claude-f636-rx ", _GROUPS) == TerminalDetails(
+    assert details_for(" SYNAPSE-CHANNEL/claude-7f3a-rx ", _GROUPS) == TerminalDetails(
         group=_GROUP,
         abbreviation="ACAACS",
         project="SYNAPSE-CHANNEL",
-        seat="SYNAPSE-CHANNEL/claude-f636",
+        seat="SYNAPSE-CHANNEL/claude-7f3a",
     )
     # A seat of the group itself: the group name stands where a project would.
-    assert details_for(f"{_GROUP}/claude-f636", _GROUPS).abbreviation == "ACAACS"
+    assert details_for(f"{_GROUP}/claude-7f3a", _GROUPS).abbreviation == "ACAACS"
     assert details_for("OTHER/seat", _GROUPS) == TerminalDetails(project="OTHER", seat="OTHER/seat")
     assert details_for("loner", _GROUPS) == TerminalDetails(seat="loner")
     assert details_for("  ", _GROUPS) == TerminalDetails()
@@ -129,7 +129,7 @@ def test_every_detail_is_listed_complete_and_in_order() -> None:
         f"group: {_GROUP} (ACAACS)",
         "project: SYNAPSE-CHANNEL · focus: terminal labels",
         "vendor: claude · model: claude-opus-5-5",
-        "seat: SYNAPSE-CHANNEL/claude-f636",
+        "seat: SYNAPSE-CHANNEL/claude-7f3a",
         "session: anulum-ff",
         "native session: d2b65cca-a4a8-481d-b1bb-9e1348d67e0e",
         "terminal: user/terminal-1485372",
@@ -148,7 +148,7 @@ def test_widths_60_125_and_240_give_different_line_counts() -> None:
     assert all(len(line) <= 125 for line in medium)
     assert wide == [
         f"group: {_GROUP} (ACAACS)  |  project: SYNAPSE-CHANNEL · focus: terminal labels  |  "
-        "vendor: claude · model: claude-opus-5-5  |  seat: SYNAPSE-CHANNEL/claude-f636  |  "
+        "vendor: claude · model: claude-opus-5-5  |  seat: SYNAPSE-CHANNEL/claude-7f3a  |  "
         "session: anulum-ff",
         "native session: d2b65cca-a4a8-481d-b1bb-9e1348d67e0e  |  terminal: user/terminal-1485372",
     ]

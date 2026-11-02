@@ -113,7 +113,7 @@ async def test_agent_presents_the_machine_identity_by_default(
 ) -> None:
     """A plain construction signs with the zero-config machine key.
 
-    This is the F9 slice-0 contract behind incident 2026-07-10T1603: `arm`
+    This is the zero-config signing contract behind incident 2026-07-10T1603: `arm`
     pinned a name and every other verb — none of which wired the machine
     identity — was then refused with `signature missing`. The default makes
     every verb that builds an agent sign uniformly, so the lockout class

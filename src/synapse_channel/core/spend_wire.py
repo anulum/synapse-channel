@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — the peer frames of shared-pool reservations (F02)
+# SYNAPSE CHANNEL — the peer frames of shared-pool reservations
 """Frame and unframe a peer hub's reservation, settlement or query, and the owner's answer.
 
 A ``spend_request`` frame carries ``spend_action`` (``reserve``, ``settle`` or

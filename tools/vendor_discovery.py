@@ -689,9 +689,9 @@ def reconcile(
                     or host_unverified
                     or mcp_unverified
                     else {
-                        "provider": "C07",
-                        "host": "C15",
-                        "mcp": "C09/C15",
+                        "provider": "provider-adapter",
+                        "host": "host-integration",
+                        "mcp": "mcp-inspection+host-integration",
                     }[sightings[0]["kind"]],
                     "publisher": sightings[0]["publisher"],
                     "review_score": score,

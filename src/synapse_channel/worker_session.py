@@ -51,7 +51,7 @@ def _safe_key(identity: str) -> str:
 
 
 def _private_sidecar_runtime(env: Mapping[str, str], leaf: str) -> Path:
-    """Return a private runtime dir for sidecars (SCH-H-NEW-12 / REV-SEC-10).
+    """Return a private runtime dir for sidecars (private, never world-writable).
 
     Prefer ``XDG_RUNTIME_DIR``; otherwise use the same private-cache parent as
     the shell hooks (never a shared world-writable ``/tmp/synapse-*``). The leaf
@@ -176,7 +176,7 @@ def _start_tmux_waiter(
         tmux_bin,
     ]
     # Prefer --token-file so the child argv never carries a process-visible secret
-    # (SCH-H-NEW-16). Inline --token remains only when no file was supplied.
+    # Inline --token remains only when no file was supplied.
     if token_file:
         wait_command.extend(["--token-file", token_file])
     elif token:

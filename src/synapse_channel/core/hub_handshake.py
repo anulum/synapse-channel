@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — WebSocket handshake Origin/Host boundary for the routing hub
-"""Browser and Host boundary for the hub WebSocket handshake (K3-F1).
+"""Browser and Host boundary for the hub WebSocket handshake.
 
 Hostile pages must not complete a WebSocket upgrade against a local or advertised
 hub and then request history. This module is pure policy: it never opens a socket

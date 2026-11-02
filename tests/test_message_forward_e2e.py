@@ -728,7 +728,7 @@ async def test_plain_chat_needs_no_receipt_and_honours_private_routing(tmp_path:
 
 
 async def test_a_retried_cross_hub_chat_is_forwarded_once(tmp_path: Path) -> None:
-    """K4-WF8: the origin answers the retry itself; the peer never sees a second copy."""
+    """The origin answers the retry itself; the peer never sees a second copy."""
     async with _two_hubs(tmp_path) as pair:
         ca = pair.material.ca
         alice = await _agent(pair.ws_uri, ca, "PROJ/alice")

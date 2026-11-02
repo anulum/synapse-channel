@@ -100,7 +100,7 @@ def add_mcp_config_doctor_arguments(parser: argparse.ArgumentParser) -> None:
         metavar="FILE",
         help=(
             "Audit one outbound MCP config's owner/repository/signature/executable/env trust "
-            "posture (REV-SEC-08)."
+            "posture."
         ),
     )
     parser.add_argument(

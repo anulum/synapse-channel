@@ -445,7 +445,7 @@ def probe_state_deepcopy(iterations: int) -> ProbeResult:
     mutation on the single-threaded hub. This probe seeds a busy fleet through
     the real :meth:`SynapseState.claim` path, then times the same ``deepcopy``;
     p50/p95 quantify how long each durable mutation blocks the event loop, which
-    is the signal for the BUG-5 copy-on-write scaling-threshold decision.
+    is the signal for the copy-on-write scaling-threshold decision.
     """
     state = SynapseState()
     now = time.time()

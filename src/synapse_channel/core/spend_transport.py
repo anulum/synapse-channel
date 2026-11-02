@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — ask a pool owner hub to reserve, settle or look up (F02)
+# SYNAPSE CHANNEL — ask a pool owner hub to reserve, settle or look up
 """Send one ``spend_request`` to the pool owner's hub and return its private answer.
 
 The request opens a fresh connection, sends one frame (signed with this hub's peer

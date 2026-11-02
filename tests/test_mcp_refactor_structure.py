@@ -80,7 +80,7 @@ def test_server_reexports_refactored_mcp_symbols() -> None:
 
 
 def test_bridge_module_stays_under_transport_facade_budget() -> None:
-    """SCH-H-NEW-08c: bridge remains a transport facade after query extraction."""
+    """Bridge remains a transport facade after query extraction."""
     source = Path(bridge_module.__file__).read_text(encoding="utf-8")
     line_count = len(source.splitlines())
     # The pre-query-extraction bridge was 458 lines and still owned six read
@@ -95,7 +95,7 @@ async def test_build_mcp_server_keeps_tool_and_resource_contract() -> None:
     live_tools = {tool.name for tool in await server.list_tools()}
     assert live_tools == EXPECTED_TOOLS
     # Doctor inventory is a static frozenset — pin it to the built server so
-    # "claim tools registered" cannot silently drift (SCH-H-NEW-03 fidelity).
+    # "claim tools registered" cannot silently drift.
     assert registration_module.registered_mcp_tool_names() == frozenset(live_tools)
     assert {str(resource.uri) for resource in await server.list_resources()} == EXPECTED_RESOURCES
     assert {

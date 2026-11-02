@@ -4,13 +4,13 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — hub-authenticated event rows (K4-REPLAY)
+# SYNAPSE_CHANNEL — hub-authenticated event rows
 """Authenticate every event row the hub writes, so a forged row is quarantined on replay.
 
 The anti-rollback checkpoint detects a log that was cut or rewritten; it cannot
 detect a row appended after the last anchor by anyone who can write the SQLite
 file. Replay would then rebuild state from that row — a forged claim, a forged
-release — as if the hub had written it (K4-REPLAY).
+release — as if the hub had written it.
 
 A hub with a key MACs each row it appends: HMAC-SHA256 over a domain separator, the
 row's ``seq``, ``ts``, ``kind`` and exact stored payload text, kept in the row's

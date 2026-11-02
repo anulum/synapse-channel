@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — worker-session token-file preference (SCH-H-NEW-16 / 12c)
+# SYNAPSE_CHANNEL — worker-session token-file preference
 
 from __future__ import annotations
 

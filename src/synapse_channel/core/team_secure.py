@@ -144,7 +144,7 @@ def apply_team_secure_hub_profile(args: argparse.Namespace) -> TeamSecureHubRepo
 
 
 def _record_sequence_floors(args: argparse.Namespace) -> str:
-    """Turn durable sequence floors on in ``compat`` mode where they can run (K4-WF10).
+    """Turn durable sequence floors on in ``compat`` mode where they can run.
 
     Floors need per-message authentication and a durable replay ledger (``--db`` or
     ``--message-auth-replay-db``); without both they stay off. An unset (``off``) mode

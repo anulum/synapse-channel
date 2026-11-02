@@ -163,7 +163,7 @@ def test_release_receipt_docs_describe_advisory_epistemic_status() -> None:
 
 
 def test_forged_hub_release_evidence_is_graded_unverified_not_supported() -> None:
-    """F4 regression: caller-supplied release evidence is never ``supported``.
+    """Caller-supplied release evidence is never ``supported``.
 
     A release frame carries only caller-supplied strings; the hub runs no checks
     and verifies no signature, so fabricated evidence (a fake digest, a "ci: green"
@@ -187,7 +187,7 @@ def test_forged_hub_release_evidence_is_graded_unverified_not_supported() -> Non
 
 
 def test_receipt_routing_trust_follows_the_verified_grade() -> None:
-    """F4 regression: routing trust follows the graded receipt, end to end.
+    """Routing trust follows the graded receipt, end to end.
 
     The full journey — ``build_release_receipt`` builds the dict,
     ``format_release_receipt_note`` renders the board note, and the routing

@@ -233,7 +233,7 @@ async def test_a_malformed_request_is_answered_with_an_empty_snapshot(tmp_path: 
 
 
 async def test_a_hub_without_a_policy_refuses_every_peer(tmp_path: Path) -> None:
-    # Fail-closed default (W3-C1): no serving policy, no log — an unauthenticated
+    # Fail-closed default: no serving policy, no log — an unauthenticated
     # frame from any peer is answered with an empty snapshot that leaks nothing.
     store = EventStore(tmp_path / "events.db")
     hub = SynapseHub(hub_id="syn-a", journal=store)

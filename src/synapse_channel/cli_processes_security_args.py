@@ -321,7 +321,7 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Declare that an A2A and/or MCP bridge is knowingly reachable alongside "
         "this hub (separate process or co-located). Off by default. When set, flood "
-        "auto-enable (REV-SEC-06) treats the hub as bridge-exposed even on loopback, "
+        "auto-enable treats the hub as bridge-exposed even on loopback, "
         "because bridge traffic can flood the hub without a connect token. Operators "
         "running a2a-serve/mcp against this hub should pass this flag.",
     )

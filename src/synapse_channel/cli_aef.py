@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — offline AEF evidence verification CLI (K4-AEF-SURFACE)
+# SYNAPSE_CHANNEL — offline AEF evidence verification CLI
 """``synapse aef``: verify a hub's AEF receipts offline, without the hub.
 
 * ``trust`` writes the trust file for one hub's log from its public key.

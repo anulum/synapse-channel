@@ -151,9 +151,9 @@ def test_real_cli_fixture_persists_first_and_last_seen(tmp_path: Path) -> None:
     assert recorded["counts"] == {"observed": 3, "review_queue": 3, "persisted": 3}
     assert recorded["review_queue"][0]["evidence"][0]["claims"]["interface"] is None
     assert {item["suggested_lane"] for item in recorded["review_queue"]} == {
-        "C07",
-        "C09/C15",
-        "C15",
+        "provider-adapter",
+        "mcp-inspection+host-integration",
+        "host-integration",
     }
     state = json.loads(next_catalog.read_text(encoding="utf-8"))
     assert state["candidates"]["provider:acme"]["first_seen"] == state["checked_at"]

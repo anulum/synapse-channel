@@ -71,7 +71,7 @@ def _attest_run(
 
     When the store is a hub log with a row-authentication key beside it, the
     attestation row is MACed with that key, so the hub does not quarantine it on its
-    next start (K4-REPLAY). The key is only loaded, never created here.
+    next start. The key is only loaded, never created here.
     """
     from synapse_channel.core.event_row_mac import load_or_create_row_mac_key, row_mac_key_path
     from synapse_channel.core.journal import record_sandbox_run

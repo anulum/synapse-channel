@@ -107,7 +107,7 @@ async def test_channel_chat_body_is_not_written_to_the_hub_log(
 
 
 async def test_channel_invite_is_owner_only_and_gates_join() -> None:
-    # F3: only the owner may invite; a non-owner invite is refused and never leaks
+    # Only the owner may invite; a non-owner invite is refused and never leaks
     # the roster, and an uninvited agent cannot join.
     async with running_hub(SynapseHub()) as (_hub, uri):
         async with connect(uri) as alpha, connect(uri) as beta, connect(uri) as gamma:

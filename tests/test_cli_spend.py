@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — `synapse spend` and `synapse hub --spend-ledger` (F02)
+# SYNAPSE CHANNEL — `synapse spend` and `synapse hub --spend-ledger`
 """The operator commands act on a real ledger file; ``request`` asks a real owner hub."""
 
 from __future__ import annotations

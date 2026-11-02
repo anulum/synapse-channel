@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — a pool advertisement reaches the journal and no seat (F03 option A)
+# SYNAPSE_CHANNEL — a pool advertisement reaches the journal and no seat
 """An owner's redacted pool advertisement on a real hub, and the CLI that sends it."""
 
 from __future__ import annotations

@@ -272,7 +272,7 @@ async def test_token_file_failures_are_bounded_and_never_echo_the_path(
 async def test_group_readable_token_file_is_refused_without_path_echo(
     live_server: _LiveServer, tmp_path: Path
 ) -> None:
-    """SCH-H-NEW-11: owner-only secret floor rejects mode 0644 tokens."""
+    """Owner-only secret floor rejects mode 0644 tokens."""
     token_file = tmp_path / "leaky-token"
     token_file.write_text("still-secret", encoding="utf-8")
     token_file.chmod(0o644)

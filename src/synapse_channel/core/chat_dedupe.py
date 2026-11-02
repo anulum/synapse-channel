@@ -8,7 +8,7 @@
 """Accept a retried chat once: the hub remembers ``(sender, client_msg_id)``.
 
 A client that loses its connection before it knows its chat got through cannot
-tell whether the hub accepted it, so it sends again. Before K4-WF8 the hub stored,
+tell whether the hub accepted it, so it sends again. Before deduplication the hub stored,
 journalled and delivered every copy, and receivers had to deduplicate. Now a chat
 that carries a ``client_msg_id`` and reached a live recipient is remembered with a
 digest of what it says; a later chat from the same sender with the same id is:

@@ -149,7 +149,7 @@ class DeliveryPersistence:
         self._conn = connection
         self._lock = lock
         # The owning event store's row writer, so delivery rows carry the same row
-        # authentication as every other event (K4-REPLAY).
+        # authentication as every other event.
         self._insert_event = insert_event
         self._verify_recovery_authentication = verify_recovery_authentication
         self._conn.execute(

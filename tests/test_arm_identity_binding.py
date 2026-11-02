@@ -71,7 +71,7 @@ async def test_an_explicitly_named_waiter_wakes_on_its_own_messages(
     tmp_path: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # F1 pin: ambient SYN_IDENTITY names ANOTHER seat, yet the waiter armed
+    # Ambient SYN_IDENTITY names ANOTHER seat, yet the waiter armed
     # with an explicit --name must wake on messages to that explicit name.
     _ambient_env(monkeypatch, tmp_path)
     async with running_hub(SynapseHub()) as (_hub, uri):
@@ -138,7 +138,7 @@ def test_provider_env_flag_must_not_suppress_an_explicitly_named_arm(
     tmp_path: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # F2: SYN_TMUX_PROVIDER=1 marks the SESSION as provider-backed. That may
+    # SYN_TMUX_PROVIDER=1 marks the SESSION as provider-backed. That may
     # suppress an arm for the AMBIENT identity (the provider is its waker),
     # but an arm explicitly requesting a DIFFERENT identity must proceed —
     # the provider wakes nobody for that seat.
@@ -187,7 +187,7 @@ def test_a_foreign_provider_pidfile_must_not_suppress_an_explicit_arm(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Any,
 ) -> None:
-    # F2, pidfile flavour: a LIVE provider pidfile for the ambient identity
+    # A LIVE provider pidfile for the ambient identity
     # exists, but the arm names a different seat — it must proceed.
     import os
 
@@ -269,7 +269,7 @@ async def test_an_arm_states_its_binding_out_loud_against_a_live_hub(
     tmp_path: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # F5: the real _cmd_arm dispatch — not a stand-in — names EXACTLY whose
+    # The real _cmd_arm dispatch — not a stand-in — names EXACTLY whose
     # messages it wakes on before it holds the socket, and because the session
     # env names ANOTHER seat (the borrowed-shell P0 signature) it also says so.
     # Driven end to end: the announcement rides the same path that then wakes.

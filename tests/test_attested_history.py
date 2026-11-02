@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — M3 collector (attested main history) regressions
+# SYNAPSE_CHANNEL — main-move attestation collector regressions
 
 from __future__ import annotations
 
@@ -148,16 +148,16 @@ class TestClassifyMainMoves:
 
 
 class TestMainHistoryMetrics:
-    def test_measures_the_m3_rate_on_history_plus_evidence(self, tmp_path: Path) -> None:
+    def test_measures_the_unattested_rate_on_history_plus_evidence(self, tmp_path: Path) -> None:
         runner = _runner_returning(f"{_SHA_A}\tfirst\n{_SHA_B}\tsecond\n{_SHA_C}\tthird")
         (tmp_path / "audit.md").write_text(f"audited {_SHA_A} and {_SHA_B[:9]}", encoding="utf-8")
         metrics, records = main_history_metrics(Path("/repo"), tmp_path, runner=runner)
         assert isinstance(metrics, GovernanceMetrics)
         assert metrics.total_main_moves == 3
-        assert metrics.m3_unattested_main_move_rate == pytest.approx(1 / 3)
+        assert metrics.unattested_main_move_rate == pytest.approx(1 / 3)
         assert [record.attested for record in records] == [True, True, False]
 
-    def test_only_the_m3_family_is_populated(self, tmp_path: Path) -> None:
+    def test_only_the_main_move_family_is_populated(self, tmp_path: Path) -> None:
         runner = _runner_returning(f"{_SHA_A}\tonly")
         metrics, _ = main_history_metrics(Path("/repo"), tmp_path, runner=runner)
         assert metrics.total_edits == 0

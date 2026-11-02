@@ -292,7 +292,7 @@ test("SDK transfers an attachment through the governed Python hub", { timeout: 2
   const begin = await exchange(client, MessageType.AttachmentResult, () => client.attachment(
     MessageType.AttachmentBegin,
     { scope: "proj", digest, length: body.length, media_type: "text/plain",
-      provenance: "claim:C12", expires_at: Math.floor(Date.now() / 1000) + 60 },
+      provenance: "claim:ATTACH-1", expires_at: Math.floor(Date.now() / 1000) + 60 },
   ));
   assert.equal(begin.ok, true, JSON.stringify(begin));
   const uploadId = begin.upload_id;

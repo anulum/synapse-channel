@@ -457,7 +457,7 @@ async def test_who_under_a_foreign_key_fails_loudly_not_silently(
     (`identity pin mismatch`), so the query received no snapshot. Before this
     fix `who` printed nothing and exited 0 — the silent sink observed on the
     live 0.99.2 workstation when a borrowed shell's ambient name resolved to a
-    pin held by a different key (F12). The refusal must now be visible.
+    pin held by a different key. The refusal must now be visible.
     """
     name = "PROJ/pinned"
     async with running_hub(SynapseHub(identity_pin_path=tmp_path / "pins.json")) as (hub, uri):

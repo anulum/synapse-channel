@@ -121,9 +121,9 @@ def test_cmd_hub_insecure_bind_refusal_creates_no_store(
 def test_cmd_hub_refuses_plaintext_db_off_loopback_and_creates_no_store(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """F2: an exposed hub refuses a plaintext --db, before the store is built.
+    """An exposed hub refuses a plaintext --db, before the store is built.
 
-    ``--insecure-off-loopback`` downgrades the R4 transport refusal, so the at-rest
+    ``--insecure-off-loopback`` downgrades the off-loopback transport refusal, so the at-rest
     guard is reached in isolation: a plaintext event store off loopback is refused
     (the two insecure knobs are independent), and no database file is written.
     """
@@ -137,7 +137,7 @@ def test_cmd_hub_refuses_plaintext_db_off_loopback_and_creates_no_store(
 
 
 def test_cmd_hub_allows_plaintext_db_on_loopback(tmp_path: Path) -> None:
-    """A loopback hub keeps a plaintext store — F2 is proportionate to exposure."""
+    """A loopback hub keeps a plaintext store — the refusal is proportionate to exposure."""
     db_path = tmp_path / "loopback-hub.db"
     assert (
         cli_processes._cmd_hub(_hub_ns(host="127.0.0.1", db=str(db_path)), runner=_close_runner)

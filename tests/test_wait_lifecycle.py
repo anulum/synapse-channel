@@ -45,7 +45,7 @@ async def _wait_denied(agent: AgentHandle, task_id: str, fragment: str) -> None:
 
 
 async def test_unrelated_claim_preserves_the_wait_and_the_cycle_check_sees_it() -> None:
-    """WF-4: a claim on task U must not erase the claimant's wait on task T."""
+    """A claim on task U must not erase the claimant's wait on task T."""
     async with running_hub() as (hub, uri):
         a = await connect_agent("A", uri)
         b = await connect_agent("B", uri)
@@ -64,7 +64,7 @@ async def test_unrelated_claim_preserves_the_wait_and_the_cycle_check_sees_it() 
 
 
 async def test_renewal_preserves_the_wait_edge() -> None:
-    """WF-4: re-claiming (renewing) an unrelated task keeps the wait alive."""
+    """Re-claiming (renewing) an unrelated task keeps the wait alive."""
     async with running_hub() as (hub, uri):
         a = await connect_agent("A", uri)
         b = await connect_agent("B", uri)
@@ -96,7 +96,7 @@ async def test_satisfied_wait_is_cleared_by_claiming_that_task() -> None:
 
 
 async def test_handoff_repoints_the_wait_at_the_new_holder() -> None:
-    """WF-4/5: a wait follows the task, so handoff re-aims it at the new owner."""
+    """A wait follows the task, so handoff re-aims it at the new owner."""
     async with running_hub() as (hub, uri):
         a = await connect_agent("A", uri)
         b = await connect_agent("B", uri)
@@ -118,7 +118,7 @@ async def test_handoff_repoints_the_wait_at_the_new_holder() -> None:
 
 
 async def test_release_prunes_the_wait_edge_and_kills_false_deadlocks() -> None:
-    """WF-5: releasing the waited task removes the edge; no false refusal later."""
+    """Releasing the waited task removes the edge; no false refusal later."""
     async with running_hub() as (hub, uri):
         a = await connect_agent("A", uri)
         b = await connect_agent("B", uri)
@@ -191,7 +191,7 @@ async def test_handoff_of_the_only_waited_task_pops_the_recipient() -> None:
 
 
 async def test_expiry_prunes_the_wait_edge_on_the_next_heartbeat() -> None:
-    """WF-5: a waited task losing its lease prunes the edge — no false deadlock."""
+    """A waited task losing its lease prunes the edge — no false deadlock."""
     import time
 
     async with running_hub() as (hub, uri):

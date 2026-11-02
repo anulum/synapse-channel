@@ -286,7 +286,7 @@ def _load_certificate_der(certfile: str | Path) -> bytes:
     """Load a PEM or DER certificate file and return canonical DER bytes.
 
     Opens with ``O_NOFOLLOW`` and requires a regular file so a final-path
-    symlink cannot substitute the operator's pin material (SCH-H-NEW-14).
+    symlink cannot substitute the operator's pin material.
     Public PEMs may remain mode 0644 — this is not an owner-only secret floor.
     """
     path = Path(certfile)

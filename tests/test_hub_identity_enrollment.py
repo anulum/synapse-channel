@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — governed online identity-key enrolment on real websockets (SOL4-ID-01)
+# SYNAPSE_CHANNEL — governed online identity-key enrolment on real websockets
 """An operator enrols an identity key on a live hub; every gate refuses on its own.
 
 Each hub requires identity binding against an operator trust bundle that holds

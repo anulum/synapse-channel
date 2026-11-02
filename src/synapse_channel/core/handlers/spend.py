@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — the pool owner answers a peer hub's reservation (F02)
+# SYNAPSE CHANNEL — the pool owner answers a peer hub's reservation
 """Handle ``spend_request``: decide a peer hub's reservation, settlement or query.
 
 Only the pool owner's hub answers, and it answers only a peer its

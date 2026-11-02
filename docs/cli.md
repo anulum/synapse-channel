@@ -1490,7 +1490,7 @@ expected, and `--bridge-exposed`
 (default off) when an A2A or MCP bridge is knowingly reachable against this hub
 — the hub does not detect those processes automatically. These flags do not
 waive the provisioned-identity gate described above. Details:
-[Automatic flood limits](secure-mode.md#auto-flood-enable-without-secure-rev-sec-06). Native `wss://` uses `--tls-certfile` plus `--tls-keyfile`; it protects
+[Automatic flood limits](secure-mode.md#auto-flood-enable-without-secure). Native `wss://` uses `--tls-certfile` plus `--tls-keyfile`; it protects
 the transport but does not replace `--token` for off-loopback binds. Supply the
 token with `--token-file` or the `SYNAPSE_TOKEN`
 environment variable rather than `--token`, which is visible in `ps`. The hub
@@ -2022,7 +2022,7 @@ success verdicts. Replayed against a real 333-task hub log:
 
 ```console
 $ synapse causality otel ~/synapse/hub.db --out spans.json \
-    --service-name workstation-hub --filter OUTPUT-INTEGRITY-REAL-SURFACE --max-nodes 0
+    --service-name workstation-hub --filter RELEASE-CHECK --max-nodes 0
 exported 3 span(s) across 1 trace(s) to spans.json, 332 task(s) filtered out
 ```
 

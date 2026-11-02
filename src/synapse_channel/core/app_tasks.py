@@ -223,7 +223,7 @@ def offer(
     actor: str = "operator:cli",
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Offer a prompt with a current C04 allowance source and fixed verifier."""
+    """Offer a prompt with a current entitlement-ledger allowance source and fixed verifier."""
     at = _now() if now is None else now
     task_id, encoded = _validate_bundle(bundle)
     if not isinstance(actor, str) or not actor.strip() or len(actor) > 128:

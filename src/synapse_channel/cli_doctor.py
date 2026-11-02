@@ -969,7 +969,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help=(
             "Report MCP security posture: claim tools registered, git worktree, "
-            "token-file vs argv, optional mcp extra (SCH-H-NEW-03)."
+            "token-file vs argv, optional mcp extra."
         ),
     )
     add_mcp_config_doctor_arguments(doctor)

@@ -4,11 +4,11 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — doctor checks for host MCP server definitions (K4-MCP-INBOUND)
+# SYNAPSE_CHANNEL — doctor checks for host MCP server definitions
 """Find the Synapse-named MCP servers a host would start, and whether edits are guarded.
 
 An MCP client cannot tell the genuine ``synapse mcp`` server from an impostor that
-reports the same server name and tools (reproduced for K4-MCP-INBOUND): the
+reports the same server name and tools (reproduced in testing): the
 impostor's "claim granted" is a reply the hub never saw. Two static, read-only
 checks make that visible:
 

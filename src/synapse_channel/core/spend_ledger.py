@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — the pool owner's durable, serialized spend ledger (F02)
+# SYNAPSE CHANNEL — the pool owner's durable, serialized spend ledger
 """Decide shared-pool reservations in one owner-only, serialized SQLite ledger.
 
 The pool owner's hub keeps this ledger apart from its replicated event journal, so
@@ -26,7 +26,7 @@ may share the file, and SQLite serializes them.
   (Core 0.99.35) is migrated in place when first opened: each stored reservation
   answer is re-keyed to the window in effect when it was decided, so a retry still
   replays it. A record that cannot be matched refuses the ledger.
-- **Uniform refusal (C4).** A refused requester sees only
+- **Uniform refusal.** A refused requester sees only
   ``{"admitted": false, "reason": "not-admitted"}``. The detailed reason is an audit
   row that only the operator reads.
 - **Operator acts.** Configuring a pool and reconciling a reservation are local
@@ -80,7 +80,7 @@ _LEGACY_SCHEMA_VERSION: Final = 1
 """Core 0.99.35 ledgers: reservation scopes without the quota window."""
 
 NOT_ADMITTED: Final = "not-admitted"
-"""The only refusal reason a requester ever sees (review correction C4)."""
+"""The only refusal reason a requester ever sees."""
 
 _SCHEMA = (
     """CREATE TABLE events (

@@ -80,7 +80,7 @@ def add_parsers(group: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         if action in {"offer", "attach"}:
             parser.add_argument("--file", required=True, help="Owner-only JSON input file.")
         if action == "offer":
-            parser.add_argument("--ledger", help="Owner-only C04 entitlement ledger.")
+            parser.add_argument("--ledger", help="Owner-only entitlement ledger.")
         else:
             parser.add_argument("task_id")
         if action == "correct-usage":

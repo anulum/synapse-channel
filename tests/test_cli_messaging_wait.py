@@ -912,7 +912,7 @@ async def test_wait_mailbox_resumes_from_the_persisted_cursor(tmp_path: Path) ->
 async def test_wait_marks_an_era_old_replayed_directed_message_as_stale(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # DEL-INT-B (CEO-required regression, 2026-07-16 stale-mailbox incident):
+    # Required regression for the 2026-07-16 stale-mailbox incident:
     # a replayed era-old directed message must be withheld or unambiguously
     # marked stale — it must never present itself in the shape of a live wake.
     # A directive sent 90 days ago replays to a fresh mailbox waiter (lost or

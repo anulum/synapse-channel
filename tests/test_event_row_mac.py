@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — K4-REPLAY: a forged event row is quarantined, not replayed
+# SYNAPSE_CHANNEL — a forged event row is quarantined, not replayed
 """A row appended to the log by anyone but the hub does not become hub state.
 
 Every case uses real SQLite files, real key files and, for the end-to-end cases, a

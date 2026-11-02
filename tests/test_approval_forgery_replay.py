@@ -4,10 +4,10 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — K4-APPROVAL: forged and replayed approval notes on a real hub
+# SYNAPSE_CHANNEL — forged and replayed approval notes on a real hub
 """Approvals stay advisory; what they record is who the hub bound, not what a frame claims.
 
-K4-APPROVAL (owner-accepted T4-1): approval notes remain advisory evidence in 0.99.x.
+By owner decision, approval notes remain advisory evidence in 0.99.x.
 These tests pin what that evidence is worth against forgery and replay, through a
 real hub and its durable log:
 

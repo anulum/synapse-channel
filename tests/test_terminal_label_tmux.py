@@ -59,7 +59,7 @@ _DETAILS = TerminalDetails(
     focus="terminal labels",
     vendor="claude",
     model="claude-opus-5-5",
-    seat="SYNAPSE-CHANNEL/claude-f636",
+    seat="SYNAPSE-CHANNEL/claude-7f3a",
     session_name="anulum-ff",
     native_session="d2b65cca-a4a8-481d-b1bb-9e1348d67e0e",
     terminal_identity="user/terminal-1485372",
@@ -398,7 +398,7 @@ def test_the_command_labels_shows_adds_details_and_restores(
     base = ["label", f"--session={name}", f"--tmux-bin={server.tmux_bin}", f"--profile={profile}"]
 
     assert (
-        cli_main([*base, "--identity=SYNAPSE-CHANNEL/claude-f636-rx", "--focus=terminal labels"])
+        cli_main([*base, "--identity=SYNAPSE-CHANNEL/claude-7f3a-rx", "--focus=terminal labels"])
         == 0
     )
     assert capsys.readouterr().out == "label and 3 status line(s) set\n"
@@ -411,7 +411,7 @@ def test_the_command_labels_shows_adds_details_and_restores(
     capsys.readouterr()
     kept = stored_details(server.tmux_bin, name, runner=subprocess.run)
     assert (kept.focus, kept.vendor, kept.model) == ("terminal labels", "claude", "claude-opus-5-5")
-    assert kept.seat == "SYNAPSE-CHANNEL/claude-f636" and kept.session_name == NOT_DECLARED
+    assert kept.seat == "SYNAPSE-CHANNEL/claude-7f3a" and kept.session_name == NOT_DECLARED
     assert server.option(name, "set-titles-string") == "ACAACS · SYNAPSE-CHANNEL · claude"
 
     options = server.options(name)

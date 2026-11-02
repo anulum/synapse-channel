@@ -4,16 +4,16 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — K4-WF10: why secured hubs record floors in compat, not strict
+# SYNAPSE_CHANNEL — why secured hubs record floors in compat, not strict
 """Reinitialised clients pass strict floors when the clock exceeds the prior sequence.
 
-K4-WF10 found through the public claim route that the shipped client numbered
+A review found through the public claim route that the shipped client numbered
 frames from 1 in every process. Two successive client states of one seat
 against a real hub with a durable ledger: ``compat`` admitted both, ``strict``
 refused the second process's first frame (``sequence_mismatch``). The test pinning
 that is in history up to Core ``814a6b03``.
 
-CLIENT-SEQUENCE-PERSIST makes the sequence time-derived
+The persisted client sequence is time-derived
 (:func:`~synapse_channel.core.message_auth.next_message_auth_sequence`), so the
 same two client instances now pass under both modes with an advancing clock.
 These tests create instances in one test process, not separate OS processes.

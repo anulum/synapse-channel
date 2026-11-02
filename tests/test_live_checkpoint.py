@@ -4,10 +4,10 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — K4-N1: a serving hub anchors its live log within a declared window
+# SYNAPSE_CHANNEL — a serving hub anchors its live log within a declared window
 """The anti-rollback checkpoint follows a serving hub, not only its start.
 
-Before K4-N1 the hub anchored its log once, at start, and never closed the
+Before this change the hub anchored its log once, at start, and never closed the
 checkpoint store; a tail cut of anything written while it served passed the next
 start. These tests run real hubs on real files and prove the new contract:
 post-start writes are anchored within ``checkpoint_interval``, a clean stop anchors

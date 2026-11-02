@@ -351,7 +351,7 @@ def test_cmd_a2a_serve_refuses_unauthenticated_off_loopback(
 def test_cmd_a2a_serve_refuses_plaintext_bearer_off_loopback(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """R4 parity: bearer over cleartext HTTP off loopback is refuse, not allow."""
+    """Same rule as the hub bind: bearer over cleartext HTTP off loopback is refuse, not allow."""
     ns = cli.build_parser().parse_args(
         [
             "a2a-serve",

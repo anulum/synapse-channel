@@ -562,7 +562,7 @@ async def _close_and_join(agent: SynapseAgent, session: asyncio.Task[None]) -> N
 
 
 async def test_reconnecting_the_same_agent_clears_readiness_and_rearms_the_loop() -> None:
-    """R5: disconnected is not ready; a later connect() on the same agent is a fresh session."""
+    """Disconnected is not ready; a later connect() on the same agent is a fresh session."""
     async with running_hub() as (_, uri):
         agent = SynapseAgent("lifecycle/reconnect", uri=uri, verbose=False, machine_identity=False)
         first = await _connect_until_ready(agent)

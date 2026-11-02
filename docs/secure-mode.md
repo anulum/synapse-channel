@@ -70,7 +70,7 @@ audit's recommendations and let a small fleet share one loopback or NAT host
 while bounding aggregate traffic; they are an approval point, not an empirical
 throughput claim.
 
-## Auto flood-enable without `--secure` (REV-SEC-06)
+## Auto flood-enable without `--secure`
 
 When the hub is **not** started with `--secure`, flood limits left at the
 disabled default (`0`) can still be filled automatically if the startup posture

@@ -186,8 +186,8 @@ expiry and separately declared idle rate.
 
 This is an owner-only advisory read. An approval note is audit evidence, not a
 provider authorisation token. The command does not reserve a grant, activate a
-billing account, buy capacity, launch a job or change the hub task state. Fleet
-F08 owns any later authorised provider lifecycle.
+billing account, buy capacity, launch a job or change the hub task state. Any
+later authorised provider lifecycle is a separate, explicitly authorised step.
 
 ## Advertise a pool to fleet planners
 

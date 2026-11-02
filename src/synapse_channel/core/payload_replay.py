@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — receiver-side replay ledger for encrypted payload envelopes (K3-F5)
+# SYNAPSE_CHANNEL — receiver-side replay ledger for encrypted payload envelopes
 """Refuse an encrypted payload envelope that a receiver has already opened.
 
 The route-bound AAD stops an envelope from being moved to another route. It does

@@ -474,7 +474,7 @@ def test_test_runs_end_to_end_against_the_real_runtime(
     assert "ready to run" in capsys.readouterr().out
 
 
-# -- attestation (W2) -----------------------------------------------------------
+# -- attestation -----------------------------------------------------------
 
 
 def test_run_attests_the_receipt_to_a_durable_store(

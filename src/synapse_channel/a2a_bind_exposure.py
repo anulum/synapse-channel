@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — bind exposure checks for the A2A HTTP bridge
 """Bind exposure checks for the Agent2Agent HTTP bridge.
 
-Mirrors the hub R4 posture from :mod:`synapse_channel.core.hub_exposure` for the
+Mirrors the hub bind-exposure posture from :mod:`synapse_channel.core.hub_exposure` for the
 stdlib ``synapse a2a-serve`` edge: a non-loopback bind without bearer auth is
 refused, and a non-loopback bind *with* bearer auth over plaintext HTTP is also
 refused so the bearer never rides the LAN in the clear by default. Operators who

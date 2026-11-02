@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — K4-AEF-SURFACE: offline `synapse aef` verification
+# SYNAPSE_CHANNEL — offline `synapse aef` verification
 """An auditor verifies a hub's AEF receipts offline, from files only.
 
 The receipts are written by the real native receipt log with a key from the real

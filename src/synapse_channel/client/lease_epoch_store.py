@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — keep a lease's fencing epoch across client processes (FENCE-01b)
+# SYNAPSE_CHANNEL — keep a lease's fencing epoch across client processes
 """Persist the fencing epoch of each lease an identity holds, across processes.
 
 A lease mutation (task update, release, handoff, checkpoint) names the epoch

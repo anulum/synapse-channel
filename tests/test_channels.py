@@ -99,7 +99,7 @@ def test_join_and_leave_refuse_unknown_channels() -> None:
 
 
 def test_join_is_refused_without_an_invite() -> None:
-    # F3 secure default: an agent can no longer self-join a private channel by id.
+    # An agent can no longer self-join a private channel by id.
     registry = ChannelRegistry()
     registry.create("c", owner="alice")
 
@@ -127,7 +127,7 @@ def test_only_the_owner_may_invite() -> None:
 
 
 def test_join_and_invite_refusals_do_not_confirm_channel_existence() -> None:
-    # Enumeration-oracle hardening (CEO F3 second-eye finding): an unauthorized
+    # Enumeration-oracle hardening (a second-review finding): an unauthorized
     # caller must get the same, ambiguous refusal for a non-existent channel and for
     # one it may not join/own, so the error string never confirms which ids exist.
     registry = ChannelRegistry()

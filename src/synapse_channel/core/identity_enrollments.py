@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — governed online enrolment of identity keys (SOL4-ID-01)
+# SYNAPSE_CHANNEL — governed online enrolment of identity keys
 """Online enrolment of identity keys under an authenticated authority.
 
 A hub started with ``--identity-trust`` verifies each socket's signed

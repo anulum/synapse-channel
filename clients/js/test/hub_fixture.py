@@ -38,7 +38,7 @@ from synapse_channel.core.role_grants import RoleGrants
 
 
 def _attachment_hub(root: Path) -> tuple[SynapseHub, list[Any]]:
-    """Provision one ephemeral fully governed C12 Hub for the JS SDK test."""
+    """Provision one ephemeral fully governed attachment Hub for the JS SDK test."""
     import base64
 
     sender = "proj/js-alice"

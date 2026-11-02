@@ -55,7 +55,7 @@ KEY = MessageAuthKey("hmac", b"test-secret", frozenset({SENDER, OTHER, SAME_PROJ
 def _make_hub(
     tmp_path: Path, attachment_store: AttachmentStore
 ) -> tuple[SynapseHub, EventStore, DurableMessageAuthReplayStore, Ed25519PrivateKey]:
-    """Create a real hub with the complete C12 security posture."""
+    """Create a real hub with the complete attachment security posture."""
     identity = Ed25519PrivateKey.generate()
     trust = EventSignatureTrustBundle(
         keys={
@@ -145,7 +145,7 @@ async def test_governed_upload_read_preview_reference_and_gc(tmp_path: Path) -> 
                     digest=digest,
                     length=len(body),
                     media_type="text/plain",
-                    provenance="claim:C12",
+                    provenance="claim:ATTACH-1",
                     expires_at=time.time() + 60,
                 )
                 assert began["ok"] is True
@@ -218,7 +218,7 @@ async def test_governed_upload_read_preview_reference_and_gc(tmp_path: Path) -> 
                 )["digests"] == []
                 assert (
                     await _request(
-                        ws, SENDER, MessageType.ATTACHMENT_REF, digest=digest, ref="claim:C12"
+                        ws, SENDER, MessageType.ATTACHMENT_REF, digest=digest, ref="claim:ATTACH-1"
                     )
                 )["ok"] is True
                 store.db.execute(
@@ -233,7 +233,7 @@ async def test_governed_upload_read_preview_reference_and_gc(tmp_path: Path) -> 
                     SENDER,
                     MessageType.ATTACHMENT_REF,
                     digest=digest,
-                    ref="claim:C12",
+                    ref="claim:ATTACH-1",
                     remove=True,
                 )
                 assert (await _request(ws, SENDER, MessageType.ATTACHMENT_GC, dry_run=False))[
@@ -246,7 +246,7 @@ async def test_governed_upload_read_preview_reference_and_gc(tmp_path: Path) -> 
                     digest=hashlib.sha256(b"aborted").hexdigest(),
                     length=7,
                     media_type="text/plain",
-                    provenance="claim:C12",
+                    provenance="claim:ATTACH-1",
                     expires_at=time.time() + 60,
                 )
                 assert (
@@ -273,7 +273,7 @@ async def test_governed_upload_read_preview_reference_and_gc(tmp_path: Path) -> 
                     digest=empty_digest,
                     length=0,
                     media_type="application/octet-stream",
-                    provenance="claim:C12",
+                    provenance="claim:ATTACH-1",
                     expires_at=time.time() + 60,
                 )
                 assert (
@@ -301,7 +301,7 @@ async def test_governed_upload_read_preview_reference_and_gc(tmp_path: Path) -> 
                     digest=hashlib.sha256(b"disconnect").hexdigest(),
                     length=10,
                     media_type="text/plain",
-                    provenance="claim:C12",
+                    provenance="claim:ATTACH-1",
                     expires_at=time.time() + 60,
                 )
                 assert (store.staging / pending["upload_id"]).exists()
@@ -433,7 +433,7 @@ async def test_python_agent_attachment_entry_point_reaches_secure_hub(tmp_path: 
                     digest=hashlib.sha256(b"python").hexdigest(),
                     length=6,
                     media_type="text/plain",
-                    provenance="claim:C12",
+                    provenance="claim:ATTACH-1",
                     expires_at=time.time() + 60,
                 )
                 result = await recorder.wait_for(

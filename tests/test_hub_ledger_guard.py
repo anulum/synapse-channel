@@ -122,7 +122,7 @@ async def test_maybe_replay_duplicate_replays_a_cached_mutation() -> None:
 async def test_maybe_replay_duplicate_does_not_cross_senders() -> None:
     # Alice's claim was cached under her namespaced key. Bob reusing the same raw
     # idem_key must NOT have her response replayed — that would silently suppress
-    # his mutation and leak her grant fields (the F1/BUG-2 confused deputy). His
+    # his mutation and leak her grant fields (the confused-deputy bug). His
     # frame passes through as novel.
     alice = {"sender": "alice", "type": "claim", "idem_key": "SHARED"}
     key = HubLedgerGuard.idempotency_key(alice)

@@ -102,7 +102,7 @@ async def test_mistyped_routing_field_is_refused_not_coerced_end_to_end() -> Non
 
 
 async def test_a_mistyped_frame_is_still_charged_to_the_host_rate_limiter_end_to_end() -> None:
-    # Regression (SOL audit of F9): the mistyped-routing-field guard runs AFTER the per-host
+    # Regression: the mistyped-routing-field guard runs AFTER the per-host
     # charge, so a flood of malformed object frames is still metered rather than cheaply
     # bypassing the limiter while still forcing hub work. Open hubs require a name-binding
     # first frame, so burst=2: registration consumes one host token, the mistyped frame

@@ -4,8 +4,8 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — the pool owner's spend ledger decides and records every reservation (F02)
-"""Real SQLite ledgers: the invariant, the review corrections C1-C4, idempotency and races."""
+# SYNAPSE CHANNEL — the pool owner's spend ledger decides and records every reservation
+"""Real SQLite ledgers: the invariant, the review corrections, idempotency and races."""
 
 from __future__ import annotations
 
@@ -147,7 +147,7 @@ def test_owner_window_caller_and_malformed_requests_are_refused(tmp_path: Path) 
 
 
 def test_expiry_and_a_new_epoch_never_release_exposure(tmp_path: Path) -> None:
-    """C1 and C3: unsettled exposure stays counted across expiry and an epoch change."""
+    """Unsettled exposure stays counted across expiry and an epoch change."""
     ledger = _ledger(tmp_path)
     first = ledger.reserve(PEER, _request(upper_bound="80"), now=T0)  # exposure 81
     assert first["admitted"] is True

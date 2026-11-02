@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — AOT deliberation result + sealed export package (AOT-D1)
+# SYNAPSE_CHANNEL — deliberation result + sealed export package
 
 from __future__ import annotations
 

@@ -120,7 +120,7 @@ def test_ungated_verbs_require_no_access() -> None:
 
 
 def test_history_and_resume_map_to_global_recall() -> None:
-    # F1: the two global-history reads become ACL-gated so a deny-by-default hub
+    # The two global-history reads become ACL-gated so a deny-by-default hub
     # no longer leaks its full backlog. Both map to one RECALL access on the shared
     # history:global target, so a single grant governs history and resume together.
     expected = [(RECALL, Target("history", "global"))]

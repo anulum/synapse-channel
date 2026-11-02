@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — export_package_from_mapping parser regressions (AOT-D1)
+# SYNAPSE_CHANNEL — export_package_from_mapping parser regressions
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _spec(**overrides: Any) -> dict[str, Any]:
         "deliberation_id": "research-aot-2026-07-16",
         "pattern": "research_council",
         "project": "SYNAPSE-CHANNEL",
-        "thesis": "AOT as world-class internal capability",
+        "thesis": "deliberation as a world-class internal capability",
         "resolution": "build it under the bar",
         "objections": ["market lens is secondary"],
         "actions": ["build the fidelity loop"],

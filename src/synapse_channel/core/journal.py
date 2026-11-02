@@ -342,7 +342,7 @@ def record_entitlement_advert(store: EventStore, record: Mapping[str, Any]) -> i
     """Append one redacted pool advertisement as a durable, audit-only row.
 
     Replay ignores this kind; it is never broadcast to seats. Fleet mirrors read
-    it from the replicated log (F03 option A).
+    it from the replicated log (journal-only advertisement).
 
     Returns
     -------

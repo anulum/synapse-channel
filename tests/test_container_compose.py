@@ -58,7 +58,7 @@ def test_production_compose_has_no_insecure_runtime_override() -> None:
 
 
 def test_production_healthcheck_signs_with_its_enrolled_probe_key() -> None:
-    """The hub binds identity (K4-F2), so the probe must prove the HEALTH name."""
+    """The hub binds identity, so the probe must prove the HEALTH name."""
     probe = [str(token) for token in _load(COMPOSE)["services"]["hub"]["healthcheck"]["test"]]
     assert probe[:3] == ["CMD", "synapse", "health"]
     assert "--identity-key-file=/run/synapse/health.pem" in probe

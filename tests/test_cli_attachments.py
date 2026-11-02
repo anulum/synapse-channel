@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — attachment CLI activation refuses an ungoverned hub
-"""The public Hub parser exposes C12 only behind its complete posture."""
+"""The public Hub parser exposes attachments only behind its complete posture."""
 
 from __future__ import annotations
 

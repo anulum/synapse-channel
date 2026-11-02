@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — a peer hub reserves, settles and recovers on a real owner hub (F02)
+# SYNAPSE CHANNEL — a peer hub reserves, settles and recovers on a real owner hub
 """A real owner hub serves a signing peer's reservations; everyone else gets the same refusal.
 
 The owner hub requires identity binding, and its serving grant names the peer's identity

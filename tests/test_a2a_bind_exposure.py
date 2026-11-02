@@ -41,7 +41,7 @@ def test_non_loopback_without_bearer_refuses() -> None:
 
 
 def test_non_loopback_with_bearer_over_plaintext_refuses() -> None:
-    """Bearer on cleartext HTTP off loopback is the new R4-parity refuse."""
+    """Bearer on cleartext HTTP off loopback is refused, as on the hub bind."""
     problems = a2a_bind_problems("0.0.0.0", bearer_auth=True, tls_active=False)
     assert len(problems) == 1
     assert "plaintext HTTP" in problems[0]
