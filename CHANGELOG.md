@@ -18,6 +18,8 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.43] - 2026-11-02
+
 ### Security
 
 - The optional `dev`, `otel` and `all` extras now require
