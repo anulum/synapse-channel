@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -90,6 +91,25 @@ def test_migrate_refusals_name_the_cause(
     assert not fresh.exists()
 
 
+def test_migrate_refuses_a_malformed_key_before_creating_the_destination(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An owner-only key file of the wrong length is a named refusal, not a traceback."""
+    key = tmp_path / "short.key"
+    key.write_bytes(b"12345")
+    os.chmod(key, 0o600)
+    source = tmp_path / "plain.db"
+    EventStore(source).close()
+    before = source.read_bytes()
+    destination = tmp_path / "enc.db"
+    argv = ["sqlcipher", "migrate", "--key", str(key), "--source", str(source)]
+    assert _refused(capsys, [*argv, "--destination", str(destination)]) == (
+        f"synapse sqlcipher migrate: key file must hold exactly 32 bytes: {key}\n"
+    )
+    assert not destination.exists()
+    assert source.read_bytes() == before
+
+
 def test_both_commands_name_the_extra_when_the_driver_is_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -99,7 +119,8 @@ def test_both_commands_name_the_extra_when_the_driver_is_absent(
     store = tmp_path / "hub.db"
     EventStore(store).close()
     before = sorted((path.name, path.read_bytes()) for path in tmp_path.iterdir())
-    monkeypatch.setitem(sys.modules, "sqlcipher3", None)
+    for driver in ("sqlcipher3", "pysqlcipher3"):  # the driver and its import fallback
+        monkeypatch.setitem(sys.modules, driver, None)
     rekey = ["sqlcipher", "rekey", "--db", str(store)]
     rekey += ["--old-key", str(key), "--new-key", str(new_key)]
     assert _refused(capsys, rekey) == f"synapse sqlcipher rekey: {_EXTRA}\n"
