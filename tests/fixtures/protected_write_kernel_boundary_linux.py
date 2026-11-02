@@ -20,6 +20,7 @@ from typing import cast
 
 import pytest
 
+from fixtures.capable_bwrap import capable_bwrap
 from fixtures.protected_write_subtree_linux import delegated_subtree as delegated_subtree
 from synapse_channel.core.protected_write_kernel_boundary import (
     ProtectedWriterKernelPolicy,
@@ -170,7 +171,7 @@ finally:
     source = Path(__file__).resolve().parents[2]
     coverage_dir = os.environ.get("SYNAPSE_TEST_COVERAGE_DIR", "")
     command = [
-        "/usr/bin/bwrap",
+        capable_bwrap(),
         "--die-with-parent",
         "--new-session",
         "--unshare-user",

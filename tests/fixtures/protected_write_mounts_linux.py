@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from fixtures.capable_bwrap import capable_bwrap
 from synapse_channel.core.protected_write_kernel_boundary import (
     capture_protected_writer_kernel_evidence,
 )
@@ -212,7 +213,7 @@ def test_real_private_namespace_mount_policy(tmp_path: Path, mode: str) -> None:
     backing = tmp_path / "data"
     backing.mkdir()
     command = [
-        "/usr/bin/bwrap",
+        capable_bwrap(),
         "--die-with-parent",
         "--new-session",
         "--unshare-user",

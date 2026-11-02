@@ -29,6 +29,20 @@ runs:
           # A second profile on the same path conflicts and leaves bwrap unconfined, which
           # then loses CAP_NET_ADMIN and cannot bring up loopback in a new network namespace.
           bwrap_label='bwrap//&unpriv_bwrap (enforce)'
+          # Three namespace fixtures mount inside their own disposable user namespace and need
+          # CAP_SYS_ADMIN there. They get a root-owned copy of the same Bubblewrap at a path no
+          # shipped profile attaches to, with the rule 24.04 gives /usr/bin/bwrap below. Every
+          # other sandbox keeps Ubuntu's capability-free children.
+          capable_bwrap=/usr/local/libexec/synapse-ci/bwrap
+          sudo -n install -d -o root -g root -m 0755 /usr/local/libexec/synapse-ci
+          sudo -n install -o root -g root -m 0755 /usr/bin/bwrap "$capable_bwrap"
+          test "$(sha256sum < /usr/bin/bwrap)" = "$(sha256sum < "$capable_bwrap")"
+          sudo -n apparmor_parser --add --skip-cache <<'PROFILE'
+        abi <abi/4.0>,
+        profile synapse-ci-capable-bwrap /usr/local/libexec/synapse-ci/bwrap flags=(unconfined) {
+          userns,
+        }
+        PROFILE
         else
           sudo -n apparmor_parser --add --skip-cache <<'PROFILE'
         abi <abi/4.0>,
@@ -37,8 +51,10 @@ runs:
         }
         PROFILE
           bwrap_label='synapse-ci-bwrap (unconfined)'
+          capable_bwrap=/usr/bin/bwrap
         fi
         printf 'SYNAPSE_BWRAP_LABEL=%s\n' "$bwrap_label" >> "$GITHUB_ENV"
+        printf 'SYNAPSE_TEST_CAPABLE_BWRAP=%s\n' "$capable_bwrap" >> "$GITHUB_ENV"
         test "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = "$userns_policy"
     - name: Prepare the native cgroup test session
       shell: bash
@@ -90,3 +106,42 @@ runs:
           --die-with-parent --new-session --unshare-user --uid 0 --gid 0 \
           --unshare-pid --unshare-net --ro-bind / / --proc /proc \
           -- /usr/bin/python3 -c "$probe" "$SYNAPSE_BWRAP_LABEL" "$host_uid" "${host_namespaces[@]}"
+    - name: Prove which Bubblewrap may use capabilities inside its own user namespace
+      shell: bash
+      run: |
+        set -euo pipefail
+        capability_probe="$(cat <<'PY'
+        import ctypes
+        import os
+        import sys
+        from pathlib import Path
+
+        mode = sys.argv[1]
+        assert mode in ('capable', 'restricted'), mode
+        status = Path('/proc/self/status').read_text().splitlines()
+        for line in status:
+            if line.startswith('Cap'):
+                print(line)
+        effective = int(next(line for line in status if line.startswith('CapEff:')).split()[1], 16)
+        target = '/tmp/synapse-capability-probe'
+        os.mkdir(target)
+        libc = ctypes.CDLL(None, use_errno=True)
+        mounted = libc.mount(b'none', target.encode(), b'tmpfs', 0, None) == 0
+        error = ctypes.get_errno()
+        if mode == 'capable':
+            assert mounted and effective >> 21 & 1, (mounted, error, hex(effective))
+        else:
+            assert not mounted and error in (1, 13), (mounted, error, hex(effective))
+        print(mode, 'Bubblewrap capability state verified by an actual mount')
+        PY
+        )"
+        run_probe() {
+          bash tools/run_delegated_tests.sh timeout 15 "$1" \
+            --die-with-parent --new-session --unshare-user --uid 0 --gid 0 \
+            --unshare-net --ro-bind / / --tmpfs /tmp --cap-add CAP_SYS_ADMIN \
+            -- /usr/bin/python3 -c "$capability_probe" "$2"
+        }
+        run_probe "$SYNAPSE_TEST_CAPABLE_BWRAP" capable
+        if [[ "$SYNAPSE_TEST_CAPABLE_BWRAP" != /usr/bin/bwrap ]]; then
+          run_probe /usr/bin/bwrap restricted
+        fi

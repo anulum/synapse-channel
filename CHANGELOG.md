@@ -60,6 +60,15 @@ execution evidence when carrying a release claim forward.
   ran the preprocessor without a C standard and failed to build. 3.0.0 passes
   `-std=c99`. The lock no longer needs asn1crypto or PyYAML. The `[tpm2]` extra
   still accepts tpm2-pytss 2.3 or later.
+- CI on Ubuntu 26.04 gives a test-only, root-owned copy of Bubblewrap the
+  user-namespace rule that Ubuntu 24.04 runners already give `/usr/bin/bwrap`.
+  Ubuntu 26.04's own `bwrap-userns-restrict` profile removes every capability
+  from children of `/usr/bin/bwrap`, so three protected-write fixtures that
+  mount inside their own disposable namespace could not run there. They now use
+  the copy named in `SYNAPSE_TEST_CAPABLE_BWRAP` (default `/usr/bin/bwrap`), which
+  must be root-owned and changeable only by root; every other sandbox keeps
+  Ubuntu's capability-free children, and a CI probe checks both by an actual
+  mount. This is a CI test capability only; product code does not read it.
 
 ## [0.99.43] - 2026-11-02
 

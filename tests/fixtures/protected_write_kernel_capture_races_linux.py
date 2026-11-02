@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from fixtures.capable_bwrap import capable_bwrap
 from fixtures.protected_write_subtree_linux import ManagedProcess
 from fixtures.protected_write_subtree_linux import delegated_subtree as delegated_subtree
 from fixtures.protected_write_subtree_linux import managed_process as managed_process
@@ -236,7 +237,7 @@ print(json.dumps({'actual_mount_changes':len(changes),'public_capture_refused':T
 """
     coverage_dir = os.environ.get("SYNAPSE_TEST_COVERAGE_DIR", "")
     command = [
-        "/usr/bin/bwrap",
+        capable_bwrap(),
         "--die-with-parent",
         "--new-session",
         "--unshare-user",
