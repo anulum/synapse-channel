@@ -78,6 +78,11 @@ execution evidence when carrying a release claim forward.
   package. Previously it admitted a pinned name unverified, so any client
   could take it. Unpinned names keep the unsigned compatibility path with
   its one-time warning.
+- The `synapse_operation_outbox_pending` metric no longer drops below the
+  durable outbox when a duplicate keyed request is replayed after its
+  intent was settled. Re-binding the same local receipt is still an
+  idempotent no-op in the store, but it no longer decrements the
+  counter a second time.
 
 ## [0.99.42] - 2026-11-01
 

@@ -124,24 +124,34 @@ class OperationTable:
             intents.append(PendingOperationIntent(str(key), intent))
         return tuple(intents)
 
-    def mark_operation_intent_delivered(self, operation_key: str, receipt_id: str) -> None:
-        """Bind one operation intent to a value-free local projection receipt."""
+    def mark_operation_intent_delivered(self, operation_key: str, receipt_id: str) -> bool:
+        """Bind one operation intent to a value-free local projection receipt.
+
+        Returns ``True`` when this call settled a pending intent and ``False``
+        when the intent already carried this exact receipt (an idempotent
+        repeat), so callers count each settlement once. An absent intent, or
+        one settled under a different receipt, raises :class:`KeyError`.
+        """
         if not operation_key or not receipt_id:
             raise ValueError("operation outbox identity and receipt must be non-empty")
         with self.storage.lock:
             self.storage.connection.execute("PRAGMA synchronous=FULL")
             try:
                 cursor = self.storage.connection.execute(
-                    (
-                        "UPDATE operation_outbox SET receipt_id = ? WHERE operation_key = ? "
-                        "AND (receipt_id IS NULL OR receipt_id = "
-                        "?)"
-                    ),
-                    (receipt_id, operation_key, receipt_id),
+                    "UPDATE operation_outbox SET receipt_id = ? "
+                    "WHERE operation_key = ? AND receipt_id IS NULL",
+                    (receipt_id, operation_key),
                 )
-                if cursor.rowcount != 1:
-                    raise KeyError("operation evidence intent is absent or already settled")
+                settled: bool = cursor.rowcount == 1
+                if not settled:
+                    row = self.storage.connection.execute(
+                        "SELECT receipt_id FROM operation_outbox WHERE operation_key = ?",
+                        (operation_key,),
+                    ).fetchone()
+                    if row is None or row[0] != receipt_id:
+                        raise KeyError("operation evidence intent is absent or already settled")
                 self.storage.connection.commit()
+                return settled
             except BaseException:
                 self.storage.connection.rollback()
                 raise

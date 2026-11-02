@@ -705,16 +705,18 @@ class SynapseHub(HubConfigView):
         if stored is None:
             return
         try:
-            await asyncio.to_thread(
+            settled = await asyncio.to_thread(
                 self.journal.mark_operation_intent_delivered,
                 operation_key,
                 f"local:{stored.response_sha256}",
             )
+        except KeyError:
+            return
+        # A replayed duplicate settles the same receipt again; count it once.
+        if settled:
             self.counters.operation_outbox_pending = max(
                 0, self.counters.operation_outbox_pending - 1
             )
-        except KeyError:
-            return
 
     async def run_atomic_operation(
         self,

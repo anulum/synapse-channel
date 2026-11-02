@@ -299,7 +299,7 @@ class EventStore:
         return self._families.operations.pending_operation_intents(limit=limit)
 
     @inherit_documentation(OperationTable.mark_operation_intent_delivered)
-    def mark_operation_intent_delivered(self, operation_key: str, receipt_id: str) -> None:
+    def mark_operation_intent_delivered(self, operation_key: str, receipt_id: str) -> bool:
         """Bind one operation intent to a value-free local projection receipt."""
         return self._families.operations.mark_operation_intent_delivered(operation_key, receipt_id)
 
