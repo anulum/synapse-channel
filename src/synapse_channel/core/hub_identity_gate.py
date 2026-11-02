@@ -125,8 +125,9 @@ class HubIdentityGate:
         """Log — once per gate — that trust-on-first-use is disabled.
 
         Without the optional ``cryptography`` package the gate can verify no
-        proof, so pins are neither checked nor recorded. One warning names the
-        remedy; repeating it per frame would drown the hub log.
+        proof, so no new pin is recorded and an unpinned name passes unverified.
+        One warning names the remedy; repeating it per frame would drown the hub
+        log. Pinned names are refused instead (:meth:`_refuse_pin_unverifiable`).
         """
         if self._crypto_warning_logged:
             return
@@ -134,8 +135,8 @@ class HubIdentityGate:
         logger.warning(
             "trust-on-first-use identity pinning is disabled: the optional "
             "cryptography package is not installed (pip install "
-            "synapse-channel[encryption]); signed registrations are admitted "
-            "unverified"
+            "synapse-channel[encryption]); signed registrations of unpinned names "
+            "are admitted unverified and pinned names are refused"
         )
 
     async def verify_identity(self, sender: str, data: dict[str, Any], websocket: Any) -> bool:
@@ -198,10 +199,12 @@ class HubIdentityGate:
           pre-TOFU client, or a key provisioned for a different hub posture).
 
         A hub whose environment lacks the optional ``cryptography`` package
-        cannot verify any proof: the posture degrades to a pass-through with
-        a once-per-gate warning rather than refusing (which would brick every
-        signing client) or crashing the frame handler. Trust-on-first-use is
-        protection for the default local hub, never an availability hazard.
+        cannot verify any proof. For an unpinned name the posture degrades to
+        a pass-through with a once-per-gate warning rather than refusing (which
+        would brick every signing client) or crashing the frame handler. A
+        pinned name is refused: its pin was recorded while verification worked,
+        so admitting it unverified would let any client take the name. The
+        refusal names the missing package as the remedy.
         """
         pin = pin_store.pinned(sender)
         presented_key = str(data.get("identity_public_key") or "")
@@ -215,8 +218,8 @@ class HubIdentityGate:
             try:
                 result = self._verify_self_contained(sender, data, pin.key_id, pin.public_key)
             except ImportError:
-                self._warn_crypto_missing()
-                return True
+                await self._refuse_pin_unverifiable(sender, pin.key_id, websocket)
+                return False
             if result is SignedEventVerificationResult.VALID:
                 return True
             await self._refuse_pin_mismatch(pin_store, sender, websocket, detail=result.value)
@@ -300,6 +303,26 @@ class HubIdentityGate:
             ),
             reason="identity pin mismatch",
             verification_result=detail,
+        )
+
+    async def _refuse_pin_unverifiable(self, sender: str, key_id: str, websocket: Any) -> None:
+        """Refuse a pinned name this hub cannot verify because ``cryptography`` is gone."""
+        logger.warning(
+            "identity pin refused name=%s pinned_key=%s detail=cryptography unavailable",
+            sender,
+            key_id,
+        )
+        await self._refuse(
+            websocket,
+            sender,
+            message=(
+                f"identity pin: name {sender!r} is pinned to key {key_id}, but this hub "
+                "cannot verify it because the optional cryptography package is not "
+                "installed. Restore it (pip install synapse-channel[encryption]) and "
+                "restart the hub; the pin is unchanged."
+            ),
+            reason="identity pin unverifiable",
+            verification_result="cryptography_unavailable",
         )
 
     async def _refuse(

@@ -88,7 +88,10 @@ The ACL model and its evaluation are implemented in
   in the same directory. A pinned
   name refuses a missing signature or any other key with close code `4013`
   (`identity pin mismatch`) and names the observed key id plus the governed
-  recovery command; unsigned names keep classic semantics;
+  recovery command; unsigned names keep classic semantics. A hub that loses
+  `cryptography` after recording pins refuses every pinned name with close
+  code `4013` (`identity pin unverifiable`) until the package is restored,
+  while unpinned names keep the unsigned compatibility path;
   `--require-identity-binding` takes precedence and keeps its fail-closed
   operator-bundle behaviour. Together with the ownership lease this preserves an existing
   reconnect binding: the lease covers its retained gap with a bearer token,

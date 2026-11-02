@@ -72,6 +72,12 @@ execution evidence when carrying a release claim forward.
   `--endpoint-url` is not an `http://` or `https://` URL. A bare
   `host:port`, which parses with the host as its scheme, was previously
   reported as clear.
+- A hub that loses the optional `cryptography` package after recording
+  trust-on-first-use pins now refuses every pinned name with close code
+  4013 (`identity pin unverifiable`) and an error naming the missing
+  package. Previously it admitted a pinned name unverified, so any client
+  could take it. Unpinned names keep the unsigned compatibility path with
+  its one-time warning.
 
 ## [0.99.42] - 2026-11-01
 
