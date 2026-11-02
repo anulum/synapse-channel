@@ -14,8 +14,6 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
-from websockets.asyncio.client import connect as ws_connect
-
 from synapse_channel import SynapseAgent, SynapseHub
 from synapse_channel.demo_runtime import _start_local_hub
 
@@ -61,38 +59,6 @@ class CodingFleetInbox:
                     return message
             await asyncio.sleep(0.01)
         raise TimeoutError("expected message did not arrive")
-
-
-async def _await_listening(port: int, timeout: float = 3.0) -> None:
-    """Block until the hub accepts a WebSocket handshake or the timeout elapses.
-
-    The probe completes one real WebSocket handshake and closes it cleanly
-    instead of opening a bare TCP socket: an aborted TCP probe makes the hub's
-    WebSocket server log ``opening handshake failed`` with a full traceback —
-    and it records that abort after the probe returns, so no probe-scoped
-    logger suppression can catch it. A clean handshake produces no error
-    record at all, keeps a first run's stderr quiet without mutating any
-    logger, and leaves genuine handshake errors visible.
-    """
-    loop = asyncio.get_event_loop()
-    deadline = loop.time() + timeout
-    while True:
-        # Each handshake attempt is bounded by the caller's remaining budget so
-        # a listener that accepts TCP but never answers the handshake cannot
-        # stretch the probe past its deadline.
-        remaining = deadline - loop.time()
-        if remaining <= 0:
-            break
-        try:
-            connection = await ws_connect(
-                f"ws://localhost:{port}", open_timeout=min(1.0, remaining)
-            )
-        except (OSError, TimeoutError, asyncio.TimeoutError):
-            await asyncio.sleep(0.02)
-            continue
-        await connection.close()
-        return
-    raise TimeoutError(f"hub did not start listening on {port}")
 
 
 async def run_coding_agents_demo(port: int = 0) -> list[str]:

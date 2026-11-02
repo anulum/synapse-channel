@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel import cli, cli_new
+from synapse_channel import SynapseHub, cli, cli_new
 from synapse_channel.coding_fleet import run_coding_agents_demo
 from synapse_channel.coding_fleet_template import create_coding_fleet
 
@@ -109,13 +109,13 @@ def test_cmd_new_coding_fleet_refuses_an_existing_workspace(
 
 async def test_coding_fleet_helpers_time_out_honestly() -> None:
     """The fleet demo's waiters raise named timeouts instead of hanging."""
-    from synapse_channel import coding_fleet
+    from synapse_channel import coding_fleet, demo_runtime
 
     inbox = coding_fleet.CodingFleetInbox()
     with pytest.raises(TimeoutError, match="expected message did not arrive"):
         await inbox.wait_for(lambda _m: False, timeout=0.05)
     with pytest.raises(TimeoutError, match="did not start listening"):
-        await coding_fleet._await_listening(0, timeout=0.05)
+        await demo_runtime._await_listening(0, timeout=0.05)
 
 
 async def test_coding_fleet_run_emits_no_handshake_abort_records(
@@ -163,7 +163,7 @@ async def test_coding_fleet_probe_deadline_holds_against_stalled_listener() -> N
     fixed per-attempt open timeout would hold a 0.2 s probe open for a full
     second against a stalled listener.
     """
-    from synapse_channel import coding_fleet
+    from synapse_channel import demo_runtime
 
     release = asyncio.Event()
 
@@ -177,7 +177,7 @@ async def test_coding_fleet_probe_deadline_holds_against_stalled_listener() -> N
     started = loop.time()
     try:
         with pytest.raises(TimeoutError, match="did not start listening"):
-            await coding_fleet._await_listening(port, timeout=0.2)
+            await demo_runtime._await_listening(port, timeout=0.2)
     finally:
         release.set()
         listener.close()
@@ -187,17 +187,22 @@ async def test_coding_fleet_probe_deadline_holds_against_stalled_listener() -> N
 
 async def test_coding_fleet_probe_leaves_logger_levels_untouched_on_both_exits() -> None:
     """The clean-handshake probe never mutates logger state, success or timeout."""
-    from synapse_channel import coding_fleet
+    from synapse_channel import demo_runtime
 
     ws_logger = logging.getLogger("synapse.hub.ws")
     previous_level = ws_logger.level
     ws_logger.setLevel(logging.WARNING)
+    server, uri = await demo_runtime._start_local_hub(SynapseHub(hub_id="probe-levels"), 0)
     try:
+        await demo_runtime._await_listening(int(uri.rsplit(":", 1)[1]), timeout=3.0)
+        assert ws_logger.level == logging.WARNING
         with pytest.raises(TimeoutError, match="did not start listening"):
-            await coding_fleet._await_listening(0, timeout=0.05)
+            await demo_runtime._await_listening(0, timeout=0.05)
         assert ws_logger.level == logging.WARNING
     finally:
         ws_logger.setLevel(previous_level)
+        server.cancel()
+        await asyncio.gather(server, return_exceptions=True)
 
 
 def test_coding_fleet_demo_refuses_an_empty_narration(

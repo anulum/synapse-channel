@@ -80,10 +80,22 @@ class DemoInbox:
 
 
 async def _await_listening(port: int, timeout: float = 3.0) -> None:
-    """Wait for one clean WebSocket handshake against the demo hub."""
+    """Block until the hub accepts a WebSocket handshake or the timeout elapses.
+
+    The probe completes one real WebSocket handshake and closes it cleanly
+    instead of opening a bare TCP socket: an aborted TCP probe makes the hub's
+    WebSocket server log ``opening handshake failed`` with a full traceback —
+    and it records that abort after the probe returns, so no probe-scoped
+    logger suppression can catch it. A clean handshake produces no error
+    record at all, keeps a first run's stderr quiet without mutating any
+    logger, and leaves genuine handshake errors visible.
+    """
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout
     while True:
+        # Each handshake attempt is bounded by the caller's remaining budget so
+        # a listener that accepts TCP but never answers the handshake cannot
+        # stretch the probe past its deadline.
         remaining = deadline - loop.time()
         if remaining <= 0:
             break
