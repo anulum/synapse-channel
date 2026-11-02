@@ -224,6 +224,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_wake_adapter_pane_bridge.py": (1, "platform-guard"),
     "tests/test_tmux_server.py": (2, "platform-guard"),
     "tests/test_worker_session.py": (2, "platform-guard"),
+    # A descriptor that outlives a rename over its path exists only on POSIX.
+    "tests/test_worker_outcome_publication.py": (1, "platform-guard"),
 }
 
 # Assembled from fragments so this ledger's own source never matches its scan.

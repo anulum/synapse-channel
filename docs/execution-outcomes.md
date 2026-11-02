@@ -170,6 +170,10 @@ again. See [uncertain wakes](wake-relay.md#uncertain-wakes-reach-an-end).
 
 Choose a new report path for each launch. The launcher creates an owner-only
 file exclusively and refuses an existing report before starting the provider.
+If anything else changes the report during the launch, the launcher refuses its
+next update with `worker outcome record changed; inquire before continuing`,
+exits 2 and leaves the changed bytes in place. On POSIX this includes a write
+through a descriptor opened just before one of the launcher's own updates.
 
 ```bash
 synapse worker-session --identity MY-PROJECT/worker \

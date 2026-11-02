@@ -87,6 +87,14 @@ execution evidence when carrying a release claim forward.
   range or not a number (for example `http://127.0.0.1:65536`) when they
   are configured. Previously such an endpoint was accepted and only
   failed on the first request, as an unavailable health result.
+- `synapse worker-session` no longer loses a provider's change to its
+  outcome report when the provider writes through a descriptor it opened
+  just before one of the launcher's own updates. On POSIX the launcher
+  keeps the replaced report inode open, puts such a write back at the
+  report path, and refuses its next update with `worker outcome record
+  changed; inquire before continuing`, as for any other change.
+  Previously the write landed in the detached file, and the launch could
+  finish with exit 0.
 
 ## [0.99.42] - 2026-11-01
 

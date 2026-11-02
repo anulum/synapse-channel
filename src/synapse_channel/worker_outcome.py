@@ -64,6 +64,11 @@ class WorkerObservation:
         )
         self.returncode: int | None = None
         self.published: bytes | None = None
+        # Descriptors of every report inode this launch published, with the bytes written
+        # to each: a writer that opened the path before a replace lands in a detached
+        # inode, which only these descriptors can still see. A launch publishes a handful
+        # of updates, so all of them are held until finish or refusal.
+        self._held: list[tuple[int, bytes]] = []
         self.publish()
 
     def observe(
@@ -101,7 +106,10 @@ class WorkerObservation:
                 OutcomeState.CONFIRMED_DONE if returncode == 0 else OutcomeState.CONFIRMED_FAILED
             )
             observation = "provider_process_exited"
-        self.observe(state, observation, returncode=returncode)
+        try:
+            self.observe(state, observation, returncode=returncode)
+        finally:
+            self.close()
         return WorkerExit(returncode, self.outcome)
 
     def tmux_result(self, launch: Callable[[], int]) -> WorkerExit:
@@ -115,7 +123,13 @@ class WorkerObservation:
         return self.finish(code, tmux=True)
 
     def publish(self) -> None:
-        """Create exclusively, then replace only the previous bytes of this operation."""
+        """Create exclusively, then replace only the previous bytes of this operation.
+
+        A record changed by anyone else is never overwritten: the update is refused
+        with ``ValueError`` and the changed bytes stay at the path. A write that races
+        a replace and lands in the detached inode is put back at the path, so the next
+        update refuses it exactly as if it had landed a moment later.
+        """
         if self.path is None:
             return
         assert self.owner is not None
@@ -133,34 +147,112 @@ class WorkerObservation:
         }
         data = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
         if self.published is None:
-            descriptor = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(descriptor, "wb") as stream:
-                assert_owner_only_file_path(self.path, purpose="worker outcome")
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            sync_directory(self.path.parent)
+            self._hold(self._create(data), data)
         else:
+            self._restore_raced_write()
             previous = read_owner_only_file_bytes(
                 self.path, purpose="worker outcome", max_bytes=MAX_REPORT_BYTES
             )
             if previous != self.published:
+                self.close()
                 raise ValueError("worker outcome record changed; inquire before continuing")
-            descriptor, temporary = tempfile.mkstemp(
-                prefix=".worker-outcome-", dir=self.path.parent
-            )
-            temporary_path = Path(temporary)
-            try:
-                with os.fdopen(descriptor, "wb") as stream:
-                    assert_owner_only_file_path(temporary_path, purpose="worker outcome")
-                    stream.write(data)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.replace(temporary_path, self.path)
-                sync_directory(self.path.parent)
-            finally:
-                temporary_path.unlink(missing_ok=True)
+            self._hold(self._replace(data), data)
         self.published = data
+
+    def close(self) -> None:
+        """Release the held report descriptors once no further update will follow."""
+        while self._held:
+            os.close(self._held.pop()[0])
+
+    def _create(self, data: bytes) -> int | None:
+        """Write the first record into a new exclusive file; keep its descriptor on POSIX."""
+        assert self.path is not None
+        descriptor = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            assert_owner_only_file_path(self.path, purpose="worker outcome")
+            _write_durably(descriptor, data)
+        except BaseException:
+            os.close(descriptor)
+            raise
+        sync_directory(self.path.parent)
+        return _kept(descriptor)
+
+    def _replace(self, data: bytes) -> int | None:
+        """Atomically replace the record; keep the new inode's descriptor on POSIX."""
+        assert self.path is not None
+        descriptor, temporary = tempfile.mkstemp(prefix=".worker-outcome-", dir=self.path.parent)
+        temporary_path = Path(temporary)
+        open_descriptor = True
+        try:
+            assert_owner_only_file_path(temporary_path, purpose="worker outcome")
+            _write_durably(descriptor, data)
+            kept = _kept(descriptor)
+            open_descriptor = kept is not None
+            os.replace(temporary_path, self.path)
+        except BaseException:
+            if open_descriptor:
+                os.close(descriptor)
+            temporary_path.unlink(missing_ok=True)
+            raise
+        sync_directory(self.path.parent)
+        return kept
+
+    def _hold(self, descriptor: int | None, data: bytes) -> None:
+        """Track the inode now at the path alongside every inode it replaced."""
+        if descriptor is not None:
+            self._held.append((descriptor, data))
+
+    def _restore_raced_write(self) -> None:
+        """Put a write that landed in the detached inode back at the path.
+
+        Only when the path still holds this observation's own latest bytes: a change
+        made at the path itself is already visible and is never overwritten.
+        """
+        assert self.path is not None
+        changed = [
+            current
+            for detached, written in self._held[:-1]
+            if (current := _read_bounded(detached)) != written
+        ]
+        if not changed:
+            return
+        at_path = read_owner_only_file_bytes(
+            self.path, purpose="worker outcome", max_bytes=MAX_REPORT_BYTES
+        )
+        if at_path == self._held[-1][1]:
+            self._hold(self._replace(changed[0]), changed[0])
+
+
+def _kept(descriptor: int) -> int | None:
+    """Keep a report descriptor on POSIX; close it elsewhere.
+
+    Windows cannot rename over a file that another handle holds open, and there a
+    concurrent writer's open handle already makes the replace fail.
+    """
+    if os.name == "posix":
+        return descriptor
+    os.close(descriptor)
+    return None
+
+
+def _write_durably(descriptor: int, data: bytes) -> None:
+    """Write all of ``data`` at the start of ``descriptor`` and flush it to disk."""
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    view = memoryview(data)
+    while view:
+        view = view[os.write(descriptor, view) :]
+    os.fsync(descriptor)
+
+
+def _read_bounded(descriptor: int) -> bytes:
+    """Read a held report inode from its start, one byte past the report bound."""
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    chunks: list[bytes] = []
+    remaining = MAX_REPORT_BYTES + 1
+    while remaining and (chunk := os.read(descriptor, remaining)):
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
 
 
 def _string(document: dict[str, Any], key: str) -> str:
