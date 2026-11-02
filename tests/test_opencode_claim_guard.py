@@ -7,6 +7,7 @@
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -78,11 +79,29 @@ def test_parses_native_apply_patch_tool() -> None:
             "unsupported control line",
         ),
         ("x" * (MAX_HOOK_EVENT_BYTES + 1), "byte limit"),
+        (json.dumps({"tool_name": "edit"}), "non-empty input.hook_event_name string"),
+        (
+            _event("edit", {"filePath": "a.py"}).replace(
+                "tool.execute.before", "tool.execute.after"
+            ),
+            "accepts only tool.execute.before events",
+        ),
+        (_event("apply_patch", {}), "non-empty tool_input.patchText string"),
+        (_event("apply_patch", {"patchText": "   "}), "non-empty tool_input.patchText string"),
     ],
 )
 def test_invalid_native_event_fails_closed(raw: str, message: str) -> None:
     with pytest.raises(OpenCodeClaimGuardError, match=message):
         parse_hook_request(raw)
+
+
+def test_non_text_event_fails_closed() -> None:
+    """Raw bytes from a plugin are refused before any JSON decoding."""
+    raw = _event("edit", {"filePath": "a.py"}).encode("utf-8")
+    with pytest.raises(
+        OpenCodeClaimGuardError, match="^OpenCode hook input must be UTF-8 text\\.$"
+    ):
+        parse_hook_request(cast(str, raw))
 
 
 @pytest.mark.asyncio
