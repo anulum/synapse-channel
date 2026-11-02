@@ -135,6 +135,8 @@ def test_link_check_keeps_narrow_badge_image_excludes_only() -> None:
 
     assert "--exclude '^https?://img\\.shields\\.io/'" in text
     assert "--exclude '^https?://api\\.securityscorecards\\.dev/'" in text
+    # The optional pepy.tech download statistics never decide the result.
+    assert text.count("--exclude '^https?://(static\\.)?pepy\\.tech/'") == 2
     # No broader external-link suppression (no wildcard https exclude).
     assert "--exclude '^https?://'" not in text
     assert "--offline" not in text

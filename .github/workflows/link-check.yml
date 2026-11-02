@@ -59,7 +59,9 @@ jobs:
           # Badge *targets* (pypi.org, securityscorecards.dev/viewer, …) stay
           # checked. Only volatile badge *image* endpoints are excluded: shields
           # CDN timeouts, the OpenSSF scorecard badge redirect loop, and the
-          # Codecov badge CDN. No broad external-link suppression.
+          # Codecov badge CDN. The pepy.tech download badge and its page are an
+          # optional statistics extra: an outage there must never turn CI red,
+          # so both are excluded. No broad external-link suppression.
           args: >-
             --root-dir "${{ github.workspace }}"
             --verbose
@@ -68,6 +70,7 @@ jobs:
             --exclude '^https?://img\.shields\.io/'
             --exclude '^https?://api\.securityscorecards\.dev/'
             --exclude '^https?://codecov\.io/gh/anulum/synapse-channel/branch/main/graph/badge\.svg$'
+            --exclude '^https?://(static\.)?pepy\.tech/'
             --min-tls TLSv1_2
             --max-concurrency 32
             --max-redirects 10
@@ -106,6 +109,7 @@ jobs:
             --exclude '^https?://img\.shields\.io/'
             --exclude '^https?://api\.securityscorecards\.dev/'
             --exclude '^https?://codecov\.io/gh/anulum/synapse-channel/branch/main/graph/badge\.svg$'
+            --exclude '^https?://(static\.)?pepy\.tech/'
             --min-tls TLSv1_2
             --max-concurrency 32
             --max-redirects 10
