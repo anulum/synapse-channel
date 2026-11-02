@@ -31,6 +31,7 @@ from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 from synapse_channel.machine_identity import machine_identity_agent_kwargs
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
 from synapse_channel.owner_lease import lease_agent_kwargs, lease_path
+from synapse_channel.parent_binding import bind_to_parent, parent_alive
 from synapse_channel.shell_integration import has_active_tmux_provider
 from synapse_channel.terminal_text import terminal_chat_line
 from synapse_channel.waiter_identity import (
@@ -199,6 +200,51 @@ async def _settle_burst(
     return list(received)
 
 
+def _closed_connection_code(agent: SynapseAgent, *, name: str, uri: str) -> int:
+    """Return the wait exit code for a connection that closed without a message.
+
+    Parameters
+    ----------
+    agent : SynapseAgent
+        The waiter's agent, whose last close code and reason name the cause.
+    name : str
+        Connection name, used in the printed explanation.
+    uri : str
+        Hub address, used in the printed explanation.
+
+    Returns
+    -------
+    int
+        ``4`` when a newer waiter superseded this one or an ownership lease
+        refused the name (yield), ``5`` when the identity pin or binding refused
+        the key (stop), and ``3`` for any other dropped connection (re-arm).
+    """
+    if is_superseded_close(agent.last_close_code, agent.last_close_reason):
+        # A newer waiter took this name over. The newcomer is the
+        # legitimate holder (it just proved it is alive); re-arming with
+        # a takeover of our own would evict it and the two waiters would
+        # steal the identity from each other indefinitely.
+        print(f"[{name}] superseded by a newer waiter; yielding.")
+        return 4
+    refusal = describe_connect_failure(
+        name, uri, close_code=agent.last_close_code, close_reason=agent.last_close_reason
+    )
+    if is_identity_refused_close(agent.last_close_code, agent.last_close_reason):
+        print(refusal)
+        return 5
+    if is_name_owned_close(agent.last_close_code, agent.last_close_reason):
+        # On an open hub the welcome precedes registration, so an
+        # ownership-lease refusal can land after readiness. Re-arming
+        # without the lease token would only hammer the same refusal.
+        print(refusal)
+        return 4
+    # The connection dropped without a message. Exit so the caller re-arms,
+    # rather than looping forever on a dead socket — a timeout=0 waiter that
+    # silently stayed up after a hub restart is exactly how an agent goes dark.
+    print(f"[{name}] connection to {uri} closed; re-arm the waiter.")
+    return 3
+
+
 async def _wait(
     *,
     uri: str,
@@ -221,6 +267,7 @@ async def _wait(
     identity_key_id: str = "",
     capability_card_path: Path | None = None,
     capability_refresh_seconds: float = 21_600.0,
+    parent_pid: int | None = None,
 ) -> int:
     """Block until one message addressed to ``for_name`` arrives, print it, and exit.
 
@@ -300,6 +347,11 @@ async def _wait(
         Re-advertise the card at this interval while the wait blocks (default
         21,600 seconds = 6 hours), so a healthy long-lived waiter never lets
         its 24-hour registration lapse. ``0`` disables periodic refresh.
+    parent_pid : int or None, optional
+        Process that started this wait (a pane bridge). The wait stops with it:
+        on Linux the kernel sends ``SIGTERM`` when that process exits, and on
+        every platform the wait ends with ``2`` within one poll interval once its
+        parent changes. ``None`` (the default) binds to nothing.
 
     Returns
     -------
@@ -337,6 +389,8 @@ async def _wait(
                 seen.add(event)
             received.append(data)
 
+    if not bind_to_parent(parent_pid):
+        return 2  # the bridge exited before this wait started; never register for it
     # A re-arming waiter takes over its own name, evicting a ghost holder of
     # ``<name>-rx`` instead of failing with a name conflict. In mailbox mode it
     # resumes from the persisted cursor and declares ``for_name`` as the identity to
@@ -414,6 +468,8 @@ async def _wait(
         while not received and (timeout <= 0 or loop.time() < deadline):
             if conn_task.done():
                 break  # the socket closed (hub restart, superseded, network)
+            if not parent_alive(parent_pid):
+                break  # the bridge that started this wait is gone; stop receiving
             if (
                 capability_card_path is not None
                 and capability_refresh_seconds > 0
@@ -451,41 +507,7 @@ async def _wait(
             )
             return 0
         if conn_task.done():
-            if is_superseded_close(agent.last_close_code, agent.last_close_reason):
-                # A newer waiter took this name over. The newcomer is the
-                # legitimate holder (it just proved it is alive); re-arming with
-                # a takeover of our own would evict it and the two waiters would
-                # steal the identity from each other indefinitely.
-                print(f"[{name}] superseded by a newer waiter; yielding.")
-                return 4
-            if is_identity_refused_close(agent.last_close_code, agent.last_close_reason):
-                print(
-                    describe_connect_failure(
-                        name,
-                        uri,
-                        close_code=agent.last_close_code,
-                        close_reason=agent.last_close_reason,
-                    )
-                )
-                return 5
-            if is_name_owned_close(agent.last_close_code, agent.last_close_reason):
-                # On an open hub the welcome precedes registration, so an
-                # ownership-lease refusal can land after readiness. Re-arming
-                # without the lease token would only hammer the same refusal.
-                print(
-                    describe_connect_failure(
-                        name,
-                        uri,
-                        close_code=agent.last_close_code,
-                        close_reason=agent.last_close_reason,
-                    )
-                )
-                return 4
-            # The connection dropped without a message. Exit so the caller re-arms,
-            # rather than looping forever on a dead socket — a timeout=0 waiter that
-            # silently stayed up after a hub restart is exactly how an agent goes dark.
-            print(f"[{name}] connection to {uri} closed; re-arm the waiter.")
-            return 3
+            return _closed_connection_code(agent, name=name, uri=uri)
         return 2
     finally:
         agent.running = False
@@ -521,6 +543,53 @@ async def _run_wait_with_reconnect(
         code = await attempt()
         if code not in (1, 3):
             return code
+
+
+def _wait_arguments(
+    args: argparse.Namespace, *, connect_name: str, for_name: str, roles: tuple[str, ...]
+) -> dict[str, Any]:
+    """Return the keyword arguments of one wait attempt for the parsed ``args``.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed ``wait`` arguments.
+    connect_name : str
+        Connection name, already suffixed with ``-rx`` when it equals ``for_name``.
+    for_name : str
+        Identity whose messages wake this waiter.
+    roles : tuple[str, ...]
+        Extra ``<project>/<role>`` names the waiter answers to.
+
+    Returns
+    -------
+    dict[str, Any]
+        Arguments for the wait runner. ``parent_pid`` is present only when
+        ``--exit-with-parent`` was given, so runners that predate it keep working.
+    """
+    machine = machine_identity_agent_kwargs()
+    card = getattr(args, "capability_card", None)
+    arguments: dict[str, Any] = {
+        "uri": args.uri,
+        "name": connect_name,
+        "for_name": for_name,
+        "timeout": args.timeout,
+        "directed_only": args.directed_only,
+        "roles": roles,
+        "wake_jitter": args.wake_jitter,
+        "token": args.token,
+        "ready_timeout": args.ready_timeout,
+        "wake_capability": getattr(args, "wake_capability", WAKE_PASSIVE),
+        "owner_lease_path": lease_path(connect_name),
+        "identity_key_path": machine.get("identity_key_path"),
+        "identity_key_id": str(machine.get("identity_key_id", "")),
+        "capability_card_path": Path(card) if card else None,
+        "capability_refresh_seconds": float(getattr(args, "capability_refresh_seconds", 21_600.0)),
+    }
+    parent_pid = getattr(args, "exit_with_parent", None)
+    if parent_pid is not None:
+        arguments["parent_pid"] = parent_pid
+    return arguments
 
 
 def _cmd_wait(
@@ -581,29 +650,10 @@ def _cmd_wait(
             )
             return 0
 
-    machine = machine_identity_agent_kwargs()
-    capability_card_path = (
-        Path(args.capability_card) if getattr(args, "capability_card", None) else None
-    )
+    wait_kwargs = _wait_arguments(args, connect_name=connect_name, for_name=for_name, roles=roles)
 
     def attempt() -> Coroutine[Any, Any, int]:
-        return wait_runner(
-            uri=args.uri,
-            name=connect_name,
-            for_name=for_name,
-            timeout=args.timeout,
-            directed_only=args.directed_only,
-            roles=roles,
-            wake_jitter=args.wake_jitter,
-            token=args.token,
-            ready_timeout=args.ready_timeout,
-            wake_capability=wake_capability,
-            owner_lease_path=lease_path(connect_name),
-            identity_key_path=machine.get("identity_key_path"),
-            identity_key_id=str(machine.get("identity_key_id", "")),
-            capability_card_path=capability_card_path,
-            capability_refresh_seconds=float(getattr(args, "capability_refresh_seconds", 21_600.0)),
-        )
+        return wait_runner(**wait_kwargs)
 
     return async_runner(
         _run_wait_with_reconnect(

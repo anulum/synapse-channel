@@ -285,10 +285,14 @@ session name per exact identity. Do not point Core and Fleet services at the
 same session.
 
 Pane-bridge presence is continuously bounded rather than assumed forever.
-`--pane-probe-interval` defaults to five seconds: each quiet wait interval
-disconnects the receiver and re-proves the session, exact binding, and active
-agent pane before reconnecting. A missing pane makes the bridge exit without
-sending keys or starting/stopping an owner application.
+`--pane-probe-interval` defaults to five seconds: one long `synapse wait` stays
+connected while the bridge re-proves the session, exact binding, and active
+agent pane every interval. A missing pane stops the wait at once and makes the
+bridge exit without sending keys or starting/stopping an owner application. The
+bridge starts one Python process per long wait instead of one per interval, so
+a fleet of bridges no longer restarts a process and a hub connection every few
+seconds each. The wait exits with the bridge, and the supervisor heartbeat still
+runs every interval.
 
 ### Provider/session compatibility without terminal downtime
 

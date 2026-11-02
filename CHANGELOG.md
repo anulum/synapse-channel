@@ -54,6 +54,18 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **Pane bridges no longer restart `synapse wait` every probe interval.** Each
+  `synapse agent-tmux` bridge used to start a new Python `synapse wait` and a
+  new hub connection every `--pane-probe-interval` (5 s); with 25 bridges that
+  was about 4-5 process starts per second on one workstation. A bridge now keeps
+  one wait connected for up to five minutes and re-proves the session, binding
+  and agent pane every interval while it waits; a lost pane stops the wait at
+  once, so the documented presence bound is unchanged. A delivered wake gets one
+  more fresh check before any key is sent, and the message stays in the hub if
+  that check refuses. The wait is bound to its bridge (`PR_SET_PDEATHSIG` on
+  Linux plus a parent check everywhere) through a hidden
+  `wait --exit-with-parent` option, and an older `--synapse-bin` that lacks it
+  keeps the former cycle.
 - The hash-locked TPM 2.0 CI capability now builds tpm2-pytss 3.0.0 instead of
   2.3.0. On Ubuntu 26.04, GCC 15 compiles C23 by default, so its `stddef.h`
   declares `nullptr_t`, which the binding's header parser cannot read; 2.3.0
@@ -69,10 +81,6 @@ execution evidence when carrying a release claim forward.
   must be root-owned and changeable only by root; every other sandbox keeps
   Ubuntu's capability-free children, and a CI probe checks both by an actual
   mount. This is a CI test capability only; product code does not read it.
-- The CI test matrix now runs on Ubuntu 26.04 for every push. The whole matrix
-  passed there first (run 41528157721: the TPM build, the uutils multicall
-  coreutils and the Bubblewrap capability fixes above). A manual run can still
-  select Ubuntu 24.04 to compare a regression against the old image.
 
 ## [0.99.43] - 2026-11-02
 

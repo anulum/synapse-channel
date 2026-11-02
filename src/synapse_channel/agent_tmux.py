@@ -52,6 +52,7 @@ from synapse_channel.agent_pane_state import (
     provider_compatibility,
 )
 from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.pane_bridge_wait import DEFAULT_BRIDGE_WAIT_TIMEOUT, run_probed_wait
 from synapse_channel.tmux_server import new_server_prefix
 from synapse_channel.waiter_identity import pane_waiter_name
 
@@ -931,8 +932,16 @@ def status(
     )
 
 
-def _wait_command(config: AgentTmuxConfig) -> list[str]:
-    """Build the one-shot ``synapse wait`` command for ``config``."""
+def _wait_command(
+    config: AgentTmuxConfig, *, timeout: float | None = None, parent_pid: int | None = None
+) -> list[str]:
+    """Build the ``synapse wait`` command for ``config``.
+
+    ``timeout`` defaults to the pane probe interval (the one-shot wait); the
+    probed bridge wait passes a long timeout and its own pid, so the child stops
+    with the bridge.
+    """
+    seconds = config.pane_probe_interval if timeout is None else timeout
     command = [
         config.synapse_bin,
         "wait",
@@ -941,11 +950,13 @@ def _wait_command(config: AgentTmuxConfig) -> list[str]:
         "--for",
         config.identity,
         "--timeout",
-        f"{max(config.pane_probe_interval, 0.1):g}",
+        f"{max(seconds, 0.1):g}",
         "--directed-only",
         "--wake-capability",
         "pane_bridge",
     ]
+    if parent_pid is not None:
+        command.extend(["--exit-with-parent", str(parent_pid)])
     if config.uri != DEFAULT_HUB_URI:
         command.extend(["--uri", config.uri])
     if config.token_file is not None:
@@ -1017,6 +1028,107 @@ def _target_refusal(snapshot: AgentTmuxStatus) -> int:
     if not snapshot.binding_valid:
         return BINDING_REFUSAL_EXIT_CODE
     return 0 if snapshot.agent_active else 1
+
+
+_ONE_SHOT_WAIT_BINARIES: set[str] = set()
+"""``synapse`` executables found too old for the long, parent-bound bridge wait."""
+
+_PARENT_FLAG_REFUSAL = "unrecognized arguments: --exit-with-parent"
+"""Argparse's refusal when a ``synapse`` predates ``wait --exit-with-parent``."""
+
+
+def _retry_exit(
+    failures: int,
+    max_failures: int | None,
+    false_wake: bool,
+    wait: subprocess.CompletedProcess[str],
+) -> int | None:
+    """Return the bridge exit code once consecutive failed waits reach the limit.
+
+    Parameters
+    ----------
+    failures : int
+        Consecutive failed waits so far.
+    max_failures : int or None
+        Limit; ``None`` retries indefinitely.
+    false_wake : bool
+        Whether the last wait was a provider-yield false wake.
+    wait : subprocess.CompletedProcess[str]
+        The last wait.
+
+    Returns
+    -------
+    int or None
+        ``3`` for a false wake or the wait's own code when the limit is reached,
+        otherwise ``None`` (keep retrying).
+    """
+    if max_failures is None or failures < max_failures:
+        return None
+    return 3 if false_wake else wait.returncode
+
+
+def _bridge_wait(
+    config: AgentTmuxConfig,
+    *,
+    runner: CommandRunner,
+    heartbeat: Callable[[], None] | None,
+) -> tuple[subprocess.CompletedProcess[str], int]:
+    """Run one receiver wait and return it with a refusal code (``0`` when valid).
+
+    With the real process runner the bridge keeps ONE wait connected for
+    :data:`~synapse_channel.pane_bridge_wait.DEFAULT_BRIDGE_WAIT_TIMEOUT` seconds
+    and re-proves the session, binding and agent pane every
+    ``pane_probe_interval`` seconds while it runs; a refused probe stops the wait
+    at once, so a lost pane keeps no receiver longer than before. A delivered
+    message is followed by one more fresh probe before any injection. The wait
+    only signals a wake: the message itself stays in the hub, so a refusal here
+    loses nothing. An injected runner (tests), or a configured ``synapse`` too
+    old to accept ``wait --exit-with-parent``, keeps the one-shot,
+    interval-bounded wait; the old executable is detected from its argparse
+    refusal once and remembered for the life of the bridge.
+
+    Parameters
+    ----------
+    config : AgentTmuxConfig
+        Wake target.
+    runner : CommandRunner
+        Subprocess runner for tmux probes and, when injected, the wait itself.
+    heartbeat : Callable[[], None] or None
+        Supervisor heartbeat, called at every probe interval of a long wait.
+
+    Returns
+    -------
+    tuple[subprocess.CompletedProcess[str], int]
+        The finished wait and ``0``, or a timeout-shaped wait and the refusal code.
+    """
+    if runner is not subprocess.run or config.synapse_bin in _ONE_SHOT_WAIT_BINARIES:
+        one_shot = runner(
+            _wait_command(config),
+            capture_output=True,
+            text=True,
+            check=False,
+            env=_wait_process_env(),
+        )
+        return one_shot, 0
+
+    def probe() -> int:
+        return _target_refusal(status(config, runner=runner))
+
+    wait_proc, refusal = run_probed_wait(
+        _wait_command(config, timeout=DEFAULT_BRIDGE_WAIT_TIMEOUT, parent_pid=os.getpid()),
+        env=_wait_process_env(),
+        interval=config.pane_probe_interval,
+        probe=probe,
+        heartbeat=heartbeat,
+    )
+    if wait_proc.returncode == 2 and _PARENT_FLAG_REFUSAL in (wait_proc.stderr or ""):
+        # An older `synapse` cannot bind its wait to the bridge; keep this
+        # bridge on the one-shot, interval-bounded wait it always used.
+        _ONE_SHOT_WAIT_BINARIES.add(config.synapse_bin)
+        return _bridge_wait(config, runner=runner, heartbeat=heartbeat)
+    if not refusal and wait_proc.returncode == 0:
+        refusal = probe()
+    return wait_proc, refusal
 
 
 def wait_and_wake(
@@ -1109,8 +1221,11 @@ def wait_and_wake(
                     consecutive_failures = 0
                     continue
                 consecutive_failures += 1
-                if max_wait_failures is not None and consecutive_failures >= max_wait_failures:
-                    return 3 if false_wake else wait_proc.returncode
+                exit_code = _retry_exit(
+                    consecutive_failures, max_wait_failures, false_wake, wait_proc
+                )
+                if exit_code is not None:
+                    return exit_code
                 sleeper(
                     _backoff_delay(
                         consecutive_failures,
@@ -1121,13 +1236,9 @@ def wait_and_wake(
                     )
                 )
             continue
-        wait_proc = runner(
-            _wait_command(config),
-            capture_output=True,
-            text=True,
-            check=False,
-            env=_wait_process_env(),
-        )
+        wait_proc, refusal = _bridge_wait(config, runner=runner, heartbeat=heartbeat)
+        if refusal:
+            return refusal
         # A provider-yield exit is rc=0 with the plain-passive message. Treating
         # that as a wake re-injects forever (false-wake loop). Count it as a
         # failed wait so backoff applies and the pane stays quiet.
@@ -1143,8 +1254,9 @@ def wait_and_wake(
             continue
         if wait_proc.returncode != 0 or false_wake:
             consecutive_failures += 1
-            if max_wait_failures is not None and consecutive_failures >= max_wait_failures:
-                return 3 if false_wake else wait_proc.returncode
+            exit_code = _retry_exit(consecutive_failures, max_wait_failures, false_wake, wait_proc)
+            if exit_code is not None:
+                return exit_code
             sleeper(
                 _backoff_delay(
                     consecutive_failures,

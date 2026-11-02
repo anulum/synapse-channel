@@ -115,12 +115,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "terminals do not re-invoke at once and trip the provider rate limit; 0 disables.",
     )
     wait.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
-    wait.add_argument(
-        "--wake-capability",
-        default=WAKE_PASSIVE,
-        choices=("direct", "passive", "pane_bridge"),
-        help=argparse.SUPPRESS,
-    )
+    _add_bridge_wait_arguments(wait)
     wait.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )
@@ -178,3 +173,22 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "instead of showing them marked as not replay-protected.",
     )
     listen.set_defaults(func=_cmd_listen)
+
+
+def _add_bridge_wait_arguments(wait: argparse.ArgumentParser) -> None:
+    """Add the hidden ``wait`` options that only a pane bridge passes.
+
+    Parameters
+    ----------
+    wait : argparse.ArgumentParser
+        The ``wait`` subcommand parser.
+    """
+    wait.add_argument(
+        "--wake-capability",
+        default=WAKE_PASSIVE,
+        choices=("direct", "passive", "pane_bridge"),
+        help=argparse.SUPPRESS,
+    )
+    # The bridge's pid: the wait stops with the bridge so it never keeps
+    # advertising a pane receiver nobody serves.
+    wait.add_argument("--exit-with-parent", type=int, default=None, help=argparse.SUPPRESS)

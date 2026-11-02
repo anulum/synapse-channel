@@ -23,6 +23,7 @@ import os
 import shlex
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -34,6 +35,7 @@ from typing import Any
 
 import pytest
 
+from _platform_caps import requires_proc
 from cli_e2e_helpers import _candidate_environment, _stop, isolated_hub, run_cli
 from synapse_channel.agent_tmux import (
     PANE_CAPTURE_MAX_CHARS,
@@ -950,3 +952,182 @@ def test_codex_tmux_alias_injects_the_same_fixed_prompt(tmp_path: Path) -> None:
 
         pane = _normalise(_capture_pane(session))
         assert _normalise(build_wake_prompt(_IDENTITY)) in pane
+
+
+def _start_long_bridge(
+    tmp_path: Path, session: str, uri: str, *, interval: float
+) -> tuple[subprocess.Popen[str], Path]:
+    """Start a pane bridge on the candidate ``synapse`` and wait until it is registered.
+
+    The candidate executable next to the test interpreter accepts
+    ``wait --exit-with-parent``, so the bridge runs its long, probed wait.
+    """
+    provider, submissions = _recording_provider(tmp_path)
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700, exist_ok=True)
+    bridge = subprocess.Popen(  # noqa: S603 - candidate CLI, test-only
+        [
+            sys.executable,
+            "-u",
+            "-m",
+            "synapse_channel.cli",
+            "agent-tmux",
+            "wait",
+            "--identity",
+            _IDENTITY,
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            str(provider),
+            "--submit-delay",
+            "0",
+            "--uri",
+            uri,
+            "--pane-probe-interval",
+            str(interval),
+            "--synapse-bin",
+            str(Path(sys.executable).parent / "synapse"),
+            "--max-wakes",
+            "1",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=_candidate_environment({"XDG_RUNTIME_DIR": str(runtime)}),
+    )
+    deadline = time.monotonic() + 15.0
+    while f"{_IDENTITY}-pane-rx" not in run_cli("who", uri=uri).stdout:
+        if time.monotonic() > deadline or bridge.poll() is not None:
+            _stop(bridge)
+            raise AssertionError(f"pane bridge did not register: {bridge.communicate()[0]}")
+        time.sleep(0.05)
+    return bridge, submissions
+
+
+def _receiver_gone(uri: str, within: float) -> bool:
+    """Return whether the pane receiver leaves the hub within ``within`` seconds."""
+    deadline = time.monotonic() + within
+    while time.monotonic() < deadline:
+        if f"{_IDENTITY}-pane-rx" not in run_cli("who", uri=uri).stdout:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def _wait_children(pid: int) -> set[int]:
+    """Return the pids of ``pid``'s live child processes that run ``synapse wait``."""
+    children: set[int] = set()
+    for task in Path(f"/proc/{pid}/task").iterdir():
+        for child in (task / "children").read_text().split():
+            try:
+                argv = Path(f"/proc/{child}/cmdline").read_bytes().split(b"\0")
+            except FileNotFoundError:
+                continue
+            if b"wait" in argv and b"--exit-with-parent" in argv:
+                children.add(int(child))
+    return children
+
+
+def test_a_lost_pane_ends_the_long_wait_within_the_probe_interval(tmp_path: Path) -> None:
+    """Killing the pane makes the bridge stop its wait, leave the hub and exit without input."""
+    with _throwaway_session() as session, isolated_hub(tmp_path) as hub:
+        bridge, submissions = _start_long_bridge(tmp_path, session, hub.uri, interval=0.5)
+        try:
+            _kill_session(session)
+            started = time.monotonic()
+            output, _ = bridge.communicate(timeout=10.0)
+            assert bridge.returncode != 0, output
+            assert time.monotonic() - started < 5.0
+            assert _receiver_gone(hub.uri, 5.0)
+            assert not submissions.exists()
+        finally:
+            if bridge.poll() is None:
+                _stop(bridge)
+
+
+@requires_proc
+def test_one_wait_process_serves_many_probe_intervals(tmp_path: Path) -> None:
+    """Across many probe intervals the bridge keeps one parent-bound wait child."""
+    with _throwaway_session() as session, isolated_hub(tmp_path) as hub:
+        bridge, _ = _start_long_bridge(tmp_path, session, hub.uri, interval=0.2)
+        try:
+            seen: set[int] = set()
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                seen |= _wait_children(bridge.pid)
+                time.sleep(0.05)
+            assert len(seen) == 1, seen
+            (child,) = seen
+            argv = Path(f"/proc/{child}/cmdline").read_bytes().split(b"\0")
+            assert argv[argv.index(b"--exit-with-parent") + 1] == str(bridge.pid).encode()
+        finally:
+            _stop(bridge)
+
+
+@requires_proc
+def test_a_killed_bridge_takes_its_wait_and_hub_presence_with_it(tmp_path: Path) -> None:
+    """``SIGKILL`` on the bridge leaves no wait process and no pane receiver behind."""
+    with _throwaway_session() as session, isolated_hub(tmp_path) as hub:
+        bridge, _ = _start_long_bridge(tmp_path, session, hub.uri, interval=5.0)
+        (child,) = _wait_children(bridge.pid)
+        bridge.kill()
+        bridge.wait(timeout=10.0)
+        deadline = time.monotonic() + 5.0
+        while Path(f"/proc/{child}").exists() and b"Z" not in _state(child):
+            assert time.monotonic() < deadline, "the wait outlived its bridge"
+            time.sleep(0.05)
+        assert _receiver_gone(hub.uri, 5.0)
+
+
+def _state(pid: int) -> bytes:
+    """Return the scheduler state letter of ``pid``, or ``Z`` once it is gone."""
+    try:
+        return Path(f"/proc/{pid}/stat").read_bytes().rsplit(b")", 1)[1].split()[0]
+    except (FileNotFoundError, IndexError):
+        return b"Z"
+
+
+def test_a_wake_for_a_lost_pane_is_not_injected_and_stays_in_the_hub(tmp_path: Path) -> None:
+    """A message that arrives after the pane is gone is never typed and is not lost."""
+    with _throwaway_session() as session, isolated_hub(tmp_path) as hub:
+        bridge, submissions = _start_long_bridge(tmp_path, session, hub.uri, interval=30.0)
+        try:
+            _kill_session(session)
+            sent = run_cli(
+                "send", "wake for a gone pane", "--name", "A", "--target", _IDENTITY, uri=hub.uri
+            )
+            assert sent.ok(), sent.output
+            output, _ = bridge.communicate(timeout=15.0)
+            assert bridge.returncode != 0, output
+            assert not submissions.exists()
+        finally:
+            if bridge.poll() is None:
+                _stop(bridge)
+        with sqlite3.connect(f"file:{hub.db_path}?mode=ro", uri=True) as journal:
+            payloads = [
+                json.loads(row[0])
+                for row in journal.execute("SELECT payload FROM events WHERE kind = 'chat'")
+            ]
+        assert any(
+            entry.get("target") == _IDENTITY and entry.get("payload") == "wake for a gone pane"
+            for entry in payloads
+        )
+        # The identity's ordinary inbox path still delivers it: a mailbox arm replays it.
+        home = tmp_path / "reader-home"
+        home.mkdir()
+        inbox = run_cli(
+            "arm",
+            "--name",
+            _IDENTITY,
+            "--for",
+            _IDENTITY,
+            "--mailbox",
+            "--max-wakes",
+            "1",
+            uri=hub.uri,
+            env={"HOME": str(home)},
+        )
+        assert inbox.ok(), inbox.output
+        assert "wake for a gone pane" in inbox.stdout

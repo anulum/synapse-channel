@@ -1215,12 +1215,19 @@ downgrade to a version that ignores control records while recovery is outstandin
 Automatic bridge
 restart, watchdog recovery, and configuration reload never terminate or replace
 the tmux provider session.
-The default `--pane-probe-interval 5` bounds stale pane-bridge presence: after
-each quiet interval the wait socket closes, then the bridge rechecks the tmux
-session, exact identity binding, and active agent pane before registering
-again. If the pane disappeared or became inactive, the bridge exits without
-injecting or starting an owner application; supervision may then report and
-repair it through the ordinary service path.
+The default `--pane-probe-interval 5` bounds stale pane-bridge presence. The
+bridge keeps one `synapse wait` connected for up to five minutes and, every
+interval while it waits, rechecks the tmux session, exact identity binding, and
+active agent pane. If the pane disappeared or became inactive, the bridge stops
+that wait at once, so the hub drops the receiver within the interval plus a
+two-second stop, and the bridge exits without injecting or starting an owner
+application; supervision may then report and repair it through the ordinary
+service path. A
+delivered wake is followed by one more fresh check before any key is sent; the
+wait only signals the wake, so the message itself stays in the hub. The wait is
+bound to the bridge: it exits when the bridge dies, even after `SIGKILL`. A
+`--synapse-bin` older than this behaviour is detected once and keeps the former
+one-wait-per-interval cycle.
 
 A global priority or CEO broadcast can still wake general-purpose
 `synapse wait --directed-only` automation. If many such consumers invoke a model
