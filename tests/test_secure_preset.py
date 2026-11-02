@@ -144,11 +144,11 @@ def test_stricter_positive_limits_survive() -> None:
         ),
         ({"durable_ingress_window": float("nan")}, "--durable-ingress-window"),
         ({"no_durable_ingress_quota": True}, "--no-durable-ingress-quota"),
+        ({"durable_ingress_events": "many"}, "requires numeric --durable-ingress-events"),
+        ({"durable_ingress_bytes": [1024]}, "requires numeric --durable-ingress-events"),
     ],
 )
-def test_weaker_durable_ingress_limits_fail_closed(
-    overrides: dict[str, float | int | bool], flag: str
-) -> None:
+def test_weaker_durable_ingress_limits_fail_closed(overrides: dict[str, object], flag: str) -> None:
     args = _complete_args(**overrides)
 
     with pytest.raises(SecureModeError, match=flag):
@@ -381,3 +381,12 @@ def test_secure_mode_records_sequence_floors_in_compat_mode() -> None:
     assert report is not None
     assert args.message_auth_sequence_floor_mode == "compat"
     assert "durable message-auth sequence floors recorded (compat)" in report.enforced
+
+
+def test_an_unset_durable_ingress_window_takes_the_secure_default() -> None:
+    """A zero window is not a weaker limit; the preset fills in its own window."""
+    args = _complete_args(durable_ingress_window=0.0)
+
+    apply_secure_hub_profile(args)
+
+    assert args.durable_ingress_window == SECURE_DURABLE_INGRESS_WINDOW
