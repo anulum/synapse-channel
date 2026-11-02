@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import json
 import socket
 from collections.abc import AsyncIterator, Callable
@@ -39,11 +40,25 @@ _MULTIHUB_KEY_ID = "test-follower-key"
 
 
 def _free_port() -> int:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("localhost", 0))
-    port = int(sock.getsockname()[1])
-    sock.close()
-    return port
+    """Return a loopback port free on IPv4 and, where IPv6 exists, on ``::1`` too.
+
+    A hub bound to ``localhost`` listens on both families. A port that is free on
+    127.0.0.1 can still be taken on ::1 by another process, which then fails the
+    hub's bind with "address already in use", so both are checked.
+    """
+    for _ in range(64):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as ipv4:
+            ipv4.bind(("127.0.0.1", 0))
+            port = int(ipv4.getsockname()[1])
+            try:
+                with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as ipv6:
+                    ipv6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                    ipv6.bind(("::1", port))
+            except OSError as exc:
+                if exc.errno == errno.EADDRINUSE:
+                    continue
+            return port
+    raise RuntimeError("no loopback port is free on both IPv4 and IPv6")
 
 
 async def _await_listening(port: int, timeout: float = 3.0) -> None:
