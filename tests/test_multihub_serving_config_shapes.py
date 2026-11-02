@@ -55,3 +55,28 @@ def test_policy_values_that_must_be_objects_are_refused(
     path.write_bytes(raw)
     with pytest.raises(MultiHubServingConfigError, match=f"^{label} must be a JSON object$"):
         load_multihub_serving_config(path)
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        (
+            b'{"version": 1, "federation_store": "federation.json", "grants": []}',
+            "^multi-hub serving policy is missing fields: client_ca_file$",
+        ),
+        (
+            b'{"version": 1, "federation_store": "federation.json",'
+            b' "client_ca_file": "client-ca.pem", "grants": [{"sender": "fleet-a"}]}',
+            "^grants\\[0\\] is missing fields: domain_id, namespace, signing_key_id$",
+        ),
+    ],
+    ids=["root", "grant"],
+)
+def test_policy_objects_missing_required_fields_are_refused(
+    tmp_path: Path, raw: bytes, message: str
+) -> None:
+    """Every required field is named, in order, when the root or a grant omits it."""
+    path = _policy(tmp_path)
+    path.write_bytes(raw)
+    with pytest.raises(MultiHubServingConfigError, match=message):
+        load_multihub_serving_config(path)
