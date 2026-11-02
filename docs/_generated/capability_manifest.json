@@ -7,7 +7,7 @@
     "optional_dependency_groups": 14,
     "package_modules": 866,
     "public_api_exports": 70,
-    "tests": 12395,
+    "tests": 12396,
     "version": "0.99.42",
     "wire_message_types": 114,
     "workflows": 27
