@@ -17,7 +17,10 @@ import pytest
 from synapse_channel.shell_integration import pid_is_live_process
 
 
-@pytest.mark.parametrize("pid", [0, -1, -os.getpid()])
+# Stable ids: a PID in the test id would differ per process and break sharded collection.
+@pytest.mark.parametrize(
+    "pid", [0, -1, -os.getpid()], ids=["zero", "broadcast", "own-process-group"]
+)
 def test_a_non_positive_pid_is_never_a_live_process(pid: int) -> None:
     """A group or broadcast pid is never mistaken for one live process."""
     assert pid_is_live_process(pid) is False
