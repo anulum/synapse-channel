@@ -175,13 +175,13 @@ def test_the_delegated_runner_passes_the_capability_variable_to_the_tests() -> N
 
 
 @pytest.mark.docs_contract
-def test_push_runs_keep_the_pinned_image_and_manual_runs_can_qualify_another() -> None:
-    """Only a manual dispatch can move the test matrix off the pinned runner image."""
+def test_push_runs_use_the_qualified_image_and_manual_runs_can_pick_the_old_one() -> None:
+    """Push runs use the qualified ubuntu-26.04 image; a manual run may still pick 24.04."""
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     dispatch = workflow[True]["workflow_dispatch"]["inputs"]["test_runner"]
-    assert dispatch["default"] == "ubuntu-24.04"
+    assert dispatch["default"] == "ubuntu-26.04"
     assert dispatch["options"] == ["ubuntu-24.04", "ubuntu-26.04"]
-    assert workflow["jobs"]["test"]["runs-on"] == "${{ inputs.test_runner || 'ubuntu-24.04' }}"
+    assert workflow["jobs"]["test"]["runs-on"] == "${{ inputs.test_runner || 'ubuntu-26.04' }}"
 
 
 def test_native_probe_executes_checks_even_with_empty_standard_input(tmp_path: Path) -> None:

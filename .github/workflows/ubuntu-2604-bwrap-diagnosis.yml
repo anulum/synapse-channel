@@ -7,9 +7,10 @@
 # SYNAPSE CHANNEL — manual diagnosis of Bubblewrap isolation on the ubuntu-26.04 image
 name: ubuntu-2604-bwrap-diagnosis
 
-# The ci test job is pinned to ubuntu-24.04 because, on ubuntu-26.04, Bubblewrap fails
-# to configure loopback in a new network namespace. This manual job records the facts
-# needed to support 26.04 without weakening isolation; it changes nothing in the repo.
+# This manual job records Bubblewrap isolation facts on the ubuntu-26.04 image (OS,
+# kernel, AppArmor profiles, user-namespace sysctls and three bwrap shapes). It found
+# why loopback setup failed there before the ci test job moved to ubuntu-26.04, and it
+# stays available to diagnose a future image change. It changes nothing in the repo.
 on:
   workflow_dispatch:
 

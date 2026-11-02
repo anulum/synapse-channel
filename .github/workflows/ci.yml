@@ -17,7 +17,7 @@ on:
         description: Runner image for the test matrix (qualify a new image before switching)
         type: choice
         options: [ubuntu-24.04, ubuntu-26.04]
-        default: ubuntu-24.04
+        default: ubuntu-26.04
 
 permissions:
   contents: read
@@ -124,9 +124,9 @@ jobs:
           overwrite: true
 
   test:
-    # Pinned to ubuntu-24.04 until the whole matrix is qualified on ubuntu-26.04
-    # (ubuntu-latest from 2026-11-02). A manual run can select ubuntu-26.04 to do that.
-    runs-on: ${{ inputs.test_runner || 'ubuntu-24.04' }}
+    # Pinned to ubuntu-26.04, qualified on the whole matrix by run 41528157721. A manual
+    # run can still select ubuntu-24.04 to compare a regression against the old image.
+    runs-on: ${{ inputs.test_runner || 'ubuntu-26.04' }}
     # Shards finish in 10-20 minutes; a hung test fails the job within the
     # hour instead of holding the runner for the six-hour platform default.
     timeout-minutes: 60

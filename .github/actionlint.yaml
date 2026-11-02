@@ -9,6 +9,6 @@ self-hosted-runner:
   labels:
     # GitHub-hosted label; actionlint 1.7.7's built-in list predates its addition.
     - macos-15-intel
-    # GitHub-hosted image behind ubuntu-latest since 2026-11-02; used by the manual
-    # ubuntu-2604-bwrap-diagnosis workflow.
+    # GitHub-hosted image behind ubuntu-latest since 2026-11-02; the ci test job and
+    # the manual ubuntu-2604-bwrap-diagnosis workflow name it explicitly.
     - ubuntu-26.04

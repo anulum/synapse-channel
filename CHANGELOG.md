@@ -69,6 +69,10 @@ execution evidence when carrying a release claim forward.
   must be root-owned and changeable only by root; every other sandbox keeps
   Ubuntu's capability-free children, and a CI probe checks both by an actual
   mount. This is a CI test capability only; product code does not read it.
+- The CI test matrix now runs on Ubuntu 26.04 for every push. The whole matrix
+  passed there first (run 41528157721: the TPM build, the uutils multicall
+  coreutils and the Bubblewrap capability fixes above). A manual run can still
+  select Ubuntu 24.04 to compare a regression against the old image.
 
 ## [0.99.43] - 2026-11-02
 
