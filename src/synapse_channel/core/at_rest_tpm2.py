@@ -62,11 +62,12 @@ still records which template derived its key and stays loadable by version-aware
 def _prepare_tpm2_cryptography_compat() -> None:
     """Expose moved legacy ciphers where tpm2-pytss 2.3 still imports them.
 
-    Cryptography moved Camellia and CFB into its explicit ``decrepit`` namespace,
-    while the latest tpm2-pytss release still imports their deprecated aliases.
+    Cryptography moved Camellia and CFB into its explicit ``decrepit`` namespace.
+    tpm2-pytss 2.3, which the ``[tpm2]`` extra still accepts, imports their old
+    deprecated aliases; tpm2-pytss 3.0 imports them from ``decrepit`` itself.
     Installing the canonical moved classes on the old module objects before the
     TPM binding loads avoids both the removal boundary and its deprecation
-    warning. Older cryptography releases without ``decrepit`` need no shim.
+    warning for 2.3. Older cryptography releases without ``decrepit`` need no shim.
 
     This is compatibility, not warning suppression: no warning filter changes,
     and tpm2-pytss receives the same class objects cryptography now exports from
