@@ -18,6 +18,16 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Security
+
+- The optional `dev`, `otel` and `all` extras now require
+  `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-http` at
+  1.45.1 or newer. SDK 1.43.0 depends on `opentelemetry-api` 1.43.0,
+  which is inside GHSA-xcq7-p3pf-p88h (affected through 1.45.0, fixed in
+  1.45.1). The hashed development lock already installs 1.45.2 and is
+  unchanged. A downstream install of the extra now resolves the patched
+  API.
+
 ### Added
 
 - Compose live Linux kernel checks, signed current authority status and the
