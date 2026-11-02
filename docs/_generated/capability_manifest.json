@@ -10,7 +10,7 @@
     "tests": 12396,
     "version": "0.99.42",
     "wire_message_types": 114,
-    "workflows": 27
+    "workflows": 28
   },
   "project": "SYNAPSE CHANNEL",
   "schema_version": "capability-manifest.v1"

@@ -1918,7 +1918,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Test functions | 12396 |
 | Benchmark harnesses | 14 |
 | Documentation pages | 91 |
-| GitHub Actions workflows | 27 |
+| GitHub Actions workflows | 28 |
 | Optional-dependency groups | 14 |
 
 This snapshot is a static inventory generated from the source tree. Performance and coverage claims have their own committed evidence — see `VALIDATION.md` and `benchmarks/`.

@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — manual diagnosis of Bubblewrap isolation on the ubuntu-26.04 image
+name: ubuntu-2604-bwrap-diagnosis
+
+# The ci test job is pinned to ubuntu-24.04 because, on ubuntu-26.04, Bubblewrap fails
+# to configure loopback in a new network namespace. This manual job records the facts
+# needed to support 26.04 without weakening isolation; it changes nothing in the repo.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - name: Record the Bubblewrap and AppArmor facts of this image
+        run: |
+          set -uo pipefail
+          grep -E '^(PRETTY_NAME|VERSION_ID)=' /etc/os-release
+          uname -r
+          bwrap --version
+          dpkg-query -W -f='${Package} ${Version}\n' apparmor bubblewrap
+          for name in apparmor_restrict_unprivileged_userns apparmor_restrict_unprivileged_unconfined; do
+            printf '%s=%s\n' "$name" "$(cat "/proc/sys/kernel/$name" 2>/dev/null || echo absent)"
+          done
+          for file in /etc/apparmor.d/*bwrap* /etc/apparmor.d/*userns*; do
+            if [ -e "$file" ]; then ls -l "$file"; fi
+          done
+          for file in /etc/apparmor.d/bwrap-userns-restrict /etc/apparmor.d/bwrap; do
+            if [ -f "$file" ]; then echo "=== $file"; cat "$file"; fi
+          done
+          sudo -n aa-status 2>/dev/null | grep -i -E 'bwrap|unpriv' || echo 'no loaded bwrap profile'
+      - name: Try each isolation shape and record its outcome
+        run: |
+          set -uo pipefail
+          # Inside the sandbox: the confining label, the visible interfaces and whether
+          # loopback is up (SIOCGIFFLAGS IFF_UP), exactly what the CI gate asserts.
+          probe='import fcntl, socket, struct
+          from pathlib import Path
+          names = [name for _, name in socket.if_nameindex()]
+          with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+              flags = fcntl.ioctl(sock, 0x8913, struct.pack("16sH14x", b"lo", 0))
+          up = bool(struct.unpack_from("H", flags, 16)[0] & 1)
+          label = Path("/proc/self/attr/current").read_text().strip()
+          print(f"label={label} interfaces={names} lo_up={up}")'
+          attempt() {
+            label="$1"; shift
+            if output="$(timeout 15 /usr/bin/bwrap --die-with-parent --new-session \
+              --unshare-user --uid 0 --gid 0 --unshare-pid "$@" \
+              --ro-bind / / --proc /proc -- /usr/bin/python3 -c "$probe" 2>&1)"; then
+              echo "PASS $label: $output"
+            else
+              echo "FAIL $label (exit $?): $output"
+            fi
+          }
+          attempt "host-network (control)"
+          attempt "new-network" --unshare-net
+          sudo -n apparmor_parser --add --skip-cache <<'PROFILE'
+          abi <abi/4.0>,
+          profile synapse-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+          attempt "new-network after the CI profile" --unshare-net
+          sudo -n journalctl -k --no-pager -n 40 | grep -i apparmor || echo 'no AppArmor kernel records'
