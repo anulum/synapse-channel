@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import platform
 
 import pytest
 
@@ -22,6 +23,7 @@ def test_a_non_positive_pid_is_never_a_live_process(pid: int) -> None:
     assert pid_is_live_process(pid) is False
 
 
+@pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux /proc process identity")
 def test_this_process_is_live() -> None:
     """The control: the probe sees its own running process."""
     assert pid_is_live_process(os.getpid()) is True
