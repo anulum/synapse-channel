@@ -66,6 +66,13 @@ def install_posix_tool(path: Path, tool: str = "true", *, mode: int = 0o700) -> 
     -------
     tuple[Path, str]
         The destination ``path`` and the hex SHA-256 of its bytes.
+
+    Notes
+    -----
+    A multicall coreutils, such as uutils (the default on Ubuntu 26.04) or
+    BusyBox, picks the utility from ``argv[0]`` and refuses an unknown name. A
+    test that runs the copy must keep ``tool`` as ``argv[0]``, for example
+    ``subprocess.run([tool, ...], executable=path)``.
     """
     src = resolve_posix_tool(tool)
     shutil.copyfile(src, path)

@@ -241,7 +241,9 @@ def test_bound_launch_executes_snapshot_and_retains_exact_cwd(tmp_path: Path) ->
         cwd.mkdir()
         (cwd / "marker").write_text("replacement-cwd", encoding="utf-8")
 
-        assert subprocess.check_output([launch.command, "trusted"], text=True).strip() == "trusted"
+        # argv[0] names the tool so a multicall coreutils (uutils) runs the snapshot.
+        output = subprocess.check_output(["echo", "trusted"], executable=launch.command, text=True)
+        assert output.strip() == "trusted"
         assert (Path(launch.cwd) / "marker").read_text(encoding="utf-8") == "trusted-cwd"
 
 

@@ -90,16 +90,22 @@ def test_invalid_budget_is_refused(budget: object) -> None:
 
 
 def _chain_argv(tmp_path: Path, depth: int) -> list[str]:
-    """Return argv for ``depth`` nested shells whose leaf execs a sleep named ``codex``."""
+    """Return argv for ``depth`` nested shells whose leaf execs a sleep named ``codex``.
+
+    The leaf keeps ``sleep`` as ``argv[0]`` while its file, and so its comm, is
+    ``codex``. A multicall coreutils such as uutils (Ubuntu 26.04's default)
+    picks the utility from ``argv[0]`` and refuses an unknown name.
+    """
     executable = shutil.which("sleep")
-    assert executable is not None
+    shell = shutil.which("bash")
+    assert executable is not None and shell is not None
     leaf_binary = tmp_path / "codex"
     shutil.copyfile(executable, leaf_binary)
     leaf_binary.chmod(0o700)
     script = tmp_path / "chain.sh"
     script.write_text(
-        '#!/bin/sh\nif [ "$1" -gt 0 ]; then "$0" $(($1 - 1)) "$2"; '
-        'else : > "$2.ready"; exec "$2" 60; fi\n'
+        f'#!{shell}\nif [ "$1" -gt 0 ]; then "$0" $(($1 - 1)) "$2"; '
+        'else : > "$2.ready"; exec -a sleep "$2" 60; fi\n'
     )
     script.chmod(0o700)
     return [str(script), str(depth), str(leaf_binary)]
@@ -218,7 +224,12 @@ def test_candidate_capacity_is_partial_and_bounded(
     children: list[subprocess.Popen[bytes]] = []
     try:
         for _ in range(257):
-            children.append(subprocess.Popen([str(candidate), "30"], stdin=subprocess.DEVNULL))
+            # argv[0] stays ``sleep`` so a multicall coreutils runs it; comm is ``codex``.
+            children.append(
+                subprocess.Popen(
+                    ["sleep", "30"], executable=str(candidate), stdin=subprocess.DEVNULL
+                )
+            )
         identities = {child.pid: observe_process(child.pid) for child in children}
         assert all(item.command_name == "codex" for item in identities.values())
         started = time.monotonic()
