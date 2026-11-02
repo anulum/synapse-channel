@@ -49,13 +49,15 @@ def _recreated_worktree(claim: dict[str, Any]) -> None:
     claim["path_identity"]["worktree_object_id"] = "811:1:1"
 
 
-def _case_folding_claim(claim: dict[str, Any]) -> None:
-    claim["path_identity"]["case_sensitive"] = False
+def _opposite_case_policy(claim: dict[str, Any]) -> None:
+    # Flip the recorded policy so it differs on any host: a case-sensitive Linux
+    # worktree and a case-insensitive macOS one both disagree with the result.
+    claim["path_identity"]["case_sensitive"] = not claim["path_identity"]["case_sensitive"]
 
 
 @pytest.mark.parametrize(
     "damage",
-    [_misaligned_paths, _recreated_worktree, _case_folding_claim],
+    [_misaligned_paths, _recreated_worktree, _opposite_case_policy],
     ids=["misaligned-identity", "other-worktree-object", "case-policy-differs"],
 )
 async def test_release_retains_a_claim_whose_identity_does_not_bind_this_commit(
