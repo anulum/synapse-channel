@@ -51,6 +51,9 @@ execution evidence when carrying a release claim forward.
   by an installed older client no longer covered or conflicted with the same
   paths as seen by a newer hook. A key without a generation now matches on its
   device and inode.
+- `synapse ingest` and `synapse compact` given an event-store path that SQLite
+  cannot open (for example a directory) now exit 2 with one
+  `cannot open event store` line instead of an uncaught `sqlite3` traceback.
 
 ## [0.99.42] - 2026-11-01
 

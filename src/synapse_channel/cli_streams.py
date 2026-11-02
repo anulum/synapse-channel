@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -114,7 +115,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         kinds = None
     try:
         store = EventStore(args.db, key_file=getattr(args, "db_key_file", None))
-    except (ValueError, OSError, RuntimeError) as exc:
+    except (ValueError, OSError, RuntimeError, sqlite3.Error) as exc:
         print(f"ingest: cannot open event store: {exc}", file=sys.stderr)
         return 2
     try:
@@ -166,7 +167,7 @@ def _cmd_compact(args: argparse.Namespace) -> int:
         return 2
     try:
         store = EventStore(args.db, key_file=getattr(args, "db_key_file", None))
-    except (ValueError, OSError, RuntimeError) as exc:
+    except (ValueError, OSError, RuntimeError, sqlite3.Error) as exc:
         print(f"compact: cannot open event store: {exc}", file=sys.stderr)
         return 2
     try:
