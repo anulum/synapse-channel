@@ -7,6 +7,7 @@
 # SYNAPSE_CHANNEL — real procfs observation tests
 """Exercise process identity, consent and exit through Linux procfs."""
 
+import contextlib
 import os
 import shutil
 import subprocess
@@ -19,6 +20,7 @@ from typing import cast
 import pytest
 
 from _platform_caps import PROC_AVAILABLE, requires_proc
+from _sandbox_coverage import coverage_data_bind
 from synapse_channel.host_sessions_proc import (
     KernelClock,
     ProcessMetadata,
@@ -67,6 +69,8 @@ def test_namespace_kernel_input_limits(source: str, target: str, call: str, expe
             "--ro-bind",
             "/",
             "/",
+            # Writable only for the active coverage data directory, and only when measuring.
+            *coverage_data_bind(),
             "--ro-bind",
             source,
             target,
@@ -112,15 +116,14 @@ def test_kernel_clock_dates_a_fresh_child_within_boot_resolution() -> None:
 
 @requires_proc
 def test_explicit_foreign_process_is_withheld_as_partial() -> None:
-    init_owner = Path("/proc/1").stat().st_uid
+    # PID 1 is foreign on a normal host; inside a user namespace it may be ours.
+    foreign = Path("/proc/1").stat().st_uid != os.geteuid()
     rows, status = discover_processes(pids=(1, os.getpid()))
     assert os.getpid() in rows
-    if init_owner == os.geteuid():
-        assert status == "complete" and 1 in rows
-    else:
-        assert status == "partial" and 1 not in rows
-        with pytest.raises(PermissionError):
-            observe_process(1)
+    assert (status, 1 in rows) == (("partial", False) if foreign else ("complete", True))
+    refusal = pytest.raises(PermissionError, match="^process belongs to another user$")
+    with refusal if foreign else contextlib.nullcontext():
+        observe_process(1)
 
 
 @requires_proc
@@ -144,13 +147,9 @@ def test_self_identity_and_opt_in_cwd() -> None:
 
 def test_discovery_reports_native_process_availability() -> None:
     rows, status = discover_processes(pids=(os.getpid(),))
-    if PROC_AVAILABLE:
-        assert status == "complete"
-        assert tuple(rows) == (os.getpid(),)
-        assert rows[os.getpid()].start_ticks > 0
-    else:
-        assert status == "unavailable"
-        assert rows == {}
+    expected = ("complete", (os.getpid(),)) if PROC_AVAILABLE else ("unavailable", ())
+    assert (status, tuple(rows)) == expected
+    assert all(row.start_ticks > 0 for row in rows.values())
 
 
 @pytest.mark.parametrize("pid", [0, -1, True])
@@ -380,6 +379,12 @@ sys.stdin.read()
             child.wait(timeout=5)
 
 
+def _state_after_pause(pid: int) -> str:
+    """Return the kernel state of ``pid`` after a 10 ms pause."""
+    time.sleep(0.01)
+    return observe_process(pid).state
+
+
 @requires_proc
 def test_exited_thread_leader_reports_unavailable_metadata(tmp_path: Path) -> None:
     program = """
@@ -401,15 +406,14 @@ libc.pthread_exit(None)
     ) as child:
         try:
             assert child.stdout is not None and child.stdout.readline() == "ready\n"
-            deadline = time.monotonic() + 5
-            while observe_process(child.pid).state != "Z":
-                assert time.monotonic() < deadline, "thread leader failed to exit"
-                time.sleep(0.01)
+            assert any(_state_after_pause(child.pid) == "Z" for _ in range(500)), (
+                "thread leader failed to exit"
+            )
             assert child.poll() is None
             with pytest.raises(FileNotFoundError):
                 os.readlink(f"/proc/{child.pid}/cwd")
-            with pytest.raises(PermissionError), os.scandir(f"/proc/{child.pid}/fd") as entries:
-                tuple(entries)
+            with pytest.raises(PermissionError):
+                os.listdir(f"/proc/{child.pid}/fd")
             assert process_metadata(
                 child.pid, paths=True, context=True, context_root=tmp_path
             ) == ProcessMetadata(None, None, "unavailable", "denied")
@@ -417,6 +421,14 @@ libc.pthread_exit(None)
             assert child.stdin is not None
             child.stdin.close()
             child.wait(timeout=5)
+
+
+def _metadata_or_changed(pid: int, root: Path) -> ProcessMetadata | None:
+    """Read context metadata once; ``None`` means the process identity changed mid-read."""
+    try:
+        return process_metadata(pid, paths=False, context=True, context_root=root)
+    except ProcessLookupError:
+        return None
 
 
 @requires_proc
@@ -460,23 +472,16 @@ worker.join()
     ) as child:
         try:
             assert child.stdout is not None and child.stdout.readline() == "ready\n"
-            deadline = time.monotonic() + 10
-            refused = False
-            while time.monotonic() < deadline:
-                try:
-                    metadata = process_metadata(
-                        child.pid, paths=False, context=True, context_root=tmp_path
-                    )
-                except ProcessLookupError:
-                    assert change == "command"
-                    refused = True
-                    break
-                if metadata.context_status == "partial":
-                    assert metadata.context_id is None
-                    refused = True
-                    break
-                assert metadata.context_id in (None, context)
-            assert refused, f"did not observe concurrent {change} change"
+            # A fixed sample, not a stop-at-first loop: both outcomes appear hundreds of
+            # times in 400 reads, so every assertion below is exercised on every run.
+            outcomes = [_metadata_or_changed(child.pid, tmp_path) for _ in range(400)]
+            changed = [outcome for outcome in outcomes if outcome is None]
+            observed = [outcome for outcome in outcomes if outcome is not None]
+            partial = [outcome for outcome in observed if outcome.context_status == "partial"]
+            # A command change refuses the read; a descriptor change marks it partial.
+            assert (bool(changed), bool(partial)) == (change == "command", change == "descriptors")
+            assert all(outcome.context_id is None for outcome in partial)
+            assert all(outcome.context_id in (None, context) for outcome in observed)
         finally:
             assert child.stdin is not None
             child.stdin.close()

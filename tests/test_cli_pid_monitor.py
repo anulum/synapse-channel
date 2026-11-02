@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 import pytest
 
 from _platform_caps import PROC_AVAILABLE, requires_proc
+from _sandbox_coverage import coverage_data_bind
 from synapse_channel import cli
 from synapse_channel.cli_pid_monitor import format_runtime, render_host_observation
 from synapse_channel.dashboard import start_dashboard_server
@@ -68,6 +69,8 @@ def test_packaged_monitor_reports_missing_kernel_metadata(hidden: str, tmp_path:
         "--ro-bind",
         "/",
         "/",
+        # Writable only for the active coverage data directory, and only when measuring.
+        *coverage_data_bind(),
         *mask,
         "--",
         sys.executable,
@@ -122,21 +125,15 @@ def test_packaged_json_and_text(tmp_path: Path) -> None:
     result = subprocess.run(argv + ["--json"], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
     document = json.loads(result.stdout)
-    if PROC_AVAILABLE:
-        assert document["process_status"] == "complete"
-        assert document["rows"][0]["pid"] == os.getpid()
-        assert document["rows"][0]["cwd"] is None
-    else:
-        assert document["process_status"] == "unavailable"
-        assert document["rows"] == []
+    rows = [(row["pid"], row["cwd"]) for row in document["rows"]]
+    expected = ("complete", [(os.getpid(), None)]) if PROC_AVAILABLE else ("unavailable", [])
+    assert (document["process_status"], rows) == expected
     result = subprocess.run(argv + ["--paths"], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0 and "OS STATE" in result.stdout
-    if PROC_AVAILABLE:
-        assert os.getcwd() in result.stdout
-        assert re.search(r"^  runtime: (\d+d )?\d\d:\d\d:\d\d \(observed\)$", result.stdout, re.M)
-    else:
-        assert "process scan: unavailable" in result.stdout
-        assert os.getcwd() not in result.stdout
+    runtime = re.search(r"^  runtime: (\d+d )?\d\d:\d\d:\d\d \(observed\)$", result.stdout, re.M)
+    shown = (os.getcwd() in result.stdout, runtime is not None)
+    assert shown == ((True, True) if PROC_AVAILABLE else (False, False))
+    assert ("process scan: unavailable" in result.stdout) is not PROC_AVAILABLE
 
 
 @pytest.mark.parametrize(
