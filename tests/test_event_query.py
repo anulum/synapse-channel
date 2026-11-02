@@ -420,6 +420,31 @@ def test_channel_human_renderer_falls_back_for_legacy_labels() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("kind", "heading", "unit"),
+    [
+        ("delivery_receipts", "delivery receipts", "event(s)"),
+        ("universal_receipts", "universal receipts", "item(s)"),
+    ],
+)
+def test_receipt_human_renderers_fall_back_for_legacy_labels(
+    kind: str, heading: str, unit: str
+) -> None:
+    """A receipt result whose query no longer parses keeps a readable participant label."""
+    assert (
+        event_query.render_human(event_query.QueryResult(kind=kind, query="legacy BOB"))
+        == f"{heading} BOB: 0 {unit}"
+    )
+    assert (
+        event_query.render_human(event_query.QueryResult(kind=kind, query="legacy"))
+        == f"{heading} ?: 0 {unit}"
+    )
+    assert (
+        event_query.render_human(event_query.QueryResult(kind=kind, query="receipts ALICE"))
+        == f"{heading} ALICE: 0 {unit}"
+    )
+
+
 def test_human_renderers_cover_state_path_conflicts_and_fallback(tmp_path: Path) -> None:
     db = tmp_path / "events.db"
     _seed_store(db)
