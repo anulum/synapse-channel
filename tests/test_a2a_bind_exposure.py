@@ -84,3 +84,23 @@ def test_endpoint_scheme_warns_https_without_native_tls() -> None:
 def test_endpoint_scheme_clear_when_aligned() -> None:
     assert a2a_endpoint_scheme_warnings("https://agent.example/a2a", tls_active=True) == []
     assert a2a_endpoint_scheme_warnings("http://127.0.0.1:8877", tls_active=False) == []
+
+
+@pytest.mark.parametrize(
+    ("endpoint_url", "scheme"),
+    [
+        ("peer.example:8080/a2a", "peer.example"),
+        ("localhost:8877", "localhost"),
+        ("ftp://agent.example/a2a", "ftp"),
+    ],
+)
+@pytest.mark.parametrize("tls_active", [False, True])
+def test_endpoint_with_a_non_http_scheme_is_reported(
+    endpoint_url: str, scheme: str, tls_active: bool
+) -> None:
+    """A bare host:port, read as a scheme, and any non-HTTP scheme get one advisory."""
+    assert a2a_endpoint_scheme_warnings(endpoint_url, tls_active=tls_active) == [
+        f"--endpoint-url {endpoint_url!r} is not an http:// or https:// URL "
+        f"(it parses with scheme {scheme!r}); use absolute http:// or https:// "
+        "for Agent Card discovery"
+    ]

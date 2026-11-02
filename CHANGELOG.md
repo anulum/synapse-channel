@@ -68,6 +68,10 @@ execution evidence when carrying a release claim forward.
   `synapse entitlements suggest-compute` given an event store that SQLite cannot
   open (a directory, or a file the caller cannot read) now exit 2 with one line
   instead of an uncaught `sqlite3` traceback.
+- `synapse doctor` (the A2A bind posture check) now warns when
+  `--endpoint-url` is not an `http://` or `https://` URL. A bare
+  `host:port`, which parses with the host as its scheme, was previously
+  reported as clear.
 
 ## [0.99.42] - 2026-11-01
 

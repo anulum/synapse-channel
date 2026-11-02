@@ -81,13 +81,21 @@ def a2a_endpoint_scheme_warnings(
     These do not refuse the bind; they catch Agent Card / client discovery
     drift (for example native HTTPS while ``--endpoint-url`` still says
     ``http://``, or an ``https://`` card while the process has no native TLS
-    and must rely on a reverse proxy).
+    and must rely on a reverse proxy). A bare ``host:port`` parses with the
+    host as its scheme, so any scheme other than ``http`` or ``https`` is
+    reported too.
     """
     scheme = (urlparse(endpoint_url).scheme or "").lower()
     if not scheme:
         return [
             f"--endpoint-url {endpoint_url!r} has no scheme; use absolute "
             "http:// or https:// for Agent Card discovery"
+        ]
+    if scheme not in {"http", "https"}:
+        return [
+            f"--endpoint-url {endpoint_url!r} is not an http:// or https:// URL "
+            f"(it parses with scheme {scheme!r}); use absolute http:// or https:// "
+            "for Agent Card discovery"
         ]
     if tls_active and scheme == "http":
         return [

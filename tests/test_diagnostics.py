@@ -346,6 +346,14 @@ def test_a2a_webhook_redirect_policy_reports_fixed_credential_boundary() -> None
 # --- check_a2a_bind_posture ---------------------------------------------------
 
 
+def test_a2a_bind_posture_warns_on_a_bare_host_port_endpoint() -> None:
+    """Doctor no longer stays silent when --endpoint-url is a schemeless host:port."""
+    diagnosis = check_a2a_bind_posture(host="127.0.0.1", endpoint_url="peer.example:8080/a2a")
+    assert diagnosis.status == "warn"
+    assert "is not an http:// or https:// URL" in diagnosis.detail
+    assert "'peer.example'" in diagnosis.detail
+
+
 def test_a2a_bind_posture_pass_loopback() -> None:
     diagnosis = check_a2a_bind_posture(host="127.0.0.1")
     assert diagnosis.check == "a2a_bind_posture"
