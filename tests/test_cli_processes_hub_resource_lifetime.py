@@ -27,6 +27,16 @@ from synapse_channel.core.message_auth_durable import DurableMessageAuthReplaySt
 from synapse_channel.core.persistence import EventStore
 
 
+@pytest.fixture(autouse=True)
+def _isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the operator's real legacy identity-pin file out of every start.
+
+    A real ``~/synapse/identity-pins.json`` beside an existing journal makes the
+    hub refuse to choose pins, so these lifetime checks would depend on the host.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+
 class RecordedStore(EventStore):
     """Real event store recording successful ownership release."""
 
