@@ -254,11 +254,18 @@ def test_idle_hooks_and_a_bad_timeout_do_not_report(monkeypatch: pytest.MonkeyPa
         hang._stderr_fd = report_write
         with hang._arm_lock:
             hang._arm = hang._Arm("node::overdue", time.monotonic() - 1)
-        time.sleep(0.15)
-        os.close(report_write)
-        reported = os.read(report_read, 4096).decode()
-        os.close(report_read)
+        # Block until the watcher reports instead of sleeping a fixed 0.15 s, which a
+        # loaded macOS runner can outlast. A 10 s guard closes the write end, so a
+        # watcher that never reports fails this assertion rather than hanging.
+        guard = threading.Timer(10.0, os.close, (report_write,))
+        guard.start()
+        try:
+            reported = os.read(report_read, 4096).decode()
+        finally:
+            guard.cancel()
         assert reported == "TIMEOUT nodeid=node::overdue\n"
+        os.close(report_write)
+        os.close(report_read)
         hang.pytest_runtest_logfinish("node::overdue", ("f", 1, "t"))
         assert hang._arm is not None and hang._arm.stopped is True
         hang.pytest_configure(cast(pytest.Config, _NumericIni()))
