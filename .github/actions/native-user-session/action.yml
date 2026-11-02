@@ -22,12 +22,23 @@ runs:
         test "$(stat -c %u /usr/bin/bwrap)" = 0
         test "$(cat /sys/module/apparmor/parameters/enabled)" = Y
         userns_policy="$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)"
-        sudo -n apparmor_parser --add --skip-cache <<'PROFILE'
+        loaded="$(sudo -n cat /sys/kernel/security/apparmor/profiles)"
+        if grep -qx 'bwrap (enforce)' <<<"$loaded" && grep -qx 'unpriv_bwrap (enforce)' <<<"$loaded"; then
+          # The image ships Ubuntu's bwrap-userns-restrict profile (26.04 and later): it admits
+          # /usr/bin/bwrap to user namespaces and strips every capability from its children.
+          # A second profile on the same path conflicts and leaves bwrap unconfined, which
+          # then loses CAP_NET_ADMIN and cannot bring up loopback in a new network namespace.
+          bwrap_label='bwrap//&unpriv_bwrap (enforce)'
+        else
+          sudo -n apparmor_parser --add --skip-cache <<'PROFILE'
         abi <abi/4.0>,
         profile synapse-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
           userns,
         }
         PROFILE
+          bwrap_label='synapse-ci-bwrap (unconfined)'
+        fi
+        printf 'SYNAPSE_BWRAP_LABEL=%s\n' "$bwrap_label" >> "$GITHUB_ENV"
         test "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = "$userns_policy"
     - name: Prepare the native cgroup test session
       shell: bash
@@ -62,10 +73,10 @@ runs:
         from pathlib import Path
 
         assert os.getuid() == os.getgid() == 0
-        assert Path('/proc/self/uid_map').read_text().split() == ['0', sys.argv[1], '1']
-        for kind, original in zip(('user', 'mnt', 'pid', 'net'), sys.argv[2:], strict=True):
+        assert Path('/proc/self/uid_map').read_text().split() == ['0', sys.argv[2], '1']
+        for kind, original in zip(('user', 'mnt', 'pid', 'net'), sys.argv[3:], strict=True):
             assert os.readlink('/proc/self/ns/' + kind) != original, kind
-        assert Path('/proc/self/attr/current').read_text().strip() == 'synapse-ci-bwrap (unconfined)'
+        assert Path('/proc/self/attr/current').read_text().strip() == sys.argv[1]
         assert os.statvfs('/').f_flag & os.ST_RDONLY
         assert Path('/proc/self/stat').read_text().startswith(str(os.getpid()) + ' ')
         assert [name for _, name in socket.if_nameindex()] == ['lo']
@@ -78,4 +89,4 @@ runs:
         bash tools/run_delegated_tests.sh timeout 15 /usr/bin/bwrap \
           --die-with-parent --new-session --unshare-user --uid 0 --gid 0 \
           --unshare-pid --unshare-net --ro-bind / / --proc /proc \
-          -- /usr/bin/python3 -c "$probe" "$host_uid" "${host_namespaces[@]}"
+          -- /usr/bin/python3 -c "$probe" "$SYNAPSE_BWRAP_LABEL" "$host_uid" "${host_namespaces[@]}"

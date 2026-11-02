@@ -67,13 +67,43 @@ def test_namespace_admission_keeps_the_global_host_policy() -> None:
     assert '"$userns_policy"' in admission
 
 
+@pytest.mark.docs_contract
+def test_a_shipped_bwrap_profile_is_used_instead_of_a_conflicting_one() -> None:
+    """Ubuntu's own bwrap profile is kept when loaded, and the probe checks its label.
+
+    Loading a second profile for /usr/bin/bwrap beside Ubuntu's bwrap-userns-restrict
+    leaves bwrap unconfined, so it cannot bring up loopback in a new network namespace.
+    """
+    admission = _steps()[0]["run"]
+    shipped = admission.index("grep -qx 'unpriv_bwrap (enforce)'")
+    assert admission.index("grep -qx 'bwrap (enforce)'") < shipped
+    assert shipped < admission.index("apparmor_parser --add") < admission.index("fi\n")
+    assert "bwrap_label='bwrap//&unpriv_bwrap (enforce)'" in admission
+    assert "bwrap_label='synapse-ci-bwrap (unconfined)'" in admission
+    assert "SYNAPSE_BWRAP_LABEL=%s" in admission and '"$GITHUB_ENV"' in admission
+    probe = _steps()[-1]["run"]
+    assert "== sys.argv[1]" in probe
+    assert '"$probe" "$SYNAPSE_BWRAP_LABEL" "$host_uid"' in probe
+
+
+@pytest.mark.docs_contract
+def test_push_runs_keep_the_pinned_image_and_manual_runs_can_qualify_another() -> None:
+    """Only a manual dispatch can move the test matrix off the pinned runner image."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    dispatch = workflow[True]["workflow_dispatch"]["inputs"]["test_runner"]
+    assert dispatch["default"] == "ubuntu-24.04"
+    assert dispatch["options"] == ["ubuntu-24.04", "ubuntu-26.04"]
+    assert workflow["jobs"]["test"]["runs-on"] == "${{ inputs.test_runner || 'ubuntu-24.04' }}"
+
+
 def test_native_probe_executes_checks_even_with_empty_standard_input(tmp_path: Path) -> None:
     """An empty pipe cannot turn an unexecuted Python namespace probe into success."""
     probe = _steps()[-1]["run"]
     assert '/usr/bin/python3 -c "$probe"' in probe
     code = probe.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
     result = subprocess.run(
-        [sys.executable, "-c", code, "1000", "user", "mnt", "pid", "net"],
+        [sys.executable, "-c", code, "synapse-ci-bwrap (unconfined)", "1000"]
+        + ["user", "mnt", "pid", "net"],
         input="",
         cwd=tmp_path,
         capture_output=True,
