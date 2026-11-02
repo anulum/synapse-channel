@@ -13,7 +13,7 @@ import argparse
 import math
 
 from synapse_channel.cli_processes_hub import _cmd_hub
-from synapse_channel.cli_processes_security_args import add_hub_security_arguments
+from synapse_channel.cli_processes_security_args import add_hub_admission_arguments
 from synapse_channel.cli_processes_supervisor import _cmd_supervisor
 from synapse_channel.cli_processes_team import _cmd_team
 from synapse_channel.cli_processes_worker import _cmd_worker
@@ -372,7 +372,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
         help="Seconds active WebSocket close handshakes may delay hub shutdown.",
     )
-    add_hub_security_arguments(hub)
+    add_hub_admission_arguments(hub)
     hub.add_argument(
         "--warn-stale-recipients",
         action=argparse.BooleanOptionalAction,

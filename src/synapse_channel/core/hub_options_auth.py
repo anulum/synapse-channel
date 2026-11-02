@@ -52,3 +52,6 @@ class HubAuthOptions(TypedDict, total=False):
     identity_enrollment_rate: int
     identity_enrollment_window_seconds: float
     private_directed_messages: bool
+    verdict_authority: Mapping[str, frozenset[str]]
+    verdict_gate_enabled: bool
+    allow_unrecorded_verdict_inputs: bool

@@ -15,6 +15,7 @@ from synapse_channel.cli_deprecated_options import (
     METRICS_QUERY_FLAG_REMOVAL_VERSION,
     DeprecatedMetricsQueryTokenAction,
 )
+from synapse_channel.cli_verdicts import add_policy_arguments
 from synapse_channel.core.capability_card_trust import (
     DEFAULT_CAPABILITY_CARD_CLOCK_SKEW_SECONDS,
     DEFAULT_CAPABILITY_CARD_HISTORY_CAPACITY,
@@ -26,6 +27,12 @@ from synapse_channel.core.identity_enrollments import (
     DEFAULT_ENROLLMENT_WINDOW_SECONDS,
 )
 from synapse_channel.core.message_auth import DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS
+
+
+def add_hub_admission_arguments(hub: argparse.ArgumentParser) -> None:
+    """Add the security options and the verdict-gate options to the hub parser."""
+    add_hub_security_arguments(hub)
+    add_policy_arguments(hub)
 
 
 def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:

@@ -82,6 +82,7 @@ everything, since they need the whole command table.
 | `synapse app-task` | Offer, accept, start, attach, verify and correct owner-local human app work with a private allowance snapshot; see [Human app tasks](app-tasks.md). |
 | `synapse fleet-scorecard` | Compose causality spans, opt-in accounting, live-claim contention, reliability findings, and optional benchmark history into an owner-only JSON bundle or a two-signal OTLP/HTTP collector push. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
+| `synapse verdict` | Declare evidence, record verdicts with the inputs they read, record corrections, and report verdicts that turned stale; approving a SHA-256 subject needs a fresh accepted verdict. See [Verdicts and corrections](verdicts.md). |
 | `synapse attention` | Observe source-backed alerts in one owner-local queue; list, snooze, resolve and opt in to generic desktop previews. See [Local attention queue](attention.md). |
 | `synapse review-feedback` | Bind a Git commit to its author session, ingest a signed GitHub review, inspect an independent hub decision and route a content-minimised notice; see [Review feedback](review-feedback.md). |
 | `synapse ttl-advice` | Build read-only lease TTL advice from a hub SQLite event store. |
@@ -1673,6 +1674,9 @@ synapse accounting report ./synapse.db --pricing pricing.json --budget budget.js
 synapse approval request --name dev --subject TASK-1 --reason "needs human sign-off"
 synapse approval decide --name ceo --subject TASK-1 --approve --reason "ship it"
 synapse approval status ./synapse.db --pending
+synapse verdict record --name lab/reviewer --task STUDY --namespace lab --subject HEX --outcome accepted --input RAWHEX --author lab/writer --sequence 1
+synapse verdict correct --name lab/writer --task STUDY --namespace lab --corrects RAWHEX --replacement NEWHEX --reason "re-exported"
+synapse verdict status ./synapse.db --json
 synapse ttl-advice ./synapse.db
 synapse ingest ./synapse.db --cursor ./ingest.cursor    # drain new events as JSON lines, resumable
 synapse multihub observe --peer-db ./peer.db --json     # fold a peer hub's log offline

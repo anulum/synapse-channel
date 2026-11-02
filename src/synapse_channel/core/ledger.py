@@ -41,8 +41,14 @@ LEDGER_TASK_STATUSES = frozenset({"open", "in_progress", "blocked", "done", "can
 DEFAULT_LEDGER_TASK_STATUS = "open"
 """Status a freshly declared task starts in."""
 
-PROGRESS_KINDS = frozenset({"note", "blocked", "assessment", "usage", "approval"})
+PROGRESS_KINDS = frozenset(
+    {"note", "blocked", "assessment", "usage", "approval", "evidence", "verdict", "correction"}
+)
 """Allowed kinds for a :class:`ProgressNote`.
+
+``evidence``, ``verdict`` and ``correction`` carry the canonical bodies of
+:mod:`synapse_channel.core.verdict_records`; the hub validates and authorises
+them before they are appended.
 
 ``usage`` marks an opt-in model cost/token record whose text body follows the
 canonical accounting format (see :mod:`synapse_channel.core.accounting`).

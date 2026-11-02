@@ -57,6 +57,9 @@ UNIVERSAL_RECEIPT_EVENT_KINDS = DELIVERY_RECEIPT_EVENT_KINDS | {
     EventKind.MULTIHUB_HEAL,
     EventKind.MULTIHUB_EQUIVOCATION,
     EventKind.MULTIHUB_EQUIVOCATION_RECOVERY,
+    EventKind.VERDICT_STALE,
+    EventKind.VERDICT_RECORD_REFUSED,
+    EventKind.VERDICT_GATE_BYPASS,
 }
 """Event kinds worth loading when building the universal receipt view."""
 
@@ -182,9 +185,35 @@ def universal_receipt_from_event(event: StoredEvent) -> UniversalReceipt | None:
         EventKind.MULTIHUB_EQUIVOCATION_RECOVERY,
     }:
         return _multihub_equivocation_receipt(event)
+    if event.kind in _VERDICT_RECEIPTS:
+        return _verdict_receipt(event)
     if event.kind == EventKind.LEDGER_PROGRESS:
         return _progress_receipt(event)
     return None
+
+
+_VERDICT_RECEIPTS = {
+    EventKind.VERDICT_STALE: ("verdict-stale", "subject_sha256", "reviewer", "stale"),
+    EventKind.VERDICT_RECORD_REFUSED: ("verdict-record-refused", "task_id", "author", "refused"),
+    EventKind.VERDICT_GATE_BYPASS: ("verdict-gate-bypass", "subject", "author", "bypassed"),
+}
+"""Receipt kind, subject field, actor field and status for each verdict audit row."""
+
+
+def _verdict_receipt(event: StoredEvent) -> UniversalReceipt:
+    """Project a verdict audit row: a stale verdict, a refused record or a gate bypass."""
+    kind, subject_field, actor_field, status = _VERDICT_RECEIPTS[event.kind]
+    payload = _object_payload(event.payload)
+    subject = _text(payload, subject_field)
+    return _receipt(
+        event,
+        kind=kind,
+        subject=subject,
+        actor=_text(payload, actor_field),
+        status=status,
+        summary=f"{kind.replace('-', ' ')} {subject or '<unknown>'}",
+        payload=payload,
+    )
 
 
 def universal_receipts_from_events(events: Iterable[StoredEvent]) -> tuple[UniversalReceipt, ...]:

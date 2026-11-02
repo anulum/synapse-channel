@@ -128,6 +128,7 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     "PiRpcError": ("synapse_channel.participants.pi_rpc", "pi_rpc", ValueError),
     "ProviderHTTPError": ("synapse_channel.client.provider_http", "provider_http", RuntimeError),
     "ReviewFeedbackError": ("synapse_channel.core.review_feedback", "review_feedback", ValueError),
+    "VerdictRecordError": ("synapse_channel.core.verdict_records", "verdict_record", ValueError),
     "ClaudePluginInstallError": (
         "synapse_channel.claude_plugin_install",
         "claude_plugin_install",

@@ -230,6 +230,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_review_feedback:add_parsers", ("review-feedback",)),
     ("synapse_channel.cli_fleet_scorecard:add_parsers", ("fleet-scorecard",)),
     ("synapse_channel.cli_approvals:add_parsers", ("approval",)),
+    ("synapse_channel.cli_verdicts:add_parsers", ("verdict",)),
     ("synapse_channel.cli_adaptive_ttl:add_parsers", ("ttl-advice",)),
     ("synapse_channel.cli_auto_action:add_parsers", ("auto-action",)),
     ("synapse_channel.cli_tasks:add_parsers", ("task",)),

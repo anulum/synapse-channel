@@ -18,6 +18,40 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- **Verdicts turn stale when an input they read is corrected.** A review that
+  accepted an abstract stays bound to the abstract, but until now nothing noticed
+  when the raw record it was based on was corrected later.
+  - `synapse verdict evidence|record|correct` record three append-only progress
+    notes: an object's declaration (with optional manifest members), a verdict
+    with every input hash it read, and a correction that supersedes one object
+    with another. Each command waits for the hub and exits 1 with its reason
+    when a record is refused.
+  - An object is identified by its namespace and SHA-256. A seat may declare
+    objects and record verdicts in its own project namespace, or where
+    `synapse hub --verdict-authority NAMESPACE=SEAT` names it; only an
+    object's declarers in that namespace and allow-listed seats may correct it.
+    Declaring the same hash elsewhere gives no authority over it. Refused
+    records are journalled as `verdict_record_refused` without their body.
+  - A verdict is stale while any input, any member of a declared manifest among
+    them, or any input of a verdict on them, has a correction it does not
+    acknowledge. The state depends only on the recorded set, not on arrival
+    order, so restarts, replays and peers agree. Accepted verdicts without
+    inputs and dependency chains deeper than 32 levels fail closed.
+  - A correction that stales verdicts is journalled as one `verdict_stale` row
+    per verdict, and the author and reviewer get a directed notice.
+  - Approving a SHA-256 subject (`synapse approval decide --approve`) is refused
+    unless every reviewer's latest verdict on that object of the approver's
+    namespace is accepted and fresh.
+    Approvals granted earlier are reported, not revoked. `synapse hub
+    --verdict-gate off` switches the gate off and journals each such approval as
+    `verdict_gate_bypass`.
+  - `synapse verdict status DB` reports verdict states, gate decisions, stale
+    notices, refused records, bypasses and approvals granted before their
+    subject turned stale. The three audit rows are also universal receipts.
+  See [Verdicts and corrections](docs/verdicts.md).
+
 ## [0.99.43] - 2026-11-02
 
 ### Security

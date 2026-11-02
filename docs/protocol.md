@@ -137,6 +137,12 @@ does not add agent grades to protocol envelopes.
 - **Fleet planning input:** `entitlement_advert` records one owner's redacted
   pool advertisement as an audit-only journal row after the proven-sender,
   `entitlement-advertise` ACL and durable-journal gates. It is never broadcast.
+- **Verdict records:** `ledger_progress` notes of kind `evidence`, `verdict` and
+  `correction` are validated and authorised before they are appended. The hub
+  journals `verdict_stale` when a correction stales a verdict,
+  `verdict_record_refused` for a refused record or gated approval (never its
+  body), and `verdict_gate_bypass` for an approval admitted while the gate is off;
+  see [Verdicts and corrections](verdicts.md).
 - **Shared-pool reservations:** `spend_request` is a peer hub's request to
   a pool owner hub. It carries `spend_action` (`reserve`, `settle` or `query`)
   and a `spend` document.

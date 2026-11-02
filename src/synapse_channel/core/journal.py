@@ -126,6 +126,9 @@ class EventKind:
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
     IDENTITY_ENROLLMENT = "identity_enrollment"
     ENTITLEMENT_ADVERT = "entitlement_advert"
+    VERDICT_STALE = "verdict_stale"
+    VERDICT_RECORD_REFUSED = "verdict_record_refused"
+    VERDICT_GATE_BYPASS = "verdict_gate_bypass"
     MULTIHUB_PARTITION = "multihub_partition"
     MULTIHUB_HEAL = "multihub_heal"
     MULTIHUB_EQUIVOCATION = "multihub_equivocation"
@@ -350,6 +353,49 @@ def record_entitlement_advert(store: EventStore, record: Mapping[str, Any]) -> i
         Monotonic journal sequence of the row.
     """
     return store.append(EventKind.ENTITLEMENT_ADVERT, dict(record), durable=True)
+
+
+def record_verdict_stale(store: EventStore, record: Mapping[str, Any]) -> int:
+    """Append the durable fact that a correction turned one verdict stale.
+
+    The row names the verdict, its subject, author and reviewer, and the
+    correction that staled it. It is the source of truth for the notification:
+    a directed message to an offline seat may dead-letter, this row does not.
+
+    Returns
+    -------
+    int
+        Monotonic journal sequence of the row.
+    """
+    return store.append(EventKind.VERDICT_STALE, dict(record), durable=True)
+
+
+def record_verdict_record_refused(store: EventStore, record: Mapping[str, Any]) -> int:
+    """Append the durable audit row for a refused evidence, verdict or correction note.
+
+    A refused note never enters the progress log; this row records who tried,
+    which kind, and why, without the refused body.
+
+    Returns
+    -------
+    int
+        Monotonic journal sequence of the row.
+    """
+    return store.append(EventKind.VERDICT_RECORD_REFUSED, dict(record), durable=True)
+
+
+def record_verdict_gate_bypass(store: EventStore, record: Mapping[str, Any]) -> int:
+    """Append the durable row for an approval admitted while the verdict gate is off.
+
+    The row names the approver and subject and what the gate would have
+    decided, so a switched-off gate never hides a stale or missing verdict.
+
+    Returns
+    -------
+    int
+        Monotonic journal sequence of the row.
+    """
+    return store.append(EventKind.VERDICT_GATE_BYPASS, dict(record), durable=True)
 
 
 def record_identity_enrollment(store: EventStore, provenance: Mapping[str, Any]) -> int:

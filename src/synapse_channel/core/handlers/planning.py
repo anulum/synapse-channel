@@ -23,6 +23,10 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from synapse_channel.core.acl import BOARD
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
+from synapse_channel.core.handlers.verdict_admission import (
+    announce_stale_verdicts,
+    progress_refusal,
+)
 from synapse_channel.core.journal import EventKind, record_ledger_progress, record_ledger_task
 from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
 from synapse_channel.core.protocol import MessageType
@@ -39,9 +43,15 @@ if TYPE_CHECKING:
     from typing import Protocol
 
     from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.verdict_hub import VerdictHubPolicy
 
     class PlanningContext(HandlerContext, Protocol):
         """Capabilities consumed by planning handlers and their callees."""
+
+        @property
+        def verdict_policy(self) -> VerdictHubPolicy:
+            """Return this hub's verdict and correction policy."""
+            ...
 
         @property
         def blackboard(self) -> Blackboard:
@@ -315,15 +325,23 @@ async def handle_ledger_task_update(
 async def handle_ledger_progress(
     hub: PlanningContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
-    """Append a structured progress note and broadcast it, or reject the kind."""
+    """Append a structured progress note and broadcast it, or reject the kind.
+
+    Evidence, verdict and correction notes, and approvals of SHA-256 subjects,
+    pass the verdict admission first; a refused note is never appended.
+    """
+    task_id = str(data.get("task_id") or "")
+    text = str(data.get("text") or data.get("payload") or "")
+    kind = str(data.get("kind") or "note")
+    refusal, recorded = progress_refusal(hub, sender=sender, task_id=task_id, kind=kind, text=text)
+    if refusal is not None:
+        await hub.send_json(
+            websocket, hub.system(refusal, msg_type=MessageType.ERROR, target=sender)
+        )
+        return
 
     def mutate(board: Blackboard) -> tuple[bool, ProgressNote | str]:
-        return board.post_progress(
-            task_id=str(data.get("task_id") or ""),
-            author=sender,
-            text=str(data.get("text") or data.get("payload") or ""),
-            kind=str(data.get("kind") or "note"),
-        )
+        return board.post_progress(task_id=task_id, author=sender, text=text, kind=kind)
 
     def persist(result: tuple[bool, ProgressNote | str]) -> None:
         if result[0] and isinstance(result[1], ProgressNote) and hub.journal is not None:
@@ -362,7 +380,15 @@ async def handle_ledger_progress(
             websocket, hub.system(str(result), msg_type=MessageType.ERROR, target=sender)
         )
         return
-    posted = execution.response or draft.response
+    await _publish_progress(hub, data, execution, execution.response or draft.response)
+    # Only an appended note reaches this point (replays and conflicts returned above).
+    await announce_stale_verdicts(hub, recorded, sender=sender, kind=kind, text=text)
+
+
+async def _publish_progress(
+    hub: PlanningContext, data: dict[str, Any], execution: AtomicExecution, posted: dict[str, Any]
+) -> None:
+    """Remember an unkeyed reply, broadcast the posted note and settle a keyed operation."""
     if execution.outcome == "uncommitted":
         hub.remember(data, posted)
     await hub.broadcast(posted)

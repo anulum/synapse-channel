@@ -210,6 +210,9 @@ class HubAuthConfig:
     identity_enrollment_rate: int = DEFAULT_ENROLLMENT_RATE
     identity_enrollment_window_seconds: float = DEFAULT_ENROLLMENT_WINDOW_SECONDS
     private_directed_messages: bool = False
+    verdict_authority: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    verdict_gate_enabled: bool = True
+    allow_unrecorded_verdict_inputs: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)

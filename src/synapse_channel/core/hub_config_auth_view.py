@@ -18,6 +18,7 @@ from synapse_channel.core.hub_config_attribute import ConfigAttribute, HubConfig
 from synapse_channel.core.message_auth import EventSignatureTrustBundle
 from synapse_channel.core.message_auth_durable import DurableMessageAuthReplayStore
 from synapse_channel.core.role_grants import RoleGrants
+from synapse_channel.core.verdict_hub import VerdictHubPolicy
 
 
 class HubAuthConfigView(HubConfigOwner):
@@ -77,6 +78,22 @@ class HubAuthConfigView(HubConfigOwner):
         lambda config: config.auth.require_fencing_epoch,
         lambda config, value: replace(
             config, auth=replace(config.auth, require_fencing_epoch=value)
+        ),
+    )
+    verdict_policy: ConfigAttribute[VerdictHubPolicy] = ConfigAttribute(
+        lambda config: VerdictHubPolicy(
+            verdict_authority=config.auth.verdict_authority,
+            gate_enabled=config.auth.verdict_gate_enabled,
+            allow_unrecorded_inputs=config.auth.allow_unrecorded_verdict_inputs,
+        ),
+        lambda config, value: replace(
+            config,
+            auth=replace(
+                config.auth,
+                verdict_authority=value.verdict_authority,
+                verdict_gate_enabled=value.gate_enabled,
+                allow_unrecorded_verdict_inputs=value.allow_unrecorded_inputs,
+            ),
         ),
     )
     require_identity_binding: ConfigAttribute[bool] = ConfigAttribute(

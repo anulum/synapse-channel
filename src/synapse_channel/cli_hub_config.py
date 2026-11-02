@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 
+from synapse_channel.cli_verdicts import verdict_policy_from_args
 from synapse_channel.core.hub_config import (
     HubAuthConfig,
     HubConfig,
@@ -31,6 +32,7 @@ from synapse_channel.core.identity_enrollments import (
     DEFAULT_ENROLLMENT_RATE,
     DEFAULT_ENROLLMENT_WINDOW_SECONDS,
 )
+from synapse_channel.core.verdict_hub import VerdictHubPolicy
 
 
 def resolve_max_connections_per_host(raw: int | None) -> int | None:
@@ -67,6 +69,7 @@ def _limits(args: argparse.Namespace, base: HubLimits) -> HubLimits:
 
 def _authentication(args: argparse.Namespace, base: HubAuthConfig) -> HubAuthConfig:
     """Project authentication controls around already-loaded trust resources."""
+    verdict = _verdict_policy(args, base)
     return replace(
         base,
         auth_timeout=args.auth_timeout,
@@ -89,6 +92,20 @@ def _authentication(args: argparse.Namespace, base: HubAuthConfig) -> HubAuthCon
         private_directed_messages=args.private_directed_messages,
         insecure_off_loopback=args.insecure_off_loopback,
         insecure_plaintext_at_rest=getattr(args, "insecure_plaintext_at_rest", False),
+        verdict_authority=verdict.verdict_authority,
+        verdict_gate_enabled=verdict.gate_enabled,
+        allow_unrecorded_verdict_inputs=verdict.allow_unrecorded_inputs,
+    )
+
+
+def _verdict_policy(args: argparse.Namespace, base: HubAuthConfig) -> VerdictHubPolicy:
+    """Return the verdict gate settings from the hub options, or keep the loaded ones."""
+    if hasattr(args, "verdict_gate"):
+        return verdict_policy_from_args(args)
+    return VerdictHubPolicy(
+        verdict_authority=base.verdict_authority,
+        gate_enabled=base.verdict_gate_enabled,
+        allow_unrecorded_inputs=base.allow_unrecorded_verdict_inputs,
     )
 
 
