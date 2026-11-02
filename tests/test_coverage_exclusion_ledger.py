@@ -131,6 +131,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_a2a_grpc_security_profiles.py": (1, "optional-dep-guard"),
     "tests/test_a2a_outbound_response.py": (2, "platform-guard"),
     "tests/test_a2a_store.py": (3, "platform-guard"),
+    # POSIX directory permissions that bind a non-root owner.
+    "tests/test_a2a_store_rollback_and_load_edges.py": (1, "platform-guard"),
     "tests/test_external_surfaces_benchmark.py": (2, "optional-dep-guard"),
     "tests/test_hub_restart.py": (2, "platform-guard"),
     "tests/test_path_identity_inode_reuse.py": (3, "platform-guard"),
@@ -151,6 +153,10 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     # Native supervisor suspension needs POSIX SIGSTOP/SIGCONT.
     "tests/test_cli_lock_stall.py": (1, "platform-guard"),
     "tests/test_cli_sqlcipher.py": (2, "optional-dep-guard"),
+    "tests/test_cli_sqlcipher_refusals.py": (1, "optional-dep-guard"),
+    # POSIX directory permissions that bind a non-root owner.
+    "tests/test_claude_plugin_install_edges.py": (1, "platform-guard"),
+    "tests/test_diagnostics_store_and_mcp_edges.py": (1, "optional-dep-guard"),
     "tests/test_cli_streams_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_codex_tmux.py": (1, "optional-dep-guard"),
     "tests/test_codex_mcp_package.py": (10, "optional-dep-guard"),
@@ -211,6 +217,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_setup_verifier.py": (6, "platform-guard"),
     "tests/test_shared_host_regression.py": (1, "platform-guard"),
     "tests/test_shell_integration.py": (1, "optional-dep-guard"),
+    # The positive liveness control reads Linux /proc.
+    "tests/test_shell_integration_pid_bounds.py": (1, "platform-guard"),
     "tests/test_terminal_label_tmux.py": (1, "platform-guard"),
     "tests/test_wake_adapter_codex_queue.py": (1, "platform-guard"),
     "tests/test_wake_adapter_pane_bridge.py": (1, "platform-guard"),
