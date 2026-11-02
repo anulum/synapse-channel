@@ -69,12 +69,40 @@ def install_posix_tool(path: Path, tool: str = "true", *, mode: int = 0o700) -> 
 
     Notes
     -----
-    A multicall coreutils, such as uutils (the default on Ubuntu 26.04) or
-    BusyBox, picks the utility from ``argv[0]`` and refuses an unknown name. A
-    test that runs the copy must keep ``tool`` as ``argv[0]``, for example
-    ``subprocess.run([tool, ...], executable=path)``.
+    Do not run a copied coreutils tool under another name. A multicall
+    coreutils, such as uutils (the default on Ubuntu 26.04) or BusyBox, picks the
+    utility from the name of the file it was started from and refuses an
+    unknown one, and uutils also refuses to run from a sealed memfd. A test that
+    runs its copy copies ``sh``, which runs under any name, or uses
+    :func:`install_posix_script` for a named process.
     """
     src = resolve_posix_tool(tool)
     shutil.copyfile(src, path)
+    path.chmod(mode)
+    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def install_posix_script(path: Path, body: str, *, mode: int = 0o700) -> tuple[Path, str]:
+    """Write a ``/bin/sh`` script to ``path`` and return ``(path, sha256)``.
+
+    A script runs under any file name, and its process name (comm) is the
+    script's file name, so it can stand in for a named process on every POSIX
+    platform.
+
+    Parameters
+    ----------
+    path : Path
+        Destination path for the script.
+    body : str
+        Shell commands that follow the ``#!/bin/sh`` line.
+    mode : int, optional
+        Permission bits applied after writing; defaults to ``0o700``.
+
+    Returns
+    -------
+    tuple[Path, str]
+        The destination ``path`` and the hex SHA-256 of its bytes.
+    """
+    path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
     path.chmod(mode)
     return path, hashlib.sha256(path.read_bytes()).hexdigest()

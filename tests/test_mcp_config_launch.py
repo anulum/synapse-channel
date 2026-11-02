@@ -220,7 +220,9 @@ def test_launch_validation_rechecks_cwd_descriptor_type(
 
 def test_bound_launch_executes_snapshot_and_retains_exact_cwd(tmp_path: Path) -> None:
     executable = tmp_path / "mcp-server"
-    _, digest = install_posix_tool(executable, "echo")
+    # The shell runs under any file name and from a sealed memfd; a multicall
+    # coreutils copy (uutils on Ubuntu 26.04) refuses both.
+    _, digest = install_posix_tool(executable, "sh")
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     cwd.chmod(0o700)
@@ -241,9 +243,8 @@ def test_bound_launch_executes_snapshot_and_retains_exact_cwd(tmp_path: Path) ->
         cwd.mkdir()
         (cwd / "marker").write_text("replacement-cwd", encoding="utf-8")
 
-        # argv[0] names the tool so a multicall coreutils (uutils) runs the snapshot.
-        output = subprocess.check_output(["echo", "trusted"], executable=launch.command, text=True)
-        assert output.strip() == "trusted"
+        command = [launch.command, "-c", 'printf "%s\\n" "$1"', "sh", "trusted"]
+        assert subprocess.check_output(command, text=True).strip() == "trusted"
         assert (Path(launch.cwd) / "marker").read_text(encoding="utf-8") == "trusted-cwd"
 
 
