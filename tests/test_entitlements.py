@@ -117,6 +117,8 @@ def test_manual_correction_preserves_old_fact_and_source() -> None:
     assert len(events) == 7
     assert next(item for item in projected if item["kind"] == "balance")["remaining"] == "790"
     assert events[-2]["remaining"] == "800"
+    unknown_balance = {**events[-2], "event_id": "b0", "remaining": None}
+    assert validate_event(unknown_balance)["remaining"] is None
     events[-1] = {**replacement, "window_id": "another-window"}
     with pytest.raises(EntitlementError, match="correction must retain"):
         active_events(events)
@@ -173,6 +175,13 @@ def test_invalid_account_facts_refused(field: str, value: object, message: str) 
     entry[field] = value
     with pytest.raises(EntitlementError, match=message):
         validate_event(entry)
+
+
+def test_external_credential_reference_is_accepted_and_kept() -> None:
+    """An account names its secret only by an external reference, which is kept as given."""
+    entry = _ledger()[0]
+    entry["credential_ref"] = "ref:vault/private-alpha"
+    assert validate_event(entry)["credential_ref"] == "ref:vault/private-alpha"
 
 
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-1", 1.25, "no-price"])
@@ -285,3 +294,7 @@ def test_compute_pool_units_and_restrictions(resource_kind: str, unit: str) -> N
         validate_event({**pool, "idle_cost": {"amount_per_hour": "1", "currency": "BTC"}})
     with pytest.raises(EntitlementError, match="requires resource_kind"):
         validate_event({key: value for key, value in pool.items() if key != "resource_kind"})
+    with pytest.raises(EntitlementError, match="non-empty list"):
+        validate_event({**pool, "eligible_projects": []})
+    with pytest.raises(EntitlementError, match="idle_cost requires"):
+        validate_event({**pool, "idle_cost": "0.25"})

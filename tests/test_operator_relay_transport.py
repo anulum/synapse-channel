@@ -87,6 +87,13 @@ def test_secure_relay_routes_require_complete_pinned_client_identity(
         parse_relay_peers(["syn-owner=wss://owner/"], pins={"syn-other": "sha256:" + "2" * 64})
 
 
+def test_relay_routes_without_pins_stay_unpinned() -> None:
+    """A route list with no pin map returns peers and does not invent pins."""
+    peers = parse_relay_peers(["syn-owner=wss://owner/"])
+    assert peers["syn-owner"].uri == "wss://owner/"
+    assert peers["syn-owner"].connector is None
+
+
 def test_relay_route_parser_rejects_incomplete_and_duplicate_routes() -> None:
     with pytest.raises(ValueError, match="configured together"):
         parse_relay_peers(["syn-owner=wss://owner/"], client_certificate_file="client.pem")

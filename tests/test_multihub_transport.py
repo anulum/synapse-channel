@@ -704,6 +704,28 @@ async def test_pinned_pull_rejects_a_mismatched_certificate_pin(tmp_path: Path) 
         store.close()
 
 
+def test_pinned_connector_rejects_a_malformed_client_identity(tmp_path: Path) -> None:
+    """A paired but unusable client identity fails before any socket opens."""
+    certificate = tmp_path / "client.pem"
+    key = tmp_path / "client.key"
+    certificate.write_text(
+        "-----BEGIN CERTIFICATE-----\nnot-a-cert\n-----END CERTIFICATE-----\n",
+        encoding="utf-8",
+    )
+    key.write_text(
+        "-----BEGIN PRIVATE KEY-----\nnot-a-key\n-----END PRIVATE KEY-----\n",
+        encoding="utf-8",
+    )
+    certificate.chmod(0o600)
+    key.chmod(0o600)
+    with pytest.raises(MultiHubFetchError):
+        pinned_connector(
+            "sha256:" + "ab" * 32,
+            client_certificate_file=certificate,
+            client_key_file=key,
+        )
+
+
 async def test_pinned_pull_requires_a_wss_uri() -> None:
     """A plaintext ws:// URI is refused before any connection is attempted."""
     fetch = network_fetcher(

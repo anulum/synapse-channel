@@ -19,7 +19,7 @@ from synapse_channel.core.archive_report import (
 )
 from synapse_channel.core.compaction import CompactionResult
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence import EventStore, StoredEvent
 
 
 def _store(tmp_path: Path) -> EventStore:
@@ -252,6 +252,36 @@ def test_render_archive_report_preserves_only_safe_corrupt_row_evidence(tmp_path
     assert "reasons=invalid_json" in html
     assert marker.payload_sha256 in html
     assert secret not in html
+
+
+def test_archive_report_omits_an_unknown_original_kind(tmp_path: Path) -> None:
+    """A quarantined row with no original kind is rendered without that field."""
+    digest = "ab" * 32
+    event = StoredEvent(
+        seq=1,
+        ts=1.0,
+        kind=EventKind.CORRUPT,
+        payload={
+            "seq": 1,
+            "schema_version": 1,
+            "reasons": ["invalid_json"],
+            "payload_sha256": digest,
+        },
+    )
+    html = render_archive_report(
+        [event],
+        result=CompactionResult(
+            checkpoints_removed=0,
+            findings_removed=0,
+            floor_seq=1,
+            corrupt_rows_removed=1,
+        ),
+        options=ArchiveReportOptions(source_path=str(tmp_path / "events.db"), generated_at=20.0),
+    )
+
+    assert "original_kind=" not in html
+    assert "reasons=invalid_json" in html
+    assert digest in html
 
 
 def test_predelete_archive_labels_compaction_as_planned(tmp_path: Path) -> None:

@@ -74,6 +74,14 @@ def test_paid_worker_exhaustion_sends_no_second_request(tmp_path: Path) -> None:
     assert len(server.requests) == 1
 
 
+def test_quote_file_must_contain_a_json_object(tmp_path: Path) -> None:
+    """A quote file that is not an object never becomes a spendable quote."""
+    path = tmp_path / "quote.json"
+    path.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="JSON object"):
+        ProviderQuote.load(path)
+
+
 def test_quote_identity_and_staleness_fail_closed(tmp_path: Path) -> None:
     """Unknown model prices and expired evidence cannot be spent."""
     quote = _quote(tmp_path / "quote.json")
