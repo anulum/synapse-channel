@@ -384,6 +384,28 @@ def test_cli_refuses_overwrite_and_fails_strict_on_unavailable_feed(
     assert discovery.main() == 2
 
 
+def test_unbounded_registry_name_is_quarantined_and_counted() -> None:
+    """Over-long or odd-character registry names are counted, not admitted; the page reads."""
+    config, catalog = discovery.load_inputs(discovery.DEFAULT_CONFIG, discovery.DEFAULT_CATALOG)
+    now = datetime(2026, 9, 19, tzinfo=UTC)
+    stuffed = "spam/" + "best-free-ai-agent-tool-" * 8
+    odd_characters = "spam/free tool!"
+    fixture = _fixture(mcp_names=("acme/tool", stuffed, odd_characters))
+    rows, errors, complete = discovery.collect(fixture=fixture, now=now)
+    assert errors == {}
+    assert [item["key"] for item in rows["mcp_registry"]] == ["mcp:acme/tool"]
+    assert complete["mcp_registry"] is True
+    report, state = discovery.reconcile(config, catalog, rows, errors, complete, now=now)
+    assert report["inspection"]["mcp_quarantined_identifiers"] == 2
+    assert report["sources"]["mcp_registry"]["status"] == "current"
+    assert not any(key.startswith("mcp:spam/") for key in state["candidates"])
+    # A name that is valid but not namespaced is still a malformed feed, refused whole.
+    fixture = _fixture(mcp_names=("acme/tool", "no-namespace"))
+    rows, errors, _ = discovery.collect(fixture=fixture, now=now)
+    assert errors["mcp_registry"] == "DiscoveryError"
+    assert "mcp_registry" not in rows
+
+
 def test_registry_pagination_and_repeated_cursor_are_bounded() -> None:
     """An incremental registry cursor advances only within the page bound."""
     now = datetime(2026, 9, 19, tzinfo=UTC)

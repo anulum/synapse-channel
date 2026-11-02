@@ -49,6 +49,8 @@ MAX_CANDIDATES = 1000
 MAX_HOST_INSPECTIONS = 40
 MAX_MCP_REPOSITORY_CHECKS = 25
 _KEY = re.compile(r"^[a-z0-9][a-z0-9._:/-]{0,180}$")
+#: Feed row bucket for registry entries whose name forms no bounded identifier.
+MCP_QUARANTINE = "mcp_registry_quarantined"
 
 
 class DiscoveryError(ValueError):
@@ -200,12 +202,18 @@ def load_inputs(config_path: Path, catalog_path: Path) -> tuple[dict[str, Any], 
     return cast(dict[str, Any], config), cast(dict[str, Any], catalog)
 
 
+def _candidate_key(kind: str, product_id: str) -> str | None:
+    """Return the bounded candidate identifier, or ``None`` when none can be formed."""
+    key = f"{kind}:{product_id.lower()}"
+    return key if _KEY.fullmatch(key) and ":" in key else None
+
+
 def _candidate(
     kind: str, product_id: str, publisher: str, source: str, metadata: Mapping[str, Any]
 ) -> dict[str, Any]:
     """Preserve separate vendor, product and interface facts as source claims."""
-    key = f"{kind}:{product_id.lower()}"
-    if not _KEY.fullmatch(key) or ":" not in key:
+    key = _candidate_key(kind, product_id)
+    if key is None:
         raise DiscoveryError("candidate identifier is invalid")
     evidence = dict(metadata)
     return {
@@ -245,8 +253,59 @@ def parse_models(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
-def parse_mcp(raw: Mapping[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
-    """Extract registry entries and its opaque next-page cursor."""
+def _mcp_server(entry: object) -> tuple[str, dict[str, Any]]:
+    """Validate one registry entry and return its name and source evidence."""
+    if not isinstance(entry, dict) or not isinstance(entry.get("server"), dict):
+        raise DiscoveryError("MCP registry server is invalid")
+    server = entry["server"]
+    name = server.get("name")
+    if not isinstance(name, str) or not name or "/" not in name:
+        raise DiscoveryError("MCP registry name is invalid")
+    meta = entry.get("_meta")
+    if not isinstance(meta, dict):
+        raise DiscoveryError("MCP registry metadata is invalid")
+    official = meta.get("io.modelcontextprotocol.registry/official", {})
+    if not isinstance(official, dict):
+        raise DiscoveryError("MCP registry status is invalid")
+    remotes = server.get("remotes") or []
+    packages = server.get("packages") or []
+    if not isinstance(remotes, list) or not isinstance(packages, list):
+        raise DiscoveryError("MCP transports are invalid")
+    transports = sorted(
+        {
+            item["type"]
+            for item in remotes
+            if isinstance(item, dict) and isinstance(item.get("type"), str)
+        }
+    )
+    repository = server.get("repository")
+    return name, {
+        "title": _text(server.get("title")),
+        "version": _text(server.get("version")),
+        "status": _text(official.get("status")),
+        "updated_at": _text(official.get("updatedAt")),
+        "interface": "mcp",
+        "transports": transports,
+        "package_count": len(packages),
+        "license": None,
+        "auth": None,
+        "privacy": None,
+        "cost": None,
+        "repository_url": _text(repository.get("url") if isinstance(repository, dict) else None),
+        "repository_reachability": "not_checked",
+    }
+
+
+def parse_mcp(raw: Mapping[str, Any]) -> tuple[list[dict[str, Any]], str | None, int]:
+    """Extract registry entries, the opaque next-page cursor and the quarantined count.
+
+    The registry accepts names from any publisher. A well-formed entry whose name
+    cannot form a bounded candidate identifier, because it is too long (keyword
+    stuffing) or uses characters outside the identifier alphabet, is a fact about
+    that entry, not about the feed: it is quarantined and counted, never
+    admitted or truncated, and the rest of the page is still read. A malformed entry
+    or page is still refused as a whole.
+    """
     servers = raw.get("servers")
     metadata = raw.get("metadata")
     if not isinstance(servers, list) or len(servers) > 100 or not isinstance(metadata, dict):
@@ -255,51 +314,14 @@ def parse_mcp(raw: Mapping[str, Any]) -> tuple[list[dict[str, Any]], str | None]
     if cursor is not None and (not isinstance(cursor, str) or len(cursor) > 300):
         raise DiscoveryError("MCP registry cursor is invalid")
     result = []
+    quarantined = 0
     for entry in servers:
-        if not isinstance(entry, dict) or not isinstance(entry.get("server"), dict):
-            raise DiscoveryError("MCP registry server is invalid")
-        server = entry["server"]
-        name = server.get("name")
-        if not isinstance(name, str) or not name or "/" not in name:
-            raise DiscoveryError("MCP registry name is invalid")
-        meta = entry.get("_meta")
-        if not isinstance(meta, dict):
-            raise DiscoveryError("MCP registry metadata is invalid")
-        official = meta.get("io.modelcontextprotocol.registry/official", {})
-        if not isinstance(official, dict):
-            raise DiscoveryError("MCP registry status is invalid")
-        remotes = server.get("remotes") or []
-        packages = server.get("packages") or []
-        if not isinstance(remotes, list) or not isinstance(packages, list):
-            raise DiscoveryError("MCP transports are invalid")
-        transports = sorted(
-            {
-                item["type"]
-                for item in remotes
-                if isinstance(item, dict) and isinstance(item.get("type"), str)
-            }
-        )
-        evidence = {
-            "title": _text(server.get("title")),
-            "version": _text(server.get("version")),
-            "status": _text(official.get("status")),
-            "updated_at": _text(official.get("updatedAt")),
-            "interface": "mcp",
-            "transports": transports,
-            "package_count": len(packages),
-            "license": None,
-            "auth": None,
-            "privacy": None,
-            "cost": None,
-            "repository_url": _text(
-                server["repository"].get("url")
-                if isinstance(server.get("repository"), dict)
-                else None
-            ),
-            "repository_reachability": "not_checked",
-        }
+        name, evidence = _mcp_server(entry)
+        if _candidate_key("mcp", name) is None:
+            quarantined += 1
+            continue
         result.append(_candidate("mcp", name, name.split("/", 1)[0], MCP_URL, evidence))
-    return result, cursor
+    return result, cursor, quarantined
 
 
 def parse_hosts(raw: Mapping[str, Any]) -> tuple[list[dict[str, Any]], bool]:
@@ -367,6 +389,41 @@ def _host_score(evidence: Mapping[str, Any]) -> int:
     score += 10 if evidence.get("license") not in {None, "NOASSERTION"} else 0
     score += 3 if isinstance(evidence.get("fork_count"), int) and evidence["fork_count"] > 0 else 0
     return score
+
+
+def _read_mcp_pages(
+    fetch: Callable[[str], dict[str, Any]], fixture: Mapping[str, Any] | None, since: date
+) -> tuple[list[dict[str, Any]], str | None, int]:
+    """Read bounded registry pages; return entries, the unread cursor and quarantined count."""
+    all_mcp: list[dict[str, Any]] = []
+    quarantined_names = 0
+    cursor: str | None = None
+    pages = fixture.get("mcp_registry") if fixture is not None else []
+    if not isinstance(pages, list):
+        raise DiscoveryError("MCP feed fixture pages are invalid")
+    seen_cursors: set[str] = set()
+    for index in range(MAX_MCP_PAGES):
+        query = {
+            "limit": 100,
+            "version": "latest",
+            "include_deleted": "true",
+            "updated_since": since.isoformat() + "T00:00:00Z",
+        }
+        if cursor is not None:
+            query["cursor"] = cursor
+        url = MCP_URL + "?" + urlencode(query)
+        raw = pages[index] if fixture is not None else fetch(url)
+        if not isinstance(raw, dict):
+            raise DiscoveryError("MCP feed fixture is invalid")
+        batch, cursor, skipped = parse_mcp(raw)
+        all_mcp.extend(batch)
+        quarantined_names += skipped
+        if cursor is None:
+            break
+        if cursor in seen_cursors:
+            raise DiscoveryError("MCP registry cursor repeated")
+        seen_cursors.add(cursor)
+    return all_mcp, cursor, quarantined_names
 
 
 def collect(
@@ -473,33 +530,9 @@ def collect(
         complete["github_hosts"] = False
         complete["github_host_inspection"] = False
     try:
-        all_mcp: list[dict[str, Any]] = []
-        cursor: str | None = None
-        pages = fixture.get("mcp_registry") if fixture is not None else []
-        if not isinstance(pages, list):
-            raise DiscoveryError("MCP feed fixture pages are invalid")
-        seen_cursors: set[str] = set()
-        for index in range(MAX_MCP_PAGES):
-            query = {
-                "limit": 100,
-                "version": "latest",
-                "include_deleted": "true",
-                "updated_since": since.isoformat() + "T00:00:00Z",
-            }
-            if cursor is not None:
-                query["cursor"] = cursor
-            url = MCP_URL + "?" + urlencode(query)
-            raw = pages[index] if fixture is not None else fetch(url)
-            if not isinstance(raw, dict):
-                raise DiscoveryError("MCP feed fixture is invalid")
-            batch, cursor = parse_mcp(raw)
-            all_mcp.extend(batch)
-            if cursor is None:
-                break
-            if cursor in seen_cursors:
-                raise DiscoveryError("MCP registry cursor repeated")
-            seen_cursors.add(cursor)
+        all_mcp, cursor, quarantined_names = _read_mcp_pages(fetch, fixture, since)
         rows["mcp_registry"] = all_mcp
+        rows[MCP_QUARANTINE] = [{"reason": "identifier_out_of_bounds"}] * quarantined_names
         complete["mcp_registry"] = cursor is None
         prior_candidates = previous.get("candidates", {}) if previous is not None else {}
         new_repositories = [
@@ -528,6 +561,42 @@ def collect(
         complete["mcp_registry"] = False
         complete["mcp_repository_check"] = False
     return rows, errors, complete
+
+
+def _inspection_summary(
+    feeds: Mapping[str, list[dict[str, Any]]],
+    errors: Mapping[str, str],
+    complete: Mapping[str, bool],
+) -> dict[str, Any]:
+    """Summarize host inspection, registry quarantine and repository reachability."""
+    host_rows = feeds.get("github_hosts", [])
+    mcp_rows = feeds.get("mcp_registry", [])
+    return {
+        "host_checked": sum(
+            item["evidence"].get("inspection") not in {"not_checked", "unavailable"}
+            for item in host_rows
+        ),
+        "host_unchecked": sum(
+            item["evidence"].get("inspection") in {"not_checked", "unavailable"}
+            for item in host_rows
+        ),
+        "host_rejected": sum(
+            item["evidence"].get("inspection") == "rejected_lure" for item in host_rows
+        ),
+        "mcp_quarantined_identifiers": len(feeds.get(MCP_QUARANTINE, [])),
+        "mcp_repository_unreachable": sum(
+            item["evidence"].get("repository_reachability") == "unreachable" for item in mcp_rows
+        ),
+        "complete": {
+            name: complete.get(name, False)
+            for name in ("github_host_inspection", "mcp_repository_check")
+        },
+        "errors": {
+            name: errors[name]
+            for name in ("github_host_inspection", "mcp_repository_check")
+            if name in errors
+        },
+    }
 
 
 def reconcile(
@@ -568,8 +637,8 @@ def reconcile(
                 "last_successful_at": stamp,
             }
     observed: dict[str, list[dict[str, Any]]] = {}
-    for items in feeds.values():
-        for item in items:
+    for source in ("models_dev", "github_hosts", "mcp_registry"):
+        for item in feeds.get(source, []):
             key = config["aliases"].get(item["key"], item["key"])
             observed.setdefault(key, []).append(item)
     if len(observed) > MAX_CANDIDATES:
@@ -729,8 +798,6 @@ def reconcile(
                 {"key": key, "status": "withdrawn", "action": "confirm removal with publisher"}
             )
     queue.sort(key=lambda item: (-item.get("review_score", 0), item["key"]))
-    host_rows = feeds.get("github_hosts", [])
-    mcp_rows = feeds.get("mcp_registry", [])
     report = {
         "schema": 1,
         "checked_at": stamp,
@@ -743,32 +810,7 @@ def reconcile(
             "review_queue": len(queue),
             "persisted": len(candidates),
         },
-        "inspection": {
-            "host_checked": sum(
-                item["evidence"].get("inspection") not in {"not_checked", "unavailable"}
-                for item in host_rows
-            ),
-            "host_unchecked": sum(
-                item["evidence"].get("inspection") in {"not_checked", "unavailable"}
-                for item in host_rows
-            ),
-            "host_rejected": sum(
-                item["evidence"].get("inspection") == "rejected_lure" for item in host_rows
-            ),
-            "mcp_repository_unreachable": sum(
-                item["evidence"].get("repository_reachability") == "unreachable"
-                for item in mcp_rows
-            ),
-            "complete": {
-                name: complete.get(name, False)
-                for name in ("github_host_inspection", "mcp_repository_check")
-            },
-            "errors": {
-                name: errors[name]
-                for name in ("github_host_inspection", "mcp_repository_check")
-                if name in errors
-            },
-        },
+        "inspection": _inspection_summary(feeds, errors, complete),
         "review_queue": queue,
         "admission": (
             "human review only; no automatic integration, routing, install or support claim"

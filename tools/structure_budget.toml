@@ -228,8 +228,8 @@ names = ["argparse._SubParsersAction"]
 "tools/opencode_compatibility_contract.py::load_compatibility" = 138
 "tools/opencode_compatibility_smoke.py::smoke_binary" = 98
 "tools/opencode_compatibility_workflow_contract.py::assert_compatibility_workflow_contract" = 68
-"tools/vendor_discovery.py::collect" = 150
-"tools/vendor_discovery.py::reconcile" = 235
+"tools/vendor_discovery.py::collect" = 126
+"tools/vendor_discovery.py::reconcile" = 208
 
 [ceilings.function_branches]
 "src/synapse_channel/a2a_interop_trace.py::run_local_interop_trace" = 50
@@ -405,10 +405,9 @@ names = ["argparse._SubParsersAction"]
 "tools/opencode_compatibility_smoke.py::_validate_initialize" = 20
 "tools/opencode_compatibility_smoke.py::smoke_binary" = 17
 "tools/repack_sdist.py::_checked_members" = 19
-"tools/vendor_discovery.py::collect" = 39
+"tools/vendor_discovery.py::collect" = 31
 "tools/vendor_discovery.py::load_inputs" = 40
-"tools/vendor_discovery.py::parse_mcp" = 21
-"tools/vendor_discovery.py::reconcile" = 72
+"tools/vendor_discovery.py::reconcile" = 66
 "tools/vendor_host_inspection.py::inspect_host" = 26
 "tools/vendor_watch.py::load_matrix" = 22
 
