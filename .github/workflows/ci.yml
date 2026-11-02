@@ -118,7 +118,10 @@ jobs:
           overwrite: true
 
   test:
-    runs-on: ubuntu-latest
+    # Pinned: on the ubuntu-26.04 image (ubuntu-latest from 2026-11-02) Bubblewrap
+    # cannot configure loopback in a new network namespace (RTM_NEWADDR: EPERM),
+    # so the native isolation gate fails before any test runs.
+    runs-on: ubuntu-24.04
     # Shards finish in 10-20 minutes; a hung test fails the job within the
     # hour instead of holding the runner for the six-hour platform default.
     timeout-minutes: 60
