@@ -20,9 +20,9 @@ from synapse_channel.a2a_push_delivery import PushDeliveryAttempt, PushDeliveryS
 from synapse_channel.a2a_store import A2ATaskStore
 
 
-def _attempt(number: int) -> PushDeliveryAttempt:
+def _attempt(number: int, task_id: str = "task-a") -> PushDeliveryAttempt:
     return PushDeliveryAttempt(
-        task_id="task-a",
+        task_id=task_id,
         config_id="cfg-a",
         delivery_id="delivery-a",
         attempt=number,
@@ -38,6 +38,7 @@ def frozen_store(tmp_path: Path) -> Iterator[tuple[A2ATaskStore, Path]]:
     directory = tmp_path / "state"
     store = A2ATaskStore(directory / "a2a.json")
     store.put({"id": "task-a", "status": {"state": "TASK_STATE_WORKING"}})
+    store.put({"id": "task-b", "status": {"state": "TASK_STATE_WORKING"}})
     store.record_push_delivery_attempt(_attempt(1))
     store.append_event("task-a", {"kind": "status", "n": 1})
     directory.chmod(0o500)
@@ -54,7 +55,7 @@ def frozen_store(tmp_path: Path) -> Iterator[tuple[A2ATaskStore, Path]]:
 def test_refused_saves_restore_events_and_delivery_attempts(
     frozen_store: tuple[A2ATaskStore, Path],
 ) -> None:
-    """Neither a new event nor a new attempt survives in memory when persisting fails."""
+    """No new event, later attempt or first attempt survives in memory when persisting fails."""
     store, path = frozen_store
     on_disk = path.read_bytes()
     with pytest.raises(PermissionError):
@@ -63,6 +64,9 @@ def test_refused_saves_restore_events_and_delivery_attempts(
     with pytest.raises(PermissionError):
         store.record_push_delivery_attempt(_attempt(2))
     assert store.list_push_delivery_attempts("task-a") == [_attempt(1).to_json()]
+    with pytest.raises(PermissionError):
+        store.record_push_delivery_attempt(_attempt(1, "task-b"))
+    assert store.list_push_delivery_attempts("task-b") == []
     assert path.read_bytes() == on_disk
 
 
