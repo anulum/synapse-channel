@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import sqlite3
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -237,6 +238,7 @@ def _suggest_compute(args: argparse.Namespace) -> int:
         EntitlementStoreError,
         SecurePathError,
         ValueError,
+        sqlite3.Error,
     ) as exc:
         print(f"entitlements: {exc}", file=sys.stderr)
         return 2

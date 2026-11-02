@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -57,7 +58,7 @@ def _cmd_root(args: argparse.Namespace) -> int:
             through_seq=args.through,
             key_file=getattr(args, "db_key_file", None),
         )
-    except (ValueError, OSError, RuntimeError) as exc:
+    except (ValueError, OSError, RuntimeError, sqlite3.Error) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     if args.json:
@@ -85,7 +86,7 @@ def _cmd_prove(args: argparse.Namespace) -> int:
             through_seq=args.through,
             key_file=getattr(args, "db_key_file", None),
         )
-    except (ValueError, OSError, RuntimeError) as exc:
+    except (ValueError, OSError, RuntimeError, sqlite3.Error) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     if proof is None:
@@ -188,7 +189,7 @@ def _cmd_checkpoint(args: argparse.Namespace) -> int:
         return 0
     try:
         events = EventStore(db_path, key_file=getattr(args, "db_key_file", None))
-    except (ValueError, OSError, RuntimeError) as exc:
+    except (ValueError, OSError, RuntimeError, sqlite3.Error) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     try:
