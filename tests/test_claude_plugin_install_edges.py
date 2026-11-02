@@ -44,13 +44,16 @@ def _entries(target: Path) -> set[str]:
 
 
 def test_an_oversized_marker_makes_the_plugin_foreign(tmp_path: Path) -> None:
-    """A marker over 64 KiB is never parsed, even when it is valid JSON, and blocks removal."""
+    """A marker of exactly 64 KiB is parsed; one byte more is foreign and blocks removal."""
     root = tmp_path / "profile"
     target = _install(root)
     marker = target / ".synapse-install.json"
-    state = json.loads(marker.read_text(encoding="utf-8"))
-    marker.write_text(json.dumps(state) + " " * 65_536, encoding="utf-8")
-    assert marker.stat().st_size > 65_536
+    encoded = json.dumps(json.loads(marker.read_text(encoding="utf-8")))
+    marker.write_text(encoded.ljust(65_536), encoding="utf-8")
+    assert marker.stat().st_size == 65_536
+    assert inspect_plugin(root).state == "owned"
+    marker.write_text(encoded.ljust(65_537), encoding="utf-8")
+    assert marker.stat().st_size == 65_537
     assert inspect_plugin(root).state == "foreign"
     with pytest.raises(ClaudePluginInstallError, match="foreign or modified"):
         apply_plugin("uninstall", config_root=root)
