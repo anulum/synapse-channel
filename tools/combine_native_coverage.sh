@@ -23,7 +23,7 @@ from pathlib import Path
 from coverage import CoverageData
 
 sys.path.insert(0, sys.argv[1])
-from tools.pytest_native_coverage import NATIVE_WRITERS
+from tools.pytest_native_coverage import NATIVE_WRITERS, PROBE_TEST_PREFIX
 
 receipt = json.loads(Path('shard-main.json').read_text())
 selected = receipt['selected']
@@ -51,9 +51,37 @@ for node, directory in cases.items():
         data.read()
         if not data.has_arcs() or not data.measured_files():
             raise ValueError('missing native branch observations: ' + node)
+probe_root = root.with_name(root.name + '-probe')
+probe_traces = []
+if probe_root.exists() or probe_root.is_symlink():
+    if probe_root.is_symlink() or not probe_root.is_dir():
+        raise ValueError('invalid probe coverage root')
+    assigned = {
+        probe_root / hashlib.sha256(node.encode('utf-8')).hexdigest()
+        for node in selected if node.startswith(PROBE_TEST_PREFIX)
+    }
+    if not set(probe_root.iterdir()).issubset(assigned):
+        raise ValueError('unassigned probe coverage case directory')
+    for case in probe_root.iterdir():
+        if case.is_symlink() or not case.is_dir():
+            raise ValueError('invalid probe coverage case directory')
+        for entry in case.rglob('*'):
+            if entry.is_symlink() or not (entry.is_file() or entry.is_dir()):
+                raise ValueError('invalid probe coverage entry')
+            if entry.is_file() and entry.name.startswith('.coverage'):
+                data = CoverageData(basename=str(entry))
+                data.read()
+                if not data.has_arcs() or not data.measured_files():
+                    raise ValueError('missing probe branch observations')
+                probe_traces.append(entry)
 if cases:
     subprocess.run(
         [sys.executable, '-m', 'coverage', 'combine', '--append',
          *(str(directory) for directory in cases.values())], check=True,
+    )
+if probe_traces:
+    subprocess.run(
+        [sys.executable, '-m', 'coverage', 'combine', '--append', '--keep',
+         *(str(trace) for trace in probe_traces)], check=True,
     )
 PY

@@ -26,6 +26,7 @@ NATIVE_WRITERS = (
     "test_actual_private_mount_observation_and_root_stage_refusals",
     "tests/fixtures/protected_write_mounts_linux.py::test_real_private_namespace_mount_policy",
 )
+PROBE_TEST_PREFIX = "tests/test_protected_runtime_probe"
 _ROOT = pytest.StashKey[Path]()
 
 
@@ -37,6 +38,7 @@ def pytest_configure(config: pytest.Config) -> None:
     root = Path(raw)
     if not root.is_absolute() or root.is_symlink() or not root.is_dir():
         raise pytest.UsageError("native coverage routing requires an ordinary absolute directory")
+    root.with_name(root.name + "-probe").mkdir(mode=0o700)
     config.stash[_ROOT] = root
 
 
@@ -44,7 +46,11 @@ def pytest_configure(config: pytest.Config) -> None:
 def pytest_runtest_setup(item: pytest.Item) -> None:
     """Route a selected writer to a fresh node-bound directory before fixture setup."""
     root = item.config.stash[_ROOT]
-    if item.nodeid.split("[", 1)[0] in NATIVE_WRITERS:
+    native = item.nodeid.split("[", 1)[0] in NATIVE_WRITERS
+    probe = item.nodeid.startswith(PROBE_TEST_PREFIX)
+    if native or probe:
+        if probe:
+            root = root.with_name(root.name + "-probe")
         root = root / hashlib.sha256(item.nodeid.encode("utf-8")).hexdigest()
         root.mkdir(mode=0o700)
     os.environ["SYNAPSE_TEST_COVERAGE_DIR"] = str(root)

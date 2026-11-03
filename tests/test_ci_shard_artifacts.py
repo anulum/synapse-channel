@@ -666,3 +666,46 @@ def test_ci_failed_job_rerun_reuses_this_run_and_states_the_matrix_result() -> N
         if code != 0:
             assert (result or "empty") in completed.stdout
             assert "Coverage is not qualified" in completed.stdout
+
+
+def test_application_report_retains_probe_data_without_expanding_the_package_gate(
+    tmp_path: Path,
+) -> None:
+    """The real report covers every application module and retains off-scope raw observations."""
+    package = tmp_path / "src/synapse_channel"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "app.py").write_text("value = 1\n")
+    (package / "unexecuted.py").write_text("value = 2\n")
+    (tmp_path / "diagnostic.py").write_text("def untouched():\n    return 3\n")
+    (tmp_path / "driver.py").write_text(
+        "import sys\nsys.path.insert(0, 'src')\nimport diagnostic\n"
+        "from synapse_channel import app\nassert app.value == 1\n"
+    )
+    (tmp_path / "measure.ini").write_text(
+        "[run]\nbranch = true\nsource = src/synapse_channel, diagnostic\n"
+    )
+    result = _run(
+        tmp_path,
+        ["-m", "coverage", "run", "--rcfile=measure.ini", "driver.py"],
+        coverage_file=tmp_path / ".coverage",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    result = _run(
+        tmp_path,
+        ["-m", "coverage", "json", "--rcfile=" + str(ROOT / "pyproject.toml"), "-o", "report.json"],
+        coverage_file=tmp_path / ".coverage",
+    )
+    assert result.returncode == 2, result.stdout + result.stderr
+    report = json.loads((tmp_path / "report.json").read_text())
+    assert set(report["files"]) == {
+        "src/synapse_channel/__init__.py",
+        "src/synapse_channel/app.py",
+        "src/synapse_channel/unexecuted.py",
+    }
+    assert report["files"]["src/synapse_channel/unexecuted.py"]["missing_lines"] == [1]
+    from coverage import CoverageData
+
+    data = CoverageData(basename=str(tmp_path / ".coverage"))
+    data.read()
+    assert str(tmp_path / "diagnostic.py") in data.measured_files()

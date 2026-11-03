@@ -299,11 +299,15 @@ jobs:
             args+=(--coverage-file .coverage)
           fi
           python tools/ci_shard_artifacts.py pack "${args[@]}"
+          if [ "$PYTHON_PROFILE" = 3.12 ]; then
+            cp -a native-kernel-coverage-probe ci-shard-artifact/probe-observations
+          fi
       - name: Publish authoritative shard only after every mandatory command passes
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pytest-shard-${{ github.sha }}-${{ matrix.python-version }}-${{ matrix.shard }}
           path: ci-shard-artifact/
+          include-hidden-files: true
           if-no-files-found: error
           overwrite: true
 

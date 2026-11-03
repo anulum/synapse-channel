@@ -114,6 +114,29 @@ def test_actual_pytest_routes_native_parameters_and_restores_the_ordinary_root(
     assert len(list(native.iterdir())) == 2
 
 
+def test_actual_probe_writers_are_isolated_from_required_kernel_observations(
+    tmp_path: Path,
+) -> None:
+    """A real probe child writes separate per-node data without polluting the kernel root."""
+    native = _project(tmp_path)
+    probe = tmp_path / "tests/test_protected_runtime_probe_example.py"
+    probe.write_text(_WRITER.replace("test_real_private_namespace_mount_policy", "test_probe"))
+    result = _run(tmp_path, str(native))
+    assert result.returncode == 0, result.stdout + result.stderr
+    records = [
+        json.loads(line) for line in (tmp_path / "destinations.jsonl").read_text().splitlines()
+    ]
+    assert len(records) == 4
+    assert len(list(native.iterdir())) == 2
+    probe_root = native.with_name(native.name + "-probe")
+    assert len(list(probe_root.iterdir())) == 2
+    for case in ("accepted", "base-writable"):
+        node = "tests/test_protected_runtime_probe_example.py::test_probe[" + case + "]"
+        directory = probe_root / hashlib.sha256(node.encode()).hexdigest()
+        assert (directory / ".coverage.observed").is_file()
+        assert any(record["directory"] == str(directory) for record in records)
+
+
 @pytest.mark.parametrize("invalid", ["unset", "relative", "missing", "file", "symlink"])
 def test_plugin_refuses_unusable_output_roots_before_collecting_tests(
     tmp_path: Path, invalid: str

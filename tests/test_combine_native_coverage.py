@@ -150,6 +150,76 @@ def test_extra_observations_from_one_case_cannot_mask_another_missing_case(tmp_p
     assert len(list(directories[0].iterdir())) == 2
 
 
+def test_probe_observations_are_combined_and_retained_outside_the_kernel_root(
+    tmp_path: Path,
+) -> None:
+    """Nested real probe databases contribute while their original bytes remain available."""
+    _project(tmp_path)
+    node = "tests/test_protected_runtime_probe_example.py::test_observed"
+    receipt = tmp_path / "shard-main.json"
+    record = json.loads(receipt.read_text())
+    record["selected"].append(node)
+    receipt.write_text(json.dumps(record))
+    directory = (
+        tmp_path / "native-kernel-coverage-probe" / hashlib.sha256(node.encode()).hexdigest()
+    )
+    directory.mkdir(parents=True)
+    nested = directory / "actual-child"
+    nested.mkdir()
+    trace = nested / ".coverage.observed"
+    result = _run(
+        tmp_path, [sys.executable, "-m", "coverage", "run", f"--data-file={trace}", "native.py"]
+    )
+    assert result.returncode == 0, result.stderr
+    before = trace.read_bytes()
+    result = _run(tmp_path, ["bash", str(SCRIPT)])
+    assert result.returncode == 0, result.stdout + result.stderr
+    data = coverage.CoverageData(basename=str(tmp_path / ".coverage"))
+    data.read()
+    assert data.lines(str(tmp_path / "main.py")) == [1]
+    assert data.lines(str(tmp_path / "native.py")) == [1]
+    assert trace.read_bytes() == before
+    assert not list((tmp_path / "native-kernel-coverage").iterdir())
+
+
+@pytest.mark.parametrize(
+    "invalid", ["unassigned", "root-link", "case-link", "child-link", "corrupt", "empty"]
+)
+def test_probe_data_cannot_admit_unassigned_or_invalid_observations(
+    tmp_path: Path, invalid: str
+) -> None:
+    """Refuse unknown nodes, links and unusable databases before changing accumulated data."""
+    _project(tmp_path)
+    node = "tests/test_protected_runtime_probe_example.py::test_observed"
+    receipt = tmp_path / "shard-main.json"
+    record = json.loads(receipt.read_text())
+    record["selected"].append(node)
+    receipt.write_text(json.dumps(record))
+    root = tmp_path / "native-kernel-coverage-probe"
+    root.mkdir()
+    case = root / hashlib.sha256(node.encode()).hexdigest()
+    if invalid == "unassigned":
+        (root / "unknown").mkdir()
+    elif invalid == "root-link":
+        root.rmdir()
+        root.symlink_to(tmp_path / "native-kernel-coverage", target_is_directory=True)
+    elif invalid == "case-link":
+        case.symlink_to(tmp_path / "native-kernel-coverage", target_is_directory=True)
+    else:
+        case.mkdir()
+        trace = case / ".coverage.invalid"
+        if invalid == "child-link":
+            trace.symlink_to(tmp_path / ".coverage")
+        elif invalid == "corrupt":
+            trace.write_bytes(b"not a coverage database")
+        else:
+            trace.touch()
+    before = (tmp_path / ".coverage").read_bytes()
+    result = _run(tmp_path, ["bash", str(SCRIPT)])
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert (tmp_path / ".coverage").read_bytes() == before
+
+
 @pytest.mark.parametrize("invalid", ["unassigned", "missing", "unsuccessful", "bad_selection"])
 def test_combiner_refuses_unbound_or_invalid_case_receipts(tmp_path: Path, invalid: str) -> None:
     """Unexpected observations and unsuccessful receipts cannot enter the main database."""

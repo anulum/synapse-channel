@@ -523,7 +523,8 @@ async def test_campaign_finalization_publishes_after_real_child_cleanup_interrup
             sys.executable,
             "-B",
             "-c",
-            "import sys; print('ready', flush=True); sys.stdin.buffer.read(); "
+            "import sys; sys.stdout.buffer.write(b'ready\\n'); sys.stdout.buffer.flush(); "
+            "sys.stdin.buffer.read(); "
             "sys.exit(int(sys.argv[1]))",
             "3" if case == "child-failure" else "0",
             stdin=asyncio.subprocess.PIPE,

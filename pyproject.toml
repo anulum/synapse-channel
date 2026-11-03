@@ -267,6 +267,8 @@ patch = ["subprocess"]
 omit = ["*/site-packages/synapse_channel/*"]
 
 [tool.coverage.report]
+# Child probe tooling is retained in raw data; this gate covers the whole application.
+include = ["src/synapse_channel/*"]
 show_missing = true
 fail_under = 98
 precision = 2
