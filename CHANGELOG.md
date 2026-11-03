@@ -18,6 +18,8 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.44] - 2026-11-03
+
 ### Added
 
 - **Verdicts turn stale when an input they read is corrected.** A review that
