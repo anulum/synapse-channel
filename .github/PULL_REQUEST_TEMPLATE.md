@@ -13,7 +13,7 @@ SYNAPSE CHANNEL — pull request template
 
 ## Testing
 
-- [ ] `make test` passes (coverage floor: 98%)
+- [ ] `make test` passes (coverage floor: 99.21%)
 - [ ] `make lint` and `make typecheck` pass
 - [ ] `make reuse` is clean
 - [ ] New tests added for new behaviour

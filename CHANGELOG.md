@@ -18,6 +18,14 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- **The CI coverage floor rises from 98% to 99.21%.** The complete Python 3.12
+  line-and-branch report on `main` reached 99.22% (99.2156% exact) on
+  2026-11-03, and the gate now holds that level instead of the older 98%.
+  Repeated runs of one source differ by a few timing-dependent lines, so the
+  floor is the reached value rounded down to the report precision.
+
 ## [0.99.44] - 2026-11-03
 
 ### Added

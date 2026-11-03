@@ -352,7 +352,7 @@ jobs:
           --allow-earlier-attempts
           --python 3.11 3.12 3.13 --count 4
           --timings timing-input/timings.json --coverage-python 3.12
-          --coverage-config pyproject.toml --fail-under 98 --output ci-coverage
+          --coverage-config pyproject.toml --fail-under 99.21 --output ci-coverage
       - name: Retain observed timings only after complete successful qualification
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

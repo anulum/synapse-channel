@@ -270,7 +270,7 @@ omit = ["*/site-packages/synapse_channel/*"]
 # Child probe tooling is retained in raw data; this gate covers the whole application.
 include = ["src/synapse_channel/*"]
 show_missing = true
-fail_under = 98
+fail_under = 99.21
 precision = 2
 exclude_lines = [
   "pragma: no cover",

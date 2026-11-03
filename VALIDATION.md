@@ -18,9 +18,12 @@ clear. The figures below are reproducible from the repository.
 - The `tests/` tree contains unit and real runtime profiles. Test-function,
   module and surface counts in the README inventory describe the source tree;
   they do not prove that every module, platform or deployment was exercised.
-- CI enforces an aggregate line-and-branch coverage floor of **98%**. The
-  Codecov report for `main` measured **98.85%** on 2026-07-18; its badge rounds
-  that value to 99%, so the badge is not evidence that coverage exceeds 99%.
+- CI enforces an aggregate line-and-branch coverage floor of **99.21%**, the
+  coverage the complete CI report actually reached on `main` (99.22% displayed,
+  99.2156% exact, on 2026-11-03). Repeated runs of one source differ by a few
+  timing-dependent lines, so the floor is that value rounded down to the
+  report precision. The Codecov badge rounds to whole percent and is not
+  evidence of a higher value.
 - Tests are designed to be deterministic: time and remote transports are injected
   where practical, while end-to-end cases use throwaway localhost services and
   external hardware or network paths remain explicitly gated.
@@ -44,7 +47,7 @@ Every change must clear these gates (run locally with `make preflight`):
 | Release claim hygiene | `tools/check_release_claim_hygiene.py --check` | configured prohibited prose patterns are absent; runtime claim qualification remains separate |
 | Commercial claim hygiene | `tools/check_commercial_claim_hygiene.py --check` | required licence-boundary and prohibited feature-split phrases are checked; this is not legal validation |
 | Types | `mypy` (strict) | no errors |
-| Tests + coverage | `pytest --cov` | pass, ≥ 98% |
+| Tests + coverage | `pytest --cov` | pass, ≥ 99.21% |
 | Licensing | `reuse lint` | REUSE 3.x compliant |
 | Spelling | `typos` | clean |
 | Security lint | `bandit` | clean |
@@ -53,7 +56,7 @@ Every change must clear these gates (run locally with `make preflight`):
 ## Coverage policy
 
 The coverage gate is configured in `pyproject.toml` (`[tool.coverage]`,
-`fail_under = 98`). Branch coverage is on. Its configured exclusion patterns
+`fail_under = 99.21`). Branch coverage is on. Its configured exclusion patterns
 cover `pragma: no cover`, the `__main__` guard, `TYPE_CHECKING`,
 `raise NotImplementedError` and `@overload`/`@typing.overload`. A pragma or
 matching pattern does not prove that code is non-executable. The coverage
