@@ -28,15 +28,14 @@ _OUTER_BOUND_SECONDS = _HANG_SLEEP_SECONDS + _FAULT_TIMEOUT_SECONDS + 45.0
 
 
 def test_faulthandler_timeout_prints_the_running_node_id(tmp_path: Path) -> None:
-    """A real hang prints its node id, then the child exits and is reaped.
+    """A real hang gets a complete dump, then its node id, then the child exits.
 
-    The macOS shard exceeded a fixed 20 second outer bound. The cause is not
-    established: the old watcher join used ``timeout=2``, so that join cannot
-    block for 20 seconds, and there is no macOS stack sample. Sleeping in
-    slices instead of ``Event.wait`` is only a suspected way to stay clear of
-    the faulthandler watchdog. The outer bound also has room for a slow
-    runner, so a pass can come from that room alone. The hosted cross-os run
-    on the pushed head is the macOS proof.
+    On macOS the watcher used to report at the faulthandler deadline itself.
+    Its line landed inside the dump, the dump stopped there, and the child
+    never exited; the watcher running during the dump is the likely cause,
+    not yet proven on macOS. The dump must now finish, naming the hung test's
+    frame, before the watcher writes its line. The outer bound keeps room for a slow
+    runner to start pytest; the hosted cross-os run is the macOS proof.
     """
     test_file = tmp_path / "test_hang_identity_probe.py"
     test_file.write_text(
@@ -90,10 +89,22 @@ def test_faulthandler_timeout_prints_the_running_node_id(tmp_path: Path) -> None
     assert any(line.endswith("::test_hangs") or "::test_hangs" in line for line in hang_lines)
     assert all(not line.endswith("::test_fast") for line in hang_lines)
     assert process.returncode == 0
+    lines = stderr.splitlines()
+    # The node id is relative to pytest's rootdir, which depends on where tmp_path lives.
+    report = next(
+        index
+        for index, line in enumerate(lines)
+        if line.startswith("TIMEOUT nodeid=") and line.endswith("::test_hangs")
+    )
+    dump = next(index for index, line in enumerate(lines) if line.startswith("Timeout ("))
+    frame = next(index for index, line in enumerate(lines) if line.endswith("in test_hangs"))
+    assert dump < frame < report, stderr[-2500:]
 
 
 def test_watch_branches_are_deterministic() -> None:
-    """Halt, idle, wait, and report are direct decisions of one session watcher.
+    """Halt, idle, wait, report, wait length and waking are direct decisions.
+
+    Only arming wakes the watcher; finishing a test leaves it blocked.
 
     Stop and join the live session watcher before changing its arm. Clearing
     the thread pointer and joining None leaves that thread alive, and it can
@@ -140,6 +151,24 @@ def test_watch_branches_are_deterministic() -> None:
         text = os.read(read_fd, 4096).decode()
         assert text == "TIMEOUT nodeid=node::due\n"
         assert due.reported is True
+        now = time.monotonic()
+        hang._arm = None
+        assert hang._wait_seconds(now) is None
+        hang._arm = hang._Arm("node::done", now + 5, stopped=True)
+        assert hang._wait_seconds(now) is None
+        hang._arm = hang._Arm("node::told", now - 1, reported=True)
+        assert hang._wait_seconds(now) is None
+        hang._arm = hang._Arm("node::late", now - 1)
+        assert hang._wait_seconds(now) == 0.0
+        hang._pause.clear()
+        upcoming = hang._Arm("node::next", now + 5)
+        hang._set_arm(upcoming)
+        assert hang._pause.is_set()
+        assert hang._wait_seconds(now) == upcoming.deadline - now
+        hang._pause.clear()
+        hang.pytest_runtest_logfinish("node::next", ("f", 1, "t"))
+        assert upcoming.stopped is True
+        assert not hang._pause.is_set()
     finally:
         if write_fd >= 0:
             os.close(write_fd)
@@ -185,6 +214,45 @@ def test_session_watcher_ignores_patched_time(monkeypatch: pytest.MonkeyPatch) -
     threading.Event().wait(0.2)
     assert monotonic_calls == 0
     assert sleep_calls == 0
+
+
+def test_an_armed_watcher_runs_nothing_until_its_report_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After the arm wakes it once, the watcher stays blocked until the report time.
+
+    faulthandler reads every thread's frames during its dump. A watcher that
+    polled through that moment stopped the dump on macOS, so no watcher step
+    may run between the arm and the report time.
+    """
+    import tools.pytest_hang_identity as hang
+
+    hang._ensure_session_watcher()
+    steps = 0
+    decide = hang._take_action
+
+    def counted(now: float) -> tuple[str, str]:
+        nonlocal steps
+        steps += 1
+        return decide(now)
+
+    monkeypatch.setattr(hang, "_take_action", counted)
+    previous = hang._arm
+    armed = hang._Arm("node::armed", time.monotonic() + 30)
+    try:
+        hang._set_arm(armed)
+        deadline = time.monotonic() + 5
+        while steps == 0:
+            assert time.monotonic() < deadline, "arming did not wake the watcher"
+            threading.Event().wait(0.01)
+        woken = steps
+        threading.Event().wait(0.5)
+        assert steps == woken
+        assert armed.reported is False
+    finally:
+        armed.stopped = True
+        with hang._arm_lock:
+            hang._arm = previous
 
 
 def test_idle_hooks_and_a_bad_timeout_do_not_report(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -252,8 +320,7 @@ def test_idle_hooks_and_a_bad_timeout_do_not_report(monkeypatch: pytest.MonkeyPa
         assert threading.active_count() == before
         report_read, report_write = os.pipe()
         hang._stderr_fd = report_write
-        with hang._arm_lock:
-            hang._arm = hang._Arm("node::overdue", time.monotonic() - 1)
+        hang._set_arm(hang._Arm("node::overdue", time.monotonic() - 1))
         # Block until the watcher reports instead of sleeping a fixed 0.15 s, which a
         # loaded macOS runner can outlast. A 10 s guard closes the write end, so a
         # watcher that never reports fails this assertion rather than hanging.

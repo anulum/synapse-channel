@@ -10,6 +10,14 @@
 The standard dump names threads and frames only. A hung shard then cannot say
 which test was running. This watcher uses the same timeout and writes one
 ``TIMEOUT nodeid=`` line. Pytest still prints its own traceback.
+
+The dump reads every thread's frames while those threads keep running. On
+macOS the dump once stopped mid-line where this watcher wrote its line, and
+the process never exited; a thread executing Python during the dump is the
+likely cause, not yet proven on macOS. The watcher therefore runs no Python
+while a dump can happen. It blocks in one wait until ``_REPORT_GRACE`` seconds after the
+timeout, and only arming a new test wakes it early; pytest has cancelled
+the previous test's dump by then.
 """
 
 from __future__ import annotations
@@ -31,11 +39,14 @@ _session_thread: threading.Thread | None = None
 # watcher must keep the real clock and must not consume a scripted one.
 _monotonic = time.monotonic
 _pause = threading.Event()
+# Seconds between the faulthandler timeout and this watcher's report, so the
+# dump has finished before the watcher runs again.
+_REPORT_GRACE = 0.5
 
 
 @dataclass
 class _Arm:
-    """One test's deadline. The session watcher is re-armed, not replaced."""
+    """One test's report time. The session watcher is re-armed, not replaced."""
 
     nodeid: str
     deadline: float
@@ -87,17 +98,43 @@ def _take_action(now: float) -> tuple[str, str]:
         return ("wait", "")
 
 
+def _wait_seconds(now: float) -> float | None:
+    """Return how long the watcher may block, or ``None`` until it is woken.
+
+    A test that is armed and not yet reported keeps the watcher blocked until
+    its report time. Otherwise nothing is due and only a new arm or the session
+    stop can make the watcher act.
+    """
+    with _arm_lock:
+        arm = _arm
+        if arm is None or arm.stopped or arm.reported:
+            return None
+        return max(arm.deadline - now, 0.0)
+
+
 def _session_loop() -> None:
-    """Re-arm the same thread for every test until the session stops."""
+    """Re-arm the same thread for every test until the session stops.
+
+    The wake flag is cleared before the state is read, so an arm or stop that
+    lands after the read still ends the following wait at once.
+    """
     while True:
+        _pause.clear()
         action, nodeid = _take_action(_monotonic())
         if action == "halt":
             return
         if action == "report":
             _write_timeout(nodeid)
             continue
-        _pause.wait(0.05)
-        _pause.clear()
+        _pause.wait(_wait_seconds(_monotonic()))
+
+
+def _set_arm(arm: _Arm) -> None:
+    """Arm the watcher for one test and wake it to wait for that report time."""
+    global _arm
+    with _arm_lock:
+        _arm = arm
+    _pause.set()
 
 
 def _ensure_session_watcher() -> None:
@@ -161,13 +198,15 @@ def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) 
     if limit <= 0:
         return
     _ensure_session_watcher()
-    with _arm_lock:
-        global _arm
-        _arm = _Arm(nodeid, _monotonic() + limit)
+    _set_arm(_Arm(nodeid, _monotonic() + limit + _REPORT_GRACE))
 
 
 def pytest_runtest_logfinish(nodeid: str, location: tuple[str, int | None, str]) -> None:
-    """Disarm the session watcher. The thread itself stays for the next test."""
+    """Disarm the session watcher without waking it.
+
+    A test can finish while its dump is still being written. The watcher then
+    stays blocked until its report time and sees the stopped arm there.
+    """
     del location
     with _arm_lock:
         if _arm is not None and _arm.nodeid == nodeid:
