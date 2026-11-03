@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import json
+import socket
 import ssl
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,7 +31,7 @@ import pytest
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
-from hub_e2e_helpers import _await_listening, _free_port, read_until_type
+from hub_e2e_helpers import _free_port, read_until_type
 from multihub_tls_helpers import TLSIdentity, certificate_authority, issue_identity
 from synapse_channel.core.federation import FederationBundle, FederationPeer
 from synapse_channel.core.hub import SynapseHub
@@ -62,6 +64,8 @@ from synapse_channel.core.tls import (
 _NS = "PROJ"
 _KEY = "PROJ:hub:2026-09"
 _READ_LIMIT = 60
+# Fresh port pairs tried when another socket takes a chosen port before a hub binds it.
+_BIND_ATTEMPTS = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,12 +172,35 @@ def _build_hub(
 
 
 async def _serve(hub: SynapseHub, material: _Material, port: int) -> asyncio.Task[None]:
+    """Serve ``hub`` on ``port`` and return once this hub's own listener is bound.
+
+    The hub's readiness is awaited instead of a connection to the port. Between
+    choosing a free port and binding it, another socket can take the port; a
+    connection probe would then be answered by that socket although this hub's
+    bind failed. A failed bind raises the bind's ``OSError`` here.
+    """
     context = build_server_ssl_context(
         certfile=material.server.cert, keyfile=material.server.key, client_ca_file=material.ca
     )
     task = asyncio.create_task(hub.serve("localhost", port, ssl_context=context))
-    await _await_listening(port)
+    try:
+        await hub.wait_until_serving()
+    except RuntimeError:
+        # serve() signals readiness without an address before it re-raises a failed bind.
+        await asyncio.wait({task}, timeout=5.0)
+        if task.done():
+            task.result()
+        await _stop(task)
+        raise
+    except BaseException:
+        await _stop(task)
+        raise
     return task
+
+
+def _lost_port(error: OSError) -> bool:
+    """Return whether a hub's bind failed because another socket holds its port."""
+    return error.errno == errno.EADDRINUSE
 
 
 async def _stop(task: asyncio.Task[None] | None) -> None:
@@ -194,8 +221,14 @@ async def _two_hubs(
     corrupt_laptop_journal: bool = False,
     laptop_identity_trust: Path | None = None,
 ) -> AsyncIterator[_Pair]:
+    """Serve both hubs on fresh loopback ports, choosing new ports if one is taken.
+
+    Each hub's peer entry names the other hub's port, so both hubs are rebuilt
+    with two new ports when a bind loses its port to another socket. A failed
+    bind leaves its hub's journal untouched; a stopped workstation reopens the
+    same journal as a restart would.
+    """
     material = _material(tmp_path)
-    ws_port, lp_port = _free_port(), _free_port()
     stores = {
         "workstation": EventStore(tmp_path / "workstation.db"),
         "laptop": EventStore(tmp_path / "laptop.db"),
@@ -208,25 +241,37 @@ async def _two_hubs(
             "UPDATE events SET payload = 'not-json' WHERE seq = ?", (seq,)
         )
         stores["laptop"]._conn.commit()
-    workstation = _build_hub(
-        material,
-        stores["workstation"],
-        name="workstation",
-        remote="laptop",
-        remote_port=lp_port,
-        ttl=workstation_ttl,
-    )
-    laptop = _build_hub(
-        material,
-        stores["laptop"],
-        name="laptop",
-        remote="workstation",
-        remote_port=ws_port,
-        namespaces=laptop_namespaces,
-        identity_trust=laptop_identity_trust,
-    )
-    ws_task = await _serve(workstation, material, ws_port)
-    lp_task = await _serve(laptop, material, lp_port) if laptop_up else None
+    for attempt in range(1, _BIND_ATTEMPTS + 1):
+        ws_port, lp_port = _free_port(), _free_port()
+        workstation = _build_hub(
+            material,
+            stores["workstation"],
+            name="workstation",
+            remote="laptop",
+            remote_port=lp_port,
+            ttl=workstation_ttl,
+        )
+        laptop = _build_hub(
+            material,
+            stores["laptop"],
+            name="laptop",
+            remote="workstation",
+            remote_port=ws_port,
+            namespaces=laptop_namespaces,
+            identity_trust=laptop_identity_trust,
+        )
+        ws_task: asyncio.Task[None] | None = None
+        try:
+            ws_task = await _serve(workstation, material, ws_port)
+            lp_task = await _serve(laptop, material, lp_port) if laptop_up else None
+        except OSError as error:
+            await _stop(ws_task)
+            if _lost_port(error) and attempt < _BIND_ATTEMPTS:
+                continue
+            for store in stores.values():
+                store.close()
+            raise
+        break
     pair = _Pair(
         material=material,
         workstation=workstation,
@@ -963,3 +1008,56 @@ async def test_a_forwarded_cancel_is_refused_after_the_owning_hub_restarts_degra
         finally:
             await alice.close()
         assert refused["reason_code"] == "journal_recovery_required"
+
+
+@contextlib.contextmanager
+def _listening(port: int) -> Iterator[None]:
+    """Hold another IPv4 listener on ``port``, as another process on a shared runner can."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as other:
+        other.bind(("127.0.0.1", port))
+        other.listen()
+        yield
+
+
+async def test_a_port_held_by_another_listener_fails_the_bind_not_readiness(
+    tmp_path: Path,
+) -> None:
+    """Another listener on the chosen port cannot stand in for the hub's own bind."""
+    material = _material(tmp_path)
+    store = EventStore(tmp_path / "laptop.db")
+    hub = _build_hub(material, store, name="laptop", remote="workstation", remote_port=_free_port())
+    port = _free_port()
+    try:
+        with _listening(port), pytest.raises(OSError) as failure:
+            await _serve(hub, material, port)
+    finally:
+        store.close()
+    assert failure.value.errno == errno.EADDRINUSE
+    assert hub.bound_address is None
+
+
+async def test_the_pair_moves_to_new_ports_when_a_chosen_port_is_taken(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A port lost before the bind gives both hubs a fresh pair instead of failing the test."""
+    free_port = _free_port
+    taken = free_port()
+    chosen = [taken]
+
+    def taken_first() -> int:
+        return chosen.pop() if chosen else free_port()
+
+    monkeypatch.setitem(globals(), "_free_port", taken_first)
+    with _listening(taken):
+        async with _two_hubs(tmp_path) as pair:
+            ports = {int(uri.rsplit(":", 1)[1]) for uri in (pair.ws_uri, pair.lp_uri)}
+            assert taken not in ports
+            bound = {
+                address[1]
+                for address in (pair.workstation.bound_address, pair.laptop.bound_address)
+                if address is not None
+            }
+            assert bound == ports
+            bob = await _agent(pair.lp_uri, pair.material.ca, "PROJ/bob")
+            await bob.close()
+    assert chosen == []
