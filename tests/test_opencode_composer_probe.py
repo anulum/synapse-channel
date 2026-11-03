@@ -10,16 +10,14 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import subprocess
-import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
 
-from fixtures.opencode.composer import native_composer
+from fixtures.opencode.composer import finished_response, native_composer
 from synapse_channel.agent_tmux import inject_wake, start_session, status
 from synapse_channel.opencode_composer import LAUNCH_ENV, PROFILE_ENV
 from synapse_channel.opencode_composer_files import ComposerError, read_document, write_document
@@ -58,23 +56,6 @@ class _Controls:
         if self.after is not None:
             self.after(args)
         return result
-
-
-def _finished_response(root: Path) -> dict[str, object]:
-    """Read the matching real callback response after its process exits."""
-    nonce = read_document(root / "request.json")["nonce"]
-    deadline = time.monotonic() + 4
-    while time.monotonic() < deadline:
-        document = read_document(root / "response.json")
-        if document.get("nonce") == nonce:
-            pid = document["callback_pid"]
-            assert isinstance(pid, int)
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                return document
-        time.sleep(0.01)
-    raise AssertionError("the actual native callback did not finish")
 
 
 def test_admission_metadata_refuses_before_editor_and_preserves_input(tmp_path: Path) -> None:
@@ -263,7 +244,7 @@ def test_response_from_another_live_native_client_cannot_replace_the_bound_proce
         def replace_parent(args: Sequence[str]) -> None:
             """Retain the real callback proof but substitute the other live native parent."""
             if args[1] == "send-keys":
-                response = _finished_response(root)
+                response = finished_response(root)
                 write_document(
                     root,
                     "response.json",

@@ -26,6 +26,7 @@ from fixtures.opencode.llm import ScriptedLlmServer
 from fixtures.opencode.process import find_opencode, isolated_environment
 from synapse_channel import agent_tmux as tmux_module
 from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxWakeResult, start_session
+from synapse_channel.opencode_composer_files import read_document
 from synapse_channel.opencode_composer_probe import (
     ComposerSnapshot,
     footer_is_probeable,
@@ -279,3 +280,47 @@ def native_composer(
         )
         assert remaining.returncode != 0, "owned native tmux server was not reaped"
         _release_extracted_libraries(root)
+
+
+def finished_response(root: Path, *, timeout: float = 4.0) -> dict[str, object]:
+    """Return the real callback's response to the current request after it exits.
+
+    The callback replaces ``response.json`` atomically while this waits. The
+    owner-only reader refuses a file that is replaced while it holds it open
+    (the old inode then has no link), so the wait reads plain bytes, which
+    always show one whole document. The owner-only reader runs once, after the
+    callback process has exited and the document can no longer change.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Private profile directory holding ``request.json`` and ``response.json``.
+    timeout : float, optional
+        Seconds to wait for the matching response and its callback's exit.
+
+    Returns
+    -------
+    dict of str to object
+        The response, read and validated by the owner-only reader.
+
+    Raises
+    ------
+    AssertionError
+        No matching response from an exited callback appears in time.
+    """
+    nonce = read_document(root / "request.json")["nonce"]
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            document = json.loads((root / "response.json").read_bytes())
+        except FileNotFoundError:
+            document = None
+        if isinstance(document, dict) and document.get("nonce") == nonce:
+            pid = document["callback_pid"]
+            assert isinstance(pid, int)
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return read_document(root / "response.json")
+        time.sleep(0.01)
+    raise AssertionError("the actual native callback did not finish")

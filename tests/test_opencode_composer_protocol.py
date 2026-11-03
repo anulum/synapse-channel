@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from fixtures.opencode.composer import native_composer
+from fixtures.opencode.composer import finished_response, native_composer
 from synapse_channel import opencode_composer
 from synapse_channel.agent_tmux import status
 from synapse_channel.opencode_composer import (
@@ -426,20 +426,7 @@ def test_native_readback_preserves_input_across_controller_timezones(tmp_path: P
 
 def _corrupt_finished_response(root: Path, fault: str) -> None:
     """Alter a real response only after its actual callback process has exited."""
-    nonce = read_document(root / "request.json")["nonce"]
-    deadline = time.monotonic() + 4
-    while time.monotonic() < deadline:
-        document = read_document(root / "response.json")
-        if document.get("nonce") == nonce:
-            pid = document["callback_pid"]
-            assert isinstance(pid, int)
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                break
-        time.sleep(0.01)
-    else:
-        pytest.fail("the real editor callback did not finish")
+    document = finished_response(root)
     if fault == "parent-start":
         document["native_start"] = "different native process"
     elif fault == "callback-start":
