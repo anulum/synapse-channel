@@ -142,6 +142,29 @@ jobs:
           path: ci-shard-artifact/
           if-no-files-found: error
           overwrite: true
+      - name: Prepare protected runtime portability observations
+        if: matrix.shard == 0
+        uses: ./.github/actions/protected-runtime-observations
+        with:
+          phase: prepare
+      - name: Collect protected runtime portability observations (macOS)
+        if: matrix.shard == 0
+        run: >-
+          python -m coverage run --rcfile=protected-runtime-observations/collector.ini
+          -m pytest -q -p no:cacheprovider tests/test_protected_runtime_probe_runtime.py
+      - name: Seal protected runtime portability observations
+        if: matrix.shard == 0
+        uses: ./.github/actions/protected-runtime-observations
+        with:
+          phase: seal
+      - name: Publish protected runtime portability observations
+        if: matrix.shard == 0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: protected-runtime-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-darwin
+          path: protected-runtime-observations/
+          if-no-files-found: error
+          overwrite: true
 
   macos-complete:
     name: cross-os-filesystem (macos-latest)
@@ -198,6 +221,10 @@ jobs:
         os: [windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
@@ -230,12 +257,17 @@ jobs:
       # filesystem/socket semantics for the portable owner-only floor. Run the
       # focused security-floor pack that exercises DACL keys, path identity,
       # shell quoting, and the Phase 4 residual surfaces.
+      - name: Prepare protected runtime portability observations
+        uses: ./.github/actions/protected-runtime-observations
+        with:
+          phase: prepare
       - name: Run NT security-floor suite (Windows)
         if: runner.os == 'Windows'
         env:
           PYTHONUNBUFFERED: "1"
         run: >-
-          python -m pytest -q -p no:cacheprovider
+          python -m coverage run --rcfile=protected-runtime-observations/collector.ini
+          -m pytest -q -p no:cacheprovider
           tests/test_secure_path.py
           tests/test_secret_files.py
           tests/test_at_rest.py
@@ -273,3 +305,38 @@ jobs:
           tests/test_hub_identity_paths_runtime.py
           tests/test_path_identity.py
           tests/test_terminal_text.py
+          tests/test_protected_runtime_probe_authority_child.py
+          tests/test_protected_runtime_probe_bootstrap_workflow.py
+          tests/test_protected_runtime_probe_capsule.py
+          tests/test_protected_runtime_probe_controller.py
+          tests/test_protected_runtime_probe_instrumentation.py
+          tests/test_protected_runtime_probe_instrumentation_analysis.py
+          tests/test_protected_runtime_probe_instrumentation_artifacts.py
+          tests/test_protected_runtime_probe_instrumentation_bootstrap.py
+          tests/test_protected_runtime_probe_instrumentation_campaign.py
+          tests/test_protected_runtime_probe_instrumentation_launch.py
+          tests/test_protected_runtime_probe_instrumentation_outputs.py
+          tests/test_protected_runtime_probe_instrumentation_prepare.py
+          tests/test_protected_runtime_probe_instrumentation_recording.py
+          tests/test_protected_runtime_probe_instrumentation_retention.py
+          tests/test_protected_runtime_probe_inventory.py
+          tests/test_protected_runtime_probe_namespace_child.py
+          tests/test_protected_runtime_probe_native_closure.py
+          tests/test_protected_runtime_probe_native_provenance.py
+          tests/test_protected_runtime_probe_prepare.py
+          tests/test_protected_runtime_probe_reports.py
+          tests/test_protected_runtime_probe_resources.py
+          tests/test_protected_runtime_probe_roles.py
+          tests/test_protected_runtime_probe_runtime.py
+          tests/test_protected_runtime_probe_storage.py
+      - name: Seal protected runtime portability observations
+        uses: ./.github/actions/protected-runtime-observations
+        with:
+          phase: seal
+      - name: Publish protected runtime portability observations
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: protected-runtime-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-win32
+          path: protected-runtime-observations/
+          if-no-files-found: error
+          overwrite: true

@@ -58,6 +58,16 @@ Justification classes
     Real provider-CLI smokes (claude, codex, kimi, grok, ollama) enabled
     explicitly with ``SYNAPSE_PARTICIPANT_REAL_SMOKE=1``; they spend live
     provider capacity and are an operator decision, never a default.
+``collector-header``
+    An executed context-manager header excluded only because its pragma
+    must also cover the nested collector boundary on the following line.
+``collector-boundary``
+    The call between two collectors: the outer collector is paused and the
+    inner collector starts mid-frame. Real target data and exit tests prove
+    the call's effect independently.
+``fixed-target-exit``
+    A normal return unreachable because both fixed targets always raise
+    SystemExit. AST guards pin those target exits and the exact choices.
 """
 
 from __future__ import annotations
@@ -70,7 +80,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-#: Every ``pragma: no cover`` in ``src/``, by file: (line count, justification class).
+#: Every ``pragma: no cover`` in source or the finite probe, with exact counts and classes.
 PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/a2a_grpc.py": (1, "optional-import"),
     "src/synapse_channel/a2a_http.py": (1, "blocking-wrapper"),
@@ -117,6 +127,28 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/setup_ledger.py": (1, "env-defensive"),
     "src/synapse_channel/setup_verification.py": (4, "env-defensive"),
     "src/synapse_channel/setup_verifier.py": (2, "env-defensive"),
+    "tools/protected_runtime_probe/instrumentation_launch.py": (
+        2,
+        "collector-header + collector-boundary + fixed-target-exit",
+    ),
+}
+
+#: Exact excluded source lines produced by the probe's two pragma sites.
+PROBE_EXCLUSIONS: dict[str, dict[int, tuple[str, str]]] = {
+    "tools/protected_runtime_probe/instrumentation_launch.py": {
+        175: (
+            "collector-header",
+            "EXECUTED header excluded only so its pragma covers the collector boundary at 176.",
+        ),
+        176: (
+            "collector-boundary",
+            "Outer paused; inner starts mid-frame. Inner data and exit tests prove the call.",
+        ),
+        179: (
+            "fixed-target-exit",
+            "Both fixed target main guards unconditionally raise SystemExit; AST tests pin them.",
+        ),
+    },
 }
 
 #: Every conditional-skip line in ``tests/``, by file: (line count, justification class).
@@ -125,6 +157,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/_portable_exec.py": (1, "platform-guard"),
     # Only Linux SO_PEERCRED journeys use this marker; signed TCP tests stay portable.
     "tests/protected_write_socket_examples.py": (1, "platform-guard"),
+    "tests/test_protected_runtime_probe_inventory.py": (1, "platform-guard"),
+    "tests/test_protected_runtime_probe_runtime.py": (1, "platform-guard"),
     "tests/test_protected_write_socket_platform.py": (1, "platform-guard"),
     "tests/fixtures/opencode/process.py": (2, "optional-dep-guard"),
     "tests/test_a2a_grpc.py": (1, "optional-dep-guard"),
@@ -294,10 +328,24 @@ def _diff(observed: dict[str, int], ledger: dict[str, tuple[int, str]]) -> list[
 
 
 def test_every_pragma_no_cover_is_ledgered_with_a_justification() -> None:
-    """Each coverage pragma in ``src/`` matches this ledger exactly."""
+    """Each source or finite-probe coverage pragma matches this ledger exactly."""
     observed = _count_matches(REPO_ROOT / "src", (_PRAGMA_TOKEN,))
+    observed.update(_count_matches(REPO_ROOT / "tools/protected_runtime_probe", (_PRAGMA_TOKEN,)))
     problems = _diff(observed, PRAGMA_LEDGER)
     assert not problems, "coverage-exclusion ledger out of sync:\n" + "\n".join(problems)
+
+
+def test_probe_pragma_sites_exclude_only_the_exact_justified_lines() -> None:
+    """A memory-only public analysis must match all three explicitly justified lines."""
+    import coverage
+
+    policy = coverage.Coverage(data_file=None, config_file=False)
+    try:
+        for name, entries in PROBE_EXCLUSIONS.items():
+            assert policy.analysis2(str(REPO_ROOT / name))[2] == sorted(entries)
+            assert all(reason_class and reason for reason_class, reason in entries.values())
+    finally:
+        policy.get_data().close(force=True)
 
 
 def test_every_conditional_skip_is_ledgered_with_a_justification() -> None:

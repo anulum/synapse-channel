@@ -405,6 +405,115 @@ and stay outside default macOS/Windows collection. Passing component journeys
 qualify observation, binding and refusal mechanics, not an installed recovery
 service or separate-principal writer isolation.
 
+### Finite Linux runtime qualification
+
+`python -m tools.protected_runtime_probe.prepare --help` describes ordinary-user
+packet preparation. It freezes the current source, WebSockets 17.4 dependency,
+licences and native inputs with exact byte pins. Review the manifest and
+bootstrap hashes independently before considering an execution attempt.
+
+Licence inputs must be regular files within the capsule's per-file byte bound.
+Capture rejects symlinks at the licence file or its immediate parent, and rejects
+nonregular files before staging. Stable ordinary cache hardlinks remain supported.
+
+The printed command is **guest-side only** and contains no `sudo`. It requires
+one independently reviewed disposable Linux guest with one virtual CPU. The
+manifest binds a new UUID for that attempt. Before creating backing, accounts,
+mounts or cgroups, the pinned bootstrap checks that exact native DMI UUID, the
+hypervisor CPU flag and the complete initial-user-namespace UID mapping. A
+mapped-root user namespace or an ordinary host refuses before setup. A packet
+or a successful identity check grants no launch authority; the complete guest
+launcher, readonly seed, private disks, evidence return and resource envelope
+must also pass independent review.
+
+All four dedicated accounts, `/opt` directories, mounts, cgroups and run backing
+exist **inside that guest only**. Its private disk supplies the guest mount
+`/media/anulum/GOTM`; this path is never a host share. Guest poweroff ends active
+processes, mounts and cgroups. Account metadata and retained backing remain in
+the held guest disk. Host artifacts are the disk, readonly seed and returned raw
+evidence and logs. Keep them until owner-authorized retirement; no automatic
+deletion or workstation account, `/opt`, mount or cgroup change is part of this
+workflow. Failed cleanup remains a hold requiring inspection.
+
+If a readonly remount and its subsequent detachment both fail, the bind can
+remain writable until guest shutdown. Both failures remain in the exception
+chain. Treat that view as unqualified: do not start the controller from it, and
+retain the guest disk and failure logs for inspection.
+
+The default packet is explicitly a **host-tools prerequisite** profile. The
+captured-runtime profile additionally requires all four inputs:
+`--runtime-image`, `--runtime-manifest`, `--runtime-sha256` and
+`--dependency-wheel`. They identify an independently pinned complete native
+runtime and its original WebSockets wheel. Every native object must match the
+observed import closure and its system-package or original-wheel provenance;
+a missing captured executable never falls back to host Python.
+
+To record that captured profile, also supply both `--instrumentation-root`
+and `--instrumentation-wheel`. The root names the `coverage` package inside a
+complete original Coverage 7.17.0 wheel tree. The preparer verifies its full
+RECORD, native tracer, licences and source bindings and adds the explicit
+`--instrumentation` selector to the operator command. It records six process
+contexts: controller, namespace wrapper, authority, client, operator and writer.
+Recording tightens the controller's `RLIMIT_FSIZE` soft and hard limits to at
+most 16 MiB; every role child inherits that bound. The report records the actual
+controller limits. The authority also uses a SIGTERM graceful stop only in this
+instrumented profile. EFBIG and SIGXFSZ are graded as instrumentation **ERROR**,
+with no product-result claim. These resource and shutdown differences must stay
+with exported evidence; they are not an uninstrumented performance comparison.
+
+Each process serializes only its own in-memory branch data into its enrolled
+output. The parent seals raw datasets only after successful producer exits and
+quiescence; privileged code never parses a child's SQLite database.
+Failed collection is terminal. Inspect failure-retention metadata before closing
+the campaign. Closing invalidates every resource accessor before cleanup starts,
+including when saving fails, and repeated closure does not touch reused descriptors.
+
+Use `python -m tools.protected_runtime_probe.instrumentation_analysis --help`
+for ordinary-user analysis of the exact report, capsule, sealed dataset copies
+and byte-identical current source. Analysis checks every association before
+parsing private working copies and refuses an existing output directory. It
+preserves the original sealed inputs and reports registered files separately
+from files with executed arcs. Bootstrap admission, readonly recapture,
+collector startup and final sealing/publication are explicitly unmeasured.
+
+Two ledgered pragma sites in the fixed child launcher cover three source lines:
+the collector context header, its nested call, and the unreachable normal return.
+The header is executed; excluding the block is necessary to cover the call at
+the collector transition. Tests pin both fixed target exits and their exact
+choices, and verify real target recording and exit propagation through the final
+save. Scoped coverage reports retain these exclusions explicitly.
+
+Store analysis inputs under a private (`0700`) directory. Each sealed dataset
+copy must have mode `0444`, including copies extracted from an evidence archive.
+Adjust only the copies' permissions; preserve their bytes and the original
+archive.
+
+These results qualify finite prerequisite and recording mechanics. They do not
+install a service or writer, issue a protected-operation grant, certify recovery
+or revocation fencing, establish whole-runtime acceptance or replace performance
+evidence. Run the owning `tests/test_protected_runtime_probe_*.py` tests for
+ordinary API, CLI and refusal contracts; successful ordinary tests alone do not
+establish dedicated host-role isolation.
+
+The ordinary role-boundary tests use private account files and single-UID user
+namespaces; they do not create host accounts. Setting `SYNAPSE_TEST_COVERAGE_DIR`
+to an existing writable directory records both real fixture CLI entries and
+their credential API calls, including the account-free child's separate mount
+root. Each database has adjacent source hashes for its actual namespace paths.
+This diagnostic measurement preserves the original isolation flags and kernel
+refusals; it does not replace a run without measurement or the separate guest
+qualification above.
+
+The existing Windows security-floor job and macOS shard zero also publish
+source-bound portability observations after their measured tests succeed.
+Artifact names include the exact commit, run ID, attempt and platform. Each
+contains raw branch data, collection configuration, source hashes and a manifest
+with the actual OS, Python and Coverage versions. Sources must match committed
+Git blobs before and after collection. Windows checkout preserves those bytes
+without line-ending conversion. Consumers must verify the successful producer
+job and exact invocation before mapping source-identical filenames. These
+observations do not certify native isolation or whole-scope coverage.
+
 ### Changes to `core/*`
 
 The `core/` modules sit on the request, authentication, and durability hot paths,

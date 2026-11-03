@@ -1,0 +1,18 @@
+{
+  "schema": "synapse.native-dependency-lock.v1",
+  "native_abi": "linux-x86_64-cpython312",
+  "websockets": {
+    "version": "17.4",
+    "filename": "websockets-17.4-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+    "sha256": "9ae1429ee9e52b139167ed0169757806a27ed7307e942e8c62037a9184e9843b",
+    "size_bytes": 226321,
+    "source_url": "https://files.pythonhosted.org/packages/cb/18/6229d6583031ca81d092a0cd887a13a57b402fb555acc323d39b45967eb7/websockets-17.4-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl"
+  },
+  "coverage": {
+    "version": "7.17.0",
+    "filename": "coverage-7.17.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+    "sha256": "85932227e9dd38e62cd29c17fefdfecfb919eead6af1e3259522d03cf85de983",
+    "size_bytes": 261789,
+    "source_url": "https://files.pythonhosted.org/packages/91/ac/eb4c31f741509a9ef48cf6f28385e98e9de0785599282252eee252ff8af7/coverage-7.17.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl"
+  }
+}

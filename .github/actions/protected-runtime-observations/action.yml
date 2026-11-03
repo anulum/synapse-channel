@@ -1,0 +1,139 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — source-bound portable runtime observations
+name: Protected runtime observations
+description: Prepare or seal actual portability data without native qualification
+inputs:
+  phase:
+    description: prepare before collection, seal after successful collection
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Prepare or seal source-bound observations
+      shell: python
+      env:
+        OBSERVATION_PHASE: ${{ inputs.phase }}
+      run: |
+
+        import hashlib
+        import json
+        import os
+        import platform
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        import coverage
+
+
+        def _digest(path: Path) -> str:
+            """Hash an actual source or completed dataset without loading it into memory."""
+            with path.open("rb") as stream:
+                return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+        phase = os.environ["OBSERVATION_PHASE"]
+        if phase not in {"prepare", "seal"}:
+            raise ValueError("unknown observation phase")
+        root = Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+        output = Path("protected-runtime-observations")
+        patterns = (
+            "tools/protected_runtime_probe/*.py",
+            "tests/test_protected_runtime_probe_*.py",
+            "tests/fixtures/protected_runtime_*.py",
+            "tests/test_coverage_exclusion_ledger.py",
+        )
+        paths = sorted({path for pattern in patterns for path in root.glob(pattern)})
+        if not paths or any(path.is_symlink() or not path.is_file() for path in paths):
+            raise ValueError("portable observation source inventory is unavailable")
+        pins = {path.relative_to(root).as_posix(): _digest(path) for path in paths}
+        hosted = os.environ.get("GITHUB_ACTIONS") == "true"
+        head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+        if hosted:
+            if head != os.environ.get("GITHUB_SHA"):
+                raise ValueError("portable observation head differs from the hosted run")
+            for relative, expected_digest in pins.items():
+                with subprocess.Popen(
+                    ["git", "-C", str(root), "show", f"{head}:{relative}"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                ) as process:
+                    if process.stdout is None:
+                        raise ValueError("committed source stream is unavailable")
+                    committed = hashlib.sha256()
+                    while chunk := process.stdout.read(64 * 1024):
+                        committed.update(chunk)
+                    if process.wait(timeout=30) != 0 or committed.hexdigest() != expected_digest:
+                        raise ValueError("actual observation source differs from its committed blob")
+        context = f"portable/{sys.platform}/python{sys.version_info.major}.{sys.version_info.minor}"
+        if phase == "prepare":
+            output.mkdir(mode=0o700)
+            with (output / "source-pins.json").open("x", encoding="utf-8") as stream:
+                json.dump(pins, stream, sort_keys=True)
+            configuration = (
+                "[run]\nbranch = True\nparallel = False\npatch =\n"
+                f"context = {context}\n"
+                f"data_file = {(output / 'observations.sqlite').resolve().as_posix()}\n"
+                "include =\n"
+                + "".join(f"    {path.as_posix()}\n" for path in paths)
+                + "[report]\nfail_under = 100\n"
+            )
+            with (output / "collector.ini").open("x", encoding="utf-8", newline="\n") as stream:
+                stream.write(configuration)
+        else:
+            previous: object = json.loads((output / "source-pins.json").read_text(encoding="utf-8"))
+            if previous != pins:
+                raise ValueError("portable observation sources changed during collection")
+            data_path = output / "observations.sqlite"
+            if (
+                data_path.is_symlink()
+                or not data_path.is_file()
+                or not 0 < data_path.stat().st_size <= 64 * 1024 * 1024
+            ):
+                raise ValueError("portable observation data exceeds its transport contract")
+            data = coverage.CoverageData(basename=str(data_path))
+            data.read()
+            try:
+                if not data.has_arcs() or not data.measured_files():
+                    raise ValueError("portable observation has no actual branch data")
+                contexts = sorted(data.measured_contexts())
+                if not contexts or any(not value.startswith(context) for value in contexts):
+                    raise ValueError("portable observation context differs from its platform")
+                measured = {
+                    name: Path(name).resolve(strict=True).relative_to(root).as_posix()
+                    for name in data.measured_files()
+                }
+                if not set(measured.values()) <= pins.keys():
+                    raise ValueError("portable observation contains an undeclared source")
+            finally:
+                data.close(force=True)
+            manifest = {
+                "schema": "synapse.portable-runtime-observations.v1",
+                "environment": "github-actions" if hosted else "local-diagnostic",
+                "source_sha": head,
+                "source_root": root.as_posix(),
+                "run_id": os.environ.get("GITHUB_RUN_ID"),
+                "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+                "producer_job": os.environ.get("GITHUB_JOB"),
+                "platform": sys.platform,
+                "machine": platform.machine(),
+                "python_version": platform.python_version(),
+                "coverage_version": coverage.__version__,
+                "contexts": contexts,
+                "source_files": pins,
+                "measured_files": measured,
+                "data_filename": "observations.sqlite",
+                "data_sha256": _digest(data_path),
+                "data_size_bytes": data_path.stat().st_size,
+                "configuration_sha256": _digest(output / "collector.ini"),
+                "source_pins_sha256": _digest(output / "source-pins.json"),
+                "native_qualification": False,
+                "whole_scope_qualification": False,
+            }
+            with (output / "manifest.json").open("x", encoding="utf-8") as stream:
+                json.dump(manifest, stream, sort_keys=True, indent=2)
