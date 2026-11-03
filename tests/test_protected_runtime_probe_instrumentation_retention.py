@@ -20,6 +20,8 @@ from pathlib import Path
 import pytest
 from tools.protected_runtime_probe.instrumentation_retention import publish_recording_outputs
 
+from fixtures.capable_bwrap import capable_bwrap
+
 _CHILD = """import sys,os,json
 from pathlib import Path
 sys.path[:0]=[sys.argv[1],sys.argv[1]+'/src']
@@ -190,7 +192,7 @@ def _execute_retention(
         measurement_directory = Path(supplied) / tmp_path.name
         measurement_directory.mkdir(mode=0o700)
     command = [
-        "/usr/bin/bwrap",
+        capable_bwrap(),
         "--die-with-parent",
         "--new-session",
         "--unshare-user",
@@ -202,7 +204,14 @@ def _execute_retention(
         "--tmpfs",
         "/",
     ]
-    for directory in ("/usr", "/media", "/home", "/lib", "/lib64"):
+    for directory in (
+        "/usr",
+        "/media",
+        "/home",
+        "/lib",
+        "/lib64",
+        str(Path(sys.base_prefix).resolve()),
+    ):
         command += ["--ro-bind", directory, directory]
     command += [
         "--proc",
@@ -215,7 +224,7 @@ def _execute_retention(
     ]
     if case == "mount-denied":
         command += ["--cap-drop", "CAP_SYS_ADMIN"]
-    interpreter = ["/usr/bin/python3.12", "-I", "-B", "-S", "-c"]
+    interpreter = [sys.executable, "-I", "-B", "-S", "-c"]
     original_arguments = [str(source), str(tmp_path / "sealed"), case]
     if measurement_directory is None:
         command += [*interpreter, _CHILD, *original_arguments]

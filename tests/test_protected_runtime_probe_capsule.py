@@ -34,6 +34,8 @@ from tools.protected_runtime_probe.capsule import (
 )
 from tools.protected_runtime_probe.prepare import prepare_packet
 
+from fixtures.capable_bwrap import capable_bwrap
+
 
 def _fixture(root: Path) -> tuple[str, bytes]:
     """Use real codec source bytes in a small codec-only, non-executable fixture."""
@@ -432,6 +434,12 @@ async def test_effect_marker_reader_refuses_nonregular_files_without_waiting(
     tmp_path: Path, kind: str
 ) -> None:
     """Read real bounded content or promptly refuse other actual filesystem objects."""
+    if os.name != "posix":
+        from tools.protected_runtime_probe.storage import read_effect_marker
+
+        with pytest.raises(OSError, match="requires native POSIX descriptors"):
+            read_effect_marker(-1)
+        return
     marker = tmp_path / "marker"
     content = b"x" * 4096 if kind == "limit" else b"runtime-marker\n"
     if kind == "fifo":
@@ -491,16 +499,25 @@ async def test_campaign_finalization_publishes_after_real_child_cleanup_interrup
     """An actual child deadline still retires its endpoint and persists failure."""
     from tools.protected_runtime_probe.resources import finalize_probe_resources
 
-    endpoint = tmp_path / "endpoint.sock"
+    native_endpoint = sys.platform == "linux"
+    endpoint = tmp_path / ("endpoint.sock" if native_endpoint else "endpoint.json")
     report = tmp_path / "result.json"
-    directory = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    directory = (
+        os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW) if native_endpoint else None
+    )
+    listener = socket.socket(
+        socket.AF_UNIX if native_endpoint else socket.AF_INET, socket.SOCK_STREAM
+    )
     child: asyncio.subprocess.Process | None = None
     failures: list[str] = []
     entered_cleanup = False
     try:
-        # Keep the actual sockaddr short while retaining the full Samsung path.
-        listener.bind(f"/proc/self/fd/{directory}/endpoint.sock")
+        if directory is not None:
+            # Keep the actual sockaddr short while retaining the full Samsung path.
+            listener.bind(f"/proc/self/fd/{directory}/endpoint.sock")
+        else:
+            listener.bind(("127.0.0.1", 0))
+            endpoint.write_text(json.dumps({"address": listener.getsockname()}))
         listener.listen()
         child = await asyncio.create_subprocess_exec(
             sys.executable,
@@ -583,7 +600,8 @@ async def test_campaign_finalization_publishes_after_real_child_cleanup_interrup
             if child.stdin is not None:
                 child.stdin.close()
         endpoint.unlink(missing_ok=True)
-        os.close(directory)
+        if directory is not None:
+            os.close(directory)
 
 
 @pytest.mark.parametrize("kind", ["regular", "file-symlink", "directory-symlink", "fifo"])
@@ -661,7 +679,7 @@ finally:
  os.close(evidence);os.close(backing)
 """
     command = [
-        "/usr/bin/bwrap",
+        capable_bwrap(),
         "--unshare-user",
         "--uid",
         "0",

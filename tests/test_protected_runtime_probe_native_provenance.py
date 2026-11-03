@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 from tools.protected_runtime_probe.native_provenance import (
+    SYSTEM_PACKAGE_TREE,
     NativePackageTree,
     collect_native_metadata_process,
     load_native_wheel,
@@ -116,6 +117,10 @@ def test_offline_wheel_capture_refuses_an_invalid_profile(
         record[field] = value
     lock = tmp_path / "native-dependencies.lock.json"
     lock.write_text(json.dumps(record))
+    if os.name != "posix":
+        with pytest.raises(OSError, match="requires native POSIX descriptors"):
+            load_native_wheel(lock, wheel)
+        return
     with pytest.raises(ValueError, match="malformed or unsupported"):
         load_native_wheel(lock, wheel)
 
@@ -296,6 +301,25 @@ async def test_metadata_collector_reaps_the_actual_child_on_an_invalid_deadline(
         await collect_native_metadata_process(process, timeout=0)
     assert process.returncode is not None
     assert await process.wait() == process.returncode
+
+
+def test_default_native_package_context_binds_the_actual_system_root() -> None:
+    """The default context imports on every host and preserves actual Linux provenance."""
+    context = NativePackageTree()
+    assert context.root.is_absolute()
+    assert context == SYSTEM_PACKAGE_TREE
+    if sys.platform != "linux":
+        return
+    assert context == NativePackageTree(Path("/"))
+    assert SYSTEM_PACKAGE_TREE.root == Path("/")
+    source = Path("/usr/bin/dpkg-query")
+    if not source.is_file():
+        with pytest.raises(OSError):
+            run_native_metadata_command(str(source), ("--version",))
+        return
+    result = verify_dpkg_native_file(source, source.read_bytes())
+    assert result["source_root"] == "/"
+    assert result["source_context"] == "system"
 
 
 @pytest.mark.parametrize("root", [Path("relative"), Path("/usr/../var")])

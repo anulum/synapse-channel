@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .capsule import read_relative_file
+from .capsule import read_relative_file, require_posix_descriptors
 from .roles import ROOT_COMMAND_ENV
 
 
@@ -46,7 +46,7 @@ class NativePackageTree:
     The production packet preparer always uses the default system context.
     """
 
-    root: Path = Path("/")
+    root: Path = Path("/").absolute()
     owner: tuple[int, int] = (0, 0)
 
     def __post_init__(self) -> None:
@@ -60,6 +60,7 @@ SYSTEM_PACKAGE_TREE = NativePackageTree()
 
 def _read_file(path: Path, maximum: int) -> bytes:
     """Capture a bounded regular file through its retained no-follow parent."""
+    require_posix_descriptors(os.name)
     parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         return read_relative_file(parent, path.name, maximum)

@@ -649,12 +649,15 @@ def test_parent_barrier_refuses_invalid_descriptor_before_pipe_access(raw: str) 
     from tools.protected_runtime_probe.runtime import wait_probe_writer_release
 
     reader, writer = os.pipe()
+    identities = (os.fstat(reader).st_ino, os.fstat(writer).st_ino)
     try:
         os.write(writer, b"\x01")
         with pytest.raises(ValueError, match="invalid prerequisite writer release descriptor"):
             wait_probe_writer_release(json.loads(raw), timeout_seconds=0.05)
         assert os.read(reader, 1) == b"\x01"
-        assert os.fstat(reader).st_ino == os.fstat(writer).st_ino
+        assert (os.fstat(reader).st_ino, os.fstat(writer).st_ino) == identities
+        os.write(writer, b"\x02")
+        assert os.read(reader, 1) == b"\x02"
     finally:
         os.close(reader)
         os.close(writer)
@@ -666,12 +669,15 @@ def test_parent_barrier_refuses_invalid_deadline_without_retiring_pipe(raw: str)
     from tools.protected_runtime_probe.runtime import wait_probe_writer_release
 
     reader, writer = os.pipe()
+    identities = (os.fstat(reader).st_ino, os.fstat(writer).st_ino)
     try:
         os.write(writer, b"\x01")
         with pytest.raises(ValueError, match="invalid prerequisite writer release deadline"):
             wait_probe_writer_release(reader, timeout_seconds=json.loads(raw))
         assert os.read(reader, 1) == b"\x01"
-        assert os.fstat(reader).st_ino == os.fstat(writer).st_ino
+        assert (os.fstat(reader).st_ino, os.fstat(writer).st_ino) == identities
+        os.write(writer, b"\x02")
+        assert os.read(reader, 1) == b"\x02"
     finally:
         os.close(reader)
         os.close(writer)

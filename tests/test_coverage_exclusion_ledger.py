@@ -153,11 +153,13 @@ PROBE_EXCLUSIONS: dict[str, dict[int, tuple[str, str]]] = {
 
 #: Every conditional-skip line in ``tests/``, by file: (line count, justification class).
 SKIP_LEDGER: dict[str, tuple[int, str]] = {
-    "tests/_platform_caps.py": (8, "platform-guard"),
+    "tests/_platform_caps.py": (9, "platform-guard"),
     "tests/_portable_exec.py": (1, "platform-guard"),
     # Only Linux SO_PEERCRED journeys use this marker; signed TCP tests stay portable.
     "tests/protected_write_socket_examples.py": (1, "platform-guard"),
     "tests/test_protected_runtime_probe_inventory.py": (1, "platform-guard"),
+    "tests/test_protected_runtime_probe_native_closure.py": (11, "platform-guard"),
+    "tests/test_protected_runtime_probe_controller.py": (1, "platform-guard"),
     "tests/test_protected_runtime_probe_runtime.py": (1, "platform-guard"),
     "tests/test_protected_write_socket_platform.py": (1, "platform-guard"),
     "tests/fixtures/opencode/process.py": (2, "optional-dep-guard"),
@@ -264,7 +266,13 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
 
 # Assembled from fragments so this ledger's own source never matches its scan.
 _PRAGMA_TOKEN = "# pragma: " + "no cover"
-_SKIP_TOKENS = ("pytest.mark." + "skip", "pytest." + "skip(", "x" + "fail")
+_SKIP_TOKENS = (
+    "pytest.mark." + "skip",
+    "pytest." + "skip(",
+    "x" + "fail",
+    "@requires_packaged_" + "python312",
+    "marks=requires_packaged_" + "python312",
+)
 _SKIP_EXEMPT = "importor" + "skip"
 
 

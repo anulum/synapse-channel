@@ -604,13 +604,12 @@ def test_public_marker_read_preserves_custody_and_enforces_actual_file_bounds(
     tmp_path: Path, case: str
 ) -> None:
     """Read real owned files through the public API without claiming role quiescence."""
-    from tools.protected_runtime_probe.capsule import require_posix_descriptors
+    from tools.protected_runtime_probe.storage import read_effect_marker
 
     if os.name != "posix":
-        with pytest.raises(OSError, match="POSIX"):
-            require_posix_descriptors(os.name)
+        with pytest.raises(OSError, match="requires native POSIX descriptors"):
+            read_effect_marker(-1)
         return
-    from tools.protected_runtime_probe.storage import read_effect_marker
 
     directory = tmp_path / "data"
     directory.mkdir(mode=0o700)

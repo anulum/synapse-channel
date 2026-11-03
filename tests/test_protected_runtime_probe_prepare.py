@@ -36,7 +36,7 @@ from fixtures.protected_runtime_image import materialize_runtime_image, samsung_
 
 _DEPENDENCY_LICENCE_CAPTURE = """import hashlib,json,sys
 from pathlib import Path
-sys.path.insert(0,sys.argv[1])
+sys.path[:0]=[sys.argv[1],str(Path(sys.argv[2]).parent)]
 from tools.protected_runtime_probe.prepare import capture_websockets_package
 captured=capture_websockets_package(Path(sys.argv[2]),'17.4',(Path(sys.argv[3]),))
 raw=captured['licenses/websockets.txt']

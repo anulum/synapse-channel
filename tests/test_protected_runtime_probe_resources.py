@@ -247,7 +247,14 @@ finally:
         "--tmpfs",
         "/",
     ]
-    for directory_name in ("/usr", "/media", "/home", "/lib", "/lib64"):
+    for directory_name in (
+        "/usr",
+        "/media",
+        "/home",
+        "/lib",
+        "/lib64",
+        str(Path(sys.base_prefix).resolve()),
+    ):
         command.extend(("--ro-bind", directory_name, directory_name))
     command.extend(("--proc", "/proc", "--bind", str(data), "/data"))
     if coverage_dir:

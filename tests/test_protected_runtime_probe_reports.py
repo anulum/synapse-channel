@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 from tools.protected_runtime_probe.prepare import prepare_packet
 
+from fixtures.capable_bwrap import capable_bwrap
 from fixtures.protected_runtime_image import samsung_backing_or_refusal
 
 
@@ -143,7 +144,7 @@ finally:
   recorder.stop();recorder.save()
 """
     command = [
-        "/usr/bin/bwrap",
+        capable_bwrap(),
         "--unshare-user",
         "--uid",
         "0",
@@ -154,7 +155,14 @@ finally:
         "--tmpfs",
         "/",
     ]
-    for directory in ("/usr", "/media", "/home", "/lib", "/lib64"):
+    for directory in (
+        "/usr",
+        "/media",
+        "/home",
+        "/lib",
+        "/lib64",
+        str(Path(sys.base_prefix).resolve()),
+    ):
         command.extend(("--ro-bind", directory, directory))
     coverage_dir = os.environ.get("SYNAPSE_TEST_COVERAGE_DIR", "")
     if coverage_dir:
@@ -283,7 +291,7 @@ def test_actual_report_size_and_missing_mount_capability(tmp_path: Path, padding
     backing.mkdir()
 
     command = [
-        "/usr/bin/bwrap",
+        capable_bwrap(),
         "--unshare-user",
         "--uid",
         "0",
@@ -294,7 +302,14 @@ def test_actual_report_size_and_missing_mount_capability(tmp_path: Path, padding
         "--tmpfs",
         "/",
     ]
-    for directory in ("/usr", "/media", "/home", "/lib", "/lib64"):
+    for directory in (
+        "/usr",
+        "/media",
+        "/home",
+        "/lib",
+        "/lib64",
+        str(Path(sys.base_prefix).resolve()),
+    ):
         command.extend(("--ro-bind", directory, directory))
     coverage_dir = os.environ.get("SYNAPSE_TEST_COVERAGE_DIR", "")
     if coverage_dir:
@@ -399,7 +414,7 @@ async def observe():
 asyncio.run(observe())
 """
     command = [
-        "/usr/bin/bwrap",
+        capable_bwrap(),
         "--unshare-user",
         "--uid",
         "0",
@@ -410,7 +425,14 @@ asyncio.run(observe())
         "--tmpfs",
         "/",
     ]
-    for directory in ("/usr", "/media", "/home", "/lib", "/lib64"):
+    for directory in (
+        "/usr",
+        "/media",
+        "/home",
+        "/lib",
+        "/lib64",
+        str(Path(sys.base_prefix).resolve()),
+    ):
         command.extend(("--ro-bind", directory, directory))
     command.extend(
         (

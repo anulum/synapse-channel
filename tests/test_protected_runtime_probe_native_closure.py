@@ -35,6 +35,8 @@ from tools.protected_runtime_probe.native_provenance import (
     verify_wheel_native_file,
 )
 
+from _platform_caps import requires_packaged_python312
+
 _SOURCE = Path(__file__).resolve().parents[1]
 _DEPENDENCY = Path(websockets.__file__).parent
 _LOCK = _SOURCE / "tools/protected_runtime_probe/native-dependencies.lock.json"
@@ -72,6 +74,7 @@ def native_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
+@requires_packaged_python312
 def test_actual_probe_closure_has_current_package_and_wheel_provenance(native_wheel: Path) -> None:
     """Current native objects match installed dpkg/wheel records without unused libraries."""
     if not _supported_or_refused():
@@ -97,6 +100,7 @@ def test_actual_probe_closure_has_current_package_and_wheel_provenance(native_wh
 
 
 @pytest.mark.parametrize("change", ["changed", "extra", "missing"])
+@requires_packaged_python312
 def test_runtime_refuses_native_bytes_or_names_outside_actual_closure(
     native_wheel: Path, change: str
 ) -> None:
@@ -116,6 +120,7 @@ def test_runtime_refuses_native_bytes_or_names_outside_actual_closure(
         verify_native_runtime_content(content, _SOURCE, _DEPENDENCY, native_wheel)
 
 
+@requires_packaged_python312
 def test_native_wheel_artifact_and_installed_module_refuse_substitution(
     native_wheel: Path, tmp_path: Path
 ) -> None:
@@ -148,6 +153,7 @@ def test_unmanaged_actual_file_cannot_be_labelled_as_a_system_package(tmp_path: 
         verify_dpkg_native_file(path, path.read_bytes())
 
 
+@requires_packaged_python312
 def test_observation_refuses_a_source_without_the_actual_probe_entrypoints(tmp_path: Path) -> None:
     """An actual isolated import failure cannot become an accepted empty native closure."""
     if not _supported_or_refused():
@@ -197,9 +203,14 @@ def test_native_mapping_ignores_actual_non_elf_files(tmp_path: Path) -> None:
     """Ordinary mapped data does not become a native executable payload."""
     source = tmp_path / "mapped-data"
     source.write_bytes(b"non executable data")
+    if sys.platform == "win32":
+        with pytest.raises(ValueError, match="native import path is unavailable"):
+            classify_native_import_paths([str(source)], _DEPENDENCY)
+        return
     assert classify_native_import_paths([str(source)], _DEPENDENCY) == ()
 
 
+@requires_packaged_python312
 def test_native_mapping_refuses_an_actual_elf_outside_declared_roots(tmp_path: Path) -> None:
     """A copied real interpreter outside all declared roots is not silently admitted."""
     if not _supported_or_refused():
@@ -211,6 +222,7 @@ def test_native_mapping_refuses_an_actual_elf_outside_declared_roots(tmp_path: P
 
 
 @pytest.mark.parametrize("case", ["bad-elf", "no-soname", "collision"])
+@requires_packaged_python312
 def test_native_mapping_reads_real_loader_metadata_and_refuses_ambiguity(
     tmp_path: Path, case: str
 ) -> None:
@@ -240,6 +252,7 @@ def test_native_mapping_reads_real_loader_metadata_and_refuses_ambiguity(
         classify_native_import_paths(paths, _DEPENDENCY, sources=roots)
 
 
+@requires_packaged_python312
 def test_native_mapping_labels_real_copies_using_explicit_source_roots(tmp_path: Path) -> None:
     """Declared ordinary source trees retain their real paths and deterministic placement."""
     if not _supported_or_refused():
@@ -287,6 +300,7 @@ def test_wheel_native_refuses_member_paths_outside_the_declared_dependency(
         verify_wheel_native_file(Path("/not-opened"), member, b"", artifact)
 
 
+@requires_packaged_python312
 def test_wheel_native_refuses_an_actual_different_member(native_wheel: Path) -> None:
     """Actual installed native bytes cannot be relabelled as another real wheel member."""
     if not _supported_or_refused():
@@ -307,6 +321,7 @@ def test_wheel_native_refuses_an_actual_different_member(native_wheel: Path) -> 
 
 
 @pytest.mark.parametrize("change", ["hash", "size", "duplicate"])
+@requires_packaged_python312
 def test_wheel_native_checks_the_actual_record_even_when_member_bytes_match(
     native_wheel: Path, tmp_path: Path, change: str
 ) -> None:
@@ -378,6 +393,7 @@ def instrumentation_library(tmp_path_factory: pytest.TempPathFactory) -> tuple[P
     return library / "coverage", artifact
 
 
+@requires_packaged_python312
 def test_actual_instrumented_native_closure_binds_original_tracer_and_database_dependencies(
     native_wheel: Path, instrumentation_library: tuple[Path, Path]
 ) -> None:
@@ -421,14 +437,15 @@ def test_actual_instrumented_native_closure_binds_original_tracer_and_database_d
     assert collector_records[0]["wheel_sha256"] == collector.artifact.sha256
     assert any("_sqlite3." in name for name in content)
     assert any("libsqlite3.so" in name for name in content)
-    # The recorder imports resource only when it tightens its own file budget.
-    # Host-backed ordinary tests must not hide a missing captured native adapter.
-    import resource
-
-    resource_source = Path(resource.__file__).resolve(strict=True)
-    resource_objects = [item for item in observed if item.installed_source == resource_source]
+    resource_objects = [
+        item
+        for item in observed
+        if item.payload.startswith("runtime/python/lib/python3.12/lib-dynload/resource.")
+    ]
     assert len(resource_objects) == 1
     resource_object = resource_objects[0]
+    resource_source = resource_object.installed_source.resolve(strict=True)
+    assert resource_source.parent == Path("/usr/lib/python3.12/lib-dynload")
     assert content[resource_object.payload] == resource_source.read_bytes()
     resource_records = [row for row in records if row["payload"] == resource_object.payload]
     assert len(resource_records) == 1
@@ -492,6 +509,7 @@ def test_instrumented_observation_refuses_distribution_metadata_as_package(
 
 
 @pytest.mark.parametrize("change", ["licence-missing", "resource-changed"])
+@requires_packaged_python312
 def test_native_verifier_refuses_incomplete_or_changed_collector_distribution(
     native_wheel: Path, instrumentation_library: tuple[Path, Path], change: str
 ) -> None:

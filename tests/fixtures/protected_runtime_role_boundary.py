@@ -173,7 +173,7 @@ def parent(arguments: argparse.Namespace) -> dict[str, Any]:
         return {"phase": "parent_refused", "error": type(error).__name__, "message": str(error)}
     identity = arguments.identity or json.dumps({"uid": role.uid, "gid": role.gid})
     command = [
-        "/usr/bin/bwrap",
+        arguments.bwrap,
         "--unshare-pid",
         "--ro-bind",
         str(arguments.prefix),
@@ -268,6 +268,7 @@ def main() -> None:
     parser.add_argument("--prefix", type=Path)
     parser.add_argument("--loader", type=Path)
     parser.add_argument("--executable")
+    parser.add_argument("--bwrap", default="/usr/bin/bwrap")
     parser.add_argument("--method", choices=("numeric", "named"), default="numeric")
     parser.add_argument("--identity")
     parser.add_argument("--with-nss", action="store_true")
@@ -320,6 +321,8 @@ def run_mapped_public_refusal(
     """
     import coverage
 
+    from fixtures.capable_bwrap import capable_bwrap
+
     accounts = directory / "account-inputs"
     accounts.mkdir(mode=0o700)
     passwd = b"synapse-writer:x:900:900:fixture:/nonexistent:/usr/sbin/nologin\n"
@@ -368,7 +371,7 @@ finally:
     rows: list[subprocess.CompletedProcess[str]] = []
     for observed in (False, True):
         command = [
-            "/usr/bin/bwrap",
+            capable_bwrap(),
             "--die-with-parent",
             "--new-session",
             "--unshare-user",
@@ -427,7 +430,9 @@ finally:
                 path = Path(name).resolve(strict=True)
                 assert path.is_relative_to(source / "tools/protected_runtime_probe")
                 assert hashlib.sha256(path.read_bytes()).hexdigest() == pin
-            data = coverage.CoverageData(no_disk=True)
+            data = coverage.CoverageData(
+                basename=str(directory / "public-refusal-observations.coverage")
+            )
             try:
                 data.loads(bytes.fromhex(binding["data_hex"]))
                 assert set(data.measured_files()) == set(binding["source_sha256"])

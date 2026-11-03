@@ -140,7 +140,7 @@ def test_actual_owned_listener_termination_closes_gracefully_only_in_finite_mode
         operator.bind("operator.sock")
         process = subprocess.Popen(
             [
-                "/usr/bin/python3.12",
+                sys.executable,
                 "-I",
                 "-B",
                 "-S",

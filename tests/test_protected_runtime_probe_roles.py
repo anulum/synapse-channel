@@ -26,6 +26,7 @@ import pytest
 from tools.protected_runtime_probe.prepare import prepare_packet
 from tools.protected_runtime_probe.roles import drop_enrolled_identity
 
+from fixtures.capable_bwrap import capable_bwrap
 from fixtures.protected_runtime_role_boundary import measured_entry_command
 
 
@@ -130,8 +131,9 @@ def _boundary(
     prefix = Path(sys.base_prefix).resolve()
     executable = Path(sys.executable).resolve().relative_to(prefix).as_posix()
     fixture = source / "tests/fixtures/protected_runtime_role_boundary.py"
+    namespace_tool = capable_bwrap()
     command = [
-        "/usr/bin/bwrap",
+        namespace_tool,
         "--unshare-user",
         "--uid",
         "0",
@@ -141,7 +143,7 @@ def _boundary(
     ]
     if parent_change == "home-exists":
         command.extend(("--tmpfs", "/"))
-        for directory in ("/usr", "/etc", "/media", "/home", "/lib", "/lib64"):
+        for directory in ("/usr", "/etc", "/media", "/home", "/lib", "/lib64", str(prefix)):
             command.extend(("--ro-bind", directory, directory))
     else:
         command.extend(("--ro-bind", "/", "/"))
@@ -177,6 +179,8 @@ def _boundary(
         executable,
         "--loader",
         str(Path("/lib64/ld-linux-x86-64.so.2").resolve()),
+        "--bwrap",
+        namespace_tool,
         "--method",
         method,
     ]

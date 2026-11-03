@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from _platform_caps import requires_packaged_python312
 from fixtures.protected_runtime_image import samsung_backing_or_refusal
 
 if TYPE_CHECKING:
@@ -392,7 +393,16 @@ def _observation_campaign(tmp_path: Path) -> Iterator[_Campaign]:
         os.close(backing)
 
 
-@pytest.mark.parametrize("case", ["native-set", "user-file", "device", "missing", "empty"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param("native-set", marks=requires_packaged_python312),
+        "user-file",
+        "device",
+        "missing",
+        "empty",
+    ],
+)
 def test_read_only_native_object_preflight_contract(tmp_path: Path, case: str) -> None:
     if not _native_contract_profile():
         return

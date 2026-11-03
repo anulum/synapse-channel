@@ -279,8 +279,11 @@ def read_effect_marker(directory: int) -> bytes:
     ValueError
         If the opened object is not regular or exceeds the marker byte bound.
     OSError
-        If the fixed marker cannot be opened without following a symlink or read.
+        On non-POSIX hosts, or if the fixed marker cannot be opened safely or read.
     """
+    from .capsule import require_posix_descriptors
+
+    require_posix_descriptors(os.name)
     descriptor = os.open(
         "marker",
         os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,

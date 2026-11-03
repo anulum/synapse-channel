@@ -21,6 +21,7 @@ CI, where the security surface actually lives. This mirrors the source guard in
 from __future__ import annotations
 
 import os
+import platform
 import sys
 from pathlib import Path
 
@@ -121,3 +122,18 @@ requires_script_launch = pytest.mark.skipif(
     sys.platform == "win32",
     reason="starts a script file by its interpreter line, which Windows does not execute",
 )
+
+
+PACKAGED_PYTHON312_AVAILABLE = Path("/usr/bin/python3.12").is_file() and os.access(
+    "/usr/bin/python3.12", os.X_OK
+)
+"""Whether the fixed packaged interpreter for the native probe exists and can execute."""
+
+requires_packaged_python312 = pytest.mark.skipif(
+    sys.platform == "linux"
+    and platform.machine() == "x86_64"
+    and sys.version_info[:2] == (3, 12)
+    and not PACKAGED_PYTHON312_AVAILABLE,
+    reason="native probe needs fixed packaged CPython3.12 at /usr/bin/python3.12",
+)
+"""Skip native positives when their fixed interpreter is absent; ABI refusals still run."""

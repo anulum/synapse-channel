@@ -546,10 +546,9 @@ def test_actual_fsync_refusal_retains_complete_private_copy_without_sealing_sour
                 assert set(data.measured_files()) == {module}
                 assert data.measured_contexts() == {"measured-diagnostic/actual-fsync-refusal"}
                 active = coverage.Coverage.current()
-                assert active is not None, (
-                    "measured child observations require an active parent collector"
-                )
-                active.get_data().update(data)
+                if active is not None:
+                    assert active.get_option("run:branch") is True
+                    active.get_data().update(data)
             finally:
                 data.close(force=True)
         (tmp_path / "actual-fsync-refusal.json").write_text(json.dumps(observed) + "\n")

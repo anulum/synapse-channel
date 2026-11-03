@@ -47,6 +47,7 @@ runs:
             "tests/test_protected_runtime_probe_*.py",
             "tests/fixtures/protected_runtime_*.py",
             "tests/test_coverage_exclusion_ledger.py",
+            "tests/_platform_caps.py",
         )
         paths = sorted({path for pattern in patterns for path in root.glob(pattern)})
         if not paths or any(path.is_symlink() or not path.is_file() for path in paths):

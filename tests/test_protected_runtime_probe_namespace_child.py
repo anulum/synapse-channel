@@ -255,14 +255,21 @@ runpy.run_module('tools.protected_runtime_probe.namespace_child',run_name='__mai
         "--tmpfs",
         "/",
     ]
-    for directory in ("/usr", "/media", "/home", "/lib", "/lib64"):
+    for directory in (
+        "/usr",
+        "/media",
+        "/home",
+        "/lib",
+        "/lib64",
+        str(Path(sys.base_prefix).resolve()),
+    ):
         command += ["--ro-bind", directory, directory]
     command += [
         "--proc",
         "/proc",
         "--cap-drop",
         "ALL",
-        "/usr/bin/python3.12",
+        sys.executable,
         "-I",
         "-B",
         "-S",

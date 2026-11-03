@@ -823,7 +823,14 @@ finally:
         "--tmpfs",
         "/",
     ]
-    for directory in ("/usr", "/media", "/home", "/lib", "/lib64"):
+    for directory in (
+        "/usr",
+        "/media",
+        "/home",
+        "/lib",
+        "/lib64",
+        str(Path(sys.base_prefix).resolve()),
+    ):
         command.extend(("--ro-bind", directory, directory))
     coverage_dir = os.environ.get("SYNAPSE_TEST_COVERAGE_DIR", "")
     if coverage_dir:
