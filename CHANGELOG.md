@@ -18,6 +18,17 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.45] - 2026-11-04
+
+### Added
+
+- **Repository tooling records and analyses source-bound native runtime
+  observations.** It lives under `tools/` and in CI, not in the installed
+  package. Its tests refuse unsupported hosts through public entry points on
+  macOS and Windows, keep probe coverage separate from the package gate, and
+  skip a native positive case only where the packaged CPython 3.12 it
+  requires is absent, with that reason named.
+
 ### Changed
 
 - **The CI coverage floor rises from 98% to 99.21%.** The complete Python 3.12
