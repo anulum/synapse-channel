@@ -29,9 +29,10 @@ class _CombineTargets(argparse.Action):
 
     A plain single-value option keeps only the last repeated flag, so
     ``--target A --target B`` silently addressed B alone. Each value now adds its
-    recipients to the same comma list the hub already accepts. The broadcast
-    keyword ``all`` is only a broadcast on its own, so repeating it next to named
-    recipients is refused instead of being sent as a seat called ``all``.
+    recipients to the same comma list the hub already accepts. The hub treats
+    ``all`` as a broadcast only when it is the whole target, so ``all`` beside any
+    other recipient, in one value or across flags, is refused instead of being sent
+    to a seat called ``all``.
     """
 
     def __call__(
@@ -46,16 +47,18 @@ class _CombineTargets(argparse.Action):
         current = getattr(namespace, self.dest, None)
         value = str(values)
         if isinstance(current, _DefaultTarget) or not str(current or "").strip():
-            setattr(namespace, self.dest, value)
+            combined = value
+        elif not value.strip():
             return
-        if not value.strip():
-            return
-        if "all" in (str(current).strip(), value.strip()):
+        else:
+            combined = f"{current},{value}"
+        parts = [part.strip() for part in combined.split(",") if part.strip()]
+        if "all" in parts and len(parts) > 1:
             parser.error(
                 "--target all broadcasts on its own and cannot be combined with other "
                 "recipients; drop 'all' or send the broadcast separately"
             )
-        setattr(namespace, self.dest, f"{current},{value}")
+        setattr(namespace, self.dest, combined)
 
 
 _ALL = _DefaultTarget("all")

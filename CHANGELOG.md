@@ -31,9 +31,10 @@ execution evidence when carrying a release claim forward.
 - **`synapse send` delivers to every repeated `--target`.** The option kept only
   the last value, so `--target A --target B` silently reached B alone while the
   command still reported success. Each repeated value now joins one
-  comma-separated target, the same form the hub already accepts. A broadcast
-  `all` next to named recipients is refused with exit 2, because the hub would
-  read that list as a seat called `all` rather than as a broadcast. With
+  comma-separated target, the same form the hub already accepts. `all` beside
+  any other recipient, in one comma list (`A,all`) or across flags, is refused
+  with exit 2, because the hub would read that list as a seat called `all`
+  rather than as a broadcast. With
   `--require-recipient` the command names every seat that received the message.
 
 ## [0.99.44] - 2026-11-03

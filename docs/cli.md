@@ -635,7 +635,8 @@ A `target` is then a name, a comma list, a **group glob** (`quantum/*` for every
 agent on the project, `quantum/claude-*` for one role), or `all`. `synapse send`
 also accepts `--target` more than once and delivers to every value, so
 `--target quantum/claude-7f3a --target quantum/codex-2b40` reaches both seats.
-`all` broadcasts only on its own; `send` refuses it next to other recipients.
+`all` broadcasts only as the whole target; `send` refuses `all` beside any
+other recipient, whether in one comma list or across repeated flags.
 List who is live:
 
 ```bash

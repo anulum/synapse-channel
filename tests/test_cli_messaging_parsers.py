@@ -115,6 +115,7 @@ class TestSendParser:
             (["--target", "", "--target", "B"], "B"),
             (["--target", "A", "--target", " "], "A"),
             (["--target", "all"], "all"),
+            (["--target", "A,", "--target", "B"], "A,,B"),
         ],
     )
     def test_repeated_targets_are_all_kept(self, argv: list[str], expected: str) -> None:
@@ -128,12 +129,16 @@ class TestSendParser:
             ["--target", "all", "--target", "B"],
             ["--target", "A", "--target", "all"],
             ["--target", "A", "--target", " all "],
+            ["--target", "A", "--target", "B,all"],
+            ["--target", "A, all"],
+            ["--target", "all,B"],
+            ["--target", "all,all"],
         ],
     )
     def test_broadcast_mixed_with_recipients_is_refused(
         self, argv: list[str], capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """``all`` next to named recipients would reach a seat called ``all``, so refuse it."""
+        """``all`` beside any recipient, in one value or across flags, is refused."""
         with pytest.raises(SystemExit) as exc:
             _parser().parse_args(["send", "hello", *argv])
         assert exc.value.code == 2
