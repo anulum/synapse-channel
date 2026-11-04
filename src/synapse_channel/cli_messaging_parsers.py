@@ -18,6 +18,53 @@ from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
 
 
+class _DefaultTarget(str):
+    """Mark the unrequested ``send`` target so the first ``--target`` replaces it."""
+
+    __slots__ = ()
+
+
+class _CombineTargets(argparse.Action):
+    """Join every ``--target`` into one comma-separated target.
+
+    A plain single-value option keeps only the last repeated flag, so
+    ``--target A --target B`` silently addressed B alone. Each value now adds its
+    recipients to the same comma list the hub already accepts. The broadcast
+    keyword ``all`` is only a broadcast on its own, so repeating it next to named
+    recipients is refused instead of being sent as a seat called ``all``.
+    """
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: object,
+        option_string: str | None = None,
+    ) -> None:
+        """Replace the default target, or append ``values`` to an explicit one."""
+        del option_string
+        current = getattr(namespace, self.dest, None)
+        value = str(values)
+        if isinstance(current, _DefaultTarget) or not str(current or "").strip():
+            setattr(namespace, self.dest, value)
+            return
+        if not value.strip():
+            return
+        if "all" in (str(current).strip(), value.strip()):
+            parser.error(
+                "--target all broadcasts on its own and cannot be combined with other "
+                "recipients; drop 'all' or send the broadcast separately"
+            )
+        setattr(namespace, self.dest, f"{current},{value}")
+
+
+_ALL = _DefaultTarget("all")
+_TARGET = (
+    "Recipients: a seat name, a comma list or a group glob (default: all). "
+    "Repeat the flag to add recipients; every value is delivered."
+)
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``send``, ``wait``, and ``listen`` subparsers."""
     send = subparsers.add_parser("send", help="Send one message and optionally await replies.")
@@ -30,7 +77,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "never collides with a listener of the same name (the hub allows one owner per name)."
         ),
     )
-    send.add_argument("--target", default="all")
+    send.add_argument("--target", default=_ALL, action=_CombineTargets, help=_TARGET)
     send.add_argument(
         "--channel",
         default="",

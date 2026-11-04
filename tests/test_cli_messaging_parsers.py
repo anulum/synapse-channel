@@ -106,6 +106,39 @@ class TestSendParser:
         assert args.encrypt_recipients == ["AGENT-A", "AGENT-B"]
         assert args.message == "payload"
 
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            (["--target", "A"], "A"),
+            (["--target", "A", "--target", "B"], "A,B"),
+            (["--target", "A,B", "--target", "C"], "A,B,C"),
+            (["--target", "", "--target", "B"], "B"),
+            (["--target", "A", "--target", " "], "A"),
+            (["--target", "all"], "all"),
+        ],
+    )
+    def test_repeated_targets_are_all_kept(self, argv: list[str], expected: str) -> None:
+        """Every repeated ``--target`` reaches the comma list, never only the last one."""
+        args = _parser().parse_args(["send", "hello", *argv])
+        assert args.target == expected
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["--target", "all", "--target", "B"],
+            ["--target", "A", "--target", "all"],
+            ["--target", "A", "--target", " all "],
+        ],
+    )
+    def test_broadcast_mixed_with_recipients_is_refused(
+        self, argv: list[str], capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """``all`` next to named recipients would reach a seat called ``all``, so refuse it."""
+        with pytest.raises(SystemExit) as exc:
+            _parser().parse_args(["send", "hello", *argv])
+        assert exc.value.code == 2
+        assert "--target all broadcasts on its own" in capsys.readouterr().err
+
     def test_message_is_required(self) -> None:
         with pytest.raises(SystemExit):
             _parser().parse_args(["send"])

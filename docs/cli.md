@@ -632,7 +632,11 @@ resources.
 An identity is a name; when several agents share a project they use composite
 names `<project>/<agent>`, e.g. `quantum/claude-7f3a` and `quantum/codex-2b40`.
 A `target` is then a name, a comma list, a **group glob** (`quantum/*` for every
-agent on the project, `quantum/claude-*` for one role), or `all`. List who is live:
+agent on the project, `quantum/claude-*` for one role), or `all`. `synapse send`
+also accepts `--target` more than once and delivers to every value, so
+`--target quantum/claude-7f3a --target quantum/codex-2b40` reaches both seats.
+`all` broadcasts only on its own; `send` refuses it next to other recipients.
+List who is live:
 
 ```bash
 synapse who                       # agents online, with -rx waiter sidecars counted apart

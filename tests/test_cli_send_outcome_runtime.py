@@ -21,7 +21,7 @@ from synapse_channel.cli_messaging_send import _send
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.protocol import MessageType, is_recipient
 
 
 class ReceiptTransportHub(SynapseHub):
@@ -241,3 +241,37 @@ async def test_later_mailbox_ack_preserves_original_negative_and_deferred_receip
             assert negative.payload["delivered"] is False
             assert deferred.payload["delivered"] is True
             assert negative.payload["client_msg_id"] == deferred.payload["client_msg_id"]
+
+
+async def test_repeated_target_flags_deliver_to_every_named_recipient(tmp_path: Path) -> None:
+    """``--target A --target B`` reaches both seats, not only the last flag."""
+    with EventStore(tmp_path / "hub.db") as journal:
+        async with running_hub(SynapseHub(journal=journal)) as (_, uri):
+            first = await connect_agent("RECIPIENT-A", uri)
+            second = await connect_agent("RECIPIENT-B", uri)
+            try:
+                result = await asyncio.to_thread(
+                    run_cli,
+                    "send",
+                    "repeated-target-marker",
+                    "--name=SENDER",
+                    "--target=RECIPIENT-A",
+                    "--target=RECIPIENT-B",
+                    "--wait-seconds=0",
+                    "--receipt-timeout=2",
+                    "--require-recipient",
+                    uri=uri,
+                    timeout=8,
+                )
+                assert result.returncode == 0, result.output
+                for name, handle in (("RECIPIENT-A", first), ("RECIPIENT-B", second)):
+                    row = await handle.recorder.wait_for(
+                        lambda row: row.get("payload") == "repeated-target-marker"
+                    )
+                    assert is_recipient(str(row.get("target")), name)
+                assert "RECIPIENT-A" in result.stdout and "RECIPIENT-B" in result.stdout
+                chats = [row for row in journal.iter_events() if row.kind == "chat"]
+                assert len(chats) == 1
+                assert chats[0].payload["target"] == "RECIPIENT-A,RECIPIENT-B"
+            finally:
+                await close_agents(first, second)
