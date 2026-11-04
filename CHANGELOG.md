@@ -26,6 +26,13 @@ execution evidence when carrying a release claim forward.
   Repeated runs of one source differ by a few timing-dependent lines, so the
   floor is the reached value rounded down to the report precision.
 
+- **The commit-message hook also checks the message body.** It refuses
+  attribution trailers that tools inject by default and internal coordination
+  identifiers (agent seat ids, review record names, hub event citations,
+  planning codes). Product names in prose stay allowed. The history audit
+  applies the rule only to commits that carry it, so published history stays
+  valid.
+
 ### Fixed
 
 - **`synapse send` delivers to every repeated `--target`.** The option kept only

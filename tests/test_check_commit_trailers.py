@@ -402,3 +402,93 @@ def test_the_hook_stamps_in_process_from_the_staged_configuration(
     assert GATE.main(["--stamp", str(path)]) == 0
     digest = GATE.config_digest(STAMPING_CONFIG.encode())
     assert f"Hooks-Verified: pre-commit sha256:{digest}" in path.read_text(encoding="utf-8")
+
+
+def _with_body(body: str, *, subject: str = "ci: enforce commit policy") -> str:
+    """Return a valid message whose body is ``body``."""
+    return f"{subject}\n\n{body}\n\nSeat: 23696\n{AUTHORSHIP}\n"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "The opencode adapter and the Claude Code plugin keep their names in prose.",
+        "Fixes CVE-2026-16221 and GHSA-g3hv-75wg-m249; digests stay SHA-256 and TLS 1.3.",
+        "Ruff F401 and UP017 are lint rule codes, not planning codes.",
+        "The hub refuses an event whose sequence is not the next one.",
+    ],
+)
+def test_hook_accepts_product_names_and_public_identifiers_in_the_body(
+    tmp_path: Path, body: str
+) -> None:
+    assert GATE.main([str(_message_file(tmp_path, _with_body(body)))]) == 0
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("Co-Authored-By: Someone <someone@example.invalid>", "vendor-injected trailer"),
+        ("co-authored-by: lower case form", "vendor-injected trailer"),
+        ("Claude-Session: https://example.invalid/session", "vendor-injected trailer"),
+        ("\N{ROBOT FACE} Generated with a tool", "vendor-injected trailer"),
+        ("Reviewed by claude-5081.", "seat identifier in the message: claude-5081"),
+        ("Asked codex-01a1824d.", "seat identifier in the message: codex-01a1824d"),
+        ("See REVIEW_2026-10-31T085353Z for details.", "coordination record name"),
+        ("Recorded in HANDOVER_2026-11-03T012903Z.", "coordination record name"),
+        ("Review: RIGOR CLEAR.", "internal reviewer name in the message: RIGOR"),
+        ("Routed at hub 227079.", "hub event citation in the message: hub 227079"),
+        ("Closes GPT6R2-13.", "internal planning code in the message: GPT6R2-13"),
+        ("Part of U11 and CRR-02.", "internal planning code in the message: U11, CRR-02"),
+    ],
+)
+def test_hook_rejects_internal_identifiers_in_the_body(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], body: str, expected: str
+) -> None:
+    assert GATE.main([str(_message_file(tmp_path, _with_body(body)))]) == 1
+    err = capsys.readouterr().err
+    assert expected in err
+    assert "private coordination records" in err
+
+
+def test_hook_rejects_an_internal_code_in_the_subject(tmp_path: Path) -> None:
+    message = _with_body("Plain body.", subject="feat(runtime): finish U11")
+
+    assert "internal planning code in the message: U11" in GATE.body_violations(message)
+    assert GATE.main([str(_message_file(tmp_path, message))]) == 1
+
+
+def test_body_rule_leaves_its_own_trailers_alone() -> None:
+    stamped = GATE.stamp_message(_message(), "a" * 16)
+
+    assert GATE.body_violations(stamped) == []
+
+
+def _commit_tool(repo: Path, content: str) -> None:
+    """Stage one copy of the gate under its repository path."""
+    target = repo / "tools" / "check_commit_trailers.py"
+    target.parent.mkdir(exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    _git(repo, "add", "tools/check_commit_trailers.py")
+
+
+def test_history_audit_applies_the_body_rule_only_where_the_commit_carries_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """History from before the rule stays valid; a commit carrying the rule is checked."""
+    repo = _repo(tmp_path)
+    baseline = _commit(repo, "historical baseline", "base")
+    _commit_tool(repo, "# a tool copy from before the body rule\n")
+    old = _commit(repo, _with_body("Reviewed by claude-5081."), "old")
+    _commit_tool(repo, f"# carries {GATE.BODY_POLICY_MARKER}\n")
+    new = _commit(repo, _with_body("Reviewed by claude-5081."), "new")
+
+    assert GATE._audit_range(f"{baseline}..{old}", repo=repo) == 0
+    capsys.readouterr()
+    assert GATE._audit_range(f"{old}..{new}", repo=repo) == 1
+    output = capsys.readouterr().out
+    assert new[:12] in output
+    assert "agent seat identifier in the message: claude-5081" in output
+
+
+def test_the_repository_tool_carries_the_body_rule_marker() -> None:
+    assert GATE.BODY_POLICY_MARKER in TOOL_PATH.read_text(encoding="utf-8")

@@ -55,6 +55,15 @@ Ruff rules and the complete coverage gate remain unchanged.
    are not installed cannot be pushed. Run `make install-hooks` in every
    worktree, and never land commits through a temporary index.
 
+   A commit message is public, so the same hook also reads its subject and
+   body. It refuses attribution trailers that a tool adds by default
+   (`Co-Authored-By`, `Claude-Session`, "Generated with …") and internal
+   coordination identifiers: agent seat ids, review or handover record names,
+   hub event citations and planning codes. Keep that provenance in the
+   private coordination records. Product names in prose, such as the name of
+   an integration, stay allowed. The history audit applies this rule to
+   commits made after it was introduced.
+
    The installed pre-push hooks are deliberately lightweight. They check the
    generated capability snapshot, commit-trailer history, and version surfaces
    in seconds. They do not run pytest, coverage, or `tools/preflight.sh`; CI owns

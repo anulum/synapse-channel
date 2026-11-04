@@ -23,6 +23,15 @@ contains this rule. A commit made with ``--no-verify``, ``git commit-tree`` or
 from a worktree without installed hooks has no stamp and is refused before
 push and in CI. Whoever types a stamp by hand can defeat this; it stops
 accidental bypass, not a determined forger.
+
+A commit message is a public surface, so its body is checked as well. It may
+not carry an attribution trailer that a vendor tool injects, an agent seat
+identifier, a coordination record name, a hub event citation or an internal
+planning code. Review provenance belongs in the private coordination records.
+Product names in prose (for example an integration's name) stay allowed. The
+hook applies this rule to every new message. The history audit applies it
+only to commits whose own copy of this tool carries the rule, so history
+published before the rule existed stays valid.
 """
 
 from __future__ import annotations
@@ -92,6 +101,38 @@ FORBIDDEN_SUBJECT_RE = re.compile(
     r"\b(" + "|".join(re.escape(word) for word in FORBIDDEN_SUBJECT_WORDS) + r")\b",
     re.IGNORECASE,
 )
+TOOL_PATH = "tools/check_commit_trailers.py"
+# The audit applies the body rule to a commit only when that commit's own copy
+# of this tool contains this exact marker text.
+BODY_POLICY_MARKER = "commit-body-policy-v1"
+INJECTED_TRAILER_RE = re.compile(
+    r"^\s*(Co-Authored-By|Claude-Session|Signed-Off-By-Agent|Generated with \[?Claude"
+    r"|\N{ROBOT FACE} Generated with)",
+    re.IGNORECASE,
+)
+BODY_TOKEN_RULES = (
+    (
+        "agent seat identifier",
+        re.compile(r"\b(?:claude|codex|grok|gemini|kimi|qwen|llama)-[0-9a-f]{4,}\b", re.I),
+    ),
+    (
+        "coordination record name",
+        re.compile(
+            r"\b(?:REVIEW|REQUEST|HANDOVER|INCIDENT|DECISION|SESSION|BROADCAST|DESIGN)"
+            r"_\d{4}-\d{2}-\d{2}"
+        ),
+    ),
+    ("internal reviewer name", re.compile(r"\bRIGOR\b")),
+    ("hub event citation", re.compile(r"\b(?:hub|event|seq)\s+#?\d{5,}\b", re.I)),
+    (
+        "internal planning code",
+        re.compile(
+            r"\b(?:GPT6(?:R2)?-[A-Z]?\d+|U(?:0[1-9]|1[0-2])|CRR-\d+|NMR-\d+|OPS-\d+"
+            r"|FDBG-\d+|SCDBG-\d+|CI-F\d+|K3-F\d+|REV-SEC-\d+|SOL4-[A-Z]+-\d+"
+            r"|EXT-?0\d|BL-\d+|WS-\d+|QWC-\d+)\b"
+        ),
+    ),
+)
 
 
 def _subject(message: str) -> str:
@@ -151,6 +192,35 @@ def _message_violations(message: str) -> list[str]:
     return violations
 
 
+def body_violations(message: str) -> list[str]:
+    """Return why a message body exposes injected trailers or internal identifiers.
+
+    The ``Seat:``, authorship and ``Hooks-Verified:`` trailers are checked by
+    their own rules and are skipped here.
+    """
+    lines = [
+        line
+        for line in message.splitlines()
+        if not SEAT_PREFIX_RE.match(line)
+        and not STAMP_PREFIX_RE.match(line)
+        and line.strip() != REQUIRED_AUTHORSHIP_LINE
+    ]
+    violations: list[str] = []
+    injected = list(
+        dict.fromkeys(
+            match.group(1) for line in lines if (match := INJECTED_TRAILER_RE.match(line))
+        )
+    )
+    if injected:
+        violations.append(f"vendor-injected trailer is forbidden: {', '.join(injected)}")
+    text = "\n".join(lines)
+    for label, pattern in BODY_TOKEN_RULES:
+        found = list(dict.fromkeys(match.group(0) for match in pattern.finditer(text)))
+        if found:
+            violations.append(f"{label} in the message: {', '.join(found)}")
+    return violations
+
+
 def config_digest(config: bytes) -> str:
     """Return the 16-hex digest a stamp carries for one hook configuration."""
     return hashlib.sha256(config).hexdigest()[:16]
@@ -183,7 +253,7 @@ def _check_message_file(path: Path, *, stamp: bool = False) -> int:
     except OSError as exc:
         print(f"cannot read commit message {path}: {exc}", file=sys.stderr)
         return 2
-    violations = _message_violations(message)
+    violations = _message_violations(message) + body_violations(message)
     if not violations:
         if not stamp:
             return 0
@@ -198,6 +268,10 @@ def _check_message_file(path: Path, *, stamp: bool = False) -> int:
         print(f"  - {violation}", file=sys.stderr)
     print(
         "Use one vendor-neutral Synapse seat suffix, then the exact authorship line.",
+        file=sys.stderr,
+    )
+    print(
+        "Keep seat, review and planning identifiers in the private coordination records.",
         file=sys.stderr,
     )
     return 1
@@ -248,6 +322,18 @@ def _stamp_violations(git: str, root: Path, commit: str, message: str) -> list[s
     return []
 
 
+def _body_policy_violations(git: str, root: Path, commit: str, message: str) -> list[str]:
+    """Return body violations for ``commit`` when its own tool copy carries the rule."""
+    tool = subprocess.run(
+        [git, "-C", str(root), "show", f"{commit}:{TOOL_PATH}"],
+        check=False,
+        capture_output=True,
+    )
+    if tool.returncode != 0 or BODY_POLICY_MARKER.encode() not in tool.stdout:
+        return []
+    return body_violations(message)
+
+
 def _audit_range(range_spec: str, *, repo: Path | None = None) -> int:
     """Audit commit messages in ``range_spec`` and return a CLI status code."""
     git = _resolve_git()
@@ -273,6 +359,7 @@ def _audit_range(range_spec: str, *, repo: Path | None = None) -> int:
             return 2
         violations = _message_violations(result.stdout)
         violations += _stamp_violations(git, root, commit, result.stdout)
+        violations += _body_policy_violations(git, root, commit, result.stdout)
         if violations:
             failures.append(f"{commit[:12]}: {'; '.join(violations)}")
 
