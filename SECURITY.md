@@ -385,9 +385,12 @@ When that boundary is crossed, the proportionate controls are:
   `--require-token-expiry` makes the hub admit no connection with a token
   that has no `not_after`, and `--max-token-days DAYS` admits none with a
   token that stays valid for more than `DAYS` days from the moment of the
-  connection (so a far-future `not_after` is refused too). Both act on the
-  token, not on the file: a set that holds a refused token is still
-  applied, so a retire in the same file always takes effect, and the
+  connection (so a far-future `not_after` is refused too). Because that bound
+  is on the validity left, such a refusal is not permanent: a longer token
+  becomes admissible once it is within `DAYS` days of its end, so a token
+  that must never be used should be retired, not left to the policy. Both
+  act on the token, not on the file: a set that holds a refused token is
+  still applied, so a retire in the same file always takes effect, and the
   refused token answers with the reason code `policy`. The hub names such
   tokens at startup, and `synapse token-set status` shows how many each hub
   refuses. Each hub publishes its policy; `synapse token-set new` then
