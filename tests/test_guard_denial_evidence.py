@@ -173,6 +173,67 @@ async def test_guard_evidence_duplicate_is_durable_at_most_once(tmp_path: Path) 
     store.close()
 
 
+async def _submit(uri: str, frame: dict[str, Any]) -> dict[str, Any]:
+    """Authenticate and send one denial frame, returning the next refusal or record."""
+    async with connect(uri) as websocket:
+        await send_json(
+            websocket,
+            sender=str(frame["sender"]),
+            type="heartbeat",
+            payload="online",
+            token=TOKEN,
+        )
+        await read_until_type(websocket, "welcome")
+        await websocket.send(json.dumps(frame))
+        recorded = await read_until_type(websocket, "guard_denial_recorded")
+        return recorded
+
+
+async def test_guard_evidence_replays_after_restart_and_conflicts_when_changed(
+    tmp_path: Path,
+) -> None:
+    """After a restart the same denial is returned once; a changed call conflicts."""
+    db = tmp_path / "replay.db"
+    store = EventStore(db)
+    hub = SynapseHub(
+        hub_id="guard-test",
+        authenticator=TokenAuthenticator([TOKEN]),
+        journal=store,
+    )
+    frame = _frame()
+    async with running_hub(hub) as (_, uri):
+        first = await _submit(uri, frame)
+    assert len(_guard_events(store)) == 1
+    store.close()
+
+    reopened = EventStore(db)
+    restarted = SynapseHub(
+        hub_id="guard-test",
+        authenticator=TokenAuthenticator([TOKEN]),
+        journal=reopened,
+    )
+    changed = _frame(call_sha256="f" * 64, idem_key="guard-1")
+    async with running_hub(restarted) as (_, uri):
+        replayed = await _submit(uri, frame)
+        async with connect(uri) as websocket:
+            await send_json(
+                websocket,
+                sender=str(changed["sender"]),
+                type="heartbeat",
+                payload="online",
+                token=TOKEN,
+            )
+            await read_until_type(websocket, "welcome")
+            await websocket.send(json.dumps(changed))
+            conflict = await read_until_type(websocket, "error")
+    assert replayed["audit_seq"] == first["audit_seq"]
+    assert replayed["call_sha256"] == frame["call_sha256"]
+    assert conflict["error_code"] == "idempotency_conflict"
+    assert conflict["payload"] == "Idempotency key was already used for a different request."
+    assert len(_guard_events(reopened)) == 1
+    reopened.close()
+
+
 async def test_guard_evidence_has_a_fixed_credential_quota(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "quota.db")
     hub = SynapseHub(
