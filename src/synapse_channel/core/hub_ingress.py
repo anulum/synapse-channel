@@ -169,9 +169,17 @@ class HubIngress:
         outcome = authenticator.authenticate_outcome(token, sender)
         audit = self._token_audit
         if audit is not None and outcome.ok:
-            audit.admitted(outcome.token_id, sender)
+            try:
+                audit.admitted(outcome.token_id, sender)
+            except Exception:
+                # No admission goes unrecorded: a failed write refuses it.
+                logger.exception("cannot record a connect-token admission; refusing it")
+                return False, "Authentication could not be recorded.", None
         elif audit is not None:
-            audit.refused(outcome.token_id, outcome.code, sender)
+            try:
+                audit.refused(outcome.token_id, outcome.code, sender)
+            except Exception:
+                logger.exception("cannot record a connect-token refusal")
         if outcome.entry is not None and self._token_sessions is not None:
             self._token_sessions.admitted(websocket, outcome.entry, sender)
         return outcome.ok, outcome.reason, outcome.principal
@@ -184,7 +192,10 @@ class HubIngress:
     def flush_audit(self) -> None:
         """Write the counts of refusal windows still open; called when serving stops."""
         if self._token_audit is not None:
-            self._token_audit.flush()
+            try:
+                self._token_audit.flush()
+            except Exception:
+                logger.exception("cannot record the last connect-token refusal counts")
 
     async def resolve_sender(
         self,

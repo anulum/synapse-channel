@@ -299,3 +299,19 @@ def test_a_token_set_beside_a_single_secret_is_refused(
         monkeypatch.setenv("SYNAPSE_TOKEN", "legacy")
     assert cli.main(argv) == 2
     assert "--token-set cannot be combined" in capsys.readouterr().err
+
+
+@posix_only
+def test_a_set_that_cannot_be_inspected_goes_stale_instead_of_raising(tmp_path: Path) -> None:
+    folder = tmp_path / "sets"
+    folder.mkdir()
+    path = _write(folder / "tokens.json", _entry("a", "s"))
+    auth = TokenSetAuthenticator(path)
+    folder.chmod(0o600)
+    try:
+        assert auth.authenticate("s", "A") == (True, "Authenticated.")
+        assert auth.stale_reason is not None
+    finally:
+        folder.chmod(0o700)
+    auth.refresh()
+    assert auth.stale_reason is None

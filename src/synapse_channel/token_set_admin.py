@@ -28,6 +28,7 @@ import os
 import secrets
 import string
 import tempfile
+import time
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -52,6 +53,11 @@ MIN_SECRET_BITS = 128
 
 MIN_DISTINCT_CHARACTERS = 10
 """Least number of different characters in a supplied secret."""
+
+LOCK_TIMEOUT_SECONDS = 10.0
+"""Longest wait for another change to the same set to finish."""
+
+_LOCK_POLL_SECONDS = 0.05
 
 _INSTANT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _POOLS = (
@@ -191,17 +197,34 @@ def lock_path(path: Path) -> Path:
 
 
 @contextmanager
-def _changing(path: Path) -> Iterator[tuple[TokenEntry, ...]]:
+def _changing(path: Path, lock_timeout: float) -> Iterator[tuple[TokenEntry, ...]]:
     """Hold the set's lock and yield the entries now on disk.
 
     A missing file yields an empty set. A file that does not validate is not
     changed: the operator repairs it first, so no change can hide a refusal.
     The directory must already exist, so a mistyped path creates nothing.
+    The lock is waited for at most ``lock_timeout`` seconds.
     """
     if not path.parent.is_dir():
         raise TokenSetError(f"directory {path.parent} does not exist")
-    with locked(lock_path(path), blocking=True, purpose="token-set lock directory"):
-        yield load_token_set(path) if os.path.lexists(path) else ()
+    deadline = time.monotonic() + lock_timeout
+    while True:
+        with locked(lock_path(path), blocking=False, purpose="token-set lock directory") as held:
+            if held:
+                yield load_token_set(path) if os.path.lexists(path) else ()
+                return
+        if time.monotonic() >= deadline:
+            raise TokenSetError(
+                f"another change to {path} has held its lock for {lock_timeout:g} s; "
+                "nothing written"
+            )
+        time.sleep(_LOCK_POLL_SECONDS)
+
+
+def _whole_seconds(moment: float | None, field: str) -> None:
+    """Refuse an instant the strict stored form cannot hold."""
+    if moment is not None and moment != int(moment):
+        raise TokenSetError(f"{field} must be a whole number of seconds")
 
 
 def write_token_set(path: Path, entries: Iterable[TokenEntry]) -> None:
@@ -244,6 +267,7 @@ def add_token(
     agents: Iterable[str] = (),
     not_before: float | None = None,
     not_after: float | None = None,
+    lock_timeout: float = LOCK_TIMEOUT_SECONDS,
 ) -> TokenEntry:
     """Add a token for ``secret`` to the set at ``path``, creating the set if absent.
 
@@ -259,6 +283,8 @@ def add_token(
         Agent names the token admits; empty admits any name.
     not_before, not_after : float or None, optional
         Validity window in whole POSIX seconds.
+    lock_timeout : float, optional
+        Longest wait for another change to the same set.
 
     Returns
     -------
@@ -269,23 +295,35 @@ def add_token(
     ------
     TokenSetError
         If the id is taken, the secret is already in the set, the entry is
-        invalid, the directory is missing, or the file on disk does not
-        validate. Nothing is written.
+        invalid, an instant has a fraction of a second, the directory is
+        missing, the lock stays held past ``lock_timeout``, or the file on
+        disk does not validate. Nothing is written.
     SecretFileError
         If the file on disk is linked, too large or readable by others.
     """
+    _whole_seconds(not_before, "not_before")
+    _whole_seconds(not_after, "not_after")
     entry = TokenEntry(
         token_id, connect_token_digest(secret), frozenset(agents), not_before, not_after
     )
-    with _changing(path) as current:
+    with _changing(path, lock_timeout) as current:
         if any(existing.token_id == token_id for existing in current):
             raise TokenSetError(f"token {token_id} already exists in {path}")
         write_token_set(path, (*current, entry))
     return entry
 
 
-def retire_token(path: Path, token_id: str) -> int:
+def retire_token(path: Path, token_id: str, *, lock_timeout: float = LOCK_TIMEOUT_SECONDS) -> int:
     """Remove the token ``token_id`` from the set at ``path``.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        The token-set file.
+    token_id : str
+        Identifier of the token to remove.
+    lock_timeout : float, optional
+        Longest wait for another change to the same set.
 
     Returns
     -------
@@ -295,12 +333,13 @@ def retire_token(path: Path, token_id: str) -> int:
     Raises
     ------
     TokenSetError
-        If the set has no such token or the file on disk does not validate.
-        Nothing is written.
+        If the set has no such token, the lock stays held past
+        ``lock_timeout``, or the file on disk does not validate. Nothing is
+        written.
     SecretFileError
         If the file on disk is linked, too large or readable by others.
     """
-    with _changing(path) as current:
+    with _changing(path, lock_timeout) as current:
         kept = tuple(entry for entry in current if entry.token_id != token_id)
         if len(kept) == len(current):
             raise TokenSetError(f"no token {token_id} in {path}")

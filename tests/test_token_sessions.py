@@ -295,7 +295,7 @@ async def test_by_default_a_retired_token_keeps_its_session_and_is_recorded(
     assert rows == [{"token_id": "old", "agent": "A", "closed": False, "reason": "retired"}]
 
 
-async def test_a_failed_close_and_a_failed_check_are_logged(
+async def test_a_failed_observer_and_a_failed_close_are_logged_and_others_still_act(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     path, _ = _write(tmp_path / "tokens.json", ("gone", "s-gone", 600))
@@ -312,25 +312,50 @@ async def test_a_failed_close_and_a_failed_check_are_logged(
                 raise RuntimeError("observer failed")
 
         def set_rejected(self, _path: Path, _reason: str) -> None:
-            """Accept every rejection."""
+            raise RuntimeError("observer failed")
 
-    sessions = TokenSessions(authenticator, None, failing_close)
-    authenticator.observe(sessions)
     observer = FailingObserver()
     authenticator.observe(observer)
+    sessions = TokenSessions(authenticator, None, failing_close)
+    authenticator.observe(sessions)
     socket = object()
     sessions.admitted(socket, authenticator.entries[0], "A")
-    watcher = asyncio.create_task(sessions.watch(0.01))
-    try:
-        observer.armed = True
-        _write(path, ("other", "s-other", 600))
-        await _until(lambda: "cannot check the token-set file" in caplog.text)
-        await _until(lambda: "cannot close a connect-token session" in caplog.text)
-        # A set applied while a close is still pending leaves that session alone.
-        sessions.set_applied(path, ("other",))
-    finally:
-        watcher.cancel()
-        await asyncio.gather(watcher, return_exceptions=True)
+    observer.armed = True
+    _write(path, ("other", "s-other", 600))
+    authenticator.refresh()
+    await _until(lambda: "cannot close a connect-token session" in caplog.text)
+    assert "a token-set observer failed on an applied set" in caplog.text
+    path.write_text("{broken")
+    authenticator.refresh()
+    assert "a token-set observer failed on a rejected set" in caplog.text
+    # A set applied while a close is still pending leaves that session alone.
+    sessions.set_applied(path, ("other",))
     sessions.closed(socket)
     assert len(sessions) == 0
     assert sessions.watches
+
+
+async def test_the_check_loop_survives_a_failing_check(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    path, _ = _write(tmp_path / "tokens.json", ("a", "s-a", None))
+
+    class BrokenCheck(TokenSetAuthenticator):
+        calls = 0
+
+        def refresh(self) -> None:
+            self.calls += 1
+            raise RuntimeError("check failed")
+
+    authenticator = BrokenCheck(path, expiry_closes_sessions=True)
+
+    async def close(_websocket: Any, _reason: str) -> None:
+        """Close nothing; no session is followed here."""
+
+    watcher = asyncio.create_task(TokenSessions(authenticator, None, close).watch(0.01))
+    try:
+        await _until(lambda: authenticator.calls >= 3)
+    finally:
+        watcher.cancel()
+        await asyncio.gather(watcher, return_exceptions=True)
+    assert "cannot check the token-set file" in caplog.text

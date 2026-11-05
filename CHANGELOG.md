@@ -39,7 +39,8 @@ execution evidence when carrying a release claim forward.
   secrets or digests. Each change holds a lock, validates the whole new set
   with the hub's parser and only then renames it into place, so a change that
   would leave an invalid file, and with it a retired token still in force,
-  writes nothing.
+  writes nothing. A change waits at most 10 seconds for another change to the
+  same set.
 
 - **Connect-token audit rows.** A hub that follows a token set and has a
   journal records the set it applied, each file it rejected and why, the
@@ -47,7 +48,8 @@ execution evidence when carrying a release claim forward.
   aggregated per reason and token identifier: the first of a minute is
   written at once, the rest as one row with a count when the minute ends or
   the hub stops. No row holds a secret or a digest. Coordination replay
-  skips these rows.
+  skips these rows. An admission the journal cannot record is refused; a
+  refusal it cannot record is logged and still refused.
 
 - **`synapse hub --token-expiry-closes-sessions`.** With `--token-set`, the hub
   closes a session with code `4401` when the token that admitted it reaches

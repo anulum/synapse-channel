@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -231,3 +232,43 @@ async def test_a_real_hub_journals_admissions_and_refusals(tmp_path: Path) -> No
     assert [event.payload["count"] for event in events[2:]] == [1, 2]
     assert "s-ops-secret" not in text and "wrong" not in text
     assert connect_token_digest("s-ops-secret") not in text
+
+
+class _TokenRowsFail(EventStore):
+    """A real store that cannot write connect-token admission or refusal rows."""
+
+    def append(
+        self, kind: str, payload: dict[str, Any], *, ts: float | None = None, durable: bool = False
+    ) -> int:
+        if kind in (EventKind.CONNECT_TOKEN_ADMITTED, EventKind.CONNECT_TOKEN_REFUSED):
+            raise sqlite3.OperationalError("database or disk is full")
+        return super().append(kind, payload, ts=ts, durable=durable)
+
+
+async def test_an_unrecorded_admission_is_refused_and_an_unrecorded_refusal_still_refuses(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    path = _write(tmp_path / "tokens.json", ("ops", "s-ops-secret", {}))
+    journal = _TokenRowsFail(tmp_path / "hub.db")
+    denials: list[dict[str, Any]] = []
+    codes: list[int | None] = []
+    try:
+        hub = SynapseHub(journal=journal, authenticator=TokenSetAuthenticator(path))
+        async with running_hub(hub) as (_, uri):
+            for agent, secret in (("A", "s-ops-secret"), ("B", "wrong"), ("C", "wrong")):
+                async with connect(uri) as websocket:
+                    await send_json(websocket, sender=agent, type="heartbeat", token=secret)
+                    denials.append(await read_until_type(websocket, "auth_denied"))
+                    await websocket.wait_closed()
+                    codes.append(websocket.close_code)
+    finally:
+        journal.close()
+    assert [denial["payload"] for denial in denials] == [
+        "Authentication could not be recorded.",
+        "Invalid authentication token.",
+        "Invalid authentication token.",
+    ]
+    assert codes == [4010, 4010, 4010]
+    assert "cannot record a connect-token admission; refusing it" in caplog.text
+    assert "cannot record a connect-token refusal" in caplog.text
+    assert "cannot record the last connect-token refusal counts" in caplog.text

@@ -246,11 +246,15 @@ def _signature(path: Path) -> tuple[int, ...] | None:
 
     Mode, owner, link count and change time are included with the content
     fields, so a ``chmod``, ``chown`` or hard link alone also triggers a reload.
+    A path that cannot be inspected gets a signature of its own error, so the
+    reload that follows reports why instead of the check raising.
     """
     try:
         status = os.stat(path, follow_symlinks=False)
     except FileNotFoundError:
         return None
+    except OSError as exc:
+        return (-1, exc.errno or 0)
     return (
         status.st_dev,
         status.st_ino,
@@ -354,7 +358,11 @@ class TokenSetAuthenticator(TokenAuthenticator):
         return self._clock()
 
     def refresh(self) -> None:
-        """Reload the file if it changed; keep the current set if it fails."""
+        """Reload the file if it changed; keep the current set if it fails.
+
+        A failing observer is logged and the others are still told; the
+        change has already happened, so it is not undone.
+        """
         current = _signature(self._path)
         if current == self._signature:
             return
@@ -369,14 +377,20 @@ class TokenSetAuthenticator(TokenAuthenticator):
             return
         self._stale_reason = None
         for observer in self._observers:
-            observer.set_applied(self._path, self._token_ids())
+            try:
+                observer.set_applied(self._path, self._token_ids())
+            except Exception:
+                _LOG.exception("a token-set observer failed on an applied set")
 
     def _mark_stale(self, reason: str) -> None:
         """Record and log that the file on disk is not in force."""
         self._stale_reason = reason
         _LOG.warning("token set not applied (%s); the last accepted set stays in force", reason)
         for observer in self._observers:
-            observer.set_rejected(self._path, reason)
+            try:
+                observer.set_rejected(self._path, reason)
+            except Exception:
+                _LOG.exception("a token-set observer failed on a rejected set")
 
     def authenticate_with_principal(self, token: str, agent: str) -> tuple[bool, str, str | None]:
         """Authenticate against the set in force after picking up any change.

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from synapse_channel.advisory_lock import locked
 from synapse_channel.cli import build_parser, main
 from synapse_channel.cli_token_set import (
     DEFAULT_VALID_DAYS,
@@ -355,3 +356,25 @@ def test_a_failed_secret_out_write_leaves_no_partial_file(tmp_path: Path) -> Non
     with pytest.raises(FileExistsError):
         _write_secret_out(out, generate_secret())
     assert out.read_text() == "kept\n"
+
+
+def test_fractional_instants_are_refused_plainly(tmp_path: Path) -> None:
+    path = tmp_path / "tokens.json"
+    with pytest.raises(TokenSetError, match="not_before must be a whole number of seconds"):
+        add_token(path, token_id="x", secret=generate_secret(), not_before=NOW + 0.5)
+    with pytest.raises(TokenSetError, match="not_after must be a whole number of seconds"):
+        add_token(path, token_id="x", secret=generate_secret(), not_after=NOW + 0.5)
+    assert not path.exists()
+
+
+def test_a_held_lock_is_waited_for_only_so_long(tmp_path: Path) -> None:
+    path = tmp_path / "tokens.json"
+    add_token(path, token_id="x", secret=generate_secret())
+    before = path.read_bytes()
+    with locked(lock_path(path), blocking=True, purpose="test"):
+        with pytest.raises(TokenSetError, match="held its lock for 0.2 s"):
+            add_token(path, token_id="y", secret=generate_secret(), lock_timeout=0.2)
+        with pytest.raises(TokenSetError, match="held its lock"):
+            retire_token(path, "x", lock_timeout=0.1)
+    assert path.read_bytes() == before
+    assert retire_token(path, "x") == 0
