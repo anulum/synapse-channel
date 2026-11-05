@@ -9,18 +9,22 @@
 
 from __future__ import annotations
 
-import argparse
+import asyncio
 import json
 import os
 import stat
 import subprocess
 import sys
+import time
+from collections.abc import Coroutine
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from cli_processes_helpers import _hub_ns
+from synapse_channel import cli_processes
 from synapse_channel.cli import main
-from synapse_channel.cli_hub_transport import _connect_authenticator
 from synapse_channel.core.token_set import (
     TokenSetAuthenticator,
     connect_token_digest,
@@ -31,6 +35,7 @@ from synapse_channel.token_set_hub_status import (
     publish_hub_state,
     read_hub_states,
 )
+from test_hub_identity_paths_runtime import owned_cli_hub
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
 _SRC = Path(__file__).resolve().parents[1] / "src"
@@ -177,8 +182,9 @@ def test_status_reports_unreadable_files_and_exits_on_health(
     path = _write(tmp_path / "tokens.json")
     assert main(["token-set", "status", str(path)]) == 1
     assert "no running hub reports this set" in capsys.readouterr().out
-    authenticator = _connect_authenticator(argparse.Namespace(token_set=str(path), token=None))
-    assert isinstance(authenticator, TokenSetAuthenticator)
+    authenticator = TokenSetAuthenticator(path)
+    writer = publish_hub_state(authenticator)
+    assert writer is not None
     assert main(["token-set", "status", str(path)]) == 0
     assert ": applied since " in capsys.readouterr().out
     broken = state_directory(path) / "hub-1-1.json"
@@ -194,6 +200,7 @@ def test_status_reports_unreadable_files_and_exits_on_health(
     assert "stale (invalid) since" in capsys.readouterr().out
     assert main(["token-set", "status", str(path), "--json"]) == 1
     assert json.loads(capsys.readouterr().out)["healthy"] is False
+    writer.close()
 
 
 @posix_only
@@ -212,3 +219,91 @@ def test_status_refuses_a_linked_lock_and_skips_a_wrong_version(
     (directory / "hub-3-3.lock").symlink_to(tmp_path / "elsewhere")
     assert main(["token-set", "status", str(path)]) == 1
     assert "synapse token-set status:" in capsys.readouterr().err
+
+
+def test_a_change_the_hub_has_not_seen_is_pending(tmp_path: Path) -> None:
+    path = _write(tmp_path / "tokens.json")
+    authenticator = TokenSetAuthenticator(path)
+    writer = publish_hub_state(authenticator)
+    assert writer is not None
+    try:
+        assert [state.state for state in read_hub_states(path)] == ["applied"]
+        _write(path, raw="{broken")
+        assert [state.state for state in read_hub_states(path)] == ["pending"]
+        assert main(["token-set", "status", str(path)]) == 1
+        authenticator.refresh()
+        assert [state.state for state in read_hub_states(path)] == ["stale"]
+    finally:
+        writer.close()
+
+
+@posix_only
+def test_a_state_without_its_lock_file_is_unknown_and_no_lock_is_made(tmp_path: Path) -> None:
+    path = _write(tmp_path / "tokens.json")
+    writer = HubStateWriter(TokenSetAuthenticator(path))
+    writer.set_applied(path, ("a",))
+    orphan = writer.path.with_name("hub-9-9.json")
+    orphan.write_bytes(writer.path.read_bytes())
+    orphan.chmod(0o600)
+    writer.close()
+    (state,) = read_hub_states(path)
+    assert (state.name, state.state) == ("hub-9-9.json", "unknown")
+    assert not orphan.with_suffix(".lock").exists()
+
+
+@posix_only
+async def test_a_real_hub_applies_or_rejects_an_edit_without_a_connection_and_cleans_up(
+    tmp_path: Path,
+) -> None:
+    path = _write(tmp_path / "tokens.json")
+    with owned_cli_hub(tmp_path / "home", None, "token-set", extra_args=("--token-set", str(path))):
+        await _until_state(path, "applied")
+        _write(path, raw="{broken")
+        await _until_state(path, "stale")
+        (state,) = read_hub_states(path)
+        assert state.reason_code == "invalid"
+        _write(path)
+        await _until_state(path, "applied")
+    assert sorted(item.name for item in state_directory(path).glob("hub-*")) == []
+
+
+async def _until_state(path: Path, wanted: str) -> None:
+    deadline = time.monotonic() + 10
+    while [state.state for state in read_hub_states(path)] != [wanted]:
+        assert time.monotonic() < deadline, read_hub_states(path)
+        await asyncio.sleep(0.1)
+
+
+def test_the_hub_command_publishes_while_serving_and_removes_at_stop(tmp_path: Path) -> None:
+    path = _write(tmp_path / "tokens.json")
+    seen: list[list[str]] = []
+
+    def runner(coroutine: Coroutine[Any, Any, None]) -> None:
+        seen.append([state.state for state in read_hub_states(path)])
+        coroutine.close()
+
+    assert cli_processes._cmd_hub(_hub_ns(token_set=str(path)), runner=runner) == 0
+    assert seen == [["applied"]]
+    assert list(state_directory(path).glob("hub-*")) == []
+
+
+@posix_only
+def test_the_hub_command_serves_when_it_cannot_publish(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    folder = tmp_path / "readonly"
+    folder.mkdir()
+    path = _write(folder / "tokens.json")
+    folder.chmod(0o500)
+    served: list[bool] = []
+
+    def runner(coroutine: Coroutine[Any, Any, None]) -> None:
+        served.append(True)
+        coroutine.close()
+
+    try:
+        assert cli_processes._cmd_hub(_hub_ns(token_set=str(path)), runner=runner) == 0
+    finally:
+        folder.chmod(0o700)
+    assert served == [True]
+    assert "token-set hub state not published" in caplog.text

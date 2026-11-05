@@ -34,7 +34,7 @@ from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_exposure import exposure_problems, guard_exposure
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.token_audit import TokenAudit
-from synapse_channel.core.token_sessions import TokenSessions
+from synapse_channel.core.token_sessions import TokenSessions, watch_token_set
 from synapse_channel.core.token_set import TokenSetAuthenticator
 
 logger = logging.getLogger("synapse.hub")
@@ -185,9 +185,11 @@ class HubIngress:
         return outcome.ok, outcome.reason, outcome.principal
 
     def token_set_watcher(self) -> Coroutine[Any, Any, None] | None:
-        """Return the token-set check loop a closing hub runs while serving, if any."""
-        sessions = self._token_sessions
-        return sessions.watch() if sessions is not None and sessions.watches else None
+        """Return the token-set check loop a token-set hub runs while serving, if any."""
+        authenticator = self._authenticator
+        if isinstance(authenticator, TokenSetAuthenticator):
+            return watch_token_set(authenticator)
+        return None
 
     def flush_audit(self) -> None:
         """Write the counts of refusal windows still open; called when serving stops."""

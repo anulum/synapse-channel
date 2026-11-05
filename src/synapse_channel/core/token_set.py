@@ -283,6 +283,30 @@ def _signature(path: Path) -> tuple[int, ...] | None:
     )
 
 
+def _status_digest(signature: tuple[int, ...] | None) -> str:
+    """Return the SHA-256 hex of a file status, without any file content."""
+    return hashlib.sha256(repr(signature).encode("ascii")).hexdigest()
+
+
+def status_digest(path: Path) -> str:
+    """Return the digest of the status of ``path`` as a token-set hub sees it now.
+
+    Two digests are equal when the hub would see no change, so a hub whose
+    published digest differs from this one has not yet looked at the file.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        The token-set file.
+
+    Returns
+    -------
+    str
+        SHA-256 hex over the file status; never over its content.
+    """
+    return _status_digest(_signature(path))
+
+
 class TokenSetAuthenticator(TokenAuthenticator):
     """Authenticate against a token-set file that may change while the hub runs.
 
@@ -368,7 +392,7 @@ class TokenSetAuthenticator(TokenAuthenticator):
     @property
     def signature_digest(self) -> str:
         """SHA-256 hex of the file status last seen, without any file content."""
-        return hashlib.sha256(repr(self._signature).encode("ascii")).hexdigest()
+        return _status_digest(self._signature)
 
     @property
     def is_empty(self) -> bool:

@@ -35,6 +35,7 @@ from synapse_channel.core.token_sessions import (
     RETIRED_CLOSE_REASON,
     TokenSessions,
     token_sessions_for,
+    watch_token_set,
 )
 from synapse_channel.core.token_set import TokenSetAuthenticator, connect_token_digest
 
@@ -332,7 +333,6 @@ async def test_a_failed_observer_and_a_failed_close_are_logged_and_others_still_
     sessions.set_applied(path, ("other",))
     sessions.closed(socket)
     assert len(sessions) == 0
-    assert sessions.watches
 
 
 async def test_the_check_loop_survives_a_failing_check(
@@ -347,12 +347,8 @@ async def test_the_check_loop_survives_a_failing_check(
             self.calls += 1
             raise RuntimeError("check failed")
 
-    authenticator = BrokenCheck(path, expiry_closes_sessions=True)
-
-    async def close(_websocket: Any, _reason: str) -> None:
-        """Close nothing; no session is followed here."""
-
-    watcher = asyncio.create_task(TokenSessions(authenticator, None, close).watch(0.01))
+    authenticator = BrokenCheck(path)
+    watcher = asyncio.create_task(watch_token_set(authenticator, 0.01))
     try:
         await _until(lambda: authenticator.calls >= 3)
     finally:

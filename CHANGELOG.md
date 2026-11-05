@@ -41,8 +41,9 @@ execution evidence when carrying a release claim forward.
   would leave an invalid file, and with it a retired token still in force,
   writes nothing. A change waits at most 10 seconds for another change to the
   same set. `status` shows whether each running hub that follows the set has
-  the file on disk in force or kept its last accepted set, with a reason code;
-  a hub that is gone is reported `unknown`.
+  the file on disk in force, kept its last accepted set (with a reason code)
+  or has not yet seen the latest change (`pending`); a hub that is gone is
+  reported `unknown`. Every token-set hub checks the file every second.
 
 - **Connect-token audit rows.** A hub that follows a token set and has a
   journal records the set it applied, each file it rejected and why, the
@@ -57,7 +58,7 @@ execution evidence when carrying a release claim forward.
   closes a session with code `4401` when the token that admitted it reaches
   its end of validity, and when an applied set no longer admits it (the token
   was retired, its secret changed or its agent list dropped the session's
-  agent). A closing hub checks the file every second. A changed `not_after`
+  agent). A changed `not_after`
   moves the session's end. Without the flag a session stays open as before,
   even after its token is retired. Either way a hub with a journal records a
   `connect_token_session_ended` row with the reason (`expired` or `retired`)

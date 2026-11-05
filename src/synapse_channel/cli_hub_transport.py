@@ -112,19 +112,24 @@ def _connect_authenticator(args: argparse.Namespace) -> TokenAuthenticator | Non
         except (SecretFileError, TokenSetError) as exc:
             print(f"synapse hub: {exc}", file=sys.stderr)
             raise HubStartupRefused() from None
-        publish_hub_state(authenticator)
         return authenticator
     return TokenAuthenticator([args.token]) if args.token else None
 
 
 def guard_transport_exposure(ctx: HubStartup) -> None:
-    """Refuse unsafe transport exposure before opening a durable store."""
+    """Refuse unsafe transport exposure before opening a durable store.
+
+    A token-set hub also starts publishing its state here; the state is
+    removed when the command's resources close at a clean stop.
+    """
+    authenticator = _connect_authenticator(ctx.args)
+    if isinstance(authenticator, TokenSetAuthenticator):
+        writer = publish_hub_state(authenticator)
+        if writer is not None:
+            ctx.resources.callback(writer.close)
     ctx.config = replace(
         ctx.config,
-        auth=replace(
-            ctx.config.auth,
-            authenticator=_connect_authenticator(ctx.args),
-        ),
+        auth=replace(ctx.config.auth, authenticator=authenticator),
     )
     try:
         guard_exposure(

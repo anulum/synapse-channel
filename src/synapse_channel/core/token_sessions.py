@@ -22,9 +22,9 @@ A token no longer admits a session when no entry has its identifier and
 digest, when that entry no longer names the session's agent, or when its
 ``not_before`` has moved into the future. A changed
 ``not_after`` moves the session's end to the new value, earlier or later.
-In closing mode the hub checks the file every :data:`WATCH_INTERVAL_SECONDS`
-as well as at each authentication, so a retire takes effect without waiting
-for a new connection. Every admitted session is followed while it is open,
+Every token-set hub checks the file every :data:`WATCH_INTERVAL_SECONDS` as
+well as at each authentication (:func:`watch_token_set`), so a retire takes
+effect without waiting for a new connection. Every admitted session is followed while it is open,
 so memory grows with open sessions only.
 """
 
@@ -106,11 +106,6 @@ class TokenSessions:
         """Return the number of sessions followed now."""
         return len(self._sessions)
 
-    @property
-    def watches(self) -> bool:
-        """Whether this tracker needs :meth:`watch` running (closing mode)."""
-        return self._closes
-
     def admitted(self, websocket: Any, entry: TokenEntry, agent: str) -> None:
         """Follow a session that ``entry`` admitted for ``agent``."""
         session = _Session(entry, agent)
@@ -188,18 +183,23 @@ class TokenSessions:
                 session.entry.token_id, session.agent, closed=session.closed_by_hub, reason=reason
             )
 
-    async def watch(self, interval: float = WATCH_INTERVAL_SECONDS) -> None:
-        """Check the token-set file every ``interval`` seconds while serving.
 
-        A failed check is logged and the next one runs; the loop never ends
-        on its own, so it cannot stop the hub.
-        """
-        while True:
-            await asyncio.sleep(interval)
-            try:
-                self._authenticator.refresh()
-            except Exception:
-                _LOG.exception("cannot check the token-set file")
+async def watch_token_set(
+    authenticator: TokenSetAuthenticator, interval: float = WATCH_INTERVAL_SECONDS
+) -> None:
+    """Check the token-set file every ``interval`` seconds while the hub serves.
+
+    Every token-set hub runs this, so a changed file is applied, or reported
+    stale, without waiting for a new connection. A failed check is logged and
+    the next one runs; the loop never ends on its own, so it cannot stop the
+    hub.
+    """
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            authenticator.refresh()
+        except Exception:
+            _LOG.exception("cannot check the token-set file")
 
 
 async def _close_session(websocket: Any, reason: str) -> None:

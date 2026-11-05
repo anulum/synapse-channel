@@ -19,7 +19,10 @@ file content or a message.
 Whether the hub behind a state file still runs is decided by a lock the hub
 holds on ``hub-<pid>-<start>.lock`` for as long as it serves, not by the
 process id, which another process may reuse. A reader that can take that
-lock knows the hub is gone and reports its state as ``unknown``.
+lock, or finds no lock file, knows the hub is gone and reports ``unknown``.
+A running hub whose published digest differs from the file's status now has
+not looked at the change yet; the reader reports it ``pending``. A hub checks
+the file every second, and a clean stop removes its state file.
 """
 
 from __future__ import annotations
@@ -40,7 +43,7 @@ from synapse_channel.advisory_lock import locked
 from synapse_channel.core.private_dir import PrivateDirError
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.core.secure_path import apply_owner_only_file
-from synapse_channel.core.token_set import TokenSetAuthenticator, state_directory
+from synapse_channel.core.token_set import TokenSetAuthenticator, state_directory, status_digest
 
 STATE_VERSION = 1
 """Version of the hub state document."""
@@ -153,8 +156,10 @@ class HubState:
     running : bool
         Whether a hub still holds the file's lock.
     state : str
-        ``applied`` or ``stale`` for a running hub; ``unknown`` for a hub that
-        is gone; ``unreadable`` for a file that is not a valid state document.
+        ``applied`` or ``stale`` for a running hub that has seen the file on
+        disk; ``pending`` for a running hub that has not seen its latest
+        change; ``unknown`` for a hub that is gone; ``unreadable`` for a file
+        that is not a valid state document.
     since, started : str or None
         When the state began and when the hub started.
     pid : int or None
@@ -200,7 +205,9 @@ def _document(status: Path) -> dict[str, Any] | None:
 
 
 def _running(lock: Path) -> bool:
-    """Whether a hub holds ``lock``; taking it proves the hub is gone."""
+    """Whether a hub holds ``lock``; a missing lock or taking it proves the hub is gone."""
+    if not os.path.lexists(lock):
+        return False
     with locked(lock, blocking=False, purpose=_PURPOSE) as free:
         return not free
 
@@ -222,6 +229,7 @@ def read_hub_states(path: Path) -> list[HubState]:
     directory = state_directory(path)
     if not directory.is_dir():
         return []
+    current = status_digest(path)
     states = []
     for status in sorted(directory.glob("hub-*.json")):
         running = _running(status.with_suffix(".lock"))
@@ -229,11 +237,17 @@ def read_hub_states(path: Path) -> list[HubState]:
         if document is None:
             states.append(HubState(status.name, running, "unreadable"))
             continue
+        if not running:
+            state = "unknown"
+        elif document["signature"] != current:
+            state = "pending"
+        else:
+            state = document["state"]
         states.append(
             HubState(
                 status.name,
                 running,
-                document["state"] if running else "unknown",
+                state,
                 since=document["since"],
                 started=document["started"],
                 pid=document["pid"],
