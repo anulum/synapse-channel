@@ -70,6 +70,8 @@ def test_a_hub_publishes_each_change_by_code_only(tmp_path: Path) -> None:
             "since",
             "reason_code",
             "signature",
+            "policy",
+            "policy_refused",
         }
         assert (first["state"], first["reason_code"]) == ("applied", None)
         assert first["started"] == "2027-01-15T08:00:00Z" and first["pid"] == os.getpid()
@@ -307,3 +309,74 @@ def test_the_hub_command_serves_when_it_cannot_publish(
         folder.chmod(0o700)
     assert served == [True]
     assert "token-set hub state not published" in caplog.text
+
+
+def test_a_policy_hub_never_blocks_a_retire_and_the_cli_follows_its_policy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A set the hub's policy partly refuses still applies, so retiring a leak works."""
+    path = tmp_path / "tokens.json"
+    assert main(["token-set", "new", str(path), "--id", "leak", "--days", "10"]) == 0
+    leak = capsys.readouterr().out.strip()
+    authenticator = TokenSetAuthenticator(path, max_token_days=30)
+    writer = publish_hub_state(authenticator)
+    assert writer is not None
+    try:
+        # With a 30-day hub running, the default validity shrinks to 30 days.
+        assert main(["token-set", "new", str(path), "--id", "fits"]) == 0
+        fits = capsys.readouterr().out.strip()
+        assert main(["token-set", "new", str(path), "--id", "long", "--days", "90"]) == 0
+        captured = capsys.readouterr()
+        assert f"warning: hub {writer.path.name} will refuse token long" in captured.err
+        assert "at most 30 days" in captured.err
+        assert authenticator.authenticate(fits, "A") == (True, "Authenticated.")
+        assert authenticator.authenticate_outcome(captured.out.strip(), "A").code == "policy"
+        assert authenticator.stale_reason is None
+        assert main(["token-set", "retire", str(path), "--id", "leak"]) == 0
+        capsys.readouterr()
+        assert authenticator.authenticate(leak, "A")[0] is False
+        (state,) = read_hub_states(path)
+        assert (state.state, state.max_token_days, state.policy_refused) == ("applied", 30, 1)
+        assert main(["token-set", "status", str(path)]) == 0
+        assert "1 token(s) refused by its policy" in capsys.readouterr().out
+        expiring = TokenSetAuthenticator(path, require_expiry=True)
+        other = HubStateWriter(expiring, pid=1)
+        expiring.observe(other)
+        assert main(["token-set", "new", str(path), "--id", "never", "--no-expiry"]) == 0
+        assert "it requires an end of validity" in capsys.readouterr().err
+        other.close()
+    finally:
+        writer.close()
+
+
+def test_a_bad_policy_document_is_unreadable(tmp_path: Path) -> None:
+    path = _write(tmp_path / "tokens.json")
+    writer = HubStateWriter(TokenSetAuthenticator(path))
+    try:
+        writer.set_applied(path, ("a",))
+        document = json.loads(writer.path.read_text())
+        for policy in ({"require_expiry": "yes", "max_token_days": None}, {"x": 1}, None):
+            document["policy"] = policy
+            writer.path.write_text(json.dumps(document))
+            writer.path.chmod(0o600)
+            assert [state.state for state in read_hub_states(path)] == ["unreadable"]
+        document["policy"] = {"require_expiry": False, "max_token_days": 0}
+        writer.path.write_text(json.dumps(document))
+        writer.path.chmod(0o600)
+        assert [state.state for state in read_hub_states(path)] == ["unreadable"]
+    finally:
+        writer.close()
+
+
+@posix_only
+def test_new_still_writes_when_hub_states_cannot_be_read(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _write(tmp_path / "tokens.json")
+    directory = state_directory(path)
+    directory.mkdir(mode=0o700)
+    (directory / "hub-3-3.json").write_text("{}")
+    (directory / "hub-3-3.lock").symlink_to(tmp_path / "elsewhere")
+    assert main(["token-set", "new", str(path), "--id", "b"]) == 0
+    captured = capsys.readouterr()
+    assert "warning" not in captured.err and captured.out.strip()

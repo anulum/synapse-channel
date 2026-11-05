@@ -14,7 +14,9 @@ directory (``.<name>.lockdir``), named after its process id and start time so
 several hubs never share one. The file holds the state (``applied`` or
 ``stale``), when it began, a reason code (``missing``, ``unsafe`` or
 ``invalid``) and a digest of the file status the hub last saw; it never holds
-file content or a message.
+file content or a message. It also publishes the hub's token policy and how
+many tokens in force that policy refused at the last change, so a tool that
+writes the set can respect it.
 
 Whether the hub behind a state file still runs is decided by a lock the hub
 holds on ``hub-<pid>-<start>.lock`` for as long as it serves, not by the
@@ -118,6 +120,8 @@ class HubStateWriter:
             "since": _instant(self._clock()),
             "reason_code": code,
             "signature": self._authenticator.signature_digest,
+            "policy": self._authenticator.policy,
+            "policy_refused": len(self._authenticator.policy_refused()),
         }
         try:
             descriptor, temporary = tempfile.mkstemp(
@@ -168,6 +172,12 @@ class HubState:
         Why a stale hub did not apply the file.
     signature : str or None
         Digest of the file status the hub last saw.
+    require_expiry : bool
+        Whether the hub admits only tokens with an end of validity.
+    max_token_days : int or None
+        Longest remaining validity the hub admits, in days.
+    policy_refused : int
+        Tokens in force that the hub's policy refused at its last change.
     """
 
     name: str
@@ -178,6 +188,9 @@ class HubState:
     pid: int | None = None
     reason_code: str | None = None
     signature: str | None = None
+    require_expiry: bool = False
+    max_token_days: int | None = None
+    policy_refused: int = 0
 
 
 def _document(status: Path) -> dict[str, Any] | None:
@@ -199,9 +212,21 @@ def _document(status: Path) -> dict[str, Any] | None:
         or not isinstance(document.get("started"), str)
         or document.get("reason_code") not in _CODES | {None}
         or not isinstance(document.get("signature"), str)
+        or type(document.get("policy_refused")) is not int
+        or not _valid_policy(document.get("policy"))
     ):
         return None
     return document
+
+
+def _valid_policy(policy: object) -> bool:
+    """Whether ``policy`` is a published token policy."""
+    if not isinstance(policy, dict) or set(policy) != {"require_expiry", "max_token_days"}:
+        return False
+    days = policy["max_token_days"]
+    return type(policy["require_expiry"]) is bool and (
+        days is None or (type(days) is int and days >= 1)
+    )
 
 
 def _running(lock: Path) -> bool:
@@ -253,6 +278,9 @@ def read_hub_states(path: Path) -> list[HubState]:
                 pid=document["pid"],
                 reason_code=document["reason_code"],
                 signature=document["signature"],
+                require_expiry=document["policy"]["require_expiry"],
+                max_token_days=document["policy"]["max_token_days"],
+                policy_refused=document["policy_refused"],
             )
         )
     return states

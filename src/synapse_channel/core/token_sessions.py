@@ -19,8 +19,9 @@ is already open when its token expires or leaves the set depends on the set:
   hub ended it (``closed`` true).
 
 A token no longer admits a session when no entry has its identifier and
-digest, when that entry no longer names the session's agent, or when its
-``not_before`` has moved into the future. A changed
+digest, when that entry no longer names the session's agent, when its
+``not_before`` has moved into the future, or when the hub's token policy
+refuses the changed entry. A changed
 ``not_after`` moves the session's end to the new value, earlier or later.
 Every token-set hub checks the file every :data:`WATCH_INTERVAL_SECONDS` as
 well as at each authentication (:func:`watch_token_set`), so a retire takes
@@ -67,12 +68,15 @@ class _Session:
     closed_by_hub: bool = False
 
 
-def _still_admits(entry: TokenEntry, session: _Session, now: float) -> bool:
-    """Whether ``entry`` is the session's token, names its agent and has begun."""
+def _still_admits(
+    authenticator: TokenSetAuthenticator, entry: TokenEntry, session: _Session, now: float
+) -> bool:
+    """Whether ``entry`` is the session's token, names its agent, has begun and meets policy."""
     return (
         entry.digest == session.entry.digest
         and (not entry.agents or session.agent in entry.agents)
         and (entry.not_before is None or now >= entry.not_before)
+        and authenticator.policy_refusal(entry, now) is None
     )
 
 
@@ -156,7 +160,7 @@ class TokenSessions:
             if session.closed_by_hub:
                 continue
             entry = current.get(session.entry.token_id)
-            if entry is None or not _still_admits(entry, session, now):
+            if entry is None or not _still_admits(self._authenticator, entry, session, now):
                 session.ended = session.ended or "retired"
                 if self._closes:
                     self._end(websocket, session, RETIRED_CLOSE_REASON)

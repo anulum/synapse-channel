@@ -114,6 +114,13 @@ def _connect_authenticator(args: argparse.Namespace) -> TokenAuthenticator | Non
         except (SecretFileError, TokenSetError) as exc:
             print(f"synapse hub: {exc}", file=sys.stderr)
             raise HubStartupRefused() from None
+        refused = authenticator.policy_refused()
+        if refused:
+            print(
+                "synapse hub: WARNING the token policy refuses these tokens, which admit "
+                f"nothing: {', '.join(refused)}",
+                file=sys.stderr,
+            )
         return authenticator
     return TokenAuthenticator([args.token]) if args.token else None
 

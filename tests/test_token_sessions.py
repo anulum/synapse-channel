@@ -376,3 +376,18 @@ async def test_a_start_moved_into_the_future_retires_the_session(tmp_path: Path)
             assert websocket.close_reason == RETIRED_CLOSE_REASON
         finally:
             await websocket.close()
+
+
+async def test_closing_mode_ends_a_session_whose_changed_token_breaks_the_policy(
+    tmp_path: Path,
+) -> None:
+    path, _ = _write(tmp_path / "tokens.json", ("tok", "s-tok", 600))
+    authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True, max_token_days=1)
+    async with running_hub(SynapseHub(authenticator=authenticator)) as (_, uri):
+        websocket = await _session(uri, "A", "s-tok")
+        try:
+            _write(path, ("tok", "s-tok", 5 * 86_400))
+            await asyncio.wait_for(websocket.wait_closed(), timeout=10)
+            assert websocket.close_reason == RETIRED_CLOSE_REASON
+        finally:
+            await websocket.close()

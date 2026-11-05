@@ -317,28 +317,27 @@ def test_a_set_that_cannot_be_inspected_goes_stale_instead_of_raising(tmp_path: 
     assert auth.stale_reason is None
 
 
-def test_require_expiry_refuses_an_unending_token_at_start_and_on_reload(
+def test_require_expiry_refuses_unending_tokens_but_applies_the_set(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ending = _entry("ends", "s-ends", not_after="2027-06-01T00:00:00Z")
     path = _write(tmp_path / "tokens.json", ending, _entry("forever", "s-forever"))
-    with pytest.raises(TokenSetError, match="refused by --require-token-expiry: forever"):
-        TokenSetAuthenticator(path, require_expiry=True)
-    namespace = argparse.Namespace(token_set=str(path), token=None, require_token_expiry=True)
-    with pytest.raises(HubStartupRefused):
-        _connect_authenticator(namespace)
-    assert "--require-token-expiry: forever" in capsys.readouterr().err
-    _write(path, ending)
     auth = TokenSetAuthenticator(path, clock=lambda: _START, require_expiry=True)
+    assert auth.policy == {"require_expiry": True, "max_token_days": None}
+    assert auth.policy_refused() == ("forever",)
     assert auth.authenticate("s-ends", "A") == (True, "Authenticated.")
-    _write(path, ending, _entry("forever", "s-forever"))
-    assert auth.authenticate("s-forever", "A")[0] is False
-    assert (auth.stale_code, auth.stale_reason) == (
-        "invalid",
-        "tokens without not_after are refused by --require-token-expiry: forever",
+    outcome = auth.authenticate_outcome("s-forever", "A")
+    assert (outcome.ok, outcome.code, outcome.token_id) == (False, "policy", "forever")
+    assert (
+        outcome.reason == "Connect token 'forever' has no end of validity, which this hub requires."
     )
+    namespace = argparse.Namespace(token_set=str(path), token=None, require_token_expiry=True)
+    assert isinstance(_connect_authenticator(namespace), TokenSetAuthenticator)
+    assert "refuses these tokens, which admit nothing: forever" in capsys.readouterr().err
+    _write(path, ending)
     assert auth.authenticate("s-ends", "A") == (True, "Authenticated.")
-    assert TokenSetAuthenticator(path).authenticate("s-forever", "A")[0] is True
+    assert auth.stale_reason is None and auth.policy_refused() == ()
+    assert TokenSetAuthenticator(path).policy == {"require_expiry": False, "max_token_days": None}
 
 
 def test_require_expiry_needs_a_token_set(
@@ -349,30 +348,26 @@ def test_require_expiry_needs_a_token_set(
     assert "--require-token-expiry requires --token-set" in capsys.readouterr().err
 
 
-def test_max_token_days_bounds_every_token_at_start_and_on_reload(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_max_token_days_refuses_long_tokens_at_connection_time(tmp_path: Path) -> None:
     # _START is 2027-01-15T08:00:00Z; 30 days later is 2027-02-14T08:00:00Z.
     inside = _entry("inside", "s-in", not_after="2027-02-14T08:00:00Z")
     beyond = _entry("beyond", "s-out", not_after="2027-02-14T08:00:01Z")
     forever = _entry("forever", "s-forever")
     path = _write(tmp_path / "tokens.json", inside, beyond, forever)
-    message = (
-        "valid for more than 30 days from now are refused by --max-token-days: beyond, forever"
+    now = [_START]
+    auth = TokenSetAuthenticator(path, clock=lambda: now[0], max_token_days=30)
+    assert auth.policy_refused() == ("beyond", "forever")
+    assert auth.authenticate("s-in", "A") == (True, "Authenticated.")
+    refused = auth.authenticate_outcome("s-out", "A")
+    assert (refused.code, refused.reason) == (
+        "policy",
+        "Connect token 'beyond' stays valid for more than 30 days, longer than this hub allows.",
     )
-    with pytest.raises(TokenSetError, match=message):
-        TokenSetAuthenticator(path, clock=lambda: _START, max_token_days=30)
-    namespace = argparse.Namespace(token_set=str(path), token=None, max_token_days=30)
-    with pytest.raises(HubStartupRefused):
-        _connect_authenticator(namespace)
-    assert "--max-token-days" in capsys.readouterr().err
-    _write(path, inside)
-    auth = TokenSetAuthenticator(path, clock=lambda: _START, max_token_days=30)
-    assert auth.authenticate("s-in", "A") == (True, "Authenticated.")
-    _write(path, inside, beyond)
-    assert auth.authenticate("s-out", "A")[0] is False
-    assert auth.stale_code == "invalid" and "beyond" in (auth.stale_reason or "")
-    assert auth.authenticate("s-in", "A") == (True, "Authenticated.")
+    assert auth.authenticate_outcome("s-forever", "A").code == "policy"
+    # The bound is on remaining validity: one second later the long token fits.
+    now[0] = _START + 1
+    assert auth.authenticate("s-out", "A") == (True, "Authenticated.")
+    assert auth.policy_refused() == ("forever",)
 
 
 def test_max_token_days_needs_a_positive_count_and_a_token_set(
@@ -383,4 +378,4 @@ def test_max_token_days_needs_a_positive_count_and_a_token_set(
     assert "--max-token-days requires --token-set" in capsys.readouterr().err
     with pytest.raises(SystemExit):
         cli.build_parser().parse_args(["hub", "--max-token-days", "0"])
-    assert "--max-token-days must be at least 1" in capsys.readouterr().err
+    assert "must be a whole number of days, at least 1" in capsys.readouterr().err

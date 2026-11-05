@@ -101,7 +101,7 @@ class TokenOutcome:
         Identifier of the matched entry, or ``None`` when nothing matched.
     code : str
         Stable reason code: ``admitted``, ``missing``, ``unknown``,
-        ``not_yet_valid``, ``expired`` or ``agent_not_bound``.
+        ``not_yet_valid``, ``expired``, ``agent_not_bound`` or ``policy``.
     entry : TokenEntry or None, optional
         The admitting entry, set only on success.
     """
@@ -321,13 +321,10 @@ class TokenSetAuthenticator(TokenAuthenticator):
         Ask the hub to close a session when the token that admitted it
         reaches ``not_after``. By default expiry refuses new connections only.
     require_expiry : bool, optional
-        Accept only a set in which every token has a ``not_after``. A set with
-        an unending token is refused at construction and, on reload, not
-        applied (the last accepted set stays in force, reported ``invalid``).
+        Admit no connection with a token that has no ``not_after``.
     max_token_days : int or None, optional
-        Accept only a set in which every token ends within this many days of
-        the moment the set is loaded. Unending tokens fail this rule too.
-        Refusal works as for ``require_expiry``.
+        Admit no connection with a token whose ``not_after`` is more than this
+        many days away at the moment of the connection, or that has none.
 
     Raises
     ------
@@ -342,6 +339,12 @@ class TokenSetAuthenticator(TokenAuthenticator):
     previous set and records why in :attr:`stale_reason`. The check, the read
     and the swap run without an ``await``, so no other coroutine can
     authenticate against a half-loaded set.
+
+    The token policy (``require_expiry``, ``max_token_days``) acts on single
+    tokens when they are presented, not on the file. A set that holds a token
+    the policy refuses is still applied, so a retire written into the same
+    file always takes effect; the refused token admits nothing, with the code
+    ``policy``.
     """
 
     def __init__(
@@ -360,34 +363,36 @@ class TokenSetAuthenticator(TokenAuthenticator):
         self._require_expiry = require_expiry
         self._max_token_days = max_token_days
         self._signature = _signature(self._path)
-        self._entries = self._load()
+        self._entries = load_token_set(self._path)
         self._stale_reason: str | None = None
         self._stale_code: str | None = None
         self._observers: list[TokenSetObserver] = []
 
-    def _load(self) -> tuple[TokenEntry, ...]:
-        """Load the file and apply this hub's own acceptance rules."""
-        entries = load_token_set(self._path)
-        if self._require_expiry:
-            unending = [entry.token_id for entry in entries if entry.not_after is None]
-            if unending:
-                raise TokenSetError(
-                    f"tokens without not_after are refused by --require-token-expiry: "
-                    f"{', '.join(unending)}"
-                )
-        if self._max_token_days is not None:
-            limit = self._clock() + self._max_token_days * 86_400
-            too_long = [
-                entry.token_id
-                for entry in entries
-                if entry.not_after is None or entry.not_after > limit
-            ]
-            if too_long:
-                raise TokenSetError(
-                    f"tokens valid for more than {self._max_token_days} days from now are "
-                    f"refused by --max-token-days: {', '.join(too_long)}"
-                )
-        return entries
+    @property
+    def policy(self) -> dict[str, object]:
+        """The token policy this hub applies, as published to operators."""
+        return {"require_expiry": self._require_expiry, "max_token_days": self._max_token_days}
+
+    def policy_refusal(self, entry: TokenEntry, now: float) -> str | None:
+        """Return why this hub's token policy refuses ``entry`` at ``now``, or ``None``."""
+        if self._require_expiry and entry.not_after is None:
+            return (
+                f"Connect token '{entry.token_id}' has no end of validity, which this hub requires."
+            )
+        days = self._max_token_days
+        if days is not None and (entry.not_after is None or entry.not_after - now > days * 86_400):
+            return (
+                f"Connect token '{entry.token_id}' stays valid for more than {days} days, "
+                "longer than this hub allows."
+            )
+        return None
+
+    def policy_refused(self) -> tuple[str, ...]:
+        """Return the identifiers in force that the token policy refuses now."""
+        now = self._clock()
+        return tuple(
+            entry.token_id for entry in self._entries if self.policy_refusal(entry, now) is not None
+        )
 
     def observe(self, observer: TokenSetObserver) -> None:
         """Send every later change to ``observer``, starting with the set in force now.
@@ -458,7 +463,7 @@ class TokenSetAuthenticator(TokenAuthenticator):
             self._mark_stale(f"{self._path} is missing", "missing")
             return
         try:
-            self._entries = self._load()
+            self._entries = load_token_set(self._path)
         except SecretFileError as exc:
             self._mark_stale(str(exc), "unsafe")
             return
@@ -536,6 +541,9 @@ class TokenSetAuthenticator(TokenAuthenticator):
         if matched.agents and agent not in matched.agents:
             reason = f"Token is not authorised for agent '{agent}'."
             return TokenOutcome(False, reason, None, token_id, "agent_not_bound")
+        refusal = self.policy_refusal(matched, now)
+        if refusal is not None:
+            return TokenOutcome(False, refusal, None, token_id, "policy")
         principal = hashlib.sha256(_QUOTA_PRINCIPAL_DOMAIN + candidate.encode("utf-8"))
         return TokenOutcome(
             True,

@@ -30,17 +30,18 @@ from pathlib import Path
 from synapse_channel.core.private_dir import PrivateDirError
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.core.secure_path import apply_owner_only_file
-from synapse_channel.core.token_set import TokenSetError, load_token_set
+from synapse_channel.core.token_set import TokenEntry, TokenSetError, load_token_set
 from synapse_channel.token_set_admin import (
     add_token,
     check_operator_secret,
     format_instant,
     generate_secret,
     parse_instant,
+    positive_days,
     retire_token,
     token_status,
 )
-from synapse_channel.token_set_hub_status import read_hub_states
+from synapse_channel.token_set_hub_status import HubState, read_hub_states
 
 DEFAULT_VALID_DAYS = 90
 """Validity of a new token when no end is given."""
@@ -56,7 +57,9 @@ def _agents(text: str | None) -> tuple[str, ...]:
     return tuple(name.strip() for name in text.split(","))
 
 
-def _window(args: argparse.Namespace, now: int) -> tuple[float | None, float | None]:
+def _window(
+    args: argparse.Namespace, now: int, default_days: int
+) -> tuple[float | None, float | None]:
     """Return the validity window the arguments ask for."""
     not_before = parse_instant(args.not_before) if args.not_before else None
     if args.no_expiry:
@@ -64,7 +67,38 @@ def _window(args: argparse.Namespace, now: int) -> tuple[float | None, float | N
     if args.not_after:
         return not_before, parse_instant(args.not_after)
     start = int(not_before) if not_before is not None else now
-    return not_before, float(start + args.days * _DAY)
+    days = default_days if args.days is None else args.days
+    return not_before, float(start + days * _DAY)
+
+
+def _running_hubs(path: Path) -> list[HubState]:
+    """Return the running hubs that published a readable state for the set."""
+    try:
+        states = read_hub_states(path)
+    except (OSError, PrivateDirError):
+        return []
+    return [state for state in states if state.running and state.state != "unreadable"]
+
+
+def _default_days(hubs: list[HubState]) -> int:
+    """Return the default validity: 90 days, or less when a running hub allows less."""
+    limits = [hub.max_token_days for hub in hubs if hub.max_token_days is not None]
+    return min([DEFAULT_VALID_DAYS, *limits])
+
+
+def _policy_warnings(entry: TokenEntry, hubs: list[HubState], now: float) -> list[str]:
+    """Name each running hub whose token policy will refuse ``entry``."""
+    warnings = []
+    for hub in hubs:
+        days = hub.max_token_days
+        if hub.require_expiry and entry.not_after is None:
+            rule = "it requires an end of validity"
+        elif days is not None and (entry.not_after is None or entry.not_after - now > days * _DAY):
+            rule = f"it admits at most {days} days of validity"
+        else:
+            continue
+        warnings.append(f"warning: hub {hub.name} will refuse token {entry.token_id}: {rule}")
+    return warnings
 
 
 def _write_secret_out(path: Path, secret: str) -> None:
@@ -96,7 +130,8 @@ def _cmd_new(args: argparse.Namespace, *, clock: Callable[[], float] = time.time
             check_operator_secret(secret)
         else:
             secret = generate_secret()
-        not_before, not_after = _window(args, int(clock()))
+        hubs = _running_hubs(path)
+        not_before, not_after = _window(args, int(clock()), _default_days(hubs))
         if secret_out is not None:
             _write_secret_out(secret_out, secret)
         try:
@@ -122,6 +157,8 @@ def _cmd_new(args: argparse.Namespace, *, clock: Callable[[], float] = time.time
         f"{token_status(entry, clock())} now",
         file=sys.stderr,
     )
+    for warning in _policy_warnings(entry, hubs, clock()):
+        print(warning, file=sys.stderr)
     if secret_out is not None:
         print(f"secret written owner-only to {secret_out}", file=sys.stderr)
     elif not args.secret_file:
@@ -198,6 +235,9 @@ def _cmd_status(args: argparse.Namespace) -> int:
                 "pid": state.pid,
                 "reason_code": state.reason_code,
                 "signature": state.signature,
+                "require_expiry": state.require_expiry,
+                "max_token_days": state.max_token_days,
+                "policy_refused": state.policy_refused,
             }
             for state in states
         ]
@@ -208,21 +248,18 @@ def _cmd_status(args: argparse.Namespace) -> int:
     for state in states:
         detail = f" ({state.reason_code})" if state.reason_code else ""
         since = f" since {state.since}" if state.since else ""
-        print(f"{state.name}: {state.state}{detail}{since}")
+        refused = (
+            f"; {state.policy_refused} token(s) refused by its policy"
+            if state.policy_refused
+            else ""
+        )
+        print(f"{state.name}: {state.state}{detail}{since}{refused}")
     return 0 if healthy else 1
 
 
 def _instant_or_none(moment: float | None) -> str | None:
     """Format an optional instant."""
     return None if moment is None else format_instant(moment)
-
-
-def _positive_days(text: str) -> int:
-    """Parse ``--days`` as a whole number of at least one."""
-    value = int(text)
-    if value < 1:
-        raise argparse.ArgumentTypeError("--days must be at least 1")
-    return value
 
 
 def _add_new_parser(nested: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -235,9 +272,12 @@ def _add_new_parser(nested: argparse._SubParsersAction[argparse.ArgumentParser])
     end = new.add_mutually_exclusive_group()
     end.add_argument(
         "--days",
-        type=_positive_days,
-        default=DEFAULT_VALID_DAYS,
-        help=f"Days of validity from the start (default {DEFAULT_VALID_DAYS}).",
+        type=positive_days,
+        default=None,
+        help=(
+            f"Days of validity from the start (default {DEFAULT_VALID_DAYS}, or the "
+            "smallest --max-token-days of a running hub that follows the set)."
+        ),
     )
     end.add_argument("--not-after", help="End of validity, YYYY-MM-DDTHH:MM:SSZ.")
     end.add_argument("--no-expiry", action="store_true", help="Leave the token without an end.")

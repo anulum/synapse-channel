@@ -22,6 +22,7 @@ the directory that holds the set keeps its own permissions.
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import os
@@ -67,6 +68,14 @@ _POOLS = (
     (frozenset(string.digits), 10),
 )
 _OTHER_POOL = 33
+
+
+def positive_days(text: str) -> int:
+    """Parse a whole number of days of at least one, for an argparse option."""
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be a whole number of days, at least 1")
+    return value
 
 
 def generate_secret() -> str:

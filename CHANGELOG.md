@@ -54,17 +54,16 @@ execution evidence when carrying a release claim forward.
   skips these rows. An admission the journal cannot record is refused; a
   refusal it cannot record is logged and still refused.
 
-- **`synapse hub --require-token-expiry`.** With `--token-set`, the hub
-  accepts only a set in which every token has a `not_after`. A set with an
-  unending token is refused at startup and not applied on a later change,
-  so the last accepted set stays in force. The flag without `--token-set` is
-  refused.
-
-- **`synapse hub --max-token-days DAYS`.** With `--token-set`, the hub
-  accepts only a set in which every token ends within `DAYS` days of when
-  the hub loads it; an unending token fails too. A set that breaks the limit
-  is refused at startup and not applied on a later change. The flag without
-  `--token-set` is refused.
+- **`synapse hub --require-token-expiry` and `--max-token-days DAYS`.** With
+  `--token-set`, the hub admits no connection with a token that has no
+  `not_after`, or (for `--max-token-days`) that stays valid for more than
+  `DAYS` days from the moment of the connection. The policy acts on single
+  tokens, so the set is still applied and a retire always takes effect; a
+  refused token answers with the reason code `policy`, the hub names such
+  tokens at startup, and `token-set status` counts them. Each hub publishes
+  its policy, and `token-set new` defaults to the smallest `--max-token-days`
+  of a running hub and warns when a running hub will refuse the new token.
+  Both flags are off by default and refused without `--token-set`.
 
 - **`synapse hub --token-expiry-closes-sessions`.** With `--token-set`, the hub
   closes a session with code `4401` when the token that admitted it reaches
