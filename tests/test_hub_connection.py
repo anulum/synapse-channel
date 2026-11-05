@@ -292,6 +292,30 @@ async def test_unregister_of_an_unnamed_socket_is_silent() -> None:
     assert forgotten == []
 
 
+async def test_unregister_reports_every_socket_and_survives_a_failing_report(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clients = _registry()
+    first, second = _Socket(), _Socket()
+    clients.add_client(first)
+    clients.add_client(second)
+    seen: list[Any] = []
+
+    def report(websocket: Any) -> None:
+        seen.append(websocket)
+        if websocket is second:
+            raise RuntimeError("journal unavailable")
+
+    conn = _connection(clients)
+    conn.add_close_listener(report)
+    await conn.unregister(first)
+    await conn.unregister(second)
+
+    assert seen == [first, second]
+    assert "cannot record a closed connect-token session" in caplog.text
+    assert clients.connected_clients == set()
+
+
 # -- authenticate_or_close ---------------------------------------------------
 
 

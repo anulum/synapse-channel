@@ -56,6 +56,7 @@ _RISK_KINDS = frozenset(
         "delivery_receipt_expired",
         "connect_token_refused",
         "connect_token_set_rejected",
+        "connect_token_session_expired",
     }
 )
 _OPERATION_KINDS = frozenset(

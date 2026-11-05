@@ -49,6 +49,13 @@ execution evidence when carrying a release claim forward.
   the hub stops. No row holds a secret or a digest. Coordination replay
   skips these rows.
 
+- **`synapse hub --token-expiry-closes-sessions`.** With `--token-set`, the hub
+  closes a session with code `4401` when the token that admitted it reaches
+  its end of validity. Without the flag a session stays open as before. Either
+  way a hub with a journal records a `connect_token_session_expired` row that
+  says whether the hub closed the session. The flag without `--token-set` is
+  refused.
+
 ### Fixed
 
 - **`synapse inbox` waits for a closing connection of the same identity.** A

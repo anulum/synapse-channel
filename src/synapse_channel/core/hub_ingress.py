@@ -34,6 +34,7 @@ from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_exposure import exposure_problems, guard_exposure
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.token_audit import TokenAudit
+from synapse_channel.core.token_sessions import TokenSessions
 from synapse_channel.core.token_set import TokenSetAuthenticator
 
 logger = logging.getLogger("synapse.hub")
@@ -83,6 +84,8 @@ class HubIngress:
     token_audit : TokenAudit or None, optional
         Journal writer for token-set admissions and refusals; ``None`` records
         nothing.
+    token_sessions : TokenSessions or None, optional
+        Follows sessions admitted by an expiring token; ``None`` follows none.
     """
 
     def __init__(
@@ -97,10 +100,12 @@ class HubIngress:
         send_json: Callable[[Any, dict[str, Any]], Awaitable[None]],
         system: Callable[..., dict[str, Any]],
         token_audit: TokenAudit | None = None,
+        token_sessions: TokenSessions | None = None,
     ) -> None:
         self._clients = clients
         self._authenticator = authenticator
         self._token_audit = token_audit
+        self._token_sessions = token_sessions
         self._enable_metrics = enable_metrics
         self._metrics_token = metrics_token
         self._metrics_query_token_ok = metrics_query_token_ok
@@ -141,7 +146,7 @@ class HubIngress:
             self._clients.set_quota_principal(websocket, f"open-host:{host}")
             return True
         ok, reason, principal = self._authenticate(
-            self._authenticator, str(data.get("token") or ""), sender
+            self._authenticator, str(data.get("token") or ""), sender, websocket
         )
         if ok:
             if principal is None:  # defensive: a successful credential must identify a bucket
@@ -156,17 +161,19 @@ class HubIngress:
         return False
 
     def _authenticate(
-        self, authenticator: TokenAuthenticator, token: str, sender: str
+        self, authenticator: TokenAuthenticator, token: str, sender: str, websocket: Any
     ) -> tuple[bool, str, str | None]:
-        """Check the token and, for an audited token set, record the outcome."""
-        audit = self._token_audit
-        if audit is None or not isinstance(authenticator, TokenSetAuthenticator):
+        """Check the token; for a token set, record the outcome and follow the session."""
+        if not isinstance(authenticator, TokenSetAuthenticator):
             return authenticator.authenticate_with_principal(token, sender)
         outcome = authenticator.authenticate_outcome(token, sender)
-        if outcome.ok:
+        audit = self._token_audit
+        if audit is not None and outcome.ok:
             audit.admitted(outcome.token_id, sender)
-        else:
+        elif audit is not None:
             audit.refused(outcome.token_id, outcome.code, sender)
+        if outcome.ok and self._token_sessions is not None:
+            self._token_sessions.admitted(websocket, outcome, sender)
         return outcome.ok, outcome.reason, outcome.principal
 
     def flush_audit(self) -> None:

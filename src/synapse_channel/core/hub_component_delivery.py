@@ -29,6 +29,7 @@ from synapse_channel.core.mailbox_pending import MailboxPendingTracker
 from synapse_channel.core.operator_relay_forwarding import OperatorRelayForwarding
 from synapse_channel.core.pending_receipts import PendingReceipts
 from synapse_channel.core.token_audit import token_audit_for
+from synapse_channel.core.token_sessions import token_sessions_for
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -134,6 +135,11 @@ def build_gates(
     callbacks: HubComponentCallbacks,
 ) -> HubGateComponents:
     """Construct all admission gates without an implicit hub dependency."""
+    audit = token_audit_for(config.auth.authenticator, config.journal)
+    sessions = token_sessions_for(config.auth.authenticator, audit)
+    connection = build_connection(config, clients, reactions, callbacks)
+    if sessions is not None:
+        connection.add_close_listener(sessions.closed)
     return HubGateComponents(
         ingress=HubIngress(
             clients.clients,
@@ -144,7 +150,8 @@ def build_gates(
             insecure_off_loopback=config.auth.insecure_off_loopback,
             send_json=callbacks.send_json,
             system=callbacks.system,
-            token_audit=token_audit_for(config.auth.authenticator, config.journal),
+            token_audit=audit,
+            token_sessions=sessions,
         ),
         identity=HubIdentityGate(
             require_identity_binding=config.auth.require_identity_binding,
@@ -153,7 +160,7 @@ def build_gates(
             system=callbacks.system,
             pin_store=security.pins,
         ),
-        connection=build_connection(config, clients, reactions, callbacks),
+        connection=connection,
         frames=build_frame_gates(config, clients, security, routing, hub_id, callbacks),
         relay_forwarding=OperatorRelayForwarding(
             namespace_ownership=config.multihub.namespace_ownership,

@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — journal rows for connect-token admissions and token-set changes
 """Record which connect token admitted a session and when the token set changed.
 
-A hub that follows a token set and has a journal writes four audit-only kinds.
+A hub that follows a token set and has a journal writes five audit-only kinds.
 Coordination replay skips them; they hold no secret and no digest.
 
 ``connect_token_set_applied``
@@ -16,6 +16,9 @@ Coordination replay skips them; they hold no secret and no digest.
     A file that was not applied and why; the previous set stays in force.
 ``connect_token_admitted``
     One row per admitted session: the token identifier and the agent name.
+``connect_token_session_expired``
+    A session that outlived its token: ``closed`` is true when the hub ended
+    it at expiry, false when it stayed until the client left.
 ``connect_token_refused``
     Refusals, aggregated per reason and token identifier. The first refusal
     of a window is written at once; the others in the next
@@ -42,6 +45,7 @@ ADMITTED_KIND = "connect_token_admitted"
 REFUSED_KIND = "connect_token_refused"
 SET_APPLIED_KIND = "connect_token_set_applied"
 SET_REJECTED_KIND = "connect_token_set_rejected"
+SESSION_EXPIRED_KIND = "connect_token_session_expired"
 
 REFUSAL_WINDOW_SECONDS = 60.0
 """Length of one refusal aggregation window."""
@@ -96,6 +100,14 @@ class TokenAudit:
         """Record the token that admitted one session."""
         self._close_expired(self._clock())
         self._journal.append(ADMITTED_KIND, {"token_id": token_id, "agent": _agent_field(agent)})
+
+    def session_expired(self, token_id: str | None, agent: str, *, closed: bool) -> None:
+        """Record a session that was still open when its token expired."""
+        self._journal.append(
+            SESSION_EXPIRED_KIND,
+            {"token_id": token_id, "agent": _agent_field(agent), "closed": closed},
+            durable=True,
+        )
 
     def refused(self, token_id: str | None, code: str, agent: str) -> None:
         """Count one refusal, writing a row only when a window opens or closes.

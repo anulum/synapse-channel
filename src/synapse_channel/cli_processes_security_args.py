@@ -48,6 +48,14 @@ def add_hub_token_set_argument(hub: argparse.ArgumentParser) -> None:
             "Cannot be combined with --token, --token-file or SYNAPSE_TOKEN."
         ),
     )
+    hub.add_argument(
+        "--token-expiry-closes-sessions",
+        action="store_true",
+        help=(
+            "With --token-set: close a session with code 4401 when the token that "
+            "admitted it expires. By default expiry refuses new connections only."
+        ),
+    )
 
 
 def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:

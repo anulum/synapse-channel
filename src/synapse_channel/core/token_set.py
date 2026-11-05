@@ -102,6 +102,8 @@ class TokenOutcome:
     code : str
         Stable reason code: ``admitted``, ``missing``, ``unknown``,
         ``not_yet_valid``, ``expired`` or ``agent_not_bound``.
+    not_after : float or None, optional
+        End of the admitting token's validity, set only on success.
     """
 
     ok: bool
@@ -109,6 +111,7 @@ class TokenOutcome:
     principal: str | None
     token_id: str | None
     code: str
+    not_after: float | None = None
 
 
 class TokenSetObserver(Protocol):
@@ -270,6 +273,9 @@ class TokenSetAuthenticator(TokenAuthenticator):
         file at that point is an error.
     clock : Callable[[], float], optional
         Source of the current POSIX time for validity windows.
+    expiry_closes_sessions : bool, optional
+        Ask the hub to close a session when the token that admitted it
+        reaches ``not_after``. By default expiry refuses new connections only.
 
     Raises
     ------
@@ -286,10 +292,17 @@ class TokenSetAuthenticator(TokenAuthenticator):
     authenticate against a half-loaded set.
     """
 
-    def __init__(self, path: str | Path, *, clock: Callable[[], float] = time.time) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        clock: Callable[[], float] = time.time,
+        expiry_closes_sessions: bool = False,
+    ) -> None:
         super().__init__(())
         self._path = Path(path).expanduser()
         self._clock = clock
+        self._expiry_closes_sessions = expiry_closes_sessions
         self._signature = _signature(self._path)
         self._entries = load_token_set(self._path)
         self._stale_reason: str | None = None
@@ -329,6 +342,15 @@ class TokenSetAuthenticator(TokenAuthenticator):
     def is_empty(self) -> bool:
         """Whether the set in force admits no connection."""
         return not self._entries
+
+    @property
+    def expiry_closes_sessions(self) -> bool:
+        """Whether a session ends when the token that admitted it expires."""
+        return self._expiry_closes_sessions
+
+    def now(self) -> float:
+        """Return the current time on the clock that judges validity windows."""
+        return self._clock()
 
     def refresh(self) -> None:
         """Reload the file if it changed; keep the current set if it fails."""
@@ -409,7 +431,12 @@ class TokenSetAuthenticator(TokenAuthenticator):
             return TokenOutcome(False, reason, None, token_id, "agent_not_bound")
         principal = hashlib.sha256(_QUOTA_PRINCIPAL_DOMAIN + candidate.encode("utf-8"))
         return TokenOutcome(
-            True, "Authenticated.", f"auth-token:{principal.hexdigest()}", token_id, "admitted"
+            True,
+            "Authenticated.",
+            f"auth-token:{principal.hexdigest()}",
+            token_id,
+            "admitted",
+            matched.not_after,
         )
 
 

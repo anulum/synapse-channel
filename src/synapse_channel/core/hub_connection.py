@@ -128,6 +128,15 @@ class HubConnection:
         self._forget_liveness = forget_liveness
         self._abort_uploads = abort_uploads
         self._agent_left = agent_left
+        self._socket_closed: Callable[[Any], None] | None = None
+
+    def add_close_listener(self, listener: Callable[[Any], None]) -> None:
+        """Call ``listener`` with every socket as it is unregistered.
+
+        One listener is supported; a failure in it is logged and cleanup
+        continues.
+        """
+        self._socket_closed = listener
 
     async def register(self, websocket: Any) -> None:
         """Record a new socket; welcome it now only on an open hub.
@@ -149,6 +158,11 @@ class HubConnection:
 
     async def unregister(self, websocket: Any) -> None:
         """Drop a socket, releasing its agent name and broadcasting departure."""
+        if self._socket_closed is not None:
+            try:
+                self._socket_closed(websocket)
+            except Exception:
+                logger.exception("cannot record a closed connect-token session")
         name = self._clients.drop_client(websocket)
         if name is not None:
             if self._abort_uploads is not None:

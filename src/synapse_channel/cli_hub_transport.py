@@ -104,7 +104,10 @@ def _connect_authenticator(args: argparse.Namespace) -> TokenAuthenticator | Non
     token_set = getattr(args, "token_set", None)
     if token_set:
         try:
-            return TokenSetAuthenticator(token_set)
+            return TokenSetAuthenticator(
+                token_set,
+                expiry_closes_sessions=bool(getattr(args, "token_expiry_closes_sessions", False)),
+            )
         except (SecretFileError, TokenSetError) as exc:
             print(f"synapse hub: {exc}", file=sys.stderr)
             raise HubStartupRefused() from None

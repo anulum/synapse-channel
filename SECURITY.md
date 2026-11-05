@@ -364,8 +364,10 @@ When that boundary is crossed, the proportionate controls are:
   others or disappears is not applied: the hub keeps the last set it accepted,
   and the old tokens keep working until a valid file appears. Expiry and
   retirement refuse new connections; sessions already connected stay
-  connected. `--token-set` cannot be combined with `--token`, `--token-file` or
-  `SYNAPSE_TOKEN`. The digest is computed over the prefix
+  connected, and a journal records each session that outlived its token.
+  `--token-expiry-closes-sessions` makes the hub close a session with code
+  `4401` when the token that admitted it expires. `--token-set` cannot be
+  combined with `--token`, `--token-file` or `SYNAPSE_TOKEN`. The digest is computed over the prefix
   `synapse-channel:connect-token:v1` and a NUL byte followed by the secret;
   generate secrets with at least 256 bits of randomness, because the digest of
   a short or guessable secret can be found offline from a copied file.

@@ -92,6 +92,7 @@ from synapse_channel.core.task_causality import TaskCausalParent, task_event_pay
 from synapse_channel.core.token_audit import (
     ADMITTED_KIND,
     REFUSED_KIND,
+    SESSION_EXPIRED_KIND,
     SET_APPLIED_KIND,
     SET_REJECTED_KIND,
 )
@@ -143,6 +144,7 @@ class EventKind:
     CONNECT_TOKEN_REFUSED = REFUSED_KIND
     CONNECT_TOKEN_SET_APPLIED = SET_APPLIED_KIND
     CONNECT_TOKEN_SET_REJECTED = SET_REJECTED_KIND
+    CONNECT_TOKEN_SESSION_EXPIRED = SESSION_EXPIRED_KIND
     CORRUPT = CORRUPT_EVENT_KIND
 
 
