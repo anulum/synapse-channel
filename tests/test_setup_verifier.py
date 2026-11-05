@@ -896,6 +896,108 @@ def test_adapter_replay_refuses_bad_history_timeout_and_changed_evidence(tmp_pat
         )
 
 
+def test_replay_ignores_an_unrelated_frame_and_refuses_changed_evidence(tmp_path: Path) -> None:
+    """A chat frame is not replay, and a changed digest refuses an otherwise matching frame."""
+    canary_id = "0" * 32
+    database = tmp_path / "events.db"
+    _event_database(database, canary_id=canary_id)
+    stored = setup_verifier._read_canary_evidence(
+        database,
+        target="DEMO/x",
+        canary_id=canary_id,
+        message_seq=1,
+    )
+    assert stored is not None
+    before = database.read_bytes()
+    target = {"uri": "ws://127.0.0.1:1", "project": "DEMO", "identity": "DEMO/x"}
+    delivered: list[str] = []
+
+    class ReplayFrames:
+        def __init__(
+            self,
+            _identity: str,
+            handler: Callable[[dict[str, object]], Awaitable[None]],
+            **_kwargs: object,
+        ) -> None:
+            self.handler = handler
+            self.running = True
+
+        async def connect(self) -> None:
+            await asyncio.sleep(3600)
+
+        async def wait_until_ready(self, timeout: float) -> bool:
+            assert timeout > 0
+            return True
+
+        async def send_message(self, *args: object, **kwargs: object) -> None:
+            assert args == (MessageType.HISTORY_REQUEST,)
+            assert kwargs["limit"] == 1
+            assert kwargs["history_target"] == "DEMO/x"
+            await self.handler({"type": MessageType.CHAT, "payload": "unrelated"})
+            delivered.append("chat")
+            await self.handler(
+                {
+                    "type": MessageType.HISTORY_SNAPSHOT,
+                    "history": [
+                        {"client_msg_id": f"setup-{canary_id}", "target": "DEMO/x"},
+                    ],
+                }
+            )
+            delivered.append("snapshot")
+
+    def factory(*args: object, **kwargs: object) -> VerificationAgent:
+        return cast(
+            VerificationAgent,
+            ReplayFrames(
+                cast(str, args[0]),
+                cast(Callable[[dict[str, object]], Awaitable[None]], args[1]),
+                **kwargs,
+            ),
+        )
+
+    adapter = SystemdVerificationAdapter(
+        runner=PidRunner(9876),
+        agent_factory=factory,
+        probe=lambda _pid: True,
+    )
+    changed = CanaryEvidence(
+        stored.message_seq,
+        "f" * 64,
+        stored.ack_event_seq,
+        stored.ack_digest,
+    )
+    assert changed != stored
+    with pytest.raises(VerificationProbeError, match="verification_replay_failed"):
+        asyncio.run(
+            adapter.prove_replay(
+                target=target,
+                canary_id=canary_id,
+                database=database,
+                evidence=changed,
+                old_pid=4321,
+                systemctl="/usr/bin/systemctl",
+                timeout=1.0,
+            )
+        )
+    assert delivered == ["chat", "snapshot"]
+    assert database.read_bytes() == before
+    delivered.clear()
+    accepted = asyncio.run(
+        adapter.prove_replay(
+            target=target,
+            canary_id=canary_id,
+            database=database,
+            evidence=stored,
+            old_pid=4321,
+            systemctl="/usr/bin/systemctl",
+            timeout=1.0,
+        )
+    )
+    assert accepted == 9876
+    assert delivered == ["chat", "snapshot"]
+    assert database.read_bytes() == before
+
+
 @pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux setup verification")
 def test_verify_refuses_unsafe_lock_clock_home_and_receipt_write(
     tmp_path: Path,
