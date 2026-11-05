@@ -422,3 +422,50 @@ async def test_reclaim_storage_failure_and_cas_race_stay_not_applied(
         "approved",
         "not_applied",
     ]
+
+
+async def test_an_operator_cannot_reclaim_its_own_connection(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Break-glass still cannot remove the pin of the operator's own connection."""
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(
+        hub_id="syn-pin-self",
+        identity_pin_path=tmp_path / "pins.json",
+        journal=store,
+    )
+    machine = _machine(tmp_path, "self")
+
+    def factory(name: str, callback: Any, **kwargs: Any) -> SynapseAgent:
+        kwargs.update(machine)
+        return SynapseAgent(name, callback, **kwargs)
+
+    async with running_hub(hub) as (_, uri):
+        holder = SynapseAgent(OPERATOR, None, uri=uri, verbose=False, **machine)
+        holder_task = await _start(holder)
+        await _await_registry(hub, OPERATOR, online=True)
+        pin = hub.identity_pins.pinned(OPERATOR)
+        assert pin is not None
+        key_id = pin.key_id
+        await _stop(holder, holder_task)
+        await _await_registry(hub, OPERATOR, online=False)
+
+        refused = await _identity_reclaim(
+            uri=uri,
+            operator=OPERATOR,
+            pin_name=OPERATOR,
+            expected_key_id=key_id,
+            reason="remove my own pin",
+            break_glass=True,
+            token=None,
+            ready_timeout=3.0,
+            result_timeout=3.0,
+            json_output=False,
+            agent_factory=factory,
+        )
+        assert refused == 1
+        kept = hub.identity_pins.pinned(OPERATOR)
+        assert kept is not None and kept.key_id == key_id
+    assert "cannot reclaim the identity used by its own live connection" in capsys.readouterr().out
+    assert not [event for event in store.read_all() if event.kind == EventKind.IDENTITY_PIN_RECLAIM]
+    store.close()
