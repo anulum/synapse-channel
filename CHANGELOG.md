@@ -54,6 +54,12 @@ execution evidence when carrying a release claim forward.
   skips these rows. An admission the journal cannot record is refused; a
   refusal it cannot record is logged and still refused.
 
+- **`synapse hub --require-token-expiry`.** With `--token-set`, the hub
+  accepts only a set in which every token has a `not_after`. A set with an
+  unending token is refused at startup and not applied on a later change,
+  so the last accepted set stays in force. The flag without `--token-set` is
+  refused.
+
 - **`synapse hub --token-expiry-closes-sessions`.** With `--token-set`, the hub
   closes a session with code `4401` when the token that admitted it reaches
   its end of validity, and when an applied set no longer admits it (the token

@@ -382,6 +382,15 @@ When that boundary is crossed, the proportionate controls are:
   publishes that state in an owner-only file beside the set, holds a lock on
   it while it serves and removes it at a clean stop; a hub whose lock is free
   or missing is gone and is reported `unknown`, never as applied.
+  `--require-token-expiry` makes the hub accept only a set in which every
+  token has a `not_after`: a set with an unending token is refused at
+  startup and, on a later change, not applied (the last accepted set stays
+  in force and `status` reports it stale with the code `invalid`). The flag
+  is the operator's choice on any bind; `synapse token-set new` already
+  gives a token 90 days unless told otherwise. Off loopback the hub also
+  refuses to start without provisioned identity binding
+  (`--identity-trust` with `--require-identity-binding`) unless
+  `--insecure-unbound-identity` is given; see the deployment matrix above.
   `--token-set` cannot be combined with `--token`, `--token-file` or
   `SYNAPSE_TOKEN`. The digest is computed over the prefix
   `synapse-channel:connect-token:v1` and a NUL byte followed by the secret;

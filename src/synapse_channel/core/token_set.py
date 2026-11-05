@@ -320,6 +320,10 @@ class TokenSetAuthenticator(TokenAuthenticator):
     expiry_closes_sessions : bool, optional
         Ask the hub to close a session when the token that admitted it
         reaches ``not_after``. By default expiry refuses new connections only.
+    require_expiry : bool, optional
+        Accept only a set in which every token has a ``not_after``. A set with
+        an unending token is refused at construction and, on reload, not
+        applied (the last accepted set stays in force, reported ``invalid``).
 
     Raises
     ------
@@ -342,16 +346,30 @@ class TokenSetAuthenticator(TokenAuthenticator):
         *,
         clock: Callable[[], float] = time.time,
         expiry_closes_sessions: bool = False,
+        require_expiry: bool = False,
     ) -> None:
         super().__init__(())
         self._path = Path(path).expanduser()
         self._clock = clock
         self._expiry_closes_sessions = expiry_closes_sessions
+        self._require_expiry = require_expiry
         self._signature = _signature(self._path)
-        self._entries = load_token_set(self._path)
+        self._entries = self._load()
         self._stale_reason: str | None = None
         self._stale_code: str | None = None
         self._observers: list[TokenSetObserver] = []
+
+    def _load(self) -> tuple[TokenEntry, ...]:
+        """Load the file and apply this hub's own acceptance rules."""
+        entries = load_token_set(self._path)
+        if self._require_expiry:
+            unending = [entry.token_id for entry in entries if entry.not_after is None]
+            if unending:
+                raise TokenSetError(
+                    f"tokens without not_after are refused by --require-token-expiry: "
+                    f"{', '.join(unending)}"
+                )
+        return entries
 
     def observe(self, observer: TokenSetObserver) -> None:
         """Send every later change to ``observer``, starting with the set in force now.
@@ -422,7 +440,7 @@ class TokenSetAuthenticator(TokenAuthenticator):
             self._mark_stale(f"{self._path} is missing", "missing")
             return
         try:
-            self._entries = load_token_set(self._path)
+            self._entries = self._load()
         except SecretFileError as exc:
             self._mark_stale(str(exc), "unsafe")
             return

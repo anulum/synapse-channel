@@ -315,3 +315,35 @@ def test_a_set_that_cannot_be_inspected_goes_stale_instead_of_raising(tmp_path: 
         folder.chmod(0o700)
     auth.refresh()
     assert auth.stale_reason is None
+
+
+def test_require_expiry_refuses_an_unending_token_at_start_and_on_reload(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ending = _entry("ends", "s-ends", not_after="2027-06-01T00:00:00Z")
+    path = _write(tmp_path / "tokens.json", ending, _entry("forever", "s-forever"))
+    with pytest.raises(TokenSetError, match="refused by --require-token-expiry: forever"):
+        TokenSetAuthenticator(path, require_expiry=True)
+    namespace = argparse.Namespace(token_set=str(path), token=None, require_token_expiry=True)
+    with pytest.raises(HubStartupRefused):
+        _connect_authenticator(namespace)
+    assert "--require-token-expiry: forever" in capsys.readouterr().err
+    _write(path, ending)
+    auth = TokenSetAuthenticator(path, clock=lambda: _START, require_expiry=True)
+    assert auth.authenticate("s-ends", "A") == (True, "Authenticated.")
+    _write(path, ending, _entry("forever", "s-forever"))
+    assert auth.authenticate("s-forever", "A")[0] is False
+    assert (auth.stale_code, auth.stale_reason) == (
+        "invalid",
+        "tokens without not_after are refused by --require-token-expiry: forever",
+    )
+    assert auth.authenticate("s-ends", "A") == (True, "Authenticated.")
+    assert TokenSetAuthenticator(path).authenticate("s-forever", "A")[0] is True
+
+
+def test_require_expiry_needs_a_token_set(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SYNAPSE_TOKEN", raising=False)
+    assert cli.main(["hub", "--require-token-expiry"]) == 2
+    assert "--require-token-expiry requires --token-set" in capsys.readouterr().err

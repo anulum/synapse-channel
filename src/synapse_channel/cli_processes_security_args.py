@@ -49,6 +49,15 @@ def add_hub_token_set_argument(hub: argparse.ArgumentParser) -> None:
         ),
     )
     hub.add_argument(
+        "--require-token-expiry",
+        action="store_true",
+        help=(
+            "With --token-set: accept only a set in which every token has not_after. "
+            "A set with an unending token is refused at startup and not applied on "
+            "reload (the last accepted set stays in force)."
+        ),
+    )
+    hub.add_argument(
         "--token-expiry-closes-sessions",
         action="store_true",
         help=(
