@@ -20,6 +20,12 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **`synapse inbox` waits for a closing connection of the same identity.** A
+  read that started while the previous read under the same name was still
+  closing failed with "cannot read durable hub inbox". It now retries that
+  exact name refusal within its timeout. A connection that stays is never
+  displaced: the read still fails once the timeout passes.
+
 - **The commit-message hook refuses every vendor-named `Seat:` trailer.** It
   refused only two vendor prefixes, so a trailer naming another assistant
   vendor passed. A seat suffix may no longer be a listed vendor name or start

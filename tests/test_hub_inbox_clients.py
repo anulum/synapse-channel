@@ -72,6 +72,47 @@ async def test_cli_reader_persists_independent_cursor_and_does_not_replay(
         journal.close()
 
 
+async def test_cli_reader_waits_for_its_identity_to_close_and_never_displaces_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A read under a still-connected identity waits for it to leave, never evicts it.
+
+    Consecutive reads reuse one identity, and on a slow host the previous
+    socket can still be open when the next read connects; the hub then refuses
+    the name. While the holder stays, the read fails and the holder keeps its
+    connection. When the holder leaves during the read, the same read succeeds.
+    """
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (_, uri):
+            publisher = await connect_agent("P/publisher", uri)
+            holder = await connect_agent("P/reader", uri)
+            try:
+                await publisher.agent.chat("queued", target="P/reader")
+                await fence(publisher)
+                home = tmp_path / "reader"
+                refused = await read_hub_inbox(uri=uri, identity="P/reader", home=home, timeout=0.5)
+                assert refused == 1
+                assert json.loads(capsys.readouterr().out)["available"] is False
+                assert holder.agent.connection is not None and not holder.task.done()
+                assert not hub_inbox_cursor_path(home, uri, "P/reader").exists()
+
+                async def leave_soon() -> None:
+                    await asyncio.sleep(0.3)
+                    await holder.close()
+
+                leaving = asyncio.create_task(leave_soon())
+                read = await read_hub_inbox(uri=uri, identity="P/reader", home=home, timeout=5)
+                await leaving
+                assert read == 0
+                page = json.loads(capsys.readouterr().out)
+                assert [item["payload"] for item in page["messages"]] == ["queued"]
+            finally:
+                await close_agents(publisher, holder)
+    finally:
+        journal.close()
+
+
 async def test_mcp_reads_remote_hub_using_existing_connection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

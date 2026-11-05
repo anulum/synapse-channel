@@ -21,6 +21,7 @@ from typing import Any
 from websockets.exceptions import WebSocketException
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.client.owner_registration import register_owner
 from synapse_channel.core.protocol import MessageType, is_recipient
 from synapse_channel.hub_inbox_cursor import (
     HubInboxCursor,
@@ -137,7 +138,9 @@ async def read_hub_inbox(
     Parameters
     ----------
     uri, identity : str
-        Hub endpoint and exact connected identity; no existing receiver is displaced.
+        Hub endpoint and exact connected identity; no existing receiver is
+        displaced. A connection of the same identity that is still closing is
+        waited for within ``timeout``.
     home : Path
         Owner-local coordination home.
     token : str or None, optional
@@ -181,8 +184,8 @@ async def read_hub_inbox(
             verbose=False,
             **machine_identity_agent_kwargs(),
         )
-        task = asyncio.create_task(agent.connect())
-        if not await agent.wait_until_ready(timeout=timeout):
+        task = await register_owner(agent, timeout)
+        if task is None:
             raise ValueError("hub inbox connection is unavailable")
         await agent.send_message(
             MessageType.HISTORY_REQUEST,
@@ -226,7 +229,6 @@ async def read_hub_inbox(
                 with contextlib.suppress(Exception):
                     await agent.connection.close()
         if task is not None:
-            if not task.done():
-                task.cancel()
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
