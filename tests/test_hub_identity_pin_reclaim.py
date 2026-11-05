@@ -22,6 +22,7 @@ from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.acl import PIN_RECLAIM, AclPolicy, AclRule
 from synapse_channel.core.handlers.identity_pins import PIN_RECLAIM_CLOSE_CODE
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.identity_pin_governance import MAX_PIN_RECLAIM_REASON_LENGTH
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
@@ -467,5 +468,76 @@ async def test_an_operator_cannot_reclaim_its_own_connection(
         kept = hub.identity_pins.pinned(OPERATOR)
         assert kept is not None and kept.key_id == key_id
     assert "cannot reclaim the identity used by its own live connection" in capsys.readouterr().out
+    assert not [event for event in store.read_all() if event.kind == EventKind.IDENTITY_PIN_RECLAIM]
+    store.close()
+
+
+async def test_a_reason_past_the_limit_is_refused_before_the_pin_changes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One character over the reason ceiling is refused and the pin stays."""
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(
+        hub_id="syn-pin-reason",
+        identity_pin_path=tmp_path / "pins.json",
+        journal=store,
+    )
+    target_machine = _machine(tmp_path, "target")
+    operator_machine = _machine(tmp_path, "operator")
+
+    def factory(name: str, callback: Any, **kwargs: Any) -> SynapseAgent:
+        kwargs.update(operator_machine)
+        return SynapseAgent(name, callback, **kwargs)
+
+    async with running_hub(hub) as (_, uri):
+        holder = SynapseAgent(PIN_NAME, None, uri=uri, verbose=False, **target_machine)
+        holder_task = await _start(holder)
+        await _await_registry(hub, PIN_NAME, online=True)
+        pin = hub.identity_pins.pinned(PIN_NAME)
+        assert pin is not None
+        key_id = pin.key_id
+        await _stop(holder, holder_task)
+        await _await_registry(hub, PIN_NAME, online=False)
+
+        too_long = await _identity_reclaim(
+            uri=uri,
+            operator=OPERATOR,
+            pin_name=PIN_NAME,
+            expected_key_id=key_id,
+            reason="x" * (MAX_PIN_RECLAIM_REASON_LENGTH + 1),
+            break_glass=True,
+            token=None,
+            ready_timeout=3.0,
+            result_timeout=3.0,
+            json_output=False,
+            agent_factory=factory,
+        )
+        assert too_long == 1
+        assert (
+            f"operator reason exceeds {MAX_PIN_RECLAIM_REASON_LENGTH} characters"
+            in capsys.readouterr().out
+        )
+        kept = hub.identity_pins.pinned(PIN_NAME)
+        assert kept is not None and kept.key_id == key_id
+
+        at_limit = await _identity_reclaim(
+            uri=uri,
+            operator=OPERATOR,
+            pin_name=PIN_NAME,
+            expected_key_id=key_id,
+            reason="y" * MAX_PIN_RECLAIM_REASON_LENGTH,
+            break_glass=True,
+            token=None,
+            ready_timeout=3.0,
+            result_timeout=3.0,
+            json_output=False,
+            agent_factory=factory,
+        )
+        assert at_limit == 1
+        limited = capsys.readouterr().out
+        assert f"exceeds {MAX_PIN_RECLAIM_REASON_LENGTH} characters" not in limited
+        assert "no identity-pin-reclaim ACL grant" in limited
+        kept = hub.identity_pins.pinned(PIN_NAME)
+        assert kept is not None and kept.key_id == key_id
     assert not [event for event in store.read_all() if event.kind == EventKind.IDENTITY_PIN_RECLAIM]
     store.close()
