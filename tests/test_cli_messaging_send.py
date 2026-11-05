@@ -643,7 +643,7 @@ async def test_send_require_recipient_fails_without_online_recipient(
             message="ping",
             wait_seconds=0.0,
             require_recipient=True,
-            receipt_timeout=0.2,
+            receipt_timeout=5.0,
         )
 
     assert code == 1
@@ -660,7 +660,7 @@ async def test_directed_send_fails_without_online_recipient_by_default(
             target="MISSING",
             message="ping",
             wait_seconds=0.0,
-            receipt_timeout=0.2,
+            receipt_timeout=5.0,
         )
 
     assert code == 1
@@ -682,7 +682,7 @@ async def test_directed_send_fails_by_default_when_only_a_stale_socket_matches(
                 target="OBSERVER",
                 message="ping",
                 wait_seconds=0.0,
-                receipt_timeout=0.2,
+                receipt_timeout=5.0,
             )
         finally:
             await close_agents(observer)

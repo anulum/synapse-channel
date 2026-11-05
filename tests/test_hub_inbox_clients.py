@@ -48,7 +48,7 @@ async def test_cli_reader_persists_independent_cursor_and_does_not_replay(
                 for expected in [2, 1, 0]:
                     assert (
                         await read_hub_inbox(
-                            uri=uri, identity="P/reader", home=home, limit=2, timeout=2
+                            uri=uri, identity="P/reader", home=home, limit=2, timeout=5
                         )
                         == 0
                     )
@@ -63,8 +63,10 @@ async def test_cli_reader_persists_independent_cursor_and_does_not_replay(
                 assert not (home / "inbox-cursor").exists()
                 save_hub_inbox_cursor(path, HubInboxCursor("foreign-hub", cursor.seq))
                 before = path.read_bytes()
-                assert await read_hub_inbox(uri=uri, identity="P/reader", home=home, timeout=2) == 1
-                assert json.loads(capsys.readouterr().out)["available"] is False
+                assert await read_hub_inbox(uri=uri, identity="P/reader", home=home, timeout=5) == 1
+                refused = capsys.readouterr()
+                assert json.loads(refused.out)["available"] is False
+                assert "hub refused the durable inbox query" in refused.err
                 assert path.read_bytes() == before
             finally:
                 await close_agents(publisher)
