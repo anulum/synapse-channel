@@ -72,6 +72,7 @@ The ``synapse`` command exposes these subcommands:
 * ``worker-session`` — launch a provider command with identity env and a wake sidecar.
 * ``channel`` — manage private-channel membership (create/join/leave/list);
 * ``encrypt-key`` — generate and check at-rest encryption key files;
+* ``token-set`` — add, retire and list a hub's connect tokens;
 * ``agent-tmux`` — wake an existing terminal-agent tmux session from Synapse messages;
 * ``codex-tmux`` — Codex-named alias of ``agent-tmux``;
 * ``shell-hook`` / ``install-shell-hook`` — auto-arm fresh terminals and provider CLIs;
@@ -183,6 +184,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_agent_tmux:add_parsers", ("agent-tmux",)),
     ("synapse_channel.cli_channels:add_parsers", ("channel",)),
     ("synapse_channel.cli_encrypt_key:add_parsers", ("encrypt-key",)),
+    ("synapse_channel.cli_token_set:add_parsers", ("token-set",)),
     ("synapse_channel.cli_sqlcipher:add_parsers", ("sqlcipher",)),
     ("synapse_channel.cli_codex_tmux:add_parsers", ("codex-tmux",)),
     ("synapse_channel.cli_shell:add_parsers", ("shell-hook", "install-shell-hook")),

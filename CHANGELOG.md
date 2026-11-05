@@ -30,6 +30,17 @@ execution evidence when carrying a release claim forward.
   `SYNAPSE_TOKEN`. `--secure`, `--team-secure` and `--paranoid` accept it as
   the connect token.
 
+- **`synapse token-set new`, `retire` and `list`.** `new` generates a 256-bit
+  secret, stores only its digest and prints the secret once, or writes it to a
+  new owner-only `--secret-out` file. A token ends after 90 days unless
+  `--days`, `--not-after` or `--no-expiry` says otherwise. A secret supplied
+  with `--secret-file` is refused below an estimated 128 bits. `retire`
+  removes a token, and `list` shows identifiers, agents and validity without
+  secrets or digests. Each change holds a lock, validates the whole new set
+  with the hub's parser and only then renames it into place, so a change that
+  would leave an invalid file, and with it a retired token still in force,
+  writes nothing.
+
 ### Fixed
 
 - **`synapse inbox` waits for a closing connection of the same identity.** A

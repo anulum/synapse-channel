@@ -369,6 +369,19 @@ When that boundary is crossed, the proportionate controls are:
   `synapse-channel:connect-token:v1` and a NUL byte followed by the secret;
   generate secrets with at least 256 bits of randomness, because the digest of
   a short or guessable secret can be found offline from a copied file.
+  `synapse token-set new PATH --id ID` generates such a secret, stores its
+  digest and prints the secret once (`--secret-out FILE` writes it to a new
+  owner-only file instead). It ends the token's validity after 90 days unless
+  `--days`, `--not-after` or `--no-expiry` says otherwise, and refuses a
+  `--secret-file` secret estimated below 128 bits. `synapse token-set retire
+  PATH --id ID` removes a token and `synapse token-set list PATH` shows
+  identifiers, agents and validity without secrets or digests. Each change
+  holds a lock, builds the whole new set, validates it with the hub's own
+  parser and renames it into place only then; a change whose result would
+  not validate writes nothing. This matters for a retire: a hand-edited file
+  that fails validation leaves the retired token in force. On Windows a
+  change to the file's access list alone changes none of the file status the
+  hub compares, so it takes effect with the next change to the content.
 - **Bounded resources.** A `--max-clients` connection cap, a `--max-msg-kb` frame
   size cap, per-agent rate limiting, bounded chat history, a bounded progress
   ledger, a bounded relay log, and bounded JSON decode depth limit their named

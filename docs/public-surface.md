@@ -97,7 +97,7 @@ is consumed by explicit runtime gates — notably `--require-acl` and
 `--federation-store` — but running a governance command does not silently enable
 enforcement or widen trust.
 
-`acl`  `aef`  `approval`  `capability-card`  `compact`  `compliance`  `encrypt-key`  `entitlements`  `federation`  `merkle`  `policy-check`  `postmortem`  `release`  `reproduce`  `review-feedback`  `role`  `sqlcipher`  `supervisor`  `verdict`  `verify-release`
+`acl`  `aef`  `approval`  `capability-card`  `compact`  `compliance`  `encrypt-key`  `entitlements`  `federation`  `merkle`  `policy-check`  `postmortem`  `release`  `reproduce`  `review-feedback`  `role`  `sqlcipher`  `supervisor`  `token-set`  `verdict`  `verify-release`
 
 [`compliance`](compliance.md) reads one existing local journal snapshot for
 record and calendar observations. It makes no regulatory verdict and does not

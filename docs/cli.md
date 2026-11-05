@@ -43,6 +43,7 @@ everything, since they need the whole command table.
 | `synapse a2a-interop-trace` | Run the repository's separate stdlib HTTP(S) client against a live `a2a-serve` bridge and emit a scoped discovery/task receipt; this is not third-party conformance. |
 | `synapse channel` | Manage private-channel membership and member-visible history; pair with `synapse send --channel`. |
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
+| `synapse token-set` | Manage a hub's connect-token set for `synapse hub --token-set`: `new` generates a 256-bit secret, stores only its digest and prints the secret once; `retire` removes a token; `list` shows identifiers, agents and validity, never a secret or a digest. A change whose result would not validate writes nothing. See *Rotating connect tokens* in `SECURITY.md`. |
 | `synapse sqlcipher` | SQLCipher page-encryption ops for the hub event store: `rekey` via PRAGMA rekey, `migrate` plaintext → encrypted. |
 | `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |

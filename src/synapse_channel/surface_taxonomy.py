@@ -141,6 +141,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "compact": GOVERNANCE,
     "capability-card": GOVERNANCE,
     "encrypt-key": GOVERNANCE,
+    "token-set": GOVERNANCE,
     "sqlcipher": GOVERNANCE,
     "entitlements": GOVERNANCE,
     "review-feedback": GOVERNANCE,

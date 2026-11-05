@@ -173,6 +173,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_hub_restart.py": (2, "platform-guard"),
     "tests/test_path_identity_inode_reuse.py": (3, "platform-guard"),
     "tests/test_token_set.py": (1, "platform-guard"),
+    "tests/test_cli_token_set.py": (1, "platform-guard"),
     "tests/test_worker_session_waiter_cleanup.py": (1, "platform-guard"),
     # Includes the real Linux executable-format fallback/process-image regression.
     "tests/test_launch_record.py": (7, "platform-guard"),
