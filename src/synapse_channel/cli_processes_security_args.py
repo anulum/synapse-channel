@@ -53,7 +53,8 @@ def add_hub_token_set_argument(hub: argparse.ArgumentParser) -> None:
         action="store_true",
         help=(
             "With --token-set: close a session with code 4401 when the token that "
-            "admitted it expires. By default expiry refuses new connections only."
+            "admitted it expires or is retired. By default expiry and retirement "
+            "refuse new connections only and open sessions stay connected."
         ),
     )
 

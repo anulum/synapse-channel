@@ -133,9 +133,15 @@ class HubConnection:
     def add_close_listener(self, listener: Callable[[Any], None]) -> None:
         """Call ``listener`` with every socket as it is unregistered.
 
-        One listener is supported; a failure in it is logged and cleanup
-        continues.
+        A failure in the listener is logged and cleanup continues.
+
+        Raises
+        ------
+        RuntimeError
+            If a listener is already set; one listener is supported.
         """
+        if self._socket_closed is not None:
+            raise RuntimeError("a close listener is already set")
         self._socket_closed = listener
 
     async def register(self, websocket: Any) -> None:

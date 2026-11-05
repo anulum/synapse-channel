@@ -363,11 +363,19 @@ When that boundary is crossed, the proportionate controls are:
   file that fails validation, turns into a symbolic link, becomes readable by
   others or disappears is not applied: the hub keeps the last set it accepted,
   and the old tokens keep working until a valid file appears. Expiry and
-  retirement refuse new connections; sessions already connected stay
-  connected, and a journal records each session that outlived its token.
-  `--token-expiry-closes-sessions` makes the hub close a session with code
-  `4401` when the token that admitted it expires. `--token-set` cannot be
-  combined with `--token`, `--token-file` or `SYNAPSE_TOKEN`. The digest is computed over the prefix
+  retirement refuse new connections. **By default, retiring a token does not
+  end the sessions it already admitted:** they stay connected until the
+  client leaves, and a journal only records that they outlived the token.
+  After a suspected compromise, retiring is therefore not enough on its own;
+  run the hub with `--token-expiry-closes-sessions`, or restart it after the
+  retire. With that flag the hub closes a session with code `4401` when its
+  token reaches `not_after` (reason "connect token expired") and when a set
+  is applied that no longer admits it, because the token was removed, its
+  secret changed or its agent list no longer names the session (reason
+  "connect token retired"). A closing hub checks the file every second, so a
+  retire takes effect without waiting for a new connection. `--token-set`
+  cannot be combined with `--token`, `--token-file` or `SYNAPSE_TOKEN`. The
+  digest is computed over the prefix
   `synapse-channel:connect-token:v1` and a NUL byte followed by the secret;
   generate secrets with at least 256 bits of randomness, because the digest of
   a short or guessable secret can be found offline from a copied file.

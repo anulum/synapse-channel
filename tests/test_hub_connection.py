@@ -314,6 +314,8 @@ async def test_unregister_reports_every_socket_and_survives_a_failing_report(
     assert seen == [first, second]
     assert "cannot record a closed connect-token session" in caplog.text
     assert clients.connected_clients == set()
+    with pytest.raises(RuntimeError, match="already set"):
+        conn.add_close_listener(report)
 
 
 # -- authenticate_or_close ---------------------------------------------------

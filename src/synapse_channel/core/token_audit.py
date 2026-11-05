@@ -16,9 +16,10 @@ Coordination replay skips them; they hold no secret and no digest.
     A file that was not applied and why; the previous set stays in force.
 ``connect_token_admitted``
     One row per admitted session: the token identifier and the agent name.
-``connect_token_session_expired``
-    A session that outlived its token: ``closed`` is true when the hub ended
-    it at expiry, false when it stayed until the client left.
+``connect_token_session_ended``
+    A session that outlived its token, with ``reason`` ``expired`` or
+    ``retired``: ``closed`` is true when the hub ended it, false when it
+    stayed open until the client left.
 ``connect_token_refused``
     Refusals, aggregated per reason and token identifier. The first refusal
     of a window is written at once; the others in the next
@@ -45,7 +46,7 @@ ADMITTED_KIND = "connect_token_admitted"
 REFUSED_KIND = "connect_token_refused"
 SET_APPLIED_KIND = "connect_token_set_applied"
 SET_REJECTED_KIND = "connect_token_set_rejected"
-SESSION_EXPIRED_KIND = "connect_token_session_expired"
+SESSION_ENDED_KIND = "connect_token_session_ended"
 
 REFUSAL_WINDOW_SECONDS = 60.0
 """Length of one refusal aggregation window."""
@@ -101,11 +102,16 @@ class TokenAudit:
         self._close_expired(self._clock())
         self._journal.append(ADMITTED_KIND, {"token_id": token_id, "agent": _agent_field(agent)})
 
-    def session_expired(self, token_id: str | None, agent: str, *, closed: bool) -> None:
-        """Record a session that was still open when its token expired."""
+    def session_ended(self, token_id: str | None, agent: str, *, closed: bool, reason: str) -> None:
+        """Record a session that was still open when its token stopped admitting it."""
         self._journal.append(
-            SESSION_EXPIRED_KIND,
-            {"token_id": token_id, "agent": _agent_field(agent), "closed": closed},
+            SESSION_ENDED_KIND,
+            {
+                "token_id": token_id,
+                "agent": _agent_field(agent),
+                "closed": closed,
+                "reason": reason,
+            },
             durable=True,
         )
 

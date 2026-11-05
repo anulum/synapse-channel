@@ -102,8 +102,8 @@ class TokenOutcome:
     code : str
         Stable reason code: ``admitted``, ``missing``, ``unknown``,
         ``not_yet_valid``, ``expired`` or ``agent_not_bound``.
-    not_after : float or None, optional
-        End of the admitting token's validity, set only on success.
+    entry : TokenEntry or None, optional
+        The admitting entry, set only on success.
     """
 
     ok: bool
@@ -111,7 +111,7 @@ class TokenOutcome:
     principal: str | None
     token_id: str | None
     code: str
-    not_after: float | None = None
+    entry: TokenEntry | None = None
 
 
 class TokenSetObserver(Protocol):
@@ -306,15 +306,16 @@ class TokenSetAuthenticator(TokenAuthenticator):
         self._signature = _signature(self._path)
         self._entries = load_token_set(self._path)
         self._stale_reason: str | None = None
-        self._observer: TokenSetObserver | None = None
+        self._observers: list[TokenSetObserver] = []
 
     def observe(self, observer: TokenSetObserver) -> None:
         """Send every later change to ``observer``, starting with the set in force now.
 
         A set that is stale at this point is reported as applied and then as
         rejected, so the observer starts from the same state as the hub.
+        Observers are called in the order they were added.
         """
-        self._observer = observer
+        self._observers.append(observer)
         observer.set_applied(self._path, self._token_ids())
         if self._stale_reason is not None:
             observer.set_rejected(self._path, self._stale_reason)
@@ -367,15 +368,15 @@ class TokenSetAuthenticator(TokenAuthenticator):
             self._mark_stale(str(exc))
             return
         self._stale_reason = None
-        if self._observer is not None:
-            self._observer.set_applied(self._path, self._token_ids())
+        for observer in self._observers:
+            observer.set_applied(self._path, self._token_ids())
 
     def _mark_stale(self, reason: str) -> None:
         """Record and log that the file on disk is not in force."""
         self._stale_reason = reason
         _LOG.warning("token set not applied (%s); the last accepted set stays in force", reason)
-        if self._observer is not None:
-            self._observer.set_rejected(self._path, reason)
+        for observer in self._observers:
+            observer.set_rejected(self._path, reason)
 
     def authenticate_with_principal(self, token: str, agent: str) -> tuple[bool, str, str | None]:
         """Authenticate against the set in force after picking up any change.
@@ -436,7 +437,7 @@ class TokenSetAuthenticator(TokenAuthenticator):
             f"auth-token:{principal.hexdigest()}",
             token_id,
             "admitted",
-            matched.not_after,
+            matched,
         )
 
 

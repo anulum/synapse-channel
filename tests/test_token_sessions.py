@@ -32,6 +32,7 @@ from synapse_channel.core.token_audit import TokenAudit
 from synapse_channel.core.token_sessions import (
     EXPIRY_CLOSE_CODE,
     EXPIRY_CLOSE_REASON,
+    RETIRED_CLOSE_REASON,
     TokenSessions,
     token_sessions_for,
 )
@@ -42,12 +43,14 @@ def _instant(moment: float) -> str:
     return datetime.fromtimestamp(moment, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _write(path: Path, *entries: tuple[str, str, float | None]) -> tuple[Path, list[float]]:
-    """Write a set; return it with each entry's whole-second end of validity."""
+def _write(path: Path, *entries: tuple[Any, ...]) -> tuple[Path, list[float]]:
+    """Write a set of (id, secret, seconds[, agents]); return each whole-second end."""
     tokens: list[dict[str, Any]] = []
     ends: list[float] = []
-    for token_id, secret, seconds in entries:
+    for token_id, secret, seconds, *agents in entries:
         entry: dict[str, Any] = {"id": token_id, "sha256": connect_token_digest(secret)}
+        if agents:
+            entry["agents"] = agents[0]
         if seconds is not None:
             end = float(int(time.time()) + seconds)
             entry["not_after"] = _instant(end)
@@ -64,7 +67,7 @@ def _expired_rows(journal: EventStore) -> list[dict[str, Any]]:
     return [
         event.payload
         for event in journal.read_all()
-        if event.kind == EventKind.CONNECT_TOKEN_SESSION_EXPIRED
+        if event.kind == EventKind.CONNECT_TOKEN_SESSION_ENDED
     ]
 
 
@@ -93,7 +96,7 @@ async def test_by_default_a_session_outlives_its_token_and_is_recorded(tmp_path:
         rows = _expired_rows(journal)
     finally:
         journal.close()
-    assert rows == [{"token_id": "short", "agent": "A", "closed": False}]
+    assert rows == [{"token_id": "short", "agent": "A", "closed": False, "reason": "expired"}]
     assert "has expired" in denied["payload"]
 
 
@@ -116,7 +119,7 @@ async def test_the_hub_can_close_a_session_when_its_token_expires(tmp_path: Path
         journal.close()
     assert (code, reason) == (EXPIRY_CLOSE_CODE, EXPIRY_CLOSE_REASON)
     assert closed_at >= end
-    assert rows == [{"token_id": "short", "agent": "A", "closed": True}]
+    assert rows == [{"token_id": "short", "agent": "A", "closed": True, "reason": "expired"}]
 
 
 async def test_a_session_that_ends_first_leaves_no_timer_and_no_row(
@@ -139,7 +142,7 @@ async def test_a_session_that_ends_first_leaves_no_timer_and_no_row(
             async with connect(uri) as websocket:
                 await send_json(websocket, sender="B", type="heartbeat", token="s-open")
                 await read_until_type(websocket, "welcome")
-                assert len(sessions) == 0
+                assert len(sessions) == 1
             await _until(lambda: len(sessions) == 0)
             await _until(lambda: time.time() >= end + 0.5)
         rows = _expired_rows(journal)
@@ -190,3 +193,144 @@ def test_the_cli_flag_reaches_the_authenticator_and_needs_a_set(
     monkeypatch.delenv("SYNAPSE_TOKEN", raising=False)
     assert cli.main(["hub", "--token-expiry-closes-sessions"]) == 2
     assert "--token-expiry-closes-sessions requires --token-set" in capsys.readouterr().err
+
+
+async def _session(uri: str, agent: str, secret: str) -> Any:
+    websocket = await connect(uri)
+    await send_json(websocket, sender=agent, type="heartbeat", token=secret)
+    await read_until_type(websocket, "welcome")
+    return websocket
+
+
+async def test_closing_mode_ends_sessions_of_a_retired_token_without_a_new_connection(
+    tmp_path: Path,
+) -> None:
+    # The retired token has no end of validity, so only the retire can end its session.
+    path, _ = _write(tmp_path / "tokens.json", ("old", "s-old", None), ("new", "s-new", 600))
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True)
+        hub = SynapseHub(journal=journal, authenticator=authenticator)
+        async with running_hub(hub) as (_, uri):
+            retired = await _session(uri, "A", "s-old")
+            kept = await _session(uri, "B", "s-new")
+            try:
+                _write(path, ("new", "s-new", 600))
+                await asyncio.wait_for(retired.wait_closed(), timeout=10)
+                assert (retired.close_code, retired.close_reason) == (
+                    EXPIRY_CLOSE_CODE,
+                    RETIRED_CLOSE_REASON,
+                )
+                await asyncio.wait_for(await kept.ping(), timeout=5)
+            finally:
+                await retired.close()
+                await kept.close()
+            await _until(lambda: bool(_expired_rows(journal)))
+        rows = _expired_rows(journal)
+    finally:
+        journal.close()
+    assert rows == [{"token_id": "old", "agent": "A", "closed": True, "reason": "retired"}]
+
+
+async def test_closing_mode_follows_a_moved_end_and_an_unbound_agent(tmp_path: Path) -> None:
+    path, _ = _write(
+        tmp_path / "tokens.json", ("move", "s-move", 600), ("seat", "s-seat", 600, ["A", "B"])
+    )
+    authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True)
+    async with running_hub(SynapseHub(authenticator=authenticator)) as (_, uri):
+        moved = await _session(uri, "M", "s-move")
+        unbound = await _session(uri, "B", "s-seat")
+        bound = await _session(uri, "A", "s-seat")
+        try:
+            _, (end, _seat_end) = _write(
+                path, ("move", "s-move", 2), ("seat", "s-seat", 600, ["A"])
+            )
+            await asyncio.wait_for(unbound.wait_closed(), timeout=10)
+            assert unbound.close_reason == RETIRED_CLOSE_REASON
+            await asyncio.wait_for(moved.wait_closed(), timeout=10)
+            assert moved.close_reason == EXPIRY_CLOSE_REASON
+            assert time.time() >= end
+            await asyncio.wait_for(await bound.ping(), timeout=5)
+        finally:
+            for websocket in (moved, unbound, bound):
+                await websocket.close()
+
+
+async def test_a_later_end_and_a_rejected_file_keep_the_session(tmp_path: Path) -> None:
+    path, _ = _write(tmp_path / "tokens.json", ("tok", "s-tok", 2))
+    authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True)
+    async with running_hub(SynapseHub(authenticator=authenticator)) as (_, uri):
+        websocket = await _session(uri, "A", "s-tok")
+        try:
+            _, (end,) = _write(path, ("tok", "s-tok", 600))
+            await _until(lambda: authenticator.entries[0].not_after == end)
+            path.write_text("{broken")
+            await _until(lambda: authenticator.stale_reason is not None)
+            await asyncio.sleep(3)
+            await asyncio.wait_for(await websocket.ping(), timeout=5)
+        finally:
+            await websocket.close()
+
+
+async def test_by_default_a_retired_token_keeps_its_session_and_is_recorded(
+    tmp_path: Path,
+) -> None:
+    path, _ = _write(tmp_path / "tokens.json", ("old", "s-old", None), ("new", "s-new", None))
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        hub = SynapseHub(journal=journal, authenticator=TokenSetAuthenticator(path))
+        async with running_hub(hub) as (_, uri):
+            websocket = await _session(uri, "A", "s-old")
+            try:
+                _write(path, ("new", "s-new", None))
+                kept = await _session(uri, "B", "s-new")
+                await kept.close()
+                await asyncio.wait_for(await websocket.ping(), timeout=5)
+            finally:
+                await websocket.close()
+            await _until(lambda: bool(_expired_rows(journal)))
+        rows = _expired_rows(journal)
+    finally:
+        journal.close()
+    assert rows == [{"token_id": "old", "agent": "A", "closed": False, "reason": "retired"}]
+
+
+async def test_a_failed_close_and_a_failed_check_are_logged(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    path, _ = _write(tmp_path / "tokens.json", ("gone", "s-gone", 600))
+    authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True)
+
+    async def failing_close(_websocket: Any, _reason: str) -> None:
+        raise OSError("socket already torn down")
+
+    class FailingObserver:
+        armed = False
+
+        def set_applied(self, _path: Path, _ids: tuple[str, ...]) -> None:
+            if self.armed:
+                raise RuntimeError("observer failed")
+
+        def set_rejected(self, _path: Path, _reason: str) -> None:
+            """Accept every rejection."""
+
+    sessions = TokenSessions(authenticator, None, failing_close)
+    authenticator.observe(sessions)
+    observer = FailingObserver()
+    authenticator.observe(observer)
+    socket = object()
+    sessions.admitted(socket, authenticator.entries[0], "A")
+    watcher = asyncio.create_task(sessions.watch(0.01))
+    try:
+        observer.armed = True
+        _write(path, ("other", "s-other", 600))
+        await _until(lambda: "cannot check the token-set file" in caplog.text)
+        await _until(lambda: "cannot close a connect-token session" in caplog.text)
+        # A set applied while a close is still pending leaves that session alone.
+        sessions.set_applied(path, ("other",))
+    finally:
+        watcher.cancel()
+        await asyncio.gather(watcher, return_exceptions=True)
+    sessions.closed(socket)
+    assert len(sessions) == 0
+    assert sessions.watches

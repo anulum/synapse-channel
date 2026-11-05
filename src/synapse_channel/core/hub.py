@@ -1890,6 +1890,11 @@ class SynapseHub(HubConfigView):
             forward_retrier = asyncio.create_task(message_forward_retry_loop(self))
             backgrounds.append(forward_retrier)
             forward_retrier.add_done_callback(lambda _task: stop.set())
+        token_set_watcher = self._ingress.token_set_watcher()
+        if token_set_watcher is not None:
+            watcher = asyncio.create_task(token_set_watcher)
+            backgrounds.append(watcher)
+            watcher.add_done_callback(lambda _task: stop.set())
         if self._live_checkpoint is not None:
             anchorer = asyncio.create_task(self._checkpoint_anchor_loop(self._live_checkpoint))
             backgrounds.append(anchorer)

@@ -26,7 +26,7 @@ hub never mutates it after ``__init__``; the guard warns through a logger named
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 from synapse_channel.core.auth import TokenAuthenticator
@@ -172,9 +172,14 @@ class HubIngress:
             audit.admitted(outcome.token_id, sender)
         elif audit is not None:
             audit.refused(outcome.token_id, outcome.code, sender)
-        if outcome.ok and self._token_sessions is not None:
-            self._token_sessions.admitted(websocket, outcome, sender)
+        if outcome.entry is not None and self._token_sessions is not None:
+            self._token_sessions.admitted(websocket, outcome.entry, sender)
         return outcome.ok, outcome.reason, outcome.principal
+
+    def token_set_watcher(self) -> Coroutine[Any, Any, None] | None:
+        """Return the token-set check loop a closing hub runs while serving, if any."""
+        sessions = self._token_sessions
+        return sessions.watch() if sessions is not None and sessions.watches else None
 
     def flush_audit(self) -> None:
         """Write the counts of refusal windows still open; called when serving stops."""

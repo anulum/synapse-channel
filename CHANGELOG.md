@@ -51,9 +51,13 @@ execution evidence when carrying a release claim forward.
 
 - **`synapse hub --token-expiry-closes-sessions`.** With `--token-set`, the hub
   closes a session with code `4401` when the token that admitted it reaches
-  its end of validity. Without the flag a session stays open as before. Either
-  way a hub with a journal records a `connect_token_session_expired` row that
-  says whether the hub closed the session. The flag without `--token-set` is
+  its end of validity, and when an applied set no longer admits it (the token
+  was retired, its secret changed or its agent list dropped the session's
+  agent). A closing hub checks the file every second. A changed `not_after`
+  moves the session's end. Without the flag a session stays open as before,
+  even after its token is retired. Either way a hub with a journal records a
+  `connect_token_session_ended` row with the reason (`expired` or `retired`)
+  and whether the hub closed the session. The flag without `--token-set` is
   refused.
 
 ### Fixed
