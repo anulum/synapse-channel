@@ -42,6 +42,7 @@ from synapse_channel.core.token_set import (
     connect_token_digest,
     load_token_set,
     parse_token_set,
+    state_directory,
 )
 from synapse_channel.durable_dir import sync_directory
 
@@ -193,7 +194,7 @@ def render_token_set(entries: Iterable[TokenEntry]) -> str:
 
 def lock_path(path: Path) -> Path:
     """Return the lock file that serialises changes to the set at ``path``."""
-    return path.parent / f".{path.name}.lockdir" / "lock"
+    return state_directory(path) / "lock"
 
 
 @contextmanager
@@ -223,7 +224,7 @@ def _changing(path: Path, lock_timeout: float) -> Iterator[tuple[TokenEntry, ...
 
 def _whole_seconds(moment: float | None, field: str) -> None:
     """Refuse an instant the strict stored form cannot hold."""
-    if moment is not None and moment != int(moment):
+    if moment is not None and (not math.isfinite(moment) or moment != int(moment)):
         raise TokenSetError(f"{field} must be a whole number of seconds")
 
 

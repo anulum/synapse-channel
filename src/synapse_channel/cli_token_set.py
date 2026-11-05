@@ -14,6 +14,7 @@ with ``--token-set PATH`` picks up each change on its next authentication.
 secret once (or writes it to an owner-only ``--secret-out`` file). ``retire``
 removes a token. ``list`` shows identifiers, bound agents and validity, never
 a secret or a digest. A change whose result would not validate writes nothing.
+``status`` shows whether each running hub that follows the set has it in force.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from synapse_channel.token_set_admin import (
     retire_token,
     token_status,
 )
+from synapse_channel.token_set_hub_status import read_hub_states
 
 DEFAULT_VALID_DAYS = 90
 """Validity of a new token when no end is given."""
@@ -175,6 +177,41 @@ def _cmd_list(args: argparse.Namespace, *, clock: Callable[[], float] = time.tim
     return 0
 
 
+def _cmd_status(args: argparse.Namespace) -> int:
+    """Show each hub's state for the set; exit 0 only when every running hub applied it."""
+    path = Path(args.path).expanduser()
+    try:
+        states = read_hub_states(path)
+    except (OSError, PrivateDirError) as exc:
+        print(f"synapse token-set status: {exc}", file=sys.stderr)
+        return 1
+    running = [state for state in states if state.running]
+    healthy = bool(running) and all(state.state == "applied" for state in running)
+    if args.json:
+        rows = [
+            {
+                "file": state.name,
+                "running": state.running,
+                "state": state.state,
+                "since": state.since,
+                "started": state.started,
+                "pid": state.pid,
+                "reason_code": state.reason_code,
+                "signature": state.signature,
+            }
+            for state in states
+        ]
+        print(json.dumps({"path": str(path), "healthy": healthy, "hubs": rows}, indent=2))
+        return 0 if healthy else 1
+    if not running:
+        print(f"{path}: no running hub reports this set; its state is unknown")
+    for state in states:
+        detail = f" ({state.reason_code})" if state.reason_code else ""
+        since = f" since {state.since}" if state.since else ""
+        print(f"{state.name}: {state.state}{detail}{since}")
+    return 0 if healthy else 1
+
+
 def _instant_or_none(moment: float | None) -> str | None:
     """Format an optional instant."""
     return None if moment is None else format_instant(moment)
@@ -229,6 +266,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     retire.add_argument("path", help="Token-set file.")
     retire.add_argument("--id", required=True, help="Identifier of the token to retire.")
     retire.set_defaults(func=_cmd_retire)
+
+    status = nested.add_parser(
+        "status", help="Show whether each running hub has the set on disk in force."
+    )
+    status.add_argument("path", help="Token-set file.")
+    status.add_argument("--json", action="store_true", help="Print a JSON document.")
+    status.set_defaults(func=_cmd_status)
 
     listing = nested.add_parser("list", help="Show identifiers, agents and validity.")
     listing.add_argument("path", help="Token-set file.")

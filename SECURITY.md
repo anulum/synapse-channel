@@ -371,9 +371,15 @@ When that boundary is crossed, the proportionate controls are:
   retire. With that flag the hub closes a session with code `4401` when its
   token reaches `not_after` (reason "connect token expired") and when a set
   is applied that no longer admits it, because the token was removed, its
-  secret changed or its agent list no longer names the session (reason
-  "connect token retired"). A closing hub checks the file every second, so a
-  retire takes effect without waiting for a new connection. `--token-set`
+  secret changed, its agent list no longer names the session or its
+  `not_before` moved into the future (reason "connect token retired"). A closing hub checks the file every second, so a
+  retire takes effect without waiting for a new connection. `synapse
+  token-set status PATH` shows, for each running hub that follows the set,
+  whether the file on disk is in force or the hub kept its last accepted set
+  (with a reason code: `missing`, `unsafe` or `invalid`). Each hub publishes
+  that state in an owner-only file beside the set and holds a lock on it
+  while it serves; a hub whose lock is free is gone and is reported
+  `unknown`, never as applied. `--token-set`
   cannot be combined with `--token`, `--token-file` or `SYNAPSE_TOKEN`. The
   digest is computed over the prefix
   `synapse-channel:connect-token:v1` and a NUL byte followed by the secret;

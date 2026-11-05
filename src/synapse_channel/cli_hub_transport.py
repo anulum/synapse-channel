@@ -31,6 +31,7 @@ from synapse_channel.core.spend_ledger import SpendLedger, SpendLedgerError
 from synapse_channel.core.tls import HubTLSConfigError
 from synapse_channel.core.token_set import TokenSetAuthenticator, TokenSetError
 from synapse_channel.core.unbound_identity_guard import refusal_message, unbound_identity_problem
+from synapse_channel.token_set_hub_status import publish_hub_state
 
 _PRECHECK_LOGGER = logging.getLogger(__name__ + ".exposure_precheck")
 _PRECHECK_LOGGER.addHandler(logging.NullHandler())
@@ -104,13 +105,15 @@ def _connect_authenticator(args: argparse.Namespace) -> TokenAuthenticator | Non
     token_set = getattr(args, "token_set", None)
     if token_set:
         try:
-            return TokenSetAuthenticator(
+            authenticator = TokenSetAuthenticator(
                 token_set,
                 expiry_closes_sessions=bool(getattr(args, "token_expiry_closes_sessions", False)),
             )
         except (SecretFileError, TokenSetError) as exc:
             print(f"synapse hub: {exc}", file=sys.stderr)
             raise HubStartupRefused() from None
+        publish_hub_state(authenticator)
+        return authenticator
     return TokenAuthenticator([args.token]) if args.token else None
 
 

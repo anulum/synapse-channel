@@ -364,6 +364,8 @@ def test_fractional_instants_are_refused_plainly(tmp_path: Path) -> None:
         add_token(path, token_id="x", secret=generate_secret(), not_before=NOW + 0.5)
     with pytest.raises(TokenSetError, match="not_after must be a whole number of seconds"):
         add_token(path, token_id="x", secret=generate_secret(), not_after=NOW + 0.5)
+    with pytest.raises(TokenSetError, match="not_after must be a whole number of seconds"):
+        add_token(path, token_id="x", secret=generate_secret(), not_after=float("inf"))
     assert not path.exists()
 
 

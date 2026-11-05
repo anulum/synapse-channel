@@ -359,3 +359,24 @@ async def test_the_check_loop_survives_a_failing_check(
         watcher.cancel()
         await asyncio.gather(watcher, return_exceptions=True)
     assert "cannot check the token-set file" in caplog.text
+
+
+async def test_a_start_moved_into_the_future_retires_the_session(tmp_path: Path) -> None:
+    path, _ = _write(tmp_path / "tokens.json", ("tok", "s-tok", None))
+    authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True)
+    async with running_hub(SynapseHub(authenticator=authenticator)) as (_, uri):
+        websocket = await _session(uri, "A", "s-tok")
+        try:
+            later = {
+                "id": "tok",
+                "sha256": connect_token_digest("s-tok"),
+                "not_before": _instant(time.time() + 3600),
+            }
+            staging = path.with_name("tokens.json.new")
+            staging.write_text(json.dumps({"version": 1, "tokens": [later]}))
+            os.chmod(staging, 0o600)
+            os.replace(staging, path)
+            await asyncio.wait_for(websocket.wait_closed(), timeout=10)
+            assert websocket.close_reason == RETIRED_CLOSE_REASON
+        finally:
+            await websocket.close()

@@ -40,7 +40,9 @@ execution evidence when carrying a release claim forward.
   with the hub's parser and only then renames it into place, so a change that
   would leave an invalid file, and with it a retired token still in force,
   writes nothing. A change waits at most 10 seconds for another change to the
-  same set.
+  same set. `status` shows whether each running hub that follows the set has
+  the file on disk in force or kept its last accepted set, with a reason code;
+  a hub that is gone is reported `unknown`.
 
 - **Connect-token audit rows.** A hub that follows a token set and has a
   journal records the set it applied, each file it rejected and why, the

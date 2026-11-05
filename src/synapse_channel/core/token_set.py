@@ -241,6 +241,22 @@ def load_token_set(path: Path) -> tuple[TokenEntry, ...]:
     return parse_token_set(text)
 
 
+def state_directory(path: Path) -> Path:
+    """Return the owner-only directory beside a set that holds its lock and hub states.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        The token-set file.
+
+    Returns
+    -------
+    pathlib.Path
+        ``.<name>.lockdir`` in the set's directory.
+    """
+    return path.parent / f".{path.name}.lockdir"
+
+
 def _signature(path: Path) -> tuple[int, ...] | None:
     """Return the identity and access state of ``path`` without following a link.
 
@@ -310,6 +326,7 @@ class TokenSetAuthenticator(TokenAuthenticator):
         self._signature = _signature(self._path)
         self._entries = load_token_set(self._path)
         self._stale_reason: str | None = None
+        self._stale_code: str | None = None
         self._observers: list[TokenSetObserver] = []
 
     def observe(self, observer: TokenSetObserver) -> None:
@@ -344,6 +361,16 @@ class TokenSetAuthenticator(TokenAuthenticator):
         return self._stale_reason
 
     @property
+    def stale_code(self) -> str | None:
+        """Why the file is not in force as a code (``missing``, ``unsafe``, ``invalid``)."""
+        return self._stale_code
+
+    @property
+    def signature_digest(self) -> str:
+        """SHA-256 hex of the file status last seen, without any file content."""
+        return hashlib.sha256(repr(self._signature).encode("ascii")).hexdigest()
+
+    @property
     def is_empty(self) -> bool:
         """Whether the set in force admits no connection."""
         return not self._entries
@@ -368,23 +395,28 @@ class TokenSetAuthenticator(TokenAuthenticator):
             return
         self._signature = current
         if current is None:
-            self._mark_stale(f"{self._path} is missing")
+            self._mark_stale(f"{self._path} is missing", "missing")
             return
         try:
             self._entries = load_token_set(self._path)
-        except (SecretFileError, TokenSetError) as exc:
-            self._mark_stale(str(exc))
+        except SecretFileError as exc:
+            self._mark_stale(str(exc), "unsafe")
+            return
+        except TokenSetError as exc:
+            self._mark_stale(str(exc), "invalid")
             return
         self._stale_reason = None
+        self._stale_code = None
         for observer in self._observers:
             try:
                 observer.set_applied(self._path, self._token_ids())
             except Exception:
                 _LOG.exception("a token-set observer failed on an applied set")
 
-    def _mark_stale(self, reason: str) -> None:
+    def _mark_stale(self, reason: str, code: str) -> None:
         """Record and log that the file on disk is not in force."""
         self._stale_reason = reason
+        self._stale_code = code
         _LOG.warning("token set not applied (%s); the last accepted set stays in force", reason)
         for observer in self._observers:
             try:

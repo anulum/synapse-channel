@@ -19,7 +19,8 @@ is already open when its token expires or leaves the set depends on the set:
   hub ended it (``closed`` true).
 
 A token no longer admits a session when no entry has its identifier and
-digest, or when that entry no longer names the session's agent. A changed
+digest, when that entry no longer names the session's agent, or when its
+``not_before`` has moved into the future. A changed
 ``not_after`` moves the session's end to the new value, earlier or later.
 In closing mode the hub checks the file every :data:`WATCH_INTERVAL_SECONDS`
 as well as at each authentication, so a retire takes effect without waiting
@@ -66,10 +67,12 @@ class _Session:
     closed_by_hub: bool = False
 
 
-def _still_admits(entry: TokenEntry, session: _Session) -> bool:
-    """Whether ``entry`` is the session's token and still names its agent."""
-    return entry.digest == session.entry.digest and (
-        not entry.agents or session.agent in entry.agents
+def _still_admits(entry: TokenEntry, session: _Session, now: float) -> bool:
+    """Whether ``entry`` is the session's token, names its agent and has begun."""
+    return (
+        entry.digest == session.entry.digest
+        and (not entry.agents or session.agent in entry.agents)
+        and (entry.not_before is None or now >= entry.not_before)
     )
 
 
@@ -153,11 +156,12 @@ class TokenSessions:
     def set_applied(self, path: Path, token_ids: tuple[str, ...]) -> None:
         """Re-judge every followed session against the set now in force."""
         current = {entry.token_id: entry for entry in self._authenticator.entries}
+        now = self._authenticator.now()
         for websocket, session in list(self._sessions.items()):
             if session.closed_by_hub:
                 continue
             entry = current.get(session.entry.token_id)
-            if entry is None or not _still_admits(entry, session):
+            if entry is None or not _still_admits(entry, session, now):
                 session.ended = session.ended or "retired"
                 if self._closes:
                     self._end(websocket, session, RETIRED_CLOSE_REASON)
