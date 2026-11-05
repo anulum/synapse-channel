@@ -21,7 +21,7 @@ import pytest
 
 from cli_e2e_helpers import CliResult, git_repo, git_run, run_cli
 from synapse_channel import cli
-from synapse_channel.mutation_governance import inspect_mutation_governance
+from synapse_channel.mutation_governance import _READ_LIMIT, inspect_mutation_governance
 
 _SYNAPSE_BIN = Path(sys.executable).with_name("synapse")
 _PRE_COMMIT_BIN = Path(
@@ -451,3 +451,107 @@ def test_real_cli_reports_unsafe_staged_gate_files(tmp_path: Path) -> None:
     assert gate["hook_state"] == "invalid"
     assert gate["gate_status"] == "incomplete"
     assert (outside_config.read_bytes(), outside_hook.read_bytes()) == before
+
+
+_GATE_THAT_WOULD_LOOK_CONFIGURED = """\
+repos:
+- repo: local
+  hooks:
+  - id: staged-claim-coverage
+    stages: [pre-commit]
+    always_run: true
+    pass_filenames: false
+    entry: run_staged_claim_hook.py
+"""
+
+_OPEN_SWAP_PROGRAM = r"""
+import contextlib
+import io
+import json
+import os
+import sys
+from pathlib import Path
+
+config, replacement, mode, home, repo, limit_text = sys.argv[1:7]
+limit = int(limit_text)
+armed = True
+
+def swap_at_open(event, args):
+    global armed
+    if not armed or event != "open" or not args or args[0] != config:
+        return
+    armed = False
+    if mode == "replaced-inode":
+        Path(replacement).replace(config)
+        return
+    extra = (limit + 1) - Path(config).stat().st_size
+    descriptor = os.open(config, os.O_WRONLY | os.O_APPEND)
+    try:
+        os.write(descriptor, b"x" * extra)
+    finally:
+        os.close(descriptor)
+
+sys.addaudithook(swap_at_open)
+from synapse_channel.cli import main
+
+captured = io.StringIO()
+with contextlib.redirect_stdout(captured):
+    code = main([
+        "adapters", "mutation-status", "--home", home, "--project", repo, "--json",
+    ])
+if code != 0 or armed:
+    raise SystemExit(f"code={code} armed={armed}\n{captured.getvalue()}")
+json.loads(captured.getvalue())
+sys.stdout.write(captured.getvalue())
+"""
+
+
+@pytest.mark.parametrize("mode", ["replaced-inode", "grown-past-limit"])
+def test_real_cli_refuses_a_precommit_file_that_changes_before_open(
+    tmp_path: Path, mode: str
+) -> None:
+    """A real rename or append at open must not become a configured gate."""
+    repo = git_repo(tmp_path / "repo")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    config = repo / ".pre-commit-config.yaml"
+    config.write_text("repos: []\n", encoding="utf-8")
+    before = config.stat()
+    replacement = tmp_path / "replacement.yaml"
+    replacement.write_text(_GATE_THAT_WOULD_LOOK_CONFIGURED, encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            _OPEN_SWAP_PROGRAM,
+            str(config),
+            str(replacement),
+            mode,
+            str(home),
+            str(repo),
+            str(_READ_LIMIT),
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    gate = report["staged_gate"]
+    assert isinstance(gate, dict)
+    assert gate["repository"] is not None
+    assert gate["configuration_state"] == "invalid"
+    assert gate["hook_state"] == "not-installed"
+    assert gate["gate_status"] == "incomplete"
+    after = config.stat()
+    if mode == "replaced-inode":
+        assert (after.st_dev, after.st_ino) != (before.st_dev, before.st_ino)
+        assert config.read_text(encoding="utf-8") == _GATE_THAT_WOULD_LOOK_CONFIGURED
+    else:
+        assert (after.st_dev, after.st_ino) == (before.st_dev, before.st_ino)
+        assert after.st_size > _READ_LIMIT
+        assert config.read_bytes().startswith(b"repos: []\n")
