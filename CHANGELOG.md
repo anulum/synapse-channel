@@ -18,6 +18,18 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- **Rotating connect tokens.** `synapse hub --token-set PATH` accepts an
+  owner-only JSON set of identified tokens, each stored as a digest with an
+  optional validity window and agent names. Several tokens can be valid at
+  once, and the hub re-reads the file when it changes, so a token rotates
+  without a restart. A file that fails validation, becomes a link, loses its
+  owner-only mode or disappears is not applied; the hub keeps the last set it
+  accepted. The set cannot be combined with `--token`, `--token-file` or
+  `SYNAPSE_TOKEN`. `--secure`, `--team-secure` and `--paranoid` accept it as
+  the connect token.
+
 ### Fixed
 
 - **`synapse inbox` waits for a closing connection of the same identity.** A

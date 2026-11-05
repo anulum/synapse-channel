@@ -24,6 +24,7 @@ import argparse
 from dataclasses import dataclass
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.token_set import connect_token_configured
 
 
 class TeamSecureModeError(SynapseError, ValueError):
@@ -80,9 +81,9 @@ def apply_team_secure_hub_profile(args: argparse.Namespace) -> TeamSecureHubRepo
     if not bool(getattr(args, "team_secure", False)):
         return None
 
-    if not getattr(args, "token", None):
+    if not connect_token_configured(args):
         raise TeamSecureModeError(
-            "team-secure mode requires --token or --token-file "
+            "team-secure mode requires --token, --token-file or --token-set "
             "(identity and role grants are only as strong as the connect gate)"
         )
     identity_trust = str(getattr(args, "identity_trust", "") or "").strip()

@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from dataclasses import replace
@@ -25,8 +26,10 @@ from synapse_channel.core.multihub_serving_config import (
     load_multihub_serving_config,
 )
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
+from synapse_channel.core.secret_files import SecretFileError
 from synapse_channel.core.spend_ledger import SpendLedger, SpendLedgerError
 from synapse_channel.core.tls import HubTLSConfigError
+from synapse_channel.core.token_set import TokenSetAuthenticator, TokenSetError
 from synapse_channel.core.unbound_identity_guard import refusal_message, unbound_identity_problem
 
 _PRECHECK_LOGGER = logging.getLogger(__name__ + ".exposure_precheck")
@@ -96,13 +99,25 @@ def configure_server_tls(ctx: HubStartup) -> None:
         raise HubStartupRefused() from None
 
 
+def _connect_authenticator(args: argparse.Namespace) -> TokenAuthenticator | None:
+    """Build the connect authenticator from a token set or a shared secret."""
+    token_set = getattr(args, "token_set", None)
+    if token_set:
+        try:
+            return TokenSetAuthenticator(token_set)
+        except (SecretFileError, TokenSetError) as exc:
+            print(f"synapse hub: {exc}", file=sys.stderr)
+            raise HubStartupRefused() from None
+    return TokenAuthenticator([args.token]) if args.token else None
+
+
 def guard_transport_exposure(ctx: HubStartup) -> None:
     """Refuse unsafe transport exposure before opening a durable store."""
     ctx.config = replace(
         ctx.config,
         auth=replace(
             ctx.config.auth,
-            authenticator=TokenAuthenticator([ctx.args.token]) if ctx.args.token else None,
+            authenticator=_connect_authenticator(ctx.args),
         ),
     )
     try:

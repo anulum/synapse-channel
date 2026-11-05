@@ -31,6 +31,7 @@ from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.hub import DEFAULT_MAX_CONNECTIONS_PER_HOST
 from synapse_channel.core.paranoid import apply_paranoid_hub_profile
 from synapse_channel.core.team_secure import apply_team_secure_hub_profile
+from synapse_channel.core.token_set import connect_token_configured
 
 #: Per-agent message rate ceiling (messages/second) and burst applied when the
 #: parser value is disabled. A stricter positive value is preserved.
@@ -88,8 +89,8 @@ class SecureHubReport:
 def _missing_material(args: argparse.Namespace) -> list[str]:
     """Return every required operator input that is absent, for one aggregate error."""
     missing: list[str] = []
-    if not getattr(args, "token", None):
-        missing.append("--token or --token-file (connect-token authentication)")
+    if not connect_token_configured(args):
+        missing.append("--token, --token-file or --token-set (connect-token authentication)")
     if not getattr(args, "db", None):
         missing.append("--db (durable event log)")
     if not str(getattr(args, "identity_trust", "") or "").strip():

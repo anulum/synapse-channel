@@ -48,7 +48,7 @@ def test_cmd_hub_paranoid_refuses_missing_token(capsys: pytest.CaptureFixture[st
     """Paranoid hub startup fails closed before building an unauthenticated hub."""
     assert cli_processes._cmd_hub(_hub_ns(paranoid=True, db="hub.db"), runner=_close_runner) == 2
 
-    assert "paranoid mode requires --token or --token-file" in capsys.readouterr().err
+    assert "paranoid mode requires --token, --token-file or --token-set" in capsys.readouterr().err
 
 
 def test_cmd_hub_paranoid_refuses_missing_durable_event_log(

@@ -80,6 +80,7 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "attachment",
         ValueError,
     ),
+    "TokenSetError": ("synapse_channel.core.token_set", "token_set_invalid", ValueError),
     "UnsupportedProtectedWriteHistoryError": (
         "synapse_channel.core.journal",
         "unsupported_protected_write_history",

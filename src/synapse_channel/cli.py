@@ -334,6 +334,26 @@ def build_parser(*, command: str | None = None) -> argparse.ArgumentParser:
 TOKEN_ENV = "SYNAPSE_TOKEN"  # nosec B105
 
 
+def _token_set_conflict(args: argparse.Namespace) -> str | None:
+    """Refuse a token set beside any single shared-secret source.
+
+    A token set carries identifiers and validity windows. A second, unexpiring
+    secret beside it would admit connections outside that lifecycle.
+    """
+    if not getattr(args, "token_set", None):
+        return None
+    if (
+        args.token is None
+        and getattr(args, "token_file", None) is None
+        and not os.environ.get(TOKEN_ENV)
+    ):
+        return None
+    return (
+        f"synapse {args.command}: --token-set cannot be combined with --token, "
+        f"--token-file or {TOKEN_ENV}"
+    )
+
+
 def _resolve_token(args: argparse.Namespace) -> str | None:
     """Resolve the hub token from ``--token``, then ``--token-file``, then the env var.
 
@@ -417,6 +437,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
     if hasattr(args, "token"):
+        if conflict := _token_set_conflict(args):
+            print(conflict, file=sys.stderr)
+            return 2
         try:
             if args.command == "mcp" and args.token is not None and args.token_file is not None:
                 print("synapse mcp: use either --token or --token-file", file=sys.stderr)

@@ -352,6 +352,23 @@ When that boundary is crossed, the proportionate controls are:
   environment variable over `--token`, which is visible in the process list.
   Owner-file readers open every path component with `O_NOFOLLOW`; configure the
   real path rather than a symlinked ancestor directory.
+- **Rotating connect tokens.** `synapse hub --token-set PATH` reads an
+  owner-only JSON file of identified tokens instead of one secret. Each entry
+  holds an `id`, the SHA-256 digest of its secret (never the secret), optional
+  `agents` it admits, and an optional `not_before`/`not_after` window in UTC
+  (`YYYY-MM-DDTHH:MM:SSZ`). Several entries can be valid together, so a token is
+  rotated by adding the new entry, moving clients to it, then removing the old
+  one. The hub re-reads the file when it changes, without a restart; replace
+  the file atomically (write a new file, then rename it over the old one). A
+  file that fails validation, turns into a symbolic link, becomes readable by
+  others or disappears is not applied: the hub keeps the last set it accepted,
+  and the old tokens keep working until a valid file appears. Expiry and
+  retirement refuse new connections; sessions already connected stay
+  connected. `--token-set` cannot be combined with `--token`, `--token-file` or
+  `SYNAPSE_TOKEN`. The digest is computed over the prefix
+  `synapse-channel:connect-token:v1` and a NUL byte followed by the secret;
+  generate secrets with at least 256 bits of randomness, because the digest of
+  a short or guessable secret can be found offline from a copied file.
 - **Bounded resources.** A `--max-clients` connection cap, a `--max-msg-kb` frame
   size cap, per-agent rate limiting, bounded chat history, a bounded progress
   ledger, a bounded relay log, and bounded JSON decode depth limit their named

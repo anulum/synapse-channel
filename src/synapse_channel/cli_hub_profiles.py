@@ -25,6 +25,7 @@ from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file, read_secret_lines
 from synapse_channel.core.secure import SecureModeError, apply_secure_hub_profile
 from synapse_channel.core.team_secure import TeamSecureModeError, apply_team_secure_hub_profile
+from synapse_channel.core.token_set import connect_token_configured
 
 
 def _resolve_file_backed_secrets(args: argparse.Namespace) -> None:
@@ -90,7 +91,7 @@ def _apply_auto_rate_policy(args: argparse.Namespace) -> None:
     ``--secure`` is active the decision stands down (secure already normalises
     limits). Local-first loopback single-seat hubs stay unbounded.
     """
-    token_configured = bool(args.token or getattr(args, "token_file", None))
+    token_configured = connect_token_configured(args) or bool(getattr(args, "token_file", None))
     multi_seat = _hub_multi_seat_intent(args)
     bridge_exposed = _hub_bridge_exposed(args)
     posture = HubExposurePosture(

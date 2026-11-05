@@ -32,7 +32,22 @@ from synapse_channel.core.message_auth import DEFAULT_MESSAGE_AUTH_WINDOW_SECOND
 def add_hub_admission_arguments(hub: argparse.ArgumentParser) -> None:
     """Add the security options and the verdict-gate options to the hub parser."""
     add_hub_security_arguments(hub)
+    add_hub_token_set_argument(hub)
     add_policy_arguments(hub)
+
+
+def add_hub_token_set_argument(hub: argparse.ArgumentParser) -> None:
+    """Add ``--token-set``, the identified and rotatable connect-token source."""
+    hub.add_argument(
+        "--token-set",
+        default=None,
+        help=(
+            "Owner-only JSON token set: several identified tokens, each stored as a "
+            "digest with an optional validity window and agent names. The hub "
+            "re-reads it when it changes, so tokens rotate without a restart. "
+            "Cannot be combined with --token, --token-file or SYNAPSE_TOKEN."
+        ),
+    )
 
 
 def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
