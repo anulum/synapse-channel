@@ -212,3 +212,108 @@ async def test_resource_primary_fields_work_without_a_journal() -> None:
     assert hub.remembered == [(data, hub.broadcasts[0])]
     assert hub.broadcasts[0]["type"] == MessageType.RESOURCE_OFFERED
     assert hub.sent == []
+
+
+async def test_unkeyed_offer_with_a_journal_records_one_resource(tmp_path: Path) -> None:
+    """A journalled offer without an idempotency key still records one resource."""
+    store = EventStore(tmp_path / "unkeyed.db")
+    try:
+        hub = _RecordingHub(journal=store)
+        data: dict[str, Any] = {"kind": "disk", "name": "scratch", "capacity": 2}
+        await offerings.handle_resource(hub, "WORKER", data, object())
+        assert set(hub.state.resources) == {"WORKER:disk:scratch"}
+        assert hub.state.resources["WORKER:disk:scratch"].capacity == 2
+        assert [event.kind for event in store.read_all()] == [EventKind.RESOURCE]
+        assert store.read_operations() == ()
+        assert len(hub.broadcasts) == 1
+        assert hub.sent == []
+        assert hub.remembered == [(data, hub.broadcasts[0])]
+    finally:
+        store.close()
+
+
+async def test_same_idempotency_key_replays_and_a_changed_body_conflicts(
+    tmp_path: Path,
+) -> None:
+    """One key returns the original offer; a different body does not create another."""
+    store = EventStore(tmp_path / "replay.db")
+    try:
+        hub = _RecordingHub(journal=store)
+        data: dict[str, Any] = {
+            "sender": "WORKER",
+            "type": MessageType.RESOURCE,
+            "kind": "gpu",
+            "name": "card-0",
+            "idem_key": "offer-1",
+        }
+        await offerings.handle_resource(hub, "WORKER", data, object())
+        original = hub.broadcasts[0]
+        events_after_insert = len(store.read_all())
+
+        replay_socket = object()
+        await offerings.handle_resource(hub, "WORKER", dict(data), replay_socket)
+
+        assert hub.broadcasts == [original]
+        assert hub.sent == [(replay_socket, original)]
+        assert set(hub.state.resources) == {"WORKER:gpu:card-0"}
+        assert len(store.read_all()) == events_after_insert
+
+        conflict_socket = object()
+        changed = dict(data)
+        changed["name"] = "card-1"
+        await offerings.handle_resource(hub, "WORKER", changed, conflict_socket)
+
+        assert len(hub.sent) == 2
+        sent_socket, conflict = hub.sent[1]
+        assert sent_socket is conflict_socket
+        assert conflict["type"] == MessageType.ERROR
+        assert conflict["target"] == "WORKER"
+        assert conflict["error_code"] == "idempotency_conflict"
+        assert conflict["payload"] == "Idempotency key was already used for a different request."
+        assert set(hub.state.resources) == {"WORKER:gpu:card-0"}
+        assert hub.broadcasts == [original]
+        assert len(store.read_all()) == events_after_insert
+    finally:
+        store.close()
+
+
+async def test_keyed_offer_over_quota_is_refused_without_a_second_record(
+    tmp_path: Path,
+) -> None:
+    """A new idempotency key still refuses when the agent is already at quota."""
+    store = EventStore(tmp_path / "quota.db")
+    try:
+        hub = _RecordingHub(journal=store, max_offers_per_agent=1)
+        first: dict[str, Any] = {
+            "sender": "WORKER",
+            "type": MessageType.RESOURCE,
+            "kind": "disk",
+            "name": "a",
+            "idem_key": "one",
+        }
+        await offerings.handle_resource(hub, "WORKER", first, object())
+        events_after_first = len(store.read_all())
+        socket = object()
+        await offerings.handle_resource(
+            hub,
+            "WORKER",
+            {
+                "sender": "WORKER",
+                "type": MessageType.RESOURCE,
+                "kind": "cpu",
+                "name": "b",
+                "idem_key": "two",
+            },
+            socket,
+        )
+        assert len(hub.sent) == 1
+        sent_socket, error = hub.sent[0]
+        assert sent_socket is socket
+        assert error["type"] == MessageType.ERROR
+        assert error["target"] == "WORKER"
+        assert error["payload"] == "resource offer quota exceeded"
+        assert set(hub.state.resources) == {"WORKER:disk:a"}
+        assert len(hub.broadcasts) == 1
+        assert len(store.read_all()) == events_after_first
+    finally:
+        store.close()
