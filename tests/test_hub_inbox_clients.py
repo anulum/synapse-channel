@@ -93,7 +93,12 @@ async def test_cli_reader_waits_for_its_identity_to_close_and_never_displaces_it
                 home = tmp_path / "reader"
                 refused = await read_hub_inbox(uri=uri, identity="P/reader", home=home, timeout=0.5)
                 assert refused == 1
-                assert json.loads(capsys.readouterr().out)["available"] is False
+                outcome = capsys.readouterr()
+                assert json.loads(outcome.out)["available"] is False
+                assert (
+                    "inbox read failed: ValueError: hub inbox connection is unavailable "
+                    "(close code 4009, reason 'name conflict')"
+                ) in outcome.err
                 assert holder.agent.connection is not None and not holder.task.done()
                 assert not hub_inbox_cursor_path(home, uri, "P/reader").exists()
 

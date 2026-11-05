@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 import json
 import math
+import sys
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
@@ -124,6 +125,33 @@ def validate_inbox_page(
     return page
 
 
+def _unavailable(agent: SynapseAgent) -> str:
+    """Name why the inbox connection did not become ready, with the hub's close."""
+    return (
+        "hub inbox connection is unavailable "
+        f"(close code {agent.last_close_code}, reason {agent.last_close_reason!r})"
+    )
+
+
+def _report_failure(identity: str, exc: BaseException) -> None:
+    """Print the unchanged refusal page and name the cause on stderr.
+
+    Stdout keeps the stable refusal object; stderr carries the exception type
+    and message so a failed read can be diagnosed without changing that object.
+    """
+    print(
+        json.dumps(
+            {
+                "available": False,
+                "identity": identity,
+                "error": "cannot read durable hub inbox; cursor unchanged",
+            }
+        ),
+        flush=True,
+    )
+    print(f"inbox read failed: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+
+
 async def read_hub_inbox(
     *,
     uri: str,
@@ -186,7 +214,7 @@ async def read_hub_inbox(
         )
         task = await register_owner(agent, timeout)
         if task is None:
-            raise ValueError("hub inbox connection is unavailable")
+            raise ValueError(_unavailable(agent))
         await agent.send_message(
             MessageType.HISTORY_REQUEST,
             target="System",
@@ -210,17 +238,8 @@ async def read_hub_inbox(
         )
         save_hub_inbox_cursor(path, HubInboxCursor(page["hub_id"], page["cursor"]))
         return 0
-    except (TimeoutError, OSError, ValueError, WebSocketException):
-        print(
-            json.dumps(
-                {
-                    "available": False,
-                    "identity": identity,
-                    "error": "cannot read durable hub inbox; cursor unchanged",
-                }
-            ),
-            flush=True,
-        )
+    except (TimeoutError, OSError, ValueError, WebSocketException) as exc:
+        _report_failure(identity, exc)
         return 1
     finally:
         if agent is not None:

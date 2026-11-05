@@ -502,3 +502,44 @@ def test_the_task_listing_is_bounded_and_survives_a_failed_read(
     monkeypatch.undo()
     assert listing == []
     assert hang._await_chain(None) == ["  awaiting NoneType"]
+
+
+def test_the_task_listing_skips_a_dead_weak_proxy() -> None:
+    """A full suite holds dead weakref proxies; listing tasks must not touch them.
+
+    ``isinstance`` dereferences a proxy and raises ``ReferenceError`` once its
+    referent is gone, which broke the listing on every hosted runner.
+    """
+    import asyncio
+    import gc
+    import weakref
+
+    import tools.pytest_hang_identity as hang
+
+    class Referent:
+        pass
+
+    referent = Referent()
+    proxies = [weakref.proxy(referent)]
+    del referent
+    gc.collect()
+    assert any(type(item) is weakref.ProxyType for item in gc.get_objects())
+
+    async def waiting(event: asyncio.Event) -> None:
+        await event.wait()
+
+    async def scenario() -> list[str]:
+        event = asyncio.Event()
+        task = asyncio.create_task(waiting(event), name="beside-a-dead-proxy")
+        await asyncio.sleep(0)
+        listing = hang._pending_task_lines()
+        event.set()
+        await task
+        return listing
+
+    listing = asyncio.run(scenario())
+    assert (
+        "PENDING TASK beside-a-dead-proxy "
+        "coro=test_the_task_listing_skips_a_dead_weak_proxy.<locals>.waiting" in listing
+    )
+    assert len(proxies) == 1

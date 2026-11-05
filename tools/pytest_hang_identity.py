@@ -113,7 +113,11 @@ def _pending_task_lines() -> list[str]:
 
     try:
         tasks = [
-            item for item in gc.get_objects() if isinstance(item, asyncio.Task) and not item.done()
+            # type() does not dereference a weakref proxy; isinstance() raises
+            # ReferenceError on a dead one, and full suites hold such proxies.
+            item
+            for item in gc.get_objects()
+            if issubclass(type(item), asyncio.Task) and not item.done()
         ]
         lines: list[str] = []
         for task in tasks[:_TASK_LIMIT]:
