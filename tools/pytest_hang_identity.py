@@ -11,6 +11,11 @@ The standard dump names threads and frames only. A hung shard then cannot say
 which test was running. This watcher uses the same timeout and writes one
 ``TIMEOUT nodeid=`` line. Pytest still prints its own traceback.
 
+The thread dump cannot show an event loop's tasks: a test waiting on a reply
+that never comes shows only the loop idle in its selector. After the node id
+the watcher therefore lists every unfinished asyncio task with the chain of
+coroutines it is suspended in, down to the awaited future.
+
 The dump reads every thread's frames while those threads keep running. On
 macOS the dump once stopped mid-line where this watcher wrote its line, and
 the process never exited; a thread executing Python during the dump is the
@@ -22,11 +27,13 @@ the previous test's dump by then.
 
 from __future__ import annotations
 
+import gc
 import os
 import sys
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
@@ -42,6 +49,9 @@ _pause = threading.Event()
 # Seconds between the faulthandler timeout and this watcher's report, so the
 # dump has finished before the watcher runs again.
 _REPORT_GRACE = 0.5
+# Bounds for the task listing written after a timeout.
+_TASK_LIMIT = 50
+_AWAIT_DEPTH = 24
 
 
 @dataclass
@@ -62,6 +72,63 @@ def _write_timeout(nodeid: str) -> None:
     if _stderr_fd < 0:
         return
     os.write(_stderr_fd, f"TIMEOUT nodeid={nodeid}\n".encode())
+    lines = _pending_task_lines()
+    if lines:
+        os.write(_stderr_fd, ("\n".join(lines) + "\n").encode(errors="replace"))
+
+
+def _await_chain(coroutine: Any) -> list[str]:
+    """Return one line per coroutine a task is suspended in, then the awaited object."""
+    lines: list[str] = []
+    current = coroutine
+    for _ in range(_AWAIT_DEPTH):
+        frame = getattr(current, "cr_frame", None) or getattr(current, "gi_frame", None)
+        if frame is None:
+            # Awaiting a future goes through its iterator; name the future.
+            lines.append(f"  awaiting {type(current).__name__.removesuffix('Iter')}")
+            return lines
+        code = frame.f_code
+        lines.append(f'  File "{code.co_filename}", line {frame.f_lineno}, in {code.co_name}')
+        following = getattr(current, "cr_await", None) or getattr(current, "gi_yieldfrom", None)
+        if following is None:
+            return lines
+        current = following
+    lines.append("  awaiting: deeper chain omitted")
+    return lines
+
+
+def _pending_task_lines() -> list[str]:
+    """Describe every unfinished asyncio task and where it is suspended.
+
+    The watcher thread holds no handle on the test's event loop, so tasks are
+    found through the garbage collector. The read is a best-effort diagnostic
+    taken while the hung loop is idle; a read that fails yields no listing.
+
+    Returns
+    -------
+    list of str
+        ``PENDING TASK`` header lines, each followed by its await chain.
+    """
+    import asyncio
+
+    try:
+        tasks = [
+            item for item in gc.get_objects() if isinstance(item, asyncio.Task) and not item.done()
+        ]
+        lines: list[str] = []
+        for task in tasks[:_TASK_LIMIT]:
+            coroutine = task.get_coro()
+            label = getattr(coroutine, "__qualname__", type(coroutine).__name__)
+            lines.append(f"PENDING TASK {task.get_name()} coro={label}")
+            lines.extend(_await_chain(coroutine))
+        if len(tasks) > _TASK_LIMIT:
+            lines.append(f"PENDING TASKS not listed: {len(tasks) - _TASK_LIMIT}")
+    except (MemoryError, RuntimeError):
+        # gc.get_objects() can run out of memory in a huge process, and a
+        # task can be torn down while it is read; the watcher thread must
+        # survive to report the next test.
+        return []
+    return lines
 
 
 def _limit() -> float:

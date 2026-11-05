@@ -396,3 +396,109 @@ def test_bare_pytest_loads_hang_identity_without_pythonpath() -> None:
         output = completed.stdout + completed.stderr
         assert "No module named tools" not in output, output[-2000:]
         assert completed.returncode == 0, output[-2000:]
+
+
+def test_a_hung_event_loop_lists_the_coroutine_it_waits_in(tmp_path: Path) -> None:
+    """A test blocked on a reply names the awaiting coroutines after its node id.
+
+    The thread dump of such a hang shows only the loop idle in its selector.
+    The probe awaits an event that is never set, inside a named helper, and
+    gives up after the faulthandler timeout so the child exits.
+    """
+    test_file = tmp_path / "test_loop_hang_probe.py"
+    test_file.write_text(
+        "import asyncio\n\n"
+        "async def wait_for_reply(event):\n"
+        "    await event.wait()\n\n"
+        "async def exchange():\n"
+        "    event = asyncio.Event()\n"
+        "    await wait_for_reply(event)\n\n"
+        "def test_loop_hangs():\n"
+        "    async def bounded():\n"
+        "        try:\n"
+        f"            await asyncio.wait_for(exchange(), {_HANG_SLEEP_SECONDS!r})\n"
+        "        except asyncio.TimeoutError:\n"
+        "            pass\n"
+        "    asyncio.run(bounded())\n",
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(test_file),
+            "--noconftest",
+            "-p",
+            "tools.pytest_hang_identity",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            f"faulthandler_timeout={_FAULT_TIMEOUT_SECONDS}",
+            "-q",
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_OUTER_BOUND_SECONDS,
+    )
+    lines = result.stderr.splitlines()
+    assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
+    report = next(index for index, line in enumerate(lines) if line.startswith("TIMEOUT nodeid="))
+    listing = lines[report + 1 :]
+    assert any(line.startswith("PENDING TASK ") for line in listing), result.stderr[-2500:]
+    waiting = [index for index, line in enumerate(listing) if line.endswith("in wait_for_reply")]
+    calling = [index for index, line in enumerate(listing) if line.endswith("in exchange")]
+    assert waiting and calling, result.stderr[-2500:]
+    assert calling[0] < waiting[0]
+    assert any(line == "  awaiting Future" for line in listing[waiting[0] :])
+
+
+def test_the_task_listing_is_bounded_and_survives_a_failed_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Many tasks are counted, a deep chain is cut, and a failed scan lists nothing."""
+    import asyncio
+
+    import tools.pytest_hang_identity as hang
+
+    async def nested(depth: int, event: asyncio.Event) -> None:
+        if depth:
+            await nested(depth - 1, event)
+        else:
+            await event.wait()
+
+    async def scenario() -> tuple[list[str], list[str]]:
+        event = asyncio.Event()
+        tasks = [asyncio.create_task(nested(3, event), name=f"probe-{i}") for i in range(3)]
+        await asyncio.sleep(0)
+        monkeypatch.setattr(hang, "_TASK_LIMIT", 2)
+        monkeypatch.setattr(hang, "_AWAIT_DEPTH", 2)
+        bounded = hang._pending_task_lines()
+        monkeypatch.undo()
+        unbounded = hang._pending_task_lines()
+        event.set()
+        await asyncio.gather(*tasks)
+        return bounded, unbounded
+
+    bounded, unbounded = asyncio.run(scenario())
+    headers = [line for line in bounded if line.startswith("PENDING TASK ")]
+    assert len(headers) == 2
+    assert any(line.startswith("PENDING TASKS not listed: ") for line in bounded)
+    assert "  awaiting: deeper chain omitted" in bounded
+    assert sum(line.endswith("in nested") for line in unbounded) >= 3 * 4
+
+    def failing_scan() -> list[object]:
+        raise RuntimeError("objects changed during the scan")
+
+    import gc
+
+    monkeypatch.setattr(gc, "get_objects", failing_scan)
+    listing = hang._pending_task_lines()
+    monkeypatch.undo()
+    assert listing == []
+    assert hang._await_chain(None) == ["  awaiting NoneType"]
