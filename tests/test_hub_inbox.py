@@ -110,6 +110,30 @@ async def test_exact_recipients_private_channels_and_own_messages(tmp_path: Path
         journal.close()
 
 
+async def test_page_limit_keeps_the_later_message(tmp_path: Path) -> None:
+    """A full page stops and the following query returns the next message."""
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (_, uri):
+            publisher = await connect_agent("P/publisher", uri)
+            reader = await connect_agent("P/reader", uri)
+            try:
+                await publisher.agent.chat("first", target="P/reader")
+                await publisher.agent.chat("second", target="P/reader")
+                await fence(publisher)
+                first = await query(reader, limit=1)
+                assert first["available"] is True
+                assert [item["payload"] for item in first["messages"]] == ["first"]
+                assert first["has_more"] is True
+                second = await query(reader, since=first["cursor"], hub_id=first["hub_id"], limit=1)
+                assert [item["payload"] for item in second["messages"]] == ["second"]
+                assert second["has_more"] is False
+            finally:
+                await close_agents(publisher, reader)
+    finally:
+        journal.close()
+
+
 async def test_long_gap_scans_foreign_rows_and_retains_old_unread(tmp_path: Path) -> None:
     journal = EventStore(tmp_path / "hub.db")
     try:
