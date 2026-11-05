@@ -186,7 +186,10 @@ async def test_run_git_release_skips_non_matching_claims(
         assert set(hub.state.claims) == {"T1", "T2", "T3", "T4"}
 
 
-async def test_run_git_release_unreachable_hub_never_blocks() -> None:
+async def test_unknown_repository_identity_returns_before_the_hub(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A runner that is not a repository exits 0 without opening a hub connection."""
     port = _free_port()
     rc = await run_git_release(
         uri=f"ws://localhost:{port}",
@@ -196,6 +199,10 @@ async def test_run_git_release_unreachable_hub_never_blocks() -> None:
         ready_timeout=0.1,
     )
     assert rc == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "Could not reach hub" not in captured.out
+    assert "git error:" not in captured.out
 
 
 async def test_run_git_release_git_error_returns_one() -> None:
