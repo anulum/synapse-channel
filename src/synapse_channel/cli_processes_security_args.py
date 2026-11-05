@@ -36,6 +36,14 @@ def add_hub_admission_arguments(hub: argparse.ArgumentParser) -> None:
     add_policy_arguments(hub)
 
 
+def _positive_days(text: str) -> int:
+    """Parse a whole number of days of at least one."""
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("--max-token-days must be at least 1")
+    return value
+
+
 def add_hub_token_set_argument(hub: argparse.ArgumentParser) -> None:
     """Add ``--token-set``, the identified and rotatable connect-token source."""
     hub.add_argument(
@@ -55,6 +63,17 @@ def add_hub_token_set_argument(hub: argparse.ArgumentParser) -> None:
             "With --token-set: accept only a set in which every token has not_after. "
             "A set with an unending token is refused at startup and not applied on "
             "reload (the last accepted set stays in force)."
+        ),
+    )
+    hub.add_argument(
+        "--max-token-days",
+        type=_positive_days,
+        default=None,
+        metavar="DAYS",
+        help=(
+            "With --token-set: accept only a set in which every token ends within DAYS "
+            "days of when the hub loads it; an unending token fails too. A set that "
+            "breaks this is refused at startup and not applied on reload."
         ),
     )
     hub.add_argument(

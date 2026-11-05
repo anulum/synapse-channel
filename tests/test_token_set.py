@@ -347,3 +347,40 @@ def test_require_expiry_needs_a_token_set(
     monkeypatch.delenv("SYNAPSE_TOKEN", raising=False)
     assert cli.main(["hub", "--require-token-expiry"]) == 2
     assert "--require-token-expiry requires --token-set" in capsys.readouterr().err
+
+
+def test_max_token_days_bounds_every_token_at_start_and_on_reload(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # _START is 2027-01-15T08:00:00Z; 30 days later is 2027-02-14T08:00:00Z.
+    inside = _entry("inside", "s-in", not_after="2027-02-14T08:00:00Z")
+    beyond = _entry("beyond", "s-out", not_after="2027-02-14T08:00:01Z")
+    forever = _entry("forever", "s-forever")
+    path = _write(tmp_path / "tokens.json", inside, beyond, forever)
+    message = (
+        "valid for more than 30 days from now are refused by --max-token-days: beyond, forever"
+    )
+    with pytest.raises(TokenSetError, match=message):
+        TokenSetAuthenticator(path, clock=lambda: _START, max_token_days=30)
+    namespace = argparse.Namespace(token_set=str(path), token=None, max_token_days=30)
+    with pytest.raises(HubStartupRefused):
+        _connect_authenticator(namespace)
+    assert "--max-token-days" in capsys.readouterr().err
+    _write(path, inside)
+    auth = TokenSetAuthenticator(path, clock=lambda: _START, max_token_days=30)
+    assert auth.authenticate("s-in", "A") == (True, "Authenticated.")
+    _write(path, inside, beyond)
+    assert auth.authenticate("s-out", "A")[0] is False
+    assert auth.stale_code == "invalid" and "beyond" in (auth.stale_reason or "")
+    assert auth.authenticate("s-in", "A") == (True, "Authenticated.")
+
+
+def test_max_token_days_needs_a_positive_count_and_a_token_set(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SYNAPSE_TOKEN", raising=False)
+    assert cli.main(["hub", "--max-token-days", "7"]) == 2
+    assert "--max-token-days requires --token-set" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["hub", "--max-token-days", "0"])
+    assert "--max-token-days must be at least 1" in capsys.readouterr().err

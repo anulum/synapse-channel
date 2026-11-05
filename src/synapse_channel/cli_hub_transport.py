@@ -109,6 +109,7 @@ def _connect_authenticator(args: argparse.Namespace) -> TokenAuthenticator | Non
                 token_set,
                 expiry_closes_sessions=bool(getattr(args, "token_expiry_closes_sessions", False)),
                 require_expiry=bool(getattr(args, "require_token_expiry", False)),
+                max_token_days=getattr(args, "max_token_days", None),
             )
         except (SecretFileError, TokenSetError) as exc:
             print(f"synapse hub: {exc}", file=sys.stderr)

@@ -324,6 +324,10 @@ class TokenSetAuthenticator(TokenAuthenticator):
         Accept only a set in which every token has a ``not_after``. A set with
         an unending token is refused at construction and, on reload, not
         applied (the last accepted set stays in force, reported ``invalid``).
+    max_token_days : int or None, optional
+        Accept only a set in which every token ends within this many days of
+        the moment the set is loaded. Unending tokens fail this rule too.
+        Refusal works as for ``require_expiry``.
 
     Raises
     ------
@@ -347,12 +351,14 @@ class TokenSetAuthenticator(TokenAuthenticator):
         clock: Callable[[], float] = time.time,
         expiry_closes_sessions: bool = False,
         require_expiry: bool = False,
+        max_token_days: int | None = None,
     ) -> None:
         super().__init__(())
         self._path = Path(path).expanduser()
         self._clock = clock
         self._expiry_closes_sessions = expiry_closes_sessions
         self._require_expiry = require_expiry
+        self._max_token_days = max_token_days
         self._signature = _signature(self._path)
         self._entries = self._load()
         self._stale_reason: str | None = None
@@ -368,6 +374,18 @@ class TokenSetAuthenticator(TokenAuthenticator):
                 raise TokenSetError(
                     f"tokens without not_after are refused by --require-token-expiry: "
                     f"{', '.join(unending)}"
+                )
+        if self._max_token_days is not None:
+            limit = self._clock() + self._max_token_days * 86_400
+            too_long = [
+                entry.token_id
+                for entry in entries
+                if entry.not_after is None or entry.not_after > limit
+            ]
+            if too_long:
+                raise TokenSetError(
+                    f"tokens valid for more than {self._max_token_days} days from now are "
+                    f"refused by --max-token-days: {', '.join(too_long)}"
                 )
         return entries
 

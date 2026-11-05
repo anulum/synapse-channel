@@ -341,12 +341,12 @@ def _token_set_conflict(args: argparse.Namespace) -> str | None:
 
     A token set carries identifiers and validity windows. A second, unexpiring
     secret beside it would admit connections outside that lifecycle. Closing
-    sessions at token expiry and requiring token expiry need a token set, so
-    either flag alone is refused.
+    sessions at token expiry, requiring token expiry and bounding token lifetime
+    need a token set, so each of those flags alone is refused.
     """
     if not getattr(args, "token_set", None):
-        for flag in ("token_expiry_closes_sessions", "require_token_expiry"):
-            if getattr(args, flag, False):
+        for flag in ("token_expiry_closes_sessions", "require_token_expiry", "max_token_days"):
+            if getattr(args, flag, None):
                 name = "--" + flag.replace("_", "-")
                 return f"synapse {args.command}: {name} requires --token-set"
         return None

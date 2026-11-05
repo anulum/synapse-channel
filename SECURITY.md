@@ -385,9 +385,14 @@ When that boundary is crossed, the proportionate controls are:
   `--require-token-expiry` makes the hub accept only a set in which every
   token has a `not_after`: a set with an unending token is refused at
   startup and, on a later change, not applied (the last accepted set stays
-  in force and `status` reports it stale with the code `invalid`). The flag
-  is the operator's choice on any bind; `synapse token-set new` already
-  gives a token 90 days unless told otherwise. Off loopback the hub also
+  in force and `status` reports it stale with the code `invalid`). A token
+  added with `synapse token-set new --no-expiry` therefore makes such a hub
+  refuse the whole new set until it is retired. `--max-token-days DAYS`
+  goes further: every token must end within that many days of when the hub
+  loads the set, so a far-future `not_after` is refused as well. Both flags
+  are the operator's choice on any bind and are off by default;
+  `synapse token-set new` already gives a token 90 days unless told
+  otherwise. Off loopback the hub also
   refuses to start without provisioned identity binding
   (`--identity-trust` with `--require-identity-binding`) unless
   `--insecure-unbound-identity` is given; see the deployment matrix above.

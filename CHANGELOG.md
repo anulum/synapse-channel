@@ -60,6 +60,12 @@ execution evidence when carrying a release claim forward.
   so the last accepted set stays in force. The flag without `--token-set` is
   refused.
 
+- **`synapse hub --max-token-days DAYS`.** With `--token-set`, the hub
+  accepts only a set in which every token ends within `DAYS` days of when
+  the hub loads it; an unending token fails too. A set that breaks the limit
+  is refused at startup and not applied on a later change. The flag without
+  `--token-set` is refused.
+
 - **`synapse hub --token-expiry-closes-sessions`.** With `--token-set`, the hub
   closes a session with code `4401` when the token that admitted it reaches
   its end of validity, and when an applied set no longer admits it (the token
