@@ -374,10 +374,13 @@ def test_grpc_requires_bounded_deadline_and_rejects_oversized_input() -> None:
         assert no_deadline.code().name == "INVALID_ARGUMENT"
         assert no_deadline.details() == "finite call deadline required"
 
+        # Oversized and over-deep requests are refused by the transport before
+        # the handler checks the deadline, so these calls get room for a slow
+        # runner. A handler that did see them would refuse the long deadline.
         too_large = _rpc_error(
             lambda: raw_send(
                 _send_payload("too-large", "x" * 512),
-                timeout=1.0,
+                timeout=10.0,
             )
         )
         assert too_large.code().name == "RESOURCE_EXHAUSTED"
@@ -388,7 +391,7 @@ def test_grpc_requires_bounded_deadline_and_rejects_oversized_input() -> None:
             request_serializer=lambda _value: nested,
             response_deserializer=lambda raw: json.loads(raw),
         )
-        too_deep = _rpc_error(lambda: deep_send({}, timeout=1.0))
+        too_deep = _rpc_error(lambda: deep_send({}, timeout=10.0))
         assert too_deep.code().name == "INTERNAL"
         assert "deserializing request" in too_deep.details()
         assert "nested" not in too_deep.details()

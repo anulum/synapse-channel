@@ -44,7 +44,7 @@ TOKEN_DIGEST_DOMAIN = b"synapse-channel:connect-token:v1\x00"
 TOKEN_SET_LIMIT = 262_144
 """Largest accepted token-set file, in bytes."""
 
-TOKEN_SET_FLAG = "--token-set"
+SET_FILE_FLAG = "--token-set"
 _LOG = logging.getLogger(__name__)
 _ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 _DIGEST = re.compile(r"[0-9a-f]{64}")
@@ -197,7 +197,7 @@ def load_token_set(path: Path) -> tuple[TokenEntry, ...]:
         If the content is not a valid token set.
     """
     text = read_secret_file(
-        path, flag=TOKEN_SET_FLAG, require_single_link=True, limit=TOKEN_SET_LIMIT
+        path, flag=SET_FILE_FLAG, require_single_link=True, limit=TOKEN_SET_LIMIT
     )
     return parse_token_set(text)
 
