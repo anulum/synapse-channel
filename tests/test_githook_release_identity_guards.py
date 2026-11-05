@@ -213,3 +213,30 @@ async def test_merge_hook_stops_before_the_hub_when_orig_head_is_absent(
     assert "git error:" in captured.out
     assert "ORIG_HEAD" in captured.out
     assert "Could not reach hub" not in captured.out
+
+
+async def test_detached_head_stops_before_the_hub(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A release from a detached HEAD reports the git failure and keeps the claim."""
+    repo = _committed_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    async with running_hub() as (hub, uri):
+        assert (
+            await run_git_claim(
+                uri=uri,
+                name="me",
+                task_id="NOTE",
+                paths=["notes.md"],
+                auto_release_on="commit",
+            )
+            == 0
+        )
+        git_run(repo, "checkout", "--detach", "-q")
+        assert set(hub.state.claims) == {"NOTE"}
+        assert await run_git_release(uri=uri, name="me", trigger="commit") == 1
+        assert set(hub.state.claims) == {"NOTE"}
+    captured = capsys.readouterr()
+    assert "git error:" in captured.out
+    assert "symbolic-ref" in captured.out
+    assert "Could not reach hub" not in captured.out
