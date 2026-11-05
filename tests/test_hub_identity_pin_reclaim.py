@@ -588,3 +588,53 @@ async def test_reclaim_without_a_journal_keeps_the_pin(
         assert kept is not None and kept.key_id == key_id
     assert "no durable journal for the mandatory reclaim audit event" in capsys.readouterr().out
     assert hub.journal is None
+
+
+async def test_an_unpinned_operator_cannot_reclaim(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A connection that never proved a key cannot remove someone else's pin."""
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(
+        hub_id="syn-pin-unbound",
+        identity_pin_path=tmp_path / "pins.json",
+        journal=store,
+        acl_policy=_policy(),
+        require_acl=True,
+    )
+    target_machine = _machine(tmp_path, "target")
+
+    def factory(name: str, callback: Any, **kwargs: Any) -> SynapseAgent:
+        kwargs["machine_identity"] = False
+        return SynapseAgent(name, callback, **kwargs)
+
+    async with running_hub(hub) as (_, uri):
+        holder = SynapseAgent(PIN_NAME, None, uri=uri, verbose=False, **target_machine)
+        holder_task = await _start(holder)
+        await _await_registry(hub, PIN_NAME, online=True)
+        pin = hub.identity_pins.pinned(PIN_NAME)
+        assert pin is not None
+        key_id = pin.key_id
+        await _stop(holder, holder_task)
+        await _await_registry(hub, PIN_NAME, online=False)
+
+        refused = await _identity_reclaim(
+            uri=uri,
+            operator=OPERATOR,
+            pin_name=PIN_NAME,
+            expected_key_id=key_id,
+            reason="recover wedged holder",
+            break_glass=True,
+            token=None,
+            ready_timeout=3.0,
+            result_timeout=3.0,
+            json_output=False,
+            agent_factory=factory,
+        )
+        assert refused == 1
+        assert hub.identity_pins.pinned(OPERATOR) is None
+        kept = hub.identity_pins.pinned(PIN_NAME)
+        assert kept is not None and kept.key_id == key_id
+    assert "not cryptographically bound" in capsys.readouterr().out
+    assert not [event for event in store.read_all() if event.kind == EventKind.IDENTITY_PIN_RECLAIM]
+    store.close()
