@@ -20,6 +20,12 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **A per-connection `session_nonce` in `welcome`.** Each connection gets a
+  new random nonce, and a connection that registered with a verified
+  identity signature is recorded with the key it proved. Older clients
+  ignore the field. This prepares signing of a connection's later frames
+  with that key.
+
 - **Rotating connect tokens.** `synapse hub --token-set PATH` accepts an
   owner-only JSON set of identified tokens, each stored as a digest with an
   optional validity window and agent names. Several tokens can be valid at

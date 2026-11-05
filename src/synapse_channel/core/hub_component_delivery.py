@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from synapse_channel.core.agent_liveness import RecipientLiveness
 from synapse_channel.core.dead_letters import DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS, DeadLetterLedger
+from synapse_channel.core.frame_signing import FrameSigningSessions
 from synapse_channel.core.hub_broadcast import HubBroadcaster
 from synapse_channel.core.hub_component_callbacks import HubComponentCallbacks
 from synapse_channel.core.hub_component_clients import HubClientComponents
@@ -52,6 +53,7 @@ class HubGateComponents:
     connection: HubConnection
     frames: HubFrameGates
     relay_forwarding: OperatorRelayForwarding
+    frame_signing: FrameSigningSessions
 
 
 def build_delivery(
@@ -140,6 +142,9 @@ def build_gates(
     connection = build_connection(config, clients, reactions, callbacks)
     if sessions is not None:
         connection.add_close_listener(sessions.closed)
+    frame_signing = FrameSigningSessions()
+    connection.add_close_listener(frame_signing.forget)
+    connection.set_welcome_fields(frame_signing.welcome_fields)
     return HubGateComponents(
         ingress=HubIngress(
             clients.clients,
@@ -172,4 +177,5 @@ def build_gates(
             send_json=callbacks.send_json,
             system=callbacks.system,
         ),
+        frame_signing=frame_signing,
     )

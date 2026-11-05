@@ -221,6 +221,15 @@ under the supplied filesystem policy. Two claims without the field retain the
 version-2 literal-path behavior. This supports rolling upgrades but means a
 fleet closes every alias gap only after all Git-aware claim producers upgrade.
 
+### Session nonce
+
+Every `welcome` also carries `session_nonce`: 24 random URL-safe characters,
+new for each connection and never reused after it closes. A connection that
+registered with a verified identity signature (an operator-enrolled key, or
+the key pinned to its name on first use) is recorded with that key. The nonce
+and the recorded key are the basis for signing a connection's later frames;
+older clients ignore the field.
+
 ### Fenced renewal of a live claim
 
 Supporting hubs advertise a 32-character `lock_renewal_session` in `welcome`.

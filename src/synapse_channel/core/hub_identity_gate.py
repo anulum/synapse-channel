@@ -42,6 +42,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from synapse_channel.core.frame_signing import KeySource
 from synapse_channel.core.identity_binding import (
     DEFAULT_IDENTITY_REPLAY_CAPACITY,
     verify_registration,
@@ -157,6 +158,30 @@ class HubIdentityGate:
         if self._pin_store is None:
             return True
         return await self._verify_first_use(self._pin_store, sender, data, websocket)
+
+    def proven_key(self, sender: str, data: dict[str, Any]) -> tuple[str, KeySource] | None:
+        """Return the key a registration that :meth:`verify_identity` admitted proved.
+
+        Call it only after ``verify_identity`` returned ``True`` for the same
+        frame. With operator binding the signing key is a bundle key; in the
+        trust-on-first-use posture it is the key now pinned to ``sender``, when
+        the frame was signed with it. An unsigned admission proved nothing.
+
+        Returns
+        -------
+        tuple[str, {"bundle", "pin"}] or None
+            The key identifier and where it is looked up, or ``None``.
+        """
+        signature = data.get("signature")
+        key_id = signature.get("key_id") if isinstance(signature, dict) else None
+        if not isinstance(key_id, str) or not key_id:
+            return None
+        if self._require_identity_binding:
+            return key_id, "bundle"
+        pin = None if self._pin_store is None else self._pin_store.pinned(sender)
+        if pin is not None and pin.key_id == key_id:
+            return key_id, "pin"
+        return None
 
     async def _verify_against_bundle(
         self, sender: str, data: dict[str, Any], websocket: Any

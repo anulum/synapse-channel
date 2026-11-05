@@ -292,30 +292,49 @@ async def test_unregister_of_an_unnamed_socket_is_silent() -> None:
     assert forgotten == []
 
 
-async def test_unregister_reports_every_socket_and_survives_a_failing_report(
+async def test_unregister_reports_every_socket_to_every_listener_despite_a_failure(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     clients = _registry()
     first, second = _Socket(), _Socket()
     clients.add_client(first)
     clients.add_client(second)
-    seen: list[Any] = []
+    seen: list[tuple[str, Any]] = []
 
-    def report(websocket: Any) -> None:
-        seen.append(websocket)
+    def failing(websocket: Any) -> None:
+        seen.append(("failing", websocket))
         if websocket is second:
             raise RuntimeError("journal unavailable")
 
+    def recording(websocket: Any) -> None:
+        seen.append(("recording", websocket))
+
     conn = _connection(clients)
-    conn.add_close_listener(report)
+    conn.add_close_listener(failing)
+    conn.add_close_listener(recording)
     await conn.unregister(first)
     await conn.unregister(second)
 
-    assert seen == [first, second]
-    assert "cannot record a closed connect-token session" in caplog.text
+    assert seen == [
+        ("failing", first),
+        ("recording", first),
+        ("failing", second),
+        ("recording", second),
+    ]
+    assert "a close listener failed for a closed socket" in caplog.text
     assert clients.connected_clients == set()
+
+
+async def test_welcome_carries_fields_from_one_provider() -> None:
+    clients = _registry()
+    socket = _Socket()
+    recorder = _Recorder()
+    conn = _connection(clients, recorder=recorder)
+    conn.set_welcome_fields(lambda websocket: {"session_nonce": f"n-{id(websocket)}"})
+    await conn.send_welcome(socket)
     with pytest.raises(RuntimeError, match="already set"):
-        conn.add_close_listener(report)
+        conn.set_welcome_fields(lambda websocket: {})
+    assert recorder.sent[-1][1]["session_nonce"] == f"n-{id(socket)}"
 
 
 # -- authenticate_or_close ---------------------------------------------------

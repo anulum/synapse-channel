@@ -591,6 +591,7 @@ class SynapseHub(HubConfigView):
         self._connection = gates.connection
         self._frame_gates = gates.frames
         self._relay_forwarding = gates.relay_forwarding
+        self.frame_signing = gates.frame_signing
 
     def _receive_state(self, components: HubComponents) -> None:
         """Install resumed state, mutation actor and views over that exact state."""
@@ -1669,16 +1670,20 @@ class SynapseHub(HubConfigView):
         return None if self._live_checkpoint is None else self._live_checkpoint.store
 
     def _record_identity_proof(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
-        """Record the key a registration was verified under against the operator bundle.
+        """Record the key a verified registration proved.
 
-        Only the operator-bundle posture proves a key an operator enrolled; the
-        trust-on-first-use posture admits a key the client chose, so it records nothing.
-        A serving grant naming ``identity_key_id`` reads this record.
+        Only the operator-bundle posture proves a key an operator enrolled, so
+        only it feeds the serving-grant record that ``identity_key_id`` reads.
+        Both postures record the key that may sign the socket's later frames:
+        the bundle key, or the key pinned to the name on first use.
         """
         signature = data.get("signature")
         key_id = signature.get("key_id") if isinstance(signature, dict) else None
         if self.require_identity_binding and isinstance(key_id, str) and key_id:
             self.clients.record_identity_proof(websocket, sender, key_id)
+        proven = self._identity_gate.proven_key(sender, data)
+        if proven is not None:
+            self.frame_signing.record(websocket, sender, *proven)
 
     def replace_enrolled_identity_keys(self, enrolled: dict[str, EventSignatureKey]) -> None:
         """Make ``enrolled`` the hub's online-enrolled identity keys (handler surface).

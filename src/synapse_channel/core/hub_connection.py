@@ -128,21 +128,28 @@ class HubConnection:
         self._forget_liveness = forget_liveness
         self._abort_uploads = abort_uploads
         self._agent_left = agent_left
-        self._socket_closed: Callable[[Any], None] | None = None
+        self._close_listeners: list[Callable[[Any], None]] = []
+        self._welcome_fields: Callable[[Any], dict[str, Any]] | None = None
 
     def add_close_listener(self, listener: Callable[[Any], None]) -> None:
         """Call ``listener`` with every socket as it is unregistered.
 
-        A failure in the listener is logged and cleanup continues.
+        Listeners run in the order they were added. A failure in one is logged
+        and the others and the cleanup still run.
+        """
+        self._close_listeners.append(listener)
+
+    def set_welcome_fields(self, fields: Callable[[Any], dict[str, Any]]) -> None:
+        """Add the fields ``fields(websocket)`` returns to every welcome frame.
 
         Raises
         ------
         RuntimeError
-            If a listener is already set; one listener is supported.
+            If a provider is already set; one provider is supported.
         """
-        if self._socket_closed is not None:
-            raise RuntimeError("a close listener is already set")
-        self._socket_closed = listener
+        if self._welcome_fields is not None:
+            raise RuntimeError("a welcome field provider is already set")
+        self._welcome_fields = fields
 
     async def register(self, websocket: Any) -> None:
         """Record a new socket; welcome it now only on an open hub.
@@ -164,11 +171,11 @@ class HubConnection:
 
     async def unregister(self, websocket: Any) -> None:
         """Drop a socket, releasing its agent name and broadcasting departure."""
-        if self._socket_closed is not None:
+        for listener in self._close_listeners:
             try:
-                self._socket_closed(websocket)
+                listener(websocket)
             except Exception:
-                logger.exception("cannot record a closed connect-token session")
+                logger.exception("a close listener failed for a closed socket")
         name = self._clients.drop_client(websocket)
         if name is not None:
             if self._abort_uploads is not None:
@@ -202,6 +209,7 @@ class HubConnection:
                 online_agents=self._online_agents(),
                 protocol_version=WIRE_PROTOCOL_VERSION,
                 lock_renewal_session=self._lock_renewal_session,
+                **(self._welcome_fields(websocket) if self._welcome_fields is not None else {}),
             ),
         )
 
