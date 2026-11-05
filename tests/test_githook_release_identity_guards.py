@@ -188,3 +188,28 @@ async def test_root_commit_retains_claims_when_semantic_evidence_has_no_parent(
     assert "semantic auto-release retained symbol claims" in captured.out
     assert "bad revision 'HEAD^'" in captured.out
     assert "git error:" not in captured.out
+
+
+async def test_merge_hook_stops_before_the_hub_when_orig_head_is_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A merge hook with no ORIG_HEAD reports the git failure and keeps the claim."""
+    monkeypatch.chdir(_committed_repo(tmp_path))
+    async with running_hub() as (hub, uri):
+        assert (
+            await run_git_claim(
+                uri=uri,
+                name="me",
+                task_id="NOTE",
+                paths=["notes.md"],
+                auto_release_on="merge",
+            )
+            == 0
+        )
+        assert set(hub.state.claims) == {"NOTE"}
+        assert await run_git_release(uri=uri, name="me", trigger="merge") == 1
+        assert set(hub.state.claims) == {"NOTE"}
+    captured = capsys.readouterr()
+    assert "git error:" in captured.out
+    assert "ORIG_HEAD" in captured.out
+    assert "Could not reach hub" not in captured.out
