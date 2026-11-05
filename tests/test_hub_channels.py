@@ -282,3 +282,21 @@ async def test_channel_history_rejects_an_overflowing_limit_and_keeps_the_socket
             )
             history = await read_until_type(alpha, "channel_history")
             assert [m.get("payload") for m in history.get("messages", [])] == ["one"]
+
+
+async def test_channel_history_refuses_a_non_member() -> None:
+    """A stranger gets a private refusal and none of the retained messages."""
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        async with connect(uri) as owner, connect(uri) as stranger:
+            await _bind(owner, "ALPHA")
+            await _bind(stranger, "BETA")
+            await send_json(owner, sender="ALPHA", type="channel_create", channel="c", label="C")
+            await read_until_type(owner, "channel_result")
+            await send_json(owner, sender="ALPHA", type="chat", channel="c", payload="secret")
+            await send_json(stranger, sender="BETA", type="channel_history_request", channel="c")
+            refusal = await read_until_type(stranger, "channel_result")
+            assert refusal["ok"] is False
+            assert refusal["members"] == []
+            assert refusal["channel"] == "c"
+            assert refusal["payload"] == "not a member of channel 'c'"
+            assert "secret" not in str(refusal)
