@@ -89,3 +89,47 @@ async def test_release_retains_a_claim_whose_identity_does_not_bind_this_commit(
         async with claim_proxy(control) as uri:
             assert await run_git_release(uri=uri, name="me", trigger="commit") == 0
         assert control.requests.count("release") == 1
+
+
+def _merged_repo(tmp_path: Path) -> Path:
+    """Return a repository whose latest commit is a merge that added notes.md."""
+    repo = git_repo(tmp_path / "repo")
+    git_run(repo, "branch", "-M", "main")
+    git_run(repo, "checkout", "-q", "-b", "feature")
+    (repo / "notes.md").write_text("from feature\n", encoding="utf-8")
+    git_run(repo, "add", "notes.md")
+    git_run(repo, "commit", "-q", "-m", "feature")
+    git_run(repo, "checkout", "-q", "main")
+    git_run(repo, "merge", "--no-ff", "-m", "merge feature", "feature")
+    return repo
+
+
+async def test_merge_hook_releases_only_the_path_the_merge_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A post-merge hook frees the merged path and keeps an untouched one."""
+    monkeypatch.chdir(_merged_repo(tmp_path))
+    async with running_hub() as (hub, uri):
+        assert (
+            await run_git_claim(
+                uri=uri,
+                name="me",
+                task_id="MERGED",
+                paths=["notes.md"],
+                auto_release_on="merge",
+            )
+            == 0
+        )
+        assert (
+            await run_git_claim(
+                uri=uri,
+                name="me",
+                task_id="UNTOUCHED",
+                paths=["README.md"],
+                auto_release_on="merge",
+            )
+            == 0
+        )
+        assert set(hub.state.claims) == {"MERGED", "UNTOUCHED"}
+        assert await run_git_release(uri=uri, name="me", trigger="merge") == 0
+        assert set(hub.state.claims) == {"UNTOUCHED"}
