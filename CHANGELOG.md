@@ -18,6 +18,15 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The commit-message hook refuses every vendor-named `Seat:` trailer.** It
+  refused only two vendor prefixes, so a trailer naming another assistant
+  vendor passed. A seat suffix may no longer be a listed vendor name or start
+  with one followed by `-`; the list now matches the Fleet hook. The three
+  published commits that carry such a trailer are listed as history
+  exemptions, because main is never rewritten.
+
 ## [0.99.45] - 2026-11-04
 
 ### Added

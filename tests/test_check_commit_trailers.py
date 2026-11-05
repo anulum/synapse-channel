@@ -48,7 +48,7 @@ def _message_file(tmp_path: Path, message: str) -> Path:
     return path
 
 
-@pytest.mark.parametrize("seat", ["23696", "a7c2", "rf_01-2"])
+@pytest.mark.parametrize("seat", ["23696", "a7c2", "rf_01-2", "cli", "grokker"])
 def test_hook_accepts_vendor_neutral_seat_suffix(tmp_path: Path, seat: str) -> None:
     assert GATE.main([str(_message_file(tmp_path, _message(seat=seat)))]) == 0
 
@@ -59,8 +59,12 @@ def test_hook_accepts_vendor_neutral_seat_suffix(tmp_path: Path, seat: str) -> N
         (f"ci: enforce policy\n\n{AUTHORSHIP}\n", "Seat: <seat-suffix>"),
         (_message() + "Seat: second\n", "Seat: <seat-suffix>"),
         (_message(seat="user/terminal-23696"), "invalid vendor-neutral"),
-        (_message(seat="codex-23696"), "vendor-prefixed"),
-        (_message(seat="claude-a7c2"), "vendor-prefixed"),
+        (_message(seat="codex-23696"), "vendor-named"),
+        (_message(seat="claude-a7c2"), "vendor-named"),
+        (_message(seat="grok-cli"), "vendor-named"),
+        (_message(seat="Grok"), "vendor-named"),
+        (_message(seat="gemini-1"), "vendor-named"),
+        (_message(seat="kimi"), "vendor-named"),
         ("ci: enforce policy\n\nSeat: 23696\n", "exactly one `Authored by"),
         (_message() + f"{AUTHORSHIP}\n", "exactly one `Authored by"),
     ],

@@ -79,10 +79,15 @@ HISTORY_EXEMPTIONS = {
     "cea5ef2a7ca947471ff5300ef0d1a72686833662": (
         "dependabot squash-merge (#53 github-app-minor-patch), authored by dependabot[bot]"
     ),
+    # Published before the seat rule named this vendor; main is never rewritten.
+    "3ecbbdbb97d87cf79ec9c8717b6ddd68c308c23b": "published with a vendor-named Seat trailer",
+    "80d831a8245dce6235b11d96d1386d7648aa0295": "published with a vendor-named Seat trailer",
+    "3180c1ff0f08c9ca1a966f2477e798cca7f81bc4": "published with a vendor-named Seat trailer",
 }
 SEAT_PREFIX_RE = re.compile(r"^\s*Seat:")
 SEAT_TRAILER_RE = re.compile(r"^Seat:\s+([A-Za-z0-9][A-Za-z0-9_-]{0,63})\s*$")
-FORBIDDEN_SEAT_PREFIXES = ("claude-", "codex-")
+# A seat suffix may not be a vendor name or start with one followed by "-".
+FORBIDDEN_SEAT_VENDORS = ("claude", "codex", "gemini", "grok", "kimi")
 CONFIG_PATH = ".pre-commit-config.yaml"
 STAMP_MARKER = "check_commit_trailers.py --stamp"
 STAMP_PREFIX_RE = re.compile(r"^\s*Hooks-Verified:")
@@ -170,8 +175,8 @@ def _message_violations(message: str) -> list[str]:
         match = SEAT_TRAILER_RE.fullmatch(seat_line)
         if match is None:
             violations.append("invalid vendor-neutral `Seat: <seat-suffix>` trailer")
-        elif match.group(1).lower().startswith(FORBIDDEN_SEAT_PREFIXES):
-            violations.append("vendor-prefixed `Seat:` trailer is forbidden")
+        elif _vendor_seat(match.group(1)):
+            violations.append("vendor-named `Seat:` trailer is forbidden")
 
     if len(authorship_indices) == 1 and len(seat_indices) == 1:
         seat_index = seat_indices[0]
@@ -190,6 +195,12 @@ def _message_violations(message: str) -> list[str]:
     if forbidden:
         violations.append(f"forbidden subject word(s): {', '.join(forbidden)}")
     return violations
+
+
+def _vendor_seat(seat: str) -> bool:
+    """Return whether a seat suffix is a vendor name or starts with ``<vendor>-``."""
+    name = seat.lower()
+    return any(name == vendor or name.startswith(f"{vendor}-") for vendor in FORBIDDEN_SEAT_VENDORS)
 
 
 def body_violations(message: str) -> list[str]:
