@@ -20,6 +20,7 @@ from cli_e2e_helpers import git_repo, git_run
 from hub_e2e_helpers import _free_port, running_hub
 from synapse_channel.git.gitclaim import run_git_claim
 from synapse_channel.git.githook import run_git_release
+from synapse_channel.git.semantic_scope import semantic_scope_path
 
 
 def _committed_repo(tmp_path: Path) -> Path:
@@ -133,3 +134,57 @@ async def test_merge_hook_releases_only_the_path_the_merge_changed(
         assert set(hub.state.claims) == {"MERGED", "UNTOUCHED"}
         assert await run_git_release(uri=uri, name="me", trigger="merge") == 0
         assert set(hub.state.claims) == {"UNTOUCHED"}
+
+
+def _initial_commit_repo(tmp_path: Path) -> Path:
+    """Return a repository whose only commit added a source file and a note."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_run(repo, "init", "-q")
+    git_run(repo, "config", "user.email", "e2e@example.test")
+    git_run(repo, "config", "user.name", "e2e")
+    git_run(repo, "config", "commit.gpgsign", "false")
+    git_run(repo, "branch", "-M", "main")
+    source = repo / "src" / "a.py"
+    source.parent.mkdir()
+    source.write_text("class Worker:\n    pass\n", encoding="utf-8")
+    (repo / "notes.md").write_text("noted\n", encoding="utf-8")
+    git_run(repo, "add", "src/a.py", "notes.md")
+    git_run(repo, "commit", "-q", "-m", "initial")
+    return repo
+
+
+async def test_root_commit_retains_claims_when_semantic_evidence_has_no_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A root commit has no parent, so the hook keeps both claims and exits 0."""
+    monkeypatch.chdir(_initial_commit_repo(tmp_path))
+    symbol = semantic_scope_path("src/a.py", "Worker")
+    async with running_hub() as (hub, uri):
+        assert (
+            await run_git_claim(
+                uri=uri,
+                name="me",
+                task_id="SYMBOL",
+                paths=[symbol],
+                auto_release_on="commit",
+            )
+            == 0
+        )
+        assert (
+            await run_git_claim(
+                uri=uri,
+                name="me",
+                task_id="NOTE",
+                paths=["notes.md"],
+                auto_release_on="commit",
+            )
+            == 0
+        )
+        assert set(hub.state.claims) == {"SYMBOL", "NOTE"}
+        assert await run_git_release(uri=uri, name="me", trigger="commit") == 0
+        assert set(hub.state.claims) == {"SYMBOL", "NOTE"}
+    captured = capsys.readouterr()
+    assert "semantic auto-release retained symbol claims" in captured.out
+    assert "bad revision 'HEAD^'" in captured.out
+    assert "git error:" not in captured.out
