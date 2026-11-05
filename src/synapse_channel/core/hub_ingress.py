@@ -33,6 +33,8 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_exposure import exposure_problems, guard_exposure
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.token_audit import TokenAudit
+from synapse_channel.core.token_set import TokenSetAuthenticator
 
 logger = logging.getLogger("synapse.hub")
 
@@ -78,6 +80,9 @@ class HubIngress:
     system : Callable[..., dict]
         The hub's system-message factory (``hub.system``), used to stamp those
         replies with the hub id.
+    token_audit : TokenAudit or None, optional
+        Journal writer for token-set admissions and refusals; ``None`` records
+        nothing.
     """
 
     def __init__(
@@ -91,9 +96,11 @@ class HubIngress:
         insecure_off_loopback: bool,
         send_json: Callable[[Any, dict[str, Any]], Awaitable[None]],
         system: Callable[..., dict[str, Any]],
+        token_audit: TokenAudit | None = None,
     ) -> None:
         self._clients = clients
         self._authenticator = authenticator
+        self._token_audit = token_audit
         self._enable_metrics = enable_metrics
         self._metrics_token = metrics_token
         self._metrics_query_token_ok = metrics_query_token_ok
@@ -133,8 +140,8 @@ class HubIngress:
             host = self.remote_host(websocket)
             self._clients.set_quota_principal(websocket, f"open-host:{host}")
             return True
-        ok, reason, principal = self._authenticator.authenticate_with_principal(
-            str(data.get("token") or ""), sender
+        ok, reason, principal = self._authenticate(
+            self._authenticator, str(data.get("token") or ""), sender
         )
         if ok:
             if principal is None:  # defensive: a successful credential must identify a bucket
@@ -147,6 +154,25 @@ class HubIngress:
         )
         await websocket.close(code=4010, reason="auth denied")
         return False
+
+    def _authenticate(
+        self, authenticator: TokenAuthenticator, token: str, sender: str
+    ) -> tuple[bool, str, str | None]:
+        """Check the token and, for an audited token set, record the outcome."""
+        audit = self._token_audit
+        if audit is None or not isinstance(authenticator, TokenSetAuthenticator):
+            return authenticator.authenticate_with_principal(token, sender)
+        outcome = authenticator.authenticate_outcome(token, sender)
+        if outcome.ok:
+            audit.admitted(outcome.token_id, sender)
+        else:
+            audit.refused(outcome.token_id, outcome.code, sender)
+        return outcome.ok, outcome.reason, outcome.principal
+
+    def flush_audit(self) -> None:
+        """Write the counts of refusal windows still open; called when serving stops."""
+        if self._token_audit is not None:
+            self._token_audit.flush()
 
     async def resolve_sender(
         self,

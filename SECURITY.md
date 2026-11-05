@@ -382,6 +382,12 @@ When that boundary is crossed, the proportionate controls are:
   that fails validation leaves the retired token in force. On Windows a
   change to the file's access list alone changes none of the file status the
   hub compares, so it takes effect with the next change to the content.
+  A token-set hub with a journal records which token identifier admitted each
+  connection, each set it applied and each file it rejected with the reason.
+  It also records refusals, aggregated per reason and token identifier: the
+  first refusal of a minute is written at once and the rest of that minute
+  as one row with a count. These rows hold no secret and no digest, and they
+  cut a client-supplied agent name to 128 characters.
 - **Bounded resources.** A `--max-clients` connection cap, a `--max-msg-kb` frame
   size cap, per-agent rate limiting, bounded chat history, a bounded progress
   ledger, a bounded relay log, and bounded JSON decode depth limit their named

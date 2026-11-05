@@ -28,6 +28,7 @@ from synapse_channel.core.hub_relay import RelayMirror
 from synapse_channel.core.mailbox_pending import MailboxPendingTracker
 from synapse_channel.core.operator_relay_forwarding import OperatorRelayForwarding
 from synapse_channel.core.pending_receipts import PendingReceipts
+from synapse_channel.core.token_audit import token_audit_for
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -143,6 +144,7 @@ def build_gates(
             insecure_off_loopback=config.auth.insecure_off_loopback,
             send_json=callbacks.send_json,
             system=callbacks.system,
+            token_audit=token_audit_for(config.auth.authenticator, config.journal),
         ),
         identity=HubIdentityGate(
             require_identity_binding=config.auth.require_identity_binding,

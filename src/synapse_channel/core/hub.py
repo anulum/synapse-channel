@@ -1901,6 +1901,7 @@ class SynapseHub(HubConfigView):
             background.cancel()
             await asyncio.gather(background, return_exceptions=True)
         if started:
+            self._ingress.flush_audit()
             # Clean stops anchor the final writes; only crashes retain an unanchored window.
             self._close_live_checkpoint()
         self._bound_address = None

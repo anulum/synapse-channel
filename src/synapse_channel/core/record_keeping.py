@@ -54,6 +54,8 @@ _RISK_KINDS = frozenset(
         "identity_pin_reclaim",
         "dead_letter_escalation",
         "delivery_receipt_expired",
+        "connect_token_refused",
+        "connect_token_set_rejected",
     }
 )
 _OPERATION_KINDS = frozenset(
@@ -73,6 +75,8 @@ _OPERATION_KINDS = frozenset(
         "delivery_receipt_requested",
         "delivery_receipt_immediate",
         "delivery_receipt_deferred",
+        "connect_token_admitted",
+        "connect_token_set_applied",
     }
 )
 

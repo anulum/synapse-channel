@@ -32,7 +32,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from synapse_channel.core.auth import _QUOTA_PRINCIPAL_DOMAIN, TokenAuthenticator
 from synapse_channel.core.errors import SynapseError
@@ -83,6 +83,42 @@ class TokenEntry:
     agents: frozenset[str]
     not_before: float | None
     not_after: float | None
+
+
+@dataclass(frozen=True)
+class TokenOutcome:
+    """The verdict on one presented connect token.
+
+    Parameters
+    ----------
+    ok : bool
+        Whether the connection is admitted.
+    reason : str
+        Human-readable reason; names a token identifier, never a secret.
+    principal : str or None
+        Stable quota principal on success.
+    token_id : str or None
+        Identifier of the matched entry, or ``None`` when nothing matched.
+    code : str
+        Stable reason code: ``admitted``, ``missing``, ``unknown``,
+        ``not_yet_valid``, ``expired`` or ``agent_not_bound``.
+    """
+
+    ok: bool
+    reason: str
+    principal: str | None
+    token_id: str | None
+    code: str
+
+
+class TokenSetObserver(Protocol):
+    """Receives each change in which token set is in force."""
+
+    def set_applied(self, path: Path, token_ids: tuple[str, ...]) -> None:
+        """Report that the file at ``path`` is now in force."""
+
+    def set_rejected(self, path: Path, reason: str) -> None:
+        """Report that the file at ``path`` was not applied and why."""
 
 
 def connect_token_digest(secret: str) -> str:
@@ -257,6 +293,22 @@ class TokenSetAuthenticator(TokenAuthenticator):
         self._signature = _signature(self._path)
         self._entries = load_token_set(self._path)
         self._stale_reason: str | None = None
+        self._observer: TokenSetObserver | None = None
+
+    def observe(self, observer: TokenSetObserver) -> None:
+        """Send every later change to ``observer``, starting with the set in force now.
+
+        A set that is stale at this point is reported as applied and then as
+        rejected, so the observer starts from the same state as the hub.
+        """
+        self._observer = observer
+        observer.set_applied(self._path, self._token_ids())
+        if self._stale_reason is not None:
+            observer.set_rejected(self._path, self._stale_reason)
+
+    def _token_ids(self) -> tuple[str, ...]:
+        """Return the identifiers of the set in force, in file order."""
+        return tuple(entry.token_id for entry in self._entries)
 
     @property
     def path(self) -> Path:
@@ -293,17 +345,18 @@ class TokenSetAuthenticator(TokenAuthenticator):
             self._mark_stale(str(exc))
             return
         self._stale_reason = None
+        if self._observer is not None:
+            self._observer.set_applied(self._path, self._token_ids())
 
     def _mark_stale(self, reason: str) -> None:
         """Record and log that the file on disk is not in force."""
         self._stale_reason = reason
         _LOG.warning("token set not applied (%s); the last accepted set stays in force", reason)
+        if self._observer is not None:
+            self._observer.set_rejected(self._path, reason)
 
     def authenticate_with_principal(self, token: str, agent: str) -> tuple[bool, str, str | None]:
         """Authenticate against the set in force after picking up any change.
-
-        Every entry is compared, in constant time, before the match is used,
-        so the position of a token in the file does not shape the refusal.
 
         Returns
         -------
@@ -311,26 +364,53 @@ class TokenSetAuthenticator(TokenAuthenticator):
             Verdict, reason and the quota principal on success. The reason
             names the token identifier, never its secret.
         """
+        outcome = self.authenticate_outcome(token, agent)
+        return outcome.ok, outcome.reason, outcome.principal
+
+    def authenticate_outcome(self, token: str, agent: str) -> TokenOutcome:
+        """Authenticate and name the matched entry and a stable reason code.
+
+        Every entry is compared, in constant time, before the match is used,
+        so the position of a token in the file does not shape the refusal.
+
+        Parameters
+        ----------
+        token : str
+            The presented secret.
+        agent : str
+            The agent name the connection claims.
+
+        Returns
+        -------
+        TokenOutcome
+            The verdict with the matched identifier, if any.
+        """
         self.refresh()
         candidate = str(token)
         if not candidate:
-            return False, "Authentication token required.", None
+            return TokenOutcome(False, "Authentication token required.", None, None, "missing")
         digest = connect_token_digest(candidate)
         matched: TokenEntry | None = None
         for entry in self._entries:
             if hmac.compare_digest(entry.digest, digest) and matched is None:
                 matched = entry
         if matched is None:
-            return False, "Invalid authentication token.", None
+            return TokenOutcome(False, "Invalid authentication token.", None, None, "unknown")
+        token_id = matched.token_id
         now = self._clock()
         if matched.not_before is not None and now < matched.not_before:
-            return False, f"Connect token '{matched.token_id}' is not yet valid.", None
+            reason = f"Connect token '{token_id}' is not yet valid."
+            return TokenOutcome(False, reason, None, token_id, "not_yet_valid")
         if matched.not_after is not None and now >= matched.not_after:
-            return False, f"Connect token '{matched.token_id}' has expired.", None
+            reason = f"Connect token '{token_id}' has expired."
+            return TokenOutcome(False, reason, None, token_id, "expired")
         if matched.agents and agent not in matched.agents:
-            return False, f"Token is not authorised for agent '{agent}'.", None
+            reason = f"Token is not authorised for agent '{agent}'."
+            return TokenOutcome(False, reason, None, token_id, "agent_not_bound")
         principal = hashlib.sha256(_QUOTA_PRINCIPAL_DOMAIN + candidate.encode("utf-8"))
-        return True, "Authenticated.", f"auth-token:{principal.hexdigest()}"
+        return TokenOutcome(
+            True, "Authenticated.", f"auth-token:{principal.hexdigest()}", token_id, "admitted"
+        )
 
 
 def connect_token_configured(args: Any) -> bool:

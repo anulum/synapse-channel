@@ -89,6 +89,12 @@ from synapse_channel.core.state import (
     TaskClaim,
 )
 from synapse_channel.core.task_causality import TaskCausalParent, task_event_payload
+from synapse_channel.core.token_audit import (
+    ADMITTED_KIND,
+    REFUSED_KIND,
+    SET_APPLIED_KIND,
+    SET_REJECTED_KIND,
+)
 
 
 class EventKind:
@@ -133,6 +139,10 @@ class EventKind:
     MULTIHUB_HEAL = "multihub_heal"
     MULTIHUB_EQUIVOCATION = "multihub_equivocation"
     MULTIHUB_EQUIVOCATION_RECOVERY = "multihub_equivocation_recovery"
+    CONNECT_TOKEN_ADMITTED = ADMITTED_KIND
+    CONNECT_TOKEN_REFUSED = REFUSED_KIND
+    CONNECT_TOKEN_SET_APPLIED = SET_APPLIED_KIND
+    CONNECT_TOKEN_SET_REJECTED = SET_REJECTED_KIND
     CORRUPT = CORRUPT_EVENT_KIND
 
 

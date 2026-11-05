@@ -41,6 +41,14 @@ execution evidence when carrying a release claim forward.
   would leave an invalid file, and with it a retired token still in force,
   writes nothing.
 
+- **Connect-token audit rows.** A hub that follows a token set and has a
+  journal records the set it applied, each file it rejected and why, the
+  token identifier that admitted each connection, and refusals. Refusals are
+  aggregated per reason and token identifier: the first of a minute is
+  written at once, the rest as one row with a count when the minute ends or
+  the hub stops. No row holds a secret or a digest. Coordination replay
+  skips these rows.
+
 ### Fixed
 
 - **`synapse inbox` waits for a closing connection of the same identity.** A
