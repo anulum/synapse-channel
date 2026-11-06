@@ -170,9 +170,10 @@ execution evidence when carrying a release claim forward.
   origin hub logged only the exception class. The warning on the
   `synapse.message_forward` logger now carries the cause, which also covers
   peer refusals and synchronous roster and delivery forwards that were not
-  logged before. The cause is at most 400 characters, written as a quoted
-  literal so a peer cannot add lines to the log, and the connect token is
-  masked. Senders, receipts and the forward ledger keep their fixed text.
+  logged before. The cause is written as a quoted literal, so a peer cannot
+  add lines to the log, and cut to 400 characters. The peer URI is shown
+  without its userinfo or query, and the connect token is masked. Senders,
+  receipts and the forward ledger keep their fixed text.
 
 - **A query command reports a connection the hub closed after its welcome.**
   When the hub closed a `synapse who`, `state` or `doctor` connection while

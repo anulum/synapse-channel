@@ -527,9 +527,10 @@ healthy projections; it does not turn an interrupted or uncertain send into an
 exactly-once guarantee. Transport failures and peer error frames produce fixed
 diagnostics for the sender, the receipt and the forward ledger, never raw
 exceptions or peer connection details. The cause goes to the origin hub's own
-log as a warning on the `synapse.message_forward` logger: at most 400
-characters, written as a quoted literal so a peer cannot add lines to the log,
-with the connect token masked.
+log as a warning on the `synapse.message_forward` logger, written as a quoted
+literal so a peer cannot add lines to the log and cut to 400 characters. The
+peer URI appears as `scheme://host:port/path`, without its userinfo or query,
+and the connect token is masked.
 The existing health and metrics backlog counts include pending entries whose
 exchange is currently running; transient ownership adds no durable outbox state.
 

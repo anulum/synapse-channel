@@ -564,3 +564,61 @@ async def test_a_hostile_peer_cannot_forge_log_lines_or_surface_the_connect_toke
     assert "FORGED log line" in message and "<token>" in message
     assert token not in caplog.text and "\n" not in message and "\r" not in message
     assert len(message) < 600
+
+
+async def test_a_control_character_flood_is_logged_within_the_bound(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Escaping cannot stretch the logged cause: the literal itself is cut, with a count."""
+
+    async def peer(socket: ServerConnection) -> None:
+        await asyncio.wait_for(socket.recv(), 3)
+        await socket.send(json.dumps({"type": "error", "payload": "\x00" * 5000}))
+
+    async with serve(peer, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        hub = SynapseHub(
+            hub_id="origin", message_peers={"peer": MessageForwardPeer(f"ws://127.0.0.1:{port}")}
+        )
+        async with running_hub(hub) as (_, uri), connect(uri) as sender:
+            await read_until_type(sender, "welcome")
+            await sender.send(
+                json.dumps({"sender": "PROJ/sender", "type": "heartbeat", "protocol_version": 3})
+            )
+            await sender.send(
+                json.dumps({"sender": "PROJ/sender", "type": "who_request", "hub": "peer"})
+            )
+            await read_until_type(sender, "error")
+    (record,) = [r for r in caplog.records if r.name == "synapse.message_forward"]
+    message = record.getMessage()
+    assert len(message) < 600 and "chars)" in message and "\x00" not in message
+
+
+async def test_the_logged_peer_uri_drops_userinfo_and_query(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A credential written into the peer URI never reaches the log; host, port and path do."""
+    password, query_value = "w" * 16, "z" * 16
+
+    async def peer(socket: ServerConnection) -> None:
+        await asyncio.wait_for(socket.recv(), 3)
+        await socket.close(code=1011, reason="no")
+
+    async with serve(peer, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        peer_uri = f"ws://user:{password}@127.0.0.1:{port}/route?key={query_value}"
+        hub = SynapseHub(hub_id="origin", message_peers={"peer": MessageForwardPeer(peer_uri)})
+        async with running_hub(hub) as (_, uri), connect(uri) as sender:
+            await read_until_type(sender, "welcome")
+            await sender.send(
+                json.dumps({"sender": "PROJ/sender", "type": "heartbeat", "protocol_version": 3})
+            )
+            await sender.send(
+                json.dumps({"sender": "PROJ/sender", "type": "who_request", "hub": "peer"})
+            )
+            await read_until_type(sender, "error")
+    (record,) = [r for r in caplog.records if r.name == "synapse.message_forward"]
+    message = record.getMessage()
+    assert f"ws://127.0.0.1:{port}/route" in message
+    assert password not in caplog.text and query_value not in caplog.text
+    assert "user:" not in caplog.text

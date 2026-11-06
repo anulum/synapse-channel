@@ -37,6 +37,7 @@ import logging
 import time
 import uuid
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 from synapse_channel.core.delivery_modes import DeliveryRefusal
 from synapse_channel.core.hub_address import (
@@ -527,18 +528,28 @@ DELIVERY_FORWARD_FIELDS = (
 
 
 def _private_detail(exc: BaseException, peer: MessageForwardPeer) -> str:
-    """Return a peer failure's text for the hub's log: bounded, escaped, token masked.
+    """Return a peer failure's text for the hub's log: escaped, bounded, secrets masked.
 
-    The text can quote what the peer sent (a close reason, an error frame), so it is cut to
-    :data:`MAX_LOG_DETAIL` characters and written as a quoted literal, which keeps line
-    breaks and control characters out of the log. The connect token is masked should a
-    peer echo it. The detail goes to the log only; replies, receipts and the forward
-    ledger keep their fixed text.
+    The text can quote what the peer sent (a close reason, an error frame), so it is
+    written as a quoted literal, which keeps line breaks and control characters out of the
+    log, and that literal is cut to :data:`MAX_LOG_DETAIL` characters with a count of what
+    was left out. The peer URI is shown without its userinfo and query, and the connect
+    token is masked should a peer echo it. The detail goes to the log only;
+    replies, receipts and the forward ledger keep their fixed text.
     """
-    text = str(exc)
-    if peer.token:
-        text = text.replace(peer.token, "<token>")
-    return repr(text[:MAX_LOG_DETAIL])
+    text = _without_secrets(str(exc), peer)
+    literal = repr(text)
+    if len(literal) <= MAX_LOG_DETAIL:
+        return literal
+    return f"{literal[:MAX_LOG_DETAIL]}…(+{len(literal) - MAX_LOG_DETAIL} chars)"
+
+
+def _without_secrets(text: str, peer: MessageForwardPeer) -> str:
+    """Show ``peer.uri`` as ``scheme://host:port/path`` and mask the connect token."""
+    parts = urlsplit(peer.uri)
+    hostport = parts.netloc.rpartition("@")[2]
+    text = text.replace(peer.uri, f"{parts.scheme}://{hostport}{parts.path}")
+    return text.replace(peer.token, "<token>") if peer.token else text
 
 
 def _log_sync_failure(
