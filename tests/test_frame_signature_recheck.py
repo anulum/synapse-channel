@@ -16,6 +16,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from websockets.exceptions import ConnectionClosedOK
 
 from hub_e2e_helpers import Recorder, running_hub
 from synapse_channel.client.agent import SynapseAgent
@@ -187,16 +188,26 @@ async def test_a_listening_connection_is_closed_once_its_key_expires(tmp_path: P
 
 
 class _Sent:
-    """Collect what a gate sends and closes, standing in for the hub's transport."""
+    """Collect what a gate sends and closes, standing in for the hub's transport.
+
+    A socket in ``gone`` fails to send, as one that is already disconnecting
+    does; a socket in ``stuck`` fails to close.
+    """
 
     def __init__(self) -> None:
         self.frames: list[dict[str, Any]] = []
         self.closed: list[tuple[Any, int, str]] = []
+        self.gone: set[int] = set()
+        self.stuck: set[int] = set()
 
-    async def send_json(self, _websocket: Any, frame: dict[str, Any]) -> None:
+    async def send_json(self, websocket: Any, frame: dict[str, Any]) -> None:
+        if id(websocket) in self.gone:
+            raise ConnectionClosedOK(None, None)
         self.frames.append(frame)
 
     async def close_socket(self, websocket: Any, *, code: int, reason: str) -> None:
+        if id(websocket) in self.stuck:
+            raise RuntimeError("the transport is gone")
         self.closed.append((websocket, code, reason))
 
 
@@ -275,3 +286,99 @@ async def test_the_recheck_loop_runs_until_cancelled() -> None:
             await loop
     assert loop.cancelled()
     assert [closed[0] for closed in sent.closed] == [socket]
+
+
+async def test_a_connection_that_cannot_be_told_or_closed_does_not_spare_the_others() -> None:
+    now, enabled, sent = [100.0], [True], _Sent()
+    gate, sessions = _gate(now=now, enabled=enabled, bundle=_expiring_bundle(150.0), sent=sent)
+    gone, stuck, plain = object(), object(), object()
+    sent.gone.add(id(gone))
+    sent.stuck.add(id(stuck))
+    for socket in (gone, stuck, plain):
+        sessions.record(socket, "P/a", "k", "bundle")
+    now[0] = 151.0
+    assert await gate.recheck() == 3
+    assert {id(closed[0]) for closed in sent.closed} == {id(gone), id(plain)}
+    assert len(sent.frames) == 2
+    assert len(sessions) == 0
+
+
+async def test_the_recheck_loop_survives_a_failed_recheck() -> None:
+    now, sent = [151.0], _Sent()
+    healthy = _expiring_bundle(150.0)
+    calls: list[int] = []
+
+    def bundle() -> EventSignatureTrustBundle:
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("the trust store could not be read")
+        return healthy
+
+    sessions = FrameSigningSessions()
+    gate = FrameSignatureGate(
+        sessions=sessions,
+        hub_id="h",
+        enabled=lambda: True,
+        bundle=bundle,
+        pins=None,
+        send_json=sent.send_json,
+        system=lambda payload, **fields: {"payload": payload, **fields},
+        close_socket=sent.close_socket,
+        count_refusal=lambda: None,
+        clock=lambda: now[0],
+    )
+    socket = object()
+    sessions.record(socket, "P/a", "k", "bundle")
+    loop = asyncio.create_task(gate.recheck_loop(interval=0.01))
+    try:
+        await _until(lambda: bool(sent.closed), seconds=5.0)
+        assert not loop.done()
+    finally:
+        loop.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop
+    assert len(calls) >= 2
+    assert [closed[0] for closed in sent.closed] == [socket]
+
+
+async def test_a_vanished_connection_neither_breaks_an_enrolment_nor_the_hub(
+    tmp_path: Path,
+) -> None:
+    machines = Machines(tmp_path / "machines")
+    hub = _hub(tmp_path, machines)
+    hub.require_signed_frames = True
+    async with running_hub(hub) as (_hub_ref, uri):
+        async with _connected(OPERATOR, uri, machines.kwargs("operator")) as (operator, inbox):
+            # A recorded connection the hub can no longer write to or close.
+            hub.frame_signing.record(object(), "PROJ/ghost", "retired-key", "bundle")
+            result = await _enrol(inbox, operator, **_seat_request(machines))
+            announced = await inbox.wait_for(
+                lambda m: m.get("event_kind") == "identity_enrollment" and m.get("name") == SEAT
+            )
+            await operator.send_message("who_request", target="System")
+            await inbox.wait_for(lambda m: m.get("type") == "who_snapshot")
+            assert operator.last_close_code is None
+    assert hub.journal is not None
+    hub.journal.close()
+    assert result["applied"] is True
+    assert announced["action"] == "enroll"
+    assert len(hub.frame_signing) == 0
+
+
+async def test_the_periodic_recheck_of_a_vanished_connection_keeps_the_hub_serving(
+    tmp_path: Path,
+) -> None:
+    machines = Machines(tmp_path / "machines")
+    hub = _hub(tmp_path, machines)
+    hub.require_signed_frames = True
+    async with running_hub(hub) as (_hub_ref, uri):
+        async with _connected(OPERATOR, uri, machines.kwargs("operator")) as (operator, inbox):
+            hub.frame_signing.record(object(), "PROJ/ghost", "retired-key", "bundle")
+            # Only the serving loop's own re-check removes the record.
+            await _until(lambda: len(hub.frame_signing) == 1, seconds=15.0)
+            inbox.messages.clear()
+            await operator.send_message("who_request", target="System")
+            await inbox.wait_for(lambda m: m.get("type") == "who_snapshot")
+            assert operator.last_close_code is None
+    assert hub.journal is not None
+    hub.journal.close()

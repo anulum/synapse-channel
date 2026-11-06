@@ -302,8 +302,11 @@ A connection that only listens sends no frame to check, so the hub also
 re-checks every signing connection's key without one: at once after any
 online enrolment, rotation or revocation (`synapse identity enroll` and
 `synapse identity revoke`), and every five seconds while it serves, which
-catches a key that expired. A connection whose key no longer qualifies gets
-`frame_signature_key_untrusted` and is closed with 4013. This includes the
+catches a key that expired: a listening connection stays open at most about
+five seconds after its key expires. A connection whose key no longer
+qualifies gets `frame_signature_key_untrusted` and is closed with 4013. A
+connection that is already going away and cannot be told or closed is
+logged; it stops neither the re-check of the others nor the hub. This includes the
 connection that rotated or revoked its own key: it receives its result
 first, then reconnects with the new key. A connection evicted by an
 operator's change to its key keeps the rotation close code 4018. Reclaiming

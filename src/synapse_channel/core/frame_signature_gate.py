@@ -28,14 +28,18 @@ are counted over the whole connection, not consecutively.
 A connection that only listens sends no frame to be checked, so keys are
 also re-checked without one: at once after every change to the enrolled
 keys, and every :data:`RECHECK_INTERVAL_SECONDS` while the hub serves, which
-catches a key that expired. A connection whose key no longer qualifies is
-told why and closed.
+catches a key that expired, so such a connection stays open at most about
+that long after its key expires. A connection whose key no longer qualifies
+is told why and closed. A connection that cannot be told or closed, because
+it is already going away, never stops the re-check of the others or the
+hub.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -51,6 +55,8 @@ from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+logger = logging.getLogger("synapse.hub")
 
 BAD_SIGNATURE_LIMIT = 5
 """Refused frames after which a connection is closed."""
@@ -252,8 +258,10 @@ class FrameSignatureGate:
         """Close every connection whose recorded key is no longer trusted.
 
         Each such connection is told :data:`KEY_UNTRUSTED` and closed, and its
-        record is dropped at once so it is not closed twice. Does nothing
-        while the hub does not require signed frames.
+        record is dropped at once so it is not closed twice. The connections
+        are closed concurrently, and one that cannot be told or closed is
+        logged without affecting the others. Does nothing while the hub does
+        not require signed frames.
 
         Returns
         -------
@@ -267,19 +275,38 @@ class FrameSignatureGate:
             for websocket, signer in self._sessions.signers()
             if self._resolve_key(signer) is None
         ]
-        for websocket, signer in untrusted:
+        for websocket, _signer in untrusted:
             self._sessions.forget(websocket)
-            await self._refuse(websocket, signer.sender, KEY_UNTRUSTED)
+        await asyncio.gather(
+            *(self._close_untrusted(websocket, signer.sender) for websocket, signer in untrusted)
+        )
+        return len(untrusted)
+
+    async def _close_untrusted(self, websocket: Any, sender: str) -> None:
+        """Tell one connection its key is no longer trusted and close it, best effort."""
+        try:
+            await self._refuse(websocket, sender, KEY_UNTRUSTED)
+        except Exception:
+            logger.warning("cannot tell %s its key is no longer trusted", sender, exc_info=True)
+        try:
             await self._close_socket(
                 websocket, code=IDENTITY_BINDING_CLOSE_CODE, reason="identity key no longer trusted"
             )
-        return len(untrusted)
+        except Exception:
+            logger.warning("cannot close the connection of %s", sender, exc_info=True)
 
     async def recheck_loop(self, interval: float = RECHECK_INTERVAL_SECONDS) -> None:
-        """Re-check every connection's key until cancelled with the server."""
+        """Re-check every connection's key until cancelled with the server.
+
+        A failed re-check is logged and the next one runs; the loop never ends
+        on its own, so it cannot stop the hub.
+        """
         while True:
             await asyncio.sleep(interval)
-            await self.recheck()
+            try:
+                await self.recheck()
+            except Exception:
+                logger.exception("cannot re-check the keys of signing connections")
 
     async def require_key(self, sender: str, websocket: Any) -> bool:
         """Refuse to bind a connection that must sign frames but proved no key.
