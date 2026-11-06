@@ -248,26 +248,30 @@ with locked(directory / "lock", blocking=False) as acquired:
         (root / "ready").write_text("READY", encoding="utf-8")
         sys.stdin.buffer.read(1)
 """
-    process = subprocess.Popen(
+    # The context manager closes the writer's pipes on every path, including
+    # a writer that exits early and fails the checkpoint assertion.
+    with subprocess.Popen(
         [sys.executable, "-c", code, str(tmp_path), phase],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-    )
-    try:
-        deadline = time.monotonic() + 20
-        while not (tmp_path / "ready").exists():
-            assert process.poll() is None, "Writer exited before preparing its transaction"
-            assert time.monotonic() < deadline, "Writer did not reach the finite test checkpoint"
-            time.sleep(0.01)
-        process.kill()
-        _stdout, stderr = process.communicate(timeout=10)
-        assert not stderr
-    finally:
-        if process.poll() is None:
+    ) as process:
+        try:
+            deadline = time.monotonic() + 20
+            while not (tmp_path / "ready").exists():
+                assert process.poll() is None, "Writer exited before preparing its transaction"
+                assert time.monotonic() < deadline, (
+                    "Writer did not reach the finite test checkpoint"
+                )
+                time.sleep(0.01)
             process.kill()
-            process.communicate(timeout=10)
+            _stdout, stderr = process.communicate(timeout=10)
+            assert not stderr
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=10)
     before = (tmp_path / ".codex/synapse.md").read_bytes()
     assert manage_adapter(tool_for("codex"), root=tmp_path, action="recover") == "recovered"
     assert (tmp_path / ".codex/synapse.md").read_bytes() == before

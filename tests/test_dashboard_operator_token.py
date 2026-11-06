@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -76,6 +77,21 @@ def _post_status(url: str, *, authorization: str | None = None) -> int:
         return int(exc.code)
 
 
+async def _get(url: str, *, authorization: str | None = None) -> int:
+    """Read off the event loop, so the hub on this loop can answer the dashboard.
+
+    A blocking read here would stall the hub: the dashboard's own hub request
+    would time out, and the hub would accept that abandoned connection just as
+    it stops and leave it open.
+    """
+    return await asyncio.to_thread(_get_status, url, authorization=authorization)
+
+
+async def _post(url: str, *, authorization: str | None = None) -> int:
+    """Write off the event loop; see :func:`_get`."""
+    return await asyncio.to_thread(_post_status, url, authorization=authorization)
+
+
 async def test_operator_dashboard_on_loopback_gets_a_generated_token() -> None:
     async with running_hub(SynapseHub()) as (_hub, uri):
         server = _server(uri, operator=True)
@@ -95,8 +111,8 @@ async def test_read_only_dashboard_on_loopback_gets_a_read_gating_token() -> Non
         try:
             assert server.dashboard_token is not None
             assert server.dashboard_token_generated is True
-            assert _get_status(server.url("/studio.json")) == 401  # read: token required
-            assert _get_status(server.url("/studio.json"), authorization=bearer) != 401
+            assert await _get(server.url("/studio.json")) == 401  # read: token required
+            assert await _get(server.url("/studio.json"), authorization=bearer) != 401
         finally:
             server.close()
 
@@ -109,11 +125,11 @@ async def test_operator_loopback_gates_both_reads_and_writes() -> None:
         server = _server(uri, operator=True)
         bearer = f"Bearer {server.dashboard_token}"
         try:
-            assert _get_status(server.url("/studio.json")) == 401  # read: token required
-            assert _get_status(server.url("/studio.json"), authorization=bearer) != 401
-            assert _post_status(server.url("/message")) == 401  # write: token required
-            # A write with the generated token clears auth (the unreachable hub then
-            # makes it a 503, but auth passed — not a 401).
-            assert _post_status(server.url("/message"), authorization=bearer) != 401
+            assert await _get(server.url("/studio.json")) == 401  # read: token required
+            assert await _get(server.url("/studio.json"), authorization=bearer) != 401
+            assert await _post(server.url("/message")) == 401  # write: token required
+            # A write with the generated token clears auth; what the hub then
+            # answers does not matter here, only that it is not a 401.
+            assert await _post(server.url("/message"), authorization=bearer) != 401
         finally:
             server.close()

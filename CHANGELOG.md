@@ -165,6 +165,12 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **A test that leaves a file, socket or process unclosed now fails.** The
+  pytest settings turn `ResourceWarning` and
+  `pytest.PytestUnraisableExceptionWarning` into errors, locally and in every
+  CI job. The product leaks those settings found are fixed in the entries
+  under Fixed; the test leaks are fixed in the tests themselves.
+
 - **The MCP face runs on MCP Python SDK 2.3.0.** The `mcp` extra now pins
   `mcp==2.3.0` (it was `1.30.0`), and with it the dev lock moves anyio to
   4.16.0, which SDK 1.30.0 could not run the HTTP command with. SDK 2 renamed

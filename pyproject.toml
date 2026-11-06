@@ -255,6 +255,11 @@ asyncio_mode = "auto"
 # A test still running after 15 minutes dumps every thread's traceback, so a
 # hung test names itself in the CI log instead of only stopping the dots.
 faulthandler_timeout = 900
+# A file, socket or process a test leaves unclosed fails that test, here and in CI.
+filterwarnings = [
+  "error::ResourceWarning",
+  "error::pytest.PytestUnraisableExceptionWarning",
+]
 markers = [
   "docs_contract: documentation/design-contract guards (not a runtime e2e journey)",
   "real_hub: exercises a live or subprocess hub runtime path",

@@ -139,6 +139,13 @@ macOS behavior; a successful hosted macOS run is required for that result.
 
 ## Standards a change must meet
 
+A test must close every file, socket and child process it opens. The pytest
+settings in `pyproject.toml` turn `ResourceWarning` and
+`pytest.PytestUnraisableExceptionWarning` into errors, the same as passing
+`-W error::ResourceWarning -W error::pytest.PytestUnraisableExceptionWarning`,
+so a leak fails the test that caused it, locally and in every CI job.
+`tests/test_pytest_leak_warnings.py` proves the setting with a real leaking probe.
+
 The CLI release compatibility tests run the complete published 0.48.0 and
 0.99.27 hubs. Their missing exact-confirmation extension refuses a fresh manual
 release without mutating the claim; legacy lock cleanup still works. Prepare

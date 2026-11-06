@@ -146,14 +146,14 @@ def _free_port() -> int:
 
 
 async def _serve_briefly(hub: SynapseHub, host: str, port: int) -> None:
+    """Serve until the hub reports its bind, then stop it.
+
+    Readiness comes from the hub itself, not from a probe connection: a probe
+    the hub accepts just as it stops would be left open.
+    """
     task = asyncio.create_task(hub.serve(host, port))
     try:
-        for _ in range(200):
-            await asyncio.sleep(0.01)
-            with socket.socket() as probe:
-                if probe.connect_ex(("127.0.0.1", port)) == 0:
-                    return
-        raise AssertionError(f"hub never started listening on port {port}")
+        assert await hub.wait_until_serving(timeout=2.0) == (host, port)
     finally:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

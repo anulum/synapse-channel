@@ -36,6 +36,7 @@ def test_unreleased_foreground_provider_response_has_a_finite_deadline() -> None
         )
         with pytest.raises(urllib.error.HTTPError) as refused:
             urllib.request.urlopen(request, timeout=15)
+        refused.value.close()
         assert refused.value.code == 504
         assert len(provider.prompt_requests) == 1
 
