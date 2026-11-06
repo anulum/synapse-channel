@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -33,26 +32,14 @@ from synapse_channel.core.deliberation import (
     seal_export_package,
     verify_sealed_package,
 )
+from synapse_channel.core.owner_only_output import (
+    write_new_owner_only_text as _write_new,
+)
 from synapse_channel.core.receipt_signing import (
     ReceiptSigningError,
     load_receipt_signing_key,
     load_receipt_verification_key,
 )
-
-
-def _write_new(path: str | Path, text: str) -> None:
-    """Create an owner-only output file and refuse to replace an existing one."""
-    file = Path(path).expanduser()
-    file.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except BaseException:
-        file.unlink(missing_ok=True)
-        raise
 
 
 def _load_spec(path: str) -> dict[str, object] | None:

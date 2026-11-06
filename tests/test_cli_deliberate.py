@@ -15,7 +15,8 @@ from typing import Any
 
 import pytest
 
-from synapse_channel.cli_deliberate import _cmd_conclude, _cmd_verify, _write_new, add_parsers
+from synapse_channel.cli_deliberate import _cmd_conclude, _cmd_verify, add_parsers
+from synapse_channel.core.owner_only_output import write_new_owner_only_text
 from synapse_channel.core.receipt_signing import generate_receipt_signing_key
 
 _SPEC: dict[str, Any] = {
@@ -175,7 +176,7 @@ class TestWriteNew:
 
         monkeypatch.setattr("os.fsync", _boom)
         with pytest.raises(OSError, match="simulated disk failure"):
-            _write_new(out, "content")
+            write_new_owner_only_text(out, "content")
         assert not out.exists()
 
 

@@ -21,8 +21,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.cli_capability_cards import _write_new
 from synapse_channel.core.identity_keys import IdentityKeyError, load_signing_key
+from synapse_channel.core.owner_only_output import write_new_owner_only_text
 from synapse_channel.core.policy_engine import PolicyError
 from synapse_channel.core.policy_signing import (
     load_policy_document,
@@ -60,7 +60,7 @@ def _cmd_sign(args: argparse.Namespace) -> int:
         )
         rendered = json.dumps(signed, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
         if args.out:
-            _write_new(args.out, rendered)
+            write_new_owner_only_text(args.out, rendered)
         else:
             sys.stdout.write(rendered)
     except FileExistsError:

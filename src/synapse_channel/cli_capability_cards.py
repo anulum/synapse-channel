@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import sys
 import time
 from pathlib import Path
@@ -39,6 +38,9 @@ from synapse_channel.core.identity_keys import (
     load_signing_key,
     public_key_b64,
     write_signing_key,
+)
+from synapse_channel.core.owner_only_output import (
+    write_new_owner_only_text as _write_new,
 )
 
 
@@ -174,22 +176,6 @@ def _keygen_fields(
     if expires_at is not None and not math.isfinite(expires_at):
         raise CapabilityCardTrustError("capability-card key expires_at must be finite")
     return key_id, agents, projects, expires_at
-
-
-def _write_new(path: str | Path, text: str) -> None:
-    """Create an owner-only output file and refuse to replace an existing card."""
-    file = Path(path).expanduser()
-    file.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    descriptor = os.open(file, flags, 0o600)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except BaseException:
-        file.unlink(missing_ok=True)
-        raise
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

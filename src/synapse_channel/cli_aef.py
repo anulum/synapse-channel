@@ -34,7 +34,6 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.cli_capability_cards import _write_new
 from synapse_channel.core.aef_chain import AefChainReport, verify_aef_chain
 from synapse_channel.core.aef_emission import AefEmissionError
 from synapse_channel.core.aef_sth import AefSthReport, AefSthVerdict, sign_aef_sth, verify_aef_sth
@@ -53,6 +52,7 @@ from synapse_channel.core.aef_verification import (
     verify_aef_receipt,
 )
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.owner_only_output import write_new_owner_only_text
 from synapse_channel.core.persistence_sqlcipher import connect_event_store
 from synapse_channel.core.receipt_signing import (
     ReceiptSigningError,
@@ -190,7 +190,7 @@ def _cmd_sth(args: argparse.Namespace) -> int:
         sys.stdout.write(text)
         return 0
     try:
-        _write_new(args.out, text)
+        write_new_owner_only_text(args.out, text)
     except OSError as exc:
         print(f"error: cannot write {args.out}: {exc.strerror}", file=sys.stderr)
         return 2

@@ -15,8 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel import cli, cli_capability_cards
+from synapse_channel import cli
 from synapse_channel.core.capability_card_trust import CapabilityCardTrustError
+from synapse_channel.core.owner_only_output import write_new_owner_only_text
 
 
 def _card(path: Path) -> Path:
@@ -392,5 +393,5 @@ def test_write_new_removes_partial_output_on_flush_failure(
 
     monkeypatch.setattr(os, "fsync", fail_fsync)
     with pytest.raises(OSError, match="disk failed"):
-        cli_capability_cards._write_new(output, "{}\n")
+        write_new_owner_only_text(output, "{}\n")
     assert not output.exists()
