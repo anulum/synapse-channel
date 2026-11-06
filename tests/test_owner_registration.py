@@ -105,3 +105,38 @@ async def test_pending_retry_retains_the_last_observed_name_refusal(tmp_path: Pa
                 assert owner.running and not listener.done()
         finally:
             await close_owner(owner, listener)
+
+
+async def test_cancelling_registration_outlasts_a_swallowed_cancellation() -> None:
+    """A probe that ignores one cancellation, as wait_for can on 3.11, is cancelled again."""
+    import asyncio
+
+    from synapse_channel.client import owner_registration
+
+    async def swallows_one_cancel() -> bool:
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            pass  # The cancellation is lost here, as in asyncio.wait_for on Python 3.11.
+        await asyncio.Event().wait()  # Waits for a reply that never comes.
+        return True
+
+    async def plain_listener() -> None:
+        await asyncio.sleep(3600)
+
+    async def failing_listener() -> None:
+        raise ConnectionError("hub went away")
+
+    agent = SynapseAgent("P/owner", None, uri="ws://127.0.0.1:9", verbose=False)
+    for listener_body in (plain_listener, failing_listener):
+        ready = asyncio.create_task(swallows_one_cancel())
+        listener = asyncio.create_task(listener_body())
+        await asyncio.sleep(0)
+        unfinished = await asyncio.wait_for(
+            owner_registration._cancel_registration(agent, listener, ready),
+            timeout=owner_registration.CANCEL_RETRY_SECONDS * 5,
+        )
+        assert ready.cancelled()
+        assert listener.done()
+        assert unfinished is (listener_body is plain_listener)
+        assert agent.running is False

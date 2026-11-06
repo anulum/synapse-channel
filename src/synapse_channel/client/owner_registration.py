@@ -68,17 +68,34 @@ async def _registered_profile(agent: SynapseAgent, timeout: float) -> bool:
         agent.callback = callback
 
 
+CANCEL_RETRY_SECONDS = 1.0
+"""How long to wait for cancelled registration tasks before cancelling again."""
+
+
 async def _cancel_registration(
     agent: SynapseAgent,
     listener: asyncio.Task[None],
     ready: asyncio.Task[bool],
 ) -> bool:
-    """Join both tasks and report whether cancellation interrupted the listener."""
+    """Join both tasks and report whether cancellation interrupted the listener.
+
+    A task can swallow a cancellation: on Python 3.11, ``asyncio.wait_for``
+    returns normally when its inner wait completes at the moment it is
+    cancelled, and the readiness probe then goes on to wait for a reply that a
+    closed socket never brings. Each unfinished task is therefore cancelled
+    again until it ends, and every wait is bounded, so this join cannot hang.
+    """
     unfinished = not listener.done()
-    ready.cancel()
     agent.running = False
-    listener.cancel()
-    await asyncio.gather(ready, listener, return_exceptions=True)
+    pending = {task for task in (ready, listener) if not task.done()}
+    while pending:
+        for task in pending:
+            task.cancel()
+        _done, pending = await asyncio.wait(pending, timeout=CANCEL_RETRY_SECONDS)
+    for task in (ready, listener):
+        # Retrieve each outcome, as the earlier gather did, so none is reported unhandled.
+        if not task.cancelled():
+            task.exception()
     return unfinished
 
 
