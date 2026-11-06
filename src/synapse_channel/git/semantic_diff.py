@@ -20,6 +20,7 @@ Rust, Go, Java, C#, and Ruby; this module never downloads a parser or contacts a
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
@@ -154,7 +155,12 @@ def _drain_git_pipe(
     reader_errors: list[str],
     overflow_lock: threading.Lock,
 ) -> None:
-    """Drain one child pipe while retaining at most ``limit`` bytes."""
+    """Drain one child pipe while retaining at most ``limit`` bytes, then close it.
+
+    The reader owns its pipe and closes it once it stops reading, whatever the
+    reason. Closing it from another thread while this read is blocked would
+    wait on the buffer lock until every holder of the pipe's write end exits.
+    """
     try:
         while chunk := stream.read(_GIT_PIPE_CHUNK_BYTES):
             room = limit - len(output)
@@ -172,6 +178,9 @@ def _drain_git_pipe(
             if label not in reader_errors:
                 reader_errors.append(label)
         overflow.set()
+    finally:
+        with contextlib.suppress(OSError):
+            stream.close()
 
 
 def _terminate_git_process(

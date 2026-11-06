@@ -195,6 +195,12 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **Semantic Git reads no longer leave their pipes open.** Each bounded
+  Git read used by the semantic diff, conflict and claim tools left the
+  child's stdout and stderr open after reading them, on success and on a
+  failed revision. Each reader now closes its pipe when it stops; the
+  bounded failure when a child keeps the output open is unchanged.
+
 - **The Codex queue wake adapter no longer leaves a zombie behind.** When a
   wake ran out of time and a process the command started had escaped its
   process group while holding the output pipes, the adapter killed the

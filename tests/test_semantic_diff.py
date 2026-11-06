@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import io
 import json
@@ -19,6 +20,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -639,6 +641,65 @@ def test_pipe_drain_keeps_first_overflow_label_and_exact_byte_ceiling() -> None:
     assert output == b"1234"
     assert labels == ["stderr"]
     assert overflow.is_set()
+
+
+class _BrokenStream(io.BytesIO):
+    """A pipe whose read fails, as a stream torn down under the reader would."""
+
+    def read(self, _size: int | None = -1) -> bytes:
+        raise OSError("read failed")
+
+
+@pytest.mark.parametrize(
+    ("stream", "limit"),
+    [(io.BytesIO(b"done"), 64), (io.BytesIO(b"too long"), 2), (_BrokenStream(), 64)],
+    ids=["eof", "overflow", "read-error"],
+)
+def test_the_pipe_reader_closes_its_pipe_however_it_stops(stream: io.BytesIO, limit: int) -> None:
+    """End of output, a byte-limit overflow and a failed read all leave the pipe closed."""
+    semantic_diff._drain_git_pipe(
+        stream,
+        bytearray(),
+        limit=limit,
+        label="stdout",
+        overflow=threading.Event(),
+        overflow_labels=[],
+        reader_errors=[],
+        overflow_lock=threading.Lock(),
+    )
+    assert stream.closed
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the stand-in git is a POSIX shell script")
+def test_a_git_whose_child_keeps_the_pipes_open_still_fails_fast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An escaped holder of git's output must not turn the bounded read into a hang."""
+    holder_pid = tmp_path / "holder.pid"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "git"
+    fake.write_text(
+        "#!/bin/sh\n"
+        "echo FAKE\n"
+        f"/usr/bin/setsid -f /bin/sh -c 'echo $$ > {holder_pid}; exec /usr/bin/sleep 15'\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    started = time.monotonic()
+    try:
+        with pytest.raises(ValueError, match="output streams did not close"):
+            semantic_diff._git(tmp_path, ("status",))
+        assert time.monotonic() - started < 5
+    finally:
+        for _ in range(100):
+            if holder_pid.exists() and holder_pid.read_text().strip():
+                break
+            time.sleep(0.02)
+        with contextlib.suppress(ProcessLookupError, ValueError):
+            os.kill(int(holder_pid.read_text().strip()), signal.SIGKILL)
 
 
 def test_repository_fsmonitor_cannot_execute_during_semantic_diff(tmp_path: Path) -> None:
