@@ -26,7 +26,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -239,11 +239,23 @@ def isolated_hub(
         # "localhost" default robustness on macOS is tracked separately.
         yield IsolatedHub(uri=f"ws://127.0.0.1:{port}", port=port, db_path=db_path)
     finally:
-        try:
-            _stop(proc)
-        finally:
-            if proc.stdout is not None:
-                proc.stdout.close()
+        _release(proc)
+
+
+def _release(
+    proc: subprocess.Popen[str],
+    stop: Callable[[subprocess.Popen[str]], None] | None = None,
+) -> None:
+    """Stop a fixture's subprocess and close its merged output pipe.
+
+    Stopping alone leaves the parent's end of the pipe open until garbage
+    collection, which a run with ``-W error::ResourceWarning`` reports.
+    """
+    try:
+        (stop or _stop)(proc)
+    finally:
+        if proc.stdout is not None:
+            proc.stdout.close()
 
 
 def _stop(proc: subprocess.Popen[str]) -> None:
@@ -343,7 +355,7 @@ def isolated_a2a_serve(
         _await_http_ready(proc, f"{base}{A2A_AGENT_CARD_PATH}", ready_timeout=ready_timeout)
         yield base
     finally:
-        _stop(proc)
+        _release(proc)
 
 
 @contextmanager
@@ -376,7 +388,7 @@ def isolated_worker(
             time.sleep(0.1)
         yield name
     finally:
-        _stop(proc)
+        _release(proc)
 
 
 @contextmanager
@@ -421,7 +433,7 @@ def isolated_supervisor(
             time.sleep(0.1)
         yield name
     finally:
-        _stop(proc)
+        _release(proc)
 
 
 @contextmanager
@@ -454,7 +466,7 @@ def isolated_team(*, no_workers: bool = True, ready_timeout: float = 10.0) -> It
             _await_listening(port, timeout=ready_timeout)
             yield f"ws://localhost:{port}"
         finally:
-            _stop_group(proc)
+            _release(proc, _stop_group)
 
 
 def _await_http_ready(
@@ -525,4 +537,4 @@ def isolated_dashboard(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[
         _await_http_ready(proc, f"{base}/snapshot.json", ready_timeout=ready_timeout, headers=auth)
         yield base, token
     finally:
-        _stop(proc)
+        _release(proc)

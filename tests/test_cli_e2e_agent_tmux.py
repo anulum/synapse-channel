@@ -36,7 +36,7 @@ from typing import Any
 import pytest
 
 from _platform_caps import requires_proc
-from cli_e2e_helpers import _candidate_environment, _stop, isolated_hub, run_cli
+from cli_e2e_helpers import _candidate_environment, _release, _stop, isolated_hub, run_cli
 from synapse_channel.agent_tmux import (
     PANE_CAPTURE_MAX_CHARS,
     AgentTmuxConfig,
@@ -668,8 +668,7 @@ def test_agent_tmux_wait_ignores_priority_broadcast_before_exact_wake(tmp_path: 
             submitted = submissions.read_text(encoding="utf-8").splitlines()
             assert submitted == [build_wake_prompt(_IDENTITY)]
         finally:
-            if waiter.poll() is None:
-                _stop(waiter)
+            _release(waiter)
 
 
 def test_agent_tmux_wait_submits_a_persisted_staged_prompt_without_repasting(
@@ -1043,8 +1042,7 @@ def test_a_lost_pane_ends_the_long_wait_within_the_probe_interval(tmp_path: Path
             assert _receiver_gone(hub.uri, 5.0)
             assert not submissions.exists()
         finally:
-            if bridge.poll() is None:
-                _stop(bridge)
+            _release(bridge)
 
 
 @requires_proc
@@ -1063,7 +1061,7 @@ def test_one_wait_process_serves_many_probe_intervals(tmp_path: Path) -> None:
             argv = Path(f"/proc/{child}/cmdline").read_bytes().split(b"\0")
             assert argv[argv.index(b"--exit-with-parent") + 1] == str(bridge.pid).encode()
         finally:
-            _stop(bridge)
+            _release(bridge)
 
 
 @requires_proc
@@ -1074,6 +1072,7 @@ def test_a_killed_bridge_takes_its_wait_and_hub_presence_with_it(tmp_path: Path)
         (child,) = _wait_children(bridge.pid)
         bridge.kill()
         bridge.wait(timeout=10.0)
+        _release(bridge)
         deadline = time.monotonic() + 5.0
         while Path(f"/proc/{child}").exists() and b"Z" not in _state(child):
             assert time.monotonic() < deadline, "the wait outlived its bridge"
@@ -1103,8 +1102,7 @@ def test_a_wake_for_a_lost_pane_is_not_injected_and_stays_in_the_hub(tmp_path: P
             assert bridge.returncode != 0, output
             assert not submissions.exists()
         finally:
-            if bridge.poll() is None:
-                _stop(bridge)
+            _release(bridge)
         with sqlite3.connect(f"file:{hub.db_path}?mode=ro", uri=True) as journal:
             payloads = [
                 json.loads(row[0])
