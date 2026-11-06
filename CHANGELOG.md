@@ -195,6 +195,12 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **`synapse team` no longer stalls a hub or worker that logs a lot.** The
+  launcher started its children with their output on a pipe it never read.
+  Once a child had written about one pipe buffer of output (64 KiB on
+  Linux), its next write blocked, so a busy hub or worker stopped
+  responding. The children now write to the launcher's own terminal.
+
 - **A refused native OpenCode startup no longer leaves its client running.**
   When a new client failed its editor qualification, the unpublished
   startup session was retired with tmux `kill-session`, which only hangs up

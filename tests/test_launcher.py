@@ -11,8 +11,10 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -62,10 +64,9 @@ def _launching_popen_factory(
     iterator = iter(commands)
     launched: list[subprocess.Popen[str]] = []
 
-    def popen(_argv: list[str], **_kwargs: object) -> subprocess.Popen[str]:
-        proc = subprocess.Popen(
-            next(iterator), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-        )
+    def popen(_argv: list[str], **kwargs: Any) -> subprocess.Popen[str]:
+        # Honour the launcher's own stream settings, so a pipe it asked for is real.
+        proc: subprocess.Popen[str] = subprocess.Popen(next(iterator), **kwargs)
         launched.append(proc)
         return proc
 
@@ -234,6 +235,34 @@ def test_run_team_returns_exit_code_of_first_dead_child(
     out = capsys.readouterr().out
     assert "--uri=ws://localhost:9999 --name=USER" in out
     assert "--target='--help$(touch injected)FAST' -- \"status?\"" in out
+
+
+def test_a_child_with_more_output_than_a_pipe_holds_still_runs_to_its_exit() -> None:
+    """A chatty hub or worker is never stalled behind an output pipe nobody reads."""
+    popen, launched = _launching_popen_factory(
+        [_python_command("import sys; sys.stdout.write('x' * 1_000_000); sys.exit(4)")]
+    )
+    result: list[int] = []
+    runner = threading.Thread(
+        target=lambda: result.append(
+            run_team(
+                9999,
+                no_workers=True,
+                popen=popen,
+                sleep=lambda _seconds: time.sleep(0.05),
+                detect=lambda prefs: "m",
+                is_hub_ready=_ready,
+            )
+        ),
+        daemon=True,
+    )
+    runner.start()
+    runner.join(timeout=20)
+    for proc in launched:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    assert result == [4]
 
 
 def test_ready_banner_does_not_bind_two_USER_names(

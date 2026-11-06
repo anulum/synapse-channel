@@ -310,7 +310,9 @@ def run_team(
         )
     try:
         for label, argv in specs:
-            proc = popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            # Children write to the launcher's own terminal. A pipe nobody reads
+            # would stall a child as soon as its output filled the pipe buffer.
+            proc = popen(argv, text=True)
             procs.append((label, proc))
             print(f"[launch] {label} started (pid={proc.pid})")
             if label == "hub" and not _await_hub_ready(
