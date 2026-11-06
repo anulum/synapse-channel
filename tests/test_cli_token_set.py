@@ -26,6 +26,7 @@ from synapse_channel.cli_token_set import (
     _cmd_new,
     _write_secret_out,
 )
+from synapse_channel.core.secure_path import apply_owner_only_file
 from synapse_channel.core.token_set import (
     TokenEntry,
     TokenSetAuthenticator,
@@ -57,7 +58,7 @@ def _new(path: Path, *extra: str, now: int = NOW) -> int:
 def _secret_file(tmp_path: Path, secret: str) -> Path:
     path = tmp_path / "operator.secret"
     path.write_text(secret + "\n")
-    path.chmod(0o600)
+    apply_owner_only_file(path)
     return path
 
 

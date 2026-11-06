@@ -270,6 +270,8 @@ jobs:
           -m pytest -q -p no:cacheprovider
           tests/test_secure_path.py
           tests/test_secret_files.py
+          tests/test_token_set.py
+          tests/test_cli_token_set.py
           tests/test_at_rest.py
           tests/test_at_rest_cloud_hsm.py
           tests/test_payload_crypto.py

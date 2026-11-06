@@ -386,7 +386,9 @@ When that boundary is crossed, the proportionate controls are:
   the file atomically (write a new file, then rename it over the old one). A
   file that fails validation, turns into a symbolic link, becomes readable by
   others or disappears is not applied: the hub keeps the last set it accepted,
-  and the old tokens keep working until a valid file appears. Expiry and
+  and the old tokens keep working until a valid file appears. On Windows the
+  check sees a permission change only together with a new file or new
+  content, so replace the file to apply or refuse one there. Expiry and
   retirement refuse new connections. **By default, retiring a token does not
   end the sessions it already admitted:** they stay connected until the
   client leaves, and a journal only records that they outlived the token.

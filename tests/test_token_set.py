@@ -27,6 +27,7 @@ from synapse_channel.cli_hub_transport import _connect_authenticator
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.secret_files import SecretFileError
+from synapse_channel.core.secure_path import apply_owner_only_file
 from synapse_channel.core.token_set import (
     TokenSetAuthenticator,
     TokenSetError,
@@ -53,7 +54,7 @@ def _write(path: Path, *entries: dict[str, Any], raw: str | None = None) -> Path
         raw if raw is not None else json.dumps({"version": 1, "tokens": list(entries)}),
         encoding="utf-8",
     )
-    os.chmod(staging, 0o600)
+    apply_owner_only_file(staging)
     os.replace(staging, path)
     return path
 
