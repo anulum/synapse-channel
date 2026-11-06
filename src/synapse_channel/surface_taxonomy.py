@@ -127,6 +127,7 @@ CLI_TAXONOMY: dict[str, str] = {
     # advisory governance and release integrity
     "policy-check": GOVERNANCE,
     "policy": GOVERNANCE,
+    "export": ANALYSIS,
     "approval": GOVERNANCE,
     "verdict": GOVERNANCE,
     "postmortem": GOVERNANCE,

@@ -140,6 +140,21 @@ def _parse(text: str, path: Path) -> RowMacKey:
     return RowMacKey(key=key, since_seq=since_seq)
 
 
+def load_row_mac_key(path: str | Path) -> RowMacKey:
+    """Read an existing row key without ever creating one.
+
+    Raises
+    ------
+    RowMacError
+        When the file is missing, unreadable, not owner-only or malformed.
+    """
+    target = Path(path)
+    try:
+        return _parse(read_secret_file(target, flag="row-authentication key"), target)
+    except SecretFileError as exc:
+        raise RowMacError(f"cannot read row-authentication key {target}: {exc}") from exc
+
+
 def load_or_create_row_mac_key(
     path: str | Path, *, current_max_seq: int, log_has_macs: bool
 ) -> RowMacKey:
@@ -168,10 +183,7 @@ def load_or_create_row_mac_key(
     """
     target = Path(path)
     if target.exists() or target.is_symlink():
-        try:
-            return _parse(read_secret_file(target, flag="row-authentication key"), target)
-        except SecretFileError as exc:
-            raise RowMacError(f"cannot read row-authentication key {target}: {exc}") from exc
+        return load_row_mac_key(target)
     if log_has_macs:
         raise RowMacError(
             f"the event log carries authenticated rows but the key {target} is missing; "

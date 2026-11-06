@@ -20,6 +20,18 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **`synapse export`: take the journal out of Synapse.** `export create` writes
+  a hub store's journal and AEF receipts as plain JSON Lines with a manifest. It
+  reads both in one read transaction, so the files are one snapshot even while
+  a hub writes. Each row keeps its stored text (base64 for bytes that are not
+  UTF-8), its payload digest, its stored row MAC and a `row_mac` statement:
+  `verified`, `failed` or `legacy` with `--row-mac-key`, otherwise
+  `unchecked`. Quarantined rows are kept and counted. `export verify` checks
+  the files against the manifest, including the exact seq set (deleted rows
+  are legitimate gaps); this is consistency, not authenticity. `export
+  to-sqlite` copies exactly the verified rows into a new plain SQLite file
+  that any SQLite tool can read. It is not a hub store. See docs/export.md.
+
 - **AEF signed tree heads: tell a complete export from a cut-off or rolled-back
   one.** `synapse aef sth` signs a tree head over a hub store's whole AEF log
   with the log's key: the RFC 6962 root over the receipts in seq order, after

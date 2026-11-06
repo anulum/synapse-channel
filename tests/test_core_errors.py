@@ -553,6 +553,7 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "path_identity",
         ValueError,
     ),
+    "ExportError": ("synapse_channel.core.journal_export", "journal_export", ValueError),
     "PolicyError": ("synapse_channel.core.policy_engine", "policy", ValueError),
     "PolicySigningError": (
         "synapse_channel.core.policy_signing",
