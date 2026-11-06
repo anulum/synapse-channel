@@ -83,7 +83,9 @@ async def _cancel_registration(
     returns normally when its inner wait completes at the moment it is
     cancelled, and the readiness probe then goes on to wait for a reply that a
     closed socket never brings. Each unfinished task is therefore cancelled
-    again until it ends, and every wait is bounded, so this join cannot hang.
+    again every :data:`CANCEL_RETRY_SECONDS` until it ends, so a task that
+    swallows one cancellation no longer holds the join; only a task that
+    ignores every cancellation could keep it waiting.
     """
     unfinished = not listener.done()
     agent.running = False
