@@ -194,11 +194,16 @@ def export_store(
     if not source.is_file():
         raise ExportError(f"no hub store at {source}")
     target = Path(out_dir)
+    if target.exists() or target.is_symlink():
+        raise ExportError(f"refusing to replace existing {target}")
+    # Read first, so a store that cannot be opened leaves no directory behind.
     try:
-        target.mkdir(mode=0o700)
-    except FileExistsError:
-        raise ExportError(f"refusing to replace existing {target}") from None
-    rows, receipts = _read_snapshot(source, key_file, between_reads)
+        rows, receipts = _read_snapshot(source, key_file, between_reads)
+    except (OSError, ValueError, RuntimeError, sqlite3.Error) as exc:
+        raise ExportError(f"cannot read {source}: {exc}") from None
+    # A directory created by someone else since the check above makes this
+    # raise FileExistsError, which the CLI reports as a refusal.
+    target.mkdir(mode=0o700)
     records = [_event_record(row, row_key) for row in rows]
     events_text = "".join(
         json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n" for record in records
@@ -267,6 +272,70 @@ def _parsed_events(raw: bytes) -> list[dict[str, Any]]:
     return events
 
 
+def _read_export(directory: Path) -> VerifiedExport:
+    """Read the manifest and data files once, checking digests and shapes."""
+    try:
+        manifest = json.loads(_read_regular(directory, MANIFEST_FILE))
+        if not isinstance(manifest, dict) or manifest.get("format") != EXPORT_FORMAT:
+            raise ExportError(f"{MANIFEST_FILE} is not a {EXPORT_FORMAT} manifest")
+        files = manifest.get("files")
+        if not isinstance(files, dict) or set(files) != set(_DATA_FILES):
+            raise ExportError(f"{MANIFEST_FILE} must list exactly {', '.join(_DATA_FILES)}")
+        data = {name: _read_regular(directory, name) for name in _DATA_FILES}
+        for name, raw in data.items():
+            if _sha256(raw) != files[name]:
+                raise ExportError(f"{name} does not match its manifest digest")
+        events = _parsed_events(data[EVENTS_FILE])
+        aef_lines = data[AEF_FILE].decode("utf-8").splitlines()
+        for number, line in enumerate(aef_lines, start=1):
+            if not isinstance(json.loads(line), dict):
+                raise ExportError(f"{AEF_FILE} line {number} is not an object")
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError) as exc:
+        if isinstance(exc, ExportError):
+            raise
+        raise ExportError(f"the export cannot be read: {exc}") from None
+    return VerifiedExport(manifest=manifest, events=events, aef_lines=aef_lines)
+
+
+def _unique_seqs(events: list[dict[str, Any]]) -> list[int]:
+    """Return every event's integer seq, refusing a non-integer or a repeat."""
+    seqs: list[int] = []
+    for record in events:
+        seq = record.get("seq")
+        if isinstance(seq, bool) or not isinstance(seq, int):
+            raise ExportError(f"{EVENTS_FILE} holds a non-integer seq")
+        seqs.append(seq)
+    if len(set(seqs)) != len(seqs):
+        raise ExportError(f"{EVENTS_FILE} repeats a seq")
+    return seqs
+
+
+def _check_against_manifest(read: VerifiedExport) -> None:
+    """Recompute every manifest figure from the rows and compare."""
+    events, manifest = read.events, read.manifest
+    seqs = _unique_seqs(events)
+    row_mac_counts: dict[str, int] = {}
+    for record in events:
+        status = str(record.get("row_mac"))
+        row_mac_counts[status] = row_mac_counts.get(status, 0) + 1
+    checks = (
+        (len(events), manifest.get("event_count"), "event count"),
+        (dict(sorted(row_mac_counts.items())), manifest.get("row_mac_counts"), "row_mac counts"),
+        (
+            sum(1 for record in events if record.get("quarantined") is True),
+            manifest.get("quarantined_count"),
+            "quarantined count",
+        ),
+        (min(seqs) if seqs else None, manifest.get("first_seq"), "first seq"),
+        (max(seqs) if seqs else None, manifest.get("last_seq"), "last seq"),
+        (_seq_set_digest(seqs), manifest.get("seq_set_sha256"), "seq set"),
+        (len(read.aef_lines), manifest.get("aef_receipt_count"), "AEF receipt count"),
+    )
+    for actual, recorded, label in checks:
+        if actual != recorded:
+            raise ExportError(f"the {label} does not match the manifest")
+
+
 def verify_export(out_dir: str | Path) -> VerifiedExport:
     """Check an export's files against its manifest and return what was checked.
 
@@ -281,38 +350,9 @@ def verify_export(out_dir: str | Path) -> VerifiedExport:
     """
     directory = Path(out_dir)
     _check_entries(directory)
-    try:
-        manifest = json.loads(_read_regular(directory, MANIFEST_FILE))
-        if not isinstance(manifest, dict) or manifest.get("format") != EXPORT_FORMAT:
-            raise ExportError(f"{MANIFEST_FILE} is not a {EXPORT_FORMAT} manifest")
-        files = manifest.get("files")
-        if not isinstance(files, dict) or set(files) != set(_DATA_FILES):
-            raise ExportError(f"{MANIFEST_FILE} must list exactly {', '.join(_DATA_FILES)}")
-        data = {name: _read_regular(directory, name) for name in _DATA_FILES}
-        for name, raw in data.items():
-            if _sha256(raw) != files[name]:
-                raise ExportError(f"{name} does not match its manifest digest")
-        events = _parsed_events(data[EVENTS_FILE])
-        aef_lines = data[AEF_FILE].decode("utf-8").splitlines()
-    except (ValueError, KeyError, TypeError, UnicodeDecodeError) as exc:
-        if isinstance(exc, ExportError):
-            raise
-        raise ExportError(f"the export cannot be read: {exc}") from None
-    seqs: list[int] = []
-    for record in events:
-        seq = record.get("seq")
-        if isinstance(seq, bool) or not isinstance(seq, int):
-            raise ExportError(f"{EVENTS_FILE} holds a non-integer seq")
-        seqs.append(seq)
-    checks = (
-        (len(events), manifest.get("event_count"), "event count"),
-        (_seq_set_digest(seqs), manifest.get("seq_set_sha256"), "seq set"),
-        (len(aef_lines), manifest.get("aef_receipt_count"), "AEF receipt count"),
-    )
-    for actual, recorded, label in checks:
-        if actual != recorded:
-            raise ExportError(f"the {label} does not match the manifest")
-    return VerifiedExport(manifest=manifest, events=events, aef_lines=aef_lines)
+    read = _read_export(directory)
+    _check_against_manifest(read)
+    return read
 
 
 _SQLITE_SCHEMA = (
@@ -341,6 +381,16 @@ def export_to_sqlite(out_dir: str | Path, sqlite_path: str | Path) -> VerifiedEx
         os.close(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
     except FileExistsError:
         raise ExportError(f"refusing to replace existing {target}") from None
+    try:
+        _write_sqlite(target, verified)
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+    return verified
+
+
+def _write_sqlite(target: Path, verified: VerifiedExport) -> None:
+    """Write the verified rows into the new plain SQLite file at ``target``."""
     connection = sqlite3.connect(target)
     try:
         for statement in _SQLITE_SCHEMA:
@@ -381,4 +431,3 @@ def export_to_sqlite(out_dir: str | Path, sqlite_path: str | Path) -> VerifiedEx
         connection.commit()
     finally:
         connection.close()
-    return verified

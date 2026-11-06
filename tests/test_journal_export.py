@@ -224,6 +224,12 @@ def _rewrite(out: Path, name: str, text: str, *, fix_digest: bool) -> None:
         ("non-object-line", "line 1 is not an object"),
         ("string-seq", "holds a non-integer seq"),
         ("aef-count", "AEF receipt count does not match"),
+        ("aef-not-object", "aef_receipts.jsonl line 1 is not an object"),
+        ("duplicate-seq", "repeats a seq"),
+        ("manifest-row-mac", "row_mac counts does not match"),
+        ("manifest-quarantined", "quarantined count does not match"),
+        ("manifest-first-seq", "first seq does not match"),
+        ("manifest-last-seq", "last seq does not match"),
     ],
 )
 def test_verify_refuses_every_inconsistency(tmp_path: Path, damage: str, message: str) -> None:
@@ -239,11 +245,11 @@ def test_verify_refuses_every_inconsistency(tmp_path: Path, damage: str, message
     elif damage == "removed-line":
         _rewrite(out, "events.jsonl", "".join(lines[1:]), fix_digest=True)
     elif damage == "swapped-seq":
-        record = json.loads(lines[0])
-        record["seq"] = 99
-        _rewrite(
-            out, "events.jsonl", json.dumps(record) + "\n" + "".join(lines[1:]), fix_digest=True
-        )
+        # seq 2 becomes the deleted seq 4: same count, first and last, other set.
+        record = json.loads(lines[1])
+        record["seq"] = 4
+        swapped = [lines[0], json.dumps(record) + "\n", *lines[2:]]
+        _rewrite(out, "events.jsonl", "".join(swapped), fix_digest=True)
     elif damage == "extra-entry":
         (out / "notes.txt").write_text("hi", "utf-8")
     elif damage == "missing-file":
@@ -271,6 +277,21 @@ def test_verify_refuses_every_inconsistency(tmp_path: Path, damage: str, message
         )
     elif damage == "aef-count":
         _rewrite(out, "aef_receipts.jsonl", "{}\n", fix_digest=True)
+    elif damage == "aef-not-object":
+        aef = (out / "aef_receipts.jsonl").read_text("utf-8").splitlines(keepends=True)
+        _rewrite(out, "aef_receipts.jsonl", "[1, 2]\n" + "".join(aef[1:]), fix_digest=True)
+    elif damage == "duplicate-seq":
+        _rewrite(out, "events.jsonl", events + lines[0], fix_digest=True)
+    elif damage.startswith("manifest-"):
+        manifest = json.loads((out / "MANIFEST.json").read_text("utf-8"))
+        field = {
+            "manifest-row-mac": "row_mac_counts",
+            "manifest-quarantined": "quarantined_count",
+            "manifest-first-seq": "first_seq",
+            "manifest-last-seq": "last_seq",
+        }[damage]
+        manifest[field] = {"verified": 99} if field == "row_mac_counts" else 99
+        (out / "MANIFEST.json").write_text(json.dumps(manifest), "utf-8")
 
     with pytest.raises(ExportError, match=message):
         verify_export(out)
@@ -335,3 +356,36 @@ def test_cli_verify_and_to_sqlite_report_and_exit(
         ]
     )
     assert code == 2 and "row-authentication key" in capsys.readouterr().err
+
+
+def test_failed_reads_and_writes_leave_nothing_behind(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A store that cannot be read leaves no directory; a failed copy leaves no file."""
+    db, _key = _store(tmp_path)
+    out = tmp_path / "export"
+    with pytest.raises(ExportError, match="cannot read"):
+        export_store(db, out, key_file=tmp_path / "missing.key")
+    assert not out.exists()
+    code = cli.main(
+        [
+            "export",
+            "create",
+            str(db),
+            "--out",
+            str(out),
+            "--db-key-file",
+            str(tmp_path / "missing.key"),
+        ]
+    )
+    assert code == 2 and "cannot read" in capsys.readouterr().err and not out.exists()
+
+    export_store(db, out)
+    lines = (out / "events.jsonl").read_text("utf-8").splitlines(keepends=True)
+    record = json.loads(lines[0])
+    record["mac"] = {"not": "a value SQLite can store"}
+    _rewrite(out, "events.jsonl", json.dumps(record) + "\n" + "".join(lines[1:]), fix_digest=True)
+    plain = tmp_path / "copy.sqlite"
+    with pytest.raises(sqlite3.Error):
+        export_to_sqlite(out, plain)
+    assert not plain.exists()
