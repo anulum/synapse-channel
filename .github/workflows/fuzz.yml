@@ -41,3 +41,4 @@ jobs:
           python -m pytest
           tests/test_fuzz_wire_inputs.py
           tests/test_fuzz_persistence_inputs.py
+          tests/test_fuzz_frame_signature.py

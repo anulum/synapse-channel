@@ -1172,6 +1172,14 @@ fails if any row disagrees with the implementation.
 | `DEFAULT_RESOURCE_TTL_SECONDS` | `300.0` | `core/state_resources.py` |
 | `WIRE_PROTOCOL_VERSION` | `7` | `core/protocol.py` |
 | `NAME_OWNED_CLOSE_CODE` | `4016` | `connect_failures.py` |
+| `DEFAULT_MAX_MSG_BYTES` | `1048576` (1 MiB, largest inbound frame) | `core/hub_defaults.py` |
+| `MAX_JSON_DEPTH` | `64` (deepest JSON nesting a frame may have) | `core/protocol.py` |
+| `DEFAULT_MAX_CLIENTS` | `256` | `core/hub_defaults.py` |
+| `DEFAULT_MAX_CONNECTIONS_PER_HOST` | `32` | `core/hub_defaults.py` |
+| `IJSON_MAX_INTEGER` | `9007199254740991` (largest integer a signed frame may hold) | `core/aef_canonical.py` |
+| `SESSION_NONCE_BYTES` | `18` (random bytes in a connection's session nonce) | `core/frame_signing.py` |
+| `BAD_SIGNATURE_LIMIT` | `5` (refused frames that close a signing connection) | `core/frame_signature_gate.py` |
+| `RECHECK_INTERVAL_SECONDS` | `5.0` (signing-key re-check period) | `core/frame_signature_gate.py` |
 
 ## The machine-checkable model
 

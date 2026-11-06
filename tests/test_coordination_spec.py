@@ -23,12 +23,20 @@ import re
 from pathlib import Path
 
 from synapse_channel.connect_failures import NAME_OWNED_CLOSE_CODE
+from synapse_channel.core.aef_canonical import IJSON_MAX_INTEGER
+from synapse_channel.core.frame_signature_gate import BAD_SIGNATURE_LIMIT, RECHECK_INTERVAL_SECONDS
+from synapse_channel.core.frame_signing import SESSION_NONCE_BYTES
+from synapse_channel.core.hub_defaults import (
+    DEFAULT_MAX_CLIENTS,
+    DEFAULT_MAX_CONNECTIONS_PER_HOST,
+    DEFAULT_MAX_MSG_BYTES,
+)
 from synapse_channel.core.message_auth import (
     DEFAULT_MESSAGE_AUTH_FUTURE_SKEW_SECONDS,
     DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
 )
 from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL
-from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION
+from synapse_channel.core.protocol import MAX_JSON_DEPTH, WIRE_PROTOCOL_VERSION
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import (
     MAX_CLAIMS_PER_AGENT,
@@ -108,6 +116,14 @@ def test_normative_constants_match_the_implementation() -> None:
         ("DEFAULT_RESOURCE_TTL_SECONDS", str(DEFAULT_RESOURCE_TTL_SECONDS)),
         ("WIRE_PROTOCOL_VERSION", str(WIRE_PROTOCOL_VERSION)),
         ("NAME_OWNED_CLOSE_CODE", str(NAME_OWNED_CLOSE_CODE)),
+        ("DEFAULT_MAX_MSG_BYTES", str(DEFAULT_MAX_MSG_BYTES)),
+        ("MAX_JSON_DEPTH", str(MAX_JSON_DEPTH)),
+        ("DEFAULT_MAX_CLIENTS", str(DEFAULT_MAX_CLIENTS)),
+        ("DEFAULT_MAX_CONNECTIONS_PER_HOST", str(DEFAULT_MAX_CONNECTIONS_PER_HOST)),
+        ("IJSON_MAX_INTEGER", str(IJSON_MAX_INTEGER)),
+        ("SESSION_NONCE_BYTES", str(SESSION_NONCE_BYTES)),
+        ("BAD_SIGNATURE_LIMIT", str(BAD_SIGNATURE_LIMIT)),
+        ("RECHECK_INTERVAL_SECONDS", str(RECHECK_INTERVAL_SECONDS)),
     ]
     rows = {
         line.split("|")[1].strip(): line
