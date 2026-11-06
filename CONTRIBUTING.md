@@ -141,9 +141,11 @@ macOS behavior; a successful hosted macOS run is required for that result.
 
 A test must close every file, socket and child process it opens. The pytest
 settings in `pyproject.toml` turn `ResourceWarning` and
-`pytest.PytestUnraisableExceptionWarning` into errors, the same as passing
-`-W error::ResourceWarning -W error::pytest.PytestUnraisableExceptionWarning`,
-so a leak fails the test that caused it, locally and in every CI job.
+`pytest.PytestUnraisableExceptionWarning` into errors, so a leak fails the test
+that caused it, locally and in every CI job. For warnings raised while tests
+are collected and run, this is equivalent to passing
+`-W error::ResourceWarning -W error::pytest.PytestUnraisableExceptionWarning`;
+a command-line `-W` also covers warnings raised when the interpreter starts.
 `tests/test_pytest_leak_warnings.py` proves the setting with a real leaking probe.
 
 The CLI release compatibility tests run the complete published 0.48.0 and
