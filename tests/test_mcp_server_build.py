@@ -15,33 +15,49 @@ import pytest
 
 from hub_e2e_helpers import running_hub
 from mcp_server_helpers import start_bridge
+from synapse_channel import __version__
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.mcp.inbox import McpFeedInbox
-from synapse_channel.mcp.registration import registered_mcp_tool_names
+from synapse_channel.mcp.registration import MCP_SERVER_MODULE, registered_mcp_tool_names
 from synapse_channel.mcp.server import (
     MCP_EXTRA_HINT,
     SynapseHubBridge,
-    _require_fastmcp,
+    _require_mcp_server,
     build_mcp_server,
 )
 
 
-def test_require_fastmcp_returns_class() -> None:
-    cls = _require_fastmcp()
-    assert cls.__name__ == "FastMCP"
+def test_require_mcp_server_returns_the_sdk_2_server_class() -> None:
+    cls = _require_mcp_server()
+    assert (cls.__module__, cls.__name__) == ("mcp.server.mcpserver.server", "MCPServer")
 
 
-def test_require_fastmcp_missing_raises() -> None:
-    def missing_fastmcp(_name: str) -> object:
+def test_require_mcp_server_missing_raises() -> None:
+    def missing_sdk(_name: str) -> object:
         raise ImportError("mcp extra unavailable")
 
     with pytest.raises(RuntimeError, match=r"\[mcp\]"):
-        _require_fastmcp(import_module=missing_fastmcp)
+        _require_mcp_server(import_module=missing_sdk)
+
+
+def test_an_sdk_without_mcpserver_gets_the_install_hint() -> None:
+    """An SDK 1.x install has no ``mcp.server.mcpserver``; the hint names the extra."""
+    imported: list[str] = []
+
+    def sdk_1(name: str) -> object:
+        imported.append(name)
+        raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+
+    with pytest.raises(RuntimeError, match=r"\[mcp\]"):
+        _require_mcp_server(import_module=sdk_1)
+    assert imported == [MCP_SERVER_MODULE]
 
 
 async def test_build_registers_tools_and_resources() -> None:
     server = build_mcp_server(SynapseHubBridge(request_timeout=0.05))
+    # SDK 2 reports an empty version unless told; the server names this package's.
+    assert (server.name, server.version) == ("synapse", __version__)
     tool_names = {tool.name for tool in await server.list_tools()}
     # Exact match (not subset): pins doctor static inventory to the live server.
     assert tool_names == set(registered_mcp_tool_names())
@@ -50,7 +66,7 @@ async def test_build_registers_tools_and_resources() -> None:
     assert any("state" in uri for uri in resource_uris)
     assert any("manifest" in uri for uri in resource_uris)
     assert any("directory" in uri for uri in resource_uris)
-    template_uris = {template.uriTemplate for template in await server.list_resource_templates()}
+    template_uris = {template.uri_template for template in await server.list_resource_templates()}
     assert "synapse://task/{task_id}" in template_uris
     assert "synapse://agent/{agent}" in template_uris
     assert "synapse://resource-kind/{kind}" in template_uris
@@ -127,9 +143,9 @@ async def test_every_tool_and_resource_wrapper_dispatches(tmp_path: Path) -> Non
 
 
 async def test_build_requires_mcp_extra() -> None:
-    def missing_fastmcp() -> NoReturn:
+    def missing_sdk() -> NoReturn:
         raise RuntimeError(MCP_EXTRA_HINT)
 
     with pytest.raises(RuntimeError, match=r"\[mcp\]"):
-        build_mcp_server(SynapseHubBridge(request_timeout=0.05), fastmcp_loader=missing_fastmcp)
+        build_mcp_server(SynapseHubBridge(request_timeout=0.05), server_loader=missing_sdk)
     assert "synapse-channel[mcp]" in MCP_EXTRA_HINT

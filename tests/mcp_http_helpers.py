@@ -19,8 +19,9 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import httpx2
 import jwt
 import uvicorn
 from cryptography import x509
@@ -28,6 +29,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.x509.oid import NameOID
+from mcp.types import RequestParamsMeta
 from starlette.applications import Starlette
 
 from synapse_channel.core.identity_keys import write_signing_key
@@ -81,6 +83,34 @@ def access_token(key: Ed25519PrivateKey, **changes: object) -> str:
     }
     claims.update(changes)
     return jwt.encode(claims, key, algorithm="EdDSA", headers={"kid": "issuer-1"})
+
+
+def operation_meta(operation: str) -> RequestParamsMeta:
+    """Return request ``_meta`` carrying a Synapse mutation operation id.
+
+    ``RequestParamsMeta`` is an open TypedDict (PEP 728 ``extra_items``), but
+    mypy 2.4 rejects its extra keys as unknown, so the open map is built here
+    once instead of at every call site.
+    """
+    meta: dict[str, Any] = {"synapse/operation-id": operation}
+    return cast(RequestParamsMeta, meta)
+
+
+class SessionIdRecorder:
+    """Keep the latest ``mcp-session-id`` a server sent, for session-ownership checks.
+
+    SDK 2 no longer yields the session id from ``streamable_http_client``; the
+    documented way to observe it is a response hook on the HTTP client.
+    """
+
+    def __init__(self) -> None:
+        self.value: str | None = None
+
+    async def __call__(self, response: httpx2.Response) -> None:
+        """Record the session id header when the response carries one."""
+        received = response.headers.get("mcp-session-id")
+        if received:
+            self.value = received
 
 
 def tls_files(directory: Path) -> tuple[Path, Path, ssl.SSLContext]:

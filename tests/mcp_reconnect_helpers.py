@@ -38,7 +38,7 @@ async def wait_for_identity(
     started = loop.time()
     while loop.time() - started < 10:
         result = await session.call_tool("synapse_status", {})
-        if not result.isError and len(result.content) == 1:
+        if not result.is_error and len(result.content) == 1:
             block = result.content[0]
             if isinstance(block, TextContent):
                 try:

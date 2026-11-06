@@ -12,12 +12,18 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import httpx
+import httpx2
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from mcp_http_helpers import access_token, https_server, provision
+from mcp_http_helpers import (
+    SessionIdRecorder,
+    access_token,
+    https_server,
+    operation_meta,
+    provision,
+)
 from mcp_reconnect_helpers import stop_hub, wait_for_identity
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
@@ -43,7 +49,8 @@ async def test_https_principals_recover_without_replaying_offline_mutations(tmp_
             operation_timeout=0.5,
         )
         async with https_server(app, tmp_path) as (url, tls):
-            async with httpx.AsyncClient(
+            session_id = SessionIdRecorder()
+            async with httpx2.AsyncClient(
                 verify=tls,
                 timeout=10,
                 trust_env=False,
@@ -51,17 +58,17 @@ async def test_https_principals_recover_without_replaying_offline_mutations(tmp_
                     "Authorization": "Bearer "
                     + access_token(issuer, scope="synapse:read synapse:mutate")
                 },
+                event_hooks={"response": [session_id]},
             ) as client:
                 async with streamable_http_client(url + "/mcp", http_client=client) as (
                     read,
                     write,
-                    session_id,
                 ):
                     async with ClientSession(read, write) as session:
                         await session.initialize()
                         await wait_for_identity(session, hub, "ALPHA/alice", also=("ALPHA/bob",))
                         assert {"ALPHA/alice", "ALPHA/bob"} <= set(hub.online_agents())
-                        original_session = session_id()
+                        original_session = session_id.value
                         assert original_session
                         await asyncio.sleep(1.1)
                         for incarnation in range(2):
@@ -73,9 +80,9 @@ async def test_https_principals_recover_without_replaying_offline_mutations(tmp_
                                     "task_id": f"ALPHA/offline-{incarnation}",
                                     "title": "must not replay",
                                 },
-                                meta={"synapse/operation-id": f"offline-{incarnation}"},
+                                meta=operation_meta(f"offline-{incarnation}"),
                             )
-                            assert rejected.isError
+                            assert rejected.is_error
                             await asyncio.sleep(0.7)
                             hub = SynapseHub(
                                 journal=store,
@@ -88,15 +95,15 @@ async def test_https_principals_recover_without_replaying_offline_mutations(tmp_
                                 session, hub, "ALPHA/alice", also=("ALPHA/bob",)
                             )
                             assert {"ALPHA/alice", "ALPHA/bob"} <= set(hub.online_agents())
-                            assert session_id() == original_session
+                            assert session_id.value == original_session
                             assert f"ALPHA/offline-{incarnation}" not in hub.blackboard.tasks
                             task_id = f"ALPHA/online-{incarnation}"
                             declared = await session.call_tool(
                                 "synapse_task_declare",
                                 {"task_id": task_id, "title": "after reconnect"},
-                                meta={"synapse/operation-id": f"online-{incarnation}"},
+                                meta=operation_meta(f"online-{incarnation}"),
                             )
-                            assert not declared.isError
+                            assert not declared.is_error
                             assert hub.blackboard.tasks[task_id].version == 1
                             assert hub.blackboard.tasks[task_id].created_by == "ALPHA/alice"
                             cross_principal = await client.post(

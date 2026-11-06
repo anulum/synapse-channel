@@ -13,16 +13,22 @@ import json
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared.exceptions import McpError
-from pydantic import AnyUrl
+from mcp.shared.exceptions import MCPError
 
 from hub_e2e_helpers import running_hub
-from mcp_http_helpers import access_token, https_server, provision
+from mcp_http_helpers import (
+    SessionIdRecorder,
+    access_token,
+    https_server,
+    operation_meta,
+    provision,
+)
+from synapse_channel import __version__
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.mcp.http_application import build_http_mcp_app
@@ -49,32 +55,38 @@ async def test_native_identities_mutations_resources_and_reconnect(tmp_path: Pat
             )
             async with https_server(app, tmp_path) as (url, tls):
                 assert {"ALPHA/alice", "ALPHA/bob"} <= set(hub.online_agents())
-                async with httpx.AsyncClient(
+                session_id = SessionIdRecorder()
+                async with httpx2.AsyncClient(
                     verify=tls,
                     timeout=10,
                     trust_env=False,
                     headers={"Authorization": "bEaReR " + token},
+                    event_hooks={"response": [session_id]},
                 ) as client:
                     for incarnation in range(2):
                         async with streamable_http_client(url + "/mcp", http_client=client) as (
                             read,
                             write,
-                            session_id,
                         ):
                             async with ClientSession(read, write) as session:
                                 initialized = await session.initialize()
-                                assert initialized.protocolVersion == "2025-11-25"
+                                assert initialized.protocol_version == "2025-11-25"
+                                server_info = initialized.server_info
+                                assert (server_info.name, server_info.version) == (
+                                    "synapse",
+                                    __version__,
+                                )
                                 assert {
                                     tool.name for tool in (await session.list_tools()).tools
                                 } == (READ_TOOLS | MUTATION_TOOLS)
                                 declared = await session.call_tool(
                                     "synapse_task_declare",
                                     {"task_id": "ALPHA/task", "title": "Remote task"},
-                                    meta={"synapse/operation-id": "declare-task"},
+                                    meta=operation_meta("declare-task"),
                                 )
-                                assert not declared.isError
-                                assert declared.structuredContent is not None
-                                observed = declared.structuredContent["execution_outcome"]
+                                assert not declared.is_error
+                                assert declared.structured_content is not None
+                                observed = declared.structured_content["execution_outcome"]
                                 assert observed["schema"] == "synapse.execution-outcome.v1"
                                 assert observed["boundary"] == "mcp_exchange"
                                 assert observed["state"] == "confirmed_done"
@@ -87,7 +99,9 @@ async def test_native_identities_mutations_resources_and_reconnect(tmp_path: Pat
                                     continue
                                 assert (await session.list_resources()).resources
                                 assert (
-                                    len((await session.list_resource_templates()).resourceTemplates)
+                                    len(
+                                        (await session.list_resource_templates()).resource_templates
+                                    )
                                     == 3
                                 )
                                 for resource in (
@@ -99,7 +113,7 @@ async def test_native_identities_mutations_resources_and_reconnect(tmp_path: Pat
                                     "synapse://agent/ALPHA%2Falice",
                                     "synapse://resource-kind/cpu",
                                 ):
-                                    await session.read_resource(AnyUrl(resource))
+                                    await session.read_resource(resource)
                                 for resource in (
                                     "synapse://agent/BETA%2Fforeign",
                                     "file:///etc/passwd",
@@ -107,8 +121,8 @@ async def test_native_identities_mutations_resources_and_reconnect(tmp_path: Pat
                                     "synapse://task/" + "x" * 257,
                                     "synapse://unknown/ALPHA%2Ftask",
                                 ):
-                                    with pytest.raises(McpError, match="resource refused"):
-                                        await session.read_resource(AnyUrl(resource))
+                                    with pytest.raises(MCPError, match="resource refused"):
+                                        await session.read_resource(resource)
                                 for name, args in (
                                     ("synapse_claim", {"task_id": "BETA/task"}),
                                     ("synapse_claim", {"task_id": "ALPHA/task", "paths": ["src"]}),
@@ -160,40 +174,40 @@ async def test_native_identities_mutations_resources_and_reconnect(tmp_path: Pat
                                     result = await session.call_tool(
                                         name,
                                         args,
-                                        meta={"synapse/operation-id": "refused"},
+                                        meta=operation_meta("refused"),
                                     )
-                                    assert result.isError
+                                    assert result.is_error
                                     assert "BETA/foreign" not in result.model_dump_json()
                                 assert not hub.state.claims
                                 conflict = await session.call_tool(
                                     "synapse_task_declare",
                                     {"task_id": "ALPHA/task", "title": "Conflicting retry"},
-                                    meta={"synapse/operation-id": "declare-task"},
+                                    meta=operation_meta("declare-task"),
                                 )
-                                assert conflict.isError
+                                assert conflict.is_error
                                 assert hub.blackboard.tasks["ALPHA/task"].title == "Remote task"
                                 assert (
                                     await session.call_tool(
                                         "synapse_claim",
                                         {"task_id": "ALPHA/task"},
                                     )
-                                ).isError
+                                ).is_error
                                 # A remote pathless claim would cover the server's worktree.
                                 assert (
                                     await session.call_tool(
                                         "synapse_claim",
                                         {"task_id": "ALPHA/task"},
-                                        meta={"synapse/operation-id": "claim-task-pathless"},
+                                        meta=operation_meta("claim-task-pathless"),
                                     )
-                                ).isError
+                                ).is_error
                                 claimed = await session.call_tool(
                                     "synapse_claim",
                                     {"task_id": "ALPHA/task", "task_only": True},
-                                    meta={"synapse/operation-id": "claim-task"},
+                                    meta=operation_meta("claim-task"),
                                 )
-                                assert not claimed.isError
+                                assert not claimed.is_error
                                 assert hub.state.claims["ALPHA/task"].owner == "ALPHA/alice"
-                                identity = session_id()
+                                identity = session_id.value
                                 assert identity
                                 response = await client.post(
                                     url + "/mcp",
@@ -210,16 +224,16 @@ async def test_native_identities_mutations_resources_and_reconnect(tmp_path: Pat
                                 released = await session.call_tool(
                                     "synapse_release",
                                     {"task_id": "ALPHA/task"},
-                                    meta={"synapse/operation-id": "release-task"},
+                                    meta=operation_meta("release-task"),
                                 )
-                                assert not released.isError
+                                assert not released.is_error
                                 assert not hub.state.claims
                                 replay = await session.call_tool(
                                     "synapse_release",
                                     {"task_id": "ALPHA/task"},
-                                    meta={"synapse/operation-id": "release-task"},
+                                    meta=operation_meta("release-task"),
                                 )
-                                assert replay.structuredContent == released.structuredContent
+                                assert replay.structured_content == released.structured_content
                                 for name, arguments, operation in (
                                     (
                                         "synapse_task_declare",
@@ -255,9 +269,9 @@ async def test_native_identities_mutations_resources_and_reconnect(tmp_path: Pat
                                         await session.call_tool(
                                             name,
                                             arguments,
-                                            meta={"synapse/operation-id": operation},
+                                            meta=operation_meta(operation),
                                         )
-                                    ).isError
+                                    ).is_error
                                 assert hub.state.claims["ALPHA/next"].owner == "ALPHA/bob"
                                 assert hub.blackboard.tasks["ALPHA/next"].suggested_owner == (
                                     "ALPHA/bob"
@@ -265,9 +279,9 @@ async def test_native_identities_mutations_resources_and_reconnect(tmp_path: Pat
                                 denied = await session.call_tool(
                                     "synapse_release",
                                     {"task_id": "ALPHA/next"},
-                                    meta={"synapse/operation-id": "not-owner"},
+                                    meta=operation_meta("not-owner"),
                                 )
-                                assert denied.isError
+                                assert denied.is_error
                 assert "BETA/foreign" not in hub.online_agents()
     finally:
         store.close()
@@ -288,7 +302,7 @@ async def test_http_admission_origin_metadata_and_revocation(tmp_path: Path) -> 
             allowed_origins=["https://trusted.example.test"],
         )
         async with https_server(app, tmp_path) as (url, tls):
-            async with httpx.AsyncClient(verify=tls, timeout=5, trust_env=False) as client:
+            async with httpx2.AsyncClient(verify=tls, timeout=5, trust_env=False) as client:
                 metadata = await client.get(url + "/.well-known/oauth-protected-resource/mcp")
                 assert metadata.status_code == 200
                 unauthenticated = await client.get(url + "/mcp")
@@ -370,7 +384,7 @@ async def test_mutation_retry_survives_a_real_hub_and_http_restart(tmp_path: Pat
                     allowed_origins=[],
                 )
                 async with https_server(app, tmp_path) as (url, tls):
-                    async with httpx.AsyncClient(
+                    async with httpx2.AsyncClient(
                         verify=tls,
                         timeout=10,
                         trust_env=False,
@@ -385,18 +399,17 @@ async def test_mutation_retry_survives_a_real_hub_and_http_restart(tmp_path: Pat
                         async with streamable_http_client(url + "/mcp", http_client=client) as (
                             read,
                             write,
-                            _,
                         ):
                             async with ClientSession(read, write) as session:
                                 await session.initialize()
                                 declared = await session.call_tool(
                                     "synapse_task_declare",
                                     {"task_id": "ALPHA/persisted", "title": "Durable retry"},
-                                    meta={"synapse/operation-id": "restart-declare"},
+                                    meta=operation_meta("restart-declare"),
                                 )
-                                assert not declared.isError
+                                assert not declared.is_error
                                 board = await session.call_tool("synapse_board")
-                                assert not board.isError
+                                assert not board.is_error
                                 assert hub.blackboard.tasks["ALPHA/persisted"].version == 1
                                 if incarnation:
                                     assert (

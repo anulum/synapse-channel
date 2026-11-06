@@ -19,7 +19,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from mcp import ClientSession, StdioServerParameters
@@ -34,7 +34,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from hub_e2e_helpers import running_hub
-from mcp_http_helpers import access_token, https_server, provision
+from mcp_http_helpers import access_token, https_server, operation_meta, provision
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.client.agent import SynapseAgent
@@ -86,17 +86,11 @@ async def test_actual_https_refuses_malformed_registered_tool_results(
                 HttpOperationPolicy(verifier, "alice", "ALPHA", grant),
                 ProjectMcpViews(bridge, "ALPHA"),
                 token_verifier=verifier,
-                json_response=True,
                 auth=AuthSettings(
                     issuer_url=AnyHttpUrl(verifier.issuer),
                     resource_server_url=AnyHttpUrl(verifier.resource),
                     validate_token_resource=True,
                     required_scopes=["synapse:read"],
-                ),
-                transport_security=TransportSecuritySettings(
-                    enable_dns_rebinding_protection=True,
-                    allowed_hosts=["127.0.0.1:*"],
-                    allowed_origins=[],
                 ),
             )
 
@@ -107,11 +101,19 @@ async def test_actual_https_refuses_malformed_registered_tool_results(
                     return "UNTRUSTED_PLUGIN_RESULT"
                 return CallToolResult(
                     content=[TextContent(type="text", text="UNTRUSTED_PLUGIN_RESULT")],
-                    structuredContent={"result": 7, "execution_outcome": []},
+                    structured_content={"result": 7, "execution_outcome": []},
                 )
 
-            async with https_server(server.streamable_http_app(), tmp_path) as (url, tls):
-                async with httpx.AsyncClient(
+            app = server.streamable_http_app(
+                json_response=True,
+                transport_security=TransportSecuritySettings(
+                    enable_dns_rebinding_protection=True,
+                    allowed_hosts=["127.0.0.1:*"],
+                    allowed_origins=[],
+                ),
+            )
+            async with https_server(app, tmp_path) as (url, tls):
+                async with httpx2.AsyncClient(
                     verify=tls,
                     timeout=5,
                     trust_env=False,
@@ -123,16 +125,15 @@ async def test_actual_https_refuses_malformed_registered_tool_results(
                     async with streamable_http_client(url + "/mcp", http_client=client) as (
                         read,
                         write,
-                        _,
                     ):
                         async with ClientSession(read, write) as session:
                             await session.initialize()
                             result = await session.call_tool(
                                 "synapse_task_declare",
                                 {"task_id": "ALPHA/invalid-result", "title": "No mutation"},
-                                meta={"synapse/operation-id": "invalid-result"},
+                                meta=operation_meta("invalid-result"),
                             )
-                            assert result.isError
+                            assert result.is_error
                             assert "operation refused or unavailable" in result.model_dump_json()
                             assert "UNTRUSTED_PLUGIN_RESULT" not in result.model_dump_json()
                             assert not hub.blackboard.tasks and not hub.state.claims
@@ -244,10 +245,10 @@ async def native_session(uri: str, root: Path) -> AsyncIterator[ClientSession]:
 
 def report(result: CallToolResult) -> dict[str, Any]:
     """Read actual structured content and require the legacy text to agree."""
-    assert result.structuredContent is not None
+    assert result.structured_content is not None
     assert result.content and result.content[0].type == "text"
-    assert result.structuredContent["result"] == result.content[0].text
-    outcome = result.structuredContent["execution_outcome"]
+    assert result.structured_content["result"] == result.content[0].text
+    outcome = result.structured_content["execution_outcome"]
     assert isinstance(outcome, dict)
     assert outcome["schema"] == "synapse.execution-outcome.v1"
     assert outcome["boundary"] == "mcp_exchange"

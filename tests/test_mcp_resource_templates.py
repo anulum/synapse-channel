@@ -22,7 +22,7 @@ from synapse_channel.mcp.server import SynapseHubBridge, build_mcp_server
 async def test_mcp_server_registers_resource_templates() -> None:
     server = build_mcp_server(SynapseHubBridge(request_timeout=0.05))
 
-    templates = {template.uriTemplate for template in await server.list_resource_templates()}
+    templates = {template.uri_template for template in await server.list_resource_templates()}
 
     assert templates == {
         "synapse://agent/{agent}",

@@ -13,13 +13,13 @@ import asyncio
 import json
 from pathlib import Path
 
-import httpx
+import httpx2
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from hub_e2e_helpers import running_hub
-from mcp_http_helpers import access_token, https_server, provision
+from mcp_http_helpers import access_token, https_server, operation_meta, provision
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.mcp.http_application import build_http_mcp_app
@@ -51,7 +51,7 @@ async def test_operation_keys_remain_bound_to_native_principals(tmp_path: Path) 
                         scope="synapse:read synapse:mutate",
                     )
                     bearers.append(bearer)
-                    async with httpx.AsyncClient(
+                    async with httpx2.AsyncClient(
                         verify=tls,
                         trust_env=False,
                         timeout=5,
@@ -60,7 +60,6 @@ async def test_operation_keys_remain_bound_to_native_principals(tmp_path: Path) 
                         async with streamable_http_client(url + "/mcp", http_client=client) as (
                             read,
                             write,
-                            _,
                         ):
                             async with ClientSession(read, write) as session:
                                 await session.initialize()
@@ -68,15 +67,15 @@ async def test_operation_keys_remain_bound_to_native_principals(tmp_path: Path) 
                                     declared = await session.call_tool(
                                         "synapse_task_declare",
                                         {"task_id": "ALPHA/" + subject, "title": subject},
-                                        meta={"synapse/operation-id": "same-declaration"},
+                                        meta=operation_meta("same-declaration"),
                                     )
-                                    assert not declared.isError
+                                    assert not declared.is_error
                                     sent = await session.call_tool(
                                         "synapse_send",
                                         {"target": "ALPHA/observer", "message": subject},
-                                        meta={"synapse/operation-id": "same-message"},
+                                        meta=operation_meta("same-message"),
                                     )
-                                    assert not sent.isError
+                                    assert not sent.is_error
                                 task = hub.blackboard.tasks["ALPHA/" + subject]
                                 assert task.created_by == "ALPHA/" + subject
                                 assert task.project == "ALPHA"

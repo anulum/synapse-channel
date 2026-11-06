@@ -52,7 +52,7 @@ from synapse_channel.core.mcp_config_launch import (
 from synapse_channel.core.mcp_config_trust import load_trusted_mcp_config
 
 MCP_EXTRA_HINT = "outbound MCP calls need the optional extra: pip install 'synapse-channel[mcp]'"
-MCP_SDK_VERSION = "1.30.0"
+MCP_SDK_VERSION = "2.3.0"
 """Exact SDK release whose stdio environment merge contract is enforced."""
 
 MCP_SDK_TERMINATION_TIMEOUT = 2.0
@@ -261,7 +261,12 @@ class OutboundMcpClient:
             raise
         except Exception as exc:
             raise _transport_error(f"tool {tool!r}", server) from exc
-        if getattr(result, "isError", False):
+        # SDK 2 names the flag ``is_error``. A result without a boolean flag is
+        # refused rather than read as success, so a renamed field cannot fail open.
+        is_error = getattr(result, "is_error", None)
+        if not isinstance(is_error, bool):
+            raise McpToolError(f"tool '{tool}' on '{server}' returned a malformed result")
+        if is_error:
             raise McpToolError(
                 f"tool '{tool}' on '{server}' returned an error: {result_text(result)}"
             )

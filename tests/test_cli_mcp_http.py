@@ -16,14 +16,14 @@ import socket
 import sys
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from hub_e2e_helpers import running_hub
-from mcp_http_helpers import access_token, provision, tls_files
+from mcp_http_helpers import access_token, operation_meta, provision, tls_files
 from synapse_channel.core.hub import SynapseHub
 
 
@@ -181,7 +181,7 @@ async def test_installed_http_command_mutates_only_the_provisioned_project(
         finally:
             signal.signal(signal.SIGTERM, previous)
         try:
-            async with httpx.AsyncClient(verify=tls, trust_env=False, timeout=5) as client:
+            async with httpx2.AsyncClient(verify=tls, trust_env=False, timeout=5) as client:
                 url = f"https://127.0.0.1:{port}/mcp"
 
                 async def ready() -> None:
@@ -190,28 +190,28 @@ async def test_installed_http_command_mutates_only_the_provisioned_project(
                             response = await client.get(url)
                             assert response.status_code == 401
                             return
-                        except httpx.ConnectError:
+                        except httpx2.ConnectError:
                             await asyncio.sleep(0.02)
                     raise RuntimeError("CLI stopped before HTTPS readiness")
 
                 await asyncio.wait_for(ready(), 8)
                 client.headers["Authorization"] = "Bearer " + bearer
-                async with streamable_http_client(url, http_client=client) as (read, write, _):
+                async with streamable_http_client(url, http_client=client) as (read, write):
                     async with ClientSession(read, write) as session:
-                        assert (await session.initialize()).protocolVersion == "2025-11-25"
+                        assert (await session.initialize()).protocol_version == "2025-11-25"
                         result = await session.call_tool(
                             "synapse_task_declare",
                             {"task_id": "ALPHA/cli", "title": "CLI task"},
-                            meta={"synapse/operation-id": "cli-declaration"},
+                            meta=operation_meta("cli-declaration"),
                         )
-                        assert not result.isError
+                        assert not result.is_error
                         assert hub.blackboard.tasks["ALPHA/cli"].created_by == "ALPHA/alice"
                         result = await session.call_tool(
                             "synapse_task_declare",
                             {"task_id": "BETA/cli", "title": "denied"},
-                            meta={"synapse/operation-id": "cli-denied"},
+                            meta=operation_meta("cli-denied"),
                         )
-                        assert result.isError
+                        assert result.is_error
                         assert "BETA/cli" not in hub.blackboard.tasks
         finally:
             if process.returncode is None:

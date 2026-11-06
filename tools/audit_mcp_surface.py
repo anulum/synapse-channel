@@ -9,7 +9,7 @@
 """Verify that the documented MCP surface matches the registered server.
 
 The MCP adapter is intentionally optional and isolated from the hub. This checker
-keeps the public MCP documentation aligned with the real FastMCP registration
+keeps the public MCP documentation aligned with the real MCP server registration
 module by parsing the registered tool functions and resource URIs from source and
 confirming that each one appears in ``docs/mcp.md``. It also checks the boundary
 language that prevents accidental overclaiming: MCP remains an adapter process,
@@ -42,7 +42,7 @@ DEFAULT_README = REPO_ROOT / "README.md"
 
 REGISTRY_NAME = "io.github.anulum/synapse-channel"
 REGISTRY_SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
-VERIFIED_MCP_REQUIREMENT = Requirement("mcp==1.30.0")
+VERIFIED_MCP_REQUIREMENT = Requirement("mcp==2.3.0")
 MCP_PACKAGE_EXTRAS = ("dev", "mcp", "all")
 
 REQUIRED_ONBOARDING_TOOLS = frozenset(
@@ -65,7 +65,7 @@ REQUIRED_DOC_PHRASES = (
     "no MCP `synapse_lock(command)` tool",
     "the vendor `claude/channel` extension",
     "examples/mcp/.mcp.json",
-    "mcp==1.30.0` runtime hint",
+    "mcp==2.3.0` runtime hint",
 )
 """Boundary phrases that must stay present in the MCP guide."""
 
@@ -316,8 +316,7 @@ def _audit_onboarding_artifacts(
             errors.append("server.json must install the optional MCP SDK through uvx --with")
         elif project_mcp is not None and registry_mcp != project_mcp:
             errors.append(
-                "server.json MCP runtime requirement must match pyproject.toml "
-                "exactly (mcp==1.30.0)"
+                "server.json MCP runtime requirement must match pyproject.toml exactly (mcp==2.3.0)"
             )
 
     servers = template.get("mcpServers")
@@ -389,7 +388,7 @@ def _project_mcp_requirement(project: dict[str, object], errors: list[str]) -> R
             and canonicalize_name(requirement.name) == "mcp"
         )
         if len(requirements) != 1 or requirements[0] != VERIFIED_MCP_REQUIREMENT:
-            errors.append(f"pyproject.toml {extra} extra must declare exactly mcp==1.30.0")
+            errors.append(f"pyproject.toml {extra} extra must declare exactly mcp==2.3.0")
             continue
         if extra == "mcp":
             canonical_requirement = requirements[0]

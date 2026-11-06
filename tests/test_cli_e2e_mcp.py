@@ -62,7 +62,7 @@ async def test_mcp_bridge_lists_and_reads_hub_tools_over_stdio(tmp_path: Path) -
                 assert {"synapse_board", "synapse_claim", "synapse_task_declare"} <= names
 
                 result = await session.call_tool("synapse_board", {})
-                assert not result.isError, result
+                assert not result.is_error, result
                 board = json.loads(_text_payload(result))
                 assert "MCP-1" in json.dumps(board)
 
@@ -76,7 +76,7 @@ async def test_mcp_tool_call_declares_a_task_on_the_hub(tmp_path: Path) -> None:
                     "synapse_task_declare",
                     {"task_id": "MCP-2", "title": "declared through the MCP bridge"},
                 )
-                assert not result.isError, result
+                assert not result.is_error, result
 
         # The task the MCP tool declared is durably on the hub: a plain CLI board
         # read against the same hub — no MCP — now shows it.

@@ -39,7 +39,7 @@ class _FakeSession:
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
         return SimpleNamespace(
             content=[SimpleNamespace(text=f"ran {name} {json.dumps(arguments or {})}")],
-            isError=False,
+            is_error=False,
         )
 
 
@@ -210,9 +210,9 @@ def test_mcp_call_crosses_trusted_config_and_real_stdio_server(
     script.write_text(
         """import os
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-server = FastMCP("cli-echo-test")
+server = MCPServer("cli-echo-test")
 
 @server.tool()
 def echo(text: str) -> str:

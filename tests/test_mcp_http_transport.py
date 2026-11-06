@@ -14,7 +14,7 @@ import os
 import sys
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.asyncio.client import connect
@@ -62,7 +62,7 @@ async def test_plaintext_and_websocket_are_refused(tmp_path: Path) -> None:
             )
             async with https_server(app, tmp_path, plaintext=plaintext) as (url, tls):
                 if plaintext:
-                    async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
+                    async with httpx2.AsyncClient(timeout=5, trust_env=False) as client:
                         response = await client.get(url + "/mcp")
                         assert response.status_code == 400
                         assert response.json() == {"error": "HTTPS required"}
@@ -135,7 +135,7 @@ async def test_sse_connection_counts_toward_global_capacity(tmp_path: Path) -> N
             max_requests=1,
         )
         async with https_server(app, tmp_path) as (url, tls):
-            async with httpx.AsyncClient(
+            async with httpx2.AsyncClient(
                 verify=tls,
                 timeout=5,
                 trust_env=False,
@@ -189,7 +189,7 @@ async def test_body_and_session_budgets_are_enforced(tmp_path: Path) -> None:
             max_sessions=1,
         )
         async with https_server(app, tmp_path) as (url, tls):
-            async with httpx.AsyncClient(
+            async with httpx2.AsyncClient(
                 verify=tls,
                 timeout=5,
                 trust_env=False,

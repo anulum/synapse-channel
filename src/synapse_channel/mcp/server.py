@@ -10,7 +10,7 @@
 The implementation lives in focused internal modules:
 
 * :mod:`synapse_channel.mcp.bridge` translates MCP-facing operations to hub verbs.
-* :mod:`synapse_channel.mcp.registration` registers FastMCP tools and resources.
+* :mod:`synapse_channel.mcp.registration` registers the MCP SDK's tools and resources.
 * :mod:`synapse_channel.mcp.stdio` owns the stdio lifecycle.
 
 Importing from :mod:`synapse_channel.mcp.server` remains supported for the CLI,
@@ -27,7 +27,7 @@ from synapse_channel.mcp.bridge import (
     Sender,
     SynapseHubBridge,
 )
-from synapse_channel.mcp.registration import MCP_EXTRA_HINT, _require_fastmcp, build_mcp_server
+from synapse_channel.mcp.registration import MCP_EXTRA_HINT, _require_mcp_server, build_mcp_server
 from synapse_channel.mcp.stdio import serve_stdio
 
 __all__ = [
@@ -38,7 +38,7 @@ __all__ = [
     "Matcher",
     "Sender",
     "SynapseHubBridge",
-    "_require_fastmcp",
+    "_require_mcp_server",
     "build_mcp_server",
     "serve_stdio",
 ]

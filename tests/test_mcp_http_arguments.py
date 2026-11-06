@@ -13,13 +13,13 @@ import asyncio
 import contextlib
 from pathlib import Path
 
-import httpx
+import httpx2
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from hub_e2e_helpers import Recorder, running_hub
-from mcp_http_helpers import access_token, https_server, provision
+from mcp_http_helpers import access_token, https_server, operation_meta, provision
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.identity_keys import write_signing_key
@@ -66,7 +66,7 @@ async def test_native_foreign_creator_cannot_import_task_authority(tmp_path: Pat
                 allowed_origins=[],
             )
             async with https_server(app, tmp_path) as (url, tls):
-                async with httpx.AsyncClient(
+                async with httpx2.AsyncClient(
                     verify=tls,
                     trust_env=False,
                     timeout=5,
@@ -78,7 +78,6 @@ async def test_native_foreign_creator_cannot_import_task_authority(tmp_path: Pat
                     async with streamable_http_client(url + "/mcp", http_client=client) as (
                         read,
                         write,
-                        _,
                     ):
                         async with ClientSession(read, write) as session:
                             await session.initialize()
@@ -100,12 +99,12 @@ async def test_native_foreign_creator_cannot_import_task_authority(tmp_path: Pat
                                 denied = await session.call_tool(
                                     tool,
                                     arguments,
-                                    meta={"synapse/operation-id": "foreign-collision"},
+                                    meta=operation_meta("foreign-collision"),
                                 )
-                                assert denied.isError
+                                assert denied.is_error
                                 assert "FOREIGN_PRIVATE" not in denied.model_dump_json()
                             board = await session.call_tool("synapse_board")
-                            assert not board.isError
+                            assert not board.is_error
                             assert "FOREIGN_PRIVATE" not in board.model_dump_json()
                             assert not hub.state.claims
                             assert (

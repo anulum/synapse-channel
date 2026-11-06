@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — MCP tool and resource registration
-"""FastMCP registration for Synapse coordination tools and resources."""
+"""MCP server registration for Synapse coordination tools and resources."""
 
 from __future__ import annotations
 
@@ -13,15 +13,19 @@ import importlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
+from synapse_channel import __version__
 from synapse_channel.mcp.bridge import SynapseHubBridge
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from synapse_channel.mcp.http_views import ProjectMcpViews
 
 MCP_EXTRA_HINT = "The MCP face needs the optional extra: pip install 'synapse-channel[mcp]'"
 """Message shown when ``synapse mcp`` runs without the ``mcp`` SDK installed."""
+
+MCP_SERVER_MODULE = "mcp.server.mcpserver"
+"""Module of the MCP SDK 2 server class; importable only with the ``mcp`` extra."""
 
 REQUIRED_MCP_CLAIM_TOOLS: frozenset[str] = frozenset(
     {
@@ -69,10 +73,10 @@ def registered_mcp_tool_names() -> frozenset[str]:
     )
 
 
-def _require_fastmcp(
+def _require_mcp_server(
     import_module: Callable[[str], Any] = importlib.import_module,
-) -> type[FastMCP]:
-    """Import and return :class:`FastMCP`, or raise a clear install hint.
+) -> type[MCPServer]:
+    """Import and return the SDK's :class:`MCPServer`, or raise a clear install hint.
 
     The ``mcp`` SDK is an optional extra, so the import lives behind this helper
     rather than at module import time. The bridge and CLI remain importable
@@ -81,41 +85,44 @@ def _require_fastmcp(
     Returns
     -------
     type
-        The ``mcp.server.fastmcp.FastMCP`` class.
+        The ``mcp.server.mcpserver.MCPServer`` class.
 
     Raises
     ------
     RuntimeError
-        When the ``mcp`` SDK is not installed, with the extra to install.
+        When the ``mcp`` SDK is not installed, or an SDK older than 2.x without
+        ``MCPServer`` is, with the extra to install.
     """
     try:
-        module = import_module("mcp.server.fastmcp")
+        module = import_module(MCP_SERVER_MODULE)
     except ImportError as exc:
         raise RuntimeError(MCP_EXTRA_HINT) from exc
-    return cast("type[FastMCP]", module.FastMCP)
+    return cast("type[MCPServer]", module.MCPServer)
 
 
 def build_mcp_server(
     bridge: SynapseHubBridge,
     *,
-    fastmcp_loader: Callable[[], type[FastMCP]] = _require_fastmcp,
-    server: FastMCP | None = None,
+    server_loader: Callable[[], type[MCPServer]] = _require_mcp_server,
+    server: MCPServer | None = None,
     views: ProjectMcpViews | None = None,
-) -> FastMCP:
-    """Build a FastMCP server whose tools and resources delegate to ``bridge``.
+) -> MCPServer:
+    """Build an MCP server whose tools and resources delegate to ``bridge``.
 
     Parameters
     ----------
     bridge : SynapseHubBridge
         The translation layer holding the hub connection.
-    server : FastMCP or None, optional
+    server_loader : Callable, optional
+        Returns the SDK server class; injectable so a missing SDK can be tested.
+    server : MCPServer or None, optional
         Configured transport server. Omission creates the original stdio server.
     views : ProjectMcpViews or None, optional
         Project-scoped remote read views; mutations still use the original bridge.
 
     Returns
     -------
-    mcp.server.fastmcp.FastMCP
+    mcp.server.mcpserver.MCPServer
         A server exposing the coordination tools and read-only resources.
 
     Raises
@@ -124,8 +131,8 @@ def build_mcp_server(
         When the ``mcp`` SDK is not installed.
     """
     if server is None:
-        fast_mcp = fastmcp_loader()
-        server = fast_mcp("synapse")
+        server_class = server_loader()
+        server = server_class("synapse", version=__version__)
     reader = views if views is not None else bridge
     from synapse_channel.mcp.outcome_tools import register_mutation_tools
 

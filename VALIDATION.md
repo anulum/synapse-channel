@@ -89,7 +89,7 @@ webhook delivery failures, and subscriber fanout:
 .venv/bin/python -m pytest tests/test_a2a_load_soak.py -q
 ```
 
-The MCP adapter documentation is checked against the registered FastMCP surface
+The MCP adapter documentation is checked against the registered MCP server surface
 and required adapter/auth/dependency boundary text:
 
 ```bash

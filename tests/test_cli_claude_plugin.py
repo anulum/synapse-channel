@@ -207,11 +207,11 @@ async def test_installed_plugin_reads_real_hub_and_enforces_live_claim(
                 names = {tool.name for tool in (await session.list_tools()).tools}
                 assert {"synapse_board", "synapse_git_claim"} <= names
                 board = await session.call_tool("synapse_board", {})
-                assert not board.isError, board
+                assert not board.is_error, board
                 claim = await session.call_tool(
                     "synapse_git_claim", {"task_id": "plugin-claim", "paths": ["owned.txt"]}
                 )
-                assert not claim.isError, claim
+                assert not claim.is_error, claim
 
         hook = json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))
         command = hook["hooks"]["PreToolUse"][0]["hooks"][0]

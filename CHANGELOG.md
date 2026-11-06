@@ -163,6 +163,33 @@ execution evidence when carrying a release claim forward.
   and whether the hub closed the session. The flag without `--token-set` is
   refused.
 
+### Changed
+
+- **The MCP face runs on MCP Python SDK 2.3.0.** The `mcp` extra now pins
+  `mcp==2.3.0` (it was `1.30.0`), and with it the dev lock moves anyio to
+  4.16.0, which SDK 1.30.0 could not run the HTTP command with. SDK 2 renamed
+  `FastMCP` to `MCPServer`: `build_mcp_server` returns an `MCPServer`, its
+  `fastmcp_loader` keyword is now `server_loader`, and the internal
+  `_require_fastmcp` is `_require_mcp_server`. `synapse doctor --mcp-policy`
+  checks for `mcp.server.mcpserver`, so an SDK 1 install reports the extra as
+  missing instead of passing. The stdio and HTTP servers report this
+  package's version as the MCP server version; SDK 2 would report none.
+  - The HTTPS profile keeps its published contract: the four `initialize`
+    revisions `2024-11-05` to `2025-11-25`. SDK 2 also serves its stateless
+    `2026-07-28` revision, with no handshake and no session, to any request
+    whose `MCP-Protocol-Version` header is not a handshake revision. The
+    router refuses those requests before dispatch, with HTTP 400 and
+    `-32600`, as SDK 1.30.0 refused an unsupported version.
+  - An unknown JSON-RPC method is now answered `-32601`, as JSON-RPC 2.0
+    names it; SDK 1.30.0 answered `-32602`.
+  - SDK 2 logs any other exception from a tool or resource as unexpected,
+    with a traceback. A refused HTTP tool call or resource read therefore
+    raises the SDK's own tool or resource error, with the same fixed text,
+    which the SDK logs in one line.
+  - The outbound MCP client checks the result flag under its SDK 2 name
+    (`is_error`) and refuses a result without a boolean flag instead of
+    reading it as success; the audited SDK contract is now `mcp==2.3.0`.
+
 ### Fixed
 
 - **One forward's unexpected fault no longer stops retries for every peer.**

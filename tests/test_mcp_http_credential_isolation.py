@@ -21,15 +21,14 @@ import ast
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from pydantic import AnyUrl
 
 from hub_e2e_helpers import running_hub
 from hub_wire_recorder import WireRecordingHub
-from mcp_http_helpers import access_token, https_server, provision
+from mcp_http_helpers import access_token, https_server, operation_meta, provision
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.mcp.http_application import build_http_mcp_app
@@ -75,22 +74,22 @@ async def test_bearer_never_reaches_the_hub_through_any_mutation_or_read(tmp_pat
             )
             async with (
                 https_server(app, tmp_path) as (url, tls),
-                httpx.AsyncClient(
+                httpx2.AsyncClient(
                     verify=tls,
                     trust_env=False,
                     timeout=5,
                     headers={"Authorization": "Bearer " + bearer},
                 ) as client,
-                streamable_http_client(url + "/mcp", http_client=client) as (read, write, _),
+                streamable_http_client(url + "/mcp", http_client=client) as (read, write),
                 ClientSession(read, write) as session,
             ):
                 await session.initialize()
                 for index, (name, arguments) in enumerate(calls):
                     result = await session.call_tool(
-                        name, arguments, meta={"synapse/operation-id": f"isolation-{index}"}
+                        name, arguments, meta=operation_meta(f"isolation-{index}")
                     )
-                    assert not result.isError, name
-                board = await session.read_resource(AnyUrl("synapse://board"))
+                    assert not result.is_error, name
+                board = await session.read_resource("synapse://board")
                 assert board.contents
     finally:
         store.close()

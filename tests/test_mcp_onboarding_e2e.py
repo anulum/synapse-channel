@@ -114,7 +114,7 @@ async def test_stdio_send_reports_connection_loss_as_an_error(tmp_path: Path) ->
                 sent = await session.call_tool(
                     "synapse_send", {"target": "all", "message": "connected fixture"}
                 )
-                assert sent.isError is False
+                assert sent.is_error is False
                 assert _text_payload(sent) == "sent to all"
                 fixtures.close()
                 unavailable = await session.call_tool("synapse_board", {})
@@ -122,5 +122,5 @@ async def test_stdio_send_reports_connection_loss_as_an_error(tmp_path: Path) ->
                 refused = await session.call_tool(
                     "synapse_send", {"target": "all", "message": "disconnected fixture"}
                 )
-                assert refused.isError is True
+                assert refused.is_error is True
                 assert "hub connection unavailable" in _text_payload(refused)

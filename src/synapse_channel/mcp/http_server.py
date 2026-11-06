@@ -12,16 +12,25 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from anyio import fail_after
-from mcp.server.fastmcp import FastMCP
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.types import CallToolResult, ContentBlock, Resource, ResourceTemplate, TextContent, Tool
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ResourceError, ToolError
+from mcp.types import (
+    CallToolResult,
+    InputRequiredResult,
+    Resource,
+    ResourceTemplate,
+    TextContent,
+    Tool,
+)
 from pydantic import AnyUrl, TypeAdapter
 
+from synapse_channel import __version__
 from synapse_channel.mcp.http_agent import HTTP_OPERATION_ID
 from synapse_channel.mcp.http_arguments import HttpArgumentPolicy
 from synapse_channel.mcp.http_config import MUTATION_TOOLS
@@ -59,9 +68,9 @@ def qualify_mutation_result(value: object, *, name: str, task_id: object, seat: 
     A scoped exchange observation survives refusal; it does not establish the
     requested business effect. The fixed error text hides local diagnostics.
     """
-    if not isinstance(value, CallToolResult) or value.structuredContent is None:
+    if not isinstance(value, CallToolResult) or value.structured_content is None:
         raise RuntimeError("remote MCP mutation result unavailable")
-    structured = value.structuredContent
+    structured = value.structured_content
     text = structured.get("result")
     outcome = structured.get("execution_outcome")
     if not isinstance(text, str) or not isinstance(outcome, dict):
@@ -72,14 +81,14 @@ def qualify_mutation_result(value: object, *, name: str, task_id: object, seat: 
         else _MUTATION_SUCCESS[name]
     )
     confirmed = text == expected if name == "synapse_release" else text.startswith(expected)
-    if value.isError or not confirmed:
+    if value.is_error or not confirmed:
         message = "remote MCP operation refused or unavailable"
         value.content = [TextContent(type="text", text=message)]
-        value.structuredContent = {"result": message, "execution_outcome": outcome}
-        value.isError = True
+        value.structured_content = {"result": message, "execution_outcome": outcome}
+        value.is_error = True
 
 
-class HttpMcpServer(FastMCP[None]):
+class HttpMcpServer(MCPServer[None]):
     """Apply remote authority while preserving the shared tool registration.
 
     Parameters
@@ -93,7 +102,8 @@ class HttpMcpServer(FastMCP[None]):
     reply_bytes : int
         Maximum serialized content returned by an action or resource.
     **settings : Any
-        Native SDK transport, authentication and session settings.
+        Native SDK authentication settings (``token_verifier``, ``auth``). The
+        transport and session limits belong to :meth:`streamable_http_app`.
 
     Notes
     -----
@@ -124,7 +134,7 @@ class HttpMcpServer(FastMCP[None]):
         instructions = settings.pop("instructions", None)
         if not isinstance(instructions, str) or not instructions.strip():
             instructions = mcp_instructions()
-        super().__init__("synapse", instructions=instructions, **settings)
+        super().__init__("synapse", instructions=instructions, version=__version__, **settings)
 
     def _bound(self, value: object) -> None:
         """Refuse an oversized reply before content is handed to the HTTP encoder."""
@@ -132,9 +142,16 @@ class HttpMcpServer(FastMCP[None]):
             raise RuntimeError("remote MCP reply exceeds configured limit")
 
     async def call_tool(
-        self, name: str, arguments: dict[str, Any]
-    ) -> Sequence[ContentBlock] | dict[str, Any]:
-        """Authorize and execute one registered tool with a stable mutation key."""
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        context: Context[None, Any] | None = None,
+    ) -> CallToolResult | InputRequiredResult:
+        """Authorize and execute one registered tool with a stable mutation key.
+
+        Every refusal or failure becomes one fixed :class:`ToolError`, which the
+        SDK returns as an error result and logs without a traceback.
+        """
         token = None
         outcome_token = None
         try:
@@ -142,9 +159,8 @@ class HttpMcpServer(FastMCP[None]):
                 async with self.dispatch:
                     await self.policy.authorize(name)
                     if name in MUTATION_TOOLS:
-                        meta = self.get_context().request_context.meta
-                        extras = meta.model_extra if meta is not None else None
-                        operation = extras.get("synapse/operation-id") if extras else None
+                        meta = context.request_context.meta if context is not None else None
+                        operation = meta.get("synapse/operation-id") if meta else None
                         if (
                             not isinstance(operation, str)
                             or _OPERATION.fullmatch(operation) is None
@@ -156,7 +172,7 @@ class HttpMcpServer(FastMCP[None]):
                         outcome_token = MCP_OUTCOME_ID.set(
                             "mcp-" + hashlib.sha256(scope).hexdigest()
                         )
-                    result = await super().call_tool(name, arguments)
+                    result = await super().call_tool(name, arguments, context)
                     if name in MUTATION_TOOLS:
                         qualify_mutation_result(
                             result,
@@ -167,7 +183,7 @@ class HttpMcpServer(FastMCP[None]):
                     self._bound(result)
                     return result
         except Exception:
-            raise RuntimeError("remote MCP operation refused or unavailable") from None
+            raise ToolError("remote MCP operation refused or unavailable") from None
         finally:
             if token is not None:
                 HTTP_OPERATION_ID.reset(token)
@@ -199,11 +215,17 @@ class HttpMcpServer(FastMCP[None]):
         return [
             item
             for item in await super().list_resource_templates()
-            if await self._allowed(_TEMPLATE_ACTIONS[item.uriTemplate])
+            if await self._allowed(_TEMPLATE_ACTIONS[item.uri_template])
         ]
 
-    async def read_resource(self, uri: AnyUrl | str) -> Iterable[ReadResourceContents]:
-        """Read project views directly so SDK diagnostics cannot log hub contents."""
+    async def read_resource(
+        self, uri: AnyUrl | str, context: Context[None, Any] | None = None
+    ) -> Iterable[ReadResourceContents] | InputRequiredResult:
+        """Read project views directly so SDK diagnostics cannot log hub contents.
+
+        Every refusal or failure becomes one fixed :class:`ResourceError`, which
+        the SDK answers as a JSON-RPC error and logs without a traceback.
+        """
         try:
             with fail_after(self.operation_timeout):
                 async with self.dispatch:
@@ -223,7 +245,7 @@ class HttpMcpServer(FastMCP[None]):
                     self._bound(content)
                     return [ReadResourceContents(content=content, mime_type="text/plain")]
         except Exception:
-            raise RuntimeError("remote MCP resource refused or unavailable") from None
+            raise ResourceError("remote MCP resource refused or unavailable") from None
 
     async def _dynamic_resource(self, value: str) -> str:
         """Validate a resource identifier and resolve it through scoped public views."""

@@ -36,7 +36,7 @@ def test_qualify_mutation_result_rejects_an_unreadable_envelope() -> None:
         )
     missing = CallToolResult(
         content=[TextContent(type="text", text="hidden")],
-        structuredContent=None,
+        structured_content=None,
     )
     with pytest.raises(RuntimeError, match="remote MCP mutation result unavailable"):
         qualify_mutation_result(
@@ -47,7 +47,7 @@ def test_qualify_mutation_result_rejects_an_unreadable_envelope() -> None:
         )
     bad_text = CallToolResult(
         content=[TextContent(type="text", text="hidden")],
-        structuredContent={"result": 7, "execution_outcome": {"state": "unknown"}},
+        structured_content={"result": 7, "execution_outcome": {"state": "unknown"}},
     )
     with pytest.raises(RuntimeError, match="remote MCP mutation result unavailable"):
         qualify_mutation_result(
@@ -58,7 +58,7 @@ def test_qualify_mutation_result_rejects_an_unreadable_envelope() -> None:
         )
     bad_outcome = CallToolResult(
         content=[TextContent(type="text", text="hidden")],
-        structuredContent={"result": "sent to ALPHA/bob", "execution_outcome": ["unknown"]},
+        structured_content={"result": "sent to ALPHA/bob", "execution_outcome": ["unknown"]},
     )
     with pytest.raises(RuntimeError, match="remote MCP mutation result unavailable"):
         qualify_mutation_result(
@@ -73,11 +73,11 @@ def test_qualify_mutation_result_keeps_a_match_and_refuses_a_mismatch() -> None:
     """A confirmed envelope stays. An error or a different receipt is refused."""
     confirmed = CallToolResult(
         content=[TextContent(type="text", text="sent to ALPHA/bob")],
-        structuredContent={
+        structured_content={
             "result": "sent to ALPHA/bob",
             "execution_outcome": {"state": "confirmed_done"},
         },
-        isError=False,
+        is_error=False,
     )
     qualify_mutation_result(
         confirmed,
@@ -85,9 +85,9 @@ def test_qualify_mutation_result_keeps_a_match_and_refuses_a_mismatch() -> None:
         task_id="ALPHA/task",
         seat="ALPHA/alice",
     )
-    assert confirmed.isError is False
-    assert confirmed.structuredContent is not None
-    assert confirmed.structuredContent["result"] == "sent to ALPHA/bob"
+    assert confirmed.is_error is False
+    assert confirmed.structured_content is not None
+    assert confirmed.structured_content["result"] == "sent to ALPHA/bob"
 
     release = CallToolResult(
         content=[
@@ -96,7 +96,7 @@ def test_qualify_mutation_result_keeps_a_match_and_refuses_a_mismatch() -> None:
                 text="released 'ALPHA/task' with receipt owner 'ALPHA/alice'",
             )
         ],
-        structuredContent={
+        structured_content={
             "result": "released 'ALPHA/task' with receipt owner 'ALPHA/alice'",
             "execution_outcome": {"state": "confirmed_done"},
         },
@@ -107,15 +107,15 @@ def test_qualify_mutation_result_keeps_a_match_and_refuses_a_mismatch() -> None:
         task_id="ALPHA/task",
         seat="ALPHA/alice",
     )
-    assert release.isError is False
+    assert release.is_error is False
 
     refused = CallToolResult(
         content=[TextContent(type="text", text="sent to ALPHA/bob")],
-        structuredContent={
+        structured_content={
             "result": "sent to someone else",
             "execution_outcome": {"state": "confirmed_done"},
         },
-        isError=True,
+        is_error=True,
     )
     qualify_mutation_result(
         refused,
@@ -123,8 +123,8 @@ def test_qualify_mutation_result_keeps_a_match_and_refuses_a_mismatch() -> None:
         task_id="ALPHA/task",
         seat="ALPHA/alice",
     )
-    assert refused.isError is True
-    assert refused.structuredContent == {
+    assert refused.is_error is True
+    assert refused.structured_content == {
         "result": "remote MCP operation refused or unavailable",
         "execution_outcome": {"state": "confirmed_done"},
     }

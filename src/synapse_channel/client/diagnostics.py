@@ -268,6 +268,19 @@ def check_waiter(roster: list[str] | None, waiter_name: str) -> Diagnosis:
     )
 
 
+def _mcp_server_importable() -> bool:
+    """Return whether the installed MCP SDK provides the server class ``synapse mcp`` uses."""
+    import importlib
+
+    from synapse_channel.mcp.registration import MCP_SERVER_MODULE
+
+    try:
+        importlib.import_module(MCP_SERVER_MODULE)
+    except ImportError:
+        return False
+    return True
+
+
 def check_mcp_posture(
     *,
     cwd: Path | None = None,
@@ -302,12 +315,7 @@ def check_mcp_posture(
     status: DoctorStatus = "pass"
 
     if mcp_extra_available is None:
-        try:
-            importlib = __import__("importlib")
-            importlib.import_module("mcp.server.fastmcp")
-            mcp_extra_available = True
-        except ImportError:
-            mcp_extra_available = False
+        mcp_extra_available = _mcp_server_importable()
     if not mcp_extra_available:
         findings.append("mcp extra not installed")
         remedies.append(MCP_EXTRA_HINT)

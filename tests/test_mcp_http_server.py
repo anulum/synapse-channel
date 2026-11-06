@@ -10,26 +10,33 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared.exceptions import McpError
-from pydantic import AnyUrl
+from mcp.shared.exceptions import MCPError
 
 from hub_e2e_helpers import running_hub
-from mcp_http_helpers import access_token, https_server, provision
+from mcp_http_helpers import access_token, https_server, operation_meta, provision
 from synapse_channel.core.acl import BOARD, AclPolicy, AclRule
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.mcp.http_application import build_http_mcp_app
 
 
-async def test_reply_budget_retains_committed_mutation_identity(tmp_path: Path) -> None:
-    """An oversized reply is private, and retry does not repeat the committed write."""
+async def test_reply_budget_retains_committed_mutation_identity(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An oversized reply is private, and retry does not repeat the committed write.
+
+    The refusals reach the SDK as its own tool and resource errors, so its log
+    holds one fixed line each: no traceback, no error record, no hub content.
+    """
+    caplog.set_level(logging.INFO, logger="mcp")
     issuer = Ed25519PrivateKey.generate()
     grants = tmp_path / "grants.json"
     trust = provision(grants, issuer)
@@ -47,7 +54,7 @@ async def test_reply_budget_retains_committed_mutation_identity(tmp_path: Path) 
                 reply_bytes=1024,
             )
             async with https_server(app, tmp_path) as (url, tls):
-                async with httpx.AsyncClient(
+                async with httpx2.AsyncClient(
                     verify=tls,
                     trust_env=False,
                     timeout=5,
@@ -59,7 +66,6 @@ async def test_reply_budget_retains_committed_mutation_identity(tmp_path: Path) 
                     async with streamable_http_client(url + "/mcp", http_client=client) as (
                         read,
                         write,
-                        _,
                     ):
                         async with ClientSession(read, write) as session:
                             await session.initialize()
@@ -67,20 +73,26 @@ async def test_reply_budget_retains_committed_mutation_identity(tmp_path: Path) 
                                 result = await session.call_tool(
                                     "synapse_task_declare",
                                     {"task_id": "ALPHA/oversized", "title": marker},
-                                    meta={"synapse/operation-id": "oversized-declaration"},
+                                    meta=operation_meta("oversized-declaration"),
                                 )
-                                assert result.isError
+                                assert result.is_error
                                 assert "PRIVATE_OVERSIZED" not in result.model_dump_json()
                                 assert hub.blackboard.tasks["ALPHA/oversized"].version == 1
                                 assert hub.blackboard.tasks["ALPHA/oversized"].title == marker
                             board = await session.call_tool("synapse_board")
-                            assert board.isError
+                            assert board.is_error
                             assert "PRIVATE_OVERSIZED" not in board.model_dump_json()
-                            with pytest.raises(McpError, match="resource refused") as error:
-                                await session.read_resource(AnyUrl("synapse://board"))
+                            with pytest.raises(MCPError, match="resource refused") as error:
+                                await session.read_resource("synapse://board")
                             assert "PRIVATE_OVERSIZED" not in str(error.value)
     finally:
         store.close()
+    sdk = [record for record in caplog.records if record.name.startswith("mcp.")]
+    assert not [record for record in sdk if record.exc_info or record.levelno >= logging.ERROR]
+    logged = [record.getMessage() for record in sdk]
+    assert any("remote MCP operation refused or unavailable" in line for line in logged)
+    assert any("remote MCP resource refused or unavailable" in line for line in logged)
+    assert not [record for record in caplog.records if "PRIVATE_OVERSIZED" in record.getMessage()]
 
 
 async def test_native_refusal_obeys_dispatch_deadline_and_recovers(tmp_path: Path) -> None:
@@ -104,7 +116,7 @@ async def test_native_refusal_obeys_dispatch_deadline_and_recovers(tmp_path: Pat
             operation_timeout=0.1,
         )
         async with https_server(app, tmp_path) as (url, tls):
-            async with httpx.AsyncClient(
+            async with httpx2.AsyncClient(
                 verify=tls,
                 trust_env=False,
                 timeout=5,
@@ -116,16 +128,15 @@ async def test_native_refusal_obeys_dispatch_deadline_and_recovers(tmp_path: Pat
                 async with streamable_http_client(url + "/mcp", http_client=client) as (
                     read,
                     write,
-                    _,
                 ):
                     async with ClientSession(read, write) as session:
                         await session.initialize()
                         arguments = {"task_id": "ALPHA/deadline", "title": "Deadline retry"}
-                        meta = {"synapse/operation-id": "deadline-declare"}
+                        meta = operation_meta("deadline-declare")
                         refused = await asyncio.wait_for(
                             session.call_tool("synapse_task_declare", arguments, meta=meta), 2
                         )
-                        assert refused.isError
+                        assert refused.is_error
                         assert "operation refused or unavailable" in refused.model_dump_json()
                         assert not hub.blackboard.tasks
                         assert not hub.state.claims
@@ -134,5 +145,5 @@ async def test_native_refusal_obeys_dispatch_deadline_and_recovers(tmp_path: Pat
                         recovered = await asyncio.wait_for(
                             session.call_tool("synapse_task_declare", arguments, meta=meta), 2
                         )
-                        assert not recovered.isError
+                        assert not recovered.is_error
                         assert hub.blackboard.tasks["ALPHA/deadline"].version == 1

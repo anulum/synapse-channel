@@ -7,15 +7,18 @@
 # SYNAPSE_CHANNEL — MCP protocol version negotiation and JSON-RPC error codes
 """Version negotiation and error codes of the production HTTPS MCP router.
 
-These tests pin what MCP SDK 1.30.0 behind the production router actually
-answers on the wire, including two known deviations, so that an SDK upgrade
+These tests pin what MCP SDK 2.3.0 behind the production router actually
+answers on the wire, including one known deviation, so that an SDK upgrade
 that changes any of them fails here instead of silently changing the
 published contract:
 
-- an unknown JSON-RPC method is answered ``-32602`` (JSON-RPC 2.0 names
-  ``-32601``);
 - a session negotiated at ``2025-11-25`` still accepts a request whose
   ``MCP-Protocol-Version`` header names another supported version.
+
+SDK 2 also serves the stateless ``2026-07-28`` revision to any request whose
+header names a version outside the handshake revisions. The router refuses
+those requests before the SDK sees them, as SDK 1.30 refused an unsupported
+version, so the published contract stays the four handshake revisions.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from hub_e2e_helpers import running_hub
@@ -32,6 +35,7 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.mcp.http_application import build_http_mcp_app
 
 LATEST = "2025-11-25"
+STATELESS = "2026-07-28"
 SUPPORTED = ("2024-11-05", "2025-03-26", "2025-06-18", LATEST)
 
 
@@ -49,7 +53,7 @@ def _initialize(version: str) -> dict[str, Any]:
 
 
 async def test_versions_and_error_codes_on_the_production_router(tmp_path: Path) -> None:
-    """Negotiation, header validation and JSON-RPC errors as SDK 1.30.0 answers them."""
+    """Negotiation, header validation and JSON-RPC errors as SDK 2.3.0 answers them."""
     issuer = Ed25519PrivateKey.generate()
     grants = tmp_path / "grants.json"
     trust = provision(grants, issuer)
@@ -65,7 +69,7 @@ async def test_versions_and_error_codes_on_the_production_router(tmp_path: Path)
         )
         async with (
             https_server(app, tmp_path) as (url, tls),
-            httpx.AsyncClient(
+            httpx2.AsyncClient(
                 verify=tls,
                 timeout=5,
                 trust_env=False,
@@ -81,8 +85,9 @@ async def test_versions_and_error_codes_on_the_production_router(tmp_path: Path)
                 answer = await client.post(endpoint, json=_initialize(version))
                 assert answer.status_code == 200
                 assert answer.json()["result"]["protocolVersion"] == version
-            unknown = await client.post(endpoint, json=_initialize("1999-01-01"))
-            assert unknown.json()["result"]["protocolVersion"] == LATEST
+            for requested in ("1999-01-01", STATELESS):
+                unknown = await client.post(endpoint, json=_initialize(requested))
+                assert unknown.json()["result"]["protocolVersion"] == LATEST
 
             started = await client.post(endpoint, json=_initialize(LATEST))
             headers = {
@@ -96,7 +101,7 @@ async def test_versions_and_error_codes_on_the_production_router(tmp_path: Path)
             )
             assert ready.status_code == 202
 
-            async def call(body: dict[str, Any] | bytes, **extra: str) -> httpx.Response:
+            async def call(body: dict[str, Any] | bytes, **extra: str) -> httpx2.Response:
                 merged = {**headers, **extra}
                 if isinstance(body, bytes):
                     merged["Content-Type"] = "application/json"
@@ -108,6 +113,34 @@ async def test_versions_and_error_codes_on_the_production_router(tmp_path: Path)
             assert bogus.status_code == 400
             assert bogus.json()["error"]["code"] == -32600
             assert "Unsupported protocol version: bogus" in bogus.json()["error"]["message"]
+            # The stateless revision is refused even with its complete envelope.
+            envelope = {
+                "io.modelcontextprotocol/protocolVersion": STATELESS,
+                "io.modelcontextprotocol/clientCapabilities": {},
+            }
+            stateless_requests: tuple[tuple[str, dict[str, object], str | None], ...] = (
+                ("tools/list", {"_meta": envelope}, None),
+                (
+                    "tools/call",
+                    {"name": "synapse_board", "arguments": {}, "_meta": envelope},
+                    "synapse_board",
+                ),
+            )
+            for rpc_method, rpc_params, tool_name in stateless_requests:
+                stateless_headers = {"MCP-Protocol-Version": STATELESS, "Mcp-Method": rpc_method}
+                if tool_name is not None:
+                    stateless_headers["Mcp-Name"] = tool_name
+                stateless = await client.post(
+                    endpoint,
+                    headers=stateless_headers,
+                    json={"jsonrpc": "2.0", "id": 9, "method": rpc_method, "params": rpc_params},
+                )
+                assert stateless.status_code == 400
+                assert stateless.json()["error"] == {
+                    "code": -32600,
+                    "message": "Bad Request: Unsupported protocol version: 2026-07-28. "
+                    "Supported versions: " + ", ".join(SUPPORTED),
+                }
             # Known deviation: another supported version in the header is accepted.
             other = await call(listing, **{"MCP-Protocol-Version": "2025-06-18"})
             assert other.status_code == 200
@@ -117,9 +150,9 @@ async def test_versions_and_error_codes_on_the_production_router(tmp_path: Path)
             assert malformed.status_code == 400
             assert malformed.json()["error"]["code"] == -32700
 
-            # Known deviation: an unknown method is -32602, not JSON-RPC's -32601.
+            # SDK 1.30 answered an unknown method -32602; SDK 2 answers JSON-RPC's -32601.
             method = await call({"jsonrpc": "2.0", "id": 3, "method": "no/such"})
-            assert method.json()["error"]["code"] == -32602
+            assert method.json()["error"]["code"] == -32601
             params = await call(
                 {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": 5}}
             )

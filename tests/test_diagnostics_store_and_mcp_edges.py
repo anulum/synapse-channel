@@ -18,7 +18,11 @@ from synapse_channel.client.diagnostics import check_mcp_posture, check_sqlciphe
 from synapse_channel.core.at_rest import generate_key_file
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
-from synapse_channel.mcp.registration import MCP_EXTRA_HINT, REQUIRED_MCP_CLAIM_TOOLS
+from synapse_channel.mcp.registration import (
+    MCP_EXTRA_HINT,
+    MCP_SERVER_MODULE,
+    REQUIRED_MCP_CLAIM_TOOLS,
+)
 
 _REJECTED = (
     "cannot open encrypted event store with key file: "
@@ -80,7 +84,7 @@ def test_no_mcp_extra_and_no_git_binary_both_warn(
 ) -> None:
     """An unimportable MCP SDK and a PATH without git each add a warning and a remedy."""
     # Block the exact module the probe imports: a cached parent import must not mask it.
-    monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", None)
+    monkeypatch.setitem(sys.modules, MCP_SERVER_MODULE, None)
     monkeypatch.setenv("PATH", str(tmp_path))
     diagnosis = check_mcp_posture(cwd=tmp_path)
     assert diagnosis.status == "warn"

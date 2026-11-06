@@ -136,7 +136,7 @@ async def test_real_stdio_mcp_task_journey(tmp_path: Path, monkeypatch: pytest.M
                     "synapse_app_task_attach",
                     {"task_id": "mcp-human-1", "result": {**result, "task_id": "wrong"}},
                 )
-                assert denied.isError
+                assert denied.is_error
                 for action, expected in (("accept", "accepted"), ("start", "running")):
                     assert _operator(action, "mcp-human-1")["state"] == expected
                 attached = await session.call_tool(
@@ -146,7 +146,7 @@ async def test_real_stdio_mcp_task_journey(tmp_path: Path, monkeypatch: pytest.M
                 repeated = await session.call_tool(
                     "synapse_app_task_attach", {"task_id": "mcp-human-1", "result": result}
                 )
-                assert not repeated.isError
+                assert not repeated.is_error
                 assert _operator("verify", "mcp-human-1")["state"] == "verified"
                 assert (
                     _operator(

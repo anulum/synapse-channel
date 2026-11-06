@@ -18,6 +18,7 @@ from pathlib import Path
 from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
+from mcp.types.version import HANDSHAKE_PROTOCOL_VERSIONS
 from pydantic import AnyHttpUrl, TypeAdapter
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -34,6 +35,38 @@ from synapse_channel.mcp.http_policy import HttpOperationPolicy
 from synapse_channel.mcp.http_server import HttpMcpServer
 from synapse_channel.mcp.http_views import ProjectMcpViews
 from synapse_channel.mcp.registration import build_mcp_server
+
+SERVED_PROTOCOL_VERSIONS: tuple[str, ...] = tuple(HANDSHAKE_PROTOCOL_VERSIONS)
+"""MCP versions this profile serves: the ``initialize``-handshake revisions only.
+
+MCP SDK 2 also routes any other ``MCP-Protocol-Version`` header, including an
+unknown one, to its stateless 2026-07-28 entry, which needs no handshake and no
+session. That revision is not part of this profile's reviewed contract, so the
+router refuses it the way SDK 1.30 refused an unsupported version.
+"""
+
+
+def unsupported_version_response(version: str) -> JSONResponse:
+    """Answer a version outside :data:`SERVED_PROTOCOL_VERSIONS` as SDK 1.30 did.
+
+    Parameters
+    ----------
+    version : str
+        The ``MCP-Protocol-Version`` header the client sent.
+
+    Returns
+    -------
+    JSONResponse
+        HTTP 400 with JSON-RPC error ``-32600`` naming the served versions.
+    """
+    message = (
+        f"Bad Request: Unsupported protocol version: {version}. "
+        f"Supported versions: {', '.join(SERVED_PROTOCOL_VERSIONS)}"
+    )
+    return JSONResponse(
+        {"jsonrpc": "2.0", "id": "server-error", "error": {"code": -32600, "message": message}},
+        status_code=400,
+    )
 
 
 class HttpPrincipalRouter:
@@ -69,7 +102,7 @@ class HttpPrincipalRouter:
         self.active = 0
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Reject unsafe origins, plaintext and excess requests before SDK dispatch."""
+        """Reject unsafe origins, plaintext, excess requests and unserved MCP versions first."""
         if scope["type"] != "http":
             await send({"type": "websocket.close", "code": 1008})
             return
@@ -111,9 +144,57 @@ class HttpPrincipalRouter:
                     scope, receive, send
                 )
                 return
+            version = request.headers.get("mcp-protocol-version")
+            if version is not None and version not in SERVED_PROTOCOL_VERSIONS:
+                await unsupported_version_response(version)(scope, receive, send)
+                return
             await self.applications[subject](scope, receive, send)
         finally:
             self.active -= 1
+
+
+def _subject_server(
+    bridge: SynapseHubBridge,
+    policy: HttpOperationPolicy,
+    *,
+    operation_timeout: float,
+    reply_bytes: int,
+) -> HttpMcpServer:
+    """Build one subject's server: the shared registration behind its own policy.
+
+    Parameters
+    ----------
+    bridge : SynapseHubBridge
+        The subject's provisioned native hub seat.
+    policy : HttpOperationPolicy
+        Fresh per-operation authority for that subject and project.
+    operation_timeout : float
+        Upper bound on one dispatched operation.
+    reply_bytes : int
+        Maximum serialized content returned by an action or resource.
+
+    Returns
+    -------
+    HttpMcpServer
+        A server whose bearer checks use the policy's issuer verifier.
+    """
+    verifier = policy.verifier
+    views = ProjectMcpViews(bridge, policy.project)
+    server = HttpMcpServer(
+        policy,
+        views,
+        operation_timeout=operation_timeout,
+        reply_bytes=reply_bytes,
+        token_verifier=verifier,
+        auth=AuthSettings(
+            issuer_url=AnyHttpUrl(verifier.issuer),
+            resource_server_url=AnyHttpUrl(verifier.resource),
+            validate_token_resource=True,
+            required_scopes=["synapse:read"],
+        ),
+    )
+    build_mcp_server(bridge, server=server, views=views)
+    return server
 
 
 def build_http_mcp_app(
@@ -197,28 +278,20 @@ def build_http_mcp_app(
                 machine_identity=False,
             ),
         )
-        views = ProjectMcpViews(bridge, project)
-        server = HttpMcpServer(
+        server = _subject_server(
+            bridge,
             HttpOperationPolicy(verifier, subject, project, grant),
-            views,
             operation_timeout=operation_timeout,
             reply_bytes=reply_bytes,
-            token_verifier=verifier,
+        )
+        bridges.append(bridge)
+        applications[subject] = server.streamable_http_app(
             json_response=True,
-            auth=AuthSettings(
-                issuer_url=AnyHttpUrl(verifier.issuer),
-                resource_server_url=AnyHttpUrl(verifier.resource),
-                validate_token_resource=True,
-                required_scopes=["synapse:read"],
-            ),
             transport_security=security,
             max_sessions=max_sessions,
             max_request_body_size=request_bytes,
             session_idle_timeout=300.0,
         )
-        build_mcp_server(bridge, server=server, views=views)
-        bridges.append(bridge)
-        applications[subject] = server.streamable_http_app()
     if not applications:
         raise ValueError("remote MCP project has no provisioned subjects")
     router = HttpPrincipalRouter(verifier, project, applications, security, max_requests)

@@ -75,7 +75,7 @@ async def test_stdio_recovers_twice_without_replaying_offline_sends(tmp_path: Pa
                             "synapse_send",
                             {"target": "MCP-RECONNECT/receiver", "message": "must-not-replay"},
                         )
-                        assert rejected.isError
+                        assert rejected.is_error
                         await asyncio.sleep(0.7)
                         hub = SynapseHub(hub_id="syn-reconnect-fixture")
                         task = asyncio.create_task(hub.serve(host, port))
@@ -88,7 +88,7 @@ async def test_stdio_recovers_twice_without_replaying_offline_sends(tmp_path: Pa
                                 "synapse_send",
                                 {"target": "MCP-RECONNECT/receiver", "message": message},
                             )
-                            assert not sent.isError
+                            assert not sent.is_error
 
                             def matches_message(
                                 event: dict[str, object], expected: str = message

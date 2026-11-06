@@ -66,7 +66,7 @@ def test_server_reexports_refactored_mcp_symbols() -> None:
     assert compatibility_module.DEFAULT_BRIDGE_NAME is bridge_module.DEFAULT_BRIDGE_NAME
     assert compatibility_module.DEFAULT_REQUEST_TIMEOUT is bridge_module.DEFAULT_REQUEST_TIMEOUT
 
-    assert compatibility_module._require_fastmcp is registration_module._require_fastmcp
+    assert compatibility_module._require_mcp_server is registration_module._require_mcp_server
     assert compatibility_module.build_mcp_server is registration_module.build_mcp_server
     assert compatibility_module.MCP_EXTRA_HINT is registration_module.MCP_EXTRA_HINT
 
@@ -99,7 +99,7 @@ async def test_build_mcp_server_keeps_tool_and_resource_contract() -> None:
     assert registration_module.registered_mcp_tool_names() == frozenset(live_tools)
     assert {str(resource.uri) for resource in await server.list_resources()} == EXPECTED_RESOURCES
     assert {
-        template.uriTemplate for template in await server.list_resource_templates()
+        template.uri_template for template in await server.list_resource_templates()
     } == EXPECTED_RESOURCE_TEMPLATES
 
 

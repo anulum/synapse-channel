@@ -27,8 +27,8 @@ row says, so review the test before relying on a row.
 | --- | --- | --- |
 | A2A | `1.0` (`A2A-Version: 1.0` header or query); specification `1.0.0` | `synapse_channel.a2a.A2A_PROTOCOL_VERSION`, `a2a_http_protocol.SUPPORTED_A2A_VERSION` |
 | A2A | No `A2A-Version` header: the pre-1.0 compatibility path, without task continuation | `a2a_http_protocol` |
-| MCP | `2025-11-25` on HTTPS; `2024-11-05`, `2025-03-26` and `2025-06-18` are negotiated as requested | MCP Python SDK `1.30.0`, pinned in `pyproject.toml` |
-| MCP | stdio tests do not pin a version; they use what the SDK client sends | MCP Python SDK `1.30.0` |
+| MCP | `2025-11-25` on HTTPS; `2024-11-05`, `2025-03-26` and `2025-06-18` are negotiated as requested; the stateless `2026-07-28` revision is refused | MCP Python SDK `2.3.0`, pinned in `pyproject.toml`; `synapse_channel.mcp.http_application.SERVED_PROTOCOL_VERSIONS` |
+| MCP | stdio tests do not pin a version; they use what the SDK client sends | MCP Python SDK `2.3.0` |
 
 The JSON-RPC binding of the A2A bridge uses the pre-1.0 method names
 (`message/send`, `tasks/get`, `tasks/cancel`). The A2A 1.0 names (`SendMessage`,
@@ -63,12 +63,20 @@ The JSON-RPC binding of the A2A bridge uses the pre-1.0 method names
 | Version negotiation and header | `tests/test_mcp_http_protocol_versions.py::test_versions_and_error_codes_on_the_production_router` | — |
 | JSON-RPC error codes | `tests/test_mcp_http_protocol_versions.py::test_versions_and_error_codes_on_the_production_router` | — |
 
-### Known deviations of MCP SDK 1.30.0
+### Known deviations of MCP SDK 2.3.0
 
 These are pinned by `tests/test_mcp_http_protocol_versions.py`, so an SDK
 upgrade that changes them fails a test instead of silently changing this page:
 
-- An unknown JSON-RPC method is answered `-32602`; JSON-RPC 2.0 names `-32601`.
 - A session negotiated at `2025-11-25` accepts a request whose
   `MCP-Protocol-Version` header names another supported version. An
   unsupported header value is refused with HTTP 400 and `-32600`.
+
+SDK 1.30.0 answered an unknown JSON-RPC method `-32602`; SDK 2.3.0 answers
+`-32601`, as JSON-RPC 2.0 names it.
+
+SDK 2.3.0 also serves the stateless `2026-07-28` revision, with no
+`initialize` handshake and no session, to any request whose
+`MCP-Protocol-Version` header is not a handshake revision. The production
+router refuses such a request before the SDK sees it, with the same HTTP 400
+and `-32600` answer, so this profile serves the four handshake revisions only.

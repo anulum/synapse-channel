@@ -67,7 +67,7 @@ async def _session(uri: str, root: Path, feed: Path, cursor: Path) -> AsyncItera
 
 def _text(result: CallToolResult) -> str:
     """Read the actual SDK tool result without discarding protocol errors."""
-    assert not result.isError, result
+    assert not result.is_error, result
     assert len(result.content) == 1
     block = result.content[0]
     assert isinstance(block, TextContent)
@@ -223,7 +223,7 @@ async def test_registered_storage_tools_validate_malformed_arguments(
             if tool == "synapse_memory_recall":
                 args.update(event_store=str(tmp_path / "missing.db"), query="recovery")
             result = await session.call_tool(tool, args)
-            assert result.isError
+            assert result.is_error
             assert any(
                 isinstance(block, TextContent) and "validation error" in block.text
                 for block in result.content

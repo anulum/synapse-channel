@@ -12,8 +12,9 @@ SYNAPSE CHANNEL — authenticated Streamable HTTP MCP
 
 `synapse mcp --transport streamable-http` exposes the existing coordination
 actions through a private HTTPS listener. The default `synapse mcp` remains
-stdio. The HTTP adapter uses MCP SDK **1.30.0**, with acceptance against protocol
-**2025-11-25**. Install the optional runtime with
+stdio. The HTTP adapter uses MCP SDK **2.3.0**, with acceptance against protocol
+**2025-11-25**. The SDK's stateless **2026-07-28** revision is refused before
+dispatch, so a client must use the `initialize` handshake and its session. Install the optional runtime with
 `python -m pip install 'synapse-channel[mcp]'`.
 
 The client profiles below describe specific qualification targets and maintained
@@ -192,7 +193,7 @@ deviations of the pinned SDK.
 | Client surface | Evidence / support boundary |
 | --- | --- |
 | MCP Inspector CLI 2.8.0 | Qualification target: initialize at 2025-11-25, list tools, declare, claim, resource read and release over verified HTTPS; check effects in the native hub and retain the exact run/artifact evidence. |
-| MCP Python SDK 1.30.0 | Maintained real HTTPS profiles in `tests/test_mcp_http_application.py` and `tests/test_mcp_http_reconnect.py`, including native identities/mutations/resources, two backend hub restarts with the same HTTP session, offline-mutation refusal and principal isolation after recovery. Authentication/refusal profiles are in `tests/test_mcp_http_auth.py` and `tests/test_mcp_http_transport.py`. |
+| MCP Python SDK 2.3.0 | Maintained real HTTPS profiles in `tests/test_mcp_http_application.py` and `tests/test_mcp_http_reconnect.py`, including native identities/mutations/resources, two backend hub restarts with the same HTTP session, offline-mutation refusal and principal isolation after recovery. Authentication/refusal profiles are in `tests/test_mcp_http_auth.py` and `tests/test_mcp_http_transport.py`. |
 | Installed Synapse HTTP console-script profile | `tests/test_cli_mcp_http.py` invokes the interpreter's installed console script for TLS, native admission, project mutation/refusal and shutdown. Its result qualifies that installation, not every wheel with the same version. |
 | Desktop, hosted web and cloud applications | No HTTP acceptance established by these checks; require their own documented client qualification. |
 

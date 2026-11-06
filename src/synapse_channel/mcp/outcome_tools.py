@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolResult, TextContent
 
 from synapse_channel.mcp.bridge import SynapseHubBridge
@@ -35,19 +35,19 @@ async def invoke(action: Awaitable[str]) -> CallToolResult:
         is_error = True
     return CallToolResult(
         content=[TextContent(type="text", text=str(text))],
-        structuredContent={"result": str(text), "execution_outcome": outcome.to_json()},
-        isError=is_error,
+        structured_content={"result": str(text), "execution_outcome": outcome.to_json()},
+        is_error=is_error,
     )
 
 
-def register_mutation_tools(server: FastMCP, bridge: SynapseHubBridge) -> None:
+def register_mutation_tools(server: MCPServer, bridge: SynapseHubBridge) -> None:
     """Register mutation adapters with explicit scoped execution observations."""
     _register_lease_tools(server, bridge)
     _register_plan_tools(server, bridge)
     _register_app_tools(server, bridge)
 
 
-def _register_lease_tools(server: FastMCP, bridge: SynapseHubBridge) -> None:
+def _register_lease_tools(server: MCPServer, bridge: SynapseHubBridge) -> None:
     """Register lease acquisition, exact confirmation and receipt-bearing release."""
 
     @server.tool(structured_output=False)
@@ -102,7 +102,7 @@ def _register_lease_tools(server: FastMCP, bridge: SynapseHubBridge) -> None:
         )
 
 
-def _register_plan_tools(server: FastMCP, bridge: SynapseHubBridge) -> None:
+def _register_plan_tools(server: MCPServer, bridge: SynapseHubBridge) -> None:
     """Register message submission, handoff and shared-plan mutations."""
 
     @server.tool(structured_output=False)
@@ -130,7 +130,7 @@ def _register_plan_tools(server: FastMCP, bridge: SynapseHubBridge) -> None:
         return await invoke(bridge.task_update(task_id, status, suggested_owner))
 
 
-def _register_app_tools(server: FastMCP, bridge: SynapseHubBridge) -> None:
+def _register_app_tools(server: MCPServer, bridge: SynapseHubBridge) -> None:
     """Register local app task mutations without a business-success claim."""
 
     @server.tool(structured_output=False)

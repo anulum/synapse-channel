@@ -54,7 +54,7 @@ class FakeSession:
         self.calls.append((name, arguments or {}))
         return SimpleNamespace(
             content=[SimpleNamespace(text=f"ran {name}"), SimpleNamespace(text="line2")],
-            isError=self._error,
+            is_error=self._error,
         )
 
 
@@ -126,6 +126,20 @@ async def test_call_tool_raises_on_error_result() -> None:
     client = OutboundMcpClient({"fs": _spec()}, session_opener=_opener(session))
     with pytest.raises(McpToolError, match="returned an error"):
         await client.call_tool("fs", "echo")
+
+
+@pytest.mark.parametrize("flag", [{"isError": True}, {"isError": False}, {"is_error": "yes"}, {}])
+async def test_a_result_without_a_boolean_error_flag_is_refused(flag: dict[str, object]) -> None:
+    """A result shaped for SDK 1 (``isError``) or without the flag is never read as success."""
+
+    class _Session(FakeSession):
+        async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
+            return SimpleNamespace(content=[SimpleNamespace(text="SECRET-TEXT")], **flag)
+
+    client = OutboundMcpClient({"fs": _spec()}, session_opener=_opener(_Session(tools=["echo"])))
+    with pytest.raises(McpToolError, match="returned a malformed result") as refused:
+        await client.call_tool("fs", "echo")
+    assert "SECRET-TEXT" not in str(refused.value)
 
 
 class _TransportFailureOpener:
@@ -268,9 +282,9 @@ async def test_default_opener_passes_the_current_stderr_stream(
 
 
 _ECHO_SERVER = """
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-server = FastMCP("echo-test")
+server = MCPServer("echo-test")
 
 
 @server.tool()
@@ -285,7 +299,6 @@ if __name__ == "__main__":
 
 @requires_sealed_launch
 async def test_call_tool_against_a_real_stdio_mcp_server(tmp_path: Path) -> None:
-    pytest.importorskip("mcp.server.fastmcp")
     mcp_spec = importlib.util.find_spec("mcp")
     assert mcp_spec is not None and mcp_spec.origin is not None
     script = tmp_path / "echo_server.py"

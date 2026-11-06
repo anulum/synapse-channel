@@ -15,33 +15,36 @@ import time
 from base64 import urlsafe_b64encode
 from pathlib import Path
 
-import httpx
+import httpx2
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import LATEST_PROTOCOL_VERSION
+from mcp.types.version import LATEST_HANDSHAKE_VERSION
 from pydantic import AnyHttpUrl
+from starlette.applications import Starlette
 
 from mcp_http_helpers import access_token, https_server, write_policy
 from synapse_channel.mcp.http_auth import HttpTokenVerifier
 
 
-def sdk_server(policy_file: Path) -> FastMCP:
+def sdk_app(policy_file: Path) -> Starlette:
     """Build the installed SDK transport with the production token verifier."""
     verifier = HttpTokenVerifier(policy_file)
-    return FastMCP(
+    server: MCPServer[None] = MCPServer(
         "auth-acceptance",
         token_verifier=verifier,
-        json_response=True,
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(verifier.issuer),
             resource_server_url=AnyHttpUrl(verifier.resource),
             validate_token_resource=True,
             required_scopes=["synapse:read"],
         ),
+    )
+    return server.streamable_http_app(
+        json_response=True,
         transport_security=TransportSecuritySettings(
             enable_dns_rebinding_protection=True, allowed_hosts=["127.0.0.1:*"], allowed_origins=[]
         ),
@@ -50,7 +53,7 @@ def sdk_server(policy_file: Path) -> FastMCP:
     )
 
 
-async def initialize(client: httpx.AsyncClient, token: str | None) -> httpx.Response:
+async def initialize(client: httpx2.AsyncClient, token: str | None) -> httpx2.Response:
     """Initialize via a network HTTP request rather than a verifier helper call."""
     headers = {"Accept": "application/json, text/event-stream"}
     if token is not None:
@@ -63,7 +66,7 @@ async def initialize(client: httpx.AsyncClient, token: str | None) -> httpx.Resp
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": LATEST_PROTOCOL_VERSION,
+                "protocolVersion": LATEST_HANDSHAKE_VERSION,
                 "capabilities": {},
                 "clientInfo": {"name": "auth-acceptance", "version": "1"},
             },
@@ -93,8 +96,8 @@ async def test_invalid_identity_refused_over_https(
     key = Ed25519PrivateKey.generate()
     policy_file = tmp_path / "grants.json"
     write_policy(policy_file, key)
-    async with https_server(sdk_server(policy_file).streamable_http_app(), tmp_path) as (url, tls):
-        async with httpx.AsyncClient(
+    async with https_server(sdk_app(policy_file), tmp_path) as (url, tls):
+        async with httpx2.AsyncClient(
             base_url=url, verify=tls, timeout=5, trust_env=False
         ) as client:
             if claim in {"exp_offset", "iat_offset"}:
@@ -119,15 +122,15 @@ async def test_authentication_and_live_revocation(
     caplog.set_level(logging.DEBUG)
     policy_file = tmp_path / "grants.json"
     write_policy(policy_file, key)
-    async with https_server(sdk_server(policy_file).streamable_http_app(), tmp_path) as (url, tls):
-        async with httpx.AsyncClient(
+    async with https_server(sdk_app(policy_file), tmp_path) as (url, tls):
+        async with httpx2.AsyncClient(
             base_url=url, verify=tls, timeout=5, trust_env=False
         ) as client:
             assert (await initialize(client, None)).status_code == 401
             token = access_token(key)
             accepted = await initialize(client, token)
             assert accepted.status_code == 200
-            assert accepted.json()["result"]["protocolVersion"] == LATEST_PROTOCOL_VERSION
+            assert accepted.json()["result"]["protocolVersion"] == LATEST_HANDSHAKE_VERSION
             write_policy(policy_file, key, revoked=True)
             assert (await initialize(client, token)).status_code == 401
             assert token not in caplog.text
@@ -160,8 +163,8 @@ async def test_bad_signatures_headers_and_policy_changes(tmp_path: Path) -> None
         access_token(key, client_id=123),
         access_token(key, exp=float(time.time()) + 60),
     ]
-    async with https_server(sdk_server(policy_file).streamable_http_app(), tmp_path) as (url, tls):
-        async with httpx.AsyncClient(
+    async with https_server(sdk_app(policy_file), tmp_path) as (url, tls):
+        async with httpx2.AsyncClient(
             base_url=url, verify=tls, timeout=5, trust_env=False
         ) as client:
             for invalid in invalid_tokens:
