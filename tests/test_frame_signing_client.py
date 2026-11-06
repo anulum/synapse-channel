@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -146,3 +147,14 @@ async def test_an_old_client_is_told_to_upgrade(tmp_path: Path) -> None:
     (error,) = [reply for reply in replies if reply.get("type") == "error"]
     assert error["verification_result"] == "frame_signature_required"
     assert "upgrade the client" in error["payload"]
+
+
+async def test_a_new_connection_attempt_drops_the_old_signing_session(tmp_path: Path) -> None:
+    # A frame sent before the next welcome must not be signed for the ended connection.
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    agent = SynapseAgent("P/agent", None, uri=f"ws://127.0.0.1:{port}", verbose=False)
+    agent.frame_session = ClientFrameSession("old-hub", "old-nonce", seq=7)
+    await agent.connect()
+    assert agent.frame_session is None

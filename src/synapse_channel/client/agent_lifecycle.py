@@ -17,6 +17,7 @@ from typing import Any, Protocol
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
+from synapse_channel.client.frame_signing_client import ClientFrameSession
 from synapse_channel.core.identity_keys import public_key_b64
 from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType
 
@@ -106,6 +107,7 @@ class _LifecycleAgent(Protocol):
     _heartbeat_task: asyncio.Task[None] | None
     _identity_key: Any
     _mailbox_since_seq: int
+    frame_session: ClientFrameSession | None
 
     async def _dispatch(self, raw: str | bytes) -> None:
         """Dispatch a raw frame received from the hub."""
@@ -115,6 +117,9 @@ class _LifecycleAgent(Protocol):
 
     async def _heartbeat_tick(self) -> None:
         """Send one heartbeat tick if connected."""
+
+    def _reset_attempt(self) -> None:
+        """Clear the state a previous connection attempt left behind."""
 
     async def connect(self) -> None:
         """Connect to the hub and process frames until disconnected."""
@@ -138,6 +143,22 @@ class AgentLifecycleMixin:
     last_close_reason: str
     _connect_active: bool
     _heartbeat_task: asyncio.Task[None] | None
+    frame_session: ClientFrameSession | None
+
+    def _reset_attempt(self: _LifecycleAgent) -> None:
+        """Clear the state a previous connection attempt left behind.
+
+        Readiness, the delivery incarnation, the close diagnostics and the
+        frame-signing session all belong to one connection. A signing session
+        in particular must not outlive it: the next welcome opens a new one,
+        and a frame signed for the old one in between would be refused.
+        """
+        self.running = True
+        self.ready_event.clear()
+        self.delivery_incarnation = ""
+        self.delivery_ready_event.clear()
+        self.last_close_code, self.last_close_reason = None, ""
+        self.frame_session = None
 
     async def connect(self: _LifecycleAgent) -> None:
         """Open the connection and run the inbound listener until it closes.
@@ -150,12 +171,12 @@ class AgentLifecycleMixin:
 
         Each call is one connection attempt that owns its state: readiness is
         cleared when the attempt starts and again when it ends, ``running`` is
-        re-armed, the previous close diagnostics are reset, and the attempt's
-        heartbeat task is cancelled and awaited before the call returns, so a
-        disconnected agent is never ready and a later call on the same agent
-        connects afresh. The mailbox cursor and any owner lease survive across
-        attempts. A second call while an attempt is still active is refused
-        instead of racing the live listener.
+        re-armed, the previous close diagnostics and frame-signing session are
+        reset, and the attempt's heartbeat task is cancelled and awaited before
+        the call returns, so a disconnected agent is never ready and a later
+        call on the same agent connects afresh. The mailbox cursor and any
+        owner lease survive across attempts. A second call while an attempt
+        is still active is refused instead of racing the live listener.
 
         Raises
         ------
@@ -165,11 +186,7 @@ class AgentLifecycleMixin:
         if self._connect_active:
             raise RuntimeError(f"{self.name}: connect() is already active; await it first")
         self._connect_active = True
-        self.running = True
-        self.ready_event.clear()
-        self.delivery_incarnation = ""
-        self.delivery_ready_event.clear()
-        self.last_close_code, self.last_close_reason = None, ""
+        self._reset_attempt()
         heartbeat: asyncio.Task[None] | None = None
         try:
             async with connect(
