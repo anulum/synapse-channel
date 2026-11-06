@@ -238,11 +238,13 @@ contract as `cross-repo --notify-cmd`: split without a shell (wrap in
 code.
 `synapse doctor --token-set FILE` adds a `token-set` check over the hubs that
 follow that set (`synapse hub --token-set FILE`). It passes only when a hub
-runs and every running hub has the file on disk in force. It warns when no
-hub reports the set, when a hub is `pending` or `stale` (with its reason
-code), and when files of hubs that are gone remain, with `synapse token-set
-status FILE --prune` as the remedy. It fails when the hub states cannot be
-read. A hub that is gone is never counted healthy.
+runs and every running hub has the file on disk in force; the pass line
+counts tokens in force that a hub's policy refuses. It fails when a running
+hub is `stale` (it keeps an older set, so a change such as a retire is not in
+force; the reason code is named) and when the hub states cannot be read. It
+warns when no hub reports the set, when a hub is `pending`, and when files of
+hubs that are gone remain, with `synapse token-set status FILE --prune` as
+the remedy. A hub that is gone is never counted healthy.
 Federated deployments can opt into peer checks without inferring ambient trust
 state: repeat `--federation-peer PEER=URI` for the hubs to probe, add
 `--federation-cursor PEER=SEQ` for the local consumed cursor when known, and

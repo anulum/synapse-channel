@@ -9,9 +9,11 @@
 
 The check reads the state files hubs publish beside the set (see
 :mod:`synapse_channel.token_set_hub_status`). It passes only when at least one
-hub runs and every running hub has the file on disk in force. A hub that is
-gone is never counted as healthy: it is reported, and so is the command that
-removes its files.
+hub runs and every running hub has the file on disk in force. A running hub
+that is ``stale`` keeps an older set, so the file on disk (a retire, say) is
+not in force: that fails. A hub that has not looked at a change yet, or a
+state file that cannot be read, warns. A hub that is gone is never counted as
+healthy: it is reported, and so is the command that removes its files.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ def diagnose_token_set(path: str | Path | None) -> list[Diagnosis]:
     -------
     list of Diagnosis
         No entry without a path; otherwise one ``pass``, ``warn`` or ``fail``.
+        A ``pass`` names how many tokens in force the hubs' policies refuse.
     """
     if path is None:
         return []
@@ -72,10 +75,11 @@ def diagnose_token_set(path: str | Path | None) -> list[Diagnosis]:
             f"{state.name} {state.state}" + (f" ({state.reason_code})" if state.reason_code else "")
             for state in unhealthy
         ]
+        stale = any(state.state == "stale" for state in unhealthy)
         return [
             Diagnosis(
                 CHECK,
-                "warn",
+                "fail" if stale else "warn",
                 "a running hub does not have the set on disk in force: " + ", ".join(parts),
                 f"run {status_command}; a stale hub keeps its last accepted set "
                 "until the file validates",
@@ -91,4 +95,6 @@ def diagnose_token_set(path: str | Path | None) -> list[Diagnosis]:
                 f"run {status_command} --prune",
             )
         ]
-    return [Diagnosis(CHECK, "pass", f"{len(running)} running hub(s) applied {target}")]
+    refused = max(state.policy_refused for state in running)
+    note = f"; {refused} token(s) in force refused by a hub's policy" if refused else ""
+    return [Diagnosis(CHECK, "pass", f"{len(running)} running hub(s) applied {target}{note}")]

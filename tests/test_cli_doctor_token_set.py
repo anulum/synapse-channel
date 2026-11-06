@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,12 @@ import pytest
 from synapse_channel import cli, cli_doctor
 from synapse_channel.cli_doctor_token_set import diagnose_token_set
 from synapse_channel.client.diagnostics import Diagnosis
-from synapse_channel.core.token_set import TokenSetAuthenticator, state_directory
+from synapse_channel.core.secure_path import apply_owner_only_file
+from synapse_channel.core.token_set import (
+    TokenSetAuthenticator,
+    connect_token_digest,
+    state_directory,
+)
 from synapse_channel.token_set_hub_status import publish_hub_state
 from test_token_set_hub_status import _killed_hub, _write
 
@@ -57,6 +63,7 @@ def test_running_hubs_pass_only_when_every_one_applied_the_file(tmp_path: Path) 
         assert f"{writer.path.name} pending" in pending.detail
         authenticator.refresh()
         stale = _only(diagnose_token_set(path))
+        assert stale.status == "fail"
         assert f"{writer.path.name} stale (invalid)" in stale.detail
         assert "keeps its last accepted set" in stale.remedy
         _write(path)
@@ -115,3 +122,18 @@ def test_the_doctor_command_passes_the_set_through(tmp_path: Path) -> None:
     for argv, expected in ((["doctor"], None), (["doctor", "--token-set", target], target)):
         assert cli_doctor._cmd_doctor(parser.parse_args(argv), diagnose_runner=runner) == 0
         assert seen[-1] == expected
+
+
+def test_the_pass_line_names_tokens_a_hubs_policy_refuses(tmp_path: Path) -> None:
+    path = tmp_path / "tokens.json"
+    document = {"version": 1, "tokens": [{"id": "open", "sha256": connect_token_digest("s")}]}
+    path.write_text(json.dumps(document))
+    apply_owner_only_file(path)
+    writer = publish_hub_state(TokenSetAuthenticator(path, require_expiry=True))
+    assert writer is not None
+    try:
+        healthy = _only(diagnose_token_set(path))
+        assert healthy.status == "pass"
+        assert healthy.detail.endswith("; 1 token(s) in force refused by a hub's policy")
+    finally:
+        writer.close()
