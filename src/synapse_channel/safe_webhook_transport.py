@@ -264,7 +264,28 @@ class _SafePinnedRedirectHandler(urllib.request.HTTPRedirectHandler):
         headers: HTTPMessage,
         newurl: str,
     ) -> urllib.request.Request | None:
-        """Validate redirect transport, origin, status, and sensitive headers."""
+        """Validate redirect transport, origin, status, and sensitive headers.
+
+        A refused redirect closes its response, and with it the socket, before
+        the refusal is raised; otherwise the socket stays open until the
+        garbage collector finds the refusal's traceback.
+        """
+        try:
+            return self._checked_redirect(req, fp, code, msg, headers, newurl)
+        except URLError:
+            fp.close()
+            raise
+
+    def _checked_redirect(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        """Return the follow-up request, or raise the policy refusal."""
         redirect_url = urljoin(req.full_url, newurl)
         redirect_history = getattr(req, "redirect_dict", {})
         if isinstance(redirect_history, dict) and (

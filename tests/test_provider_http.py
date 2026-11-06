@@ -14,7 +14,7 @@ import threading
 
 import pytest
 
-from http_server_helpers import LocalHttpResponder
+from http_server_helpers import LocalHttpResponder, keep_failure, unclosed_resources
 from synapse_channel.client.provider_http import (
     ProviderHTTPClient,
     ProviderHTTPError,
@@ -289,6 +289,22 @@ def test_error_body_and_secret_are_never_exposed() -> None:
     assert captured.value.retry_after == "2"
     assert captured.value.rate_limits["x-ratelimit-remaining-requests"] == "0"
     assert "secret" not in str(captured.value)
+
+
+def test_a_refused_provider_call_leaves_no_socket_open() -> None:
+    """A kept provider error holds no open socket: the HTTP error is closed first."""
+    with LocalHttpResponder(body=b"busy", status=503) as server:
+        client = ProviderHTTPClient(PROFILES["openai"], api_key="secret-key", base_url=server.url)
+        with unclosed_resources() as leaked:
+            kept = keep_failure(
+                lambda: client.complete(
+                    model="m", system_prompt="s", user_prompt="u", max_output_tokens=8
+                ),
+                ProviderHTTPError,
+            )
+    assert kept.text == "provider http_error (503)"
+    assert (kept.http_errors, kept.open_http_errors) == (1, 0)
+    assert leaked == []
 
 
 def test_oversized_provider_response_has_a_stable_redacted_error() -> None:

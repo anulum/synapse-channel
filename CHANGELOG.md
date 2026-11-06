@@ -195,6 +195,14 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A refused HTTP call no longer keeps its socket open.** When a provider,
+  the OpenAI-compatible chat backend or the Remanentia memory service answered
+  with an HTTP error, the raised error kept the refused response, and with it
+  the socket, as its context; a webhook redirect refused by policy left the
+  redirect response open the same way. A caller that kept the error kept the
+  socket until garbage collection. Each client now closes the refused
+  response before raising; the error text and status are unchanged.
+
 - **Semantic Git reads no longer leave their pipes open.** Each bounded
   Git read used by the semantic diff, conflict and claim tools left the
   child's stdout and stderr open after reading them, on success and on a

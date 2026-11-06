@@ -8,12 +8,88 @@
 
 from __future__ import annotations
 
+import contextlib
+import gc
 import threading
+import warnings
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.error import HTTPError
 
 from hub_e2e_helpers import _free_port
+
+
+@contextlib.contextmanager
+def unclosed_resources() -> Iterator[list[str]]:
+    """Collect every ResourceWarning raised in the block and by a final collection.
+
+    The block should drop its references to what it opened, then the garbage
+    collector frees them: a socket or file still open at that point warns, and
+    the warning text lands in the yielded list. The list stays empty when
+    everything was closed explicitly.
+    """
+    found: list[str] = []
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        yield found
+        gc.collect()
+    found.extend(str(item.message) for item in caught if item.category is ResourceWarning)
+
+
+@dataclass(frozen=True)
+class KeptFailure:
+    """What a kept error showed before it was dropped.
+
+    ``http_errors`` counts the HTTP errors in its context and cause chain;
+    ``open_http_errors`` counts those whose response was still open.
+    """
+
+    text: str
+    http_errors: int
+    open_http_errors: int
+
+
+def _kept(error: BaseException) -> KeptFailure:
+    links: list[HTTPError] = []
+    seen: set[int] = set()
+    link: BaseException | None = error
+    while link is not None and id(link) not in seen:
+        seen.add(id(link))
+        if isinstance(link, HTTPError):
+            links.append(link)
+        link = link.__cause__ or link.__context__
+    still_open = [item for item in links if item.fp is not None and not item.fp.closed]
+    return KeptFailure(str(error), len(links), len(still_open))
+
+
+def keep_failure(call: Callable[[], object], expected: type[Exception]) -> KeptFailure:
+    """Run a call that must fail and keep its error, as a caller that stores it would.
+
+    The kept error and this frame refer to each other through the traceback, so
+    once this returns only the garbage collector frees them. Whatever the error
+    still holds open then shows up in :func:`unclosed_resources`, when the
+    collector happens to free the socket before its reader.
+    """
+    try:
+        call()
+    except expected as error:
+        kept = error
+        return _kept(kept)
+    raise AssertionError(f"{expected.__name__} was not raised")
+
+
+async def keep_async_failure(
+    call: Callable[[], Awaitable[object]], expected: type[Exception]
+) -> KeptFailure:
+    """Await a call that must fail and keep its error; see :func:`keep_failure`."""
+    try:
+        await call()
+    except expected as error:
+        kept = error
+        return _kept(kept)
+    raise AssertionError(f"{expected.__name__} was not raised")
 
 
 @dataclass(frozen=True)

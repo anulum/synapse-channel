@@ -20,6 +20,7 @@ from typing import cast
 
 import pytest
 
+from http_server_helpers import keep_async_failure, unclosed_resources
 from synapse_channel.participants.remanentia_http import (
     MAX_TOKEN_BYTES,
     RemanentiaHttpRecall,
@@ -344,6 +345,19 @@ async def test_server_error_body_url_and_token_are_not_reflected(
     text = str(failure.value)
     assert "hidden-token" not in text
     assert "https://" not in text
+
+
+@pytest.mark.asyncio
+async def test_a_refused_recall_leaves_no_socket_open(live_server: _LiveServer) -> None:
+    """A kept recall error holds no open socket: the HTTP error is closed first."""
+    live_server.plan.status = 500
+    live_server.plan.body = b"busy"
+    recall = RemanentiaHttpRecall(live_server.url)
+    with unclosed_resources() as leaked:
+        kept = await keep_async_failure(lambda: recall.recall("q", top_k=1), RuntimeError)
+    assert kept.text == "memory service request failed"
+    assert (kept.http_errors, kept.open_http_errors) == (1, 0)
+    assert leaked == []
 
 
 @pytest.mark.asyncio

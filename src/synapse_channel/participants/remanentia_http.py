@@ -157,7 +157,11 @@ class RemanentiaHttpRecall:
                 if response.headers.get_content_type() != "application/json":
                     raise ValueError("memory service returned a non-JSON response")
                 raw = response.read(self.max_response_bytes + 1)
-        except (HTTPError, URLError, TimeoutError, OSError):
+        except HTTPError as exc:
+            # Close the refused response's socket now, not at garbage collection.
+            exc.close()
+            raise RuntimeError("memory service request failed") from None
+        except (URLError, TimeoutError, OSError):
             raise RuntimeError("memory service request failed") from None
         if len(raw) > self.max_response_bytes:
             raise ValueError("memory service response exceeds the configured size limit")

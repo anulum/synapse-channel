@@ -21,6 +21,7 @@ from urllib.request import Request
 
 import pytest
 
+from http_server_helpers import keep_failure, unclosed_resources
 from synapse_channel import safe_webhook_transport as transport
 
 
@@ -373,6 +374,18 @@ def test_redirect_chain_limit_is_explicit_and_bounded() -> None:
 
     assert len(endpoint.paths) <= transport.WEBHOOK_MAX_REDIRECTS + 1
     assert "test-only-secret" not in str(exc_info.value)
+
+
+def test_a_refused_redirect_leaves_no_socket_open() -> None:
+    """A kept redirect refusal holds no open socket: the response is closed first."""
+    with _Redirect(location="/loop", code=307, always_redirect=True) as endpoint:
+        opener = transport.build_safe_opener(allow_local=True)
+        req = Request(f"{endpoint.url}/start", data=b"{}", method="POST")
+        with unclosed_resources() as leaked:
+            kept = keep_failure(lambda: opener.open(req, timeout=2.0), URLError)
+    assert kept.text == f"<urlopen error {transport.REDIRECT_LIMIT_ERROR}>"
+    assert kept.http_errors == 0  # the refusal is raised in the handler, not as an HTTP error
+    assert leaked == []
 
 
 def test_webhook_redirect_policy_descriptor_is_stable_and_value_free() -> None:

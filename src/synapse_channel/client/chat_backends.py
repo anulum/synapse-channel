@@ -164,6 +164,8 @@ class OpenAIChatClient:
                     "utf-8", errors="replace"
                 )
         except urllib.error.HTTPError as exc:
+            # Close the refused response's socket now, not at garbage collection.
+            exc.close()
             raise RuntimeError(f"chat backend HTTP {exc.code}") from None
         except urllib.error.URLError:
             raise RuntimeError("chat backend connection error") from None

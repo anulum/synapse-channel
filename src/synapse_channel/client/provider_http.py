@@ -397,6 +397,9 @@ class ProviderHTTPClient:
                         raise ProviderHTTPError("response_too_large") from None
                 headers = dict(response.headers.items())
         except urllib.error.HTTPError as exc:
+            # The refused response still holds its socket; the raised error would
+            # keep it open as context until garbage collection, so close it now.
+            exc.close()
             retry_after = exc.headers.get("Retry-After", "")[:128]
             raise ProviderHTTPError(
                 "http_error",

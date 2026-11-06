@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from http_server_helpers import LocalHttpResponder
+from http_server_helpers import LocalHttpResponder, keep_failure, unclosed_resources
 from hub_e2e_helpers import _free_port
 from synapse_channel.client.chat_backends import (
     OpenAIChatClient,
@@ -114,6 +114,19 @@ def test_generate_error_does_not_echo_untrusted_body() -> None:
         with pytest.raises(RuntimeError) as captured:
             client.generate(system_prompt="s", user_prompt="u")
     assert "private-response-token" not in str(captured.value)
+
+
+def test_a_refused_generate_leaves_no_socket_open() -> None:
+    """A kept backend error holds no open socket: the HTTP error is closed first."""
+    with LocalHttpResponder(body=b"busy", status=503) as server:
+        client = OpenAIChatClient(api_key="k", model="m", base_url=server.url, timeout_seconds=3.0)
+        with unclosed_resources() as leaked:
+            kept = keep_failure(
+                lambda: client.generate(system_prompt="s", user_prompt="u"), RuntimeError
+            )
+    assert kept.text == "chat backend HTTP 503"
+    assert (kept.http_errors, kept.open_http_errors) == (1, 0)
+    assert leaked == []
 
 
 def test_generate_raises_on_connection_error() -> None:
