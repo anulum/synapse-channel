@@ -185,6 +185,29 @@ def _utf16_sort_key(value: str) -> bytes:
     return value.encode("utf-16-be")
 
 
+def jcs_member_key(value: str) -> bytes:
+    """Return the RFC 8785 sort key of an object member name (UTF-16 code units).
+
+    Raises
+    ------
+    AefCanonicalizationError
+        If ``value`` holds an unpaired surrogate.
+    """
+    _require_unicode_scalar_text(value)
+    return _utf16_sort_key(value)
+
+
+def jcs_string(value: str) -> str:
+    """Return ``value`` as an RFC 8785 JSON string literal.
+
+    Raises
+    ------
+    AefCanonicalizationError
+        If ``value`` holds an unpaired surrogate.
+    """
+    return _quote(value)
+
+
 def _quote(value: str) -> str:
     _require_unicode_scalar_text(value)
     rendered: list[str] = ['"']

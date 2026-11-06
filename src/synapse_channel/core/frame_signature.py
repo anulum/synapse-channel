@@ -14,9 +14,10 @@ connection's session nonce and a sequence number that must grow on every
 frame of that connection. A frame copied to another connection, another hub
 or the same connection later is therefore refused without any clock.
 
-The signed bytes are a fixed domain prefix followed by the canonical JSON of
-the whole frame as sent, with only the signature value left out. Any change
-to any field, including the message type, breaks the signature.
+The signed bytes are a fixed domain prefix followed by the RFC 8785 (JCS)
+canonical JSON of the whole frame as sent, with only the signature value left
+out, so a client in any language can reproduce them. Any change to any field,
+including the message type, breaks the signature.
 
 Choosing the key, checking that it is still trusted, and remembering the last
 sequence of a connection belong to the caller.
@@ -27,10 +28,11 @@ from __future__ import annotations
 import base64
 import binascii
 import copy
-import json
 from collections.abc import Mapping
 from enum import Enum
 from typing import TYPE_CHECKING, Any
+
+from synapse_channel.core.frame_canonical import FrameCanonicalError, frame_canonical_json
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -76,15 +78,19 @@ def frame_signing_bytes(frame: Mapping[str, Any]) -> bytes:
     Returns
     -------
     bytes
-        :data:`FRAME_SIGNATURE_DOMAIN` followed by the canonical JSON of the
+        :data:`FRAME_SIGNATURE_DOMAIN` followed by the RFC 8785 bytes of the
         frame without ``frame_signature.value``.
+
+    Raises
+    ------
+    FrameCanonicalError
+        If the frame holds a value RFC 8785 cannot represent here.
     """
     unsigned = dict(frame)
     envelope = unsigned.get(FRAME_SIGNATURE_FIELD)
     if isinstance(envelope, Mapping):
         unsigned[FRAME_SIGNATURE_FIELD] = {k: v for k, v in envelope.items() if k != "value"}
-    canonical = json.dumps(unsigned, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    return FRAME_SIGNATURE_DOMAIN + canonical.encode("utf-8")
+    return FRAME_SIGNATURE_DOMAIN + frame_canonical_json(unsigned)
 
 
 def sign_session_frame(
@@ -116,6 +122,11 @@ def sign_session_frame(
     -------
     dict[str, Any]
         The signed frame.
+
+    Raises
+    ------
+    FrameCanonicalError
+        If the frame holds a value RFC 8785 cannot represent here.
     """
     signed = copy.deepcopy(dict(frame))
     signed[FRAME_SIGNATURE_FIELD] = {
@@ -196,8 +207,12 @@ def verify_session_frame(
     if seq <= last_seq:
         return FrameSignatureResult.REPLAYED, last_seq
     try:
+        signed_bytes = frame_signing_bytes(frame)
+    except FrameCanonicalError:
+        return FrameSignatureResult.MALFORMED, last_seq
+    try:
         value = base64.b64decode(str(envelope["value"]), validate=True)
-        public_key.verify(value, frame_signing_bytes(frame))
+        public_key.verify(value, signed_bytes)
     except (binascii.Error, InvalidSignature):
         return FrameSignatureResult.BAD_SIGNATURE, last_seq
     return FrameSignatureResult.VALID, seq

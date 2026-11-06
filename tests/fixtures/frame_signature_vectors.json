@@ -1,0 +1,55 @@
+{
+  "description": "Shared vectors for Synapse frame signatures: RFC 8785 canonical JSON and a deterministic Ed25519 frame signature. Every client that signs frames must reproduce them.",
+  "canonical": [
+    {
+      "input": "{\"numbers\":[333333333.33333329,1E30,4.50,2e-3,0.000000000000000000000000001],\"string\":\"\\u20ac$\\u000F\\u000aA'\\u0042\\u0022\\u005c\\\\\\\"\\/\",\"literals\":[null,true,false]}",
+      "canonical": "{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"€$\\u000f\\nA'B\\\"\\\\\\\\\\\"/\"}"
+    },
+    {
+      "input": "{\"\\u20ac\":\"Euro\",\"\\r\":\"CR\",\"\\ufb33\":\"Hebrew\",\"1\":\"One\",\"\\ud83d\\ude00\":\"Smiley\",\"\\u0080\":\"Ctrl\",\"\\u00f6\":\"Latin\"}",
+      "canonical": "{\"\\r\":\"CR\",\"1\":\"One\",\"\":\"Ctrl\",\"ö\":\"Latin\",\"€\":\"Euro\",\"😀\":\"Smiley\",\"דּ\":\"Hebrew\"}"
+    },
+    {
+      "input": "[0,-0,1,1.0,1e21,1e20,1e-7,1e-6,5e-324,1.7976931348623157e308,2.9514790517935283e20,9007199254740991,-9007199254740991]",
+      "canonical": "[0,0,1,1,1e+21,100000000000000000000,1e-7,0.000001,5e-324,1.7976931348623157e+308,295147905179352830000,9007199254740991,-9007199254740991]"
+    }
+  ],
+  "signature": {
+    "private_key_seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "key_id": "machine:abc",
+    "hub_id": "hub-x",
+    "session_nonce": "nonce-1",
+    "seq": 3,
+    "frame": {
+      "sender": "P/agent",
+      "type": "claim",
+      "target": "System",
+      "task_id": "t-1",
+      "paths": [
+        "src/a.py"
+      ],
+      "ttl_seconds": 600.5,
+      "note": "é😀"
+    },
+    "signed_frame": {
+      "sender": "P/agent",
+      "type": "claim",
+      "target": "System",
+      "task_id": "t-1",
+      "paths": [
+        "src/a.py"
+      ],
+      "ttl_seconds": 600.5,
+      "note": "é😀",
+      "frame_signature": {
+        "version": 1,
+        "algorithm": "ed25519",
+        "key_id": "machine:abc",
+        "hub_id": "hub-x",
+        "session_nonce": "nonce-1",
+        "seq": 3,
+        "value": "ZGrC+owk8t2wbJYWR+qF3gD25yfPIpYih8HddQwRmkbsfzvfiuATobd5UNw3UnbvFSqgFsmLcjdkh8v4Lv2nCw=="
+      }
+    }
+  }
+}

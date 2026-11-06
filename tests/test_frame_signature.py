@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from synapse_channel.core.frame_canonical import FrameCanonicalError, frame_canonical_json
 from synapse_channel.core.frame_signature import (
     FRAME_SIGNATURE_DOMAIN,
     FRAME_SIGNATURE_FIELD,
@@ -71,10 +72,8 @@ def test_a_signed_frame_verifies_and_reports_its_sequence() -> None:
     }
     assert FRAME_SIGNATURE_FIELD not in FRAME
     assert frame_signing_bytes(signed).startswith(FRAME_SIGNATURE_DOMAIN)
-    # An unsigned frame and its signed form cover the same bytes apart from the envelope.
-    assert frame_signing_bytes(FRAME) == FRAME_SIGNATURE_DOMAIN + json.dumps(
-        FRAME, ensure_ascii=False, separators=(",", ":"), sort_keys=True
-    ).encode("utf-8")
+    # An unsigned frame is covered by its RFC 8785 bytes behind the domain prefix.
+    assert frame_signing_bytes(FRAME) == FRAME_SIGNATURE_DOMAIN + frame_canonical_json(FRAME)
 
 
 def test_the_connection_binding_refuses_copies_and_replays() -> None:
@@ -150,3 +149,18 @@ def test_an_unsigned_frame_or_an_event_signature_is_missing_a_frame_signature() 
     assert _check(dict(FRAME))[0] is FrameSignatureResult.MISSING
     event_signed = sign_event_frame(FRAME, key_id="k", private_key=KEY, nonce="n", sequence=1)
     assert _check(event_signed)[0] is FrameSignatureResult.MISSING
+
+
+def test_a_frame_rfc_8785_cannot_represent_is_malformed_or_refused() -> None:
+    signed = _signed()
+    signed["ttl"] = float("nan")
+    assert _check(signed)[0] is FrameSignatureResult.MALFORMED
+    with pytest.raises(FrameCanonicalError):
+        sign_session_frame(
+            {**FRAME, "big": 2**60},
+            key_id="k",
+            private_key=KEY,
+            hub_id="hub-1",
+            session_nonce="n-1",
+            seq=1,
+        )
