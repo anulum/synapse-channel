@@ -133,7 +133,8 @@ def running(
                 process.wait(timeout=_STOP_SECONDS)
 
 
-def _owner_only_text(path: Path, text: str) -> Path:
+def owner_only_text(path: Path, text: str) -> Path:
+    """Write ``text`` to a new file created owner-only (O_EXCL, mode 0600)."""
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         handle.write(text)
@@ -174,9 +175,20 @@ class Provisioned:
     def secrets(self) -> list[str]:
         """Return the secret strings a record must never contain.
 
-        They are the hub token and every access token issued so far.
+        They are the hub token, every access token issued so far, and the key
+        material: the issuer key, both identity keys and the TLS key.
         """
-        return [self.hub_token, *self.issued]
+        issuer = self.issuer_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode("ascii")
+        keys = [
+            (self.directory / f"{subject}.pem").read_text(encoding="ascii")
+            for subject in HTTP_SUBJECTS
+        ]
+        tls = self.certificate_key.read_text(encoding="ascii")
+        return [self.hub_token, *self.issued, issuer, *keys, tls]
 
 
 def _certificate(directory: Path) -> tuple[Path, Path]:
@@ -202,7 +214,7 @@ def _certificate(directory: Path) -> tuple[Path, Path]:
     key_text = key.private_bytes(
         serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
     ).decode("ascii")
-    return certificate_file, _owner_only_text(directory / "https-key.pem", key_text)
+    return certificate_file, owner_only_text(directory / "https-key.pem", key_text)
 
 
 def provision(directory: Path) -> Provisioned:
@@ -248,11 +260,11 @@ def provision(directory: Path) -> Provisioned:
     return Provisioned(
         directory=directory,
         hub_token=hub_token,
-        hub_token_file=_owner_only_text(directory / "hub.token", hub_token + "\n"),
-        identity_trust=_owner_only_text(
+        hub_token_file=owner_only_text(directory / "hub.token", hub_token + "\n"),
+        identity_trust=owner_only_text(
             directory / "identity-trust.json", json.dumps({"keys": trust_keys})
         ),
-        grants=_owner_only_text(directory / "grants.json", json.dumps(grants)),
+        grants=owner_only_text(directory / "grants.json", json.dumps(grants)),
         certificate=certificate,
         certificate_key=certificate_key,
         issuer_key=issuer_key,

@@ -51,12 +51,14 @@ from tools.interop_hub import (
     free_port,
     http_mcp_command,
     hub_command,
+    owner_only_text,
     provision,
     running,
     stdio_mcp_command,
 )
-from tools.interop_journey import StepFailure, Steps, journey_record, judge
+from tools.interop_journey import StepFailure, Steps, journey_record, judge, version_failure
 from tools.interop_oracle import JournalOracle
+from tools.interop_pins import pinned_hashes, pins
 from tools.interop_record import JourneyRecord, StepRecord
 
 CLIENT = "mcp-python-sdk"
@@ -290,11 +292,15 @@ async def _guarded(
     return ""
 
 
-ClientHalf = Callable[[Provisioned, str, "str | None", str, Steps], str]
-"""A client half: ``(provisioned, hub_uri, http_url, control, steps) -> failed_step``.
+ClientHalf = Callable[[Provisioned, str, "str | None", str, Steps], tuple[str, str]]
+"""A client half: ``(provisioned, hub_uri, http_url, control, steps)``.
 
-``http_url`` is the HTTPS MCP server's base URL, or ``None`` on stdio.
+It returns ``(failed_step, client_version)``, the version the client reports
+it ran. ``http_url`` is the HTTPS MCP server's base URL, or ``None`` on stdio.
 """
+
+CLIENT_SECONDS = 120.0
+"""How long a client half may run before its row fails."""
 
 
 async def _python_sessions(
@@ -313,11 +319,24 @@ async def _python_sessions(
         return "session-open"
 
 
-def python_client_half(
+async def _bounded(
     provisioned: Provisioned, hub_uri: str, http_url: str | None, control: str, steps: Steps
 ) -> str:
-    """Run the official Python SDK's half of the journey."""
-    return asyncio.run(_python_sessions(provisioned, hub_uri, http_url, control, steps))
+    try:
+        return await asyncio.wait_for(
+            _python_sessions(provisioned, hub_uri, http_url, control, steps), CLIENT_SECONDS
+        )
+    except TimeoutError:
+        steps.records.append(StepRecord("client-run", "client sessions", "client-timeout"))
+        return "client-run"
+
+
+def python_client_half(
+    provisioned: Provisioned, hub_uri: str, http_url: str | None, control: str, steps: Steps
+) -> tuple[str, str]:
+    """Run the official Python SDK's half of the journey, bounded in time."""
+    failed = asyncio.run(_bounded(provisioned, hub_uri, http_url, control, steps))
+    return failed, metadata.version("mcp")
 
 
 def run_mcp_row(
@@ -326,14 +345,14 @@ def run_mcp_row(
     directory: Path,
     *,
     client: str,
-    version: str,
     integrity: str,
     client_half: ClientHalf,
 ) -> tuple[JourneyRecord, list[str]]:
     """Run one MCP client's journey on ``transport`` in ``control`` mode.
 
     The hub, and on HTTP the HTTPS MCP server, run here; ``client_half`` drives
-    the client. Returns the record and the secrets the run used.
+    the client. A client that reports another version than its pin fails the
+    row. Returns the record and the secrets the run used.
     """
     provisioned = provision(directory / "provision")
     db = directory / "hub.db"
@@ -346,7 +365,7 @@ def run_mcp_row(
     hub_uri = f"ws://127.0.0.1:{port}"
     with running(hub, port=port, label="hub", log=directory / "hub.log"):
         if transport == "stdio":
-            failed_step = client_half(provisioned, hub_uri, None, control, steps)
+            failed_step, version = client_half(provisioned, hub_uri, None, control, steps)
         else:
             http_port = free_port()
             with running(
@@ -355,9 +374,11 @@ def run_mcp_row(
                 label="HTTP MCP server",
                 log=directory / "mcp-http.log",
             ):
-                failed_step = client_half(
+                failed_step, version = client_half(
                     provisioned, hub_uri, f"https://127.0.0.1:{http_port}", control, steps
                 )
+    if not failed_step:
+        failed_step = version_failure(steps, client, version, pins()[client])
     journal_sha256 = ""
     if not failed_step:
         failed_step, journal_sha256 = judge(
@@ -387,15 +408,13 @@ def run_journey(transport: str, control: str, directory: Path) -> tuple[JourneyR
         control,
         directory,
         client=CLIENT,
-        version=metadata.version("mcp"),
-        integrity="",
+        integrity=pinned_hashes(CLIENT),
         client_half=python_client_half,
     )
 
 
 def other_token(provisioned: Provisioned) -> Path:
     """Write a hub token file that the hub does not accept, for the stdio control."""
-    path = provisioned.directory / "other.token"
-    path.write_text("not-the-hub-token-" + "0" * 32 + "\n", encoding="utf-8")
-    path.chmod(0o600)
-    return path
+    return owner_only_text(
+        provisioned.directory / "other.token", "not-the-hub-token-" + "0" * 32 + "\n"
+    )

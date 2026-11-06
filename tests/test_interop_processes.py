@@ -26,7 +26,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from mcp import ClientSession
 from mcp.types import CallToolResult
-from tools import interop_a2a, interop_hub, interop_mcp_python, interop_mcp_ts
+from tools import interop_a2a, interop_hub, interop_mcp_python, interop_mcp_ts, interop_pins
 from tools.interop_hub import (
     RESOURCE,
     InteropProcessError,
@@ -77,7 +77,12 @@ def test_access_tokens_are_real_and_counted_as_secrets(tmp_path: Path) -> None:
     )
     claims = jwt.decode(token, public, algorithms=["EdDSA"], audience=RESOURCE)
     assert claims["sub"] == "alice" and claims["scope"] == "synapse:read synapse:mutate"
-    assert provisioned.secrets() == [provisioned.hub_token, token, other]
+    secrets = provisioned.secrets()
+    assert secrets[:3] == [provisioned.hub_token, token, other]
+    # Key material too: the issuer key, both identity keys and the TLS key.
+    assert len(secrets) == 7
+    assert all("PRIVATE KEY" in secret for secret in secrets[3:])
+    assert provisioned.certificate_key.read_text("ascii") in secrets
 
 
 def test_commands_carry_paths_and_the_requested_binding(tmp_path: Path) -> None:
@@ -359,17 +364,51 @@ def test_a_separate_client_that_breaks_or_is_missing_fails_client_run(
     monkeypatch.setattr(interop_mcp_ts, "CLIENT_DIRECTORY", tmp_path)
     monkeypatch.setattr(interop_mcp_ts, "NODE", sys.executable)
     broken = Steps()
-    assert (
-        interop_mcp_ts.typescript_client_half(provisioned, "ws://127.0.0.1:1", None, "none", broken)
-        == "client-run"
-    )
+    assert interop_mcp_ts.typescript_client_half(
+        provisioned, "ws://127.0.0.1:1", None, "none", broken
+    ) == ("client-run", "")
     assert broken.records[-1].outcome.startswith("exit-")
     monkeypatch.setattr(interop_mcp_ts, "NODE", str(tmp_path / "no-such-node"))
     missing = Steps()
-    assert (
-        interop_mcp_ts.typescript_client_half(
-            provisioned, "ws://127.0.0.1:1", None, "none", missing
-        )
-        == "client-run"
-    )
+    assert interop_mcp_ts.typescript_client_half(
+        provisioned, "ws://127.0.0.1:1", None, "none", missing
+    ) == ("client-run", "")
     assert missing.records[-1].outcome == "node-missing"
+
+
+def test_a_hung_client_records_a_timeout_instead_of_stopping_the_lane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provisioned = provision(tmp_path / "p")
+    for module in (interop_a2a, interop_mcp_ts):
+        monkeypatch.setattr(module, "CLIENT_SECONDS", 0.001)
+    monkeypatch.setattr(interop_mcp_ts, "CLIENT_DIRECTORY", tmp_path)
+    monkeypatch.setattr(interop_mcp_ts, "NODE", sys.executable)
+    a2a_steps, ts_steps = Steps(), Steps()
+    assert interop_a2a._client_half(
+        Path(sys.executable), "http://127.0.0.1:1", provisioned.hub_token_file, a2a_steps
+    ) == ("client-run", "", "")
+    assert interop_mcp_ts.typescript_client_half(
+        provisioned, "ws://127.0.0.1:1", None, "none", ts_steps
+    ) == ("client-run", "")
+    assert a2a_steps.records[-1].outcome == ts_steps.records[-1].outcome == "client-timeout"
+
+
+def test_the_python_half_is_bounded_in_time(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import asyncio
+
+    async def hangs(*_arguments: object) -> str:
+        await asyncio.sleep(30)
+        return ""
+
+    monkeypatch.setattr(interop_mcp_python, "_python_sessions", hangs)
+    monkeypatch.setattr(interop_mcp_python, "CLIENT_SECONDS", 0.05)
+    steps = Steps()
+    provisioned = provision(tmp_path / "p")
+    failed, version = interop_mcp_python.python_client_half(
+        provisioned, "ws://127.0.0.1:1", None, "none", steps
+    )
+    assert failed == "client-run" and steps.records[-1].outcome == "client-timeout"
+    assert version == interop_pins.pins()["mcp-python-sdk"]

@@ -297,3 +297,13 @@ def test_a_separate_clients_report_is_read_or_recorded_as_a_failed_run() -> None
 )
 def test_each_mode_requires_its_own_ending(control: str, failed_step: str, met: bool) -> None:
     assert expectation_met(_journey(failed_step), control, "journal-claim-granted") is met
+
+
+def test_a_client_that_ran_another_version_fails_its_row() -> None:
+    from tools.interop_journey import version_failure
+
+    steps = Steps()
+    assert version_failure(steps, "a2a-sdk", "1.2.3", "1.2.3") == ""
+    assert steps.records == []
+    assert version_failure(steps, "a2a-sdk", "1.3.0", "1.2.3") == "client-version"
+    assert steps.records == [StepRecord("client-version", "pin check a2a-sdk", "mismatch")]

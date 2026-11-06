@@ -207,3 +207,15 @@ def test_each_row_runs_its_own_client_and_the_lane_judges_every_mode(
 def test_the_pin_tool_does_nothing_without_a_request(capsys: pytest.CaptureFixture[str]) -> None:
     assert interop_pins.main([]) == 0
     assert capsys.readouterr().out == ""
+
+
+def test_the_pinned_hashes_are_the_ones_pip_enforces(tmp_path: Path) -> None:
+    for client in ("mcp-python-sdk", "a2a-sdk"):
+        hashes = interop_pins.pinned_hashes(client).split(",")
+        assert hashes == sorted(hashes) and all(h.startswith("sha256:") for h in hashes)
+    root = _copy_pins(tmp_path)
+    clients = root / ".github/requirements/requirements-interop-clients.txt"
+    text = clients.read_text("utf-8")
+    clients.write_text(text.replace("--hash=sha256:", "--hash=md5:"), "utf-8")
+    with pytest.raises(InteropPinError, match="no hashes"):
+        interop_pins.pinned_hashes("a2a-sdk", root)

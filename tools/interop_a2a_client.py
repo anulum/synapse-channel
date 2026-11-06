@@ -120,18 +120,42 @@ async def _task_steps(client: Any, task_id: str, steps: _Steps) -> str:
     return ""
 
 
+def _refusal_reason(body: object) -> str:
+    """Return the AIP-193 reason of an error body, or an empty string."""
+    error = body.get("error") if isinstance(body, dict) else None
+    details = error.get("details") if isinstance(error, dict) else None
+    for detail in details if isinstance(details, list) else []:
+        if isinstance(detail, dict) and isinstance(detail.get("reason"), str):
+            return str(detail["reason"])
+    return ""
+
+
 async def _cross_origin(url: str, headers: dict[str, str], steps: _Steps) -> str:
-    """Send one raw request with a browser Origin, outside the SDK; it must be refused."""
+    """Show that a browser Origin alone makes the bridge refuse a request.
+
+    The same raw request, made outside the SDK, must succeed without an
+    ``Origin`` header and be refused with 403 and the reason
+    ``ORIGIN_OR_HOST_NOT_ALLOWED`` with one. The reason is checked, never
+    copied into the step.
+    """
     import httpx
 
+    name, route = "cross-origin-refused", "raw GET agent card with and without Origin"
+    card = url.rstrip("/") + "/.well-known/agent-card.json"
     async with httpx.AsyncClient(headers=headers, timeout=15, trust_env=False) as raw:
-        refused = await raw.get(
-            url.rstrip("/") + "/.well-known/agent-card.json",
-            headers={"Origin": "https://untrusted.interop.test"},
-        )
-    if refused.status_code < 400:
-        return steps.fail("cross-origin-refused", "raw GET with Origin", str(refused.status_code))
-    steps.ok("cross-origin-refused", f"raw GET with Origin {refused.status_code}", [], [])
+        plain = await raw.get(card)
+        refused = await raw.get(card, headers={"Origin": "https://untrusted.interop.test"})
+    if plain.status_code != 200:
+        return steps.fail(name, route, f"without-origin-{plain.status_code}")
+    if refused.status_code != 403:
+        return steps.fail(name, route, f"with-origin-{refused.status_code}")
+    try:
+        reason = _refusal_reason(refused.json())
+    except ValueError:
+        reason = ""
+    if reason != "ORIGIN_OR_HOST_NOT_ALLOWED":
+        return steps.fail(name, route, "wrong-refusal-reason")
+    steps.ok(name, route, [], [])
     return ""
 
 

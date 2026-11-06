@@ -96,6 +96,18 @@ def read_client_report(stdout: str, returncode: int, steps: Steps) -> dict[str, 
     return dict(report)
 
 
+def version_failure(steps: Steps, client: str, reported: str, pinned: str) -> str:
+    """Return ``client-version`` and record it when the client ran another version.
+
+    The record and the documented matrix must name the version that actually
+    ran, so a client whose reported version differs from its pin fails its row.
+    """
+    if reported == pinned:
+        return ""
+    steps.records.append(StepRecord("client-version", f"pin check {client}", "mismatch"))
+    return "client-version"
+
+
 def judge(
     steps: Steps,
     db: Path,

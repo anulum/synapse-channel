@@ -49,6 +49,22 @@ def _requirement(path: Path, package: str) -> str:
     return match.group(1)
 
 
+def pinned_hashes(client: str, root: Path = ROOT) -> str:
+    """Return the sorted ``sha256:`` hashes pip enforces for a PyPI client's pin."""
+    files = {
+        "mcp-python-sdk": "requirements-dev.txt",
+        "a2a-sdk": "requirements-interop-clients.txt",
+    }
+    package = CLIENTS[client][1]
+    text = (root / ".github" / "requirements" / files[client]).read_text(encoding="utf-8")
+    block = re.search(
+        rf"^{re.escape(package)}==[^\n]*\n((?:\s+--hash=sha256:[0-9a-f]+[ \\]*\n)+)", text, re.M
+    )
+    if block is None:
+        raise InteropPinError(f"{package} has no hashes in {files[client]}")
+    return ",".join(sorted(re.findall(r"sha256:[0-9a-f]+", block.group(1))))
+
+
 def pins(root: Path = ROOT) -> dict[str, str]:
     """Return every client's pinned version, read from the files CI installs from."""
     lock = json.loads(

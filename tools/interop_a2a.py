@@ -26,13 +26,21 @@ from tools.interop_hub import (
     clean_environment,
     free_port,
     hub_command,
+    owner_only_text,
     provision,
     running,
     synapse_command,
 )
-from tools.interop_journey import Steps, journey_record, judge, read_client_report
+from tools.interop_journey import (
+    Steps,
+    journey_record,
+    judge,
+    read_client_report,
+    version_failure,
+)
 from tools.interop_oracle import JournalOracle
-from tools.interop_record import JourneyRecord
+from tools.interop_pins import pinned_hashes, pins
+from tools.interop_record import JourneyRecord, StepRecord
 
 CLIENT = "a2a-sdk"
 JOURNEY = "card-send-get-list-cancel"
@@ -41,14 +49,13 @@ BRIDGE = "interop/a2a-bridge"
 RECEIVER = "interop/receiver"
 MARKER = "synapse-interop-a2a-marker"
 FIRST_JOURNAL_STEP = "journal-chat"
+CLIENT_SECONDS = 120.0
+"""How long the client half may run before its row fails."""
 _CLIENT_SCRIPT = Path(__file__).with_name("interop_a2a_client.py")
 
 
 def _bearer(provisioned: Provisioned, name: str, value: str) -> Path:
-    path = provisioned.directory / name
-    path.write_text(value + "\n", encoding="utf-8")
-    path.chmod(0o600)
-    return path
+    return owner_only_text(provisioned.directory / name, value + "\n")
 
 
 def bridge_command(provisioned: Provisioned, hub_uri: str, port: int, bearer: Path) -> list[str]:
@@ -76,14 +83,18 @@ def bridge_command(provisioned: Provisioned, hub_uri: str, port: int, bearer: Pa
 def _client_half(client_python: Path, url: str, bearer: Path, steps: Steps) -> tuple[str, str, str]:
     """Run the client script; return ``(failed_step, client_version, task_id)``."""
     # A fixed command: the client environment's interpreter and the client script.
-    completed = subprocess.run(  # noqa: S603  # nosec B603
-        [str(client_python), "-I", str(_CLIENT_SCRIPT), url, str(bearer), MARKER],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        env=clean_environment(),
-        check=False,
-    )
+    try:
+        completed = subprocess.run(  # noqa: S603  # nosec B603
+            [str(client_python), "-I", str(_CLIENT_SCRIPT), url, str(bearer), MARKER],
+            capture_output=True,
+            text=True,
+            timeout=CLIENT_SECONDS,
+            env=clean_environment(),
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        steps.records.append(StepRecord("client-run", "client process", "client-timeout"))
+        return "client-run", "", ""
     report = read_client_report(completed.stdout, completed.returncode, steps)
     if report is None:
         return "client-run", "", ""
@@ -121,6 +132,8 @@ def run_journey(
             failed_step, version, task_id = _client_half(
                 client_python, f"http://127.0.0.1:{bridge_port}", client_bearer, steps
             )
+    if not failed_step:
+        failed_step = version_failure(steps, CLIENT, version, pins()[CLIENT])
     journal_sha256 = ""
     if not failed_step:
 
@@ -133,7 +146,7 @@ def run_journey(
     record = journey_record(
         client=CLIENT,
         version=version,
-        integrity="",
+        integrity=pinned_hashes(CLIENT),
         transport=TRANSPORT,
         journey=JOURNEY,
         steps=steps,

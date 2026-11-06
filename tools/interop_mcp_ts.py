@@ -27,10 +27,11 @@ from tools.interop_hub import (
     STDIO_NAMES,
     Provisioned,
     clean_environment,
+    owner_only_text,
     stdio_mcp_command,
 )
 from tools.interop_journey import Steps, read_client_report
-from tools.interop_mcp_python import HTTP, MARKER, STDIO, run_mcp_row
+from tools.interop_mcp_python import CLIENT_SECONDS, HTTP, MARKER, STDIO, run_mcp_row
 from tools.interop_record import JourneyRecord, StepRecord
 
 CLIENT = "mcp-typescript-sdk"
@@ -45,12 +46,6 @@ def sdk_pin(directory: Path = CLIENT_DIRECTORY) -> tuple[str, str]:
     lock = json.loads((directory / "package-lock.json").read_text(encoding="utf-8"))
     entry = lock["packages"][_SDK_LOCK_KEY]
     return str(entry["version"]), str(entry["integrity"])
-
-
-def _owner_only(path: Path, text: str) -> Path:
-    path.write_text(text + "\n", encoding="utf-8")
-    path.chmod(0o600)
-    return path
 
 
 def configuration(
@@ -84,9 +79,9 @@ def configuration(
     config["url"] = http_url
     config["token_files"] = [
         str(
-            _owner_only(
+            owner_only_text(
                 provisioned.directory / f"{subject}.access-token",
-                provisioned.access_token(subject, audience=audience),
+                provisioned.access_token(subject, audience=audience) + "\n",
             )
         )
         for subject in HTTP_SUBJECTS
@@ -96,8 +91,8 @@ def configuration(
 
 def typescript_client_half(
     provisioned: Provisioned, hub_uri: str, http_url: str | None, control: str, steps: Steps
-) -> str:
-    """Run the built TypeScript client and copy its steps into ``steps``."""
+) -> tuple[str, str]:
+    """Run the built TypeScript client; return its failed step and reported version."""
     config_file = provisioned.directory / "ts-client.json"
     config_file.write_text(
         json.dumps(configuration(provisioned, hub_uri, http_url, control)), encoding="utf-8"
@@ -110,29 +105,31 @@ def typescript_client_half(
             [NODE, str(CLIENT_DIRECTORY / "dist" / "journey.js"), str(config_file)],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=CLIENT_SECONDS,
             env=environment,
             check=False,
             cwd=os.fspath(CLIENT_DIRECTORY),
         )
+    except subprocess.TimeoutExpired:
+        steps.records.append(StepRecord("client-run", "client process", "client-timeout"))
+        return "client-run", ""
     except OSError:
         steps.records.append(StepRecord("client-run", "client process", "node-missing"))
-        return "client-run"
+        return "client-run", ""
     report = read_client_report(completed.stdout, completed.returncode, steps)
     if report is None:
-        return "client-run"
-    return str(report["failed_step"])
+        return "client-run", ""
+    return str(report["failed_step"]), str(report["client_version"])
 
 
 def run_journey(transport: str, control: str, directory: Path) -> tuple[JourneyRecord, list[str]]:
     """Run the TypeScript SDK row on ``transport`` in ``control`` mode."""
-    version, integrity = sdk_pin()
+    _version, integrity = sdk_pin()
     return run_mcp_row(
         transport,
         control,
         directory,
         client=CLIENT,
-        version=version,
         integrity=integrity,
         client_half=typescript_client_half,
     )
