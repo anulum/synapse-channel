@@ -161,7 +161,13 @@ def _owns(fragment: str) -> str | None:
 
 
 def _attention(wanted: bool, active: str, sub: str, restarts: int, limit: str) -> str:
-    """Return why a unit needs an operator, or an empty string."""
+    """Return why a unit needs an operator, or an empty string.
+
+    A unit without a start limit that has restarted is reported whatever
+    moment the query catches: one that fails at once spends most of its time
+    waiting to restart, but one that runs for a while before each failure is
+    usually caught running, and its restart count is then the only sign.
+    """
     if active == "failed":
         if wanted:
             return "enabled but failed: it stopped trying; reset and start it"
@@ -172,6 +178,8 @@ def _attention(wanted: bool, active: str, sub: str, restarts: int, limit: str) -
         if limit == "unlimited":
             return f"restarting without a start limit ({restarts} restarts); regenerate the unit"
         return f"restarting ({restarts} restarts so far)"
+    if limit == "unlimited" and restarts > 0 and active in {"active", "activating"}:
+        return f"restarted without a start limit ({restarts} restarts); regenerate the unit"
     return ""
 
 

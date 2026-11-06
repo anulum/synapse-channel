@@ -830,7 +830,10 @@ A unit gets an `attention` line when it is:
 - **enabled but not running**;
 - **restarting**, with the number of restarts so far;
 - **restarting without a start limit**: the unit was installed before start
-  budgets existed and would restart without end. Regenerate it.
+  budgets existed and would restart without end. Regenerate it;
+- **restarted without a start limit**: the same kind of unit, caught running
+  between restarts. A unit that runs for a while before each failure is
+  usually caught this way, so its restart count is the sign. Regenerate it.
 
 The report also says where the tmux server lives and flags a server inside a
 service unit; see [The tmux server and unit stops](#the-tmux-server-and-unit-stops).

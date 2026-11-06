@@ -201,6 +201,15 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **`synapse service status` reports a crash loop it catches running.** A
+  unit without a start limit was flagged only when the query caught it
+  waiting to restart. One that runs for a while before each failure is
+  usually caught running, and was reported as needing nothing, even after
+  hundreds of thousands of restarts. Such a unit now gets the attention line
+  "restarted without a start limit (N restarts); regenerate the unit" and
+  counts against the exit status. A running unit that never restarted, or
+  one that has a start limit, is unchanged.
+
 - **A refused HTTP call no longer keeps its socket open.** When a provider,
   the OpenAI-compatible chat backend or the Remanentia memory service answered
   with an HTTP error, the raised error kept the refused response, and with it

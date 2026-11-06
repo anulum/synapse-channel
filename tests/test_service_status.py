@@ -202,6 +202,92 @@ def test_real_units_are_reported_with_their_state_limit_and_relation(
     assert render(report)[-1] == "units: 7, needing attention: 3"
 
 
+def test_a_real_unit_without_a_limit_is_flagged_while_it_runs_after_a_restart(
+    owned: Owned, tmp_path: Path
+) -> None:
+    """A unit caught running still shows its restarts when it has no start limit.
+
+    The unit fails on its first start and runs on its second, so the report
+    always catches it running, with one restart behind it, the way a unit that
+    runs for a while before each failure is usually caught.
+    """
+    marker = tmp_path / "failed-once"
+    script = f"test -e {marker} && exec /usr/bin/sleep infinity; touch {marker}; exit 1"
+    flapping = owned.start(
+        "flapping",
+        ["Restart=always", "RestartSec=100ms", "StartLimitIntervalSec=0"],
+        ["/bin/sh", "-c", script],
+    )
+    deadline = time.monotonic() + 20.0
+    while True:
+        shown = subprocess.run(
+            ["systemctl", "--user", "show", flapping, "--property=NRestarts,ActiveState"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+        if "NRestarts=1" in shown and "ActiveState=active" in shown:
+            break
+        assert time.monotonic() < deadline, shown
+        time.sleep(0.1)
+
+    report = collect(runner=_RUNNER, tmux_server=_NO_TMUX, hub_unit=flapping, pattern=owned.pattern)
+
+    row = report.rows[0]
+    assert (row.unit, row.active_state, row.restarts) == (flapping, "active", 1)
+    assert row.start_limit == "unlimited"
+    assert row.attention == "restarted without a start limit (1 restarts); regenerate the unit"
+    assert report.needs_attention == (row,)
+
+
+@pytest.mark.parametrize(("active", "sub"), [("active", "running"), ("activating", "start")])
+def test_an_unlimited_unit_that_has_restarted_is_flagged_however_it_is_caught(
+    active: str, sub: str
+) -> None:
+    """A recorded crash loop caught between its restarts is still reported."""
+    runner = Recorded(
+        relations="",
+        listing="",
+        shown=_shown(
+            "synapse-hub.service",
+            "enabled",
+            active,
+            sub,
+            NRestarts="192704",
+            StartLimitIntervalUSec="infinity",
+        ),
+    )
+
+    row = collect(runner=runner, tmux_server=_NO_TMUX).rows[0]
+
+    assert row.attention == "restarted without a start limit (192704 restarts); regenerate the unit"
+
+
+@pytest.mark.parametrize(
+    ("restarts", "interval"),
+    [("0", "infinity"), ("5", "30min")],
+    ids=["never-restarted", "limited"],
+)
+def test_a_running_unit_needs_no_attention_without_restarts_or_with_a_limit(
+    restarts: str, interval: str
+) -> None:
+    """Only the combination of restarts and no start limit is flagged in a running unit."""
+    runner = Recorded(
+        relations="",
+        listing="",
+        shown=_shown(
+            "synapse-hub.service",
+            "enabled",
+            "active",
+            "running",
+            NRestarts=restarts,
+            StartLimitIntervalUSec=interval,
+        ),
+    )
+
+    assert collect(runner=runner, tmux_server=_NO_TMUX).rows[0].attention == ""
+
+
 def test_the_command_prints_text_or_json_and_signals_attention(
     owned: Owned, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
@@ -388,7 +474,11 @@ def test_enabled_units_that_are_down_get_recovery_commands(tmp_path: Path) -> No
     assert rows["synapse-idle.service"].desired == "linked-runtime"
     assert rows["synapse-idle.service"].attention == ""
     assert rows["synapse-old.service"].start_limit == "unlimited"
-    assert rows["synapse-old.service"].attention == "" and rows["synapse-old.service"].owns is None
+    # Caught running, but 389706 restarts without a start limit: still a crash loop.
+    assert rows["synapse-old.service"].attention == (
+        "restarted without a start limit (389706 restarts); regenerate the unit"
+    )
+    assert rows["synapse-old.service"].owns is None
     assert rows["synapse-hub.service"].attention == ""
     assert "synapse-odd.timer" not in rows and "synapse-arm@.service" not in rows
 
@@ -409,7 +499,7 @@ def test_enabled_units_that_are_down_get_recovery_commands(tmp_path: Path) -> No
         "  attention: stopping bridge.service would kill every tmux session; "
         "run: synapse service tmux-server --move"
     ) in lines
-    assert "units: 6, needing attention: 3" in lines
+    assert "units: 6, needing attention: 4" in lines
     assert lines[-3] == (
         "to bring back units that are enabled but not running, after checking why:"
     )
@@ -419,7 +509,7 @@ def test_enabled_units_that_are_down_get_recovery_commands(tmp_path: Path) -> No
         "in_service_unit": True,
     }
     assert report.to_json()["attention"] == sorted(
-        ["synapse-arm@a.service", "synapse-arm@b.service", spent]
+        ["synapse-arm@a.service", "synapse-arm@b.service", "synapse-old.service", spent]
     )
     assert not report.healthy and report.to_json()["healthy"] is False
 
