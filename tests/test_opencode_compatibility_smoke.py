@@ -9,15 +9,18 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 import json
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tarfile
+import time
 import zipfile
 from dataclasses import replace
 from pathlib import Path
@@ -38,7 +41,11 @@ if TYPE_CHECKING:
         install_archive,
         verify_archive,
     )
-    from tools.opencode_compatibility_smoke import _process_environment, smoke_binary
+    from tools.opencode_compatibility_smoke import (
+        _close_pipes,
+        _process_environment,
+        smoke_binary,
+    )
 else:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from tools import opencode_compatibility_install as install_module
@@ -53,7 +60,11 @@ else:
         install_archive,
         verify_archive,
     )
-    from tools.opencode_compatibility_smoke import _process_environment, smoke_binary
+    from tools.opencode_compatibility_smoke import (
+        _close_pipes,
+        _process_environment,
+        smoke_binary,
+    )
 
 _PAYLOAD = b"real archive member bytes\n"
 
@@ -337,6 +348,52 @@ def test_smoke_environment_excludes_ambient_credentials(
     assert "AWS_SECRET_ACCESS_KEY" not in environment
     assert environment["HOME"] == str(tmp_path)
     assert environment["OPENCODE_AUTH_CONTENT"] == "{}"
+
+
+def _silent_acp_binary(root: Path, version: str, holder_pid: Path) -> Path:
+    """A fake OpenCode whose ACP face never answers, with a child holding its stdout."""
+    fake = root / "opencode"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import subprocess, sys, time\n"
+        "if sys.argv[1:] == ['--version']:\n"
+        f"    print({version!r})\n"
+        "    raise SystemExit(0)\n"
+        "holder = subprocess.Popen(['/bin/sleep', '30'], start_new_session=True)\n"
+        f"open({str(holder_pid)!r}, 'w').write(str(holder.pid))\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o700)
+    return fake
+
+
+def test_a_silent_acp_face_fails_fast_even_while_a_child_holds_its_output(
+    tmp_path: Path,
+) -> None:
+    """The timeout is reported and the cleanup does not wait on the still-held stdout."""
+    contract = load_compatibility()
+    holder_pid = tmp_path / "holder.pid"
+    fake = _silent_acp_binary(tmp_path, contract.version, holder_pid)
+    started = time.monotonic()
+    try:
+        with pytest.raises(SmokeError, match="initialize response timed out"):
+            smoke_binary(fake, contract, timeout=1.0)
+        assert time.monotonic() - started < 15
+    finally:
+        if holder_pid.exists():
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(int(holder_pid.read_text()), signal.SIGKILL)
+
+
+def test_closing_a_broken_pipe_is_tolerated() -> None:
+    """A write that could not reach a closed reader must not turn cleanup into an error."""
+    read_end, write_end = os.pipe()
+    os.close(read_end)
+    pipe = os.fdopen(write_end, "w")
+    pipe.write("unsent")
+    _close_pipes(pipe)
+    assert pipe.closed
 
 
 def test_real_pinned_opencode_negotiates_the_expected_acp_face() -> None:

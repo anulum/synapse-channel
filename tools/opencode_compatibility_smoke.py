@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import queue
@@ -18,6 +19,7 @@ import subprocess  # nosec B404
 import tempfile
 import threading
 from pathlib import Path
+from typing import IO
 
 from tools.opencode_compatibility_contract import (
     DEFAULT_MANIFEST,
@@ -87,6 +89,44 @@ def _terminate(process: subprocess.Popen[str]) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=5)
+
+
+_INITIALIZE_REQUEST = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": 1,
+        "clientCapabilities": {"_meta": {"terminal-auth": True}},
+        "clientInfo": {"name": "synapse-channel-compatibility", "version": "1"},
+    },
+}
+
+
+def _read_one_line(stdout: IO[str]) -> tuple[queue.Queue[str], threading.Thread]:
+    """Read one line of ``stdout`` on a thread that then closes the pipe.
+
+    The reader owns ``stdout``: closing it from another thread while this read is
+    blocked would wait on the buffer lock until every holder of the write end exits.
+    """
+    responses: queue.Queue[str] = queue.Queue(maxsize=1)
+
+    def read_response() -> None:
+        try:
+            responses.put(stdout.readline())
+        finally:
+            _close_pipes(stdout)
+
+    reader = threading.Thread(target=read_response, daemon=True)
+    reader.start()
+    return responses, reader
+
+
+def _close_pipes(*pipes: IO[str]) -> None:
+    """Close the given pipes, tolerating one that a failed write left broken."""
+    for pipe in pipes:
+        with contextlib.suppress(OSError):
+            pipe.close()
 
 
 def _validate_initialize(response: object, contract: Compatibility) -> dict[str, object]:
@@ -187,30 +227,10 @@ def smoke_binary(
             _terminate(process)
             raise SmokeError("OpenCode ACP pipes were not created")
         stdin = process.stdin
-        stdout = process.stdout
         stderr_stream = process.stderr
-        responses: queue.Queue[str] = queue.Queue(maxsize=1)
-
-        def read_response() -> None:
-            responses.put(stdout.readline())
-
-        reader = threading.Thread(target=read_response, daemon=True)
-        reader.start()
-        request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": 1,
-                "clientCapabilities": {"_meta": {"terminal-auth": True}},
-                "clientInfo": {
-                    "name": "synapse-channel-compatibility",
-                    "version": "1",
-                },
-            },
-        }
+        responses, reader = _read_one_line(process.stdout)
         try:
-            stdin.write(json.dumps(request, separators=(",", ":")) + "\n")
+            stdin.write(json.dumps(_INITIALIZE_REQUEST, separators=(",", ":")) + "\n")
             stdin.flush()
             try:
                 line = responses.get(timeout=timeout)
@@ -236,6 +256,7 @@ def smoke_binary(
         finally:
             _terminate(process)
             reader.join(timeout=2)
+            _close_pipes(stdin, stderr_stream)
 
 
 def main() -> int:
