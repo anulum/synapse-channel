@@ -128,6 +128,7 @@ def test_cli_issues_a_head_and_tells_complete_growth_truncation_and_two_sizes(
         str(old_head),
     )
     assert code == 0 and "over 3 receipts" in err
+    assert old_head.stat().st_mode & 0o777 == 0o600
     assert json.loads(old_head.read_text("utf-8"))["tree_size"] == 3
 
     with AefReceiptLog(db, hub_id="hub-a", signing_key=key) as log:
@@ -311,3 +312,85 @@ def test_a_tree_head_with_a_malformed_log_id_is_invalid(tmp_path: Path) -> None:
     report = verify_aef_sth([], head, trust_store=trust)
 
     assert (report.verdict, report.log_id) == (AefSthVerdict.STH_INVALID, None)
+
+
+def test_require_sth_without_a_head_is_refused_rather_than_passing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Completeness against no tree head would pass vacuously, so it is refused."""
+    db, key_path, _key = _hub(tmp_path, count=1)
+    trust = tmp_path / "trust.json"
+    assert (
+        _run(
+            capsys,
+            "aef",
+            "trust",
+            "--public-key",
+            f"{key_path}.pub",
+            "--hub-id",
+            "hub-a",
+            "--out",
+            str(trust),
+        )[0]
+        == 0
+    )
+    export = tmp_path / "x.jsonl"
+    assert _run(capsys, "aef", "export", str(db), "--out", str(export))[0] == 0
+
+    code, _o, err = _run(
+        capsys, "aef", "verify", str(export), "--trust", str(trust), "--require-sth"
+    )
+    assert code == 2 and "--require-sth needs at least one --sth" in err
+
+
+@pytest.mark.parametrize("order", ["signed-first", "rewritten-first"])
+def test_a_fork_is_named_at_its_seq_whichever_copy_comes_first(order: str) -> None:
+    """The fork verdict does not depend on which of two leaves a set yields first."""
+    trust = parse_aef_trust(json.dumps(_FIXTURE["trust"]).encode("utf-8"))
+    vector = next(item for item in _FIXTURE["vectors"] if item["name"] == "sth-fork")
+    receipts = list(vector["receipts"])
+    if order == "rewritten-first":
+        receipts = [receipts[-1], *receipts[:-1]]
+
+    report = verify_aef_sth(receipts, _FIXTURE["sth"], trust_store=trust)
+
+    assert (report.verdict, report.detail) == (
+        AefSthVerdict.STH_ROOT_MISMATCH,
+        "differing receipts at seq 3",
+    )
+
+
+def test_two_logs_with_the_same_seqs_in_one_export_are_each_complete(tmp_path: Path) -> None:
+    """Receipts of another log never fill this log's positions."""
+    db_a, _path_a, key = _hub(tmp_path, count=3)
+    db_b = tmp_path / "hub-b.db"
+    with AefReceiptLog(db_b, hub_id="hub-b", signing_key=key) as log:
+        _append(log, range(1, 4))
+    with AefReceiptLog(db_b, hub_id="hub-b", signing_key=key) as log:
+        receipts_b = list(log.read_all())
+    receipts_a = _receipts(db_a, key)
+    head_a = sign_aef_sth(receipts_a, hub_id="hub-a", signing_key=key)
+    head_b = sign_aef_sth(receipts_b, hub_id="hub-b", signing_key=key)
+    public_hex = key.private_key.public_key().public_bytes_raw().hex()
+    trust = parse_aef_trust(
+        json.dumps(
+            {
+                "format": "aef-trust-v0.1",
+                "keys": {key.key_id: {"public_key_hex": public_hex, "revoked": False}},
+                "logs": {head_a["log_id"]: key.key_id, head_b["log_id"]: key.key_id},
+            }
+        ).encode("utf-8")
+    )
+    mixed = [
+        receipts_b[0],
+        receipts_a[0],
+        receipts_b[1],
+        receipts_a[1],
+        receipts_a[2],
+        receipts_b[2],
+    ]
+
+    assert verify_aef_sth(mixed, head_a, trust_store=trust).verdict is AefSthVerdict.STH_COMPLETE
+    assert verify_aef_sth(mixed, head_b, trust_store=trust).verdict is AefSthVerdict.STH_COMPLETE
+    only_b = [receipts_b[0], receipts_b[1], receipts_b[2]]
+    assert verify_aef_sth(only_b, head_a, trust_store=trust).verdict is AefSthVerdict.STH_TRUNCATED

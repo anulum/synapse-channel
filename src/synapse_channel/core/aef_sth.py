@@ -49,9 +49,6 @@ from synapse_channel.core.aef_verification import (
 from synapse_channel.core.merkle import merkle_tree_hash
 from synapse_channel.core.receipt_signing import ReceiptSigningKey, receipt_key_id
 
-_AUTHENTIC = frozenset({AefVerdictCode.VALID, AefVerdictCode.EXPIRED})
-"""Receipt verdicts an STH may cover: expiry does not make a receipt inauthentic."""
-
 
 class AefSthVerdict(str, Enum):
     """How an export compares with one signed tree head."""
@@ -190,10 +187,10 @@ def sign_aef_sth(
         issued_at = receipt.get("issued_at")
         if isinstance(issued_at, bool) or not isinstance(issued_at, int):
             raise AefEmissionError(f"receipt seq {position} has no integer issued_at")
-        # Checked at its own issue time: an STH covers authentic receipts, and
-        # a receipt that has since expired is still authentic.
+        # Checked at its own issue time, so a receipt that has expired since
+        # is still covered: expiry is not a defect of the log.
         outcome = verify_aef_receipt(receipt, trust_store=trust, now_ms=issued_at)
-        if outcome.verdict not in _AUTHENTIC:
+        if outcome.verdict is not AefVerdictCode.VALID:
             raise AefEmissionError(f"receipt seq {position} is {outcome.verdict.value}")
         checked.append((receipt, outcome))
     if not all(chain.continuous for chain in verify_aef_chain(checked)):

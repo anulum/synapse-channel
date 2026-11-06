@@ -34,6 +34,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.cli_capability_cards import _write_new
 from synapse_channel.core.aef_chain import AefChainReport, verify_aef_chain
 from synapse_channel.core.aef_emission import AefEmissionError
 from synapse_channel.core.aef_sth import AefSthReport, AefSthVerdict, sign_aef_sth, verify_aef_sth
@@ -189,8 +190,7 @@ def _cmd_sth(args: argparse.Namespace) -> int:
         sys.stdout.write(text)
         return 0
     try:
-        with Path(args.out).open("x", encoding="utf-8") as handle:
-            handle.write(text)
+        _write_new(args.out, text)
     except OSError as exc:
         print(f"error: cannot write {args.out}: {exc.strerror}", file=sys.stderr)
         return 2
@@ -253,6 +253,10 @@ def _print_verify(
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
+    if args.require_sth and not args.sth:
+        # Requiring completeness against no tree head would pass vacuously.
+        print("error: --require-sth needs at least one --sth", file=sys.stderr)
+        return 2
     now_ms = int(time.time() * 1000) if args.now_ms is None else args.now_ms
     try:
         trust, heads, checked = _verify_inputs(args, now_ms)

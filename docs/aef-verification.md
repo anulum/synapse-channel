@@ -143,7 +143,7 @@ synapse aef verify hub-a.receipts.jsonl --trust hub-a.aef-trust.json \
     in seq order.
   - `timestamp` is the last receipt's `issued_at`, so one log always gives
     the same head. It is not a freshness signal.
-  - The command never replaces an existing file.
+  - It writes a new owner-only file (or stdout) and never replaces one.
 - **Checking an export against a head.** `verify --sth` (repeatable) compares
   the export with each head. Every receipt of that log counts exactly as it
   is presented, including one that fails its own verdict. A receipt without a
