@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import WebSocketException
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.multihub_transport import pinned_connector
@@ -251,9 +251,11 @@ async def relay_operator_action(
         return decode_relay_result(frame)
     except RelayTransportError:
         raise
+    # WebSocketException covers a dropped stream and also a refused handshake (an HTTP
+    # error status, for one from a proxy) or a URI the client rejects.
     except (
         OSError,
-        ConnectionClosed,
+        WebSocketException,
         asyncio.TimeoutError,
         RelayWireError,
         json.JSONDecodeError,

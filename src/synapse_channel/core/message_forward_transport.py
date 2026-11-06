@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import WebSocketException
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.hub_address import is_valid_hub_id
@@ -259,7 +259,9 @@ async def forward_message(
     except TimeoutError as exc:
         msg = f"peer {peer.uri!r} did not answer within {timeout:g}s"
         raise MessageForwardTransportError(msg) from exc
-    except (OSError, ConnectionClosed, MessageForwardWireError, json.JSONDecodeError) as exc:
+    # WebSocketException covers a dropped stream and also a refused handshake (an HTTP
+    # error status, for one from a proxy) or a URI the client rejects.
+    except (OSError, WebSocketException, MessageForwardWireError, json.JSONDecodeError) as exc:
         msg = f"forwarding to {peer.uri!r} failed: {exc}"
         raise MessageForwardTransportError(msg) from exc
     if result.forward_id != request.forward_id:

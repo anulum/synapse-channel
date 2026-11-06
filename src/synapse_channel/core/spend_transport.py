@@ -27,7 +27,7 @@ from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed, InvalidMessage
+from websockets.exceptions import WebSocketException
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
@@ -134,7 +134,9 @@ async def request_spend(
         raise SpendTransportTimeoutError(
             f"the spend owner at {uri!r} did not answer within {timeout:g}s; query by key"
         ) from exc
-    except (OSError, ConnectionClosed, InvalidMessage, SpendWireError, json.JSONDecodeError) as exc:
+    # WebSocketException covers a dropped stream and also a refused handshake (an HTTP
+    # error status, for one from a proxy) or a URI the client rejects.
+    except (OSError, WebSocketException, SpendWireError, json.JSONDecodeError) as exc:
         raise SpendTransportError(f"spend request to {uri!r} failed: {exc}") from exc
 
 

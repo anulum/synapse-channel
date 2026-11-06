@@ -35,7 +35,7 @@ from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import WebSocketException
 
 from synapse_channel.core.dead_letter_forwarding import FORWARDING_FIELD, DeadLetterForwardError
 from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
@@ -123,7 +123,9 @@ async def forward_dead_letter(
     )
     try:
         await asyncio.wait_for(_transmit(envelope, uri, connector), timeout)
-    except (TimeoutError, OSError, ConnectionClosed) as exc:
+    # WebSocketException covers a dropped stream and also a refused handshake (an HTTP
+    # error status, for one from a proxy) or a URI the client rejects.
+    except (TimeoutError, OSError, WebSocketException) as exc:
         msg = f"forwarding a dead-letter signal to {uri!r} failed: {exc}"
         raise DeadLetterForwardError(msg) from exc
 

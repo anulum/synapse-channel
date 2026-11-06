@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import WebSocketException
 
 from synapse_channel.client.diagnostics import Diagnosis, DoctorStatus
 from synapse_channel.core.errors import SynapseError
@@ -354,10 +354,12 @@ async def probe_federation_peer(
             )
     except FederationDoctorError:
         raise
+    # WebSocketException covers a dropped stream and also a refused handshake (an HTTP
+    # error status, for one from a proxy) or a URI the client rejects.
     except (
         TimeoutError,
         OSError,
-        ConnectionClosed,
+        WebSocketException,
         MultiHubWireError,
         json.JSONDecodeError,
         ValueError,

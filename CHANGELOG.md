@@ -165,6 +165,16 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A peer that refuses the WebSocket handshake is an ordinary transport
+  failure.** A proxy in front of a peer hub that is down answers the upgrade
+  with an HTTP error such as `502`. Message, claim, dead-letter, operator
+  relay, spend and federation-offer forwarding, and the federation doctor
+  probe, let that error escape. A forwarded chat or roster request ended the
+  requester's connection, and a pending chat forward stopped the retry loop
+  for every peer. Each transport now reports it as its own transport error:
+  the chat stays pending and is retried, a roster request is refused with
+  `peer_unreachable`, and the requester stays connected.
+
 - **A peer URI the WebSocket client cannot open is refused at startup.**
   `--message-peer`, `--claim-peer` and `--multihub-watch` accepted a URI that
   failed only when it was first used. A fragment or a missing host made a

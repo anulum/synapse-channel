@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import WebSocketException
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.multihub_claim_wire import (
@@ -298,7 +298,9 @@ async def forward_claim(
     except asyncio.TimeoutError as exc:
         msg = f"forwarding a claim to {uri!r} timed out after {timeout:g}s"
         raise ClaimForwardTimeoutError(msg) from exc
-    except (OSError, ConnectionClosed, ClaimWireError, json.JSONDecodeError) as exc:
+    # WebSocketException covers a dropped stream and also a refused handshake (an HTTP
+    # error status, for one from a proxy) or a URI the client rejects.
+    except (OSError, WebSocketException, ClaimWireError, json.JSONDecodeError) as exc:
         msg = f"forwarding a claim to {uri!r} failed: {exc}"
         raise ClaimForwardError(msg) from exc
 
