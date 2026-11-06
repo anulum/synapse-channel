@@ -165,6 +165,13 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **One forward's unexpected fault no longer stops retries for every peer.**
+  The chat-forward retry sweep tries each peer's due forwards in turn, and
+  any exception ended the retry loop. An unexpected exception from one
+  attempt is now logged with its traceback and counted as a failed attempt
+  with a fixed reason, and the sweep goes on. A storage error from the
+  forward ledger still stops it.
+
 - **A peer that refuses the WebSocket handshake is an ordinary transport
   failure.** A proxy in front of a peer hub that is down answers the upgrade
   with an HTTP error such as `502`. Message, claim, dead-letter, operator

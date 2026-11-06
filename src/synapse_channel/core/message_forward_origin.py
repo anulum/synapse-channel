@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 import time
 import uuid
 from typing import TYPE_CHECKING, Any
@@ -363,13 +364,46 @@ async def run_forward_retries(hub: ForwardOriginContext, *, now: float) -> int:
         current = ledger.outbox_entry(entry.forward_id)
         if current is None or current.state != "pending":
             continue
-        outcome = await attempt_forward(hub, entry)
+        outcome = await _attempt_isolated(hub, entry)
         if outcome.state not in ("pending", "expired"):
             settled.append(outcome)
     for entry in settled:
         if entry.notify_sender:
             await _notify_sender(hub, entry)
     return len(settled)
+
+
+INTERNAL_ERROR_DETAIL = "An internal error interrupted this forward attempt."
+"""Fixed ``last_error`` kept for an attempt that failed on an unexpected exception."""
+
+
+async def _attempt_isolated(hub: ForwardOriginContext, entry: OutboxEntry) -> OutboxEntry:
+    """Attempt one due forward so that an unexpected fault fails only this attempt.
+
+    A sweep retries every peer's due forwards in turn, and the retry loop does not survive an
+    exception, so one entry's fault would otherwise stop retries for every peer. The fault
+    is logged with its traceback and counted as a failed attempt with a fixed reason, and
+    the entry is retried on its normal schedule. A storage error still propagates: a ledger
+    that cannot be written stops the sweep.
+    """
+    try:
+        return await attempt_forward(hub, entry)
+    except sqlite3.Error:
+        raise
+    except Exception:
+        attempts = entry.attempts + 1
+        logger.exception(
+            "Forward %s to %s failed on an unexpected error (attempt %d)",
+            entry.forward_id,
+            entry.peer_hub,
+            attempts,
+        )
+        updated = hub.message_forward_ledger.record_failed_attempt(
+            entry.forward_id,
+            next_attempt_at=time.time() + retry_delay(attempts),
+            error=INTERNAL_ERROR_DETAIL,
+        )
+        return updated or entry
 
 
 async def message_forward_retry_loop(
