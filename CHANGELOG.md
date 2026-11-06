@@ -122,6 +122,15 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A connection that is going away no longer breaks delivery work.** A
+  delivery notification that cannot be written to its audience, during the
+  deadline sweep or a request, is logged and stays pending in the journal.
+  Before, the error escaped; in the sweep it stopped the hub. With
+  `--require-signed-frames`, a key whose lookup fails during the re-check
+  now closes that connection instead of skipping the others. A storage
+  failure under a background sweep still stops the hub on purpose; see
+  "When the hub stops on its own" in `docs/deployment.md`.
+
 - **`synapse inbox` waits for a closing connection of the same identity.** A
   read that started while the previous read under the same name was still
   closing failed with "cannot read durable hub inbox". It now retries that

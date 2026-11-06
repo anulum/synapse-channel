@@ -724,6 +724,26 @@ receiving-hub ownership and rollback requirements.
 The `--relay-log` feed is derived state and bounded by `--relay-max-lines`; it is
 not a replacement for the journal and its keys.
 
+## When the hub stops on its own
+
+While it serves, the hub runs background work: the delivery deadline sweep,
+message-forward retries, live checkpoint anchoring, the token-set file check
+and, with `--require-signed-frames`, the re-check of signing connections'
+keys.
+
+- **A storage failure stops the hub, on purpose.** When the event store fails
+  under the delivery sweep, the forward retries or the checkpoint anchoring,
+  `synapse hub` ends with that error. A sweep or anchor that stopped quietly
+  would leave deadlines unexpired, forwards unretried or writes unanchored
+  while the hub looked healthy. The service unit restarts the hub within its
+  start budget (next section).
+- **A connection that cannot be written to never stops the hub.** A delivery
+  notification for a connection that is already going away is logged and
+  stays pending in the journal. An identity-key refusal that cannot be
+  delivered is logged, and the connection is still closed.
+- **The token-set check and the key re-check log a failure and try again**
+  at their next interval.
+
 ## Start budgets: when a unit stops trying
 
 Every generated user unit restarts after a failure, waits longer before each

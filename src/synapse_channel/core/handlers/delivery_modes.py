@@ -512,7 +512,13 @@ def _outcome_stage(data: dict[str, Any]) -> DeliveryStage:
 
 
 async def _notify_record(hub: DeliveryModesContext, record: StoredDelivery, audience: str) -> None:
-    """Publish an already committed stable notification to its live audience."""
+    """Publish an already committed stable notification to its live audience.
+
+    The notification is committed before it is sent. A send that fails, to a
+    connection already going away, is logged and the notification stays
+    pending for replay at the audience's next registration; it never fails
+    the sweep or the request that caused it.
+    """
     ledger = _ledger(hub)
     notification_id = f"delivery:{record.operation_key}:{record.ordinal}"
     frame = ledger.notification(notification_id)
@@ -526,7 +532,16 @@ async def _notify_record(hub: DeliveryModesContext, record: StoredDelivery, audi
         and websocket is not None
         and hub.clients.protocol_version_of(audience) >= MIN_DELIVERY_PROTOCOL_VERSION
     ):
-        await hub.send_json(websocket, frame)
+        try:
+            await hub.send_json(websocket, frame)
+        except Exception:
+            logger.warning(
+                "delivery notification %s stays pending: cannot write to %s",
+                notification_id,
+                audience,
+                exc_info=True,
+            )
+            return
         ledger.mark_notification_delivered(notification_id)
 
 

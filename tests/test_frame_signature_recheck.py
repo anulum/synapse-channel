@@ -308,18 +308,18 @@ async def test_the_recheck_loop_survives_a_failed_recheck() -> None:
     healthy = _expiring_bundle(150.0)
     calls: list[int] = []
 
-    def bundle() -> EventSignatureTrustBundle:
+    def enabled() -> bool:
         calls.append(1)
         if len(calls) == 1:
-            raise OSError("the trust store could not be read")
-        return healthy
+            raise OSError("the hub configuration could not be read")
+        return True
 
     sessions = FrameSigningSessions()
     gate = FrameSignatureGate(
         sessions=sessions,
         hub_id="h",
-        enabled=lambda: True,
-        bundle=bundle,
+        enabled=enabled,
+        bundle=lambda: healthy,
         pins=None,
         send_json=sent.send_json,
         system=lambda payload, **fields: {"payload": payload, **fields},

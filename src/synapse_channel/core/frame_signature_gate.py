@@ -189,6 +189,14 @@ class FrameSignatureGate:
             return bundle_key(self._bundle(), signer.key_id, signer.sender, self._clock())
         return pin_key(self._pins, signer.key_id, signer.sender)
 
+    def _still_trusted(self, signer: FrameSigner) -> bool:
+        """Return whether a signer's key still resolves; a failed lookup counts as no."""
+        try:
+            return self._resolve_key(signer) is not None
+        except Exception:
+            logger.warning("cannot look up the key of %s; closing it", signer.sender, exc_info=True)
+            return False
+
     def check(self, websocket: Any, sender: str, frame: Mapping[str, Any]) -> GateOutcome:
         """Return what to do with ``frame``, received on ``websocket`` bound to ``sender``.
 
@@ -258,7 +266,8 @@ class FrameSignatureGate:
         """Close every connection whose recorded key is no longer trusted.
 
         Each such connection is told :data:`KEY_UNTRUSTED` and closed, and its
-        record is dropped at once so it is not closed twice. The connections
+        record is dropped at once so it is not closed twice. A key whose lookup
+        fails counts as untrusted. The connections
         are closed concurrently, and one that cannot be told or closed is
         logged without affecting the others. Does nothing while the hub does
         not require signed frames.
@@ -273,7 +282,7 @@ class FrameSignatureGate:
         untrusted = [
             (websocket, signer)
             for websocket, signer in self._sessions.signers()
-            if self._resolve_key(signer) is None
+            if not self._still_trusted(signer)
         ]
         for websocket, _signer in untrusted:
             self._sessions.forget(websocket)
