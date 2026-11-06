@@ -20,6 +20,12 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **`synapse token-set status --prune`.** A hub that was killed leaves its
+  state and lock files beside the token set, and `status` keeps reporting it
+  `unknown`. `--prune` first removes the files of every hub whose lock is
+  free, while holding that lock, and never touches a running hub's; it
+  prints each removed hub, and `--json` lists them under `pruned`.
+
 - **A delivery matrix and a whole-hub kill -9 test.** `docs/delivery-matrix.md`
   lists every request type a hub accepts with its delivery (at-least-once,
   apply-once with `idem_key`, or read), its retry key, the clock it depends

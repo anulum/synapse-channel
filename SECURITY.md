@@ -407,7 +407,9 @@ When that boundary is crossed, the proportionate controls are:
   whether it has not yet seen the latest change (`pending`). Each hub
   publishes that state in an owner-only file beside the set, holds a lock on
   it while it serves and removes it at a clean stop; a hub whose lock is free
-  or missing is gone and is reported `unknown`, never as applied.
+  or missing is gone and is reported `unknown`, never as applied. A killed
+  hub leaves its files behind; `synapse token-set status PATH --prune` first
+  removes those of every hub whose lock is free, and never a running hub's.
   `--require-token-expiry` makes the hub admit no connection with a token
   that has no `not_after`, and `--max-token-days DAYS` admits none with a
   token that stays valid for more than `DAYS` days from the moment of the

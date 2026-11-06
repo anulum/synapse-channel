@@ -24,7 +24,9 @@ process id, which another process may reuse. A reader that can take that
 lock, or finds no lock file, knows the hub is gone and reports ``unknown``.
 A running hub whose published digest differs from the file's status now has
 not looked at the change yet; the reader reports it ``pending``. A hub checks
-the file every second, and a clean stop removes its state file.
+the file every second, and a clean stop removes its state file. A hub that
+was killed leaves its files behind; :func:`prune_gone_hubs` removes those of
+every hub whose lock is free, and never touches a running hub's.
 """
 
 from __future__ import annotations
@@ -284,6 +286,53 @@ def read_hub_states(path: Path) -> list[HubState]:
             )
         )
     return states
+
+
+def prune_gone_hubs(path: Path) -> list[str]:
+    """Remove the state and lock files of every hub that is gone.
+
+    A hub that stops cleanly removes its own files; one that was killed
+    leaves them, and readers then report it ``unknown`` until they are
+    removed. A file is removed only while its lock is held here, so a hub
+    that still serves keeps its files. A state file without a lock file
+    belongs to no hub and is removed too.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        The token-set file.
+
+    Returns
+    -------
+    list of str
+        The removed hubs, by file stem (``hub-<pid>-<start>``), in name order.
+
+    Raises
+    ------
+    OSError
+        If a lock cannot be inspected, for example because it is a link.
+    """
+    directory = state_directory(path)
+    if not directory.is_dir():
+        return []
+    stems = sorted(
+        {entry.stem for entry in directory.glob("hub-*.json")}
+        | {entry.stem for entry in directory.glob("hub-*.lock")}
+    )
+    removed = []
+    for stem in stems:
+        lock = directory / f"{stem}.lock"
+        status = directory / f"{stem}.json"
+        if os.path.lexists(lock):
+            with locked(lock, blocking=False, purpose=_PURPOSE) as free:
+                if not free:
+                    continue
+                status.unlink(missing_ok=True)
+            lock.unlink(missing_ok=True)
+        else:
+            status.unlink(missing_ok=True)
+        removed.append(stem)
+    return removed
 
 
 def publish_hub_state(authenticator: TokenSetAuthenticator) -> HubStateWriter | None:

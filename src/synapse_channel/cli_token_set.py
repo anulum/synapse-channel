@@ -41,7 +41,7 @@ from synapse_channel.token_set_admin import (
     retire_token,
     token_status,
 )
-from synapse_channel.token_set_hub_status import HubState, read_hub_states
+from synapse_channel.token_set_hub_status import HubState, prune_gone_hubs, read_hub_states
 
 DEFAULT_VALID_DAYS = 90
 """Validity of a new token when no end is given."""
@@ -218,6 +218,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
     """Show each hub's state for the set; exit 0 only when every running hub applied it."""
     path = Path(args.path).expanduser()
     try:
+        pruned = prune_gone_hubs(path) if args.prune else []
         states = read_hub_states(path)
     except (OSError, PrivateDirError) as exc:
         print(f"synapse token-set status: {exc}", file=sys.stderr)
@@ -241,8 +242,11 @@ def _cmd_status(args: argparse.Namespace) -> int:
             }
             for state in states
         ]
-        print(json.dumps({"path": str(path), "healthy": healthy, "hubs": rows}, indent=2))
+        document = {"path": str(path), "healthy": healthy, "hubs": rows, "pruned": pruned}
+        print(json.dumps(document, indent=2))
         return 0 if healthy else 1
+    for stem in pruned:
+        print(f"{stem}: removed, its hub is gone")
     if not running:
         print(f"{path}: no running hub reports this set; its state is unknown")
     for state in states:
@@ -312,6 +316,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     status.add_argument("path", help="Token-set file.")
     status.add_argument("--json", action="store_true", help="Print a JSON document.")
+    status.add_argument(
+        "--prune",
+        action="store_true",
+        help="First remove the state and lock files of hubs that are gone (a killed hub "
+        "leaves them); a running hub's files are never touched.",
+    )
     status.set_defaults(func=_cmd_status)
 
     listing = nested.add_parser("list", help="Show identifiers, agents and validity.")

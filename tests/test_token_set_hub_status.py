@@ -32,6 +32,7 @@ from synapse_channel.core.token_set import (
 )
 from synapse_channel.token_set_hub_status import (
     HubStateWriter,
+    prune_gone_hubs,
     publish_hub_state,
     read_hub_states,
 )
@@ -380,3 +381,71 @@ def test_new_still_writes_when_hub_states_cannot_be_read(
     assert main(["token-set", "new", str(path), "--id", "b"]) == 0
     captured = capsys.readouterr()
     assert "warning" not in captured.err and captured.out.strip()
+
+
+def _killed_hub(path: Path) -> None:
+    """Leave the files of a hub process that ended without a clean stop."""
+    script = (
+        "import os, sys\n"
+        "from synapse_channel.core.token_set import TokenSetAuthenticator\n"
+        "from synapse_channel.token_set_hub_status import publish_hub_state\n"
+        "publish_hub_state(TokenSetAuthenticator(sys.argv[1]))\n"
+        "os._exit(0)\n"
+    )
+    env = {**os.environ, "PYTHONPATH": str(_SRC)}
+    subprocess.run([sys.executable, "-c", script, str(path)], check=True, env=env, timeout=60)
+
+
+def test_prune_removes_only_the_files_of_hubs_that_are_gone(tmp_path: Path) -> None:
+    path = _write(tmp_path / "tokens.json")
+    writer = publish_hub_state(TokenSetAuthenticator(path))
+    assert writer is not None
+    try:
+        _killed_hub(path)
+        directory = state_directory(path)
+        (directory / "hub-8-8.json").write_text("{}")  # a state file with no lock
+        (directory / "hub-9-9.lock").write_text("")  # a lock with no state file
+        gone = sorted(
+            entry.stem
+            for entry in directory.glob("hub-*.json")
+            if entry.stem not in {writer.path.stem, "hub-8-8"}
+        )
+        assert len(gone) == 1
+        removed = prune_gone_hubs(path)
+        assert removed == sorted([*gone, "hub-8-8", "hub-9-9"])
+        assert sorted(entry.name for entry in directory.glob("hub-*")) == sorted(
+            [writer.path.name, writer.path.with_suffix(".lock").name]
+        )
+        assert [(state.running, state.state) for state in read_hub_states(path)] == [
+            (True, "applied")
+        ]
+        assert prune_gone_hubs(path) == []
+    finally:
+        writer.close()
+    assert prune_gone_hubs(tmp_path / "never-used.json") == []
+
+
+def test_status_prune_reports_what_it_removed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _write(tmp_path / "tokens.json")
+    _killed_hub(path)
+    assert main(["token-set", "status", str(path)]) == 1
+    assert ": unknown" in capsys.readouterr().out
+    writer = publish_hub_state(TokenSetAuthenticator(path))
+    assert writer is not None
+    try:
+        assert main(["token-set", "status", str(path), "--prune"]) == 0
+        out = capsys.readouterr().out
+        assert out.count(": removed, its hub is gone") == 1
+        assert ": unknown" not in out
+        assert ": applied since " in out
+        _killed_hub(path)
+        assert main(["token-set", "status", str(path), "--prune", "--json"]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert len(report["pruned"]) == 1
+        assert [row["state"] for row in report["hubs"]] == ["applied"]
+        assert main(["token-set", "status", str(path), "--json"]) == 0
+        assert json.loads(capsys.readouterr().out)["pruned"] == []
+    finally:
+        writer.close()
