@@ -1211,9 +1211,7 @@ class SynapseHub(HubConfigView):
         target = str(data.get("target") or "all")
         msg_type = str(data.get("type") or MessageType.CHAT).strip().lower()
         payload = str(data.get("payload") or "")
-        if not await self._frame_gate.admit(
-            websocket, self.clients.bound_agent(websocket), msg_type, data
-        ):
+        if not await self._frame_gate.admit(websocket, self.clients.bound_agent(websocket), data):
             return
         resolved = await self._register_frame(sender, msg_type, data, websocket)
         if resolved is None:

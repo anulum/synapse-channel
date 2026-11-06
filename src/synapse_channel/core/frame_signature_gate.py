@@ -9,17 +9,21 @@
 
 With ``require_signed_frames`` a hub checks every frame that arrives on an
 already registered connection before anything else happens to it, apart
-from the per-host rate limit that reading a frame applies. Only the request
-types in :data:`READ_ONLY_TYPES` pass unsigned; every other type, including
-one the hub does not know, needs a valid frame signature, so a new
-state-changing verb cannot slip through unsigned. The registration frame
-itself is proven by the identity gate and never reaches this check.
+from the per-host rate limit that reading a frame applies. Every frame needs
+a valid frame signature, read requests and unknown types included: handling
+any frame on a registered connection refreshes the sender's presence and
+liveness and clears its dead-letter record, so no frame may pass unsigned.
+The registration frame itself is proven by the identity gate and never
+reaches this check.
 
 The public key is looked up again for every frame: the operator bundle key
 must still exist, be unrevoked, unexpired and name the sender; a pinned key
-must still be the name's pin. A key that no longer qualifies closes the
+must still be the name's pin. As at registration, a key is not checked
+against a project scope: the ``<project>/<agent>`` sender name it must list
+already fixes the project. A key that no longer qualifies closes the
 connection. So does a connection without a recorded key, and a connection
-that sends :data:`BAD_SIGNATURE_LIMIT` refused frames.
+whose refused frames reach :data:`BAD_SIGNATURE_LIMIT` in total; refusals
+are counted over the whole connection, not consecutively.
 """
 
 from __future__ import annotations
@@ -40,24 +44,6 @@ from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
-READ_ONLY_TYPES = frozenset(
-    {
-        "attachment_info",
-        "attachment_read",
-        "board_request",
-        "channel_history_request",
-        "channel_list_request",
-        "federation_offer_request",
-        "history_request",
-        "manifest_request",
-        "multihub_log_request",
-        "resume_request",
-        "state_request",
-        "who_request",
-    }
-)
-"""Request types that change no state and so pass unsigned; everything else is signed."""
 
 BAD_SIGNATURE_LIMIT = 5
 """Refused frames after which a connection is closed."""
@@ -180,9 +166,7 @@ class FrameSignatureGate:
             return bundle_key(self._bundle(), signer.key_id, signer.sender, self._clock())
         return pin_key(self._pins, signer.key_id, signer.sender)
 
-    def check(
-        self, websocket: Any, sender: str, msg_type: str, frame: Mapping[str, Any]
-    ) -> GateOutcome:
+    def check(self, websocket: Any, sender: str, frame: Mapping[str, Any]) -> GateOutcome:
         """Return what to do with ``frame``, received on ``websocket`` bound to ``sender``.
 
         Parameters
@@ -191,8 +175,6 @@ class FrameSignatureGate:
             The registered connection.
         sender : str
             The name the connection is bound to.
-        msg_type : str
-            The frame's normalised request type.
         frame : Mapping[str, Any]
             The frame exactly as received.
 
@@ -201,8 +183,6 @@ class FrameSignatureGate:
         GateOutcome
             The verdict and its reason.
         """
-        if msg_type in READ_ONLY_TYPES:
-            return GateOutcome(GateVerdict.ADMIT, FrameSignatureResult.VALID.value)
         signer = self._sessions.signer(websocket, sender)
         if signer is None:
             return GateOutcome(GateVerdict.CLOSE, NO_IDENTITY)
@@ -226,9 +206,7 @@ class FrameSignatureGate:
         )
         return GateOutcome(verdict, result.value)
 
-    async def admit(
-        self, websocket: Any, bound: str | None, msg_type: str, frame: dict[str, Any]
-    ) -> bool:
+    async def admit(self, websocket: Any, bound: str | None, frame: dict[str, Any]) -> bool:
         """Check a registered connection's frame before anything else runs on it.
 
         A connection that is not yet bound, or a hub that does not require
@@ -243,7 +221,7 @@ class FrameSignatureGate:
         """
         if bound is None or not self._enabled():
             return True
-        outcome = self.check(websocket, bound, msg_type, frame)
+        outcome = self.check(websocket, bound, frame)
         if outcome.verdict is GateVerdict.ADMIT:
             return True
         await self._refuse(websocket, bound, outcome.reason)

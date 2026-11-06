@@ -30,14 +30,12 @@ from synapse_channel.core.frame_signature import sign_session_frame
 from synapse_channel.core.frame_signature_gate import (
     BAD_SIGNATURE_LIMIT,
     NO_IDENTITY,
-    READ_ONLY_TYPES,
     FrameSignatureGate,
     GateVerdict,
     bundle_key,
     pin_key,
 )
 from synapse_channel.core.frame_signing import FrameSigningSessions
-from synapse_channel.core.handlers import VERBS
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.identity_keys import sign_registration
 from synapse_channel.core.identity_pins import IdentityPinStore
@@ -106,7 +104,7 @@ async def _register(websocket: ClientConnection) -> _Session:
     )
     await websocket.send(json.dumps(registration))
     session = _Session(websocket, welcome)
-    await session.send({"sender": SENDER, "type": "who_request"})
+    await session.send(session.signed(type="who_request"))
     await read_until_type(websocket, "who_snapshot")
     return session
 
@@ -186,13 +184,26 @@ async def test_a_key_that_is_no_longer_trusted_closes_the_connection() -> None:
     assert "after-revoke" not in hub.state.claims
 
 
-async def test_reads_pass_unsigned_and_a_reconnect_starts_a_new_session() -> None:
+async def test_reads_need_a_signature_and_cannot_touch_presence_or_dead_letters() -> None:
+    hub = _hub()
+    async with running_hub(hub) as (_, uri):
+        async with connect(uri) as websocket:
+            session = await _register(websocket)
+            hub.dead_letters.record(SENDER, sender="P/other", ts=time.time())
+            await session.send({"sender": SENDER, "type": "who_request"})
+            refused = await read_until_type(websocket, "error")
+            assert [row["target"] for row in hub.dead_letters.snapshot()] == [SENDER]
+            await session.send(session.signed(type="state_request"))
+            await read_until_type(websocket, "state_snapshot")
+            assert hub.dead_letters.snapshot() == []
+    assert refused["verification_result"] == "frame_signature_required"
+
+
+async def test_a_reconnect_starts_a_new_session() -> None:
     hub = _hub()
     async with running_hub(hub) as (_, uri):
         async with connect(uri) as websocket:
             first = await _register(websocket)
-            await first.send({"sender": SENDER, "type": "state_request"})
-            await read_until_type(websocket, "state_snapshot")
         async with connect(uri) as websocket:
             second = await _register(websocket)
             assert second.nonce != first.nonce
@@ -205,6 +216,8 @@ async def test_without_the_requirement_unsigned_mutations_pass() -> None:
     async with running_hub(hub) as (_, uri):
         async with connect(uri) as websocket:
             await _register(websocket)
+            await websocket.send(json.dumps({"sender": SENDER, "type": "who_request"}))
+            await read_until_type(websocket, "who_snapshot")
             await websocket.send(json.dumps({"sender": SENDER, **_claim("plain")}))
             await read_until_type(websocket, "claim_granted")
 
@@ -227,12 +240,6 @@ async def test_a_connection_without_a_proven_key_is_refused_at_registration(
             assert websocket.close_code == 4013
     assert refused["verification_result"] == "frame_signature_no_identity"
     assert "P/plain" not in hub.clients.agent_sockets
-
-
-def test_only_verbs_that_change_nothing_pass_unsigned() -> None:
-    read_only = {name for name, spec in VERBS.items() if not spec.mutates}
-    assert read_only == READ_ONLY_TYPES
-    assert "heartbeat" not in READ_ONLY_TYPES and "chat" not in READ_ONLY_TYPES
 
 
 def test_keys_are_looked_up_afresh() -> None:
@@ -337,6 +344,5 @@ def test_a_bound_connection_without_a_record_is_closed() -> None:
         close_socket=_no_close,
         count_refusal=lambda: None,
     )
-    outcome = gate.check(object(), "A", "claim", {"type": "claim"})
+    outcome = gate.check(object(), "A", {"type": "who_request"})
     assert (outcome.verdict, outcome.reason) == (GateVerdict.CLOSE, NO_IDENTITY)
-    assert gate.check(object(), "A", "who_request", {}).verdict is GateVerdict.ADMIT

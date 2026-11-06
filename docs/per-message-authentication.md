@@ -265,12 +265,11 @@ With `--require-signed-frames`, every frame after a connection's registration
 must carry a `frame_signature` made with the identity key that proved the
 connection: an operator-enrolled key (`--identity-trust` with
 `--require-identity-binding`) or the key pinned to the name on first use.
-Only the read-only requests `attachment_info`, `attachment_read`,
-`board_request`, `channel_history_request`, `channel_list_request`,
-`federation_offer_request`, `history_request`, `manifest_request`,
-`multihub_log_request`, `resume_request`, `state_request` and `who_request`
-pass unsigned. Every other request type needs a signature, including one the
-hub does not know.
+That includes read requests and types the hub does not know. Handling any
+frame on a registered connection refreshes the sender's presence and
+liveness and clears its dead-letter record, so no frame passes unsigned. The
+key is not checked against a project scope, as at registration: the
+`<project>/<agent>` sender name the key must list already fixes the project.
 
 The envelope is `{version: 1, algorithm: "ed25519", key_id, hub_id,
 session_nonce, seq, value}`. `hub_id` and `session_nonce` come from the
@@ -299,7 +298,8 @@ whose `verification_result` is one of these:
 | `frame_signature_key_untrusted` | The key was revoked, expired, no longer names the sender, or its pin changed | closed (4013) |
 | `frame_signature_no_identity` | The connection registered without a verified identity signature | closed (4013) |
 
-After five refused frames the connection is closed with 4013. When
+After five refused frames on a connection, counted in total and not only in
+a row, the connection is closed with 4013. When
 `--require-message-auth` is also set, a frame in its protected set needs both
 the HMAC `auth` envelope and the frame signature. The frame signature covers
 `auth` as well.

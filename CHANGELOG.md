@@ -20,13 +20,12 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
-- **`synapse hub --require-signed-frames`.** Every state-changing frame after
-  registration must carry an Ed25519 `frame_signature` by the identity key
-  that proved the connection (an operator-enrolled key or the key pinned on
-  first use). The signature covers the RFC 8785 bytes of the whole frame and
+- **`synapse hub --require-signed-frames`.** Every frame after registration,
+  read requests included, must carry an Ed25519 `frame_signature` by the
+  identity key that proved the connection (an operator-enrolled key or the
+  key pinned on first use). The signature covers the RFC 8785 bytes of the whole frame and
   binds the hub, the connection's session nonce and a growing sequence, so
-  copies and replays are refused without clocks. Only read-only requests pass
-  unsigned. A key that is no longer trusted closes the connection, and so do
+  copies and replays are refused without clocks. A key that is no longer trusted closes the connection, and so do
   five refused frames. A connection without a verified identity is refused at
   registration. The hub refuses to start with the flag when it serves
   multi-hub peers or lacks the `encryption` extra. The flag is off by default.

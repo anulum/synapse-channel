@@ -353,7 +353,7 @@ When that boundary is crossed, the proportionate controls are:
   Owner-file readers open every path component with `O_NOFOLLOW`; configure the
   real path rather than a symlinked ancestor directory.
 - **Per-connection identity signatures.** `--require-signed-frames` makes
-  every state-changing frame after registration carry an Ed25519 signature by
+  every frame after registration carry an Ed25519 signature by
   the identity key that proved the connection, bound to this hub, to the
   connection's session nonce and to a growing sequence. A frame copied to
   another connection or hub, or sent again, is refused. A connection whose key

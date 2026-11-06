@@ -102,7 +102,7 @@ def measure_gate(count: int) -> dict[str, Any]:
         )
         signing.append((time.perf_counter() - start) * 1e6)
         start = time.perf_counter()
-        outcome = gate.check(socket, SENDER, "claim", signed)
+        outcome = gate.check(socket, SENDER, signed)
         checking.append((time.perf_counter() - start) * 1e6)
         if outcome.verdict is not GateVerdict.ADMIT:
             raise RuntimeError(f"benchmark frame {seq} was refused: {outcome.reason}")
