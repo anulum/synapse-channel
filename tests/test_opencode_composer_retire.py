@@ -114,36 +114,71 @@ def test_a_group_that_is_already_gone_is_skipped(groups: list[int]) -> None:
 
 
 def test_the_callers_own_group_and_init_are_never_signalled() -> None:
-    """Group 0 and the caller's own group would end this process; 1 is init."""
-    started = time.monotonic()
-    end_process_groups([0, 1, os.getpgrp()])
-    assert time.monotonic() - started < 0.2
+    """Group 0 and the caller's own group would end the caller; 1 is init.
+
+    The call runs in a child that leads its own group, so a regression ends
+    only that child and fails here instead of stopping the whole test run.
+    """
+    probe = (
+        "import os, time\n"
+        "from synapse_channel.opencode_composer_startup import end_process_groups\n"
+        "started = time.monotonic()\n"
+        "end_process_groups([0, 1, os.getpgrp()])\n"
+        "print(f'alive {time.monotonic() - started:.3f}')\n"
+    )
+    child = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        start_new_session=True,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+    )
+    assert child.returncode == 0, (child.returncode, child.stderr)
+    label, elapsed = child.stdout.split()
+    assert label == "alive" and float(elapsed) < 0.2
 
 
-def _foreign_group_leader() -> int:
-    """Return a process group led by a process of another user (root, on a normal host)."""
+def _foreign_group_leader() -> int | None:
+    """Return a process group this user may not signal, or ``None`` if there is none.
+
+    The probe is signal 0, which checks permission and delivers nothing.
+    """
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit() or int(entry.name) <= 1:
             continue
         try:
             stat = (entry / "stat").read_text()
-            owner = entry.stat().st_uid
         except OSError:
             continue
         pgrp = int(stat[stat.rindex(")") + 2 :].split()[2])
-        if pgrp == int(entry.name) and owner != os.geteuid():
+        if pgrp != int(entry.name):
+            continue
+        try:
+            os.killpg(pgrp, 0)
+        except PermissionError:
             return pgrp
-    raise AssertionError("no process group of another user to test against")
+        except ProcessLookupError:
+            continue
+    return None
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root may signal every process group")
+FOREIGN_GROUP = _foreign_group_leader() if sys.platform.startswith("linux") else None
+
+
+@pytest.mark.skipif(
+    FOREIGN_GROUP is None, reason="no process group here that this user may not signal"
+)
 def test_a_group_of_another_user_is_left_alone_without_an_error() -> None:
-    """A recycled group id that now belongs to someone else is neither waited for nor raised."""
-    foreign = _foreign_group_leader()
+    """A recycled group id that now belongs to someone else is neither waited for nor raised.
+
+    The kernel refuses the signal (PermissionError), so nothing reaches that group.
+    """
+    assert FOREIGN_GROUP is not None
     started = time.monotonic()
-    end_process_groups([foreign])
+    end_process_groups([FOREIGN_GROUP])
     assert time.monotonic() - started < 0.2
-    assert Path(f"/proc/{foreign}").exists()
+    assert Path(f"/proc/{FOREIGN_GROUP}").exists()
 
 
 class _Failing:
