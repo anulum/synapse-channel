@@ -38,9 +38,19 @@ execution evidence when carrying a release claim forward.
   a hub that does not ask gets unchanged frames. A frame holding a value the
   signature cannot cover is refused before it is sent. An unsigned frame on
   such a hub is refused with a message telling the client to upgrade. The
-  JavaScript and Go clients, the VS Code extension and the cockpit do not
-  sign yet. A new connection attempt drops the previous connection's signing
+  JavaScript client signs too (below); the Go client, the VS Code extension
+  and the cockpit do not sign yet. A new connection attempt drops the previous connection's signing
   session, so nothing is signed for an ended connection.
+
+- **The JavaScript client signs frames for hubs that require it.** Give
+  `SynapseClient` a `frameSigner` (`{ keyId, sign(message) }`, the key that
+  signs the registration) and it signs every frame after registration for
+  the connection's session, covering any per-message `auth` envelope. The
+  RFC 8785 bytes and the signature reproduce the shared vectors byte for
+  byte, and a real-hub test passes a claim, a roster read and a release
+  through a Python hub with `--require-signed-frames`. Without a signer,
+  `connect()` to such a hub rejects. The Go client, the VS Code extension
+  and the cockpit do not sign yet.
 
 - **`synapse hub --require-identity-proof`.** Without operator identity
   binding, a name that never proves a key stays first-come. With this flag

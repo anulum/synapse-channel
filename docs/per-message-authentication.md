@@ -324,10 +324,12 @@ welcome: every `synapse` command, the MCP server and the waiter sign each
 frame after registration with the key they registered with, and send
 unchanged frames to a hub that does not ask. A value a signature cannot cover
 (an integer beyond ±(2**53 − 1), a non-finite number or a lone surrogate) is
-refused before anything is sent. The JavaScript client (`clients/js`), the Go
-client (`clients/go`), the VS Code extension and the cockpit do not sign yet;
-a hub with the flag refuses their frames with `frame_signature_required`, and
-the error tells the client to upgrade.
+refused before anything is sent. The JavaScript client (`clients/js`) signs
+the same way when it is given a `frameSigner` (see `docs/js-client.md`) and
+rejects `connect()` to such a hub without one. The Go client (`clients/go`),
+the VS Code extension and the cockpit do not sign yet; a hub with the flag
+refuses their frames with `frame_signature_required`, and the error tells the
+client to upgrade.
 
 The hub refuses to start with `--require-signed-frames` when it serves
 multi-hub peers (`--multihub-serving-policy`, `--relay-peer`, `--message-peer`).

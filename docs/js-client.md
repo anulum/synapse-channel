@@ -115,6 +115,21 @@ these requests without a version-four welcome or an attachment signer. The
 caller supplies the credential-backed signing callbacks; the dependency-free
 client does not manage private keys.
 
+A hub started with `--require-signed-frames` says so in its welcome
+(`"frame_signatures": "required"`). Configure `frameSigner` with the key that
+signs the registration: `{ keyId, sign(message) }`, where `sign` returns the
+raw Ed25519 signature of the bytes it is given. The client then signs every
+frame after registration for that connection: it binds each frame to the
+hub, the connection's session nonce and a sequence from one, and covers the
+per-message `auth` envelope when one is attached. In Node,
+`sign: (message) => new Uint8Array(crypto.sign(null, message, privateKey))`
+is enough. Without `frameSigner`, `connect()` to such a hub rejects. A frame
+the hub could not verify is refused with `FrameCanonicalError` before it is
+sent: a non-finite number, a lone surrogate, or a whole number below 1e21
+beyond ±(2**53 − 1), which the hub would read as an out-of-range integer.
+The canonical bytes are RFC 8785 and reproduce the shared vectors in
+`tests/fixtures/frame_signature_vectors.json`, signature included.
+
 The client implements the agent-side envelope and the connection lifecycle:
 registration, keepalive heartbeats, typed send helpers, and inbound dispatch by
 `MessageType`. It does not run the hub, does not enforce ACLs, and does not verify

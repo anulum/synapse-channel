@@ -311,3 +311,85 @@ test("SDK transfers an attachment through the governed Python hub", { timeout: 2
   assert.equal(Buffer.from(read.body, "base64").toString(), body.toString(), JSON.stringify(read));
   assert.equal(read.eof, true);
 });
+
+/** Start the fixture hub with `env`; stop it and require a clean exit when the test ends. */
+async function startFixtureHub(t, env) {
+  const python = process.env.SYNAPSE_TEST_PYTHON ?? "python3";
+  const child = spawn(
+    python.includes("/") ? resolve(python) : python,
+    [fileURLToPath(new URL("./hub_fixture.py", import.meta.url))],
+    {
+      cwd: fileURLToPath(new URL("../../../", import.meta.url)),
+      env: {
+        ...process.env,
+        PYTHONPATH: fileURLToPath(new URL("../../../src/", import.meta.url)),
+        ...env,
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  let diagnostics = "";
+  child.stderr.on("data", (chunk) => {
+    diagnostics = (diagnostics + chunk.toString()).slice(-65536);
+  });
+  const exited = new Promise((resolve) => {
+    child.once("error", (error) => resolve({ error }));
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
+  const watchdog = setTimeout(() => child.kill("SIGKILL"), 20000);
+  const lines = createInterface({ input: child.stdout });
+  t.after(async () => {
+    lines.close();
+    child.stdin.end();
+    const killTimer = setTimeout(() => child.kill("SIGKILL"), 3000);
+    const result = await exited;
+    clearTimeout(killTimer);
+    clearTimeout(watchdog);
+    assert.deepEqual(result, { code: 0, signal: null }, diagnostics);
+  });
+  const ready = once(lines, "line", { signal: AbortSignal.timeout(5000) });
+  return Promise.race([
+    ready.then(([line]) => JSON.parse(line)),
+    exited.then((status) => {
+      throw new Error(`Hub exited before readiness: ${JSON.stringify(status)} ${diagnostics}`);
+    }),
+  ]);
+}
+
+test("SDK signs every frame for a Python hub that requires it", { timeout: 25000 }, async (t) => {
+  assert.equal(typeof globalThis.WebSocket, "function", "Use Node 22+ for this test");
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const publicRaw = publicKey.export({ type: "spki", format: "der" }).subarray(-32);
+  const result = await startFixtureHub(t, {
+    SYNAPSE_TEST_SIGNED_FRAMES: "1",
+    SYNAPSE_TEST_ID_PUBLIC: publicRaw.toString("base64"),
+  });
+  const client = new SynapseClient({
+    uri: result.uri,
+    name: "proj/js-signer",
+    token: "integration-only-token",
+    signRegistration(frame) {
+      const signed = { ...frame, signature: {
+        version: 1, key_id: "js-id", algorithm: "ed25519",
+        nonce: randomBytes(12).toString("hex"), sequence: 1,
+        signed_at: Math.floor(Date.now() / 1000),
+      } };
+      signed.signature.value = sign(null, Buffer.from(canonical(signed)), privateKey).toString("base64");
+      return signed;
+    },
+    frameSigner: { keyId: "js-id", sign: (message) => new Uint8Array(sign(null, message, privateKey)) },
+  });
+  t.after(() => client.close());
+  await client.connect();
+  const granted = await exchange(client, MessageType.ClaimGranted,
+    () => client.claim("JS-SIGNED-1", [], undefined, { taskOnly: true }));
+  assert.equal(granted.owner, "proj/js-signer");
+  const who = await exchange(client, MessageType.WhoSnapshot, () => client.requestWho());
+  assert.ok(JSON.stringify(who).includes("proj/js-signer"), JSON.stringify(who));
+  const released = await exchange(client, MessageType.ReleaseGranted, () => client.release("JS-SIGNED-1"));
+  assert.equal(released.task_id, "JS-SIGNED-1");
+
+  const plain = new SynapseClient({ uri: result.uri, name: "proj/js-plain", token: "integration-only-token" });
+  t.after(() => plain.close());
+  await assert.rejects(plain.connect(), /requires signed frames|before welcoming/);
+});

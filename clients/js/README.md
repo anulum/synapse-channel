@@ -101,6 +101,12 @@ cancellation engine. See [streaming](../../docs/streaming.md).
   complete envelopes; the client refuses attachment requests to older hubs or
   without `signAttachment`. Results arrive through `on(MessageType.AttachmentResult, ...)`.
   See the [wire contract](../../docs/attachments.md).
+- `frameSigner: { keyId, sign(message) }` signs every frame after registration
+  when the hub requires signed frames (`--require-signed-frames`); `sign`
+  returns the raw Ed25519 signature, for example
+  `(message) => new Uint8Array(crypto.sign(null, message, privateKey))` in Node.
+  Use the key that signs the registration. Without it, `connect()` to such a
+  hub rejects. See [the JS client guide](../../docs/js-client.md).
 - `send(type, { target?, payload?, extra? })` for any other protocol frame.
 - `close()` — closes the socket, stops heartbeats, leaves `isReady` false and rejects a
   `connect()` still awaiting its welcome.

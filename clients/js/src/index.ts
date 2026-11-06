@@ -23,3 +23,14 @@ export {
   type WebSocketLike,
   type WebSocketFactory,
 } from "./client.js";
+export {
+  FRAME_SIGNATURE_DOMAIN,
+  FRAME_SIGNATURE_FIELD,
+  FrameCanonicalError,
+  frameCanonicalJson,
+  frameSigningBytes,
+  sessionFromWelcome,
+  signSessionFrame,
+  type FrameSession,
+  type FrameSigner,
+} from "./frame-signature.js";

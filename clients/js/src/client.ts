@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — typed WebSocket client for the coordination hub
 
+import { type FrameSession, type FrameSigner, sessionFromWelcome, signSessionFrame } from "./frame-signature.js";
 import { SocketClosureBarrier } from "./socket-closure.js";
 
 import {
@@ -52,6 +53,12 @@ export interface SynapseClientOptions {
   signRegistration?: (frame: Envelope) => Envelope;
   /** Sign each attachment frame with the Hub's configured per-message key. */
   signAttachment?: (frame: Envelope) => Envelope;
+  /**
+   * Sign every frame after registration with the identity key that signed the
+   * registration, when the hub's welcome requires it (`--require-signed-frames`).
+   * Without it, connecting to such a hub rejects.
+   */
+  frameSigner?: FrameSigner;
 }
 
 const ATTACHMENT_REQUEST_TYPES = new Set<string>([
@@ -103,6 +110,8 @@ export class SynapseClient {
   private pending: PendingAttempt | null = null;
   private readonly closing = new SocketClosureBarrier();
   private awaitingClosure = false;
+  /** The current connection's frame-signing session; never outlives that connection. */
+  private frameSession: FrameSession | null = null;
 
   constructor(options: SynapseClientOptions) {
     this.options = options;
@@ -151,6 +160,7 @@ export class SynapseClient {
     this.socket = socket;
     this.ready = false;
     this.hubProtocolVersion = null;
+    this.frameSession = null;
     return new Promise<void>((resolve, reject) => {
       const live = (): boolean => generation === this.generation && this.socket === socket;
       const fail = (error: Error): void => {
@@ -160,6 +170,7 @@ export class SynapseClient {
         this.stopHeartbeat();
         this.ready = false;
         this.socket = null;
+        this.frameSession = null;
         try {
           this.closing.close(socket);
         } catch (closeError) {
@@ -196,6 +207,12 @@ export class SynapseClient {
           return;
         }
         if (!this.ready && message.type === MessageType.Welcome) {
+          const session = sessionFromWelcome(message);
+          if (session !== null && this.options.frameSigner === undefined) {
+            fail(new Error("the hub requires signed frames; configure frameSigner"));
+            return;
+          }
+          this.frameSession = session;
           this.hubProtocolVersion = typeof message["protocol_version"] === "number"
             ? message["protocol_version"] as number : null;
           this.ready = true;
@@ -221,6 +238,7 @@ export class SynapseClient {
         this.ready = false;
         this.socket = null;
         this.pending = null;
+        this.frameSession = null;
         if (!welcomed) {
           clearTimeout(timer);
           reject(new Error(`hub closed the connection before welcoming ${this.options.name}`));
@@ -251,8 +269,7 @@ export class SynapseClient {
     if (this.socket === null) {
       throw new Error("client is not connected");
     }
-    const envelope = buildEnvelope(this.options.name, type, options);
-    this.socket.send(JSON.stringify(envelope));
+    this.transmit(buildEnvelope(this.options.name, type, options));
   }
 
   /** Send a version-four attachment request through the configured signed boundary. */
@@ -269,7 +286,7 @@ export class SynapseClient {
       throw new Error("attachment frames require a configured per-message signer");
     }
     const frame = buildEnvelope(this.options.name, type, { target: "SynapseHub", extra });
-    this.socket.send(JSON.stringify(signer(frame)));
+    this.transmit(signer(frame));
   }
 
   /** Send a chat message to a target agent, `"all"`, or a private channel. */
@@ -397,6 +414,7 @@ export class SynapseClient {
     this.pending = null;
     this.socket = null;
     this.ready = false;
+    this.frameSession = null;
     this.stopHeartbeat();
     if (pending !== null) {
       clearTimeout(pending.timer);
@@ -423,6 +441,22 @@ export class SynapseClient {
       return;
     }
     this.send(MessageType.Heartbeat, { target: "System", payload: "online", extra });
+  }
+
+  /**
+   * Send one frame on the current socket, signing it for the connection's
+   * session when the hub requires signed frames. The per-message auth
+   * envelope, when used, is attached first and so is covered too.
+   */
+  private transmit(frame: Envelope): void {
+    if (this.socket === null) {
+      throw new Error("client is not connected");
+    }
+    const session = this.frameSession;
+    const signer = this.options.frameSigner;
+    const outbound = session !== null && signer !== undefined
+      ? signSessionFrame(frame, session, signer) : frame;
+    this.socket.send(JSON.stringify(outbound));
   }
 
   private startHeartbeat(): void {

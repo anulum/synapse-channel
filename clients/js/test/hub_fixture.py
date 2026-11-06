@@ -78,11 +78,33 @@ def _attachment_hub(root: Path) -> tuple[SynapseHub, list[Any]]:
     return hub, [store, replay, journal]
 
 
+def _signed_frames_hub(root: Path) -> tuple[SynapseHub, list[Any]]:
+    """Provision one ephemeral Hub that requires every frame to be signed."""
+    import base64
+
+    sender = "proj/js-signer"
+    public = base64.b64decode(os.environ["SYNAPSE_TEST_ID_PUBLIC"])
+    journal = EventStore(root / "hub.db")
+    hub = SynapseHub(
+        journal=journal,
+        authenticator=TokenAuthenticator({"integration-only-token": {sender, "proj/js-plain"}}),
+        identity_trust_bundle=EventSignatureTrustBundle(
+            keys={"js-id": EventSignatureKey("js-id", public, frozenset({sender}))},
+            replay_cache=MessageReplayCache(window_seconds=30, max_entries=64),
+        ),
+        require_identity_binding=True,
+        require_signed_frames=True,
+    )
+    return hub, [journal]
+
+
 async def main() -> None:
     """Publish readiness and shut down when the test parent disconnects."""
     with tempfile.TemporaryDirectory() as directory:
         if os.environ.get("SYNAPSE_TEST_ATTACHMENT") == "1":
             hub, stores = _attachment_hub(Path(directory))
+        elif os.environ.get("SYNAPSE_TEST_SIGNED_FRAMES") == "1":
+            hub, stores = _signed_frames_hub(Path(directory))
         else:
             # Strict fencing: every release in the SDK journey must name its lease epoch.
             journal = EventStore(Path(directory) / "hub.db")

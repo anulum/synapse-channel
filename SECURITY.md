@@ -364,8 +364,9 @@ When that boundary is crossed, the proportionate controls are:
   The signatures protect the integrity and origin of mutations; they do not
   hide or protect reads, so TLS stays required off-host. The Python client
   (every `synapse` command, the MCP server and the waiter) signs whenever the
-  hub's welcome asks; the JavaScript and Go clients, the VS Code extension and
-  the cockpit do not sign yet and are refused by such a hub (see
+  hub's welcome asks, and the JavaScript client signs when given a
+  `frameSigner`; the Go client, the VS Code extension and the cockpit do not
+  sign yet and are refused by such a hub (see
   `docs/per-message-authentication.md`).
 - **Identity proof at registration.** Without operator identity binding, the
   hub pins each name to the first key that proves it, and a name that never
