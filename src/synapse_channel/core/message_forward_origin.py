@@ -545,10 +545,15 @@ def _private_detail(exc: BaseException, peer: MessageForwardPeer) -> str:
 
 
 def _without_secrets(text: str, peer: MessageForwardPeer) -> str:
-    """Show ``peer.uri`` as ``scheme://host:port/path`` and mask the connect token."""
+    """Show ``peer.uri`` as ``scheme://host:port/path`` and mask the connect token.
+
+    Transport messages quote the URI with ``repr``, so its escaped spelling is replaced
+    as well as the raw one.
+    """
     parts = urlsplit(peer.uri)
     hostport = parts.netloc.rpartition("@")[2]
-    text = text.replace(peer.uri, f"{parts.scheme}://{hostport}{parts.path}")
+    shown = f"{parts.scheme}://{hostport}{parts.path}"
+    text = text.replace(repr(peer.uri)[1:-1], shown).replace(peer.uri, shown)
     return text.replace(peer.token, "<token>") if peer.token else text
 
 

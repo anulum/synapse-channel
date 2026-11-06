@@ -622,3 +622,32 @@ async def test_the_logged_peer_uri_drops_userinfo_and_query(
     assert f"ws://127.0.0.1:{port}/route" in message
     assert password not in caplog.text and query_value not in caplog.text
     assert "user:" not in caplog.text
+
+
+async def test_an_escaped_peer_uri_is_rewritten_too(caplog: pytest.LogCaptureFixture) -> None:
+    """A URI quoted with escapes in the transport message still loses its userinfo.
+
+    The hub's own parser refuses such a URI; a peer built in code is not parsed.
+    """
+    password = "v" * 12
+
+    async def peer(socket: ServerConnection) -> None:
+        await asyncio.wait_for(socket.recv(), 3)
+        await socket.close(code=1011, reason="no")
+
+    async with serve(peer, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        peer_uri = f"ws://op:{password}\\x@127.0.0.1:{port}/ws"
+        hub = SynapseHub(hub_id="origin", message_peers={"peer": MessageForwardPeer(peer_uri)})
+        async with running_hub(hub) as (_, uri), connect(uri) as sender:
+            await read_until_type(sender, "welcome")
+            await sender.send(
+                json.dumps({"sender": "PROJ/sender", "type": "heartbeat", "protocol_version": 3})
+            )
+            await sender.send(
+                json.dumps({"sender": "PROJ/sender", "type": "who_request", "hub": "peer"})
+            )
+            await read_until_type(sender, "error")
+    (record,) = [r for r in caplog.records if r.name == "synapse.message_forward"]
+    assert f"ws://127.0.0.1:{port}/ws" in record.getMessage()
+    assert password not in caplog.text and "op:" not in caplog.text

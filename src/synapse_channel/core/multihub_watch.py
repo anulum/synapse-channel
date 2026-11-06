@@ -51,6 +51,7 @@ from synapse_channel.core.multihub_transport import (
 )
 from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipOutcome
 from synapse_channel.core.peer_identity import PeerRegistrationSigner
+from synapse_channel.core.peer_uri import require_peer_uri
 from synapse_channel.core.persistence import EventStore
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ def parse_watch_peers(values: list[str]) -> dict[str, str]:
         if not sep or not peer or not uri:
             msg = f"--multihub-watch must use PEER=URI, got {value!r}"
             raise ValueError(msg)
+        require_peer_uri("--multihub-watch", peer, uri)
         if peer in peers:
             msg = f"--multihub-watch names peer {peer!r} twice"
             raise ValueError(msg)

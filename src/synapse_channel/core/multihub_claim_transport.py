@@ -47,6 +47,7 @@ from synapse_channel.core.multihub_claim_wire import (
 )
 from synapse_channel.core.multihub_transport import pinned_connector
 from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
+from synapse_channel.core.peer_uri import require_peer_uri
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
 
 DEFAULT_FORWARD_TIMEOUT = 10.0
@@ -159,6 +160,7 @@ def parse_claim_peers(
         hub_id, uri = hub_id.strip(), uri.strip()
         if not sep or not hub_id or not uri:
             raise ValueError(f"--claim-peer must use HUB_ID=URI, got {value!r}")
+        require_peer_uri("--claim-peer", hub_id, uri)
         if hub_id in peers:
             raise ValueError(f"--claim-peer names hub {hub_id!r} twice")
         pin = pins.get(hub_id) if pins is not None else None

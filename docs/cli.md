@@ -2700,6 +2700,13 @@ is independent of namespace ownership and needs no `--namespace-owner`. The peer
 must grant this hub's id in its `--multihub-serving-policy`, for the target's
 namespace.
 
+Every `--multihub-watch`, `--claim-peer` and `--message-peer` URI is checked when
+the hub starts, the way the WebSocket client reads it. A URI with a fragment, no
+host, a port out of range, a scheme other than `ws://` or `wss://`, or a
+backslash or control character makes `synapse hub` exit 2 with the reason. The
+message names the option and the peer, not the URI, so a credential in it is not
+echoed.
+
 The other message-peer options are:
 
 - `--message-peer-token TOKEN` or `--message-peer-token-file PATH` (owner-only)

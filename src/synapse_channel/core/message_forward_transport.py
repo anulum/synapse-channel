@@ -48,6 +48,7 @@ from synapse_channel.core.message_forward_wire import (
 )
 from synapse_channel.core.multihub_transport import pinned_connector
 from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
+from synapse_channel.core.peer_uri import require_peer_uri
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
 
 DEFAULT_FORWARD_TIMEOUT = 10.0
@@ -148,6 +149,7 @@ def parse_message_peers(
             raise ValueError(f"--message-peer hub id {hub_id!r} is not a valid hub id")
         if not uri.startswith(("ws://", "wss://")):
             raise ValueError(f"--message-peer URI for {hub_id!r} must be ws:// or wss://")
+        require_peer_uri("--message-peer", hub_id, uri)
         if hub_id in peers:
             raise ValueError(f"--message-peer names hub {hub_id!r} twice")
         pin = pins.get(hub_id) if pins is not None else None

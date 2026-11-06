@@ -165,6 +165,15 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A peer URI the WebSocket client cannot open is refused at startup.**
+  `--message-peer`, `--claim-peer` and `--multihub-watch` accepted a URI that
+  failed only when it was first used. A fragment or a missing host made a
+  forwarded roster request end the requester's connection with an internal
+  error; the chat and claim transports do not catch that error either. A
+  port out of range stopped the watch feed.
+  `synapse hub` now exits 2 at startup with the reason, without echoing the
+  URI. Claim and watch peers also need a `ws://` or `wss://` scheme now.
+
 - **The hub log says why a cross-hub forward failed.** When a peer could not
   be reached, closed the connection or answered with an error frame, the
   origin hub logged only the exception class. The warning on the
