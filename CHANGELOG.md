@@ -20,6 +20,17 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **A delivery matrix and a whole-hub kill -9 test.** `docs/delivery-matrix.md`
+  lists every request type a hub accepts with its delivery (at-least-once,
+  apply-once with `idem_key`, or read), its retry key, the clock it depends
+  on and the record it leaves with `--db` (FULL, NORMAL or memory). A test
+  keeps it in step with the verb registry. A new test kills a real
+  `synapse hub` with SIGKILL after it acknowledged a keyed claim, a directed
+  chat with a receipt to an offline recipient and a progress note; the
+  restarted hub still holds the claim and its epoch, returns the first grant
+  to a retry, replays the chat and settles the receipt on the recipient's
+  `ack`.
+
 - **`synapse hub --require-signed-frames`.** Every frame after registration,
   read requests included, must carry an Ed25519 `frame_signature` by the
   identity key that proved the connection (an operator-enrolled key or the

@@ -171,6 +171,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_a2a_store_rollback_and_load_edges.py": (1, "platform-guard"),
     "tests/test_external_surfaces_benchmark.py": (2, "optional-dep-guard"),
     "tests/test_hub_restart.py": (2, "platform-guard"),
+    # A whole-hub kill -9 needs POSIX SIGKILL.
+    "tests/test_hub_sigkill_durability.py": (1, "platform-guard"),
     "tests/test_path_identity_inode_reuse.py": (3, "platform-guard"),
     "tests/test_token_set.py": (1, "platform-guard"),
     "tests/test_cli_token_set.py": (1, "platform-guard"),

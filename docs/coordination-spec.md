@@ -841,6 +841,8 @@ hub start. The lease TTL remains the upper bound.
 ## 7. Per-verb delivery guarantees
 
 Delivery guarantees differ by verb, on purpose, and the difference is normative.
+[The delivery matrix](delivery-matrix.md) lists every request type with its
+delivery, retry key, clock and durable record.
 
 ### INV-DG-1 — chat is at-least-once; a named retry is accepted once
 
