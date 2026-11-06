@@ -318,6 +318,16 @@ a row, the connection is closed with 4013. When
 the HMAC `auth` envelope and the frame signature. The frame signature covers
 `auth` as well.
 
+A refused keyed `release` names its `release_operation_id` and `task_id`, as
+every other refusal of a release does, so `synapse lock` and `synapse release`
+can report "refused" instead of "unknown". Those fields are read from the
+frame as received, before any signature is trusted, so a
+`frame_signature_*` refusal means only that one frame was refused. On a
+connection that someone else can write to, the refused frame may not be the
+client's own. `synapse lock` still reports that the lease may remain held.
+With either command, `synapse release --confirm-only` reads the operation's
+durable outcome.
+
 A hub with the flag says so in every welcome with
 `"frame_signatures": "required"`. The Python client signs on its own from that
 welcome: every `synapse` command, the MCP server and the waiter sign each
