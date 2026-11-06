@@ -24,11 +24,12 @@ from typing import Any
 
 from synapse_channel.cli_policy_signing import load_trust_bundle
 from synapse_channel.core.policy_engine import (
+    PolicyConfig,
     PolicyDecision,
     PolicyError,
     gate_blocks,
-    load_policy,
     overall_status,
+    policy_config_from_mapping,
     read_policy_mapping,
 )
 from synapse_channel.core.policy_rules import evaluate_policy
@@ -155,29 +156,33 @@ def _signature_decision(
     )
 
 
-def _provenance(args: argparse.Namespace) -> PolicyProvenance:
-    """Return the policy's provenance, verifying it first when a bundle is given.
+def _checked_policy(args: argparse.Namespace) -> tuple[PolicyConfig, PolicyProvenance]:
+    """Read the policy once and return its configuration and provenance.
 
-    With ``--policy-trust-bundle`` only a signed JSON policy from a trusted,
+    The file is read a single time: the mapping that is verified, and whose
+    digest the report carries, is the mapping whose rules are evaluated, so a
+    file swapped after verification cannot change the decision. With
+    ``--policy-trust-bundle`` only a signed JSON policy from a trusted,
     unrevoked key at or above ``--min-policy-version`` passes; anything else
     raises before a rule is evaluated.
     """
     if args.policy_trust_bundle:
-        return policy_provenance(
-            load_policy_document(args.policy),
+        document = load_policy_document(args.policy)
+        provenance = policy_provenance(
+            document,
             trust_document=load_trust_bundle(args.policy_trust_bundle),
             min_policy_version=args.min_policy_version,
         )
-    return policy_provenance(
-        read_policy_mapping(args.policy), min_policy_version=args.min_policy_version
-    )
+    else:
+        document = read_policy_mapping(args.policy)
+        provenance = policy_provenance(document, min_policy_version=args.min_policy_version)
+    return policy_config_from_mapping(document), provenance
 
 
 def _cmd_policy_check(args: argparse.Namespace) -> int:
     """Run ``synapse policy-check`` and return its exit code."""
     try:
-        provenance = _provenance(args)
-        config = load_policy(args.policy)
+        config, provenance = _checked_policy(args)
         receipt = _load_receipt(args.receipt_json)
     except PolicyError as exc:
         print(f"policy-check error: {exc}")

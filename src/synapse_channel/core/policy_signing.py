@@ -117,12 +117,26 @@ def load_policy_document(path: str | Path) -> dict[str, Any]:
     except FileNotFoundError as exc:
         raise PolicySigningError(f"policy file does not exist: {target}") from exc
     try:
-        document = json.loads(raw)
+        document = json.loads(raw, object_pairs_hook=_unique_members)
     except json.JSONDecodeError as exc:
         raise PolicySigningError(f"invalid policy JSON: {exc}") from exc
     if not isinstance(document, dict):
         raise PolicySigningError("policy file must contain a mapping at the top level")
     return document
+
+
+def _unique_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build a JSON object, refusing a repeated member name.
+
+    Parsers disagree on which of two equal names wins, so a policy with one
+    could mean different rules to the signer and to another verifier.
+    """
+    members: dict[str, Any] = {}
+    for name, value in pairs:
+        if name in members:
+            raise PolicySigningError(f"policy JSON repeats the member {name!r}")
+        members[name] = value
+    return members
 
 
 def _canonical(value: object) -> bytes:

@@ -392,3 +392,80 @@ def test_policy_check_without_a_bundle_names_the_policy_and_refuses_a_floor(
     assert "  policy: no canonical digest (unsigned)" in capsys.readouterr().out
     assert cli.main([*base, "--policy", str(signed), "--min-policy-version", "1"]) == 2
     assert "--min-policy-version needs --policy-trust-bundle" in capsys.readouterr().out
+
+
+_COUNT_OPENS = """
+import sys
+from pathlib import Path
+
+policy = str(Path(sys.argv[1]).resolve())
+opens = []
+
+
+def count(event, args):
+    if event == "open" and args and isinstance(args[0], (str, bytes)):
+        name = args[0].decode() if isinstance(args[0], bytes) else args[0]
+        if name and str(Path(name).resolve()) == policy:
+            opens.append(name)
+
+
+sys.addaudithook(count)
+from synapse_channel import cli
+
+code = cli.main(sys.argv[2:])
+print(f"OPENS={len(opens)} CODE={code}", file=sys.stderr)
+"""
+
+
+@pytest.mark.parametrize("with_bundle", [True, False], ids=["verified", "unchecked"])
+def test_policy_check_reads_the_policy_file_exactly_once(tmp_path: Path, with_bundle: bool) -> None:
+    """The verified mapping is the evaluated one: the file is opened a single time."""
+    import os
+    import subprocess
+    import sys
+
+    private_key, _, bundle = _keys(tmp_path)
+    signed = _write(
+        tmp_path / "signed.json",
+        sign_policy_document(_POLICY, private_key=private_key, key_id="k1"),
+    )
+    argv = [
+        "policy-check",
+        "T1",
+        "--policy",
+        str(signed),
+        "--receipt-json",
+        str(_receipt(tmp_path)),
+    ]
+    if with_bundle:
+        argv += ["--policy-trust-bundle", str(bundle)]
+    root = Path(__file__).resolve().parents[1]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join([str(root / "src"), env.get("PYTHONPATH", "")])
+    result = subprocess.run(
+        [sys.executable, "-c", _COUNT_OPENS, str(signed), *argv],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        env=env,
+    )
+
+    assert "OPENS=1 CODE=0" in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"policy_version": 1, "mode": "advisory", "mode": "enforcement"}',
+        '{"policy_version": 1, "rules": {"a": {}, "a": {"x": 1}}}',
+    ],
+    ids=["top-level", "nested"],
+)
+def test_a_policy_repeating_a_member_name_is_refused(tmp_path: Path, text: str) -> None:
+    """Parsers disagree on which repeated name wins, so a signed policy may hold none."""
+    path = tmp_path / "dup.json"
+    path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(PolicySigningError, match="repeats the member"):
+        load_policy_document(path)

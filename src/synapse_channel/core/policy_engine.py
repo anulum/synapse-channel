@@ -139,7 +139,21 @@ def load_policy(path: str | Path) -> PolicyConfig:
         When the file cannot be parsed, the version is unsupported, or the mode
         is not ``advisory``/``enforcement``.
     """
-    data = read_policy_mapping(path)
+    return policy_config_from_mapping(read_policy_mapping(path))
+
+
+def policy_config_from_mapping(data: dict[str, Any]) -> PolicyConfig:
+    """Validate a policy mapping that was read once, into a :class:`PolicyConfig`.
+
+    A caller that verifies a policy's signature builds the configuration from
+    the same mapping it verified, so the evaluated rules are the signed ones.
+
+    Raises
+    ------
+    PolicyError
+        When the version is unsupported, the mode is not ``advisory`` or
+        ``enforcement``, or ``rules`` is not a mapping.
+    """
     version = data.get("version", 1)
     if version != 1:
         raise PolicyError(f"unsupported policy version: {version!r} (expected 1)")
