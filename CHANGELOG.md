@@ -165,6 +165,14 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **`synapse lock` names why it stopped a command.** The stop line, for
+  example `lock: lease unknown for 'task' (the hub sent no renewal answer);
+  stopping the owned command`, now gives the cause: a refused renewal, a
+  renewal connection the hub did not accept, a restarted or different hub, a
+  missing or non-continuing answer, no answer before the lease deadline, or a
+  deadline that passed before a renewal could start because this process was
+  delayed. Exit statuses are unchanged.
+
 - **A pane bridge says when it falls back to one-shot waits.** A bridge
   whose `synapse` refuses `wait --exit-with-parent` keeps the old one-shot
   wait, which starts a new process every probe interval. It now writes one

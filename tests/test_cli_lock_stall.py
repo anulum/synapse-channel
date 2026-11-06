@@ -87,8 +87,13 @@ async def test_paused_supervisor_refuses_exhausted_confirmed_lifetime(
                 assert command.returncode == 3, (stdout + stderr).decode()
                 assert b"CHILD_FINISHED" not in stdout
                 assert started.exists() == (phase == "running")
+                # A paused supervisor wakes after its deadline and says that its own
+                # delay, not the hub, stopped the command.
                 assert (
-                    b"insufficient remaining lifetime" if phase == "admission" else b"lease unknown"
+                    b"insufficient remaining lifetime"
+                    if phase == "admission"
+                    else b"lease unknown for 'paused' "
+                    b"(the renewal deadline passed before a renewal could start)"
                 ) in stderr
             finally:
                 if paused:

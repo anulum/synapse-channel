@@ -724,7 +724,12 @@ must answer state queries for binding and continuity checks.
 A restarted or replaced hub changes the renewal
 session: the command stops and cleanup remains unknown without mutating restored
 claims. Explicit renewal refusal returns `1`; transport loss, missing or malformed
-replies return `3`. The owned command is stopped and joined before release. Renewal
+replies return `3`. The stop line on stderr names the cause in parentheses: the hub
+refused the renewal, did not accept the renewal connection, restarted or is not the
+hub that granted the lease, sent no answer, sent an answer that did not continue the
+lease, gave no answer before the lease deadline, or the deadline passed before a
+renewal could start (this process was delayed, for example by a paused or overloaded
+host). The owned command is stopped and joined before release. Renewal
 and cleanup remain bound to the original hub, session and continuous ownership anchor, ignoring unrelated
 or corrupted epoch-cache entries. A child's ordinary renewal can advance the
 fencing epoch; teardown reads a correlated authoritative snapshot and accepts

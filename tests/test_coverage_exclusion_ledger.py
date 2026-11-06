@@ -90,6 +90,8 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/cli_doctor_mcp_hosts.py": (1, "interpreter-guard"),
     "src/synapse_channel/codex_mcp_package.py": (1, "interpreter-guard"),
     "src/synapse_channel/cli_doctor_federation.py": (5, "protocol-body"),
+    # Lease renewal: register_owner and the exchange absorb connection errors.
+    "src/synapse_channel/cli_lock_supervision.py": (1, "validated-helper-boundary"),
     "src/synapse_channel/cli_relay.py": (1, "env-defensive"),
     "src/synapse_channel/commit.py": (2, "protocol-body"),
     "src/synapse_channel/core/aef_verification.py": (

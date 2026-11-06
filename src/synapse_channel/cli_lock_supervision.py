@@ -100,12 +100,18 @@ def _renewal_reply(
 
 async def renew_lock(
     profile: LockRelease, *, hub_id: str, session: str
-) -> tuple[int, float | None]:
+) -> tuple[int, float | None, str]:
     """Return a correlated renewal verdict without ever issuing a fresh acquisition.
 
     The same authenticated name is bound briefly, without takeover. A restarted
     hub has a different welcome session and is refused before mutation. Unknown
     replies are never retried; the supervisor stops its command instead.
+
+    Returns
+    -------
+    tuple[int, float | None, str]
+        The verdict (zero renewed, one lost, three unknown), the renewed lease
+        duration, and for a lost or unknown lease the reason in a few words.
     """
     welcome: dict[str, Any] = {}
 
@@ -120,10 +126,10 @@ async def renew_lock(
     )
     listener = await profile.register_owner(agent)
     if listener is None:
-        return 3, None
+        return 3, None, "the hub did not accept the renewal connection"
     try:
         if agent.hub_id != hub_id or welcome.get("lock_renewal_session") != session:
-            return 3, None
+            return 3, None, "the hub restarted or is not the hub that granted the lease"
         renewal_id = uuid.uuid4().hex
         reply = await profile.exchange(
             lambda data: _renewal_reply(data, profile, hub_id, renewal_id),
@@ -139,13 +145,13 @@ async def renew_lock(
             ),
         )
         if reply is None:
-            return 3, None
+            return 3, None, "the hub sent no renewal answer"
         if reply.get("type") == MessageType.CLAIM_DENIED:
-            return 1, None
+            return 1, None, "the hub refused the renewal"
         duration = lease_duration(reply)
         if not claim_continues(reply, profile.name, profile.initial_epoch) or duration is None:
-            return 3, None
-        return 0, duration
+            return 3, None, "the hub's renewal answer did not continue this lease"
+        return 0, duration, ""
     finally:
         agent.running = False
         listener.cancel()
@@ -182,8 +188,12 @@ async def supervise_locked_command(
     """
     loop = asyncio.get_running_loop()
 
-    async def monitor() -> int:
-        """Renew before expiry without extending authority on an uncertain response."""
+    async def monitor() -> tuple[int, str]:
+        """Renew before expiry without extending authority on an uncertain response.
+
+        A stop returns its code with the reason, so the stop message can say
+        whether the hub, the connection or this process's own delay was the cause.
+        """
         allowance = duration
         deadline = acquired_at + allowance - STOP_ALLOWANCE
         while True:
@@ -191,15 +201,19 @@ async def supervise_locked_command(
             started = loop.time()
             remaining = deadline - started
             if remaining <= 0:
-                return 3
+                return 3, "the renewal deadline passed before a renewal could start"
             try:
-                code, renewed = await asyncio.wait_for(
+                code, renewed, reason = await asyncio.wait_for(
                     renew_lock(profile, hub_id=hub_id, session=session), remaining
                 )
-            except (asyncio.TimeoutError, OSError):
-                return 3
+            except asyncio.TimeoutError:
+                return 3, "no renewal answer before the lease deadline"
+            # register_owner and the exchange absorb connection errors, so only a
+            # future change below them could let one through; it still stops safely.
+            except OSError as exc:  # pragma: no cover - callees absorb connection errors
+                return 3, f"the renewal connection failed ({type(exc).__name__})"
             if code:
-                return code
+                return code, reason
             assert renewed is not None
             allowance = renewed
             deadline = started + allowance - STOP_ALLOWANCE
@@ -215,10 +229,10 @@ async def supervise_locked_command(
     try:
         done, _ = await asyncio.wait((child, watcher), return_when=asyncio.FIRST_COMPLETED)
         if watcher in done:
-            code = watcher.result()
+            code, reason = watcher.result()
             print(
-                f"lock: lease {'lost' if code == 1 else 'unknown'} for {profile.task_id!r}; "
-                "stopping the owned command",
+                f"lock: lease {'lost' if code == 1 else 'unknown'} for {profile.task_id!r} "
+                f"({reason}); stopping the owned command",
                 file=sys.stderr,
             )
             return child.result() or code if child.done() else code

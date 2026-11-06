@@ -86,7 +86,10 @@ async def test_lease_deadline_overrides_a_long_owner_readiness_timeout(tmp_path:
                         return line
 
             status = await asyncio.wait_for(observe_stop(), 30)
-            assert b"lease unknown" in status
+            assert (
+                b"lease unknown for 'deadline' (no renewal answer before the lease deadline)"
+                in status
+            )
             assert time.time() < original_expiry
             await close_agents(holder)
             holder = None

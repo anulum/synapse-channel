@@ -171,7 +171,10 @@ async def test_transport_loss_stops_owned_command_with_unknown_outcome(tmp_path:
         closed = True
         result = await asyncio.wait_for(command, 12)
         assert result.returncode == 3, result.output
-        assert "lease unknown" in result.stderr
+        assert (
+            "lease unknown for 'supervised' (the hub did not accept the renewal connection)"
+            in result.stderr
+        )
         assert "CHILD_FINISHED" not in result.stdout
         assert hub.state.claims["supervised"].owner == "lock-owner"
     finally:
@@ -253,7 +256,7 @@ async def test_lost_ownership_stops_command_and_preserves_successor(
             owner = None
             result = await asyncio.wait_for(command, 12)
             assert result.returncode == 1, result.output
-            assert "lease lost" in result.stderr
+            assert "lease lost for 'supervised' (the hub refused the renewal)" in result.stderr
             assert "CHILD_FINISHED" not in result.stdout
             if loss == "release":
                 assert "supervised" not in hub.state.claims
@@ -432,14 +435,18 @@ async def test_real_wire_loss_and_legacy_admission(tmp_path: Path, fault: str) -
                     assert not (tmp_path / "started").exists()
                 if fault == "legacy":
                     assert "supervised" not in hub.state.claims
-                if fault in (
-                    "drop",
-                    "invalid-renewal",
-                    "drop-state",
-                    "wrong-anchor",
-                    "boolean-renewal-epoch",
-                ):
-                    assert "lease unknown" in result.stderr
+                unknown_reasons = {
+                    "drop": "the hub sent no renewal answer",
+                    "drop-state": "the hub did not accept the renewal connection",
+                    "invalid-renewal": "the hub's renewal answer did not continue this lease",
+                    "wrong-anchor": "the hub's renewal answer did not continue this lease",
+                    "boolean-renewal-epoch": (
+                        "the hub's renewal answer did not continue this lease"
+                    ),
+                }
+                if fault in unknown_reasons:
+                    reason = unknown_reasons[fault]
+                    assert f"lease unknown for 'supervised' ({reason})" in result.stderr
                     assert "CHILD_FINISHED" not in result.stdout
             finally:
                 (tmp_path / "finish").touch()

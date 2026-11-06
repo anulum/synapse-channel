@@ -185,7 +185,10 @@ async def test_durable_hub_restart_stops_command_without_mutating_restored_claim
         await _await_listening(port)
         result = await asyncio.wait_for(operation, 25)
         assert result.returncode == 3, result.output
-        assert "lease unknown" in result.stderr
+        assert (
+            "lease unknown for 'mutex' "
+            "(the hub restarted or is not the hub that granted the lease)" in result.stderr
+        )
         assert replacement.state.claims["mutex"].epoch == epoch
         assert not [row for row in journal.iter_events() if row.kind == "release"]
     finally:
