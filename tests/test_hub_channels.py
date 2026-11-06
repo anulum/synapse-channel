@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from websockets.asyncio.client import connect
 
-from hub_e2e_helpers import collect_available, read_until_type, running_hub, send_json
+from hub_e2e_helpers import collect_available, read_json, read_until_type, running_hub, send_json
 from synapse_channel.core.hub import SynapseHub
 
 
@@ -284,8 +284,19 @@ async def test_channel_history_rejects_an_overflowing_limit_and_keeps_the_socket
             assert [m.get("payload") for m in history.get("messages", [])] == ["one"]
 
 
+async def _frames_until(websocket: Any, barrier: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    """Return every frame through the first one of type ``barrier``."""
+    frames: list[dict[str, Any]] = []
+    for _ in range(limit):
+        message = await read_json(websocket)
+        frames.append(message)
+        if message.get("type") == barrier:
+            return frames
+    raise TimeoutError(f"message type {barrier!r} did not arrive")
+
+
 async def test_channel_history_refuses_a_non_member() -> None:
-    """A stranger gets a private refusal and none of the retained messages."""
+    """A stranger gets a private refusal and no history frame for the channel."""
     async with running_hub(SynapseHub()) as (_hub, uri):
         async with connect(uri) as owner, connect(uri) as stranger:
             await _bind(owner, "ALPHA")
@@ -293,10 +304,21 @@ async def test_channel_history_refuses_a_non_member() -> None:
             await send_json(owner, sender="ALPHA", type="channel_create", channel="c", label="C")
             await read_until_type(owner, "channel_result")
             await send_json(owner, sender="ALPHA", type="chat", channel="c", payload="secret")
+            await send_json(owner, sender="ALPHA", type="channel_history_request", channel="c")
+            kept = await read_until_type(owner, "channel_history")
+            assert [message.get("payload") for message in kept.get("messages", [])] == ["secret"]
             await send_json(stranger, sender="BETA", type="channel_history_request", channel="c")
-            refusal = await read_until_type(stranger, "channel_result")
+            await send_json(stranger, sender="BETA", type="who_request")
+            frames = await _frames_until(stranger, "who_snapshot")
+            assert not any(
+                frame.get("type") == "channel_history" and frame.get("channel") == "c"
+                for frame in frames
+            )
+            refusals = [frame for frame in frames if frame.get("type") == "channel_result"]
+            assert len(refusals) == 1
+            refusal = refusals[0]
             assert refusal["ok"] is False
             assert refusal["members"] == []
             assert refusal["channel"] == "c"
             assert refusal["payload"] == "not a member of channel 'c'"
-            assert "secret" not in str(refusal)
+            assert "secret" not in str(frames)
