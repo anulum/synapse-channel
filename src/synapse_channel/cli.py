@@ -366,6 +366,11 @@ def _token_set_conflict(args: argparse.Namespace) -> str | None:
     )
 
 
+def _is_http_mcp(args: argparse.Namespace) -> bool:
+    """Return whether ``args`` select ``synapse mcp --transport streamable-http``."""
+    return args.command == "mcp" and getattr(args, "transport", "stdio") == "streamable-http"
+
+
 def _resolve_token(args: argparse.Namespace) -> str | None:
     """Resolve the hub token from ``--token``, then ``--token-file``, then the env var.
 
@@ -456,9 +461,15 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "mcp" and args.token is not None and args.token_file is not None:
                 print("synapse mcp: use either --token or --token-file", file=sys.stderr)
                 return 2
-            args.token = _resolve_token(args)
-            if args.command == "mcp":
-                args.token_file = None
+            if _is_http_mcp(args):
+                # The private HTTPS profile reads its own --token-file. Any other
+                # source stays visible in args.token, so the profile refuses it.
+                if args.token is None:
+                    args.token = os.environ.get(TOKEN_ENV) or None
+            else:
+                args.token = _resolve_token(args)
+                if args.command == "mcp":
+                    args.token_file = None
         except (OSError, SecretFileError) as exc:
             print(f"cannot read token file: {exc}", file=sys.stderr)
             return 2

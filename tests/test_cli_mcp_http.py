@@ -24,6 +24,7 @@ from mcp.client.streamable_http import streamable_http_client
 
 from hub_e2e_helpers import running_hub
 from mcp_http_helpers import access_token, operation_meta, provision, tls_files
+from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 
 
@@ -226,3 +227,80 @@ async def test_installed_http_command_mutates_only_the_provisioned_project(
         assert key_material not in stdout + stderr
         assert b"Traceback" not in stdout + stderr
         assert "ALPHA/alice" not in hub.online_agents()
+
+
+async def test_installed_http_command_reads_its_hub_token_file(tmp_path: Path) -> None:
+    """The documented --token-file reaches a tokened hub through the real CLI entry."""
+    issuer = Ed25519PrivateKey.generate()
+    trust = provision(tmp_path / "grants.json", issuer)
+    _, _key, tls = tls_files(tmp_path)
+    token_file = tmp_path / "hub.token"
+    token_file.write_text("cli-hub-token-" + "7" * 32 + "\n", encoding="utf-8")
+    token_file.chmod(0o600)
+    bearer = access_token(issuer, scope="synapse:read synapse:mutate")
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    hub = SynapseHub(
+        identity_trust_bundle=trust,
+        require_identity_binding=True,
+        authenticator=TokenAuthenticator(["cli-hub-token-" + "7" * 32]),
+    )
+    async with running_hub(hub) as (_, uri):
+        environment = {key: value for key, value in os.environ.items() if key != "SYNAPSE_TOKEN"}
+        process = await asyncio.create_subprocess_exec(
+            *command(),
+            *profile(tmp_path, uri, port),
+            "--token-file",
+            str(token_file),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=environment,
+        )
+        try:
+            async with httpx2.AsyncClient(verify=tls, trust_env=False, timeout=5) as client:
+                url = f"https://127.0.0.1:{port}/mcp"
+
+                async def ready() -> None:
+                    while process.returncode is None:
+                        try:
+                            await client.get(url)
+                            return
+                        except httpx2.ConnectError:
+                            await asyncio.sleep(0.02)
+                    raise RuntimeError("CLI stopped before HTTPS readiness")
+
+                await asyncio.wait_for(ready(), 8)
+                client.headers["Authorization"] = "Bearer " + bearer
+                async with streamable_http_client(url, http_client=client) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        result = await session.call_tool(
+                            "synapse_task_declare",
+                            {"task_id": "ALPHA/token-file", "title": "token file"},
+                            meta=operation_meta("token-file-declaration"),
+                        )
+                        assert not result.is_error
+                        assert hub.blackboard.tasks["ALPHA/token-file"].created_by == "ALPHA/alice"
+        finally:
+            if process.returncode is None:
+                process.terminate()
+            stdout, stderr = await stopped(process)
+        assert b"cli-hub-token" not in stdout + stderr
+        assert b"invalid private HTTPS profile" not in stderr
+
+
+async def test_ambient_token_environment_is_still_refused(tmp_path: Path) -> None:
+    """SYNAPSE_TOKEN is not a source for the private profile; it refuses before startup."""
+    environment = dict(os.environ, SYNAPSE_TOKEN="env-secret-must-not-be-logged")
+    process = await asyncio.create_subprocess_exec(
+        *command(),
+        *profile(tmp_path, "ws://127.0.0.1:1", 8888),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=environment,
+    )
+    stdout, stderr = await stopped(process)
+    assert process.returncode == 2
+    assert b"invalid private HTTPS profile" in stderr
+    assert b"env-secret-must-not-be-logged" not in stdout + stderr
