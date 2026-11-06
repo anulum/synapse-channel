@@ -225,6 +225,9 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_integration_catalog.py": (3, "optional-dep-guard"),
     "tests/test_multihub_mcp_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_opencode_compatibility_smoke.py": (2, "operator-smoke"),
+    # Linux procfs and tmux; the foreign-group case needs a process group the
+    # test user may not signal, which a single-user container may not have.
+    "tests/test_opencode_composer_retire.py": (2, "platform-guard"),
     "tests/test_operator_sqlcipher_readers.py": (1, "optional-dep-guard"),
     "tests/test_ordinary_claim_scope.py": (1, "filesystem-capability"),
     "tests/test_participant_api_ollama_smoke.py": (1, "operator-smoke"),
@@ -252,6 +255,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_reliability_workflow_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_secret_files.py": (8, "platform-guard"),
     "tests/test_secure_path.py": (5, "platform-guard"),
+    # The stand-in git that keeps its pipes open is a POSIX shell script.
+    "tests/test_semantic_diff.py": (1, "platform-guard"),
     "tests/test_service_status.py": (1, "platform-guard"),
     "tests/test_service_templates.py": (2, "platform-guard"),
     "tests/test_session_capability_sqlcipher.py": (1, "optional-dep-guard"),
@@ -264,6 +269,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_terminal_label_tmux.py": (1, "platform-guard"),
     "tests/test_wake_adapter_codex_queue.py": (1, "platform-guard"),
     "tests/test_wake_adapter_pane_bridge.py": (1, "platform-guard"),
+    # Pane sessions are read from Linux procfs and need tmux.
+    "tests/test_tmux_reap.py": (1, "platform-guard"),
     "tests/test_tmux_server.py": (2, "platform-guard"),
     "tests/test_worker_session.py": (2, "platform-guard"),
     # A descriptor that outlives a rename over its path exists only on POSIX.
