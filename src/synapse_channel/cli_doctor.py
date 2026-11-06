@@ -48,6 +48,7 @@ from synapse_channel.cli_doctor_mcp_config import (
     validate_mcp_config_doctor_args,
 )
 from synapse_channel.cli_doctor_mcp_hosts import default_project, diagnose_mcp_hosts
+from synapse_channel.cli_doctor_token_set import diagnose_token_set
 from synapse_channel.cli_queries import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.client.diagnostics import (
@@ -281,6 +282,7 @@ async def _diagnose(
     token_file: str | Path | None = None,
     mcp_home: Path | None = None,
     mcp_project: Path | None = None,
+    token_set: str | Path | None = None,
 ) -> tuple[int, list[str], list[Diagnosis]]:
     """Resolve the identity, run every check, and return the summarised verdicts.
 
@@ -292,7 +294,8 @@ async def _diagnose(
     lines so ``--fix`` can decide which findings the local service install repairs.
     ``mcp_home`` and ``mcp_project`` locate the host MCP configuration the
     ``mcp-host-sources`` and ``mcp-claim-guard`` checks read; they default to
-    ``$HOME`` and the Git top level of the working directory.
+    ``$HOME`` and the Git top level of the working directory. ``token_set``
+    names a token set whose hubs are checked for having it in force.
     """
     from synapse_channel.ergonomics import resolve_identity
 
@@ -363,28 +366,17 @@ async def _diagnose(
             force=multi_seat,
         )
     )
-    if a2a_policy or a2a_allow_origins:
-        diagnoses.append(check_a2a_origin_policy(allow_origins=a2a_allow_origins))
-    if a2a_policy:
-        diagnoses.append(check_a2a_webhook_redirect_policy())
-    # Bind posture: always with --a2a-policy, or when any bind-posture flag is set.
-    if (
-        a2a_policy
-        or a2a_bind_host is not None
-        or a2a_bearer_auth
-        or a2a_tls
-        or a2a_insecure_off_loopback
-        or a2a_endpoint_url is not None
-    ):
-        diagnoses.append(
-            check_a2a_bind_posture(
-                host=a2a_bind_host if a2a_bind_host is not None else "127.0.0.1",
-                bearer_auth=a2a_bearer_auth,
-                tls_active=a2a_tls,
-                insecure_off_loopback=a2a_insecure_off_loopback,
-                endpoint_url=a2a_endpoint_url,
-            )
+    diagnoses.extend(
+        _a2a_diagnoses(
+            policy=a2a_policy,
+            allow_origins=a2a_allow_origins,
+            bind_host=a2a_bind_host,
+            bearer_auth=a2a_bearer_auth,
+            tls=a2a_tls,
+            insecure_off_loopback=a2a_insecure_off_loopback,
+            endpoint_url=a2a_endpoint_url,
         )
+    )
     if mcp_policy:
         diagnoses.append(
             check_mcp_posture(
@@ -426,8 +418,55 @@ async def _diagnose(
             cert_warn_days=federation_cert_warn_days,
         )
     )
+    diagnoses.extend(diagnose_token_set(token_set))
     code, lines = summarise(diagnoses)
     return code, lines, diagnoses
+
+
+def _a2a_diagnoses(
+    *,
+    policy: bool,
+    allow_origins: tuple[str, ...],
+    bind_host: str | None,
+    bearer_auth: bool,
+    tls: bool,
+    insecure_off_loopback: bool,
+    endpoint_url: str | None,
+) -> list[Diagnosis]:
+    """Return the A2A checks the doctor flags ask for.
+
+    The origin policy runs with ``--a2a-policy`` or any allowed origin, the
+    webhook redirect policy with ``--a2a-policy``, and the bind posture with
+    ``--a2a-policy`` or any bind-posture flag.
+    """
+    diagnoses: list[Diagnosis] = []
+    if policy or allow_origins:
+        diagnoses.append(check_a2a_origin_policy(allow_origins=allow_origins))
+    if policy:
+        diagnoses.append(check_a2a_webhook_redirect_policy())
+    if (
+        policy
+        or bind_host is not None
+        or bearer_auth
+        or tls
+        or insecure_off_loopback
+        or endpoint_url is not None
+    ):
+        diagnoses.append(
+            check_a2a_bind_posture(
+                host=bind_host if bind_host is not None else "127.0.0.1",
+                bearer_auth=bearer_auth,
+                tls_active=tls,
+                insecure_off_loopback=insecure_off_loopback,
+                endpoint_url=endpoint_url,
+            )
+        )
+    return diagnoses
+
+
+def _optional_path(value: str | None) -> Path | None:
+    """Return ``value`` as a path, keeping an absent option absent."""
+    return None if value is None else Path(value)
 
 
 def _resolve_service_identity(
@@ -562,11 +601,7 @@ def _cmd_doctor(
                 federation_peers=tuple(getattr(args, "federation_peer", ())),
                 federation_cursors=tuple(getattr(args, "federation_cursor", ())),
                 federation_paths=tuple(getattr(args, "federation_path", ())),
-                federation_store=(
-                    None
-                    if getattr(args, "federation_store", None) is None
-                    else Path(args.federation_store)
-                ),
+                federation_store=_optional_path(getattr(args, "federation_store", None)),
                 federation_token=getattr(args, "federation_token", None),
                 federation_skew_warn_seconds=getattr(
                     args,
@@ -595,6 +630,7 @@ def _cmd_doctor(
                 mcp_config_trust_bundle=getattr(args, "mcp_config_trust_bundle", None),
                 allow_repo_mcp_config=bool(getattr(args, "allow_repo_mcp_config", False)),
                 token_file=getattr(args, "token_file", None),
+                token_set=getattr(args, "token_set", None),
             )
         )
 
@@ -726,6 +762,37 @@ def _cmd_doctor(
     return code
 
 
+def _add_trust_arguments(doctor: argparse.ArgumentParser) -> None:
+    """Add the multi-seat trust checklist options and ``--token-set``."""
+    doctor.add_argument(
+        "--multi-seat",
+        action="store_true",
+        help="Force the multi-seat trust checklist even when the live roster looks "
+        "single-seat (token, identity-trust, role-grants → --team-secure).",
+    )
+    doctor.add_argument(
+        "--identity-trust",
+        default="",
+        metavar="FILE",
+        help="Path to an identity trust bundle for the multi-seat checklist "
+        "(same file as synapse hub --identity-trust).",
+    )
+    doctor.add_argument(
+        "--role-grants",
+        default="",
+        metavar="FILE",
+        help="Path to a role-grant store for the multi-seat checklist "
+        "(same file as synapse hub --role-grants).",
+    )
+    doctor.add_argument(
+        "--token-set",
+        default=None,
+        metavar="FILE",
+        help="Check that every running hub following this token set (synapse hub "
+        "--token-set) has it in force; a hub that is gone is never counted healthy.",
+    )
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``doctor`` subparser on the top-level CLI."""
     doctor = subparsers.add_parser(
@@ -855,26 +922,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=DEFAULT_FEDERATION_CERT_WARN_DAYS,
         help="Warn when peer TLS certificates or federation bundles expire within this many days.",
     )
-    doctor.add_argument(
-        "--multi-seat",
-        action="store_true",
-        help="Force the multi-seat trust checklist even when the live roster looks "
-        "single-seat (token, identity-trust, role-grants → --team-secure).",
-    )
-    doctor.add_argument(
-        "--identity-trust",
-        default="",
-        metavar="FILE",
-        help="Path to an identity trust bundle for the multi-seat checklist "
-        "(same file as synapse hub --identity-trust).",
-    )
-    doctor.add_argument(
-        "--role-grants",
-        default="",
-        metavar="FILE",
-        help="Path to a role-grant store for the multi-seat checklist "
-        "(same file as synapse hub --role-grants).",
-    )
+    _add_trust_arguments(doctor)
     doctor.add_argument(
         "--redeploy-checklist",
         action="store_true",

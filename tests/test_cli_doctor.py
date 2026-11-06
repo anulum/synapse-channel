@@ -942,3 +942,31 @@ def test_cmd_doctor_notify_pages_a_repair_that_did_not_take(
     assert code == 1
     assert calls == [["fail hub: still down | remedy: look"]]
     capsys.readouterr()
+
+
+def test_each_a2a_check_runs_only_for_the_flags_that_ask_for_it() -> None:
+    def checks(**flags: Any) -> list[str]:
+        base: dict[str, Any] = {
+            "policy": False,
+            "allow_origins": (),
+            "bind_host": None,
+            "bearer_auth": False,
+            "tls": False,
+            "insecure_off_loopback": False,
+            "endpoint_url": None,
+        }
+        return [d.check for d in cli_doctor._a2a_diagnoses(**{**base, **flags})]
+
+    assert checks() == []
+    origin_only = checks(allow_origins=("https://a.example",))
+    assert len(origin_only) == 1 and "origin" in origin_only[0]
+    for flag, value in (
+        ("bind_host", "0.0.0.0"),
+        ("bearer_auth", True),
+        ("tls", True),
+        ("insecure_off_loopback", True),
+        ("endpoint_url", "https://a.example"),
+    ):
+        (bind_only,) = checks(**{flag: value})
+        assert "bind" in bind_only, flag
+    assert len(checks(policy=True)) == 3

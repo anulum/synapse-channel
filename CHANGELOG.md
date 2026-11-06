@@ -20,6 +20,12 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **`synapse doctor --token-set FILE`.** A `token-set` check reports
+  whether the hubs following a connect-token set have it in force. It
+  passes only when a hub runs and every running hub applied the file. A hub
+  that is gone is never counted healthy, and leftover files of such hubs are
+  named with `synapse token-set status --prune` as the remedy.
+
 - **`synapse token-set status --prune`.** A hub that was killed leaves its
   state and lock files beside the token set, and `status` keeps reporting it
   `unknown`. `--prune` first removes the files of every hub whose lock is
