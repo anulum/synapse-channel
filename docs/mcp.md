@@ -47,6 +47,14 @@ pip install 'synapse-channel[mcp]'
 Running `synapse mcp` without the extra prints a one-line install hint and exits
 non-zero, so nothing fails silently.
 
+Over stdio the MCP SDK serves two protocol eras. A host that opens with
+`initialize` negotiates a handshake revision, `2025-11-25` at the newest. A
+host that opens with `server/discover` gets the stateless `2026-07-28`
+revision and the same tools and resources. The stdio face is a local process
+of the same user with no authentication boundary, so it does not refuse that
+revision; the [HTTPS profile](mcp-http.md) does. Both answers are pinned by
+`tests/test_mcp_stdio_protocol_eras.py`.
+
 ## Hub connection recovery
 
 After startup admission, both MCP transports reconnect when their native hub

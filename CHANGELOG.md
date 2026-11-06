@@ -179,7 +179,10 @@ execution evidence when carrying a release claim forward.
     `2026-07-28` revision, with no handshake and no session, to any request
     whose `MCP-Protocol-Version` header is not a handshake revision. The
     router refuses those requests before dispatch, with HTTP 400 and
-    `-32600`, as SDK 1.30.0 refused an unsupported version.
+    `-32600`, as SDK 1.30.0 refused an unsupported version. The stdio face,
+    a local process with no authentication boundary, serves both eras: a
+    host that opens with `server/discover` gets `2026-07-28` and the same
+    tools.
   - An unknown JSON-RPC method is now answered `-32601`, as JSON-RPC 2.0
     names it; SDK 1.30.0 answered `-32602`.
   - SDK 2 logs any other exception from a tool or resource as unexpected,

@@ -28,7 +28,7 @@ row says, so review the test before relying on a row.
 | A2A | `1.0` (`A2A-Version: 1.0` header or query); specification `1.0.0` | `synapse_channel.a2a.A2A_PROTOCOL_VERSION`, `a2a_http_protocol.SUPPORTED_A2A_VERSION` |
 | A2A | No `A2A-Version` header: the pre-1.0 compatibility path, without task continuation | `a2a_http_protocol` |
 | MCP | `2025-11-25` on HTTPS; `2024-11-05`, `2025-03-26` and `2025-06-18` are negotiated as requested; the stateless `2026-07-28` revision is refused | MCP Python SDK `2.3.0`, pinned in `pyproject.toml`; `synapse_channel.mcp.http_application.SERVED_PROTOCOL_VERSIONS` |
-| MCP | stdio tests do not pin a version; they use what the SDK client sends | MCP Python SDK `2.3.0` |
+| MCP | stdio: `initialize` negotiates `2025-11-25`; `server/discover` opens the stateless `2026-07-28` revision with the same tools (`tests/test_mcp_stdio_protocol_eras.py`) | MCP Python SDK `2.3.0` |
 
 The JSON-RPC binding of the A2A bridge uses the pre-1.0 method names
 (`message/send`, `tasks/get`, `tasks/cancel`). The A2A 1.0 names (`SendMessage`,
