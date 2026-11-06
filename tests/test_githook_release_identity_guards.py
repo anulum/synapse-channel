@@ -17,7 +17,7 @@ import pytest
 
 from claim_outcome_helpers import ClaimProxy, claim_proxy
 from cli_e2e_helpers import git_repo, git_run
-from hub_e2e_helpers import _free_port, running_hub
+from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel.git.gitclaim import run_git_claim
 from synapse_channel.git.githook import run_git_release
 from synapse_channel.git.semantic_scope import semantic_scope_path
@@ -133,6 +133,14 @@ async def test_merge_hook_releases_only_the_path_the_merge_changed(
         )
         assert set(hub.state.claims) == {"MERGED", "UNTOUCHED"}
         assert await run_git_release(uri=uri, name="me", trigger="merge") == 0
+        observer = await connect_agent("observer", uri)
+        try:
+            await observer.agent.request_state()
+            await observer.recorder.wait_for(
+                lambda message: message.get("type") == "state_snapshot"
+            )
+        finally:
+            await close_agents(observer)
         assert set(hub.state.claims) == {"UNTOUCHED"}
 
 
