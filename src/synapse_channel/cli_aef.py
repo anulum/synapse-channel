@@ -11,7 +11,9 @@
 * ``export`` copies a hub store's native receipts, in log order, to JSON Lines.
 * ``verify`` checks receipts against a trust file under one clock. Receipts in
   one run share a replay index, so a repeated receipt is ``REPLAYED`` and a
-  second receipt for a taken ``(log_id, seq)`` is ``CHAIN_CONFLICT``.
+  second receipt for a taken ``(log_id, seq)`` is ``CHAIN_CONFLICT``. It then
+  checks each log's chain (:mod:`synapse_channel.core.aef_chain`);
+  ``--require-chain`` also fails a broken chain.
 * ``inclusion`` checks one receipt against a signed tree head and audit path.
 
 Exit codes: ``0`` when every verdict is valid, ``1`` when any is not, ``2``
@@ -29,6 +31,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.aef_chain import AefChainReport, verify_aef_chain
 from synapse_channel.core.aef_trust_file import (
     AefTrustFileError,
     aef_trust_document,
@@ -159,15 +162,17 @@ def _cmd_export(args: argparse.Namespace) -> int:
 def _cmd_verify(args: argparse.Namespace) -> int:
     now_ms = int(time.time() * 1000) if args.now_ms is None else args.now_ms
     index = AefReceiptIndex()
-    results: list[tuple[object, AefVerification]] = []
+    checked: list[tuple[dict[str, Any], AefVerification]] = []
     try:
         trust = load_aef_trust(args.trust)
         for receipt in _receipts(args.receipts):
             outcome = verify_aef_receipt(receipt, trust_store=trust, now_ms=now_ms, seen=index)
-            results.append((receipt.get("seq"), outcome))
+            checked.append((receipt, outcome))
     except (AefTrustFileError, AefInputError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    results = [(receipt.get("seq"), outcome) for receipt, outcome in checked]
+    chains = verify_aef_chain(checked)
     valid = sum(1 for _seq, outcome in results if outcome.verdict is AefVerdictCode.VALID)
     if args.json:
         rendered = [
@@ -180,13 +185,47 @@ def _cmd_verify(args: argparse.Namespace) -> int:
             }
             for seq, outcome in results
         ]
-        print(json.dumps({"now_ms": now_ms, "valid": valid, "receipts": rendered}, sort_keys=True))
+        document = {
+            "now_ms": now_ms,
+            "valid": valid,
+            "receipts": rendered,
+            "chains": [_chain_json(chain) for chain in chains],
+        }
+        print(json.dumps(document, sort_keys=True))
     else:
         for seq, outcome in results:
             reasons = ", ".join(outcome.reasons)
             print(f"seq={seq} {outcome.verdict.value} {outcome.receipt_id} ({reasons})")
         print(f"{valid} of {len(results)} receipts VALID at now_ms={now_ms}")
-    return 0 if results and valid == len(results) else 1
+        for chain in chains:
+            print(_chain_line(chain))
+    chained = not args.require_chain or all(chain.continuous for chain in chains)
+    return 0 if results and valid == len(results) and chained else 1
+
+
+def _chain_json(chain: AefChainReport) -> dict[str, Any]:
+    """Render one log's chain report as JSON."""
+    return {
+        "log_id": chain.log_id,
+        "first_seq": chain.first_seq,
+        "last_seq": chain.last_seq,
+        "receipts": chain.receipts,
+        "verdict": chain.verdict.value,
+        "issues": [
+            {"code": issue.code.value, "seq": issue.seq, "detail": issue.detail}
+            for issue in chain.issues
+        ],
+    }
+
+
+def _chain_line(chain: AefChainReport) -> str:
+    """Render one log's chain report as one line."""
+    issues = "; ".join(f"{issue.code.value} at seq {issue.seq}" for issue in chain.issues)
+    suffix = f" ({issues})" if issues else ""
+    return (
+        f"chain log={chain.log_id[:16]} seq {chain.first_seq}..{chain.last_seq}: "
+        f"{chain.verdict.value}{suffix}"
+    )
 
 
 def _cmd_inclusion(args: argparse.Namespace) -> int:
@@ -246,6 +285,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Verifier clock in epoch milliseconds for expiry (default: now).",
     )
     verify.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    verify.add_argument(
+        "--require-chain",
+        action="store_true",
+        help="Also fail unless each log's authentic receipts form one unbroken chain "
+        "(no gap, broken link, fork, duplicate or wrong genesis).",
+    )
     verify.set_defaults(func=_cmd_verify)
 
     inclusion = actions.add_parser(

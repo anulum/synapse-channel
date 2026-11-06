@@ -84,6 +84,39 @@ The command prints one verdict per receipt and a summary. It exits `0` only when
 every receipt is `VALID`, `1` otherwise (an empty file is not a pass), and `2`
 when an input cannot be read or parsed.
 
+### Chain continuity
+
+Each log numbers its receipts from 1, and each receipt names the one before it
+in `prev_receipt`: seq 1 names the genesis id `aef1:` followed by 64 zeros,
+and every later seq names the `receipt_id` of seq − 1. After the per-receipt
+verdicts, the command checks this chain for every log in the file and prints
+one `chain` line per log (`--json`: a `chains` array with each log's range,
+verdict and findings). Only authentic receipts take part, those that reached
+`VALID` or `EXPIRED`, because both passed the content-identity and signature
+checks. A receipt that failed earlier leaves a hole.
+
+| Finding | Meaning |
+| --- | --- |
+| `CHAIN_CONTINUOUS` | No finding breaks the chain. |
+| `CHAIN_OPEN_START` | Informational: the lowest seq present is above 1, so the file cannot show what came before. |
+| `CHAIN_GAP` | A seq between the lowest and the highest present is missing. |
+| `CHAIN_BROKEN_LINK` | A receipt's `prev_receipt` is not the id of the seq − 1 present. |
+| `CHAIN_FORK` | Two different receipts hold the same seq, or name the same `prev_receipt`. |
+| `CHAIN_DUPLICATE` | The same receipt appears more than once. |
+| `CHAIN_GENESIS_INVALID` | Seq 1 does not name the genesis id. |
+
+The chain check never changes a receipt's verdict. By default it does not
+change the exit code either; `--require-chain` also exits `1` unless every
+log's chain is unbroken. `tests/fixtures/aef_chain_v0_1.json`
+(`aef-chain-conformance-v0.1`) holds signed example files with their expected
+verdicts and findings, and `tools/aef_chain_vectors.py --check` reproduces it
+byte for byte.
+
+The five basic conformance cases are covered as follows: a valid receipt
+(`v01`), a forged signature (`v02`), an expired receipt (`v04`), a replayed
+seq (`v05`) and a missing predecessor (`c04-missing-prev`). A lease's own
+expiry is hub state, not part of a receipt, so it has no vector of its own.
+
 ## 4. Inclusion in a signed tree head
 
 ```bash
@@ -96,9 +129,11 @@ The output is `INCLUSION_VALID`, `INCLUSION_INVALID`, `STH_INVALID` or
 
 ## What this does not establish
 
-- **Chain continuity.** A missing receipt, or a fork in the `prev_receipt` links
-  across files, is not yet a verdict. The gap, fork and rollback verdicts are
-  tracked for the next profile version.
+- **A cut-off end or a rollback.** Without a signed tree head, a file whose
+  last receipts were removed cannot be told from a complete one. A later
+  export that ends below an earlier one needs state kept across exports.
+  The chain check sees only gaps, broken links, forks and duplicates within
+  one file.
 - **Completeness.** A verified export proves that the receipts it contains are
   authentic. It does not prove that the hub recorded every decision.
 - **Legal or compliance status.** AEF is an evidence format, not a

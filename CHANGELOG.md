@@ -20,6 +20,16 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **`synapse aef verify` checks chain continuity.** After the per-receipt
+  verdicts, each log's authentic receipts (`VALID` or `EXPIRED`) are checked as
+  a chain: a missing seq (`CHAIN_GAP`), a `prev_receipt` that is not the
+  receipt before (`CHAIN_BROKEN_LINK`), a fork, a duplicate or a wrong genesis
+  link. A file that starts late is noted, not failed. A `chain` line per log,
+  and a `chains` array with `--json`, report the result. `--require-chain`
+  makes a broken chain fail the command; without it, the exit code is
+  unchanged. The new signed vectors in `tests/fixtures/aef_chain_v0_1.json`
+  are reproducible with `tools/aef_chain_vectors.py`.
+
 - **`synapse doctor --token-set FILE`.** A `token-set` check reports
   whether the hubs following a connect-token set have it in force. It
   passes only when a hub runs and every running hub applied the file. A hub
