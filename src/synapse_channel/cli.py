@@ -462,10 +462,15 @@ def main(argv: list[str] | None = None) -> int:
                 print("synapse mcp: use either --token or --token-file", file=sys.stderr)
                 return 2
             if _is_http_mcp(args):
-                # The private HTTPS profile reads its own --token-file. Any other
-                # source stays visible in args.token, so the profile refuses it.
-                if args.token is None:
-                    args.token = os.environ.get(TOKEN_ENV) or None
+                # The private HTTPS profile reads its own --token-file; a raw
+                # --token stays in args.token, where the profile refuses it.
+                if args.token is None and os.environ.get(TOKEN_ENV):
+                    print(
+                        f"synapse mcp: the private HTTPS profile reads its hub token only "
+                        f"from --token-file; unset {TOKEN_ENV}",
+                        file=sys.stderr,
+                    )
+                    return 2
             else:
                 args.token = _resolve_token(args)
                 if args.command == "mcp":

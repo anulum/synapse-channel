@@ -291,7 +291,7 @@ async def test_installed_http_command_reads_its_hub_token_file(tmp_path: Path) -
 
 
 async def test_ambient_token_environment_is_still_refused(tmp_path: Path) -> None:
-    """SYNAPSE_TOKEN is not a source for the private profile; it refuses before startup."""
+    """SYNAPSE_TOKEN is not a source for the private profile; the refusal names it."""
     environment = dict(os.environ, SYNAPSE_TOKEN="env-secret-must-not-be-logged")
     process = await asyncio.create_subprocess_exec(
         *command(),
@@ -302,5 +302,5 @@ async def test_ambient_token_environment_is_still_refused(tmp_path: Path) -> Non
     )
     stdout, stderr = await stopped(process)
     assert process.returncode == 2
-    assert b"invalid private HTTPS profile" in stderr
+    assert b"reads its hub token only from --token-file; unset SYNAPSE_TOKEN" in stderr
     assert b"env-secret-must-not-be-logged" not in stdout + stderr
