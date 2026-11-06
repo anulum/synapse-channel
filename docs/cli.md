@@ -2703,7 +2703,8 @@ namespace.
 Every `--multihub-watch`, `--claim-peer` and `--message-peer` URI is checked when
 the hub starts, the way the WebSocket client reads it. A URI with a fragment, no
 host, a port out of range, a scheme other than `ws://` or `wss://`, or a
-backslash or control character makes `synapse hub` exit 2 with the reason. The
+character that needs escaping (a backslash, an unprintable character, or both
+kinds of quote mark) makes `synapse hub` exit 2 with the reason. The
 message names the option and the peer, not the URI, so a credential in it is not
 echoed.
 

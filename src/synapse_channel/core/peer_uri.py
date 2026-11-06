@@ -34,12 +34,16 @@ def require_peer_uri(flag: str, name: str, uri: str) -> None:
     Raises
     ------
     ValueError
-        If ``uri`` holds a backslash or another character that would need escaping, or
-        the WebSocket client cannot parse it. The message names the reason, not the URI,
+        If ``uri`` holds a character that would need escaping in a Python string
+        literal (a backslash, an unprintable character, or both kinds of quote mark),
+        or the WebSocket client cannot parse it. The message names the reason, not the URI,
         so a credential written into it is not echoed.
     """
     if repr(uri)[1:-1] != uri:
-        reason = "it holds a backslash or a control character"
+        reason = (
+            "it holds a character that needs escaping "
+            "(a backslash, an unprintable character or both kinds of quote mark)"
+        )
     else:
         try:
             parse_uri(uri)

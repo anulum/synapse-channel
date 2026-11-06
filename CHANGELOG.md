@@ -189,7 +189,9 @@ execution evidence when carrying a release claim forward.
   error; the chat and claim transports do not catch that error either. A
   port out of range stopped the watch feed.
   `synapse hub` now exits 2 at startup with the reason, without echoing the
-  URI. Claim and watch peers also need a `ws://` or `wss://` scheme now.
+  URI. Claim and watch peers also need a `ws://` or `wss://` scheme now, and
+  a URI holding a backslash, an unprintable character or both kinds of quote
+  mark is refused too.
 
 - **The hub log says why a cross-hub forward failed.** When a peer could not
   be reached, closed the connection or answered with an error frame, the

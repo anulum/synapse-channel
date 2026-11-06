@@ -22,13 +22,16 @@ from synapse_channel.core.multihub_watch import parse_watch_peers
 from synapse_channel.core.peer_uri import require_peer_uri
 
 _SECRET = "s" * 12
+_NEEDS_ESCAPING = "a character that needs escaping"
 
 _UNUSABLE = [
     ("ws://hub-b:8876/route#part", "fragment identifier is meaningless"),
     ("ws:///route", "hostname isn't provided"),
     ("ws://hub-b:99999/", "Port out of range"),
-    (f"ws://op:{_SECRET}\\x@hub-b/ws", "backslash or a control character"),
-    (f"ws://op:{_SECRET}@hub-b/\x00", "backslash or a control character"),
+    (f"ws://op:{_SECRET}\\x@hub-b/ws", _NEEDS_ESCAPING),
+    (f"ws://op:{_SECRET}@hub-b/\x00", _NEEDS_ESCAPING),
+    (f"ws://op:{_SECRET}@hub-b/a\u200bb", _NEEDS_ESCAPING),
+    (f'ws://op:{_SECRET}@hub-b/it\'s-"q"', _NEEDS_ESCAPING),
 ]
 
 _PARSERS: dict[str, Callable[[list[str]], object]] = {
@@ -59,10 +62,17 @@ def test_claim_and_watch_peers_need_a_websocket_scheme(flag: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "uri", ["wss://op:secret@hub-b:443/ws?key=1", "ws://[::1]:8876", "ws://hub-b", "ws://hüb/"]
+    "uri",
+    [
+        "wss://op:secret@hub-b:443/ws?key=1",
+        "ws://[::1]:8876",
+        "ws://hub-b",
+        "ws://hüb/",
+        "ws://hub-b/it's",
+    ],
 )
 def test_a_usable_uri_passes_unchanged(uri: str) -> None:
-    """Userinfo, a query, IPv6 and non-ASCII host names stay acceptable."""
+    """Userinfo, a query, IPv6, non-ASCII host names and one kind of quote stay acceptable."""
     require_peer_uri("--message-peer", "hub-b", uri)
     assert parse_message_peers([f"hub-b={uri}"])["hub-b"].uri == uri
 
