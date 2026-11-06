@@ -230,6 +230,32 @@ the key pinned to its name on first use) is recorded with that key. The nonce
 and the recorded key are the basis for signing a connection's later frames;
 older clients ignore the field.
 
+### Signed frames
+
+A hub started with `--require-signed-frames` adds `"frame_signatures":
+"required"` to every `welcome`. Every frame a client sends after its
+registration must then carry a `frame_signature` object:
+
+| Field | Value |
+| --- | --- |
+| `version` | `1` |
+| `algorithm` | `"ed25519"` |
+| `key_id` | the identity key that proved the connection at registration |
+| `hub_id` | the `hub_id` of the welcome |
+| `session_nonce` | the `session_nonce` of the welcome |
+| `seq` | an integer from `1`, greater than every earlier signed frame on the connection |
+| `value` | the standard base64 Ed25519 signature |
+
+The signature covers `synapse-channel:frame-signature:v1` and a NUL byte,
+followed by the RFC 8785 canonical JSON of the whole frame with only
+`frame_signature.value` left out. Integers must stay within ±(2**53 − 1).
+The registration frame keeps its registration `signature` and carries no
+`frame_signature`. A refusal is an `error` whose `verification_result` names
+the reason; [per-message authentication](per-message-authentication.md#per-connection-identity-signatures---require-signed-frames)
+lists them, and `tests/fixtures/frame_signature_vectors.json` holds shared
+vectors that every signing client must reproduce. A hub without the flag adds
+no such field, and clients send it unchanged frames.
+
 ### Fenced renewal of a live claim
 
 Supporting hubs advertise a 32-character `lock_renewal_session` in `welcome`.

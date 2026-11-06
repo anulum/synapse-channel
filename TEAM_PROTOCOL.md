@@ -76,7 +76,10 @@ inventory; see [the protocol reference](docs/protocol.md) and the versioned
 - Queries: `state_request`, `who_request`, `history_request`, `resume_request`.
 
 A state-mutating message may carry an `idem_key` so a retry after a reconnect is
-applied once. On a secured hub the first message must carry a `token`.
+applied once. On a secured hub the first message must carry a `token`. A hub
+whose `welcome` says `"frame_signatures": "required"` needs every later frame
+to carry a `frame_signature` by the connection's identity key; see
+[the wire contract](docs/protocol.md#signed-frames).
 
 A failed shared-plan journal write returns a private `error` confirming
 `mutation rolled back`, with no storage exception text. The board and journal
