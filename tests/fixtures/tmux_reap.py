@@ -13,6 +13,11 @@ holds memory until someone notices. Each tmux pane runs in a session of its
 own, so the programs it started stay findable by that session id; this module
 kills them after the server has stopped, and removes the socket file the
 stopped server leaves behind.
+
+A session id is the pid of the pane's first process. Its start time is recorded
+with it, so a recycled pid that leads an unrelated new session is never taken
+for the pane. A pane program that starts a session of its own with ``setsid``
+leaves the pane's session and is out of reach here.
 """
 
 from __future__ import annotations
@@ -22,24 +27,41 @@ import os
 import signal
 import subprocess
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 PROC = Path("/proc")
 
+PaneSessions = Mapping[int, int | None]
+"""Session id of each pane, mapped to its leader's start time (``None``: gone when listed)."""
 
-def pane_sessions(base: Sequence[str]) -> frozenset[int]:
-    """Return the session ids of every pane of the tmux server ``base`` names.
+
+def _stat(proc: Path, pid: str) -> tuple[str, int, int] | None:
+    """Return ``(state, session, start time)`` of ``pid`` from procfs, or ``None``."""
+    try:
+        stat = (proc / pid / "stat").read_text()
+    except OSError:
+        return None
+    # The command name may hold spaces or parentheses; fields start after the last ')'.
+    fields = stat[stat.rindex(")") + 2 :].split()
+    return fields[0], int(fields[3]), int(fields[19])
+
+
+def pane_sessions(base: Sequence[str], proc: Path = PROC) -> dict[int, int | None]:
+    """Return the session of every pane of the tmux server ``base`` names.
 
     Parameters
     ----------
     base : Sequence[str]
         The tmux command and its private-socket arguments (``tmux -L name``).
+    proc : pathlib.Path, optional
+        The procfs root to read the pane leaders' start times from.
 
     Returns
     -------
-    frozenset[int]
-        One session id per pane; empty when the server is not running.
+    dict[int, int | None]
+        Session id per pane, mapped to its leader's start time; empty when the
+        server is not running.
     """
     listed = subprocess.run(
         [*base, "list-panes", "-a", "-F", "#{pane_pid}"],
@@ -49,11 +71,15 @@ def pane_sessions(base: Sequence[str]) -> frozenset[int]:
         timeout=10,
     )
     if listed.returncode != 0:
-        return frozenset()
-    return frozenset(int(pid) for pid in listed.stdout.split() if pid.isdigit())
+        return {}
+    sessions: dict[int, int | None] = {}
+    for pid in listed.stdout.split():
+        leader = _stat(proc, pid)
+        sessions[int(pid)] = None if leader is None else leader[2]
+    return sessions
 
 
-def _socket_path(base: Sequence[str]) -> Path | None:
+def socket_path(base: Sequence[str]) -> Path | None:
     """Return the socket file of the running server ``base`` names, or ``None``.
 
     The server does not remove its socket file when ``kill-server`` stops it.
@@ -69,25 +95,27 @@ def _socket_path(base: Sequence[str]) -> Path | None:
     return Path(path) if shown.returncode == 0 and path else None
 
 
-def processes_in_sessions(sessions: frozenset[int], proc: Path = PROC) -> list[int]:
-    """Return the live processes whose session id is one of ``sessions``.
+def processes_in_sessions(sessions: PaneSessions, proc: Path = PROC) -> list[int]:
+    """Return the live processes still in one of the pane ``sessions``, in pid order.
 
+    A session whose id is now the pid of a process with another start time was
+    recycled: that process and its session are not the pane's and are skipped.
     Zombies are left out: they hold no memory and cannot be killed, only reaped
     by their parent.
     """
+    current = {
+        session
+        for session, started in sessions.items()
+        if (leader := _stat(proc, str(session))) is None or leader[2] == started
+    }
     found: list[int] = []
     for entry in proc.iterdir():
         if not entry.name.isdigit():
             continue
-        try:
-            stat = (entry / "stat").read_text()
-        except OSError:
-            continue
-        # The command name may hold spaces or parentheses; fields start after the last ')'.
-        state, _ppid, _pgrp, session = stat[stat.rindex(")") + 2 :].split()[:4]
-        if state != "Z" and int(session) in sessions:
+        stat = _stat(proc, entry.name)
+        if stat is not None and stat[0] != "Z" and stat[1] in current:
             found.append(int(entry.name))
-    return found
+    return sorted(found)
 
 
 def stop_private_tmux_server(
@@ -109,8 +137,8 @@ def stop_private_tmux_server(
     AssertionError
         When a pane program is still alive after ``timeout`` seconds.
     """
-    sessions = pane_sessions(base)
-    socket = _socket_path(base)
+    sessions = pane_sessions(base, proc)
+    socket = socket_path(base)
     subprocess.run([*base, "kill-server"], capture_output=True, check=False, timeout=10)
     if socket is not None:
         socket.unlink(missing_ok=True)
