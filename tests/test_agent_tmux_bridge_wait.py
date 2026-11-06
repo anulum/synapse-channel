@@ -147,3 +147,5 @@ def test_a_parent_bound_wait_leaves_the_hub_when_its_parent_exits(tmp_path: Path
             if bridge.poll() is None:
                 bridge.kill()
                 bridge.wait(timeout=10)
+            if bridge.stdin is not None:
+                bridge.stdin.close()
