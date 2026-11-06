@@ -111,3 +111,18 @@ def test_lock_supervision_times_a_lease_only_by_its_relative_duration() -> None:
     assert lease_duration(skewed) == 600.0
     assert lease_duration({"lease_expires_at": 1e15, "claimed_at": 0.0}) is None
     assert lease_duration({"lease_duration_seconds": STOP_ALLOWANCE}) is None
+
+
+def test_a_holder_cannot_renew_a_lease_that_expired_unswept() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    assert state.claim("P/a", "T1", now=1000.0, paths=["src/a.py"])[0]
+    epoch = state.claims["T1"].epoch
+    # Nothing else touches the state before the renewal arrives past the expiry.
+    renewal = state.renew_claim("P/a", "T1", now=1300.0, epoch=epoch, paths=("src/a.py",))
+    assert renewal == (False, "Task 'T1' renewal lost its original ownership.")
+    assert "T1" not in state.claims
+    # Just before the expiry the same renewal is granted and keeps the duration.
+    assert state.claim("P/a", "T2", now=2000.0, paths=["src/b.py"])[0]
+    second = state.claims["T2"].epoch
+    assert state.renew_claim("P/a", "T2", now=2299.0, epoch=second, paths=("src/b.py",))[0]
+    assert state.claims["T2"].lease_expires_at == 2599.0
