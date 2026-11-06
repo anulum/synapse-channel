@@ -298,6 +298,17 @@ whose `verification_result` is one of these:
 | `frame_signature_key_untrusted` | The key was revoked, expired, no longer names the sender, or its pin changed | closed (4013) |
 | `frame_signature_no_identity` | The connection registered without a verified identity signature | closed (4013) |
 
+A connection that only listens sends no frame to check, so the hub also
+re-checks every signing connection's key without one: at once after any
+online enrolment, rotation or revocation (`synapse identity enroll` and
+`synapse identity revoke`), and every five seconds while it serves, which
+catches a key that expired. A connection whose key no longer qualifies gets
+`frame_signature_key_untrusted` and is closed with 4013. This includes the
+connection that rotated or revoked its own key: it receives its result
+first, then reconnects with the new key. A connection evicted by an
+operator's change to its key keeps the rotation close code 4018. Reclaiming
+an identity pin already closes the name's live connection.
+
 After five refused frames on a connection, counted in total and not only in
 a row, the connection is closed with 4013. When
 `--require-message-auth` is also set, a frame in its protected set needs both

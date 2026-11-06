@@ -1718,6 +1718,20 @@ class SynapseHub(HubConfigView):
         self.identity_trust_bundle = bundle
         self._identity_gate.replace_trust_bundle(bundle)
 
+    async def recheck_frame_signers(self) -> int:
+        """Close every signing connection whose key is no longer trusted (handler surface).
+
+        Called after the enrolled keys change, so a connection that proved a
+        key just rotated or revoked does not stay open to receive. Does
+        nothing unless the hub requires signed frames.
+
+        Returns
+        -------
+        int
+            The number of connections closed.
+        """
+        return await self._frame_gate.recheck()
+
     def _peer_hub_identity_proven(self, sender: str, websocket: Any) -> bool:
         """Return whether ``sender`` is a peer hub proven by its pinned client certificate.
 
@@ -1904,6 +1918,9 @@ class SynapseHub(HubConfigView):
             watcher = asyncio.create_task(token_set_watcher)
             backgrounds.append(watcher)
             watcher.add_done_callback(lambda _task: stop.set())
+        key_rechecker = asyncio.create_task(self._frame_gate.recheck_loop())
+        backgrounds.append(key_rechecker)
+        key_rechecker.add_done_callback(lambda _task: stop.set())
         if self._live_checkpoint is not None:
             anchorer = asyncio.create_task(self._checkpoint_anchor_loop(self._live_checkpoint))
             backgrounds.append(anchorer)

@@ -39,7 +39,16 @@ execution evidence when carrying a release claim forward.
   signature cannot cover is refused before it is sent. An unsigned frame on
   such a hub is refused with a message telling the client to upgrade. The
   JavaScript and Go clients, the VS Code extension and the cockpit do not
-  sign yet.
+  sign yet. A new connection attempt drops the previous connection's signing
+  session, so nothing is signed for an ended connection.
+
+- **Signing connections are closed once their key stops being trusted, even
+  while they only listen.** With `--require-signed-frames` the hub re-checks
+  every signing connection's key right after an online enrolment, rotation
+  or revocation, and every five seconds while it serves, so a key that was
+  revoked, rotated away or has expired no longer keeps a connection open to
+  receive. Such a connection gets `frame_signature_key_untrusted` and close
+  code 4013; one that changed its own key receives its result first.
 
 - **A per-connection `session_nonce` in `welcome`.** Each connection gets a
   new random nonce, and a connection that registered with a verified

@@ -24,10 +24,17 @@ already fixes the project. A key that no longer qualifies closes the
 connection. So does a connection without a recorded key, and a connection
 whose refused frames reach :data:`BAD_SIGNATURE_LIMIT` in total; refusals
 are counted over the whole connection, not consecutively.
+
+A connection that only listens sends no frame to be checked, so keys are
+also re-checked without one: at once after every change to the enrolled
+keys, and every :data:`RECHECK_INTERVAL_SECONDS` while the hub serves, which
+catches a key that expired. A connection whose key no longer qualifies is
+told why and closed.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from collections.abc import Awaitable, Callable, Mapping
@@ -53,6 +60,9 @@ NO_IDENTITY = "frame_signature_no_identity"
 
 KEY_UNTRUSTED = "frame_signature_key_untrusted"
 """Refusal for a connection whose key is no longer trusted."""
+
+RECHECK_INTERVAL_SECONDS = 5.0
+"""Seconds between re-checks of every connection's key while the hub serves."""
 
 
 class GateVerdict(str, Enum):
@@ -237,6 +247,39 @@ class FrameSignatureGate:
                 websocket, code=IDENTITY_BINDING_CLOSE_CODE, reason="frame signature refused"
             )
         return False
+
+    async def recheck(self) -> int:
+        """Close every connection whose recorded key is no longer trusted.
+
+        Each such connection is told :data:`KEY_UNTRUSTED` and closed, and its
+        record is dropped at once so it is not closed twice. Does nothing
+        while the hub does not require signed frames.
+
+        Returns
+        -------
+        int
+            The number of connections closed.
+        """
+        if not self._enabled():
+            return 0
+        untrusted = [
+            (websocket, signer)
+            for websocket, signer in self._sessions.signers()
+            if self._resolve_key(signer) is None
+        ]
+        for websocket, signer in untrusted:
+            self._sessions.forget(websocket)
+            await self._refuse(websocket, signer.sender, KEY_UNTRUSTED)
+            await self._close_socket(
+                websocket, code=IDENTITY_BINDING_CLOSE_CODE, reason="identity key no longer trusted"
+            )
+        return len(untrusted)
+
+    async def recheck_loop(self, interval: float = RECHECK_INTERVAL_SECONDS) -> None:
+        """Re-check every connection's key until cancelled with the server."""
+        while True:
+            await asyncio.sleep(interval)
+            await self.recheck()
 
     async def require_key(self, sender: str, websocket: Any) -> bool:
         """Refuse to bind a connection that must sign frames but proved no key.

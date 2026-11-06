@@ -93,6 +93,10 @@ class FrameSigningSessions:
             return None
         return signer
 
+    def signers(self) -> list[tuple[Any, FrameSigner]]:
+        """Return a snapshot of every socket with a recorded signing key."""
+        return list(self._signers.items())
+
     def forget(self, websocket: Any) -> None:
         """Drop everything kept for a socket that closed."""
         self._signers.pop(websocket, None)

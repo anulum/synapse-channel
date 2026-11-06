@@ -119,6 +119,16 @@ if TYPE_CHECKING:
             """
             ...
 
+        async def recheck_frame_signers(self) -> int:
+            """Close every signing connection whose key is no longer trusted (handler surface).
+
+            Returns
+            -------
+            int
+            The number of connections closed.
+            """
+            ...
+
         @property
         def require_identity_binding(self) -> bool:
             """Return the require identity binding used by this handler family."""
@@ -402,6 +412,22 @@ async def _apply(
             evicted, code=KEY_ROTATED_CLOSE_CODE, reason="identity key rotated or revoked"
         )
     await _send_result(hub, websocket, sender, result, True, detail, applied_seq)
+    await _settle_applied(hub, sender, provenance, result, applied_seq)
+
+
+async def _settle_applied(
+    hub: IdentityEnrollmentsContext,
+    sender: str,
+    provenance: dict[str, Any],
+    result: _Result,
+    applied_seq: int,
+) -> None:
+    """Close connections whose key the applied change retired, then announce it.
+
+    Runs after the requester has its result, so a requester that rotated or
+    revoked its own key learns the outcome before its connection is closed.
+    """
+    await hub.recheck_frame_signers()
     await hub.broadcast(
         hub.system(
             f"Identity key change ({provenance['action']}) for {result.name!r} by operator "
