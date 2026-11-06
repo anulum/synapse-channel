@@ -196,19 +196,17 @@ def export_store(
     target = Path(out_dir)
     if target.exists() or target.is_symlink():
         raise ExportError(f"refusing to replace existing {target}")
-    # Read first, so a store that cannot be opened leaves no directory behind.
+    # Read and build everything first, so a store that cannot be read or
+    # represented faithfully leaves no directory behind.
     try:
         rows, receipts = _read_snapshot(source, key_file, between_reads)
     except (OSError, ValueError, RuntimeError, sqlite3.Error) as exc:
         raise ExportError(f"cannot read {source}: {exc}") from None
-    # A directory created by someone else since the check above makes this
-    # raise FileExistsError, which the CLI reports as a refusal.
-    target.mkdir(mode=0o700)
     records = [_event_record(row, row_key) for row in rows]
     events_text = "".join(
         json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n" for record in records
     )
-    aef_text = "".join(receipt.decode("utf-8") + "\n" for receipt in receipts)
+    aef_text = _receipts_text(receipts)
     counts: dict[str, int] = {}
     for record in records:
         counts[record["row_mac"]] = counts.get(record["row_mac"], 0) + 1
@@ -230,12 +228,45 @@ def export_store(
         },
         "not_included": list(NOT_INCLUDED),
     }
-    write_new_owner_only_text(target / EVENTS_FILE, events_text)
-    write_new_owner_only_text(target / AEF_FILE, aef_text)
-    write_new_owner_only_text(
-        target / MANIFEST_FILE, json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    _write_export(
+        target,
+        {
+            EVENTS_FILE: events_text,
+            AEF_FILE: aef_text,
+            MANIFEST_FILE: json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        },
     )
     return manifest
+
+
+def _receipts_text(receipts: list[bytes]) -> str:
+    """Join the stored AEF receipts, one per line, refusing one that is not UTF-8."""
+    lines: list[str] = []
+    for position, receipt in enumerate(receipts, start=1):
+        try:
+            lines.append(receipt.decode("utf-8") + "\n")
+        except UnicodeDecodeError:
+            raise ExportError(f"AEF receipt {position} is not valid UTF-8") from None
+    return "".join(lines)
+
+
+def _write_export(target: Path, texts: dict[str, str]) -> None:
+    """Create ``target`` and write ``texts`` into it; a failed write removes all of it.
+
+    A directory created by someone else since the existence check makes the
+    ``mkdir`` raise FileExistsError, which the CLI reports as a refusal.
+    """
+    target.mkdir(mode=0o700)
+    written: list[Path] = []
+    try:
+        for name, text in texts.items():
+            write_new_owner_only_text(target / name, text)
+            written.append(target / name)
+    except OSError:
+        for path in written:
+            path.unlink()
+        target.rmdir()
+        raise
 
 
 def _read_regular(directory: Path, name: str) -> bytes:

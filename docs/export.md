@@ -22,7 +22,9 @@ sqlite3 hub-history.sqlite "SELECT kind, count(*) FROM events GROUP BY kind"
 ## What `create` writes
 
 `create` writes a new owner-only directory and refuses to replace an existing
-one. It reads the `events` and `aef_receipts` tables in one read transaction on
+one. It builds every file before it creates the directory, and removes the
+directory again if a write fails, so a failed `create` leaves nothing behind.
+It reads the `events` and `aef_receipts` tables in one read transaction on
 one connection, so the files are one snapshot even while a hub keeps writing.
 Add `--db-key-file` for a SQLCipher store.
 

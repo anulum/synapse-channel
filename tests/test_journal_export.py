@@ -33,6 +33,7 @@ from synapse_channel.core.journal_export import (
     export_to_sqlite,
     verify_export,
 )
+from synapse_channel.core.owner_only_output import write_new_owner_only_text
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.receipt_signing import (
     generate_receipt_signing_key,
@@ -389,3 +390,38 @@ def test_failed_reads_and_writes_leave_nothing_behind(
     with pytest.raises(sqlite3.Error):
         export_to_sqlite(out, plain)
     assert not plain.exists()
+
+
+def test_a_receipt_or_a_write_that_fails_leaves_no_export_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Everything is built before the directory exists, and a failed write removes it."""
+    db, _key = _store(tmp_path)
+    out = tmp_path / "export"
+
+    def failing_manifest(path: Path, text: str) -> None:
+        if path.name == "MANIFEST.json":
+            raise OSError("No space left on device")
+        write_new_owner_only_text(path, text)
+
+    monkeypatch.setattr(
+        "synapse_channel.core.journal_export.write_new_owner_only_text", failing_manifest
+    )
+    with pytest.raises(OSError, match="No space left"):
+        export_store(db, out)
+    assert not out.exists()
+    monkeypatch.undo()
+
+    connection = sqlite3.connect(db)
+    connection.execute(
+        "UPDATE aef_receipts SET canonical_receipt = CAST(X'7bff7d' AS TEXT) "
+        "WHERE seq = (SELECT max(seq) FROM aef_receipts)"
+    )
+    connection.commit()
+    connection.close()
+    with pytest.raises(ExportError, match="AEF receipt 2 is not valid UTF-8"):
+        export_store(db, out)
+    assert not out.exists()
+    assert cli.main(["export", "create", str(db), "--out", str(out)]) == 2
+    assert "AEF receipt 2 is not valid UTF-8" in capsys.readouterr().err
+    assert not out.exists()
