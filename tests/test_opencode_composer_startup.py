@@ -29,6 +29,23 @@ from synapse_channel.opencode_composer_files import write_document
 from synapse_channel.opencode_composer_probe import profile_directory
 
 
+def _processes_working_in(directory: Path, *, timeout: float = 3.0) -> list[int]:
+    """Return processes whose working directory is ``directory``, once they had time to exit."""
+    deadline = time.monotonic() + timeout
+    while True:
+        found = []
+        for entry in Path("/proc").iterdir():
+            if entry.name.isdigit():
+                try:
+                    if Path(os.readlink(entry / "cwd")) == directory:
+                        found.append(int(entry.name))
+                except OSError:
+                    continue
+        if not found or time.monotonic() > deadline:
+            return found
+        time.sleep(0.05)
+
+
 @pytest.mark.parametrize("race", ["create-conflict", "disappears", "publish-conflict"])
 def test_startup_control_races_preserve_other_sessions(tmp_path: Path, race: str) -> None:
     """Real launch or rename failures never retire a session acquired by another owner."""
@@ -164,6 +181,8 @@ def test_native_control_timeout_reaps_the_command_and_allows_a_fresh_start(
             with pytest.raises(ProcessLookupError):
                 os.kill(stalled_pid, 0)
             assert native.tmux("list-sessions", "-F", "#{session_name}").splitlines() == ["anchor"]
+            # The retired launch's client is stopped too, not left running under init.
+            assert _processes_working_in(native.config.cwd) == []
             assert not native.provider.prompt_requests
         finally:
             wrapper.write_text(original, encoding="utf-8")

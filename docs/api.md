@@ -572,7 +572,9 @@ that a model received or completed work.
 `AgentTmuxConfig.opencode_editor_readback` opts new pinned POSIX OpenCode mini
 clients into native input verification. The startup coordinator qualifies an
 unpublished empty client and binds its process before making the requested
-session available. `opencode_composer_probe` compares content-free native
+session available. A client that fails qualification is retired with its
+session: its pane's process group gets SIGTERM, then SIGKILL after two seconds,
+because tmux only hangs up on the pane. `opencode_composer_probe` compares content-free native
 snapshots before a wake is pasted or submitted; `opencode_composer_files` bounds
 and protects its local metadata. The callback in `opencode_composer` rejects
 the editor transaction even after a successful observation, preserving the

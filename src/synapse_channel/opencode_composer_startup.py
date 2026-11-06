@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import signal
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -60,6 +62,7 @@ class _Refusal:
 
 Launch = Callable[[str, Sequence[str]], _CommandResult]
 _STARTUP_SECONDS = 15.0
+_RETIRE_GRACE_SECONDS = 2.0
 
 
 def _require_new_client(command: tuple[str, ...]) -> None:
@@ -99,10 +102,54 @@ def _initial_screen(config: AgentTmuxConfig, target: str, runner: CommandRunner)
     raise ComposerError("new native client did not reach its initial composer")
 
 
+def _pane_groups(config: AgentTmuxConfig, target: str, runner: CommandRunner) -> list[int]:
+    """Return the process group of each pane of ``target``; a pane leads its own group."""
+    listed = _control(config, runner, "list-panes", "-t", target, "-F", "#{pane_pid}")
+    if listed.returncode:
+        return []
+    return [int(pid) for pid in listed.stdout.split()]
+
+
+def _signal_group(group: int, signum: int) -> bool:
+    """Send ``signum`` to process group ``group``; return whether the group still exists."""
+    try:
+        os.killpg(group, signum)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def end_process_groups(groups: Sequence[int], *, grace: float = _RETIRE_GRACE_SECONDS) -> None:
+    """Stop what retired panes started; tmux ``kill-session`` only hangs up on them.
+
+    A native client that ignores SIGHUP keeps running under init after its
+    session is gone. Each pane's process group gets SIGTERM, and SIGKILL if it
+    is still there after ``grace`` seconds.
+
+    Parameters
+    ----------
+    groups : Sequence[int]
+        Process groups led by the retired panes, read before the session ended.
+    grace : float, optional
+        Seconds a group may take to exit after SIGTERM.
+    """
+    pending = [group for group in groups if _signal_group(group, signal.SIGTERM)]
+    deadline = time.monotonic() + grace
+    while pending and time.monotonic() < deadline:
+        time.sleep(0.05)
+        pending = [group for group in pending if _signal_group(group, 0)]
+    for group in pending:
+        _signal_group(group, signal.SIGKILL)
+
+
 def _retire_owned_startup(
     config: AgentTmuxConfig, target: str, nonce: str, runner: CommandRunner
 ) -> None:
-    """Retire only the unpublished session retaining our exact launch marker."""
+    """Retire only the unpublished session retaining our exact launch marker.
+
+    The programs its pane started are stopped too, so a refused launch leaves
+    no native client running.
+    """
     observed = _control(config, runner, "show-environment", "-t", target, LAUNCH_ENV)
     if observed.returncode:
         if _control(config, runner, "has-session", "-t", target).returncode:
@@ -110,9 +157,11 @@ def _retire_owned_startup(
         raise ComposerError("unpublished native startup ownership is unavailable")
     if observed.stdout.strip() != f"{LAUNCH_ENV}={nonce}":
         raise ComposerError("unpublished native startup ownership changed")
+    groups = _pane_groups(config, target, runner)
     retired = _control(config, runner, "kill-session", "-t", target)
     if retired.returncode:
         raise ComposerError("owned native startup session could not be retired")
+    end_process_groups(groups)
 
 
 def _recover_startup(config: AgentTmuxConfig, runner: CommandRunner) -> None:
@@ -164,7 +213,8 @@ def launch_editor_session(
     _CommandResult
         Success only after native readback and renaming that same process to
         the requested target. Refusal retires only its nonce-bound temporary
-        session and never sends a model prompt or touches another session.
+        session and the programs its pane started, and never sends a model
+        prompt or touches another session.
     """
     target = ""
     nonce = ""

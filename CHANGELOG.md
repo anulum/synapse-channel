@@ -195,6 +195,14 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A refused native OpenCode startup no longer leaves its client running.**
+  When a new client failed its editor qualification, the unpublished
+  startup session was retired with tmux `kill-session`, which only hangs up
+  on the pane. The client ignores the hang-up, so it kept running under init
+  with nobody to stop it; such clients were found running for days. The
+  pane's process group now gets SIGTERM after the session ends, and SIGKILL
+  if it is still there two seconds later.
+
 - **One forward's unexpected fault no longer stops retries for every peer.**
   The chat-forward retry sweep tries each peer's due forwards in turn, and
   any exception ended the retry loop. An unexpected exception from one
