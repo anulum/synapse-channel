@@ -259,6 +259,56 @@ runtime provides a signed-event trust bundle. CLI trust-bundle loading remains
 future work, so command-line operators still use `--message-auth-key` for this
 runtime.
 
+## Per-connection identity signatures (`--require-signed-frames`)
+
+With `--require-signed-frames`, every frame after a connection's registration
+must carry a `frame_signature` made with the identity key that proved the
+connection: an operator-enrolled key (`--identity-trust` with
+`--require-identity-binding`) or the key pinned to the name on first use.
+Only the read-only requests `attachment_info`, `attachment_read`,
+`board_request`, `channel_history_request`, `channel_list_request`,
+`federation_offer_request`, `history_request`, `manifest_request`,
+`multihub_log_request`, `resume_request`, `state_request` and `who_request`
+pass unsigned. Every other request type needs a signature, including one the
+hub does not know.
+
+The envelope is `{version: 1, algorithm: "ed25519", key_id, hub_id,
+session_nonce, seq, value}`. `hub_id` and `session_nonce` come from the
+connection's `welcome`, and `seq` starts at 1 and must grow on every signed
+frame of the connection. The signature covers the prefix
+`synapse-channel:frame-signature:v1` and a NUL byte, followed by the RFC 8785
+(JCS) bytes of the whole frame with only `frame_signature.value` left out. So a
+signed frame may hold integers only within ±(2**53 − 1) and only finite
+numbers, and its strings may not hold lone surrogates. The shared vectors in
+`tests/fixtures/frame_signature_vectors.json` pin these bytes for every
+client.
+
+The hub checks the frame as it arrived, before registration touches any field,
+and looks the key up again for each frame. A refused frame gets an `error`
+whose `verification_result` is one of these:
+
+| `verification_result` | Meaning | Connection |
+| --- | --- | --- |
+| `frame_signature_required` | No `frame_signature` | stays open |
+| `frame_signature_malformed` | The envelope is incomplete, or the frame holds a value RFC 8785 cannot represent | stays open |
+| `frame_signature_wrong_key` | Signed with a key other than the one that proved the connection | stays open |
+| `frame_signature_wrong_hub` | Signed for another hub | stays open |
+| `frame_signature_wrong_session` | Signed for another connection | stays open |
+| `frame_signature_replayed` | `seq` not above the last accepted one | stays open |
+| `frame_signature_invalid` | The signature does not verify | stays open |
+| `frame_signature_key_untrusted` | The key was revoked, expired, no longer names the sender, or its pin changed | closed (4013) |
+| `frame_signature_no_identity` | The connection registered without a verified identity signature | closed (4013) |
+
+After five refused frames the connection is closed with 4013. When
+`--require-message-auth` is also set, a frame in its protected set needs both
+the HMAC `auth` envelope and the frame signature. The frame signature covers
+`auth` as well.
+
+The hub refuses to start with `--require-signed-frames` when it serves
+multi-hub peers (`--multihub-serving-policy`, `--relay-peer`, `--message-peer`).
+A peer hub proves itself with its certificate and has no identity key to sign
+with. It also refuses to start without the `encryption` extra.
+
 ## Boundaries
 
 The implemented runtime proves that a selected mutating frame was signed by a

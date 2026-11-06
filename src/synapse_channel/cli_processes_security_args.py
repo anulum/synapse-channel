@@ -34,7 +34,20 @@ def add_hub_admission_arguments(hub: argparse.ArgumentParser) -> None:
     """Add the security options and the verdict-gate options to the hub parser."""
     add_hub_security_arguments(hub)
     add_hub_token_set_argument(hub)
+    add_hub_frame_signature_argument(hub)
     add_policy_arguments(hub)
+
+
+def add_hub_frame_signature_argument(hub: argparse.ArgumentParser) -> None:
+    """Add ``--require-signed-frames``, the per-frame identity signature requirement."""
+    hub.add_argument(
+        "--require-signed-frames",
+        action="store_true",
+        help="Require every state-changing frame after registration to carry an Ed25519 "
+        "signature by the identity key that proved the connection, bound to this hub, the "
+        "connection's session nonce and a growing sequence. A connection that registers "
+        "without a verified identity signature is refused. Off by default.",
+    )
 
 
 def add_hub_token_set_argument(hub: argparse.ArgumentParser) -> None:

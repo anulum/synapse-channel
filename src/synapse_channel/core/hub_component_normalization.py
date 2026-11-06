@@ -47,6 +47,7 @@ def normalize_transport(config: HubConfig) -> HubConfig:
             require_acl=bool(auth.require_acl),
             require_role_claim=bool(auth.require_role_claim),
             require_fencing_epoch=bool(auth.require_fencing_epoch),
+            require_signed_frames=bool(auth.require_signed_frames),
             require_identity_binding=bool(auth.require_identity_binding),
             private_directed_messages=bool(auth.private_directed_messages),
         ),

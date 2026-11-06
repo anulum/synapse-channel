@@ -48,12 +48,15 @@ class FrameSigner:
         Where the key is looked up when a frame is checked.
     last_seq : int, optional
         Highest frame sequence accepted on the socket so far.
+    failures : int, optional
+        Frames refused on the socket so far.
     """
 
     sender: str
     key_id: str
     source: KeySource
     last_seq: int = 0
+    failures: int = 0
 
 
 class FrameSigningSessions:

@@ -29,6 +29,9 @@ class SenderRegistrationPorts:
         Existing credential and signed-registration admission gates.
     peer_proven, record_identity_proof : callable
         Existing peer certificate predicate and verified identity recorder.
+    require_frame_key : callable
+        Refuse and close a new connection that must sign its frames but proved
+        no key; returns whether it may bind.
     resolve_sender : callable
         Bind the sender with takeover, lease request and owner lease inputs.
     send_welcome : callable
@@ -37,6 +40,7 @@ class SenderRegistrationPorts:
 
     authorise: Callable[[str, dict[str, Any], Any], Awaitable[bool]]
     verify_identity: Callable[[str, dict[str, Any], Any], Awaitable[bool]]
+    require_frame_key: Callable[[str, Any], Awaitable[bool]]
     peer_proven: Callable[[str, Any], bool]
     record_identity_proof: Callable[[str, dict[str, Any], Any], None]
     resolve_sender: Callable[[str, Any, bool, bool, str], Awaitable[str | None]]
@@ -80,6 +84,8 @@ async def register_sender(
         if not await ports.verify_identity(sender, data, websocket):
             return None
         ports.record_identity_proof(sender, data, websocket)
+    if not was_bound and not await ports.require_frame_key(sender, websocket):
+        return None
     data.pop("token", None)
     resolved = await ports.resolve_sender(
         sender,

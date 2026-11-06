@@ -80,6 +80,12 @@ class HubAuthConfigView(HubConfigOwner):
             config, auth=replace(config.auth, require_fencing_epoch=value)
         ),
     )
+    require_signed_frames: ConfigAttribute[bool] = ConfigAttribute(
+        lambda config: config.auth.require_signed_frames,
+        lambda config, value: replace(
+            config, auth=replace(config.auth, require_signed_frames=value)
+        ),
+    )
     verdict_policy: ConfigAttribute[VerdictHubPolicy] = ConfigAttribute(
         lambda config: VerdictHubPolicy(
             verdict_authority=config.auth.verdict_authority,

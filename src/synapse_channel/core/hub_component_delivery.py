@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from synapse_channel.core.agent_liveness import RecipientLiveness
 from synapse_channel.core.dead_letters import DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS, DeadLetterLedger
+from synapse_channel.core.frame_signature_gate import FrameSignatureGate
 from synapse_channel.core.frame_signing import FrameSigningSessions
 from synapse_channel.core.hub_broadcast import HubBroadcaster
 from synapse_channel.core.hub_component_callbacks import HubComponentCallbacks
@@ -54,6 +55,7 @@ class HubGateComponents:
     frames: HubFrameGates
     relay_forwarding: OperatorRelayForwarding
     frame_signing: FrameSigningSessions
+    frame_signature_gate: FrameSignatureGate
 
 
 def build_delivery(
@@ -145,6 +147,29 @@ def build_gates(
     frame_signing = FrameSigningSessions()
     connection.add_close_listener(frame_signing.forget)
     connection.set_welcome_fields(frame_signing.welcome_fields)
+    identity = HubIdentityGate(
+        require_identity_binding=config.auth.require_identity_binding,
+        identity_trust_bundle=security.identity_trust,
+        send_json=callbacks.send_json,
+        system=callbacks.system,
+        pin_store=security.pins,
+    )
+    counters = clients.counters
+
+    def count_refusal() -> None:
+        counters.auth_failures += 1
+
+    frame_signature_gate = FrameSignatureGate(
+        sessions=frame_signing,
+        hub_id=hub_id,
+        enabled=lambda: bool(getattr(callbacks.owner, "require_signed_frames", False)),
+        bundle=lambda: identity.trust_bundle,
+        pins=security.pins,
+        send_json=callbacks.send_json,
+        system=callbacks.system,
+        close_socket=clients.clients.close_socket,
+        count_refusal=count_refusal,
+    )
     return HubGateComponents(
         ingress=HubIngress(
             clients.clients,
@@ -158,13 +183,7 @@ def build_gates(
             token_audit=audit,
             token_sessions=sessions,
         ),
-        identity=HubIdentityGate(
-            require_identity_binding=config.auth.require_identity_binding,
-            identity_trust_bundle=security.identity_trust,
-            send_json=callbacks.send_json,
-            system=callbacks.system,
-            pin_store=security.pins,
-        ),
+        identity=identity,
         connection=connection,
         frames=build_frame_gates(config, clients, security, routing, hub_id, callbacks),
         relay_forwarding=OperatorRelayForwarding(
@@ -178,4 +197,5 @@ def build_gates(
             system=callbacks.system,
         ),
         frame_signing=frame_signing,
+        frame_signature_gate=frame_signature_gate,
     )

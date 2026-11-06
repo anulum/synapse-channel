@@ -159,6 +159,11 @@ class HubIdentityGate:
             return True
         return await self._verify_first_use(self._pin_store, sender, data, websocket)
 
+    @property
+    def trust_bundle(self) -> EventSignatureTrustBundle | None:
+        """The identity trust bundle registrations are verified against now."""
+        return self._identity_trust_bundle
+
     def proven_key(self, sender: str, data: dict[str, Any]) -> tuple[str, KeySource] | None:
         """Return the key a registration that :meth:`verify_identity` admitted proved.
 

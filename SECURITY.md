@@ -352,6 +352,17 @@ When that boundary is crossed, the proportionate controls are:
   environment variable over `--token`, which is visible in the process list.
   Owner-file readers open every path component with `O_NOFOLLOW`; configure the
   real path rather than a symlinked ancestor directory.
+- **Per-connection identity signatures.** `--require-signed-frames` makes
+  every state-changing frame after registration carry an Ed25519 signature by
+  the identity key that proved the connection, bound to this hub, to the
+  connection's session nonce and to a growing sequence. A frame copied to
+  another connection or hub, or sent again, is refused. A connection whose key
+  is revoked, expires or loses its pin is closed at its next such frame, and a
+  connection that registers without a verified identity signature is refused.
+  The signatures protect the integrity and origin of mutations; they do not
+  hide or protect reads, so TLS stays required off-host. Clients that sign are
+  added separately; until then the flag is for clients that sign with the
+  shared vectors' rules (see `docs/per-message-authentication.md`).
 - **Rotating connect tokens.** `synapse hub --token-set PATH` reads an
   owner-only JSON file of identified tokens instead of one secret. Each entry
   holds an `id`, the SHA-256 digest of its secret (never the secret), optional

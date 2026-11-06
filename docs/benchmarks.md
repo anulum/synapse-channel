@@ -91,6 +91,28 @@ frames do not establish network throughput or justify a new wire encoding;
 the [compatibility guide](protocol-compatibility-plan.md) describes the JSON wire.
 This dated fixture sample does not cover all current version-seven frames.
 
+## Signed frames
+
+`frame_signature_benchmark.py` measures what `--require-signed-frames` costs.
+The gate workload signs 2000 claim frames on one session and runs the hub
+gate's full check on each: RFC 8785 bytes, Ed25519 verification, key lookup,
+and session and sequence binding. The hub workload sends 120 claims over a
+real loopback WebSocket to a real hub and waits until each is granted, first
+with the requirement off and plain frames, then with it on and signed frames.
+Each claim's time includes signing it on the client. Three consecutive runs
+on one shared workstation (Python 3.12, cryptography 50.0.2) gave these
+medians:
+
+| Run | Sign p50 (us) | Gate check p50 (us) | Hub claim, plain p50 (us) | Hub claim, signed p50 (us) |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 75.6 | 140.4 | 350 | 580 |
+| 2 | 76.0 | 140.7 | 317 | 572 |
+| 3 | 73.2 | 137.0 | 307 | 552 |
+
+Raw results are in `benchmarks/results/frame_signature_benchmark.json`. The
+numbers establish no production throughput claim. Reproduce with
+`PYTHONPATH=src python benchmarks/frame_signature_benchmark.py`.
+
 ## Relay token benchmark
 
 `relay_token_benchmark.py` measures how much the lite relay encoding shrinks a

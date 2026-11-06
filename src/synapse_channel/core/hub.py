@@ -592,6 +592,7 @@ class SynapseHub(HubConfigView):
         self._frame_gates = gates.frames
         self._relay_forwarding = gates.relay_forwarding
         self.frame_signing = gates.frame_signing
+        self._frame_gate = gates.frame_signature_gate
 
     def _receive_state(self, components: HubComponents) -> None:
         """Install resumed state, mutation actor and views over that exact state."""
@@ -1210,6 +1211,10 @@ class SynapseHub(HubConfigView):
         target = str(data.get("target") or "all")
         msg_type = str(data.get("type") or MessageType.CHAT).strip().lower()
         payload = str(data.get("payload") or "")
+        if not await self._frame_gate.admit(
+            websocket, self.clients.bound_agent(websocket), msg_type, data
+        ):
+            return
         resolved = await self._register_frame(sender, msg_type, data, websocket)
         if resolved is None:
             return
@@ -1228,6 +1233,7 @@ class SynapseHub(HubConfigView):
             record_identity_proof=lambda sender, data, socket: self._record_identity_proof(
                 sender, data, socket
             ),
+            require_frame_key=lambda sender, socket: self._frame_gate.require_key(sender, socket),
             resolve_sender=lambda name, socket, takeover, requested, lease: self._resolve_sender(
                 name, socket, takeover=takeover, lease_requested=requested, owner_lease=lease
             ),

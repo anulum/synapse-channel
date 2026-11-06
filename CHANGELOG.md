@@ -20,6 +20,18 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **`synapse hub --require-signed-frames`.** Every state-changing frame after
+  registration must carry an Ed25519 `frame_signature` by the identity key
+  that proved the connection (an operator-enrolled key or the key pinned on
+  first use). The signature covers the RFC 8785 bytes of the whole frame and
+  binds the hub, the connection's session nonce and a growing sequence, so
+  copies and replays are refused without clocks. Only read-only requests pass
+  unsigned. A key that is no longer trusted closes the connection, and so do
+  five refused frames. A connection without a verified identity is refused at
+  registration. The hub refuses to start with the flag when it serves
+  multi-hub peers or lacks the `encryption` extra. The flag is off by default.
+  `benchmarks/frame_signature_benchmark.py` measures its cost.
+
 - **A per-connection `session_nonce` in `welcome`.** Each connection gets a
   new random nonce, and a connection that registered with a verified
   identity signature is recorded with the key it proved. Older clients

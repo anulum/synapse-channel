@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import logging
 import sys
 from dataclasses import replace
@@ -186,6 +187,35 @@ def guard_declared_identity(ctx: HubStartup) -> None:
         print(f"synapse hub: WARNING Synapse Hub {identity_problem}.", file=sys.stderr)
 
 
+def guard_signed_frames(ctx: HubStartup) -> None:
+    """Refuse ``--require-signed-frames`` where some connections could never sign.
+
+    A peer hub proves itself with its certificate, not with an identity key,
+    so it could not sign its frames; and without the ``cryptography`` package
+    no signature can be checked.
+    """
+    if not getattr(ctx.args, "require_signed_frames", False):
+        return
+    if (
+        getattr(ctx.args, "multihub_serving_policy", "")
+        or getattr(ctx.args, "relay_peer", None)
+        or getattr(ctx.args, "message_peer", None)
+    ):
+        print(
+            "synapse hub: --require-signed-frames cannot serve multi-hub peers yet: a peer "
+            "hub proves itself with its certificate and has no identity key to sign with",
+            file=sys.stderr,
+        )
+        raise HubStartupRefused()
+    if importlib.util.find_spec("cryptography") is None:
+        print(
+            "synapse hub: --require-signed-frames needs the encryption extra "
+            "(pip install 'synapse-channel[encryption]')",
+            file=sys.stderr,
+        )
+        raise HubStartupRefused()
+
+
 def prepare_hub_transport(ctx: HubStartup) -> None:
     """Validate serving, transport, durable prerequisites and exposure before allocation."""
     configure_serving_policy(ctx)
@@ -196,3 +226,4 @@ def prepare_hub_transport(ctx: HubStartup) -> None:
     guard_transport_exposure(ctx)
     guard_storage_exposure(ctx)
     guard_declared_identity(ctx)
+    guard_signed_frames(ctx)

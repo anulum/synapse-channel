@@ -1,0 +1,96 @@
+{
+  "benchmark": "frame_signature_benchmark.py",
+  "command": "PYTHONPATH=src python benchmarks/frame_signature_benchmark.py",
+  "parameters": {
+    "gate_count": 2000,
+    "hub_count": 120
+  },
+  "environment": {
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cryptography": "50.0.2",
+    "websockets": "17.4"
+  },
+  "source_parent": "a3b6d172",
+  "note": "Three consecutive runs on one shared workstation; loopback WebSocket; no production throughput claim.",
+  "runs": [
+    [
+      {
+        "workload": "gate",
+        "count": 2000,
+        "sign_p50_us": 75.59848017990589,
+        "check_p50_us": 140.440184623003,
+        "check_mean_us": 154.12219800055027,
+        "admitted": 2000
+      },
+      {
+        "workload": "hub",
+        "signed_frames": false,
+        "count": 120,
+        "p50_us": 350.1893952488899,
+        "mean_us": 371.68940374006826,
+        "granted": 120
+      },
+      {
+        "workload": "hub",
+        "signed_frames": true,
+        "count": 120,
+        "p50_us": 579.8244383186102,
+        "mean_us": 638.5013344697654,
+        "granted": 120
+      }
+    ],
+    [
+      {
+        "workload": "gate",
+        "count": 2000,
+        "sign_p50_us": 75.96192881464958,
+        "check_p50_us": 140.71958139538765,
+        "check_mean_us": 150.10800352320075,
+        "admitted": 2000
+      },
+      {
+        "workload": "hub",
+        "signed_frames": false,
+        "count": 120,
+        "p50_us": 317.4557350575924,
+        "mean_us": 356.08432178075117,
+        "granted": 120
+      },
+      {
+        "workload": "hub",
+        "signed_frames": true,
+        "count": 120,
+        "p50_us": 571.5654697269201,
+        "mean_us": 614.2474943771958,
+        "granted": 120
+      }
+    ],
+    [
+      {
+        "workload": "gate",
+        "count": 2000,
+        "sign_p50_us": 73.23152385652065,
+        "check_p50_us": 137.02083379030228,
+        "check_mean_us": 146.34630037471652,
+        "admitted": 2000
+      },
+      {
+        "workload": "hub",
+        "signed_frames": false,
+        "count": 120,
+        "p50_us": 306.70897103846073,
+        "mean_us": 333.4840255168577,
+        "granted": 120
+      },
+      {
+        "workload": "hub",
+        "signed_frames": true,
+        "count": 120,
+        "p50_us": 551.990931853652,
+        "mean_us": 673.228851519525,
+        "granted": 120
+      }
+    ]
+  ]
+}

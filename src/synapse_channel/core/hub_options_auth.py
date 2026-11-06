@@ -44,6 +44,7 @@ class HubAuthOptions(TypedDict, total=False):
     role_grants: RoleGrants | None
     require_role_claim: bool
     require_fencing_epoch: bool
+    require_signed_frames: bool
     identity_trust_bundle: EventSignatureTrustBundle | None
     require_identity_binding: bool
     identity_pin_path: str | Path | None
