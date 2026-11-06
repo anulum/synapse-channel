@@ -201,8 +201,9 @@ existing lease can carry one:
   INV-EF-4 under `--require-fencing-epoch`);
 - a renewal that names `renew_epoch`. The hub refuses it unless the caller
   still owns the lease, the epoch is the lease's current epoch or the anchor of
-  its uninterrupted same-owner, same-scope ownership (`ownership_epoch`), and
-  the request repeats the original paths
+  its uninterrupted same-owner, same-scope ownership (`ownership_epoch`), no
+  protected custody is outstanding on the task, and the request repeats the
+  original paths
   (`core/state.py:SynapseState.renew_claim`). A plain re-`claim` by the holder
   is checked by owner name and stamps a new epoch.
 
