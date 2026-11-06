@@ -24,6 +24,7 @@ from pathlib import Path
 
 from fixtures.opencode.llm import ScriptedLlmServer
 from fixtures.opencode.process import find_opencode, isolated_environment
+from fixtures.tmux_reap import stop_private_tmux_server
 from synapse_channel import agent_tmux as tmux_module
 from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxWakeResult, start_session
 from synapse_channel.opencode_composer_files import read_document
@@ -274,7 +275,8 @@ def native_composer(
                 assert started.returncode != 0
             yield fixture
     finally:
-        subprocess.run([*base, "kill-server"], capture_output=True, check=False, timeout=10)
+        # kill-server alone leaves a pane program that ignores SIGHUP running.
+        stop_private_tmux_server(base)
         remaining = subprocess.run(
             [*base, "list-sessions"], capture_output=True, check=False, timeout=10
         )
