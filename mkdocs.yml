@@ -81,6 +81,7 @@ nav:
   - Use cases: use-cases.md
   - How it compares: comparison.md
   - Integration demos: integration-demos.md
+  - Official-client interop lane: interop.md
   - Go client: go-client.md
   - TypeScript/JavaScript client: js-client.md
   - Cross-agent adapter kits: cross-agent-adapter-kits.md

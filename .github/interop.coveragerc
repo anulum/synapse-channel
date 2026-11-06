@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SYNAPSE CHANNEL — coverage of the interop lane's tools: its unit tests plus a lane run
+[run]
+branch = True
+parallel = True
+include = tools/interop_*.py
+# The A2A client half runs in the client's own environment, which has no coverage.
+omit = tools/interop_a2a_client.py
+
+[report]
+show_missing = True
+fail_under = 100
+exclude_lines =
+    if __name__ == .__main__.:

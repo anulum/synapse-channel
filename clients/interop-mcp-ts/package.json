@@ -1,0 +1,22 @@
+{
+  "name": "@anulum/synapse-interop-mcp-ts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Interop lane client: the official MCP TypeScript SDK against real Synapse processes.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}

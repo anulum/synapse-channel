@@ -1,0 +1,136 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — official MCP and A2A clients against real Synapse processes
+name: interop
+
+on:
+  push:
+    paths:
+      - ".github/workflows/interop.yml"
+      - ".github/interop.coveragerc"
+      - ".github/requirements/requirements-dev.txt"
+      - ".github/requirements/requirements-interop-clients.txt"
+      - "clients/interop-mcp-ts/**"
+      - "src/synapse_channel/a2a*"
+      - "src/synapse_channel/a2a/**"
+      - "src/synapse_channel/cli.py"
+      - "src/synapse_channel/cli_a2a*"
+      - "src/synapse_channel/cli_mcp*"
+      - "src/synapse_channel/mcp*"
+      - "src/synapse_channel/mcp/**"
+      - "tools/interop_*.py"
+      - "tests/test_interop_*.py"
+      - "docs/interop.md"
+  pull_request:
+    paths:
+      - ".github/workflows/interop.yml"
+      - ".github/interop.coveragerc"
+      - ".github/requirements/requirements-dev.txt"
+      - ".github/requirements/requirements-interop-clients.txt"
+      - "clients/interop-mcp-ts/**"
+      - "src/synapse_channel/a2a*"
+      - "src/synapse_channel/a2a/**"
+      - "src/synapse_channel/cli.py"
+      - "src/synapse_channel/cli_a2a*"
+      - "src/synapse_channel/cli_mcp*"
+      - "src/synapse_channel/mcp*"
+      - "src/synapse_channel/mcp/**"
+      - "tools/interop_*.py"
+      - "tests/test_interop_*.py"
+      - "docs/interop.md"
+  schedule:
+    - cron: "41 5 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  interop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Install the hub environment from its hash lock
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
+          python -m pip install -e . --no-deps
+          python -m pip check
+      - name: Install the A2A client in its own environment
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/a2a-client"
+          "$RUNNER_TEMP/a2a-client/bin/python" -m pip install --require-hashes \
+            -r .github/requirements/requirements-interop-clients.txt
+      - name: Build the MCP TypeScript client from its committed lock
+        working-directory: clients/interop-mcp-ts
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install tsc -p tsconfig.json
+      - name: Check the documented matrix against the pins
+        run: python -m tools.interop_pins --check-doc
+      - name: Run the interop lane and its unit tests under coverage
+        run: |
+          set -euo pipefail
+          python -m coverage run --rcfile=.github/interop.coveragerc -m pytest -p no:cov \
+            tests/test_interop_evidence.py tests/test_interop_pins.py tests/test_interop_processes.py
+          python -m coverage run --rcfile=.github/interop.coveragerc -m tools.interop_lane \
+            --out interop-results.json \
+            --mcp-ts \
+            --a2a-python "$RUNNER_TEMP/a2a-client/bin/python" \
+            --work "$RUNNER_TEMP/interop"
+      - name: Require full coverage of the lane's tools
+        run: |
+          set -euo pipefail
+          python -m coverage combine --rcfile=.github/interop.coveragerc
+          python -m coverage report --rcfile=.github/interop.coveragerc
+      - name: Report newer upstream client releases
+        if: always()
+        run: |
+          set -euo pipefail
+          python - > "$RUNNER_TEMP/latest.json" <<'PY'
+          import json
+          import urllib.request
+
+          def pypi(package: str) -> str:
+              with urllib.request.urlopen(f"https://pypi.org/pypi/{package}/json", timeout=30) as reply:
+                  return json.load(reply)["info"]["version"]
+
+          def npm(package: str) -> str:
+              url = "https://registry.npmjs.org/" + package.replace("/", "%2f") + "/latest"
+              with urllib.request.urlopen(url, timeout=30) as reply:
+                  return json.load(reply)["version"]
+
+          print(json.dumps({
+              "mcp-python-sdk": pypi("mcp"),
+              "mcp-typescript-sdk": npm("@modelcontextprotocol/sdk"),
+              "a2a-sdk": pypi("a2a-sdk"),
+          }))
+          PY
+          python -m tools.interop_pins --advisory "$RUNNER_TEMP/latest.json"
+      - name: Keep the evidence record
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: interop-results
+          path: interop-results.json
+          if-no-files-found: warn
+          retention-days: 30

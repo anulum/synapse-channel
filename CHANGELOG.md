@@ -20,6 +20,22 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **An interop lane run by the official clients.** A new `interop` workflow
+  drives the official MCP Python SDK, the official MCP TypeScript SDK and the
+  official `a2a-sdk` against real `synapse hub`, `synapse mcp` and
+  `synapse a2a-serve` processes. The MCP SDKs run over stdio and Streamable
+  HTTP, the A2A SDK over HTTP+JSON. Each run is judged by the hub's own
+  journal, not only by what the client reports, and each has two negative
+  controls that must fail:
+  - one where the server refuses the client;
+  - one where the client succeeds but the journal check reads an untouched
+    store.
+
+  Each client is pinned to a release at least 14 days old and installed from a
+  hash lock in its own environment. The run uploads a content-minimised record
+  with no message bodies or tokens. `docs/interop.md` lists what is tested and
+  what is not, and a test keeps that page equal to the pins.
+
 - **`synapse export`: take the journal out of Synapse.** `export create` writes
   a hub store's journal and AEF receipts as plain JSON Lines with a manifest. It
   reads both in one read transaction, so the files are one snapshot even while

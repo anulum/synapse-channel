@@ -232,6 +232,10 @@ warn_return_any = true
 
 [[tool.mypy.overrides]]
 module = [
+  # The official A2A client and its httpx live only in the interop lane's
+  # separate client environment (tools/interop_a2a_client.py).
+  "a2a.*",
+  "httpx",
   "websockets.*",
   "tiktoken",
   "pysqlcipher3",

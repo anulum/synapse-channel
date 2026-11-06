@@ -96,6 +96,10 @@ required exposed-bridge posture for bearer auth, TLS/proxy placement, state-file
 permissions, webhook egress, retention, logging, and receipts. Concrete
 production deployment sign-off remains external.
 
+The [official-client interop lane](interop.md) runs the official `a2a-sdk` against
+a real bridge in CI and judges each run by the hub's journal. The rating below
+changes only by a reviewed decision on that lane's evidence.
+
 Independent interoperability is **`partial`**. On 2026-07-10 the official
 `a2a-sdk==1.1.0` selected its HTTP+JSON `RestTransport` from the live Agent
 Card and completed send, get, list, and cancel. The official TCK at
