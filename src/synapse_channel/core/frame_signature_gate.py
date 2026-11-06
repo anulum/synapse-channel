@@ -52,6 +52,7 @@ from synapse_channel.core.hub_identity_gate import IDENTITY_BINDING_CLOSE_CODE
 from synapse_channel.core.identity_pins import IdentityPinStore
 from synapse_channel.core.message_auth import EventSignatureTrustBundle
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.release_confirmation import release_error_correlation
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -255,7 +256,7 @@ class FrameSignatureGate:
         outcome = self.check(websocket, bound, frame)
         if outcome.verdict is GateVerdict.ADMIT:
             return True
-        await self._refuse(websocket, bound, outcome.reason)
+        await self._refuse(websocket, bound, outcome.reason, release_error_correlation(frame))
         if outcome.verdict is GateVerdict.CLOSE:
             await self._close_socket(
                 websocket, code=IDENTITY_BINDING_CLOSE_CODE, reason="frame signature refused"
@@ -337,8 +338,19 @@ class FrameSignatureGate:
         )
         return False
 
-    async def _refuse(self, websocket: Any, target: str, reason: str) -> None:
-        """Count a refusal and tell the connection why."""
+    async def _refuse(
+        self,
+        websocket: Any,
+        target: str,
+        reason: str,
+        correlation: Mapping[str, str] | None = None,
+    ) -> None:
+        """Count a refusal and tell the connection why.
+
+        A refused keyed release carries its operation id, as every other
+        ingress refusal does, so the sender can tell a refusal from an
+        unanswered request.
+        """
         self._count_refusal()
         hint = (
             " (this hub requires signed frames; upgrade the client)"
@@ -352,5 +364,6 @@ class FrameSignatureGate:
                 msg_type=MessageType.ERROR,
                 target=target,
                 verification_result=reason,
+                **(correlation or {}),
             ),
         )

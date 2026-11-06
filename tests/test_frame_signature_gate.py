@@ -367,3 +367,28 @@ def test_every_request_type_is_refused_unsigned(msg_type: str) -> None:
     )
     outcome = gate.check(socket, SENDER, {"sender": SENDER, "type": msg_type})
     assert (outcome.verdict, outcome.reason) == (GateVerdict.REFUSE, "frame_signature_required")
+
+
+async def test_a_refused_keyed_release_names_its_operation() -> None:
+    """The sender can tell a refused release from one that got no answer."""
+    hub = _hub()
+    async with running_hub(hub) as (_, uri):
+        async with connect(uri) as websocket:
+            session = await _register(websocket)
+            await session.send(session.signed(**_claim("held")))
+            await read_until_type(websocket, "claim_granted")
+            release = {
+                "sender": SENDER,
+                "type": "release",
+                "target": "System",
+                "task_id": "held",
+                "idem_key": "release-op-1",
+            }
+            await session.send(release)
+            refused = await read_until_type(websocket, "error")
+            await session.send({"sender": SENDER, "type": "heartbeat", "target": "System"})
+            plain = await read_until_type(websocket, "error")
+    assert refused["verification_result"] == "frame_signature_required"
+    assert (refused["release_operation_id"], refused["task_id"]) == ("release-op-1", "held")
+    assert "release_operation_id" not in plain
+    assert "held" in hub.state.claims
