@@ -972,6 +972,39 @@ event-signature paths).
 
 **Pinned by.** `tests/test_message_auth.py`, `tests/test_hub_per_message_auth.py`.
 
+### INV-CK-3 — only the authoritative hub's clock sets and ends a lease
+
+**Normative.** The hub that owns a task's namespace (INV-MH-1) MUST stamp a
+lease's start and expiry with its own wall clock and judge expiry against that
+same clock. No time field of a claim frame (its `timestamp`, a supplied
+`claimed_at`, `lease_expires_at` or `lease_duration_seconds`) may move the lease;
+only `ttl_seconds`, clamped by INV-LL-3, sets its length. A clock difference
+between a client and the hub therefore cannot shorten or lengthen a lease, and
+leases need no client skew leeway. A client that times its own lease, such as
+`synapse lock`, MUST time it by the relative `lease_duration_seconds` on its own
+monotonic clock, measured from before its request and less a stop allowance
+(`STOP_ALLOWANCE`, 5 s), never by the hub's absolute timestamps.
+
+**Residual: the hub's own clock.** A step of the hub's wall clock moves every
+lease with it. A forward step ends leases early: another agent, or a new
+process of the same name, may then claim the task. Epoch fencing (INV-EF-2,
+required under `--require-fencing-epoch`) stays the primary safety: the earlier
+holder's release, update, handoff or checkpoint carries the old epoch and is
+refused. A backward step lengthens leases and never frees one; a renewal keeps
+the lease's duration. The hub's host MUST therefore run the same clock
+synchronization INV-CK-2 requires and SHOULD slew rather than step its clock.
+Displays that compare a lease's `lease_expires_at` with the viewer's clock
+(`synapse locks`, the dashboard) are diagnostic and may be off by that
+viewer's skew. A lease is coordination, not a filesystem lock.
+
+**Implementation.** `core/state.py` (`claim`, `renew_claim`, `_expire_claims`
+use the hub clock), `core/handlers/leasing.py` (the grant reports
+`lease_duration_seconds`), `cli_lock_supervision.py` (`lease_duration` and the
+monotonic renewal deadline).
+
+**Pinned by.** `tests/test_lease_clock_skew.py`, `tests/test_cli_lock_supervision.py`,
+`tests/test_fencing_epoch.py`.
+
 ## 9. Multi-host claim safety
 
 Federation observes and merges append-only logs; it MUST NOT arbitrate authority.
