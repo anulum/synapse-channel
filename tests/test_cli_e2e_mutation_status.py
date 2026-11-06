@@ -428,6 +428,37 @@ def test_real_cli_reports_invalid_opencode_schema_outside_git(tmp_path: Path) ->
     assert before == (config.read_bytes(), config.stat().st_mtime_ns, config.stat().st_mode)
 
 
+def test_real_cli_fails_closed_when_git_answers_beyond_the_inspection_limit(
+    tmp_path: Path,
+) -> None:
+    """A Git answer over the 64 KiB limit is refused, so no staged gate is reported.
+
+    A real ``core.hooksPath`` of 70 000 characters makes ``git rev-parse
+    --git-path hooks/pre-commit`` print more than the limit; the inspection
+    must not read on and must not call the repository gated.
+    """
+    repo = git_repo(tmp_path / "repo")
+    git_run(repo, "config", "core.hooksPath", "/" + "h" * 70_000)
+    answer = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--git-path", "hooks/pre-commit"],
+        capture_output=True,
+        check=True,
+        text=True,
+    ).stdout
+    assert len(answer.encode("utf-8")) > 65_536
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+
+    report = _report(home, repo)
+
+    gate = report["staged_gate"]
+    assert isinstance(gate, dict)
+    assert gate["repository"] is None
+    assert gate["hook_state"] == "not-a-repository"
+    assert gate["gate_status"] == "not-configured"
+    assert list(home.iterdir()) == []
+
+
 def test_real_cli_reports_unsafe_staged_gate_files(tmp_path: Path) -> None:
     """Symlinked pre-commit policy and hook files produce an incomplete gate."""
     repo = git_repo(tmp_path / "repo")
