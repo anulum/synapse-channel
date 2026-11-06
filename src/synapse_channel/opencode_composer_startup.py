@@ -111,10 +111,13 @@ def _pane_groups(config: AgentTmuxConfig, target: str, runner: CommandRunner) ->
 
 
 def _signal_group(group: int, signum: int) -> bool:
-    """Send ``signum`` to process group ``group``; return whether the group still exists."""
+    """Send ``signum`` to process group ``group``; return whether it is still ours to wait for.
+
+    A group that is gone, or that now belongs to another user, is not waited for.
+    """
     try:
         os.killpg(group, signum)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         return False
     return True
 
@@ -133,7 +136,10 @@ def end_process_groups(groups: Sequence[int], *, grace: float = _RETIRE_GRACE_SE
     grace : float, optional
         Seconds a group may take to exit after SIGTERM.
     """
-    pending = [group for group in groups if _signal_group(group, signal.SIGTERM)]
+    # 0 and 1 would address the caller's own group and init; never signal those.
+    own = os.getpgrp()
+    targets = [group for group in groups if group > 1 and group != own]
+    pending = [group for group in targets if _signal_group(group, signal.SIGTERM)]
     deadline = time.monotonic() + grace
     while pending and time.monotonic() < deadline:
         time.sleep(0.05)

@@ -29,7 +29,7 @@ from typing import Any
 
 import pytest
 
-from fixtures.tmux_reap import processes_in_sessions, stop_private_tmux_server
+from fixtures.tmux_reap import pane_sessions, processes_in_sessions, stop_private_tmux_server
 from synapse_channel.agent_tmux import AgentTmuxConfig
 from synapse_channel.opencode_composer import LAUNCH_ENV
 from synapse_channel.opencode_composer_startup import (
@@ -113,6 +113,39 @@ def test_a_group_that_is_already_gone_is_skipped(groups: list[int]) -> None:
     assert time.monotonic() - started < 0.2
 
 
+def test_the_callers_own_group_and_init_are_never_signalled() -> None:
+    """Group 0 and the caller's own group would end this process; 1 is init."""
+    started = time.monotonic()
+    end_process_groups([0, 1, os.getpgrp()])
+    assert time.monotonic() - started < 0.2
+
+
+def _foreign_group_leader() -> int:
+    """Return a process group led by a process of another user (root, on a normal host)."""
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit() or int(entry.name) <= 1:
+            continue
+        try:
+            stat = (entry / "stat").read_text()
+            owner = entry.stat().st_uid
+        except OSError:
+            continue
+        pgrp = int(stat[stat.rindex(")") + 2 :].split()[2])
+        if pgrp == int(entry.name) and owner != os.geteuid():
+            return pgrp
+    raise AssertionError("no process group of another user to test against")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root may signal every process group")
+def test_a_group_of_another_user_is_left_alone_without_an_error() -> None:
+    """A recycled group id that now belongs to someone else is neither waited for nor raised."""
+    foreign = _foreign_group_leader()
+    started = time.monotonic()
+    end_process_groups([foreign])
+    assert time.monotonic() - started < 0.2
+    assert Path(f"/proc/{foreign}").exists()
+
+
 class _Failing:
     """A command runner whose tmux exchange fails, as a vanished session does."""
 
@@ -129,25 +162,33 @@ def test_panes_of_a_vanished_session_have_no_groups(tmp_path: Path) -> None:
 
 
 @pytest.fixture
-def private_tmux(tmp_path: Path) -> Iterator[tuple[tuple[str, ...], str]]:
-    """A private tmux socket and a wrapper that the startup code calls as its tmux."""
+def private_tmux(tmp_path: Path) -> Iterator[tuple[tuple[str, ...], str, dict[int, int | None]]]:
+    """A private tmux socket, the wrapper the startup code calls as its tmux, and its panes.
+
+    Tests record each pane session when they start it, so the last-resort
+    cleanup still finds pane programs after the code under test ended the
+    session itself.
+    """
     tmux = shutil.which("tmux")
     assert tmux is not None
     base = (tmux, "-L", "synapse-retire-" + uuid.uuid4().hex, "-f", "/dev/null")
     wrapper = tmp_path / "tmux"
     wrapper.write_text("#!/bin/sh\nexec " + shlex.join(base) + ' "$@"\n', encoding="utf-8")
     wrapper.chmod(0o700)
+    sessions: dict[int, int | None] = {}
     try:
-        yield base, str(wrapper)
+        yield base, str(wrapper), sessions
     finally:
         stop_private_tmux_server(base)
+        for pid in processes_in_sessions(sessions):
+            os.kill(pid, signal.SIGKILL)
 
 
 def test_retiring_the_owned_startup_stops_the_client_it_launched(
-    private_tmux: tuple[tuple[str, ...], str], tmp_path: Path
+    private_tmux: tuple[tuple[str, ...], str, dict[int, int | None]], tmp_path: Path
 ) -> None:
     """The session is gone and so is the client that ignored the hang-up."""
-    base, wrapper = private_tmux
+    base, wrapper, sessions = private_tmux
     target = "synapse-native-start-" + NONCE
     subprocess.run([*base, "new-session", "-d", "-s", "anchor", "sleep 600"], check=True)
     subprocess.run(
@@ -155,6 +196,7 @@ def test_retiring_the_owned_startup_stops_the_client_it_launched(
         + ["sh", "-c", HUP_PROOF],
         check=True,
     )
+    sessions.update(pane_sessions(base))
     listed = subprocess.run(
         [*base, "list-panes", "-t", target, "-F", "#{pane_pid}"],
         capture_output=True,
