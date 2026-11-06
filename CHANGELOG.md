@@ -255,6 +255,13 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **`synapse mcp --transport streamable-http --token-file FILE` starts.** The
+  command read the hub token file before handing over to the private HTTPS
+  profile, which then saw a raw token and refused to start, as it refuses
+  `--token`. A separately secured hub could therefore not be reached over
+  HTTPS at all. The profile now reads its own token file. `--token` and
+  `SYNAPSE_TOKEN` are still refused there.
+
 - **`synapse service status` reports a crash loop it catches running.** A
   unit without a start limit was flagged only when the query caught it
   waiting to restart. One that runs for a while before each failure is
