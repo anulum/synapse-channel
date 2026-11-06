@@ -153,3 +153,24 @@ def test_the_command_reports_each_chain_and_gates_on_it_only_when_asked(
     assert chain["verdict"] == "CHAIN_CONTINUOUS"
     assert chain["issues"][0]["code"] == "CHAIN_OPEN_START"
     assert (chain["first_seq"], chain["last_seq"], chain["receipts"]) == (5, 6, 2)
+
+
+def test_far_apart_receipts_cost_their_count_not_their_seq_range() -> None:
+    import time
+
+    from synapse_channel.core.aef_chain import AefChainIssue
+    from synapse_channel.core.aef_verification import AefVerification
+
+    top = (1 << 53) - 1
+    log_id = next(iter(_FIXTURE["trust_store"]["logs"]))
+    entries = [
+        (
+            {"log_id": log_id, "seq": seq, "prev_receipt": prev},
+            AefVerification(AefVerdictCode.VALID, receipt_id=f"aef1:{seq:064x}"),
+        )
+        for seq, prev in ((1, GENESIS_RECEIPT), (top, "aef1:" + "f" * 64))
+    ]
+    started = time.monotonic()
+    (report,) = verify_aef_chain(entries)
+    assert time.monotonic() - started < 1.0
+    assert report.issues == (AefChainIssue(AefChainCode.CHAIN_GAP, 2, f"seq 2..{top - 1} missing"),)

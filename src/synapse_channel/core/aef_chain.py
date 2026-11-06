@@ -169,40 +169,42 @@ def _report(log_id: str, members: list[tuple[int, str, str]]) -> AefChainReport:
             issues.append(AefChainIssue(AefChainCode.CHAIN_GENESIS_INVALID, 1, "not genesis"))
     else:
         issues.append(AefChainIssue(AefChainCode.CHAIN_OPEN_START, first, "earlier seqs absent"))
-    issues.extend(_gaps(by_seq, first, last))
-    issues.extend(_broken_links(by_seq, unique, first, last))
+    present = sorted(by_seq)
+    issues.extend(_gaps(present))
+    issues.extend(_broken_links(present, by_seq, unique))
     issues.sort(key=lambda issue: (issue.seq, issue.code.value))
     return AefChainReport(log_id, first, last, len(unique), tuple(issues))
 
 
-def _gaps(by_seq: Mapping[int, list[str]], first: int, last: int) -> list[AefChainIssue]:
-    """Return one gap finding per run of missing seqs."""
+def _gaps(present: list[int]) -> list[AefChainIssue]:
+    """Return one gap finding per run of missing seqs between present ones.
+
+    Only the sorted seqs present are walked, so the cost follows the number
+    of receipts, not the width of the seq range.
+    """
     gaps = []
-    seq = first
-    while seq <= last:
-        if seq in by_seq:
-            seq += 1
-            continue
-        start = seq
-        while seq not in by_seq:
-            seq += 1
-        end = seq - 1
-        span = f"{start}" if start == end else f"{start}..{end}"
-        gaps.append(AefChainIssue(AefChainCode.CHAIN_GAP, start, f"seq {span} missing"))
+    for before, after in zip(present, present[1:], strict=False):
+        if after - before > 1:
+            start, end = before + 1, after - 1
+            span = f"{start}" if start == end else f"{start}..{end}"
+            gaps.append(AefChainIssue(AefChainCode.CHAIN_GAP, start, f"seq {span} missing"))
     return gaps
 
 
 def _broken_links(
+    present: list[int],
     by_seq: Mapping[int, list[str]],
     unique: Mapping[str, tuple[int, str]],
-    first: int,
-    last: int,
 ) -> list[AefChainIssue]:
-    """Return a finding for each receipt not linked to the receipt before it."""
+    """Return a finding for each receipt not linked to the receipt before it.
+
+    A link is checked only where seq − 1 is present; a missing predecessor
+    is a gap instead.
+    """
     broken = []
-    for seq in range(first + 1, last + 1):
+    for seq in present:
         previous = by_seq.get(seq - 1)
-        if previous is None or seq not in by_seq:
+        if previous is None:
             continue
         for receipt_id in by_seq[seq]:
             prev = unique[receipt_id][1]
