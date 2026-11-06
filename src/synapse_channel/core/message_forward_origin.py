@@ -109,6 +109,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("synapse.message_forward")
 
+MAX_LOG_DETAIL = 400
+"""Characters of a peer failure's text kept in the hub's private log."""
+
 DEFAULT_FORWARD_TTL_SECONDS = 86_400.0
 """How long an unanswered forwarded chat is retried before it expires (24 hours)."""
 
@@ -303,7 +306,13 @@ async def _attempt_owned_forward(hub: ForwardOriginContext, entry: OutboxEntry) 
     try:
         request = decode_message_forward_request(entry.request)
         result = await hub.message_forwarder(request, peer=peer, local_id=hub.hub_id)
-    except MessageForwardRejectedError:
+    except MessageForwardRejectedError as exc:
+        logger.warning(
+            "Forward %s to %s refused by the peer: %s",
+            entry.forward_id,
+            entry.peer_hub,
+            _private_detail(exc, peer),
+        )
         settled = ledger.settle(
             entry.forward_id,
             "refused",
@@ -313,11 +322,12 @@ async def _attempt_owned_forward(hub: ForwardOriginContext, entry: OutboxEntry) 
     except (MessageForwardTransportError, MessageForwardWireError) as exc:
         attempts = entry.attempts + 1
         logger.warning(
-            "Forward %s to %s failed (attempt %d): %s",
+            "Forward %s to %s failed (attempt %d): %s: %s",
             entry.forward_id,
             entry.peer_hub,
             attempts,
             type(exc).__name__,
+            _private_detail(exc, peer),
         )
         updated = ledger.record_failed_attempt(
             entry.forward_id,
@@ -516,6 +526,38 @@ DELIVERY_FORWARD_FIELDS = (
 """Delivery-request fields forwarded to the peer; identity and credentials never are."""
 
 
+def _private_detail(exc: BaseException, peer: MessageForwardPeer) -> str:
+    """Return a peer failure's text for the hub's log: bounded, escaped, token masked.
+
+    The text can quote what the peer sent (a close reason, an error frame), so it is cut to
+    :data:`MAX_LOG_DETAIL` characters and written as a quoted literal, which keeps line
+    breaks and control characters out of the log. The connect token is masked should a
+    peer echo it. The detail goes to the log only; replies, receipts and the forward
+    ledger keep their fixed text.
+    """
+    text = str(exc)
+    if peer.token:
+        text = text.replace(peer.token, "<token>")
+    return repr(text[:MAX_LOG_DETAIL])
+
+
+def _log_sync_failure(
+    request: MessageForwardRequest,
+    peer_hub: str,
+    exc: MessageForwardTransportError | MessageForwardRejectedError,
+    peer: MessageForwardPeer,
+) -> None:
+    """Record why a synchronous forward failed in the hub's log."""
+    logger.warning(
+        "%s forward %s to %s failed: %s: %s",
+        request.kind,
+        request.forward_id,
+        peer_hub,
+        type(exc).__name__,
+        _private_detail(exc, peer),
+    )
+
+
 async def _forward_once(
     hub: ForwardOriginContext, peer_hub: str, request: MessageForwardRequest
 ) -> dict[str, Any]:
@@ -534,8 +576,10 @@ async def _forward_once(
     try:
         result = await hub.message_forwarder(request, peer=peer, local_id=hub.hub_id)
     except MessageForwardTransportError as exc:
+        _log_sync_failure(request, peer_hub, exc, peer)
         raise DeliveryRefusal("peer_unreachable", "The peer connection failed.") from exc
     except MessageForwardRejectedError as exc:
+        _log_sync_failure(request, peer_hub, exc, peer)
         raise DeliveryRefusal("peer_rejected", "The peer refused this request.") from exc
     if result.disposition == "refused":
         raise DeliveryRefusal(result.reason_code, result.detail or "peer refused the request")

@@ -165,6 +165,15 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **The hub log says why a cross-hub forward failed.** When a peer could not
+  be reached, closed the connection or answered with an error frame, the
+  origin hub logged only the exception class. The warning on the
+  `synapse.message_forward` logger now carries the cause, which also covers
+  peer refusals and synchronous roster and delivery forwards that were not
+  logged before. The cause is at most 400 characters, written as a quoted
+  literal so a peer cannot add lines to the log, and the connect token is
+  masked. Senders, receipts and the forward ledger keep their fixed text.
+
 - **A query command reports a connection the hub closed after its welcome.**
   When the hub closed a `synapse who`, `state` or `doctor` connection while
   the request was being written, for example on a refused identity, the

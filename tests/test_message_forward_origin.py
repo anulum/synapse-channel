@@ -451,13 +451,13 @@ async def test_the_forward_backlog_is_visible_in_metrics_and_health() -> None:
 
 @pytest.mark.parametrize("kind", ["chat", "who", "delivery"])
 @pytest.mark.parametrize("failure", ["closed", "rejected"])
-async def test_peer_diagnostics_do_not_escape_through_chat_roster_or_delivery(
+async def test_peer_diagnostics_reach_only_the_hub_log_not_chat_roster_or_delivery(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
     kind: Literal["chat", "who", "delivery"],
     failure: Literal["closed", "rejected"],
 ) -> None:
-    """Actual socket failures and error frames retain named refusals without raw diagnostics."""
+    """Socket failures and error frames keep named refusals; the cause goes to the hub log only."""
     diagnostic = "private-peer-diagnostic-CRR10"
 
     async def peer(socket: ServerConnection) -> None:
@@ -512,7 +512,7 @@ async def test_peer_diagnostics_do_not_escape_through_chat_roster_or_delivery(
                     response_type = "delivery_refused"
                 await sender.send(json.dumps(request))
                 response = await read_until_type(sender, response_type)
-                assert diagnostic not in json.dumps(response) and diagnostic not in caplog.text
+                assert diagnostic not in json.dumps(response)
                 if kind == "chat":
                     assert response["forward_state"] == (
                         "pending" if failure == "closed" else "refused"
@@ -524,3 +524,43 @@ async def test_peer_diagnostics_do_not_escape_through_chat_roster_or_delivery(
                     assert expected in json.dumps(response)
     finally:
         journal.close()
+    logged = [r for r in caplog.records if r.name == "synapse.message_forward"]
+    assert any(diagnostic in r.getMessage() and r.levelname == "WARNING" for r in logged)
+
+
+@pytest.mark.parametrize("failure", ["closed", "rejected"])
+async def test_a_hostile_peer_cannot_forge_log_lines_or_surface_the_connect_token(
+    caplog: pytest.LogCaptureFixture, failure: Literal["closed", "rejected"]
+) -> None:
+    """The logged cause is one escaped, bounded line with the connect token masked."""
+    token = "q" * 24
+    hostile = f"echo {token}\nFORGED log line"
+
+    async def peer(socket: ServerConnection) -> None:
+        await asyncio.wait_for(socket.recv(), 3)
+        if failure == "closed":
+            await socket.close(code=1011, reason=hostile)
+        else:
+            await socket.send(json.dumps({"type": "error", "payload": hostile + "x" * 5000}))
+
+    async with serve(peer, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        hub = SynapseHub(
+            hub_id="origin",
+            message_peers={"peer": MessageForwardPeer(f"ws://127.0.0.1:{port}", token=token)},
+        )
+        async with running_hub(hub) as (_, uri), connect(uri) as sender:
+            await read_until_type(sender, "welcome")
+            await sender.send(
+                json.dumps({"sender": "PROJ/sender", "type": "heartbeat", "protocol_version": 3})
+            )
+            await sender.send(
+                json.dumps({"sender": "PROJ/sender", "type": "who_request", "hub": "peer"})
+            )
+            response = await read_until_type(sender, "error")
+    assert token not in json.dumps(response) and "FORGED" not in json.dumps(response)
+    (record,) = [r for r in caplog.records if r.name == "synapse.message_forward"]
+    message = record.getMessage()
+    assert "FORGED log line" in message and "<token>" in message
+    assert token not in caplog.text and "\n" not in message and "\r" not in message
+    assert len(message) < 600
