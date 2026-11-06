@@ -28,6 +28,7 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.secure_path import apply_owner_only_file
 from synapse_channel.core.token_audit import TokenAudit
 from synapse_channel.core.token_sessions import (
     EXPIRY_CLOSE_CODE,
@@ -59,7 +60,7 @@ def _write(path: Path, *entries: tuple[Any, ...]) -> tuple[Path, list[float]]:
         tokens.append(entry)
     staging = path.with_name(path.name + ".new")
     staging.write_text(json.dumps({"version": 1, "tokens": tokens}))
-    os.chmod(staging, 0o600)
+    apply_owner_only_file(staging)
     os.replace(staging, path)
     return path, ends
 
@@ -370,7 +371,7 @@ async def test_a_start_moved_into_the_future_retires_the_session(tmp_path: Path)
             }
             staging = path.with_name("tokens.json.new")
             staging.write_text(json.dumps({"version": 1, "tokens": [later]}))
-            os.chmod(staging, 0o600)
+            apply_owner_only_file(staging)
             os.replace(staging, path)
             await asyncio.wait_for(websocket.wait_closed(), timeout=10)
             assert websocket.close_reason == RETIRED_CLOSE_REASON

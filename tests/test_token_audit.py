@@ -28,6 +28,7 @@ from synapse_channel.core.record_keeping import (
     RISK_INDICATOR,
     purpose_for_kind,
 )
+from synapse_channel.core.secure_path import apply_owner_only_file
 from synapse_channel.core.token_audit import (
     AGENT_FIELD_LIMIT,
     REFUSAL_WINDOW_SECONDS,
@@ -61,7 +62,7 @@ def _write(path: Path, *entries: tuple[str, str, dict[str, Any]], raw: str | Non
     ]
     staging = path.with_name(path.name + ".new")
     staging.write_text(raw if raw is not None else json.dumps({"version": 1, "tokens": tokens}))
-    os.chmod(staging, 0o600)
+    apply_owner_only_file(staging)
     os.replace(staging, path)
     return path
 

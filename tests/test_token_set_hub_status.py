@@ -25,6 +25,7 @@ import pytest
 from cli_processes_helpers import _hub_ns
 from synapse_channel import cli_processes
 from synapse_channel.cli import main
+from synapse_channel.core.secure_path import apply_owner_only_file
 from synapse_channel.core.token_set import (
     TokenSetAuthenticator,
     connect_token_digest,
@@ -46,7 +47,7 @@ def _write(path: Path, raw: str | None = None) -> Path:
     document = {"version": 1, "tokens": [{"id": "a", "sha256": connect_token_digest("s-a")}]}
     staging = path.with_name(path.name + ".new")
     staging.write_text(raw if raw is not None else json.dumps(document))
-    os.chmod(staging, 0o600)
+    apply_owner_only_file(staging)
     os.replace(staging, path)
     return path
 
@@ -192,7 +193,7 @@ def test_status_reports_unreadable_files_and_exits_on_health(
     assert ": applied since " in capsys.readouterr().out
     broken = state_directory(path) / "hub-1-1.json"
     broken.write_text("{not json")
-    broken.chmod(0o600)
+    apply_owner_only_file(broken)
     assert main(["token-set", "status", str(path), "--json"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["healthy"] is True
@@ -359,11 +360,11 @@ def test_a_bad_policy_document_is_unreadable(tmp_path: Path) -> None:
         for policy in ({"require_expiry": "yes", "max_token_days": None}, {"x": 1}, None):
             document["policy"] = policy
             writer.path.write_text(json.dumps(document))
-            writer.path.chmod(0o600)
+            apply_owner_only_file(writer.path)
             assert [state.state for state in read_hub_states(path)] == ["unreadable"]
         document["policy"] = {"require_expiry": False, "max_token_days": 0}
         writer.path.write_text(json.dumps(document))
-        writer.path.chmod(0o600)
+        apply_owner_only_file(writer.path)
         assert [state.state for state in read_hub_states(path)] == ["unreadable"]
     finally:
         writer.close()
