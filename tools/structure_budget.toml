@@ -253,7 +253,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/cli_participants_deliberate.py::_dry_run_report" = 21
 "src/synapse_channel/cli_pid_monitor.py::_cmd_pid_monitor" = 18
 "src/synapse_channel/cli_query_rendering.py::_render_who" = 16
-"src/synapse_channel/cli_query_transport.py::_query_attempt" = 16
 "src/synapse_channel/cli_release.py::_release" = 67
 "src/synapse_channel/cli_streams.py::_cmd_compact" = 17
 "src/synapse_channel/cli_streams.py::_cmd_relay" = 18

@@ -15,11 +15,17 @@ import sys
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from websockets.exceptions import ConnectionClosed
+
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import describe_connect_failure, is_identity_refused_close
 from synapse_channel.core.protocol import MessageType
 
 AgentFactory = Callable[..., SynapseAgent]
+
+
+CLOSE_REPORT_SECONDS = 1.0
+"""How long a closed query connection may take to record its close reason."""
 
 
 async def _query_attempt(
@@ -53,13 +59,16 @@ async def _query_attempt(
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
             return _connection_failure(agent, failure_name, uri, suppress_identity_refusal)
-        await request(agent)
-        for _ in range(attempts):
-            if results or (surface_error and errors):
-                break
-            if agent.last_close_code is not None:
-                break
-            await asyncio.sleep(0.05)
+        try:
+            await request(agent)
+        except ConnectionClosed:
+            # The hub closed the connection after its welcome, before the
+            # request could be written (a refused identity, for one). Let the
+            # listener record why, briefly, and report that instead of a
+            # traceback; nothing was sent, so nothing is retried.
+            await asyncio.wait((conn_task,), timeout=CLOSE_REPORT_SECONDS)
+            return _connection_failure(agent, failure_name, uri, suppress_identity_refusal)
+        await _await_reply(agent, results, errors, attempts=attempts, surface_error=surface_error)
         if results:
             render(results[-1])
             return 0, False
@@ -90,6 +99,21 @@ async def _query_attempt(
             conn_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await conn_task
+
+
+async def _await_reply(
+    agent: SynapseAgent,
+    results: list[Any],
+    errors: list[str],
+    *,
+    attempts: int,
+    surface_error: bool,
+) -> None:
+    """Wait up to ``attempts`` short ticks for a reply, a surfaced error or a close."""
+    for _ in range(attempts):
+        if results or (surface_error and errors) or agent.last_close_code is not None:
+            return
+        await asyncio.sleep(0.05)
 
 
 def _connection_failure(

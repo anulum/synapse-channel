@@ -165,6 +165,13 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A query command reports a connection the hub closed after its welcome.**
+  When the hub closed a `synapse who`, `state` or `doctor` connection while
+  the request was being written, for example on a refused identity, the
+  command ended with a WebSocket traceback. It now waits briefly for the
+  close reason and reports it like any other refused connection. Nothing is
+  retried.
+
 - **A connection that is going away no longer breaks delivery work.** A
   delivery notification that cannot be written to its audience, during the
   deadline sweep or a request, is logged and stays pending in the journal.
