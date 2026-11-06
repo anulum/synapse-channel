@@ -259,7 +259,6 @@ The coloured areas group projects for navigation; they are not dependencies.
 | LLM | Large language model. |
 | MCP | Model Context Protocol, a standard way for AI clients to call tools and data sources. |
 | NLI | Natural-language inference: checking whether one text supports or contradicts another. |
-| RAG | Retrieval-augmented generation. |
 
 See the full [glossary](glossary.md) for SYNAPSE CHANNEL terms.
 
