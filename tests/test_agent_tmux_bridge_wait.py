@@ -87,6 +87,37 @@ def test_an_old_synapse_keeps_the_bridge_on_the_one_shot_wait(
     ]
 
 
+def test_the_logged_refusal_shows_controls_instead_of_sending_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refusal carrying terminal controls is logged with the controls made visible."""
+    monkeypatch.setattr(agent_tmux, "_ONE_SHOT_WAIT_BINARIES", set())
+    binary = tmp_path / "synapse-noisy"
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "if '--exit-with-parent' in sys.argv:\n"
+        "    sys.stderr.write('error: unrecognized arguments: --exit-with-parent '\n"
+        "                     '\\x1b]0;owned\\x07\\n')\n"
+        "sys.exit(2)\n",
+        encoding="utf-8",
+    )
+    binary.chmod(0o700)
+    config = AgentTmuxConfig(
+        identity="NOISY/seat",
+        session="unused",
+        cwd=tmp_path,
+        synapse_bin=str(binary),
+        pane_probe_interval=30.0,
+    )
+
+    _bridge_wait(config, runner=subprocess.run, heartbeat=None)
+
+    logged = capsys.readouterr().err
+    assert "\x1b" not in logged and "\x07" not in logged
+    assert "--exit-with-parent \\x1b]0;owned\\x07)" in logged
+
+
 def test_a_wait_bound_to_a_process_that_is_not_its_parent_never_connects() -> None:
     """The CLI refuses at once, before contacting the hub, when its parent is not the bridge."""
     started = time.monotonic()

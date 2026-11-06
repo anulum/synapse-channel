@@ -54,6 +54,7 @@ from synapse_channel.agent_pane_state import (
 )
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.pane_bridge_wait import DEFAULT_BRIDGE_WAIT_TIMEOUT, run_probed_wait
+from synapse_channel.terminal_text import terminal_text
 from synapse_channel.tmux_server import new_server_prefix
 from synapse_channel.waiter_identity import pane_waiter_name
 
@@ -1127,10 +1128,12 @@ def _bridge_wait(
         # bridge on the one-shot, interval-bounded wait it always used. Say so
         # once in the bridge log, with the refusal, so the switch is visible.
         _ONE_SHOT_WAIT_BINARIES.add(config.synapse_bin)
-        refusal_line = (wait_proc.stderr or "").strip().splitlines()[-1][:300]
+        # The refusal comes from another program; controls in it are made
+        # visible so they cannot alter a terminal that shows the log.
+        refusal_line = terminal_text((wait_proc.stderr or "").strip().splitlines()[-1][:300])
         print(
-            f"agent-tmux {config.identity}: {config.synapse_bin} refused "
-            f"'wait --exit-with-parent' ({refusal_line}); using the one-shot "
+            f"agent-tmux {terminal_text(config.identity)}: {terminal_text(config.synapse_bin)} "
+            f"refused 'wait --exit-with-parent' ({refusal_line}); using the one-shot "
             f"{config.pane_probe_interval:g} s wait from now on",
             file=sys.stderr,
             flush=True,
