@@ -195,6 +195,13 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **The Codex queue wake adapter no longer leaves a zombie behind.** When a
+  wake ran out of time and a process the command started had escaped its
+  process group while holding the output pipes, the adapter killed the
+  command and closed the pipes but never waited for the command, so it
+  stayed a zombie until the caller exited. The killed command is now
+  reaped within the same bounded wait.
+
 - **`synapse team` no longer stalls a hub or worker that logs a lot.** The
   launcher started its children with their output on a pipe it never read.
   Once a child had written about one pipe buffer of output (64 KiB on

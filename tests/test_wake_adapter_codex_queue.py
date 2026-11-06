@@ -34,6 +34,8 @@ from synapse_channel.wake_adapters.codex_queue import (
     KIND,
     PROVES,
     CodexQueueAdapter,
+    _end,
+    _start_owned,
     canonical_session,
 )
 from synapse_channel.wake_relay import relay
@@ -259,6 +261,30 @@ def test_a_descendant_that_escaped_cannot_hold_the_adapter_past_its_bounds(
         assert 2.0 <= elapsed < 8.0
     finally:
         os.kill(grandchild, signal.SIGKILL)
+
+
+def test_the_killed_command_is_reaped_even_while_an_escaped_child_holds_its_pipes(
+    tmp_path: Path,
+) -> None:
+    """The bounded end leaves no zombie of the command behind."""
+    marker = tmp_path / "escaped"
+    script = (
+        "import subprocess, sys, time\n"
+        "escaped = subprocess.Popen(['/bin/sleep', '30'], start_new_session=True)\n"
+        f"open({str(marker)!r}, 'w').write(str(escaped.pid))\n"
+        "time.sleep(60)\n"
+    )
+    child, owned = _start_owned([sys.executable, "-c", script])
+    try:
+        deadline = time.monotonic() + 10
+        while not marker.exists() or not marker.read_text():
+            assert time.monotonic() < deadline, "the stand-in did not start its escapee"
+            time.sleep(0.02)
+        _end(owned, child, 0.5)
+        assert child.returncode == -signal.SIGKILL
+        assert child.stdout is not None and child.stdout.closed
+    finally:
+        os.kill(int(marker.read_text()), signal.SIGKILL)
 
 
 def test_what_the_command_started_is_ended_also_when_the_command_itself_has_exited(

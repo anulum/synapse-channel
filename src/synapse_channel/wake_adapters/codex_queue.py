@@ -329,7 +329,8 @@ def _end(owned: object, child: subprocess.Popen[str], wait_seconds: float) -> No
 
     A descendant that left the group or the job can keep the output pipes
     open; the wait for the output is therefore bounded too, and the pipes are
-    closed when it runs out.
+    closed when it runs out. The killed command itself is then reaped, within
+    the same bound, so it is not left behind as a zombie.
     """
     _end_owned(owned, child)
     try:
@@ -337,3 +338,5 @@ def _end(owned: object, child: subprocess.Popen[str], wait_seconds: float) -> No
     except subprocess.TimeoutExpired:
         for stream in filter(None, (child.stdout, child.stderr)):
             stream.close()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            child.wait(timeout=wait_seconds)
