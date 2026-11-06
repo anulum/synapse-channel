@@ -294,6 +294,8 @@ installed authority, migration exclusion or recovery custody.
 
 - **Tests.** Every new module, function, and branch ships with tests. Aggregate
   coverage stays at or above the 99.21% floor; a change must not lower it.
+  [Checking the coverage figure](docs/coverage.md) shows how to read the
+  measured figure of a CI run and how to measure it again.
 - **Test taxonomy.** Reserve the `e2e` name and real-runtime CI mental
   model for journeys that exercise a live process path (CLI subprocess,
   hub socket, or `real_hub`). Documentation and design-doc guards use
