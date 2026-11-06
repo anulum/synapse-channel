@@ -127,6 +127,36 @@ synapse aef inclusion --trust hub-a.aef-trust.json \
 The output is `INCLUSION_VALID`, `INCLUSION_INVALID`, `STH_INVALID` or
 `STH_UNTRUSTED`. It exits `0` only for `INCLUSION_VALID`.
 
+## Design choices
+
+AEF v0.1 settles a few points where receipt formats commonly differ:
+
+- **Canonical bytes.** Receipts are serialized with RFC 8785 (JCS) over a
+  restricted data model. Numbers must be integers within ±(2**53 − 1), and
+  every time is integer milliseconds, so no implementation has to reproduce
+  floating-point formatting.
+- **What is signed.** The Ed25519 signature covers the domain
+  `aef:receipt:v0.1`, a NUL byte, then the canonical bytes of the receipt
+  without `signature.value`. Because the domain is part of what is signed,
+  an AEF receipt signature cannot be presented as a signature over anything
+  that does not begin with that domain.
+- **Key identity.** `key_id` is the first 16 hex characters of the SHA-256 of
+  the raw public key. The verifier recomputes it from the public key in the
+  trust file, which also binds each `log_id` to the one key that signs it.
+  Identity is therefore pinned by the operator's trust file rather than
+  carried in each receipt, for example as a `did:key`.
+- **Receipt identity.** `receipt_id` is `aef1:` followed by the SHA-256 of
+  the canonical receipt without its id and signature, so the id names the
+  content.
+- **Chaining and inclusion.** Each receipt names its predecessor in
+  `prev_receipt`, which is checked as a chain (see *Chain continuity*).
+  Inclusion in the hub's Merkle log is checked separately, against a signed
+  tree head and an audit path (`synapse aef inclusion`), instead of each
+  receipt carrying a Merkle root.
+- **Verdicts.** Verification returns one value from a closed set of
+  verdicts, not a yes/no, so a tool can tell an expired receipt from a
+  forged one.
+
 ## What this does not establish
 
 - **A cut-off end or a rollback.** Without a signed tree head, a file whose
