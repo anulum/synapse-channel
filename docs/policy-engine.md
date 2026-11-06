@@ -35,6 +35,50 @@ they do not certify that the chosen tests or evidence were sufficient.
 CODEOWNERS-sourced approval mapping, event-store-backed claim coverage, and git-
 hook enforcement remain design targets described below.
 
+## Signed policies
+
+A policy can say who wrote it and which version it is, and every report names
+the policy that produced it.
+
+- A policy may declare an integer `policy_version` (1 or more, the operator's
+  choice). `synapse policy sign POLICY.json --key PRIVATE.pem --key-id ID
+  [--out FILE]` adds a `signature` envelope:
+  `{"version": 1, "algorithm": "ed25519", "key_id": ID, "value": BASE64}`.
+  - The signature covers the domain `SYNAPSE-CHANNEL:POLICY:v1` and a NUL byte,
+    then the RFC 8785 canonical JSON of the whole policy, envelope included,
+    with only `value` left out. A changed rule, version, key id or algorithm
+    therefore fails, and a client in any language can recompute the bytes.
+  - Signing needs `policy_version` and refuses a value RFC 8785 cannot
+    represent. It writes a new owner-only file (or stdout) and never replaces
+    its input. A TOML policy must be converted to JSON first.
+- Trust lives in a separate JSON bundle in the MCP config bundle format:
+  `{"version": 1, "keys": [{"key_id": …, "public_key": BASE64, "revoked": false}]}`.
+  A repository that can replace a policy therefore cannot also replace the key
+  that authorises it. A revoked key is not trusted.
+- `synapse policy verify POLICY.json --trust-bundle FILE [--min-policy-version N]
+  [--json]` prints the key id, version and digest, or exits `2` with the reason.
+- `policy-check --policy-trust-bundle FILE` exits `2` before evaluating any rule
+  when:
+  - the policy is unsigned or TOML;
+  - its key is unknown or revoked;
+  - its signature fails;
+  - its `policy_version` is below `--min-policy-version N`.
+
+  `--min-policy-version` without a trust bundle is refused, because an
+  unverified floor is not a control. Without the bundle, behaviour is unchanged.
+- Every report carries a `policy` block:
+  `{"canonical": "rfc8785", "digest": "sha256:…", "policy_version": …, "key_id": …,
+  "signed": …, "verified": …}`.
+  - The digest covers the policy content without its signature, so it names
+    the exact rules a decision used.
+  - `signed` says that a signature is present; `verified` says that it was
+    checked against a trust bundle and held.
+  - An unchecked policy holding a value RFC 8785 cannot represent (a TOML date,
+    for example) reports no digest.
+
+Loading a policy into the hub, and reloading it there without a restart, is not
+part of this; the hub does not evaluate policies.
+
 ## CI gating with the GitHub Action
 
 The Action lives in its own repository,

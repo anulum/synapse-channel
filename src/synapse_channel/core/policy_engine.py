@@ -99,6 +99,25 @@ class PolicyError(SynapseError, ValueError):
     code = "policy"
 
 
+def read_policy_mapping(path: str | Path) -> dict[str, Any]:
+    """Read a policy file (``.json``, or ``.toml`` where supported) as a mapping.
+
+    Raises
+    ------
+    PolicyError
+        When the file is missing, cannot be parsed, or is not a mapping.
+    """
+    target = Path(path)
+    try:
+        raw = target.read_bytes()
+    except FileNotFoundError as exc:
+        raise PolicyError(f"policy file does not exist: {target}") from exc
+    data = _parse_policy_bytes(raw, target.suffix.lower())
+    if not isinstance(data, dict):
+        raise PolicyError("policy file must contain a mapping at the top level")
+    return data
+
+
 def load_policy(path: str | Path) -> PolicyConfig:
     """Load and validate a policy file (``.json``, or ``.toml`` where supported).
 
@@ -120,14 +139,7 @@ def load_policy(path: str | Path) -> PolicyConfig:
         When the file cannot be parsed, the version is unsupported, or the mode
         is not ``advisory``/``enforcement``.
     """
-    target = Path(path)
-    try:
-        raw = target.read_bytes()
-    except FileNotFoundError as exc:
-        raise PolicyError(f"policy file does not exist: {target}") from exc
-    data = _parse_policy_bytes(raw, target.suffix.lower())
-    if not isinstance(data, dict):
-        raise PolicyError("policy file must contain a mapping at the top level")
+    data = read_policy_mapping(path)
     version = data.get("version", 1)
     if version != 1:
         raise PolicyError(f"unsupported policy version: {version!r} (expected 1)")

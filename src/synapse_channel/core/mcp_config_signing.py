@@ -161,55 +161,67 @@ def verify_mcp_config_signature(
     return key_id
 
 
-def _parse_trust_bundle(document: Mapping[str, Any]) -> dict[str, bytes]:
-    """Parse a minimal versioned Ed25519 config trust bundle."""
+def _parse_trust_bundle(
+    document: Mapping[str, Any],
+    *,
+    label: str = "MCP config",
+    error: type[Exception] = McpConfigError,
+) -> dict[str, bytes]:
+    """Parse a minimal versioned Ed25519 trust bundle into its usable keys.
+
+    Revoked keys are validated and then left out, so a signature by one is
+    reported as untrusted. ``label`` names the bundle in every refusal and
+    ``error`` is the exception raised, so another signed document type can share
+    this exact format.
+    """
     if set(document) - _TRUST_BUNDLE_FIELDS:
-        raise McpConfigError("MCP config trust bundle has unknown fields")
+        raise error(f"{label} trust bundle has unknown fields")
     bundle_version = document.get("version")
     if (
         isinstance(bundle_version, bool)
         or not isinstance(bundle_version, int)
         or bundle_version != MCP_CONFIG_VERSION
     ):
-        raise McpConfigError(f"MCP config trust bundle version must be {MCP_CONFIG_VERSION}")
+        raise error(f"{label} trust bundle version must be {MCP_CONFIG_VERSION}")
     entries = document.get("keys")
     if not isinstance(entries, list) or not entries:
-        raise McpConfigError("MCP config trust bundle must contain a non-empty 'keys' list")
+        raise error(f"{label} trust bundle must contain a non-empty 'keys' list")
     keys: dict[str, bytes] = {}
     seen_key_ids: set[str] = set()
     seen_public_keys: set[bytes] = set()
     for index, entry in enumerate(entries):
         if not isinstance(entry, dict) or set(entry) - _TRUST_KEY_FIELDS:
-            raise McpConfigError(f"MCP config trust key {index} has an invalid shape")
+            raise error(f"{label} trust key {index} has an invalid shape")
         key_id = entry.get("key_id")
         public_value = entry.get("public_key")
         revoked = entry.get("revoked", False)
         if not isinstance(key_id, str) or not key_id or key_id != key_id.strip():
-            raise McpConfigError(
-                f"MCP config trust key {index} needs non-empty key_id "
-                "without surrounding whitespace"
+            raise error(
+                f"{label} trust key {index} needs non-empty key_id without surrounding whitespace"
             )
         if key_id in seen_key_ids:
-            raise McpConfigError(f"duplicate MCP config trust key id: {key_id}")
+            raise error(f"duplicate {label} trust key id: {key_id}")
         seen_key_ids.add(key_id)
         if not isinstance(revoked, bool):
-            raise McpConfigError(f"MCP config trust key {key_id!r} revoked must be boolean")
+            raise error(f"{label} trust key {key_id!r} revoked must be boolean")
         if not isinstance(public_value, str):
-            raise McpConfigError(f"MCP config trust key {key_id!r} public_key must be base64 text")
+            raise error(f"{label} trust key {key_id!r} public_key must be base64 text")
         try:
             public_key = base64.b64decode(public_value, validate=True)
         except (binascii.Error, ValueError) as exc:
-            raise McpConfigError(
-                f"MCP config trust key {key_id!r} public_key is not valid base64"
-            ) from exc
+            raise error(f"{label} trust key {key_id!r} public_key is not valid base64") from exc
         if len(public_key) != _ED25519_PUBLIC_BYTES:
-            raise McpConfigError(
-                f"MCP config trust key {key_id!r} must be {_ED25519_PUBLIC_BYTES} raw Ed25519 bytes"
+            raise error(
+                f"{label} trust key {key_id!r} must be {_ED25519_PUBLIC_BYTES} raw Ed25519 bytes"
             )
         if public_key in seen_public_keys:
-            raise McpConfigError("duplicate MCP config trust public key material")
+            raise error(f"duplicate {label} trust public key material")
         seen_public_keys.add(public_key)
         if revoked:
             continue
         keys[key_id] = public_key
     return keys
+
+
+parse_ed25519_trust_bundle = _parse_trust_bundle
+"""Public name for the trust-bundle parser shared with signed policy documents."""

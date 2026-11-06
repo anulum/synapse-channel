@@ -22,14 +22,21 @@ import json
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.cli_policy_signing import load_trust_bundle
 from synapse_channel.core.policy_engine import (
     PolicyDecision,
     PolicyError,
     gate_blocks,
     load_policy,
     overall_status,
+    read_policy_mapping,
 )
 from synapse_channel.core.policy_rules import evaluate_policy
+from synapse_channel.core.policy_signing import (
+    PolicyProvenance,
+    load_policy_document,
+    policy_provenance,
+)
 from synapse_channel.core.receipt_signing import (
     MerkleSignatureCheck,
     ReceiptSigningError,
@@ -64,6 +71,13 @@ def _print_text_report(report: dict[str, Any]) -> None:
         print(f"  {glyph} {decision['rule']}: {decision['reason']}")
         if decision["next_action"] and decision["status"] in ("warn", "fail"):
             print(f"      next: {decision['next_action']}")
+    policy = report["policy"]
+    origin = (
+        f"verified, key {policy['key_id']}"
+        if policy["verified"]
+        else ("signed, not verified" if policy["signed"] else "unsigned")
+    )
+    print(f"  policy: {policy['digest'] or 'no canonical digest'} ({origin})")
     evidence_verdict = report.get("evidence_verdict")
     if isinstance(evidence_verdict, dict):
         print(f"  evidence_verdict: {evidence_verdict['verdict']}")
@@ -141,9 +155,28 @@ def _signature_decision(
     )
 
 
+def _provenance(args: argparse.Namespace) -> PolicyProvenance:
+    """Return the policy's provenance, verifying it first when a bundle is given.
+
+    With ``--policy-trust-bundle`` only a signed JSON policy from a trusted,
+    unrevoked key at or above ``--min-policy-version`` passes; anything else
+    raises before a rule is evaluated.
+    """
+    if args.policy_trust_bundle:
+        return policy_provenance(
+            load_policy_document(args.policy),
+            trust_document=load_trust_bundle(args.policy_trust_bundle),
+            min_policy_version=args.min_policy_version,
+        )
+    return policy_provenance(
+        read_policy_mapping(args.policy), min_policy_version=args.min_policy_version
+    )
+
+
 def _cmd_policy_check(args: argparse.Namespace) -> int:
     """Run ``synapse policy-check`` and return its exit code."""
     try:
+        provenance = _provenance(args)
         config = load_policy(args.policy)
         receipt = _load_receipt(args.receipt_json)
     except PolicyError as exc:
@@ -173,6 +206,7 @@ def _cmd_policy_check(args: argparse.Namespace) -> int:
         "overall": overall_status(decisions),
         "blocked": blocked,
         "decisions": [decision.as_dict() for decision in decisions],
+        "policy": provenance.as_dict(),
     }
     if signature_check is not None:
         report["evidence_verdict"] = {
@@ -226,5 +260,19 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Trusted hub verification key (.pub from `synapse merkle keygen`); adds a "
         "merkle_signature decision that fails unless a trusted key's signature "
         "verifies over the receipt's commitment. Repeat to trust several hubs.",
+    )
+    parser.add_argument(
+        "--policy-trust-bundle",
+        default="",
+        metavar="FILE",
+        help="Ed25519 trust bundle; the policy must then be a signed JSON policy from a "
+        "trusted, unrevoked key, or the command exits 2 before evaluating any rule.",
+    )
+    parser.add_argument(
+        "--min-policy-version",
+        type=int,
+        default=None,
+        metavar="N",
+        help="With --policy-trust-bundle, refuse a policy whose policy_version is below N.",
     )
     parser.set_defaults(func=_cmd_policy_check)

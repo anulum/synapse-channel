@@ -554,6 +554,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         ValueError,
     ),
     "PolicyError": ("synapse_channel.core.policy_engine", "policy", ValueError),
+    "PolicySigningError": (
+        "synapse_channel.core.policy_signing",
+        "policy_signature",
+        ValueError,
+    ),
     "PrivateDirError": ("synapse_channel.core.private_dir", "private_dir", ValueError),
     "ReceiptSigningError": ("synapse_channel.core.receipt_signing", "receipt_signing", ValueError),
     "RelayTransportError": (

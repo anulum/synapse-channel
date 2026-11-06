@@ -20,6 +20,16 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **Signed, versioned policies for `policy-check`.** `synapse policy sign`
+  writes an Ed25519-signed copy of a JSON policy, with the envelope bound by
+  RFC 8785 canonical JSON. `synapse policy verify` checks it against a
+  separate trust bundle. `policy-check --policy-trust-bundle` refuses an
+  unsigned, untrusted, revoked or tampered policy before any rule is evaluated,
+  and `--min-policy-version` refuses an older one. Every decision report now
+  names its policy with a `policy` block (digest, version, key id, `signed`,
+  `verified`). Without the new flags `policy-check` behaves as before apart
+  from that block. See docs/policy-engine.md, "Signed policies".
+
 - **`synapse aef verify` checks chain continuity.** After the per-receipt
   verdicts, each log's authentic receipts (`VALID` or `EXPIRED`) are checked as
   a chain: a missing seq (`CHAIN_GAP`), a `prev_receipt` that is not the

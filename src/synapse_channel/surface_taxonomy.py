@@ -126,6 +126,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "fleet-scorecard": ANALYSIS,
     # advisory governance and release integrity
     "policy-check": GOVERNANCE,
+    "policy": GOVERNANCE,
     "approval": GOVERNANCE,
     "verdict": GOVERNANCE,
     "postmortem": GOVERNANCE,
