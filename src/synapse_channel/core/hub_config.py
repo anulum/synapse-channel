@@ -203,6 +203,7 @@ class HubAuthConfig:
     require_role_claim: bool = False
     require_fencing_epoch: bool = False
     require_signed_frames: bool = False
+    require_identity_proof: bool = False
     identity_trust_bundle: EventSignatureTrustBundle | None = None
     require_identity_binding: bool = False
     identity_pin_path: str | Path | None = None

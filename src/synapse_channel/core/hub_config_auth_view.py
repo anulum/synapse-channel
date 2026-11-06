@@ -86,6 +86,12 @@ class HubAuthConfigView(HubConfigOwner):
             config, auth=replace(config.auth, require_signed_frames=value)
         ),
     )
+    require_identity_proof: ConfigAttribute[bool] = ConfigAttribute(
+        lambda config: config.auth.require_identity_proof,
+        lambda config, value: replace(
+            config, auth=replace(config.auth, require_identity_proof=value)
+        ),
+    )
     verdict_policy: ConfigAttribute[VerdictHubPolicy] = ConfigAttribute(
         lambda config: VerdictHubPolicy(
             verdict_authority=config.auth.verdict_authority,

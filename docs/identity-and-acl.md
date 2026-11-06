@@ -88,7 +88,15 @@ The ACL model and its evaluation are implemented in
   in the same directory. A pinned
   name refuses a missing signature or any other key with close code `4013`
   (`identity pin mismatch`) and names the observed key id plus the governed
-  recovery command; unsigned names keep classic semantics. A hub that loses
+  recovery command; unsigned names keep classic semantics unless the hub runs
+  with `--require-identity-proof`, which refuses a registration that proves
+  no key (close code `4013`, `identity proof required`, verification result
+  `identity_proof_required`), a signature without `identity_public_key`
+  included. Current `synapse` clients prove the machine key on their own;
+  a client built with `machine_identity=False`, or one that does not sign
+  its registration, is refused. With the flag a hub that cannot verify
+  proofs (no `cryptography`) refuses unpinned names too, and the command
+  refuses to start without the `encryption` extra. A hub that loses
   `cryptography` after recording pins refuses every pinned name with close
   code `4013` (`identity pin unverifiable`) until the package is restored,
   while unpinned names keep the unsigned compatibility path;

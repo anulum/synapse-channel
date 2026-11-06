@@ -80,6 +80,7 @@ def _authentication(args: argparse.Namespace, base: HubAuthConfig) -> HubAuthCon
         require_role_claim=args.require_role_claim,
         require_fencing_epoch=bool(getattr(args, "require_fencing_epoch", False)),
         require_signed_frames=bool(getattr(args, "require_signed_frames", False)),
+        require_identity_proof=bool(getattr(args, "require_identity_proof", False)),
         require_identity_binding=args.require_identity_binding,
         identity_pin_path=args.identity_pins or None,
         identity_enrollment_path=getattr(args, "identity_enrollments", "") or None,

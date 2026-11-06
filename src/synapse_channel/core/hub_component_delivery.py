@@ -129,6 +129,22 @@ def build_frame_gates(
     )
 
 
+def build_identity_gate(
+    config: HubConfig, security: HubSecurityComponents, callbacks: HubComponentCallbacks
+) -> HubIdentityGate:
+    """Build the registration identity gate; the proof requirement is read live."""
+    return HubIdentityGate(
+        require_identity_binding=config.auth.require_identity_binding,
+        identity_trust_bundle=security.identity_trust,
+        send_json=callbacks.send_json,
+        system=callbacks.system,
+        pin_store=security.pins,
+        require_identity_proof=lambda: bool(
+            getattr(callbacks.owner, "require_identity_proof", False)
+        ),
+    )
+
+
 def build_gates(
     config: HubConfig,
     clients: HubClientComponents,
@@ -146,13 +162,7 @@ def build_gates(
         connection.add_close_listener(sessions.closed)
     frame_signing = FrameSigningSessions()
     connection.add_close_listener(frame_signing.forget)
-    identity = HubIdentityGate(
-        require_identity_binding=config.auth.require_identity_binding,
-        identity_trust_bundle=security.identity_trust,
-        send_json=callbacks.send_json,
-        system=callbacks.system,
-        pin_store=security.pins,
-    )
+    identity = build_identity_gate(config, security, callbacks)
     counters = clients.counters
 
     def count_refusal() -> None:

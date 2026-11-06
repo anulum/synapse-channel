@@ -42,6 +42,14 @@ execution evidence when carrying a release claim forward.
   sign yet. A new connection attempt drops the previous connection's signing
   session, so nothing is signed for an ended connection.
 
+- **`synapse hub --require-identity-proof`.** Without operator identity
+  binding, a name that never proves a key stays first-come. With this flag
+  the hub refuses such a registration with close code 4013 and
+  `identity_proof_required`, so every admitted connection is bound to a key
+  pinned on first use. Current `synapse` clients prove their machine key on
+  their own. The command refuses to start with the flag without the
+  `encryption` extra. Off by default.
+
 - **Signing connections are closed once their key stops being trusted, even
   while they only listen.** With `--require-signed-frames` the hub re-checks
   every signing connection's key right after an online enrolment, rotation

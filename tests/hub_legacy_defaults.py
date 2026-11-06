@@ -110,6 +110,7 @@ LEGACY_DEFAULTS: dict[str, object] = {
     "require_role_claim": False,
     "require_fencing_epoch": False,
     "require_signed_frames": False,
+    "require_identity_proof": False,
     "identity_trust_bundle": None,
     "require_identity_binding": False,
     "identity_pin_path": None,

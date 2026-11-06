@@ -216,6 +216,19 @@ def guard_signed_frames(ctx: HubStartup) -> None:
         raise HubStartupRefused()
 
 
+def guard_identity_proof(ctx: HubStartup) -> None:
+    """Refuse ``--require-identity-proof`` where no proof could be verified."""
+    if getattr(ctx.args, "require_identity_proof", False) and (
+        importlib.util.find_spec("cryptography") is None
+    ):
+        print(
+            "synapse hub: --require-identity-proof needs the encryption extra "
+            "(pip install 'synapse-channel[encryption]')",
+            file=sys.stderr,
+        )
+        raise HubStartupRefused()
+
+
 def prepare_hub_transport(ctx: HubStartup) -> None:
     """Validate serving, transport, durable prerequisites and exposure before allocation."""
     configure_serving_policy(ctx)
@@ -227,3 +240,4 @@ def prepare_hub_transport(ctx: HubStartup) -> None:
     guard_storage_exposure(ctx)
     guard_declared_identity(ctx)
     guard_signed_frames(ctx)
+    guard_identity_proof(ctx)

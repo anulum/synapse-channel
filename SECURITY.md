@@ -357,14 +357,24 @@ When that boundary is crossed, the proportionate controls are:
   the identity key that proved the connection, bound to this hub, to the
   connection's session nonce and to a growing sequence. A frame copied to
   another connection or hub, or sent again, is refused. A connection whose key
-  is revoked, expires or loses its pin is closed at its next such frame, and a
-  connection that registers without a verified identity signature is refused.
+  is revoked, rotated away, expires or loses its pin is closed: at once after
+  an online enrolment change, within about five seconds of expiry, and at its
+  next frame in any case. A connection that registers without a verified
+  identity signature is refused.
   The signatures protect the integrity and origin of mutations; they do not
   hide or protect reads, so TLS stays required off-host. The Python client
   (every `synapse` command, the MCP server and the waiter) signs whenever the
   hub's welcome asks; the JavaScript and Go clients, the VS Code extension and
   the cockpit do not sign yet and are refused by such a hub (see
   `docs/per-message-authentication.md`).
+- **Identity proof at registration.** Without operator identity binding, the
+  hub pins each name to the first key that proves it, and a name that never
+  proves a key stays first-come. `--require-identity-proof` refuses such a
+  registration (close code 4013, `identity_proof_required`), so every
+  connection is bound to a key; with `--require-signed-frames` an unproven
+  registration is refused in any case. First use still trusts whoever proves
+  a name first, so `--require-identity-binding` with an operator trust bundle
+  remains the posture for a hub whose names must be assigned in advance.
 - **Rotating connect tokens.** `synapse hub --token-set PATH` reads an
   owner-only JSON file of identified tokens instead of one secret. Each entry
   holds an `id`, the SHA-256 digest of its secret (never the secret), optional

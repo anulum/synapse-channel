@@ -39,7 +39,15 @@ def add_hub_admission_arguments(hub: argparse.ArgumentParser) -> None:
 
 
 def add_hub_frame_signature_argument(hub: argparse.ArgumentParser) -> None:
-    """Add ``--require-signed-frames``, the per-frame identity signature requirement."""
+    """Add ``--require-signed-frames`` and ``--require-identity-proof``."""
+    hub.add_argument(
+        "--require-identity-proof",
+        action="store_true",
+        help="Refuse a registration that proves no identity key. Without operator identity "
+        "binding the hub pins each name to the first key that proves it; this also refuses a "
+        "name that presents no proof, so every connection is bound to a key. Current synapse "
+        "clients prove the machine identity on their own. Off by default.",
+    )
     hub.add_argument(
         "--require-signed-frames",
         action="store_true",

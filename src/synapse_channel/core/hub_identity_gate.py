@@ -22,7 +22,8 @@ in one of two postures:
   name binds only to a frame proving possession of the pinned key — a missing
   signature or a different key is refused with an actionable error. Names that
   never sign stay unpinned and keep classic first-come semantics, so a
-  pre-TOFU client is never locked out.
+  pre-TOFU client is never locked out. With ``--require-identity-proof``
+  such a name is refused instead, so every admitted socket proved a key.
 
 The gate resolves the connection credential to the claimed audit subject before
 the hub trusts that subject for the ``-rx`` mailbox gate or a role claim. It
@@ -64,6 +65,9 @@ logger = logging.getLogger("synapse.hub")
 IDENTITY_BINDING_CLOSE_CODE = 4013
 """WebSocket close code for a socket refused because it did not prove its identity."""
 
+IDENTITY_PROOF_REQUIRED = "identity_proof_required"
+"""Refusal for an unpinned registration without a proof when the hub requires one."""
+
 _ED25519_RAW_PUBLIC_KEY_BYTES = 32
 
 
@@ -94,6 +98,9 @@ class HubIdentityGate:
         Wall-clock source for signature freshness; defaults to :func:`time.time`
         (the signed-registration timestamp is wall-clock, not the hub's monotonic
         uptime clock).
+    require_identity_proof : Callable[[], bool], optional
+        Whether the trust-on-first-use posture refuses an unpinned name that
+        presents no proof, read at each registration; off by default.
     """
 
     def __init__(
@@ -105,8 +112,10 @@ class HubIdentityGate:
         system: Callable[..., dict[str, Any]],
         pin_store: IdentityPinStore | None = None,
         clock: Callable[[], float] = time.time,
+        require_identity_proof: Callable[[], bool] = lambda: False,
     ) -> None:
         self._require_identity_binding = require_identity_binding
+        self._require_identity_proof = require_identity_proof
         self._identity_trust_bundle = identity_trust_bundle
         self._send_json = send_json
         self._system = system
@@ -149,14 +158,16 @@ class HubIdentityGate:
         With binding off, the trust-on-first-use posture applies (see the class
         docstring): a pinned name must prove its pinned key; an unpinned name
         that presents a valid self-contained proof is pinned; an unpinned,
-        unsigned name passes unchanged. Every refusal sends an error naming the
+        unsigned name passes unchanged unless the hub requires an identity proof,
+        and so does every name when no pin store is configured. Every refusal
+        sends an error naming the
         reason and closes the socket (:data:`IDENTITY_BINDING_CLOSE_CODE`), and
         returns ``False`` so the hub stops routing before the name is bound.
         """
         if self._require_identity_binding:
             return await self._verify_against_bundle(sender, data, websocket)
         if self._pin_store is None:
-            return True
+            return await self._admit_unproven(sender, websocket)
         return await self._verify_first_use(self._pin_store, sender, data, websocket)
 
     @property
@@ -226,12 +237,14 @@ class HubIdentityGate:
         - name unpinned, a presented proof FAILS → refuse (a broken proof is
           never admitted, and never pins);
         - name unpinned, no complete proof presented → admit unchanged (the
-          pre-TOFU client, or a key provisioned for a different hub posture).
+          pre-TOFU client, or a key provisioned for a different hub posture),
+          or refuse when the hub requires an identity proof.
 
         A hub whose environment lacks the optional ``cryptography`` package
         cannot verify any proof. For an unpinned name the posture degrades to
         a pass-through with a once-per-gate warning rather than refusing (which
-        would brick every signing client) or crashing the frame handler. A
+        would brick every signing client) or crashing the frame handler; a hub
+        that requires an identity proof refuses it, since nothing was proven. A
         pinned name is refused: its pin was recorded while verification worked,
         so admitting it unverified would let any client take the name. The
         refusal names the missing package as the remedy.
@@ -255,13 +268,13 @@ class HubIdentityGate:
             await self._refuse_pin_mismatch(pin_store, sender, websocket, detail=result.value)
             return False
         if not has_signature or not presented_key:
-            return True
+            return await self._admit_unproven(sender, websocket)
         key_id = str(data.get("signature", {}).get("key_id") or "")
         try:
             result = self._verify_self_contained(sender, data, key_id, presented_key)
         except ImportError:
             self._warn_crypto_missing()
-            return True
+            return await self._admit_unproven(sender, websocket)
         if result is not SignedEventVerificationResult.VALID:
             logger.warning("identity first-use proof failed for %s: %s", sender, result.value)
             await self._refuse(
@@ -334,6 +347,24 @@ class HubIdentityGate:
             reason="identity pin mismatch",
             verification_result=detail,
         )
+
+    async def _admit_unproven(self, sender: str, websocket: Any) -> bool:
+        """Admit a registration that proved no key, unless the hub requires a proof."""
+        if not self._require_identity_proof():
+            return True
+        logger.warning("identity proof required but not presented by %s", sender)
+        await self._refuse(
+            websocket,
+            sender,
+            message=(
+                f"identity proof required: this hub admits {sender!r} only with a "
+                "registration signed by its identity key that also carries the public "
+                "key. Current synapse clients do this with the machine identity."
+            ),
+            reason="identity proof required",
+            verification_result=IDENTITY_PROOF_REQUIRED,
+        )
+        return False
 
     async def _refuse_pin_unverifiable(self, sender: str, key_id: str, websocket: Any) -> None:
         """Refuse a pinned name this hub cannot verify because ``cryptography`` is gone."""

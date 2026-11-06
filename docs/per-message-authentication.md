@@ -332,7 +332,10 @@ the error tells the client to upgrade.
 The hub refuses to start with `--require-signed-frames` when it serves
 multi-hub peers (`--multihub-serving-policy`, `--relay-peer`, `--message-peer`).
 A peer hub proves itself with its certificate and has no identity key to sign
-with. It also refuses to start without the `encryption` extra.
+with. It also refuses to start without the `encryption` extra. On a hub
+without operator identity binding, `--require-signed-frames` already refuses
+a registration that proves no key; `--require-identity-proof` refuses it on
+its own, without requiring signed frames (see `docs/identity-and-acl.md`).
 
 ## Boundaries
 
