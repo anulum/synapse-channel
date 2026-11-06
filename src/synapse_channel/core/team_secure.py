@@ -150,9 +150,11 @@ def _record_sequence_floors(args: argparse.Namespace) -> str:
     Floors need per-message authentication and a durable replay ledger (``--db`` or
     ``--message-auth-replay-db``); without both they stay off. An unset (``off``) mode
     becomes ``compat``, which records each key's high-water sequence without refusing
-    anything. ``strict`` is left to the operator: the shipped client numbers frames
-    from 1 in every process, so a strict floor refuses a restarted agent's first
-    frames (reproduced) until clients keep their sequence across restarts.
+    anything. ``strict`` is left to the operator. The shipped client derives each
+    sequence from the wall clock, so a restarted agent passes a strict floor, but
+    a clock set back, or a restart within the same microsecond, is refused
+    (``sequence_mismatch``); clients up to Core 0.99.31 numbered frames from 1 in
+    every process and are refused after every restart.
 
     Returns
     -------
