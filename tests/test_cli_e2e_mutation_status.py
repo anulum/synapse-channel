@@ -426,12 +426,18 @@ def test_real_cli_reports_invalid_opencode_schema_outside_git(tmp_path: Path) ->
     assert gate["hook_state"] == "not-a-repository"
     assert gate["gate_status"] == "not-configured"
     assert before == (config.read_bytes(), config.stat().st_mtime_ns, config.stat().st_mode)
+    text = _run_in_process(
+        "adapters", "mutation-status", "--home", str(home), "--project", str(project)
+    )
+    assert text.ok(), text.output
+    assert "  repository: not-a-repository" in text.stdout
+    assert "  hook: not-a-repository" in text.stdout
 
 
 def test_real_cli_fails_closed_when_git_answers_beyond_the_inspection_limit(
     tmp_path: Path,
 ) -> None:
-    """A Git answer over the 64 KiB limit is refused, so no staged gate is reported.
+    """A Git answer over the 64 KiB limit is refused and named, not read as a non-repository.
 
     A real ``core.hooksPath`` of 70 000 characters makes ``git rev-parse
     --git-path hooks/pre-commit`` print more than the limit; the inspection
@@ -454,9 +460,19 @@ def test_real_cli_fails_closed_when_git_answers_beyond_the_inspection_limit(
     gate = report["staged_gate"]
     assert isinstance(gate, dict)
     assert gate["repository"] is None
-    assert gate["hook_state"] == "not-a-repository"
+    assert gate["hook_state"] == "inspection-limit"
     assert gate["gate_status"] == "not-configured"
     assert list(home.iterdir()) == []
+    text = _run(
+        "adapters", "mutation-status", "--home", str(home), "--project", str(repo), cwd=repo
+    )
+    assert text.ok(), text.output
+    assert "repository: not inspected (Git answer over the inspection limit)" in text.stdout
+    assert "hook: inspection-limit" in text.stdout
+    in_process_text = _run_in_process(
+        "adapters", "mutation-status", "--home", str(home), "--project", str(repo)
+    )
+    assert in_process_text.stdout == text.stdout
 
 
 def test_real_cli_reports_unsafe_staged_gate_files(tmp_path: Path) -> None:

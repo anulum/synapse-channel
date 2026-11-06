@@ -224,6 +224,10 @@ staged-claim configuration and an executable pre-commit runner (or an exact
 direct staged-check hook). It still reports `enforcement_status=not-exercised`:
 the posture view does not stage a change or manufacture a claim merely to clear
 its own diagnostic. Real commit-path tests remain independent evidence.
+`hook_state=not-a-repository` means Git did not answer for the project;
+`hook_state=inspection-limit` means Git answered with more than the 64 KiB the
+inspection reads, for example through a very long `core.hooksPath`, so the
+repository was not inspected. Both leave the gate `not-configured`.
 
 Every report enumerates the covered write tools and the remaining unsupported
 custom, MCP, direct-filesystem, provider crash/timeout, incomplete-interception,

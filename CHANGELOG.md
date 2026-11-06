@@ -165,6 +165,14 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **`synapse adapters mutation-status` names an over-limit Git answer.** When
+  Git answers with more than the 64 KiB the inspection reads, for example
+  through a very long `core.hooksPath`, the staged gate reports
+  `hook_state=inspection-limit` instead of `not-a-repository`, and the text
+  output says the repository was not inspected. The gate stays
+  `not-configured`; the schema stays `synapse.mutation-governance.v1` with one
+  added `hook_state` value.
+
 - **A test that leaves a file, socket or process unclosed now fails.** The
   pytest settings turn `ResourceWarning` and
   `pytest.PytestUnraisableExceptionWarning` into errors, locally and in every

@@ -55,7 +55,7 @@ else:  # pragma: no cover - exercised only on Python 3.10
     import tomli as tomllib
 
 ConfigurationState = Literal["configured", "partial", "not-configured", "invalid"]
-HookState = Literal["installed", "not-installed", "invalid", "not-a-repository"]
+HookState = Literal["installed", "not-installed", "invalid", "not-a-repository", "inspection-limit"]
 
 GLOBAL_RESIDUALS = (
     "unsupported custom write tools",
@@ -323,6 +323,10 @@ def _inspect_opencode(
     return "not-configured", "owned project/global OpenCode assets not found", paths
 
 
+class _GitInspectionLimit(ValueError):
+    """Git answered with more output than the inspection reads."""
+
+
 def _run_git(project: Path, *arguments: str) -> str:
     command = ["git", "-C", str(project), *arguments]
     # The command is a fixed Git executable with structured arguments and no shell.
@@ -336,7 +340,7 @@ def _run_git(project: Path, *arguments: str) -> str:
     if completed.returncode != 0:
         raise ValueError("not a readable Git repository")
     if len(completed.stdout.encode("utf-8")) > 65_536:
-        raise ValueError("Git response exceeded the inspection limit")
+        raise _GitInspectionLimit("Git response exceeded the inspection limit")
     return completed.stdout.strip()
 
 
@@ -351,26 +355,49 @@ def _contains_staged_gate_config(text: str) -> bool:
     return command_present and all(marker in text for marker in required)
 
 
-def _inspect_staged_gate(project: Path) -> StagedGatePosture:
-    residuals = (
-        "unstaged working-tree changes",
-        "direct filesystem writes before staging",
-        "external side effects outside the Git index",
+_STAGED_GATE_RESIDUALS = (
+    "unstaged working-tree changes",
+    "direct filesystem writes before staging",
+    "external side effects outside the Git index",
+)
+
+
+def _uninspected_gate(hook_state: HookState) -> StagedGatePosture:
+    """Return the fail-closed posture of a project whose Git was not read."""
+    return StagedGatePosture(
+        repository=None,
+        configuration_state="not-configured",
+        hook_state=hook_state,
+        gate_status="not-configured",
+        enforcement_status="not-configured",
+        inspected_paths=(),
+        covered_surface=("staged Git index",),
+        residuals=_STAGED_GATE_RESIDUALS,
     )
+
+
+def _repository_paths(project: Path) -> tuple[Path, Path] | HookState:
+    """Return the repository root and raw hook path, or why Git was not read.
+
+    A real repository whose answer is too long to read is reported as
+    ``inspection-limit``, so it is not mistaken for a directory outside Git.
+    """
     try:
         root = Path(_run_git(project, "rev-parse", "--show-toplevel"))
         hook_raw = Path(_run_git(project, "rev-parse", "--git-path", "hooks/pre-commit"))
+    except _GitInspectionLimit:
+        return "inspection-limit"
     except (OSError, subprocess.SubprocessError, ValueError):
-        return StagedGatePosture(
-            repository=None,
-            configuration_state="not-configured",
-            hook_state="not-a-repository",
-            gate_status="not-configured",
-            enforcement_status="not-configured",
-            inspected_paths=(),
-            covered_surface=("staged Git index",),
-            residuals=residuals,
-        )
+        return "not-a-repository"
+    return root, hook_raw
+
+
+def _inspect_staged_gate(project: Path) -> StagedGatePosture:
+    residuals = _STAGED_GATE_RESIDUALS
+    located = _repository_paths(project)
+    if isinstance(located, str):
+        return _uninspected_gate(located)
+    root, hook_raw = located
 
     root = _lexical_absolute(root)
     hook_path = hook_raw if hook_raw.is_absolute() else root / hook_raw

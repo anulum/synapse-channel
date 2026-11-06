@@ -44,7 +44,13 @@ def _command(args: argparse.Namespace) -> int:
 
     gate = report.staged_gate
     print("Staged Git claim gate")
-    print(f"  repository: {gate.repository or 'not-a-repository'}")
+    if gate.repository is not None:
+        repository = gate.repository
+    elif gate.hook_state == "inspection-limit":
+        repository = "not inspected (Git answer over the inspection limit)"
+    else:
+        repository = "not-a-repository"
+    print(f"  repository: {repository}")
     print(f"  configuration: {gate.configuration_state}")
     print(f"  hook: {gate.hook_state}")
     print(f"  gate: {gate.gate_status}")
