@@ -34,6 +34,7 @@ import shlex
 
 # Tmux and synapse subprocesses are this module's controlled process boundary.
 import subprocess  # nosec B404
+import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -1123,8 +1124,17 @@ def _bridge_wait(
     )
     if wait_proc.returncode == 2 and _PARENT_FLAG_REFUSAL in (wait_proc.stderr or ""):
         # An older `synapse` cannot bind its wait to the bridge; keep this
-        # bridge on the one-shot, interval-bounded wait it always used.
+        # bridge on the one-shot, interval-bounded wait it always used. Say so
+        # once in the bridge log, with the refusal, so the switch is visible.
         _ONE_SHOT_WAIT_BINARIES.add(config.synapse_bin)
+        refusal_line = (wait_proc.stderr or "").strip().splitlines()[-1][:300]
+        print(
+            f"agent-tmux {config.identity}: {config.synapse_bin} refused "
+            f"'wait --exit-with-parent' ({refusal_line}); using the one-shot "
+            f"{config.pane_probe_interval:g} s wait from now on",
+            file=sys.stderr,
+            flush=True,
+        )
         return _bridge_wait(config, runner=runner, heartbeat=heartbeat)
     if not refusal and wait_proc.returncode == 0:
         refusal = probe()

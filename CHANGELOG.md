@@ -165,6 +165,12 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **A pane bridge says when it falls back to one-shot waits.** A bridge
+  whose `synapse` refuses `wait --exit-with-parent` keeps the old one-shot
+  wait, which starts a new process every probe interval. It now writes one
+  line to its log when it switches, naming the identity, the executable and
+  the refusal, so an unexpected switch can be traced.
+
 - **`synapse adapters mutation-status` names an over-limit Git answer.** When
   Git answers with more than the 64 KiB the inspection reads, for example
   through a very long `core.hooksPath`, the staged gate reports

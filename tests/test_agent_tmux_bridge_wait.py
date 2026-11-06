@@ -56,7 +56,7 @@ def _legacy_synapse(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def test_an_old_synapse_keeps_the_bridge_on_the_one_shot_wait(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A ``synapse`` that refuses the parent binding is detected once and then used one-shot."""
     monkeypatch.setattr(agent_tmux, "_ONE_SHOT_WAIT_BINARIES", set())
@@ -78,6 +78,13 @@ def test_an_old_synapse_keeps_the_bridge_on_the_one_shot_wait(
     assert "--exit-with-parent" in lines[0]
     assert all("--exit-with-parent" not in line for line in lines[1:])
     assert all("--timeout 30" in line for line in lines[1:])
+    # The switch is logged once, with the refusal, and not again on the next wait.
+    logged = capsys.readouterr().err.splitlines()
+    assert logged == [
+        f"agent-tmux LEGACY/seat: {binary} refused 'wait --exit-with-parent' "
+        f"(synapse-legacy: error: unrecognized arguments: --exit-with-parent {os.getpid()}); "
+        "using the one-shot 30 s wait from now on"
+    ]
 
 
 def test_a_wait_bound_to_a_process_that_is_not_its_parent_never_connects() -> None:
