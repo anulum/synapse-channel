@@ -96,7 +96,8 @@ def test_a_failing_probe_still_stops_the_wait() -> None:
 
 def test_stopping_kills_a_child_that_ignores_sigterm_and_reaps_a_finished_one() -> None:
     """``SIGTERM`` first, ``SIGKILL`` after the grace period; an exited child is only reaped."""
-    stubborn = subprocess.Popen(
+    # The context managers close each child's pipes once it is stopped.
+    with subprocess.Popen(
         [
             sys.executable,
             "-c",
@@ -108,15 +109,15 @@ def test_stopping_kills_a_child_that_ignores_sigterm_and_reaps_a_finished_one() 
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-    )
-    assert stubborn.stdout is not None
-    assert stubborn.stdout.readline() == "ready\n"
-    assert stop_wait(stubborn, grace=0.2) == -9
-    finished = subprocess.Popen(
+    ) as stubborn:
+        assert stubborn.stdout is not None
+        assert stubborn.stdout.readline() == "ready\n"
+        assert stop_wait(stubborn, grace=0.2) == -9
+    with subprocess.Popen(
         [sys.executable, "-c", "raise SystemExit(5)"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-    )
-    finished.wait(timeout=20)
-    assert stop_wait(finished) == 5
+    ) as finished:
+        finished.wait(timeout=20)
+        assert stop_wait(finished) == 5

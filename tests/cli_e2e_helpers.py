@@ -456,8 +456,10 @@ def isolated_team(*, no_workers: bool = True, ready_timeout: float = 10.0) -> It
     with tempfile.TemporaryDirectory(prefix="synapse-team-e2e-") as home:
         proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
             argv,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            # Nobody reads the launcher's output here, so it must not go to a pipe
+            # that a chatty hub or worker could fill.
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             text=True,
             start_new_session=True,
             env={**os.environ, "HOME": home},

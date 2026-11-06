@@ -132,16 +132,18 @@ def test_mtls_client_cert_required_and_accepted(tmp_path: Path) -> None:
         # Missing client cert must fail closed
         no_client = ssl.create_default_context(cafile=str(ca))
         no_client.check_hostname = False
+        refused = http.client.HTTPSConnection("127.0.0.1", port, context=no_client, timeout=3.0)
         try:
-            conn = http.client.HTTPSConnection("127.0.0.1", port, context=no_client, timeout=3.0)
-            conn.request("GET", "/.well-known/agent-card.json")
-            conn.getresponse()
-            conn.close()
+            refused.request("GET", "/.well-known/agent-card.json")
+            refused.getresponse()
             raised = False
         except ssl.SSLError:
             raised = True
         except OSError:
             raised = True
+        finally:
+            # The refused handshake leaves the socket open unless it is closed here.
+            refused.close()
         assert raised, "expected TLS failure without client certificate"
 
         # Matching client cert succeeds
