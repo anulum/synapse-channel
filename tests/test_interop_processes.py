@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import stat
 import sys
 from pathlib import Path
@@ -42,17 +41,16 @@ from tools.interop_hub import (
 from tools.interop_journey import StepFailure, Steps
 from tools.interop_oracle import JournalOracle
 
+from _platform_caps import requires_posix_mode_bits
 from synapse_channel.core.identity_binding import parse_identity_trust_document
 from synapse_channel.core.persistence import EventStore
-
-POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason="owner-only modes are POSIX permissions")
 
 
 def _mode(path: Path) -> int:
     return stat.S_IMODE(path.stat().st_mode)
 
 
-@POSIX_ONLY
+@requires_posix_mode_bits
 def test_provisioning_writes_owner_only_operator_material(tmp_path: Path) -> None:
     provisioned = provision(tmp_path / "p")
     for path in (
@@ -162,7 +160,7 @@ def test_the_typescript_client_receives_paths_never_tokens(tmp_path: Path) -> No
     assert version == "1.32.2" and integrity.startswith("sha512-")
 
 
-@POSIX_ONLY
+@requires_posix_mode_bits
 def test_the_a2a_bridge_is_bearer_protected_and_its_bearer_owner_only(tmp_path: Path) -> None:
     provisioned = provision(tmp_path / "p")
     bearer = interop_a2a._bearer(provisioned, "unit.bearer", "bearer-value")
@@ -219,7 +217,6 @@ def test_the_mcp_journal_assertions_match_a_real_journey_journal(tmp_path: Path)
     assert interop_hub.STDIO_NAMES == (who.first, who.second)
 
 
-@POSIX_ONLY
 def test_a_process_that_never_listens_is_refused_then_killed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

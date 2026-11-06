@@ -68,7 +68,9 @@ official `a2a-sdk` on PyPI.
    because the SDK sends no Origin, must be refused.
 
 The journal must hold the forwarded chat from the bridge to its target, and
-that chat must carry the A2A task id the client saw.
+that chat must carry the A2A task id the client saw. Only the send is backed by
+the journal: get, list and cancel act on the bridge's own task state, so they
+are checked at the client.
 
 ## How a journey can fail
 
@@ -137,4 +139,6 @@ python -m tools.interop_lane --out /tmp/interop-results.json \
 ```
 
 The lane prints one line per row and mode, and exits non-zero when any outcome
-is not the one required.
+is not the one required. Without `--mcp-ts` or `--a2a-python` it runs only the
+MCP Python SDK rows and still exits 0 when they are as required. Such a run is
+partial; CI always passes both options.
