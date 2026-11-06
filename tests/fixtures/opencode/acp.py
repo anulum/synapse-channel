@@ -9,19 +9,27 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import queue
 import subprocess
 import threading
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 _INITIALIZE_PARAMS = {
     "protocolVersion": 1,
     "clientCapabilities": {"_meta": {"terminal-auth": True}},
     "clientInfo": {"name": "synapse-channel-test", "version": "0.1.0"},
 }
+
+
+def _close_main_pipes(*streams: IO[str]) -> None:
+    """Close the pipes the main thread owns; a dead child's stdin may refuse a flush."""
+    for stream in streams:
+        with contextlib.suppress(OSError):
+            stream.close()
 
 
 def acp_initialize(
@@ -49,8 +57,13 @@ def acp_initialize(
     responses: queue.Queue[str] = queue.Queue()
 
     def _read_response() -> None:
-        for line in stdout:
-            responses.put(line)
+        # The reader owns stdout and closes it: closing it from the main thread
+        # while this read is blocked would wait on the buffer lock.
+        try:
+            for line in stdout:
+                responses.put(line)
+        finally:
+            stdout.close()
 
     reader = threading.Thread(target=_read_response, daemon=True)
     reader.start()
@@ -78,6 +91,7 @@ def acp_initialize(
             process.kill()
             process.wait(timeout=5)
         reader.join(timeout=2)
+        _close_main_pipes(stdin, stderr_stream)
 
 
 def acp_session_prompt(
@@ -107,8 +121,13 @@ def acp_session_prompt(
     chunks: list[str] = []
 
     def _read_response() -> None:
-        for line in stdout:
-            responses.put(line)
+        # The reader owns stdout and closes it: closing it from the main thread
+        # while this read is blocked would wait on the buffer lock.
+        try:
+            for line in stdout:
+                responses.put(line)
+        finally:
+            stdout.close()
 
     reader = threading.Thread(target=_read_response, daemon=True)
     reader.start()
@@ -162,3 +181,4 @@ def acp_session_prompt(
             process.kill()
             process.wait(timeout=5)
         reader.join(timeout=2)
+        _close_main_pipes(stdin, stderr_stream)

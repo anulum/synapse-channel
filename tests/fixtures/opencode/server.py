@@ -60,12 +60,21 @@ def running_opencode_server(
     stdout_lines: queue.Queue[str] = queue.Queue()
     stderr_lines: list[str] = []
 
+    # Each drain thread owns its pipe and closes it when the stream ends;
+    # closing it from the main thread while a read is blocked would wait on
+    # the buffer lock.
     def _drain_stdout() -> None:
-        for line in stdout:
-            stdout_lines.put(line)
+        try:
+            for line in stdout:
+                stdout_lines.put(line)
+        finally:
+            stdout.close()
 
     def _drain_stderr() -> None:
-        stderr_lines.extend(stderr)
+        try:
+            stderr_lines.extend(stderr)
+        finally:
+            stderr.close()
 
     stdout_thread = threading.Thread(target=_drain_stdout, daemon=True)
     stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
