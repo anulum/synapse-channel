@@ -36,6 +36,7 @@ from synapse_channel.core.frame_signature_gate import (
     pin_key,
 )
 from synapse_channel.core.frame_signing import FrameSigningSessions
+from synapse_channel.core.handlers import VERBS
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.identity_keys import sign_registration
 from synapse_channel.core.identity_pins import IdentityPinStore
@@ -346,3 +347,23 @@ def test_a_bound_connection_without_a_record_is_closed() -> None:
     )
     outcome = gate.check(object(), "A", {"type": "who_request"})
     assert (outcome.verdict, outcome.reason) == (GateVerdict.CLOSE, NO_IDENTITY)
+
+
+@pytest.mark.parametrize("msg_type", [*sorted(VERBS), "not_a_registered_verb"])
+def test_every_request_type_is_refused_unsigned(msg_type: str) -> None:
+    sessions = FrameSigningSessions()
+    socket = object()
+    sessions.record(socket, SENDER, "k", "bundle")
+    gate = FrameSignatureGate(
+        sessions=sessions,
+        hub_id="h",
+        enabled=lambda: True,
+        bundle=_bundle,
+        pins=None,
+        send_json=_discard,
+        system=lambda *args, **kwargs: {},
+        close_socket=_no_close,
+        count_refusal=lambda: None,
+    )
+    outcome = gate.check(socket, SENDER, {"sender": SENDER, "type": msg_type})
+    assert (outcome.verdict, outcome.reason) == (GateVerdict.REFUSE, "frame_signature_required")

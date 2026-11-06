@@ -14,6 +14,7 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, cast
 
+from synapse_channel.client.frame_signing_client import ClientFrameSession, session_from_welcome
 from synapse_channel.client.lease_epoch_store import LeaseEpochStore
 from synapse_channel.core.protocol import MessageType, read_protocol_version
 
@@ -33,6 +34,7 @@ class _DispatchAgent(Protocol):
     """Attributes required by the inbound dispatch mixin."""
 
     callback: MessageCallback | None
+    frame_session: ClientFrameSession | None
     hub_id: str
     hub_protocol_version: int | None
     delivery_incarnation: str
@@ -106,6 +108,7 @@ class AgentDispatchMixin:
             return
 
         if data.get("type") == MessageType.WELCOME:
+            self.frame_session = session_from_welcome(data)
             self.hub_id = str(data.get("hub_id", "unknown"))
             self.hub_protocol_version = read_protocol_version(data.get("protocol_version"))
             self.ready_event.set()

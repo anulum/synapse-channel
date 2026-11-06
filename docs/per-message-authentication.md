@@ -304,6 +304,17 @@ a row, the connection is closed with 4013. When
 the HMAC `auth` envelope and the frame signature. The frame signature covers
 `auth` as well.
 
+A hub with the flag says so in every welcome with
+`"frame_signatures": "required"`. The Python client signs on its own from that
+welcome: every `synapse` command, the MCP server and the waiter sign each
+frame after registration with the key they registered with, and send
+unchanged frames to a hub that does not ask. A value a signature cannot cover
+(an integer beyond ±(2**53 − 1), a non-finite number or a lone surrogate) is
+refused before anything is sent. The JavaScript client (`clients/js`), the Go
+client (`clients/go`), the VS Code extension and the cockpit do not sign yet;
+a hub with the flag refuses their frames with `frame_signature_required`, and
+the error tells the client to upgrade.
+
 The hub refuses to start with `--require-signed-frames` when it serves
 multi-hub peers (`--multihub-serving-policy`, `--relay-peer`, `--message-peer`).
 A peer hub proves itself with its certificate and has no identity key to sign

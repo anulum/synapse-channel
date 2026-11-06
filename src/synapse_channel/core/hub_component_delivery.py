@@ -146,7 +146,6 @@ def build_gates(
         connection.add_close_listener(sessions.closed)
     frame_signing = FrameSigningSessions()
     connection.add_close_listener(frame_signing.forget)
-    connection.set_welcome_fields(frame_signing.welcome_fields)
     identity = HubIdentityGate(
         require_identity_binding=config.auth.require_identity_binding,
         identity_trust_bundle=security.identity_trust,
@@ -170,6 +169,7 @@ def build_gates(
         close_socket=clients.clients.close_socket,
         count_refusal=count_refusal,
     )
+    connection.set_welcome_fields(frame_signature_gate.welcome_fields)
     return HubGateComponents(
         ingress=HubIngress(
             clients.clients,

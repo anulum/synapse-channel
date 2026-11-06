@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
+from synapse_channel.client.frame_signing_client import sign_outbound
 from synapse_channel.core.identity_keys import sign_registration
 from synapse_channel.core.message_auth import (
     DEFAULT_SIGNED_MESSAGE_TYPES,
@@ -72,7 +73,9 @@ class AgentSendMixin:
             When ``True`` and an identity signing key is configured, attach an Ed25519
             identity signature so a hub that requires connection-identity binding admits
             this socket. Used only for the registration heartbeat — a keepalive tick
-            leaves it ``False`` — so exactly the name-binding frame is proven.
+            leaves it ``False`` — so exactly the name-binding frame is proven. Every
+            other frame is signed for the connection's session when the hub's
+            welcome requires signed frames.
         **extra : Any
             Additional protocol fields merged into the envelope.
         """
@@ -87,6 +90,13 @@ class AgentSendMixin:
                 key=self._message_auth_key,
                 nonce=secrets.token_urlsafe(18),
                 sequence=self._message_auth_sequence,
+            )
+        if not sign_identity and self.frame_session is not None and self._identity_key is not None:
+            msg = sign_outbound(
+                msg,
+                self.frame_session,
+                key_id=self._identity_key_id,
+                private_key=self._identity_key,
             )
         if sign_identity and self._identity_key is not None:
             self._identity_sequence += 1

@@ -160,6 +160,13 @@ class FrameSignatureGate:
         self._count_refusal = count_refusal
         self._clock = clock
 
+    def welcome_fields(self, websocket: Any) -> dict[str, str]:
+        """Return the welcome fields for a connection: its nonce, and the requirement."""
+        fields = self._sessions.welcome_fields(websocket)
+        if self._enabled():
+            fields["frame_signatures"] = "required"
+        return fields
+
     def _resolve_key(self, signer: FrameSigner) -> Ed25519PublicKey | None:
         """Look up a recorded signer's key afresh; ``None`` once it is no longer trusted."""
         if signer.source == "bundle":
@@ -254,10 +261,15 @@ class FrameSignatureGate:
     async def _refuse(self, websocket: Any, target: str, reason: str) -> None:
         """Count a refusal and tell the connection why."""
         self._count_refusal()
+        hint = (
+            " (this hub requires signed frames; upgrade the client)"
+            if reason == FrameSignatureResult.MISSING.value
+            else ""
+        )
         await self._send_json(
             websocket,
             self._system(
-                f"frame signature refused: {reason}",
+                f"frame signature refused: {reason}{hint}",
                 msg_type=MessageType.ERROR,
                 target=target,
                 verification_result=reason,

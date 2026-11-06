@@ -31,6 +31,16 @@ execution evidence when carrying a release claim forward.
   multi-hub peers or lacks the `encryption` extra. The flag is off by default.
   `benchmarks/frame_signature_benchmark.py` measures its cost.
 
+- **The Python client signs frames when the hub requires it.** A hub with
+  `--require-signed-frames` adds `"frame_signatures": "required"` to its
+  welcome. Every `synapse` command, the MCP server and the waiter then sign
+  each frame after registration with the identity key they registered with;
+  a hub that does not ask gets unchanged frames. A frame holding a value the
+  signature cannot cover is refused before it is sent. An unsigned frame on
+  such a hub is refused with a message telling the client to upgrade. The
+  JavaScript and Go clients, the VS Code extension and the cockpit do not
+  sign yet.
+
 - **A per-connection `session_nonce` in `welcome`.** Each connection gets a
   new random nonce, and a connection that registered with a verified
   identity signature is recorded with the key it proved. Older clients

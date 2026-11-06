@@ -36,6 +36,7 @@ from synapse_channel.client.agent_lifecycle import (
 )
 from synapse_channel.client.agent_outbound import AgentOutboundMixin
 from synapse_channel.client.agent_queries import AgentQueryMixin
+from synapse_channel.client.frame_signing_client import ClientFrameSession
 from synapse_channel.client.lease_epoch_store import LeaseEpochStore
 from synapse_channel.core.capability_card_signing import (
     DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
@@ -183,6 +184,9 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         Root of the epoch store; ``None`` uses
         ``$XDG_DATA_HOME/synapse/lease-epoch``.
     """
+
+    frame_session: ClientFrameSession | None = None
+    """Signing session of the current connection, set from each welcome."""
 
     def __init__(
         self,

@@ -360,9 +360,11 @@ When that boundary is crossed, the proportionate controls are:
   is revoked, expires or loses its pin is closed at its next such frame, and a
   connection that registers without a verified identity signature is refused.
   The signatures protect the integrity and origin of mutations; they do not
-  hide or protect reads, so TLS stays required off-host. Clients that sign are
-  added separately; until then the flag is for clients that sign with the
-  shared vectors' rules (see `docs/per-message-authentication.md`).
+  hide or protect reads, so TLS stays required off-host. The Python client
+  (every `synapse` command, the MCP server and the waiter) signs whenever the
+  hub's welcome asks; the JavaScript and Go clients, the VS Code extension and
+  the cockpit do not sign yet and are refused by such a hub (see
+  `docs/per-message-authentication.md`).
 - **Rotating connect tokens.** `synapse hub --token-set PATH` reads an
   owner-only JSON file of identified tokens instead of one secret. Each entry
   holds an `id`, the SHA-256 digest of its secret (never the secret), optional
