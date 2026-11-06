@@ -251,17 +251,17 @@ def verify_aef_receipt(
     return _result(AefVerdictCode.VALID, receipt_id, key_id, "verified")
 
 
-def verify_aef_inclusion(
-    receipt: Mapping[str, object],
-    sth: Mapping[str, object],
-    proof: Mapping[str, object],
-    *,
-    trust_store: AefTrustStore,
-) -> AefInclusionVerdict:
-    """Verify an AEF receipt leaf against a trusted, signed tree head."""
+def verified_sth(
+    sth: Mapping[str, object], *, trust_store: AefTrustStore
+) -> tuple[str, int, str] | AefInclusionVerdict:
+    """Check a signed tree head and return its log id, tree size and root.
+
+    Returns ``STH_UNTRUSTED`` when the log or its key is not the trusted one,
+    and ``STH_INVALID`` when the document, its domain or its signature fails.
+    """
     try:
         log_id = _required_text(sth, "log_id")
-        if _LOG_ID.fullmatch(log_id) is None or receipt.get("log_id") != log_id:
+        if _LOG_ID.fullmatch(log_id) is None:
             return AefInclusionVerdict.STH_INVALID
         expected_key_id = trust_store.logs.get(log_id)
         if expected_key_id is None:
@@ -282,6 +282,36 @@ def verify_aef_inclusion(
             return AefInclusionVerdict.STH_INVALID
     except (AefCanonicalizationError, AefTimestampError, KeyError, ValueError):
         return AefInclusionVerdict.STH_INVALID
+    return log_id, tree_size, root
+
+
+def aef_leaf_hash(receipt: Mapping[str, object]) -> bytes:
+    """Return the Merkle leaf hash of a receipt: SHA-256(0x00 || JCS(receipt)).
+
+    Raises
+    ------
+    AefCanonicalizationError
+        When the receipt holds a value the AEF canonical form cannot represent.
+    """
+    return hashlib.sha256(b"\x00" + canonical_json(dict(receipt))).digest()
+
+
+def verify_aef_inclusion(
+    receipt: Mapping[str, object],
+    sth: Mapping[str, object],
+    proof: Mapping[str, object],
+    *,
+    trust_store: AefTrustStore,
+) -> AefInclusionVerdict:
+    """Verify an AEF receipt leaf against a trusted, signed tree head."""
+    # A tree head for another log is invalid for this receipt before any trust
+    # question, as the published failure order requires.
+    if receipt.get("log_id") != sth.get("log_id"):
+        return AefInclusionVerdict.STH_INVALID
+    checked = verified_sth(sth, trust_store=trust_store)
+    if isinstance(checked, AefInclusionVerdict):
+        return checked
+    _log_id, tree_size, root = checked
     try:
         index = _required_nonnegative_integer(proof, "leaf_index")
         if _required_positive_integer(proof, "tree_size") != tree_size:
@@ -292,7 +322,7 @@ def verify_aef_inclusion(
             not isinstance(item, str) or _LOG_ID.fullmatch(item) is None for item in path_value
         ):
             return AefInclusionVerdict.INCLUSION_INVALID
-        computed_leaf = hashlib.sha256(b"\x00" + canonical_json(dict(receipt))).hexdigest()
+        computed_leaf = aef_leaf_hash(receipt).hex()
         if leaf != computed_leaf:
             return AefInclusionVerdict.INCLUSION_INVALID
         inclusion = InclusionProof(

@@ -127,6 +127,49 @@ synapse aef inclusion --trust hub-a.aef-trust.json \
 The output is `INCLUSION_VALID`, `INCLUSION_INVALID`, `STH_INVALID` or
 `STH_UNTRUSTED`. It exits `0` only for `INCLUSION_VALID`.
 
+## 5. Complete up to a signed tree head
+
+```bash
+synapse aef sth ~/synapse/hub.db --hub-id hub-a --signing-key hub-a.aef.key --out sth.json
+synapse aef verify hub-a.receipts.jsonl --trust hub-a.aef-trust.json \
+  --sth sth.json --require-sth
+```
+
+- **Issuing a tree head.** `aef sth` reads the store's log read-only and
+  re-checks every receipt under the log's key and its chain. The log must
+  start at seq 1 with no gap. The command then signs a tree head
+  `{aef, log_id, tree_size, root, timestamp}` under the domain `aef:sth:v0.1`.
+  - `root` is the RFC 6962 Merkle root over `SHA-256(0x00 || JCS(receipt))`
+    in seq order.
+  - `timestamp` is the last receipt's `issued_at`, so one log always gives
+    the same head. It is not a freshness signal.
+  - The command never replaces an existing file.
+- **Checking an export against a head.** `verify --sth` (repeatable) compares
+  the export with each head. Every receipt of that log counts exactly as it
+  is presented, including one that fails its own verdict. A receipt without a
+  positive integer `seq`, or one the canonical form cannot represent, fills
+  no position. The first verdict that applies wins:
+  1. `STH_UNTRUSTED` or `STH_INVALID`: the tree head itself fails.
+  2. `STH_TRUNCATED`: a position between 1 and `tree_size` has no receipt.
+     This covers a cut-off end, an inner gap, or a rollback below a signed
+     state.
+  3. `STH_ROOT_MISMATCH`: a position holds two different receipts (a fork),
+     or the root over the positions differs (a rewritten history). Identical
+     copies count once.
+  4. `STH_COMPLETE`: every signed position matches. Receipts past
+     `tree_size` are growth.
+- **Exit status.** Without `--require-sth` the heads are reported but the
+  exit status does not change. With it, any verdict other than `STH_COMPLETE`
+  fails the command.
+- **Detecting a rollback.** Keep an earlier head and verify each later export
+  against it. `STH_COMPLETE` shows that the export still extends the signed
+  state.
+- **Limits.** An export cut back exactly to an older head's size is
+  `STH_COMPLETE` against that older head; only a newer head shows the cut.
+  There are no consistency proofs between two heads, so the check needs the
+  receipts. The vectors are in `tests/fixtures/aef_sth_v0_1.json`
+  (reproducible with `tools/aef_sth_vectors.py`).
+
 ## Design choices
 
 AEF v0.1 settles a few points where receipt formats commonly differ:
@@ -159,11 +202,10 @@ AEF v0.1 settles a few points where receipt formats commonly differ:
 
 ## What this does not establish
 
-- **A cut-off end or a rollback.** Without a signed tree head, a file whose
-  last receipts were removed cannot be told from a complete one. A later
-  export that ends below an earlier one needs state kept across exports.
-  The chain check sees only gaps, broken links, forks and duplicates within
-  one file.
+- **A cut-off end or a rollback without a tree head.** Without `--sth`, a
+  file whose last receipts were removed cannot be told from a complete one;
+  the chain check sees only gaps, broken links, forks and duplicates within
+  one file. With a kept tree head see section 5, and its limits.
 - **Completeness.** A verified export proves that the receipts it contains are
   authentic. It does not prove that the hub recorded every decision.
 - **Legal or compliance status.** AEF is an evidence format, not a

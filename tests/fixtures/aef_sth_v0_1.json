@@ -1,0 +1,1797 @@
+{
+ "format": "aef-sth-vectors-v0.1",
+ "leaf_rule": "leaf_hash = SHA-256(0x00 || JCS(receipt)); leaf index = seq - 1",
+ "sth": {
+  "aef": "0.1",
+  "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+  "root": "f5ed7fd81efe042a75cdbc8151876585fe403282b0d4bdb2913500e28e1e8d73",
+  "signature": {
+   "alg": "ed25519",
+   "domain": "aef:sth:v0.1",
+   "key_id": "56475aa75463474c",
+   "value": "DyUSqiZD8ra7Womm83lCE19sNdCEMprjQinF1uaMiHv8dA_XoVR30QYS8UJeiG2V7u7eZcDCIFN-7KC6mRV-Cg=="
+  },
+  "timestamp": 1783937404000,
+  "tree_size": 4
+ },
+ "trust": {
+  "format": "aef-trust-v0.1",
+  "keys": {
+   "56475aa75463474c": {
+    "public_key_hex": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+    "revoked": false
+   }
+  },
+  "logs": {
+   "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6": "56475aa75463474c"
+  }
+ },
+ "vectors": [
+  {
+   "detail": "the four signed positions match",
+   "expected": "STH_COMPLETE",
+   "name": "sth-complete",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": 2,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "lSnH2sjsV4Zq0L643zDsxVYsXN_8pxNgzNCTSWEy4rSOakNqk5kbRMs1xJQbmNcW_8G2Vt5RF14_jUWzjsxnBQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937404000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_id": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_type": "lease",
+     "seq": 4,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "SBRg0abCZiwgEvO3fghftqrJoHCffIPqPlk-i_9FOx_G9fUOidG6S9PiSrjRUzQ2o3jrRabwFE0zKx9-82x3Cg=="
+     },
+     "subject": {
+      "epoch": 4,
+      "lease_expires_at": 1783941004000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ]
+  },
+  {
+   "detail": "two receipts past tree_size are growth",
+   "expected": "STH_COMPLETE",
+   "name": "sth-complete-with-growth",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": 2,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "lSnH2sjsV4Zq0L643zDsxVYsXN_8pxNgzNCTSWEy4rSOakNqk5kbRMs1xJQbmNcW_8G2Vt5RF14_jUWzjsxnBQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937404000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_id": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_type": "lease",
+     "seq": 4,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "SBRg0abCZiwgEvO3fghftqrJoHCffIPqPlk-i_9FOx_G9fUOidG6S9PiSrjRUzQ2o3jrRabwFE0zKx9-82x3Cg=="
+     },
+     "subject": {
+      "epoch": 4,
+      "lease_expires_at": 1783941004000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937405000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_id": "aef1:3a4296a03692a2e4140b2f912a45ecdaed1bbfade999655c1762f9149986f174",
+     "receipt_type": "lease",
+     "seq": 5,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "UZNG7xCASVDsKFkoulMqqXglPjBPKbOxl67rm8Oe_zgUrpzg3OeAMIlMYJeUz2W6yn8Pi2dXGYwNY5YRqeSyCw=="
+     },
+     "subject": {
+      "epoch": 5,
+      "lease_expires_at": 1783941005000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937406000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:3a4296a03692a2e4140b2f912a45ecdaed1bbfade999655c1762f9149986f174",
+     "receipt_id": "aef1:0f7a20e84efbb1c1e8be0deed10451d466b403bce352edf33a27aa4a7508b30f",
+     "receipt_type": "lease",
+     "seq": 6,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "KgCRTxHoFCxEKoaIwJMZsu8FSmaXbQfDyV_jK5_skWrntrdNxeBBB5yXOk7cS0ADj_A1cIauZ4q6jvumuchvAw=="
+     },
+     "subject": {
+      "epoch": 6,
+      "lease_expires_at": 1783941006000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ]
+  },
+  {
+   "detail": "a forged receipt past tree_size does not change the verdict",
+   "expected": "STH_COMPLETE",
+   "name": "sth-forged-past-size",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": 2,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "lSnH2sjsV4Zq0L643zDsxVYsXN_8pxNgzNCTSWEy4rSOakNqk5kbRMs1xJQbmNcW_8G2Vt5RF14_jUWzjsxnBQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937404000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_id": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_type": "lease",
+     "seq": 4,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "SBRg0abCZiwgEvO3fghftqrJoHCffIPqPlk-i_9FOx_G9fUOidG6S9PiSrjRUzQ2o3jrRabwFE0zKx9-82x3Cg=="
+     },
+     "subject": {
+      "epoch": 4,
+      "lease_expires_at": 1783941004000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937405000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_id": "aef1:3a4296a03692a2e4140b2f912a45ecdaed1bbfade999655c1762f9149986f174",
+     "receipt_type": "lease",
+     "seq": 5,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "rpNG7xCASVDsKFkoulMqqXglPjBPKbOxl67rm8Oe_zgUrpzg3OeAMIlMYJeUz2W6yn8Pi2dXGYwNY5YRqeSyCw=="
+     },
+     "subject": {
+      "epoch": 5,
+      "lease_expires_at": 1783941005000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ]
+  },
+  {
+   "detail": "seq 3 holds two different receipts",
+   "expected": "STH_ROOT_MISMATCH",
+   "name": "sth-fork",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": 2,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "lSnH2sjsV4Zq0L643zDsxVYsXN_8pxNgzNCTSWEy4rSOakNqk5kbRMs1xJQbmNcW_8G2Vt5RF14_jUWzjsxnBQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937404000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_id": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_type": "lease",
+     "seq": 4,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "SBRg0abCZiwgEvO3fghftqrJoHCffIPqPlk-i_9FOx_G9fUOidG6S9PiSrjRUzQ2o3jrRabwFE0zKx9-82x3Cg=="
+     },
+     "subject": {
+      "epoch": 4,
+      "lease_expires_at": 1783941004000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:520656bdc6071191ac8e7004f3cf6a64ad7d936722f60777f554e6bb67922a3e",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "5Axz40WheogFk2Qcf3VO6tOA6NOpyYTipeiFs63AAYRt-RCboHXBU-Yaa7Ma7Ongz08S_l0bno4WtaTv31RpAQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "rewritten-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ]
+  },
+  {
+   "detail": "an identical second copy of seq 2 counts once",
+   "expected": "STH_COMPLETE",
+   "name": "sth-identical-duplicate",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": 2,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "lSnH2sjsV4Zq0L643zDsxVYsXN_8pxNgzNCTSWEy4rSOakNqk5kbRMs1xJQbmNcW_8G2Vt5RF14_jUWzjsxnBQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937404000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_id": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_type": "lease",
+     "seq": 4,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "SBRg0abCZiwgEvO3fghftqrJoHCffIPqPlk-i_9FOx_G9fUOidG6S9PiSrjRUzQ2o3jrRabwFE0zKx9-82x3Cg=="
+     },
+     "subject": {
+      "epoch": 4,
+      "lease_expires_at": 1783941004000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": 2,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ]
+  },
+  {
+   "detail": "seq 2 is missing although the export goes past tree_size",
+   "expected": "STH_TRUNCATED",
+   "name": "sth-inner-gap-with-growth",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "lSnH2sjsV4Zq0L643zDsxVYsXN_8pxNgzNCTSWEy4rSOakNqk5kbRMs1xJQbmNcW_8G2Vt5RF14_jUWzjsxnBQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937404000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_id": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_type": "lease",
+     "seq": 4,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "SBRg0abCZiwgEvO3fghftqrJoHCffIPqPlk-i_9FOx_G9fUOidG6S9PiSrjRUzQ2o3jrRabwFE0zKx9-82x3Cg=="
+     },
+     "subject": {
+      "epoch": 4,
+      "lease_expires_at": 1783941004000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937405000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_id": "aef1:3a4296a03692a2e4140b2f912a45ecdaed1bbfade999655c1762f9149986f174",
+     "receipt_type": "lease",
+     "seq": 5,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "UZNG7xCASVDsKFkoulMqqXglPjBPKbOxl67rm8Oe_zgUrpzg3OeAMIlMYJeUz2W6yn8Pi2dXGYwNY5YRqeSyCw=="
+     },
+     "subject": {
+      "epoch": 5,
+      "lease_expires_at": 1783941005000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937406000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:3a4296a03692a2e4140b2f912a45ecdaed1bbfade999655c1762f9149986f174",
+     "receipt_id": "aef1:0f7a20e84efbb1c1e8be0deed10451d466b403bce352edf33a27aa4a7508b30f",
+     "receipt_type": "lease",
+     "seq": 6,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "KgCRTxHoFCxEKoaIwJMZsu8FSmaXbQfDyV_jK5_skWrntrdNxeBBB5yXOk7cS0ADj_A1cIauZ4q6jvumuchvAw=="
+     },
+     "subject": {
+      "epoch": 6,
+      "lease_expires_at": 1783941006000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ]
+  },
+  {
+   "detail": "a receipt whose seq is the string \"2\" fills no position",
+   "expected": "STH_TRUNCATED",
+   "name": "sth-non-integer-seq",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": "2",
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "lSnH2sjsV4Zq0L643zDsxVYsXN_8pxNgzNCTSWEy4rSOakNqk5kbRMs1xJQbmNcW_8G2Vt5RF14_jUWzjsxnBQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937404000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_id": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_type": "lease",
+     "seq": 4,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "SBRg0abCZiwgEvO3fghftqrJoHCffIPqPlk-i_9FOx_G9fUOidG6S9PiSrjRUzQ2o3jrRabwFE0zKx9-82x3Cg=="
+     },
+     "subject": {
+      "epoch": 4,
+      "lease_expires_at": 1783941004000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ]
+  },
+  {
+   "detail": "seq 3 holds another receipt validly signed by the log key",
+   "expected": "STH_ROOT_MISMATCH",
+   "name": "sth-rewritten",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": 2,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:520656bdc6071191ac8e7004f3cf6a64ad7d936722f60777f554e6bb67922a3e",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "5Axz40WheogFk2Qcf3VO6tOA6NOpyYTipeiFs63AAYRt-RCboHXBU-Yaa7Ma7Ongz08S_l0bno4WtaTv31RpAQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "rewritten-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937404000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_id": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_type": "lease",
+     "seq": 4,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "SBRg0abCZiwgEvO3fghftqrJoHCffIPqPlk-i_9FOx_G9fUOidG6S9PiSrjRUzQ2o3jrRabwFE0zKx9-82x3Cg=="
+     },
+     "subject": {
+      "epoch": 4,
+      "lease_expires_at": 1783941004000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ]
+  },
+  {
+   "detail": "the head's root was changed after signing",
+   "expected": "STH_INVALID",
+   "name": "sth-tampered-root",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": 2,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "lSnH2sjsV4Zq0L643zDsxVYsXN_8pxNgzNCTSWEy4rSOakNqk5kbRMs1xJQbmNcW_8G2Vt5RF14_jUWzjsxnBQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937404000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_id": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_type": "lease",
+     "seq": 4,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "SBRg0abCZiwgEvO3fghftqrJoHCffIPqPlk-i_9FOx_G9fUOidG6S9PiSrjRUzQ2o3jrRabwFE0zKx9-82x3Cg=="
+     },
+     "subject": {
+      "epoch": 4,
+      "lease_expires_at": 1783941004000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ],
+   "sth": {
+    "aef": "0.1",
+    "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+    "root": "0000000000000000000000000000000000000000000000000000000000000000",
+    "signature": {
+     "alg": "ed25519",
+     "domain": "aef:sth:v0.1",
+     "key_id": "56475aa75463474c",
+     "value": "DyUSqiZD8ra7Womm83lCE19sNdCEMprjQinF1uaMiHv8dA_XoVR30QYS8UJeiG2V7u7eZcDCIFN-7KC6mRV-Cg=="
+    },
+    "timestamp": 1783937404000,
+    "tree_size": 4
+   }
+  },
+  {
+   "detail": "seq 4 was cut off",
+   "expected": "STH_TRUNCATED",
+   "name": "sth-truncated-end",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": 2,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "lSnH2sjsV4Zq0L643zDsxVYsXN_8pxNgzNCTSWEy4rSOakNqk5kbRMs1xJQbmNcW_8G2Vt5RF14_jUWzjsxnBQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ]
+  },
+  {
+   "detail": "the head names a log the trust file does not hold",
+   "expected": "STH_UNTRUSTED",
+   "name": "sth-untrusted-log",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": 2,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "lSnH2sjsV4Zq0L643zDsxVYsXN_8pxNgzNCTSWEy4rSOakNqk5kbRMs1xJQbmNcW_8G2Vt5RF14_jUWzjsxnBQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937404000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_id": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_type": "lease",
+     "seq": 4,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "SBRg0abCZiwgEvO3fghftqrJoHCffIPqPlk-i_9FOx_G9fUOidG6S9PiSrjRUzQ2o3jrRabwFE0zKx9-82x3Cg=="
+     },
+     "subject": {
+      "epoch": 4,
+      "lease_expires_at": 1783941004000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ],
+   "sth": {
+    "aef": "0.1",
+    "log_id": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "root": "f5ed7fd81efe042a75cdbc8151876585fe403282b0d4bdb2913500e28e1e8d73",
+    "signature": {
+     "alg": "ed25519",
+     "domain": "aef:sth:v0.1",
+     "key_id": "56475aa75463474c",
+     "value": "DyUSqiZD8ra7Womm83lCE19sNdCEMprjQinF1uaMiHv8dA_XoVR30QYS8UJeiG2V7u7eZcDCIFN-7KC6mRV-Cg=="
+    },
+    "timestamp": 1783937404000,
+    "tree_size": 4
+   }
+  },
+  {
+   "detail": "the head's signature was made by another key",
+   "expected": "STH_INVALID",
+   "name": "sth-wrong-signature",
+   "receipts": [
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937401000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:0000000000000000000000000000000000000000000000000000000000000000",
+     "receipt_id": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_type": "lease",
+     "seq": 1,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "BGpUo7IvRT1CkjxPiR16exs0bpQ3CgbpYocsWSJyKiAlG7M4MWAH3oVQhI-mXt-GdYgF2FOp_pwO9UF7fRVpAg=="
+     },
+     "subject": {
+      "epoch": 1,
+      "lease_expires_at": 1783941001000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937402000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:50647cb2aaa608a7c83208444616aaad8d8305278a960db1f0125a2e15accd4b",
+     "receipt_id": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_type": "lease",
+     "seq": 2,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "bg43jcs_47zU8g8OkmgA6QxxAA_rAWDuHeEO5Srb9jD-J7w5psXZY7tuJY2nHIu7_vnOchvhoMvIx7nwgtUXCw=="
+     },
+     "subject": {
+      "epoch": 2,
+      "lease_expires_at": 1783941002000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937403000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:6b30219c50b12b15efed609d1efa21cff10ceeff7c0714dfc3bc1dbf66020efc",
+     "receipt_id": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_type": "lease",
+     "seq": 3,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "lSnH2sjsV4Zq0L643zDsxVYsXN_8pxNgzNCTSWEy4rSOakNqk5kbRMs1xJQbmNcW_8G2Vt5RF14_jUWzjsxnBQ=="
+     },
+     "subject": {
+      "epoch": 3,
+      "lease_expires_at": 1783941003000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    },
+    {
+     "action": "grant",
+     "actor": {
+      "agent_id": "agent-7"
+     },
+     "aef": "0.1",
+     "decision": "allow",
+     "hub_id": "hub-ops-01.example.com",
+     "issued_at": 1783937404000,
+     "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+     "prev_receipt": "aef1:5033a4d00f97751aa2bce40207a7fd220ec76e0a26bd0bb87dfa1c9080ad5309",
+     "receipt_id": "aef1:ba302c46a252d87cf3009f3cd8be2441e71e11c67bac6cd82f6b8907added091",
+     "receipt_type": "lease",
+     "seq": 4,
+     "signature": {
+      "alg": "ed25519",
+      "domain": "aef:receipt:v0.1",
+      "key_id": "56475aa75463474c",
+      "value": "SBRg0abCZiwgEvO3fghftqrJoHCffIPqPlk-i_9FOx_G9fUOidG6S9PiSrjRUzQ2o3jrRabwFE0zKx9-82x3Cg=="
+     },
+     "subject": {
+      "epoch": 4,
+      "lease_expires_at": 1783941004000,
+      "paths": [
+       "src/"
+      ],
+      "task_id": "chain-task",
+      "ttl_seconds": 3600,
+      "worktree": "repo-chain"
+     }
+    }
+   ],
+   "sth": {
+    "aef": "0.1",
+    "log_id": "f3320c94a8b070b04d652b5b0099baa9e12ff8cf8f375093282c7c31becbe0d6",
+    "root": "f5ed7fd81efe042a75cdbc8151876585fe403282b0d4bdb2913500e28e1e8d73",
+    "signature": {
+     "alg": "ed25519",
+     "domain": "aef:sth:v0.1",
+     "key_id": "56475aa75463474c",
+     "value": "GiWYWUbuesHizvIV8I4uHI1pvxggCfrKrzfurC-_4uVoKxX2rAoWdVgQ9ZzF3nrNLu7algW2bdP9KSQ4TjvGAQ=="
+    },
+    "timestamp": 1783937404000,
+    "tree_size": 4
+   }
+  }
+ ]
+}

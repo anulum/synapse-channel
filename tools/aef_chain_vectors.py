@@ -253,6 +253,16 @@ def build() -> str:
     return json.dumps(document, indent=1, sort_keys=True) + "\n"
 
 
+signed_receipt = _receipt
+"""Public name for one signed receipt of the test log, shared with other vector tools."""
+
+linked_receipts = _chain
+"""Public name for a linked run of test-log receipts."""
+
+forged_receipt = _forged
+"""Public name for a receipt whose signature no longer verifies."""
+
+
 def main(argv: list[str] | None = None, *, out: Callable[[str], None] = print) -> int:
     """Write or check the fixture; return the process exit code."""
     parser = argparse.ArgumentParser(description=__doc__)

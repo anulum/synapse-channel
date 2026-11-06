@@ -20,6 +20,16 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **AEF signed tree heads: tell a complete export from a cut-off or rolled-back
+  one.** `synapse aef sth` signs a tree head over a hub store's whole AEF log
+  with the log's key: the RFC 6962 root over the receipts in seq order, after
+  re-checking each receipt and the chain. `synapse aef verify --sth` compares
+  an export with one or more heads: `STH_COMPLETE`, `STH_TRUNCATED` (a missing
+  signed position), `STH_ROOT_MISMATCH` (a fork or rewritten history), or
+  `STH_INVALID`/`STH_UNTRUSTED`. `--require-sth` makes anything but complete
+  fail. Reproducible vectors are in `tests/fixtures/aef_sth_v0_1.json`; see
+  docs/aef-verification.md, section 5.
+
 - **Signed, versioned policies for `policy-check`.** `synapse policy sign`
   writes an Ed25519-signed copy of a JSON policy, with the envelope bound by
   RFC 8785 canonical JSON. `synapse policy verify` checks it against a

@@ -481,6 +481,10 @@ def _merkle_tree_hash(leaves: Sequence[bytes]) -> bytes:
     return _node_hash(_merkle_tree_hash(leaves[:split]), _merkle_tree_hash(leaves[split:]))
 
 
+merkle_tree_hash = _merkle_tree_hash
+"""Public name of the RFC 6962 Merkle Tree Hash, shared with AEF tree heads."""
+
+
 def _audit_path(index: int, leaves: Sequence[bytes]) -> list[bytes]:
     """Return the RFC 6962 audit path for ``index`` within ``leaves``."""
     size = len(leaves)
