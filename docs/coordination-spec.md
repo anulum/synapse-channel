@@ -192,6 +192,40 @@ check can fence a process that writes repository files directly.
 release from a superseded writer succeeds by default and is refused under the
 flag, and the shipped client passes the flag.
 
+### Which requests the epoch fences, and why the others are outside it
+
+*Informative.* An epoch belongs to a lease, so only requests that act on an
+existing lease can carry one:
+
+- `release`, `task_update`, `handoff` and `checkpoint` (INV-EF-2, and
+  INV-EF-4 under `--require-fencing-epoch`);
+- a renewal that names `renew_epoch`. The hub refuses it unless the caller
+  still owns the lease, the epoch is the lease's current epoch or the anchor of
+  its uninterrupted same-owner, same-scope ownership (`ownership_epoch`), and
+  the request repeats the original paths
+  (`core/state.py:SynapseState.renew_claim`). A plain re-`claim` by the holder
+  is checked by owner name and stamps a new epoch.
+
+A new `claim` creates the epoch, so it has none to present. The other mutating
+requests do not act on a lease, and an epoch would have to invent one. Each
+family relies on its own retry and conflict rule instead, as listed in the
+[delivery matrix](delivery-matrix.md):
+
+- the progress ledger, findings, recall log, resources and native message
+  records use `idem_key` apply-once;
+- delivery steps bind `request_id`, `idempotency_key` and `mutation_id` to one
+  delivery record;
+- attachments bind the content digest, the `upload_id` and each chunk's
+  `offset`;
+- identity rotation and pin reclaim name `expected_key_id`;
+- a spend request uses an idempotency key scoped to caller, pool, window,
+  seat, task and operation;
+- a claim forwarded to another hub is applied under that hub's own `claim`
+  rule;
+- `guard_denial` only records evidence and changes no lease.
+
+None of these rules fences a process that writes repository files directly.
+
 ## 3. Lease liveness
 
 A lease is a liveness hint, not a durable reservation: a crashed agent MUST
