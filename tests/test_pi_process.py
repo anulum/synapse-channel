@@ -398,3 +398,66 @@ time.sleep(30)
         assert marker.exists()
         with pytest.raises(PiRpcError, match="could not reach the child"):
             await child.command("prompt", message="Do not run")
+
+
+async def test_drains_refuse_to_run_before_the_child_starts(tmp_path: Path) -> None:
+    """Stdout and stderr drains fail closed until a child pipe exists."""
+    child = PiRpcProcess(
+        [sys.executable, "-c", "pass"],
+        cwd=tmp_path,
+        environment=os.environ,
+        timeout=5,
+    )
+    with pytest.raises(PiRpcError, match="stdout is unavailable"):
+        await child._read_stdout()
+    with pytest.raises(PiRpcError, match="stderr is unavailable"):
+        await child._drain_stderr()
+
+
+async def test_late_responses_do_not_complete_a_finished_request(tmp_path: Path) -> None:
+    """Responses that arrive after the waiter finished are ignored, then reading continues."""
+    marker = tmp_path / "ready"
+    responder = r"""
+import json,signal,sys
+requests=[]
+for _ in range(2):
+    requests.append(json.loads(sys.stdin.readline()))
+open(sys.argv[1],'w',encoding='ascii').close()
+def on_term(_signum,_frame):
+    payload=b''.join(
+        (json.dumps({'type':'response','id':request['id'],
+                     'command':request['type'],'success':True})+'\n').encode()
+        for request in requests
+    )
+    sys.stdout.buffer.write(payload)
+    sys.stdout.buffer.flush()
+    raise SystemExit
+signal.signal(signal.SIGTERM, on_term)
+signal.pause()
+"""
+    child = PiRpcProcess(
+        [sys.executable, "-u", "-c", responder, str(marker)],
+        cwd=tmp_path,
+        environment=os.environ,
+        timeout=5,
+    )
+    await child.start()
+    try:
+        first = asyncio.create_task(child.command("prompt", message="one"))
+        second = asyncio.create_task(child.command("follow_up", message="two"))
+        for _ in range(200):
+            if marker.exists() and len(child._pending) == 2:
+                break
+            await asyncio.sleep(0.01)
+        assert marker.exists()
+        assert len(child._pending) == 2
+        first.cancel()
+        second.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        with pytest.raises(asyncio.CancelledError):
+            await second
+        with pytest.raises(PiRpcError, match="unavailable"):
+            await child.command("get_state")
+    finally:
+        await child.close()
