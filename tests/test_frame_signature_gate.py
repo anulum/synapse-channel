@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import sys
 import time
 import uuid
@@ -369,8 +370,11 @@ def test_every_request_type_is_refused_unsigned(msg_type: str) -> None:
     assert (outcome.verdict, outcome.reason) == (GateVerdict.REFUSE, "frame_signature_required")
 
 
-async def test_a_refused_keyed_release_names_its_operation() -> None:
-    """The sender can tell a refused release from one that got no answer."""
+async def test_a_refused_keyed_release_names_its_operation(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The sender can tell a refused release from one that got no answer, and so can the log."""
+    caplog.set_level(logging.WARNING, logger="synapse.hub")
     hub = _hub()
     async with running_hub(hub) as (_, uri):
         async with connect(uri) as websocket:
@@ -392,3 +396,11 @@ async def test_a_refused_keyed_release_names_its_operation() -> None:
     assert (refused["release_operation_id"], refused["task_id"]) == ("release-op-1", "held")
     assert "release_operation_id" not in plain
     assert "held" in hub.state.claims
+    assert [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("Release refused")
+    ] == [
+        f"Release refused for {SENDER} on task 'held' (operation 'release-op-1'): "
+        "'frame_signature_required'"
+    ]

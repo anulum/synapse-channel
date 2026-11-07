@@ -52,7 +52,10 @@ from synapse_channel.core.hub_identity_gate import IDENTITY_BINDING_CLOSE_CODE
 from synapse_channel.core.identity_pins import IdentityPinStore
 from synapse_channel.core.message_auth import EventSignatureTrustBundle
 from synapse_channel.core.protocol import MessageType
-from synapse_channel.core.release_confirmation import release_error_correlation
+from synapse_channel.core.release_confirmation import (
+    log_release_refusal,
+    release_error_correlation,
+)
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -256,6 +259,7 @@ class FrameSignatureGate:
         outcome = self.check(websocket, bound, frame)
         if outcome.verdict is GateVerdict.ADMIT:
             return True
+        log_release_refusal(frame, bound, outcome.reason)
         await self._refuse(websocket, bound, outcome.reason, release_error_correlation(frame))
         if outcome.verdict is GateVerdict.CLOSE:
             await self._close_socket(

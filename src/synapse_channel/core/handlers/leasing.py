@@ -66,7 +66,7 @@ from synapse_channel.core.receipts import (
     format_release_receipt_note,
     release_receipt_has_evidence,
 )
-from synapse_channel.core.release_confirmation import release_reply_binding
+from synapse_channel.core.release_confirmation import log_release_refusal, release_reply_binding
 from synapse_channel.core.scoping import normalize_paths
 from synapse_channel.core.state import GitContext, SynapseState
 from synapse_channel.core.state_transaction import durable_state_transaction
@@ -187,6 +187,7 @@ async def _refuse_unfenced(
     if not hub.require_fencing_epoch or optional_int_field(data, "epoch") is not None:
         return False
     binding = release_reply_binding(data) if msg_type == MessageType.RELEASE_DENIED else {}
+    log_release_refusal(data, sender, FENCING_EPOCH_REQUIRED)
     await hub.send_json(
         websocket,
         hub.system(
@@ -1016,6 +1017,7 @@ async def _announce_release(
         if execution is not None:
             await hub.settle_atomic_operation(data)
         return
+    log_release_refusal(data, sender, message)
     await hub.send_json(
         websocket,
         hub.system(

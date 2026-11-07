@@ -31,6 +31,7 @@ from synapse_channel.core.handlers import VERBS
 from synapse_channel.core.idempotency import IdempotencyCache
 from synapse_channel.core.journal import record_idempotency
 from synapse_channel.core.protocol import SENDER_HUB, MessageType
+from synapse_channel.core.release_confirmation import log_release_refusal
 
 if TYPE_CHECKING:
     from synapse_channel.core.persistence import EventStore
@@ -251,6 +252,7 @@ class HubLedgerGuard:
         try:
             digest = canonical_request_digest(data)
         except (TypeError, ValueError):
+            log_release_refusal(data, str(data.get("sender") or ""), "not strict canonical JSON")
             await send_json(
                 websocket,
                 {
@@ -263,6 +265,7 @@ class HubLedgerGuard:
             )
             return True
         if cached.request_digest is not None and cached.request_digest != digest:
+            log_release_refusal(data, str(data.get("sender") or ""), "idempotency conflict")
             await send_json(
                 websocket,
                 idempotency_conflict_response(

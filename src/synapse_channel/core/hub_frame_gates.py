@@ -56,7 +56,10 @@ from synapse_channel.core.multihub_claim_transport import (
 from synapse_channel.core.multihub_claim_wire import ClaimForwardRequest
 from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipOutcome
 from synapse_channel.core.protocol import MessageType
-from synapse_channel.core.release_confirmation import release_error_correlation
+from synapse_channel.core.release_confirmation import (
+    log_release_refusal,
+    release_error_correlation,
+)
 
 logger = logging.getLogger("synapse.hub")
 
@@ -169,6 +172,7 @@ class HubFrameGates:
                 return True
         else:
             result = VerificationResult.MISSING
+        log_release_refusal(data, sender, f"per-message authentication failed: {result.value}")
         await self._send_json(
             websocket,
             self._system(
@@ -205,6 +209,7 @@ class HubFrameGates:
             denial.target.value,
             denial.reason,
         )
+        log_release_refusal(data, sender, f"access denied: {denial.reason}")
         await self._send_json(
             websocket,
             self._system(

@@ -96,6 +96,27 @@ def release_error_correlation(data: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def log_release_refusal(data: dict[str, Any], sender: str, reason: str) -> None:
+    """Record a refused release in the private hub log, naming its operation.
+
+    A sender that hears nothing reports its release as unknown, so the hub log
+    is where an operator tells a refusal from a lost frame. Keyed and legacy
+    releases are both recorded; a legacy release has no operation id. Other
+    frames are ignored. Task, operation and reason are written with ``repr``,
+    so text from the frame cannot forge further log lines.
+    """
+    if data.get("type") != MessageType.RELEASE:
+        return
+    key = data.get("idem_key")
+    logger.warning(
+        "Release refused for %s on task %r (operation %r): %r",
+        sender,
+        str(data.get("task_id") or data.get("payload") or "").strip(),
+        key if isinstance(key, str) and key else None,
+        reason,
+    )
+
+
 def release_reply_binding(data: dict[str, Any]) -> dict[str, str]:
     """Echo the exact keyed intent on a release verdict; leave legacy frames unchanged."""
     operation_id = data.get("idem_key")

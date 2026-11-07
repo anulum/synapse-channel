@@ -296,6 +296,14 @@ execution evidence when carrying a release claim forward.
   fails or the pane is lost. Measured on a live fleet before the fix: one such
   bridge started 18 waits in 90 seconds.
 
+- **The hub logs every release it refuses, with its operation.** A release
+  that a sender reports as unknown could not be traced on the hub: refusals
+  at the authentication, signature, access-control, fencing and idempotency
+  checks and in the release handler left no log line naming the operation
+  (only access control logged at all). Each now writes one
+  warning naming the sender, task, operation key and reason, escaped so that
+  frame text cannot add lines. See `docs/cli.md` (lock and release recovery).
+
 - **A strict-fencing refusal of a keyed release names its operation.** On a
   hub started with `--require-fencing-epoch`, a keyed release without an epoch
   was refused without its operation id and request digest. `synapse lock`
