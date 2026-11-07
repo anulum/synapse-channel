@@ -17,7 +17,7 @@ import json
 import math
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -73,7 +73,7 @@ class ProviderQuote:
             source_day = date.fromisoformat(quote.source_date)
         except ValueError as exc:
             raise ValueError("provider quote requires an ISO source date") from exc
-        if source_day > datetime.now(timezone.utc).date():
+        if source_day > datetime.now(UTC).date():
             raise ValueError("provider quote source date is in the future")
         values = (
             quote.input_per_million,
