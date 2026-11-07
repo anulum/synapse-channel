@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from synapse_channel.core.entitlement_store import (
     EntitlementStoreError,
@@ -30,7 +30,7 @@ def read_entitlement_overview() -> str:
     try:
         report = entitlement_view(
             read_events(default_entitlement_store()),
-            as_of=datetime.now(timezone.utc),
+            as_of=datetime.now(UTC),
             private=False,
         )
     except (EntitlementStoreError, EntitlementError, ValueError):
