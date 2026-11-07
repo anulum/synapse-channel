@@ -49,17 +49,19 @@ def _machine(tmp_path: Path, label: str) -> dict[str, Any]:
     return kwargs
 
 
-def _policy() -> AclPolicy:
-    """Grant only ``OPS/operator`` permission to reclaim the one test name."""
+def _policy(*targets: str) -> AclPolicy:
+    """Grant ``OPS/operator`` permission to reclaim each named agent."""
+    names = targets or (PIN_NAME,)
     return AclPolicy(
         [
             AclRule(
                 PIN_RECLAIM,
                 "agent",
-                PIN_NAME,
+                name,
                 "OPS",
                 "designated stale-pin operator",
             )
+            for name in names
         ]
     )
 
@@ -428,12 +430,14 @@ async def test_reclaim_storage_failure_and_cas_race_stay_not_applied(
 async def test_an_operator_cannot_reclaim_its_own_connection(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Break-glass still cannot remove the pin of the operator's own connection."""
+    """A granted operator still cannot remove the pin of their own connection."""
     store = EventStore(tmp_path / "events.db")
     hub = SynapseHub(
         hub_id="syn-pin-self",
         identity_pin_path=tmp_path / "pins.json",
         journal=store,
+        acl_policy=_policy(OPERATOR),
+        require_acl=True,
     )
     machine = _machine(tmp_path, "self")
 
@@ -475,12 +479,14 @@ async def test_an_operator_cannot_reclaim_its_own_connection(
 async def test_a_reason_past_the_limit_is_refused_before_the_pin_changes(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """One character over the reason ceiling is refused and the pin stays."""
+    """One character over the reason ceiling is refused even with the grant."""
     store = EventStore(tmp_path / "events.db")
     hub = SynapseHub(
         hub_id="syn-pin-reason",
         identity_pin_path=tmp_path / "pins.json",
         journal=store,
+        acl_policy=_policy(),
+        require_acl=True,
     )
     target_machine = _machine(tmp_path, "target")
     operator_machine = _machine(tmp_path, "operator")
@@ -533,13 +539,12 @@ async def test_a_reason_past_the_limit_is_refused_before_the_pin_changes(
             json_output=False,
             agent_factory=factory,
         )
-        assert at_limit == 1
+        assert at_limit == 0
         limited = capsys.readouterr().out
         assert f"exceeds {MAX_PIN_RECLAIM_REASON_LENGTH} characters" not in limited
-        assert "no identity-pin-reclaim ACL grant" in limited
-        kept = hub.identity_pins.pinned(PIN_NAME)
-        assert kept is not None and kept.key_id == key_id
-    assert not [event for event in store.read_all() if event.kind == EventKind.IDENTITY_PIN_RECLAIM]
+        assert hub.identity_pins.pinned(PIN_NAME) is None
+    audits = [event for event in store.read_all() if event.kind == EventKind.IDENTITY_PIN_RECLAIM]
+    assert [event.payload["status"] for event in audits] == ["approved", "applied"]
     store.close()
 
 
