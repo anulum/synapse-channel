@@ -66,6 +66,11 @@ def test_cli_reference_states_default_identity_derivation() -> None:
     # Wave-2: an omitted --name must document its environment/git-project derivation.
     doc = _CLI_DOC.read_text(encoding="utf-8")
     assert "an omitted `--name` resolves from an agreeing environment or `<git-project>/mcp`" in doc
+    assert "earlier behaviour" in doc
+    assert "existing behaviour" in doc
+    assert "at-least-once behaviour" in doc
+    assert "audit behaviour" in doc
+    assert "behavior" not in doc
 
 
 def test_cli_reference_documents_multihub_observe_follow_and_claim_forwarding() -> None:

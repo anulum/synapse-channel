@@ -756,7 +756,7 @@ claim follows the same bounded release confirmation as a completed command.
 Arguments are passed directly without shell expansion. A nonzero child exit
 status is preserved. After a successful child, `lock` returns `0` only for a
 confirmed release, `1` for an explicit release refusal, or `3` when cleanup is
-unconfirmed. This replaces the earlier behavior that silently returned the
+unconfirmed. This replaces the earlier behaviour that silently returned the
 child's `0` even when the lease remained held. Cleanup failures are reported
 on stderr together with the original child status.
 If the fresh client profile cannot be loaded after the command finishes, cleanup
@@ -842,7 +842,7 @@ operation journal for read-only recovery. A missing/pruned record, an in-memory
 cache alone, a mismatched digest, or corrupt transaction witnesses remain unknown.
 An older hub that ignores the extension cannot admit a fresh release;
 read-only recovery of a previously sent operation remains unknown. The non-blocking
-`git-release` hook and the `lock` child-exit contract keep their existing behavior.
+`git-release` hook and the `lock` child-exit contract keep their existing behaviour.
 
 A fresh manual `release` first sends a private, correlated read of its prepared
 operation key and request digest. Only an exact confirmation projection admits
@@ -2988,7 +2988,7 @@ second board mutation, including after restart. Reusing the key for changed
 request content fails with `idempotency_conflict`; the response does not expose
 the key or either request payload. The key is scoped by authenticated sender and
 message type, so declare, update, and progress keys do not collide. Omitting the
-flag retains the documented at-least-once behavior.
+flag retains the documented at-least-once behaviour.
 
 Tasks carry an optional project scope and a monotonic version for
 compare-and-set updates:
@@ -3616,7 +3616,7 @@ presentation fields, so each hit is labelled `boundary` and a similarity score
 is never presented as proof. A timeout, transport failure, malformed response,
 or no-hit result produces a visible marker and the provider turn continues.
 See [Participant memory recall](participant-memory.md) for service setup,
-library use, limits, and audit behavior.
+library use, limits, and audit behaviour.
 
 The deliberation subcommands drive the Fabric's multi-party layers from the same
 surface, naming each seat as `PROVIDER[:MODEL]` (the model part may itself hold
