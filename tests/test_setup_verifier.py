@@ -937,7 +937,7 @@ def test_adapter_replay_refuses_bad_history_timeout_and_changed_evidence(tmp_pat
 
 
 def test_replay_ignores_an_unrelated_frame_and_refuses_changed_evidence(tmp_path: Path) -> None:
-    """A chat frame is not replay, and a changed digest refuses an otherwise matching frame."""
+    """A chat frame does not prove replay, and a changed digest refuses a match."""
     canary_id = "0" * 32
     database = tmp_path / "events.db"
     _event_database(database, canary_id=canary_id)
@@ -951,6 +951,7 @@ def test_replay_ignores_an_unrelated_frame_and_refuses_changed_evidence(tmp_path
     before = database.read_bytes()
     target = {"uri": "ws://127.0.0.1:1", "project": "DEMO", "identity": "DEMO/x"}
     delivered: list[str] = []
+    script = ["chat", "snapshot"]
 
     class ReplayFrames:
         def __init__(
@@ -973,17 +974,26 @@ def test_replay_ignores_an_unrelated_frame_and_refuses_changed_evidence(tmp_path
             assert args == (MessageType.HISTORY_REQUEST,)
             assert kwargs["limit"] == 1
             assert kwargs["history_target"] == "DEMO/x"
-            await self.handler({"type": MessageType.CHAT, "payload": "unrelated"})
-            delivered.append("chat")
-            await self.handler(
-                {
-                    "type": MessageType.HISTORY_SNAPSHOT,
-                    "history": [
-                        {"client_msg_id": f"setup-{canary_id}", "target": "DEMO/x"},
-                    ],
-                }
-            )
-            delivered.append("snapshot")
+            if "chat" in script:
+                await self.handler(
+                    {
+                        "type": MessageType.CHAT,
+                        "history": [
+                            {"client_msg_id": f"setup-{canary_id}", "target": "DEMO/x"},
+                        ],
+                    }
+                )
+                delivered.append("chat")
+            if "snapshot" in script:
+                await self.handler(
+                    {
+                        "type": MessageType.HISTORY_SNAPSHOT,
+                        "history": [
+                            {"client_msg_id": f"setup-{canary_id}", "target": "DEMO/x"},
+                        ],
+                    }
+                )
+                delivered.append("snapshot")
 
     def factory(*args: object, **kwargs: object) -> VerificationAgent:
         return cast(
@@ -1007,6 +1017,23 @@ def test_replay_ignores_an_unrelated_frame_and_refuses_changed_evidence(tmp_path
         stored.ack_digest,
     )
     assert changed != stored
+    script[:] = ["chat"]
+    with pytest.raises(VerificationProbeError, match="verification_replay_failed"):
+        asyncio.run(
+            adapter.prove_replay(
+                target=target,
+                canary_id=canary_id,
+                database=database,
+                evidence=stored,
+                old_pid=4321,
+                systemctl="/usr/bin/systemctl",
+                timeout=0.3,
+            )
+        )
+    assert delivered == ["chat"]
+    assert database.read_bytes() == before
+    delivered.clear()
+    script[:] = ["chat", "snapshot"]
     with pytest.raises(VerificationProbeError, match="verification_replay_failed"):
         asyncio.run(
             adapter.prove_replay(
