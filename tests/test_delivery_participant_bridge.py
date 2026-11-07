@@ -735,3 +735,63 @@ async def test_expired_offer_never_starts_provider_turn(tmp_path: Path) -> None:
                 await receiver.connection.close()
             await asyncio.gather(sender_task, receiver_task)
             await bridge.close()
+
+
+class _ResumingParticipant:
+    """Complete each follow-up and record the resume token the bridge supplied."""
+
+    def __init__(self) -> None:
+        self.requests: list[TurnRequest] = []
+
+    @property
+    def identity(self) -> str:
+        return "P/receiver"
+
+    @property
+    def channel(self) -> ParticipantChannel:
+        return ParticipantChannel.HEADLESS
+
+    def health(self) -> ParticipantHealth:
+        return ParticipantHealth(self.identity, self.channel, True, "ready")
+
+    async def take_turn(self, request: TurnRequest) -> TurnResult:
+        self.requests.append(request)
+        result = error_turn_result(
+            participant=self.identity,
+            channel=self.channel,
+            request=request,
+            reason="",
+        )
+        result["is_error"] = False
+        result["abstained"] = False
+        result["answer"] = "OK"
+        result["stop_reason"] = "end_turn"
+        result["session"] = "provider-session-1"
+        return result
+
+
+@pytest.mark.real_hub
+async def test_follow_up_resumes_the_provider_session(tmp_path: Path) -> None:
+    """A completed follow-up resumes that provider session on the next follow-up."""
+    participant = _ResumingParticipant()
+    outcome = await _journey(
+        tmp_path,
+        participant,
+        capability={"follow_up": "native"},
+        mode="follow_up",
+        turns=2,
+    )
+    assert outcome["stage"] == "completed"
+    assert [request.topic_id for request in participant.requests] == [
+        "provider-task",
+        "provider-task",
+    ]
+    assert [request.resume_session for request in participant.requests] == [
+        "",
+        "provider-session-1",
+    ]
+    with closing(sqlite3.connect(tmp_path / "bridge.db")) as connection, connection:
+        rows = connection.execute(
+            "SELECT stage, outcome_code FROM delivery_bridge ORDER BY rowid"
+        ).fetchall()
+    assert rows == [("completed", "success"), ("completed", "success")]
