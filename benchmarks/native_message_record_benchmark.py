@@ -189,8 +189,38 @@ async def _listening(port: int, timeout: float = 5.0) -> None:
 
 
 async def _round_trips(count: int, text_bytes: int, directory: str) -> dict[str, Any]:
+    """Record ``count`` messages through a real hub; hub and journal close on every exit.
+
+    A refused record raises out of the run. The hub is stopped and closed and
+    the journal closed on that path too, so the benchmark leaves no open
+    database behind.
+    """
     store = EventStore(str(Path(directory) / "native_message_record_bench.db"))
-    hub = SynapseHub(hub_id="bench-native", journal=store)
+    try:
+        hub = SynapseHub(hub_id="bench-native", journal=store)
+        try:
+            latencies, span = await _record_through(hub, count, text_bytes)
+        finally:
+            hub.close()
+        stored = sum(1 for event in store.read_all() if event.kind == EventKind.NATIVE_MESSAGE)
+    finally:
+        store.close()
+    return {
+        "count": count,
+        "text_bytes": text_bytes,
+        "stored_events": stored,
+        "throughput_per_second": count / span if span > 0 else float("inf"),
+        **_percentiles(latencies),
+    }
+
+
+async def _record_through(
+    hub: SynapseHub, count: int, text_bytes: int
+) -> tuple[list[float], float]:
+    """Serve ``hub``, send ``count`` records over one connection and stop serving.
+
+    Returns the per-record round-trip latencies and the whole span, in seconds.
+    """
     port = _free_port()
     serving = asyncio.create_task(hub.serve("127.0.0.1", port))
     latencies: list[float] = []
@@ -216,15 +246,7 @@ async def _round_trips(count: int, text_bytes: int, directory: str) -> dict[str,
         serving.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await serving
-    stored = sum(1 for event in store.read_all() if event.kind == EventKind.NATIVE_MESSAGE)
-    store.close()
-    return {
-        "count": count,
-        "text_bytes": text_bytes,
-        "stored_events": stored,
-        "throughput_per_second": count / span if span > 0 else float("inf"),
-        **_percentiles(latencies),
-    }
+    return latencies, span
 
 
 def measure_round_trip(count: int, text_bytes: int) -> dict[str, Any]:

@@ -9,8 +9,10 @@
 
 from __future__ import annotations
 
+import gc
 import importlib.util
 import json
+import warnings
 from pathlib import Path
 
 import pytest
@@ -60,8 +62,13 @@ def test_round_trip_measurement_stores_every_record_in_a_real_journal() -> None:
 
 
 def test_round_trip_above_the_event_quota_raises_instead_of_reporting_a_partial_run() -> None:
-    with pytest.raises(RuntimeError, match="native_record_rate_limited"):
-        bench.measure_round_trip(bench.QUOTA_EVENTS + 1, 16)
+    """The refused run raises and leaves no open journal for the collector to find."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        with pytest.raises(RuntimeError, match="native_record_rate_limited"):
+            bench.measure_round_trip(bench.QUOTA_EVENTS + 1, 16)
+        gc.collect()
+    assert [str(item.message) for item in caught if item.category is ResourceWarning] == []
 
 
 def test_documented_runs_stay_inside_the_event_and_byte_quota() -> None:
