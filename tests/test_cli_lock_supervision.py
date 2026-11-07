@@ -13,9 +13,9 @@ import asyncio
 import contextlib
 import json
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import pytest
 from websockets.asyncio.client import connect
@@ -24,6 +24,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from cli_e2e_helpers import CliResult, run_cli
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.cli_locking import _lock
+from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
@@ -282,6 +283,7 @@ async def renewal_proxy(
     acquired = asyncio.Event()
     saved_grant: dict[str, object] | None = None
     connections = 0
+    post_grant = {"seen": False, "welcomes": 0}
 
     async def handle(socket: ServerConnection) -> None:
         nonlocal connections
@@ -315,8 +317,16 @@ async def renewal_proxy(
                     data = json.loads(raw)
                     renewed = bool(data.get("renewal_id"))
                     if data.get("type") == MessageType.CLAIM_GRANTED and not renewed:
+                        post_grant["seen"] = True
                         if saved_grant is None:
                             saved_grant = dict(data)
+                    if data.get("type") == MessageType.WELCOME and post_grant["seen"]:
+                        post_grant["welcomes"] = int(post_grant["welcomes"]) + 1
+                        if int(post_grant["welcomes"]) == 1 and fault == "restarted-session":
+                            data["lock_renewal_session"] = "f" * 32
+                        if int(post_grant["welcomes"]) == 1 and fault == "stall-renewal":
+                            await socket.wait_closed()
+                            return
                     if (
                         fault == "replay-acquisition"
                         and data.get("type") == MessageType.CLAIM_DENIED
@@ -510,3 +520,106 @@ async def test_guarded_renewal_never_acquires_or_changes_scope(
             )
         finally:
             await close_agents(owner)
+
+
+def _isolated_factory(root: Path) -> Callable[..., SynapseAgent]:
+    """Build real clients whose lease epochs stay under ``root``."""
+
+    def build(
+        name: str,
+        callback: Any,
+        *,
+        uri: str,
+        verbose: bool = False,
+        token: str | None = None,
+    ) -> SynapseAgent:
+        """Construct one real client for this supervised lock."""
+        return SynapseAgent(
+            name,
+            callback,
+            uri=uri,
+            verbose=verbose,
+            token=token,
+            lease_epoch_root=root,
+        )
+
+    return build
+
+
+async def _run_supervised(proxy: str, root: Path, *, ready: float, release: float) -> int:
+    """Run the waiting child under the real lock supervisor."""
+    return await _lock(
+        uri=proxy,
+        name="lock-owner",
+        task_id="supervised",
+        command=[
+            sys.executable,
+            "-c",
+            _CHILD,
+            str(root / "started"),
+            str(root / "finish"),
+        ],
+        paths=[],
+        wait_timeout=0,
+        agent_factory=_isolated_factory(root / "epochs"),
+        ready_timeout=ready,
+        release_timeout=release,
+    )
+
+
+async def test_restarted_renewal_session_stops_before_mutation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A renewal welcome from another session does not extend the original lease."""
+    journal = EventStore(tmp_path / "hub.db")
+    command: asyncio.Task[int] | None = None
+    try:
+        async with running_hub(SynapseHub(default_ttl_seconds=16, journal=journal)) as (hub, uri):
+            async with renewal_proxy(uri, "restarted-session") as proxy:
+                command = asyncio.create_task(_run_supervised(proxy, tmp_path, ready=3, release=3))
+                await wait_started(tmp_path / "started", command)
+                code = await asyncio.wait_for(command, 20)
+                captured = capsys.readouterr()
+                assert code == 3, captured.err
+                assert "the hub restarted or is not the hub that granted the lease" in captured.err
+                assert "CHILD_FINISHED" not in captured.out
+                assert "supervised" not in hub.state.claims
+                kinds = [row.kind for row in journal.iter_events()]
+                assert kinds.count("claim") == 1
+                assert kinds.count("release") == 1
+    finally:
+        (tmp_path / "finish").touch()
+        if command is not None and not command.done():
+            command.cancel()
+            await asyncio.gather(command, return_exceptions=True)
+        journal.close()
+
+
+async def test_renewal_still_open_at_the_deadline_is_unknown(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A renewal that outlasts the remaining lease stops the command as unknown."""
+    journal = EventStore(tmp_path / "hub.db")
+    command: asyncio.Task[int] | None = None
+    try:
+        async with running_hub(SynapseHub(default_ttl_seconds=16, journal=journal)) as (hub, uri):
+            async with renewal_proxy(uri, "stall-renewal") as proxy:
+                command = asyncio.create_task(
+                    _run_supervised(proxy, tmp_path, ready=30, release=30)
+                )
+                await wait_started(tmp_path / "started", command)
+                code = await asyncio.wait_for(command, 25)
+                captured = capsys.readouterr()
+                assert code == 3, captured.err
+                assert "no renewal answer before the lease deadline" in captured.err
+                assert "CHILD_FINISHED" not in captured.out
+                assert "supervised" not in hub.state.claims
+                kinds = [row.kind for row in journal.iter_events()]
+                assert kinds.count("claim") == 1
+                assert kinds.count("release") == 1
+    finally:
+        (tmp_path / "finish").touch()
+        if command is not None and not command.done():
+            command.cancel()
+            await asyncio.gather(command, return_exceptions=True)
+        journal.close()
