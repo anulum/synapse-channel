@@ -56,7 +56,7 @@ import stat
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from synapse_channel.core.errors import SynapseError
@@ -391,7 +391,7 @@ def make_record(
     if not all(isinstance(word, str) for word in command):
         raise LaunchRecordError("a command is a list of texts")
     whole = json.dumps(list(command), ensure_ascii=True, separators=(",", ":"))
-    moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    moment = (now or datetime.now(UTC)).astimezone(UTC)
     return LaunchRecord(
         seat=_clean(seat, "the seat"),
         recorded_at=moment.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
