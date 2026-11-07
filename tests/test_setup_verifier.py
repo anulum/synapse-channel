@@ -1027,7 +1027,9 @@ def test_replay_ignores_an_unrelated_frame_and_refuses_changed_evidence(tmp_path
                 evidence=stored,
                 old_pid=4321,
                 systemctl="/usr/bin/systemctl",
-                timeout=0.3,
+                # The same budget as the other cases: a loaded runner once spent
+                # 0.3 s before the request was sent, so no frame was delivered.
+                timeout=1.0,
             )
         )
     assert delivered == ["chat"]
