@@ -154,7 +154,7 @@ each exact concrete web origin that UI serves from
 match this independent allow-list; opaque `null` is never permitted.
 Origin-less clients remain compatible only through the always-on Host
 boundary. These independent checks guard against DNS rebinding and drive-by
-requests without relying on browser CORS behavior.
+requests without relying on browser CORS behaviour.
 
 ## Webhook Redirect Credential Custody
 
@@ -261,7 +261,7 @@ public receipts.
   hub mTLS and does not authenticate Synapse agents.
 - Subscription replay is local process memory, not a durable cross-restart
   event stream.
-- Public webhook receiver behavior still needs a real deployment receipt behind
+- Public webhook receiver behaviour still needs a real deployment receipt behind
   production TLS and proxy infrastructure.
 - Push evidence is bridge-local at-least-once attempt history. It is not a
   transactional cross-replica outbox or receiver-signed acknowledgement.

@@ -80,6 +80,9 @@ def test_a2a_deployment_threat_model_pins_exposed_bridge_controls() -> None:
     assert "Explicit `--insecure-off-loopback` override" in threat_model
     assert "operator deployment sign-off" in combined
     assert "A2A deployment threat model" in combined
+    assert "browser CORS behaviour" in threat_model
+    assert "receiver behaviour" in threat_model
+    assert "behavior" not in threat_model
 
 
 def test_secure_mode_docs_pin_same_descriptor_secret_file_boundary() -> None:
