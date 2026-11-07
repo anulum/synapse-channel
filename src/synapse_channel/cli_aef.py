@@ -34,7 +34,16 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.cli_aef_pq import add_parsers as add_countersign_parsers
+from synapse_channel.cli_aef_pq import add_verify_options as add_countersign_options
+from synapse_channel.cli_aef_pq import (
+    check_countersignatures,
+    countersign_arguments_error,
+    countersign_json,
+    countersign_lines,
+)
 from synapse_channel.core.aef_chain import AefChainReport, verify_aef_chain
+from synapse_channel.core.aef_countersign import CountersignReport
 from synapse_channel.core.aef_emission import AefEmissionError
 from synapse_channel.core.aef_sth import AefSthReport, AefSthVerdict, sign_aef_sth, verify_aef_sth
 from synapse_channel.core.aef_trust_file import (
@@ -59,6 +68,7 @@ from synapse_channel.core.receipt_signing import (
     load_receipt_signing_key,
     load_receipt_verification_key,
 )
+from synapse_channel.core.signature_suite import SignatureSuiteError
 
 _MAX_DOCUMENT_BYTES = 64 << 20
 
@@ -218,6 +228,7 @@ def _print_verify(
     checked: list[tuple[dict[str, Any], AefVerification]],
     chains: list[AefChainReport],
     sths: list[AefSthReport],
+    countersignatures: list[tuple[CountersignReport, str]],
 ) -> None:
     """Print the verify result as JSON or as one line per receipt, chain and head."""
     results = [(receipt.get("seq"), outcome) for receipt, outcome in checked]
@@ -239,6 +250,7 @@ def _print_verify(
             "receipts": rendered,
             "chains": [_chain_json(chain) for chain in chains],
             "sths": [_sth_json(report) for report in sths],
+            "countersignatures": countersign_json(countersignatures),
         }
         print(json.dumps(document, sort_keys=True))
         return
@@ -250,12 +262,21 @@ def _print_verify(
         print(_chain_line(chain))
     for report in sths:
         print(_sth_line(report))
+    for line in countersign_lines(countersignatures):
+        print(line)
+
+
+def _verify_arguments_error(args: argparse.Namespace) -> str | None:
+    """Return why the ``verify`` options cannot be used together, or ``None``."""
+    if args.require_sth and not args.sth:
+        # Requiring completeness against no tree head would pass vacuously.
+        return "--require-sth needs at least one --sth"
+    return countersign_arguments_error(args)
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
-    if args.require_sth and not args.sth:
-        # Requiring completeness against no tree head would pass vacuously.
-        print("error: --require-sth needs at least one --sth", file=sys.stderr)
+    if (problem := _verify_arguments_error(args)) is not None:
+        print(f"error: {problem}", file=sys.stderr)
         return 2
     now_ms = int(time.time() * 1000) if args.now_ms is None else args.now_ms
     try:
@@ -266,13 +287,28 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     chains = verify_aef_chain(checked)
     exported = [receipt for receipt, _outcome in checked]
     sths = [verify_aef_sth(exported, head, trust_store=trust) for head in heads]
-    _print_verify(args, now_ms, checked, chains, sths)
+    try:
+        countersignatures, countersigned = check_countersignatures(args, heads, sths)
+    except (SignatureSuiteError, OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    _print_verify(args, now_ms, checked, chains, sths, countersignatures)
+    return 0 if countersigned and _verify_passed(args, checked, chains, sths) else 1
+
+
+def _verify_passed(
+    args: argparse.Namespace,
+    checked: list[tuple[dict[str, Any], AefVerification]],
+    chains: list[AefChainReport],
+    sths: list[AefSthReport],
+) -> bool:
+    """Return whether every receipt is valid and every required check holds."""
     valid = all(outcome.verdict is AefVerdictCode.VALID for _receipt, outcome in checked)
     chained = not args.require_chain or all(chain.continuous for chain in chains)
     complete = not args.require_sth or all(
         report.verdict is AefSthVerdict.STH_COMPLETE for report in sths
     )
-    return 0 if checked and valid and chained and complete else 1
+    return bool(checked) and valid and chained and complete
 
 
 def _sth_json(report: AefSthReport) -> dict[str, Any]:
@@ -360,6 +396,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
 
     _add_verify_parser(actions)
     _add_sth_parser(actions)
+    add_countersign_parsers(actions)
 
     inclusion = actions.add_parser(
         "inclusion", help="Verify one receipt against a signed tree head and audit path."
@@ -407,6 +444,7 @@ def _add_verify_parser(actions: argparse._SubParsersAction[argparse.ArgumentPars
         action="store_true",
         help="Also fail unless every --sth verdict is STH_COMPLETE.",
     )
+    add_countersign_options(verify)
     verify.set_defaults(func=_cmd_verify)
 
 

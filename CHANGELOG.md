@@ -20,6 +20,22 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **A post-quantum countersignature for AEF tree heads.** The hybrid suite
+  `ed25519+ml-dsa-65/v1` (Ed25519 plus ML-DSA-65) is an AND composite. Each
+  half signs a labelled composite preimage, so neither half can stand alone.
+  Three commands use it:
+  - `synapse aef pq-key new` writes an owner-only hybrid key and its trust
+    file;
+  - `synapse aef countersign` signs a tree head that verifies under the log's
+    trust;
+  - `synapse aef verify --countersignature ... --countersign-trust ...` reports
+    each countersignature, and `--require-countersignature` fails unless every
+    one is valid and its head is complete for the export.
+
+  This is the migration path for long-lived logs: receipts countersigned
+  while Ed25519 is sound stay anchored after a break. Receipts, frames and
+  other formats are unchanged. See `docs/crypto-agility.md`.
+
 - **An interop lane run by the official clients.** A new `interop` workflow
   drives the official MCP Python SDK, the official MCP TypeScript SDK and the
   official `a2a-sdk` against real `synapse hub`, `synapse mcp` and

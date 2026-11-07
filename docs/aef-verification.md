@@ -170,6 +170,47 @@ synapse aef verify hub-a.receipts.jsonl --trust hub-a.aef-trust.json \
   receipts. The vectors are in `tests/fixtures/aef_sth_v0_1.json`
   (reproducible with `tools/aef_sth_vectors.py`).
 
+## 6. A post-quantum countersignature of a tree head
+
+```bash
+synapse aef pq-key new --out witness.pq.key --trust-out witness.pq-trust.json
+synapse aef countersign --sth sth.json --trust hub-a.aef-trust.json \
+  --key witness.pq.key --out sth.countersign.json
+synapse aef verify hub-a.receipts.jsonl --trust hub-a.aef-trust.json --sth sth.json \
+  --countersignature sth.countersign.json --countersign-trust witness.pq-trust.json \
+  --require-countersignature
+```
+
+- **The key.** `pq-key new` writes a new owner-only hybrid key, Ed25519 plus
+  ML-DSA-65 (suite `ed25519+ml-dsa-65/v1`), and a trust file naming its public
+  key. Commands read the key only from an owner-only file.
+- **Countersigning.** `countersign` first verifies the head under the log's
+  AEF trust file, and refuses one that does not verify. It then signs a
+  document `aef-sth-countersignature` `0.1` with the hybrid key. The document
+  binds the head by the SHA-256 of the head's canonical JSON, signature
+  included, and repeats its `log_id`, `tree_size` and `root`.
+- **Verdicts.** `verify --countersignature` (repeatable) matches each
+  countersignature to the `--sth` head it names. The first check that fails
+  gives the verdict:
+  1. `INVALID`: the document is malformed.
+  2. `UNTRUSTED`: its key is not a hybrid key of `--countersign-trust`.
+  3. `INVALID`: its signature fails.
+  4. `MISMATCH`: it binds another head. A head that differs only in its own
+     Ed25519 signature bytes is another head.
+  5. `VALID`.
+- **Exit status.** Each countersignature is reported with its head's verdict.
+  `--require-countersignature` fails the command unless every countersignature
+  is `VALID` **and** its head is `STH_COMPLETE` for the export. It needs at
+  least one `--countersignature`, as `--require-sth` needs a `--sth`.
+- **What it proves.** After a break of Ed25519, the authenticity of the
+  receipts up to `tree_size` rests on two things: the export matching the
+  countersigned root, and the post-quantum countersignature. It does not rest
+  on any Ed25519 signature. A countersignature proves endorsement by the
+  post-quantum key holder at a time it does not prove. The countersigner
+  checks the head with Ed25519, so a countersignature made after a break may
+  endorse a forged head. Countersign routinely, and keep the countersignatures
+  in custody independent of the log host. See [Crypto agility](crypto-agility.md).
+
 ## Design choices
 
 AEF v0.1 settles a few points where receipt formats commonly differ:

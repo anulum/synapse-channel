@@ -554,6 +554,16 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         ValueError,
     ),
     "ExportError": ("synapse_channel.core.journal_export", "journal_export", ValueError),
+    "AefCountersignError": (
+        "synapse_channel.core.aef_countersign",
+        "aef_countersign",
+        ValueError,
+    ),
+    "SignatureSuiteError": (
+        "synapse_channel.core.signature_suite",
+        "signature_suite",
+        ValueError,
+    ),
     "PolicyError": ("synapse_channel.core.policy_engine", "policy", ValueError),
     "PolicySigningError": (
         "synapse_channel.core.policy_signing",
