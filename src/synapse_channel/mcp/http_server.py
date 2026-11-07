@@ -147,7 +147,7 @@ class HttpMcpServer(MCPServer[None]):
         arguments: dict[str, Any],
         context: Context[None, Any] | None = None,
     ) -> CallToolResult | InputRequiredResult:
-        """Authorize and execute one registered tool with a stable mutation key.
+        """Authorise and execute one registered tool with a stable mutation key.
 
         Every refusal or failure becomes one fixed :class:`ToolError`, which the
         SDK returns as an error result and logs without a traceback.

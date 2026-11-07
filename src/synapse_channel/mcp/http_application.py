@@ -171,7 +171,7 @@ def _subject_server(
     operation_timeout : float
         Upper bound on one dispatched operation.
     reply_bytes : int
-        Maximum serialized content returned by an action or resource.
+        Maximum serialised content returned by an action or resource.
 
     Returns
     -------

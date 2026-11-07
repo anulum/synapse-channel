@@ -223,7 +223,7 @@ synapse aef verify hub-a.receipts.jsonl --trust hub-a.aef-trust.json --sth sth.j
 
 AEF v0.1 settles a few points where receipt formats commonly differ:
 
-- **Canonical bytes.** Receipts are serialized with RFC 8785 (JCS) over a
+- **Canonical bytes.** Receipts are serialised with RFC 8785 (JCS) over a
   restricted data model. Numbers must be integers within ±(2**53 − 1), and
   every time is integer milliseconds, so no implementation has to reproduce
   floating-point formatting.

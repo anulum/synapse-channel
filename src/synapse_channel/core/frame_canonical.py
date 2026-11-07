@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — RFC 8785 canonical JSON for signed frames
-"""Serialize a frame to RFC 8785 (JCS) bytes that every client can reproduce.
+"""Serialise a frame to RFC 8785 (JCS) bytes that every client can reproduce.
 
 A frame signature covers these bytes, so a client in another language must
 produce exactly the same ones. RFC 8785 fixes the details that differ between

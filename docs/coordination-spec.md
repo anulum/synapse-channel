@@ -1031,7 +1031,7 @@ refused. A backward step lengthens leases and never frees one; a renewal keeps
 the lease's duration. A renewal first expires stale leases at its own instant,
 so a lease that expired with nothing else happening in between cannot be
 renewed back to life. The hub's host MUST therefore run the same clock
-synchronization INV-CK-2 requires and SHOULD slew rather than step its clock.
+synchronisation INV-CK-2 requires and SHOULD slew rather than step its clock.
 Displays that compare a lease's `lease_expires_at` with the viewer's clock
 (`synapse locks`, the dashboard) are diagnostic and may be off by that
 viewer's skew. A lease is coordination, not a filesystem lock.
