@@ -17,12 +17,14 @@ import contextlib
 import json
 import stat
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
 import jwt
 import pytest
+from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from mcp import ClientSession
 from mcp.types import CallToolResult
@@ -66,6 +68,15 @@ def test_provisioning_writes_owner_only_operator_material(tmp_path: Path) -> Non
     assert grants["resource"] == RESOURCE
     assert grants["subjects"]["bob"]["projects"]["INTEROP"]["seat"] == "INTEROP/bob"
     assert provisioned.hub_token_file.read_text("utf-8").strip() == provisioned.hub_token
+    certificate = x509.load_pem_x509_certificate(provisioned.certificate.read_bytes())
+    moment = datetime.now(UTC)
+    assert certificate.not_valid_before_utc <= moment <= certificate.not_valid_after_utc
+    assert abs((moment - certificate.not_valid_before_utc) - timedelta(minutes=1)) < timedelta(
+        seconds=30
+    )
+    assert abs((certificate.not_valid_after_utc - moment) - timedelta(hours=2)) < timedelta(
+        seconds=30
+    )
 
 
 def test_access_tokens_are_real_and_counted_as_secrets(tmp_path: Path) -> None:
