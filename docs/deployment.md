@@ -291,7 +291,8 @@ agent pane every interval. A missing pane stops the wait at once and makes the
 bridge exit without sending keys or starting/stopping an owner application. The
 bridge starts one Python process per long wait instead of one per interval, so
 a fleet of bridges no longer restarts a process and a hub connection every few
-seconds each. The wait exits with the bridge, and the supervisor heartbeat still
+seconds each. This holds while a wake is queued for a pane that is not yet
+safe, too: the retries run inside the one long wait. The wait exits with the bridge, and the supervisor heartbeat still
 runs every interval.
 
 ### Provider/session compatibility without terminal downtime

@@ -1249,7 +1249,10 @@ delivered wake is followed by one more fresh check before any key is sent; the
 wait only signals the wake, so the message itself stays in the hub. The wait is
 bound to the bridge: it exits when the bridge dies, even after `SIGKILL`. A
 `--synapse-bin` older than this behaviour is detected once and keeps the former
-one-wait-per-interval cycle.
+one-wait-per-interval cycle. The same single wait serves a pane whose wake is
+queued: while a modal, busy turn or startup screen prevents injection, the
+bridge retries the queued wake at every probe interval inside that wait, and
+stops the wait as soon as the wake is delivered or the send fails.
 
 A global priority or CEO broadcast can still wake general-purpose
 `synapse wait --directed-only` automation. If many such consumers invoke a model

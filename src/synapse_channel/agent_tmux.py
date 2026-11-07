@@ -1038,6 +1038,12 @@ _ONE_SHOT_WAIT_BINARIES: set[str] = set()
 _PARENT_FLAG_REFUSAL = "unrecognized arguments: --exit-with-parent"
 """Argparse's refusal when a ``synapse`` predates ``wait --exit-with-parent``."""
 
+_DELIVERED = -1
+"""Private probe result: the pending wake was injected, so the pending wait stops.
+
+No exit code is negative, so it never collides with a refusal, and
+:func:`wait_and_wake` consumes it and never returns it."""
+
 
 def _retry_exit(
     failures: int,
@@ -1069,11 +1075,48 @@ def _retry_exit(
     return 3 if false_wake else wait.returncode
 
 
+def _pending_attempt(config: AgentTmuxConfig, *, runner: CommandRunner, sleeper: Sleeper) -> int:
+    """Retry a pending wake once; return ``_DELIVERED``, ``0`` while queued, or its failure."""
+    wake = inject_wake(config, runner=runner, sleeper=sleeper)
+    if wake.returncode != 0:
+        return wake.returncode
+    return _DELIVERED if wake.injected else 0
+
+
+def _pending_step(
+    config: AgentTmuxConfig,
+    *,
+    runner: CommandRunner,
+    sleeper: Sleeper,
+    heartbeat: Callable[[], None] | None,
+) -> tuple[subprocess.CompletedProcess[str], int]:
+    """Run one pending-wake cycle: re-prove the target, retry the wake, then wait.
+
+    The pane capability stays advertised while a modal, busy turn, or
+    asynchronous startup prevents injection, so new exact wakes coalesce into
+    the already durable routing hint instead of disappearing into the passive
+    mailbox sidecar alone. The long bridge wait retries the staged wake every
+    probe interval instead of starting a new wait process each time.
+
+    Returns
+    -------
+    tuple[subprocess.CompletedProcess[str], int]
+        The wait and ``0``; or a timeout-shaped wait with ``_DELIVERED`` once the
+        wake was injected, or with the target refusal or injection failure code.
+    """
+    attempt = partial(_pending_attempt, config, runner=runner, sleeper=sleeper)
+    refusal = _target_refusal(status(config, runner=runner)) or attempt()
+    if refusal:
+        return subprocess.CompletedProcess(_wait_command(config), 2, "", ""), refusal
+    return _bridge_wait(config, runner=runner, heartbeat=heartbeat, attempt=attempt)
+
+
 def _bridge_wait(
     config: AgentTmuxConfig,
     *,
     runner: CommandRunner,
     heartbeat: Callable[[], None] | None,
+    attempt: Callable[[], int] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], int]:
     """Run one receiver wait and return it with a refusal code (``0`` when valid).
 
@@ -1089,6 +1132,10 @@ def _bridge_wait(
     interval-bounded wait; the old executable is detected from its argparse
     refusal once and remembered for the life of the bridge.
 
+    While a wake is pending, ``attempt`` runs after every passed probe of the
+    long wait, so a staged wake is retried each interval without a new wait
+    process; a non-zero result stops the wait and is returned as the refusal.
+
     Parameters
     ----------
     config : AgentTmuxConfig
@@ -1097,6 +1144,9 @@ def _bridge_wait(
         Subprocess runner for tmux probes and, when injected, the wait itself.
     heartbeat : Callable[[], None] or None
         Supervisor heartbeat, called at every probe interval of a long wait.
+    attempt : Callable[[], int] or None, optional
+        Pending-wake injection attempt for the long wait's probe; ``0`` keeps
+        waiting. The one-shot wait never calls it: its caller retries between waits.
 
     Returns
     -------
@@ -1113,8 +1163,12 @@ def _bridge_wait(
         )
         return one_shot, 0
 
-    def probe() -> int:
+    def target() -> int:
         return _target_refusal(status(config, runner=runner))
+
+    def probe() -> int:
+        refusal = target()
+        return refusal if refusal or attempt is None else attempt()
 
     wait_proc, refusal = run_probed_wait(
         _wait_command(config, timeout=DEFAULT_BRIDGE_WAIT_TIMEOUT, parent_pid=os.getpid()),
@@ -1138,9 +1192,9 @@ def _bridge_wait(
             file=sys.stderr,
             flush=True,
         )
-        return _bridge_wait(config, runner=runner, heartbeat=heartbeat)
+        return _bridge_wait(config, runner=runner, heartbeat=heartbeat, attempt=attempt)
     if not refusal and wait_proc.returncode == 0:
-        refusal = probe()
+        refusal = target()
     return wait_proc, refusal
 
 
@@ -1202,52 +1256,29 @@ def wait_and_wake(
     wakes = 0
     pending = _pending_wake(config)
     consecutive_failures = 0
+    backoff = partial(_backoff_delay, base=retry_base, cap=retry_cap, jitter=retry_jitter, rng=rng)
     while max_wakes is None or wakes < max_wakes:
         if heartbeat is not None:
             heartbeat()
         if pending:
-            refusal = _target_refusal(status(config, runner=runner))
-            if refusal:
-                return refusal
-            wake = inject_wake(config, runner=runner, sleeper=sleeper)
-            if wake.returncode != 0:
-                return wake.returncode
-            if wake.injected:
+            wait_proc, refusal = _pending_step(
+                config, runner=runner, sleeper=sleeper, heartbeat=heartbeat
+            )
+            if refusal == _DELIVERED:
                 pending = False
                 wakes += 1
-            else:
-                # Keep advertising the pane capability while a modal, busy turn,
-                # or asynchronous startup prevents injection. New exact wakes
-                # coalesce into the already durable routing hint instead of
-                # disappearing into the passive mailbox sidecar alone.
-                wait_proc = runner(
-                    _wait_command(config),
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    env=_wait_process_env(),
-                )
-                false_wake = wait_proc.returncode == 0 and _is_provider_yield_stdout(
-                    wait_proc.stdout
-                )
-                if wait_proc.returncode in {0, 2} and not false_wake:
-                    consecutive_failures = 0
-                    continue
-                consecutive_failures += 1
-                exit_code = _retry_exit(
-                    consecutive_failures, max_wait_failures, false_wake, wait_proc
-                )
-                if exit_code is not None:
-                    return exit_code
-                sleeper(
-                    _backoff_delay(
-                        consecutive_failures,
-                        base=retry_base,
-                        cap=retry_cap,
-                        jitter=retry_jitter,
-                        rng=rng,
-                    )
-                )
+                continue
+            if refusal:
+                return refusal
+            false_wake = wait_proc.returncode == 0 and _is_provider_yield_stdout(wait_proc.stdout)
+            if wait_proc.returncode in {0, 2} and not false_wake:
+                consecutive_failures = 0
+                continue
+            consecutive_failures += 1
+            exit_code = _retry_exit(consecutive_failures, max_wait_failures, false_wake, wait_proc)
+            if exit_code is not None:
+                return exit_code
+            sleeper(backoff(consecutive_failures))
             continue
         wait_proc, refusal = _bridge_wait(config, runner=runner, heartbeat=heartbeat)
         if refusal:
@@ -1270,15 +1301,7 @@ def wait_and_wake(
             exit_code = _retry_exit(consecutive_failures, max_wait_failures, false_wake, wait_proc)
             if exit_code is not None:
                 return exit_code
-            sleeper(
-                _backoff_delay(
-                    consecutive_failures,
-                    base=retry_base,
-                    cap=retry_cap,
-                    jitter=retry_jitter,
-                    rng=rng,
-                )
-            )
+            sleeper(backoff(consecutive_failures))
             continue
         consecutive_failures = 0
         wake = inject_wake(config, runner=runner, sleeper=sleeper, unsafe_payload=wait_proc.stdout)

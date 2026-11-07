@@ -287,6 +287,15 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A pane bridge with a queued wake no longer starts a wait every interval.**
+  While a modal, busy turn or startup screen kept a wake from being injected,
+  the bridge fell back to a new `synapse wait` process every probe interval
+  (five seconds by default), so a long-queued pane cost a Python start and a
+  hub reconnect each time. The queued wake is now retried inside the one long,
+  bridge-bound wait, which stops as soon as the wake is delivered, the send
+  fails or the pane is lost. Measured on a live fleet before the fix: one such
+  bridge started 18 waits in 90 seconds.
+
 - **`synapse mcp --transport streamable-http --token-file FILE` starts.** The
   command read the hub token file before handing over to the private HTTPS
   profile, which then saw a raw token and refused to start, as it refuses

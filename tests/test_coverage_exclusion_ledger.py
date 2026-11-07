@@ -192,6 +192,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_benchmark.py": (1, "optional-dep-guard"),
     # tmux availability plus separate opt-in OpenCode and Codex composer smokes.
     "tests/test_cli_e2e_agent_tmux.py": (3, "optional-dep-guard + operator-smoke"),
+    "tests/test_cli_e2e_agent_tmux_pending_wait.py": (1, "optional-dep-guard"),
     "tests/test_cli_e2e_opencode_editors.py": (1, "operator-smoke"),
     "tests/test_cli_e2e_mutation_status.py": (1, "platform-guard"),
     # Native supervisor suspension needs POSIX SIGSTOP/SIGCONT.
