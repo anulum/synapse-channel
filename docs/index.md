@@ -74,7 +74,7 @@ support weight. Choose in this order:
   as Claude Code, Codex, Cursor, and Claude Desktop: registered tools/resources
   and host-specific profiles are listed in the guide. Qualification applies to
   the exact host, version, artifact and executed profile; the stability contract
-  freezes named adapter boundaries rather than every host's behavior.
+  freezes named adapter boundaries rather than every host's behaviour.
 - **Validated, partial interop** — the **[A2A bridge](a2a-conformance.md)**:
   the official SDK completes discovery and the send/get/list/cancel lifecycle
   against it, and the official TCK HTTP+JSON MUST run records 55 passed with

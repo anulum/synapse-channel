@@ -31,6 +31,8 @@ def test_policy_engine_design_is_publicly_discoverable() -> None:
     assert "Policy engine: policy-engine.md" in nav
     assert "policy-engine.md" in readme
     assert "policy-engine.md" in index
+    assert "every host's behaviour" in index
+    assert "behavior" not in index
 
 
 def test_policy_engine_design_covers_enterprise_rules() -> None:
