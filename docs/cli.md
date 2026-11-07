@@ -778,7 +778,7 @@ An unknown outcome prints its operation key, request digest, and a
 `synapse release --confirm-only ...` recovery command. Preserve that output and
 run the read-only command; do not send another release to discover the result.
 The hub records every release it refuses in its log as one line, `Release
-refused for <sender> on task '<task>' (operation '<key>'): '<reason>'`; a
+refused for '<sender>' on task '<task>' (operation '<key>'): '<reason>'`; a
 legacy release without a key shows `operation None`. Search the hub log for the
 printed operation key to tell a refused release from one that never arrived.
 The recovery command uses the existing authentication profile. A hub URI with

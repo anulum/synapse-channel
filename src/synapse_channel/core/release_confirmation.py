@@ -102,14 +102,15 @@ def log_release_refusal(data: dict[str, Any], sender: str, reason: str) -> None:
     A sender that hears nothing reports its release as unknown, so the hub log
     is where an operator tells a refusal from a lost frame. Keyed and legacy
     releases are both recorded; a legacy release has no operation id. Other
-    frames are ignored. Task, operation and reason are written with ``repr``,
-    so text from the frame cannot forge further log lines.
+    frames are ignored. Sender, task, operation and reason are all written
+    with ``repr``: on some paths the sender is the frame's own field, so no
+    argument may start another log line.
     """
     if data.get("type") != MessageType.RELEASE:
         return
     key = data.get("idem_key")
     logger.warning(
-        "Release refused for %s on task %r (operation %r): %r",
+        "Release refused for %r on task %r (operation %r): %r",
         sender,
         str(data.get("task_id") or data.get("payload") or "").strip(),
         key if isinstance(key, str) and key else None,

@@ -401,6 +401,6 @@ async def test_a_refused_keyed_release_names_its_operation(
         for record in caplog.records
         if record.getMessage().startswith("Release refused")
     ] == [
-        f"Release refused for {SENDER} on task 'held' (operation 'release-op-1'): "
+        f"Release refused for {SENDER!r} on task 'held' (operation 'release-op-1'): "
         "'frame_signature_required'"
     ]

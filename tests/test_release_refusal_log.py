@@ -26,6 +26,7 @@ from synapse_channel.core.acl import CLAIM, AclPolicy, AclRule
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.release_confirmation import log_release_refusal
 
 _FIELDS_SENT_BY_SEND_MESSAGE = {"sender", "type", "target", "payload", "timestamp"}
 
@@ -80,8 +81,10 @@ async def test_a_denied_keyed_and_legacy_release_are_logged(
         finally:
             await close_agents(alice, mallory)
     first, second = _refusals(caplog)
-    assert first.startswith("Release refused for P/mallory on task 'T1' (operation 'op-denied'): ")
-    assert second.startswith("Release refused for P/mallory on task 'T1' (operation None): ")
+    assert first.startswith(
+        "Release refused for 'P/mallory' on task 'T1' (operation 'op-denied'): "
+    )
+    assert second.startswith("Release refused for 'P/mallory' on task 'T1' (operation None): ")
 
 
 async def test_a_strict_fencing_refusal_is_logged(caplog: pytest.LogCaptureFixture) -> None:
@@ -96,7 +99,9 @@ async def test_a_strict_fencing_refusal_is_logged(caplog: pytest.LogCaptureFixtu
         finally:
             await close_agents(alice, mallory)
     [line] = _refusals(caplog)
-    assert line.startswith("Release refused for P/mallory on task 'T2' (operation 'op-unfenced'): ")
+    assert line.startswith(
+        "Release refused for 'P/mallory' on task 'T2' (operation 'op-unfenced'): "
+    )
     assert "Fencing epoch required" in line
 
 
@@ -120,7 +125,7 @@ async def test_an_idempotency_conflict_is_logged(
                 await close_agents(alice)
     assert conflict["error_code"] == "idempotency_conflict"
     assert _refusals(caplog) == [
-        "Release refused for P/alice on task 'T3' (operation 'op-reused'): 'idempotency conflict'"
+        "Release refused for 'P/alice' on task 'T3' (operation 'op-reused'): 'idempotency conflict'"
     ]
 
 
@@ -150,7 +155,8 @@ async def test_a_conflict_with_a_durable_release_is_logged_after_a_restart(
                 await close_agents(alice)
     assert conflict["error_code"] == "idempotency_conflict"
     assert _refusals(caplog) == [
-        "Release refused for P/alice on task 'T7' (operation 'op-durable'): 'idempotency conflict'"
+        "Release refused for 'P/alice' on task 'T7' (operation 'op-durable'): "
+        "'idempotency conflict'"
     ]
 
 
@@ -166,7 +172,7 @@ async def test_an_acl_refusal_is_logged(caplog: pytest.LogCaptureFixture) -> Non
         finally:
             await close_agents(alice)
     [line] = _refusals(caplog)
-    assert line.startswith("Release refused for P/alice on task 'T4' (operation 'op-acl'): ")
+    assert line.startswith("Release refused for 'P/alice' on task 'T4' (operation 'op-acl'): ")
     assert "access denied" in line
 
 
@@ -182,7 +188,7 @@ async def test_a_per_message_auth_refusal_is_logged(caplog: pytest.LogCaptureFix
         finally:
             await close_agents(alice)
     assert _refusals(caplog) == [
-        "Release refused for P/alice on task 'T5' (operation 'op-unsigned'): "
+        "Release refused for 'P/alice' on task 'T5' (operation 'op-unsigned'): "
         "'per-message authentication failed: missing'"
     ]
 
@@ -205,3 +211,18 @@ async def test_frame_text_cannot_forge_a_log_line(caplog: pytest.LogCaptureFixtu
     [line] = _refusals(caplog)
     assert "\n" not in line
     assert "'T6\\nRelease refused for P/alice'" in line and "'op\\nforged'" in line
+
+
+def test_a_sender_with_a_line_break_stays_on_the_one_line(caplog: pytest.LogCaptureFixture) -> None:
+    """The ledger guard passes the frame's own sender field, so the sender is escaped too."""
+    caplog.set_level(logging.WARNING, logger="synapse.hub")
+    log_release_refusal(
+        {"type": MessageType.RELEASE, "task_id": "T8", "idem_key": "op-8"},
+        "P/x\nRelease refused for 'P/alice'",
+        "idempotency conflict",
+    )
+    log_release_refusal({"type": MessageType.CLAIM, "task_id": "T8"}, "P/x", "ignored")
+    assert _refusals(caplog) == [
+        "Release refused for \"P/x\\nRelease refused for 'P/alice'\" on task 'T8' "
+        "(operation 'op-8'): 'idempotency conflict'"
+    ]
