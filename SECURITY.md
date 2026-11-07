@@ -434,11 +434,14 @@ When that boundary is crossed, the proportionate controls are:
   `synapse-channel:connect-token:v1` and a NUL byte followed by the secret;
   generate secrets with at least 256 bits of randomness, because the digest of
   a short or guessable secret can be found offline from a copied file.
-  `synapse token-set new PATH --id ID` generates such a secret, stores its
-  digest and prints the secret once (`--secret-out FILE` writes it to a new
-  owner-only file instead). It ends the token's validity after 90 days unless
-  `--days`, `--not-after` or `--no-expiry` says otherwise, and refuses a
-  `--secret-file` secret estimated below 128 bits. `synapse token-set retire
+  `synapse token-set new PATH --id ID --secret-out FILE` generates such a
+  secret, stores its digest and writes the secret to a new owner-only file.
+  It prints the secret on stdout only with `--print-secret` in place of
+  `--secret-out`, because terminal logs, shell recordings and CI output keep
+  what a command prints; with neither it refuses and writes nothing. It
+  ends the token's validity after 90 days unless `--days`, `--not-after` or
+  `--no-expiry` says otherwise, and refuses a `--secret-file` secret
+  estimated below 128 bits. `synapse token-set retire
   PATH --id ID` removes a token and `synapse token-set list PATH` shows
   identifiers, agents and validity without secrets or digests. Each change
   holds a lock, builds the whole new set, validates it with the hub's own

@@ -184,8 +184,10 @@ execution evidence when carrying a release claim forward.
   the connect token.
 
 - **`synapse token-set new`, `retire` and `list`.** `new` generates a 256-bit
-  secret, stores only its digest and prints the secret once, or writes it to a
-  new owner-only `--secret-out` file. A token ends after 90 days unless
+  secret, stores only its digest and writes the secret to a new owner-only
+  `--secret-out` file. It prints the secret once on stdout only with
+  `--print-secret`, since terminal logs and CI output keep what a command
+  prints; with neither it refuses before writing anything. A token ends after 90 days unless
   `--days`, `--not-after` or `--no-expiry` says otherwise. A secret supplied
   with `--secret-file` is refused below an estimated 128 bits. `retire`
   removes a token, and `list` shows identifiers, agents and validity without

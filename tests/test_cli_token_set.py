@@ -51,6 +51,9 @@ NOW = 1_800_000_000  # 2027-01-15T08:00:00Z
 
 
 def _new(path: Path, *extra: str, now: int = NOW) -> int:
+    """Run ``token-set new``; a generated secret is printed unless the test names a file."""
+    if not {"--secret-file", "--secret-out"} & set(extra):
+        extra = (*extra, "--print-secret")
     args = build_parser().parse_args(["token-set", "new", str(path), *extra])
     return _cmd_new(args, clock=lambda: now)
 
@@ -80,6 +83,38 @@ def test_new_prints_the_secret_once_and_stores_only_its_digest(
     assert entry.not_after == NOW + DEFAULT_VALID_DAYS * 86_400
     authenticator = TokenSetAuthenticator(path, clock=lambda: NOW)
     assert authenticator.authenticate_with_principal(secret, "A/any")[0] is True
+
+
+def test_a_generated_secret_needs_a_destination(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without ``--secret-out`` or ``--print-secret`` nothing is generated, written or printed."""
+    path = tmp_path / "tokens.json"
+    args = build_parser().parse_args(["token-set", "new", str(path), "--id", "ops-1"])
+    assert _cmd_new(args, clock=lambda: NOW) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "--secret-out FILE" in captured.err and "--print-secret" in captured.err
+    assert not path.exists()
+    existing = tmp_path / "existing.json"
+    assert _new(existing, "--id", "kept") == 0
+    capsys.readouterr()
+    before = existing.read_bytes()
+    args = build_parser().parse_args(["token-set", "new", str(existing), "--id", "second"])
+    assert _cmd_new(args, clock=lambda: NOW) == 2
+    assert capsys.readouterr().out == ""
+    assert existing.read_bytes() == before
+
+
+@pytest.mark.parametrize("other", [["--secret-file", "operator.secret"], ["--secret-out", "x"]])
+def test_print_secret_excludes_the_other_secret_options(
+    tmp_path: Path, other: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    command = ["token-set", "new", str(tmp_path / "t.json"), "--id", "a", "--print-secret"]
+    with pytest.raises(SystemExit) as exit_info:
+        build_parser().parse_args([*command, *other])
+    assert exit_info.value.code == 2
+    assert "not allowed with argument" in capsys.readouterr().err
 
 
 def test_rotation_through_the_cli_reaches_a_running_authenticator(

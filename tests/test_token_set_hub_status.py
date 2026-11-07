@@ -318,16 +318,21 @@ def test_a_policy_hub_never_blocks_a_retire_and_the_cli_follows_its_policy(
 ) -> None:
     """A set the hub's policy partly refuses still applies, so retiring a leak works."""
     path = tmp_path / "tokens.json"
-    assert main(["token-set", "new", str(path), "--id", "leak", "--days", "10"]) == 0
+    assert (
+        main(["token-set", "new", str(path), "--id", "leak", "--days", "10", "--print-secret"]) == 0
+    )
     leak = capsys.readouterr().out.strip()
     authenticator = TokenSetAuthenticator(path, max_token_days=30)
     writer = publish_hub_state(authenticator)
     assert writer is not None
     try:
         # With a 30-day hub running, the default validity shrinks to 30 days.
-        assert main(["token-set", "new", str(path), "--id", "fits"]) == 0
+        assert main(["token-set", "new", str(path), "--id", "fits", "--print-secret"]) == 0
         fits = capsys.readouterr().out.strip()
-        assert main(["token-set", "new", str(path), "--id", "long", "--days", "90"]) == 0
+        assert (
+            main(["token-set", "new", str(path), "--id", "long", "--days", "90", "--print-secret"])
+            == 0
+        )
         captured = capsys.readouterr()
         assert f"warning: hub {writer.path.name} will refuse token long" in captured.err
         assert "at most 30 days" in captured.err
@@ -344,7 +349,10 @@ def test_a_policy_hub_never_blocks_a_retire_and_the_cli_follows_its_policy(
         expiring = TokenSetAuthenticator(path, require_expiry=True)
         other = HubStateWriter(expiring, pid=1)
         expiring.observe(other)
-        assert main(["token-set", "new", str(path), "--id", "never", "--no-expiry"]) == 0
+        assert (
+            main(["token-set", "new", str(path), "--id", "never", "--no-expiry", "--print-secret"])
+            == 0
+        )
         assert "it requires an end of validity" in capsys.readouterr().err
         other.close()
     finally:
@@ -379,7 +387,7 @@ def test_new_still_writes_when_hub_states_cannot_be_read(
     directory.mkdir(mode=0o700)
     (directory / "hub-3-3.json").write_text("{}")
     (directory / "hub-3-3.lock").symlink_to(tmp_path / "elsewhere")
-    assert main(["token-set", "new", str(path), "--id", "b"]) == 0
+    assert main(["token-set", "new", str(path), "--id", "b", "--print-secret"]) == 0
     captured = capsys.readouterr()
     assert "warning" not in captured.err and captured.out.strip()
 

@@ -10,8 +10,10 @@
 These are local file operations; they do not connect to the hub. A hub started
 with ``--token-set PATH`` picks up each change on its next authentication.
 
-``new`` generates a 256-bit secret, stores only its digest, and prints the
-secret once (or writes it to an owner-only ``--secret-out`` file). ``retire``
+``new`` generates a 256-bit secret, stores only its digest, and writes the
+secret to a new owner-only ``--secret-out`` file. It prints the secret on
+stdout only when ``--print-secret`` asks for it, because terminal logs, shell
+recordings and CI output keep what a command prints. ``retire``
 removes a token. ``list`` shows identifiers, bound agents and validity, never
 a secret or a digest. A change whose result would not validate writes nothing.
 ``status`` shows whether each running hub that follows the set has it in force.
@@ -47,6 +49,10 @@ DEFAULT_VALID_DAYS = 90
 """Validity of a new token when no end is given."""
 
 _DAY = 86_400
+_NO_DESTINATION_REFUSAL = (
+    "synapse token-set new: name where the generated secret goes: --secret-out FILE "
+    "writes it to a new owner-only file; --print-secret prints it once on stdout"
+)
 _REFUSALS = (TokenSetError, SecretFileError, PrivateDirError, OSError)
 
 
@@ -121,9 +127,17 @@ def _write_secret_out(path: Path, secret: str) -> None:
 
 
 def _cmd_new(args: argparse.Namespace, *, clock: Callable[[], float] = time.time) -> int:
-    """Add a token to the set, generating its secret unless ``--secret-file`` names one."""
+    """Add a token to the set, generating its secret unless ``--secret-file`` names one.
+
+    A generated secret needs a destination the operator chose: an owner-only
+    ``--secret-out`` file, or stdout with ``--print-secret``. Without one the
+    command refuses before it generates or writes anything.
+    """
     path = Path(args.path).expanduser()
     secret_out = Path(args.secret_out).expanduser() if args.secret_out else None
+    if not args.secret_file and secret_out is None and not args.print_secret:
+        print(_NO_DESTINATION_REFUSAL, file=sys.stderr)
+        return 2
     try:
         if args.secret_file:
             secret = read_secret_file(args.secret_file, flag="--secret-file")
@@ -161,7 +175,7 @@ def _cmd_new(args: argparse.Namespace, *, clock: Callable[[], float] = time.time
         print(warning, file=sys.stderr)
     if secret_out is not None:
         print(f"secret written owner-only to {secret_out}", file=sys.stderr)
-    elif not args.secret_file:
+    elif args.print_secret:
         print(secret, flush=True)
     return 0
 
@@ -268,7 +282,11 @@ def _instant_or_none(moment: float | None) -> str | None:
 
 def _add_new_parser(nested: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register ``token-set new``."""
-    new = nested.add_parser("new", help="Add a token and print its secret once.")
+    new = nested.add_parser(
+        "new",
+        help="Add a token; its generated secret goes to a new owner-only --secret-out "
+        "file, or to stdout with --print-secret.",
+    )
     new.add_argument("path", help="Token-set file; created owner-only when absent.")
     new.add_argument("--id", required=True, help="Unique identifier, [A-Za-z0-9._-]{1,64}.")
     new.add_argument("--agents", help="Comma list of agent names the token admits (default any).")
@@ -293,7 +311,13 @@ def _add_new_parser(nested: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     source.add_argument(
         "--secret-out",
-        help="Write the generated secret to this new owner-only file instead of stdout.",
+        help="Write the generated secret to this new owner-only file.",
+    )
+    source.add_argument(
+        "--print-secret",
+        action="store_true",
+        help="Print the generated secret once on stdout instead; terminal logs and CI "
+        "output keep it.",
     )
     new.set_defaults(func=_cmd_new)
 
