@@ -216,3 +216,17 @@ def test_coding_fleet_demo_refuses_an_empty_narration(
     )
     with pytest.raises(RuntimeError, match="produced no narration"):
         coding_fleet.main()
+
+
+def test_coding_fleet_main_reports_a_completed_demo(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The packaged demo entry returns success only after a live narration."""
+    from synapse_channel import coding_fleet
+
+    assert coding_fleet.main() == 0
+    captured = capsys.readouterr()
+    assert "coding agents, no collisions" in captured.out
+    assert "claimed src/app/api.py" in captured.out
+    assert "success: coding fleet demo completed" in captured.out
+    assert captured.err == ""
