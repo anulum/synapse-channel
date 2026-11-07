@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from synapse_channel import wake_marks
@@ -36,7 +36,7 @@ def _uncertain(args: argparse.Namespace) -> int:
     try:
         rows = unresolved(
             _marks_dir(args),
-            now=datetime.now(timezone.utc),
+            now=datetime.now(UTC),
             question_after_seconds=args.question_after,
         )
     except (OSError, ValueError) as exc:
@@ -56,7 +56,7 @@ def _resolve(args: argparse.Namespace) -> int:
             args.wake_id,
             args.decision,
             args.operator,
-            now=datetime.now(timezone.utc),
+            now=datetime.now(UTC),
         )
     except FileExistsError:
         print("waker resolve: this wake is already resolved", file=sys.stderr)
