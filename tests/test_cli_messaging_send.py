@@ -20,10 +20,13 @@ from websockets.asyncio.server import ServerConnection, serve
 
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging, cli_messaging_send
+from synapse_channel.cli import main as cli_main
+from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.payload_crypto import PAYLOAD_PLACEHOLDER
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -776,3 +779,73 @@ async def test_send_reports_a_failed_encryption(
         )
     assert code == 1
     assert "encryption failed:" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("timeout", ["0", "-1", "301", "nan", "inf"])
+def test_send_refuses_a_receipt_timeout_outside_the_bound(
+    timeout: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The send command rejects a deadline it cannot honour before it connects."""
+    code = cli_main(
+        [
+            "send",
+            "--uri",
+            "ws://127.0.0.1:9",
+            "--wait-seconds",
+            "0",
+            "--ready-timeout",
+            "0.1",
+            "--receipt-timeout",
+            timeout,
+            "ping",
+        ]
+    )
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "invalid receipt timeout" in captured.out
+    assert "Could not reach hub" not in captured.out
+
+
+async def test_unknown_send_does_not_abort_a_socket_that_is_already_gone(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A vanished socket is reported unknown without touching a missing transport."""
+
+    class Gone(SynapseAgent):
+        """A connected client whose chat socket disappears before the write."""
+
+        async def send_message(
+            self,
+            msg_type: str,
+            *,
+            target: str = "all",
+            payload: str = "",
+            sign_identity: bool = False,
+            **extra: object,
+        ) -> None:
+            if msg_type == MessageType.CHAT:
+                self.connection = None
+                raise OSError("socket already gone")
+            await super().send_message(
+                msg_type,
+                target=target,
+                payload=payload,
+                sign_identity=sign_identity,
+                **extra,
+            )
+
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        code = await cli_messaging._send(
+            uri=uri,
+            name="USER",
+            target="all",
+            message="ping",
+            wait_seconds=0.0,
+            ready_timeout=2.0,
+            agent_factory=Gone,
+        )
+    assert code == 3
+    captured = capsys.readouterr().out
+    assert "delivery unknown: send was not confirmed for all" in captured
+    assert "client_msg_id=" in captured
+    assert "socket already gone" not in captured
