@@ -72,5 +72,6 @@ def test_participant_memory_guide_states_the_actual_audit_boundary() -> None:
     text = _collapsed(DOC)
     assert "metadata-only request audit rows" in text
     assert "does not record the query body" in text
-    assert "query-stream recall telemetry is a separate remanentia mcp behavior" in text
+    assert "query-stream recall telemetry is a separate remanentia mcp behaviour" in text
+    assert "behavior" not in text
     assert "does not emit query text to the synapse event log" in text

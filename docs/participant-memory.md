@@ -148,7 +148,7 @@ authentication was enabled. It deliberately does not record the query body or
 authorization header. Operators can select or disable that JSONL sink through
 REMANENTIA's audit-log environment configuration.
 
-Query-stream recall telemetry is a separate REMANENTIA MCP behavior; the
+Query-stream recall telemetry is a separate REMANENTIA MCP behaviour; the
 lightweight stdlib HTTP path does not emit query text to the SYNAPSE event log.
 Do not use an API audit row as evidence that a particular memory was retrieved
 or admitted.
