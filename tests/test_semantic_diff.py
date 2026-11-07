@@ -682,7 +682,10 @@ def test_a_git_whose_child_keeps_the_pipes_open_still_fails_fast(
     fake.write_text(
         "#!/bin/sh\n"
         "echo FAKE\n"
-        f"/usr/bin/setsid -f /bin/sh -c 'echo $$ > {holder_pid}; exec /usr/bin/sleep 15'\n"
+        # A detached holder in its own session keeps git's stdout and stderr open.
+        # The interpreter, not setsid(1) or a fixed sleep path, keeps it portable.
+        f"'{sys.executable}' -c 'import os, pathlib, time; os.setsid(); "
+        f'pathlib.Path("{holder_pid}").write_text(str(os.getpid())); time.sleep(15)\' &\n'
         "exit 0\n",
         encoding="utf-8",
     )
