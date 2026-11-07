@@ -82,9 +82,11 @@ def test_e2ee_channels_design_keeps_hub_blind_boundaries_clear() -> None:
         "does not replace at-rest encryption",
         "does not protect compromised endpoints",
         "local-first tradeoff",
+        "hub behaviour",
     )
     for boundary in required_boundaries:
         assert boundary in text
+    assert "behavior" not in text
 
 
 def test_e2ee_channels_doc_tracks_runtime_tranche() -> None:

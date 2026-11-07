@@ -117,7 +117,7 @@ primitives:
 Historical ciphertext should stay immutable. Re-encrypting history is a later
 migration task and should not be required for the first feature.
 
-## Hub behavior
+## Hub behaviour
 
 The hub should route encrypted envelopes exactly like ordinary messages where
 possible. It can enforce size limits, retention limits, recipient delivery,
