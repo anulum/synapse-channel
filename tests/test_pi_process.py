@@ -461,3 +461,47 @@ signal.pause()
             await child.command("get_state")
     finally:
         await child.close()
+
+
+async def test_close_reaps_a_leader_that_exits_while_a_descendant_holds_pipes(
+    tmp_path: Path,
+) -> None:
+    """A leader that has already exited is not killed again while its pipes stay open."""
+    ready = tmp_path / "ready"
+    descendant = tmp_path / "descendant"
+    holder = r"""
+import os, signal, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+open(sys.argv[1], "w", encoding="ascii").close()
+time.sleep(0.5)
+pid = os.fork()
+if pid == 0:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    open(sys.argv[2], "w", encoding="ascii").write(str(os.getpid()))
+    time.sleep(30)
+    os._exit(0)
+os._exit(0)
+"""
+    child = PiRpcProcess(
+        [sys.executable, "-u", "-c", holder, str(ready), str(descendant)],
+        cwd=tmp_path,
+        environment=os.environ,
+        timeout=5,
+    )
+    await child.start()
+    try:
+        for _ in range(200):
+            if ready.exists():
+                break
+            await asyncio.sleep(0.01)
+        assert ready.exists()
+        await asyncio.wait_for(child.close(), timeout=6)
+        with pytest.raises(PiRpcError, match="unavailable"):
+            await child.command("get_state")
+    finally:
+        await child.close()
+        if descendant.exists():
+            try:
+                os.kill(int(descendant.read_text(encoding="ascii")), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass
