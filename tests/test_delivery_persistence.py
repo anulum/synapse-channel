@@ -652,3 +652,16 @@ def test_terminal_transition_retires_stale_recipient_offer(tmp_path: Path) -> No
         )
         assert store.delivery.pending_notifications(intent.target) == ()
         assert store.delivery.notification(f"delivery:{intent.operation_key}:1") is not None
+
+
+def test_every_known_stage_is_restored_and_an_unknown_one_refused() -> None:
+    """A persisted stage restores as itself; anything else refuses the replay."""
+    from typing import get_args
+
+    from synapse_channel.core import delivery_persistence
+    from synapse_channel.core.delivery_modes import DeliveryStage
+
+    for stage in get_args(DeliveryStage):
+        assert delivery_persistence._stage(stage) == stage
+    with pytest.raises(DeliveryRefusal, match="stored delivery stage is unknown"):
+        delivery_persistence._stage("teleported")
