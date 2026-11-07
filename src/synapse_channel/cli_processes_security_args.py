@@ -33,6 +33,7 @@ from synapse_channel.token_set_admin import positive_days
 def add_hub_admission_arguments(hub: argparse.ArgumentParser) -> None:
     """Add the security options and the verdict-gate options to the hub parser."""
     add_hub_security_arguments(hub)
+    add_hub_mailbox_custodians_argument(hub)
     add_hub_token_set_argument(hub)
     add_hub_frame_signature_argument(hub)
     add_policy_arguments(hub)
@@ -97,6 +98,20 @@ def add_hub_token_set_argument(hub: argparse.ArgumentParser) -> None:
             "admitted it expires or is retired. By default expiry and retirement "
             "refuse new connections only and open sessions stay connected."
         ),
+    )
+
+
+def add_hub_mailbox_custodians_argument(hub: argparse.ArgumentParser) -> None:
+    """Add the custodian map that decides who may hand over or close a mailbox."""
+    hub.add_argument(
+        "--mailbox-custodians",
+        default="",
+        metavar="FILE",
+        help="JSON object naming who may hand over or close a mailbox nobody collects: "
+        "keys are a name, a project or '*', values are custodian names; the name's own "
+        "entry wins, then its project's, then '*'. A missing file names no custodian; a "
+        "malformed file refuses startup. The name itself and an operator granted "
+        "mailbox-handover by --acl-policy may act without a custodian entry.",
     )
 
 

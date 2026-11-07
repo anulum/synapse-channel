@@ -42,6 +42,7 @@ OBSERVE = "observe"
 MAILBOX = "mailbox"
 ROLE_CLAIM = "role-claim"
 PIN_RECLAIM = "identity-pin-reclaim"
+MAILBOX_HANDOVER = "mailbox-handover"
 IDENTITY_ENROLL = "identity-enroll"
 ENTITLEMENT_ADVERTISE = "entitlement-advertise"
 EVIDENCE = "evidence"
@@ -66,6 +67,7 @@ PERMISSIONS = frozenset(
         MAILBOX,
         ROLE_CLAIM,
         PIN_RECLAIM,
+        MAILBOX_HANDOVER,
         IDENTITY_ENROLL,
         ENTITLEMENT_ADVERTISE,
         EVIDENCE,

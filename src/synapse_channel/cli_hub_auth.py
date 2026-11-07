@@ -24,6 +24,10 @@ from synapse_channel.core.capability_card_trust import (
     load_capability_card_trust_bundle,
 )
 from synapse_channel.core.identity_binding import IdentityBindingError, load_identity_trust_bundle
+from synapse_channel.core.mailbox_custodians import (
+    MailboxCustodianError,
+    load_mailbox_custodians,
+)
 from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.role_grants import RoleGrantError, load_role_grants
 
@@ -90,6 +94,20 @@ def load_acl_policy_for_hub(ctx: HubStartup) -> None:
             ),
             file=sys.stderr,
         )
+
+
+def load_mailbox_custodians_for_hub(ctx: HubStartup) -> None:
+    """Load the mailbox custodian map; a malformed file refuses startup."""
+    path = str(getattr(ctx.args, "mailbox_custodians", "") or "")
+    if not path:
+        return
+    try:
+        custodians = load_mailbox_custodians(path)
+    except MailboxCustodianError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        raise HubStartupRefused() from None
+    entries = dict(custodians.entries)
+    ctx.config = replace(ctx.config, auth=replace(ctx.config.auth, mailbox_custodians=entries))
 
 
 def load_role_grants_for_hub(ctx: HubStartup) -> None:
@@ -216,5 +234,6 @@ def prepare_hub_trust(ctx: HubStartup) -> None:
     load_message_auth_keys(ctx)
     load_acl_policy_for_hub(ctx)
     load_role_grants_for_hub(ctx)
+    load_mailbox_custodians_for_hub(ctx)
     load_identity_trust_for_hub(ctx)
     load_capability_trust_for_hub(ctx)

@@ -42,6 +42,7 @@ class HubAuthOptions(TypedDict, total=False):
     acl_policy: AclPolicy | None
     require_acl: bool
     role_grants: RoleGrants | None
+    mailbox_custodians: Mapping[str, str] | None
     require_role_claim: bool
     require_fencing_epoch: bool
     require_signed_frames: bool

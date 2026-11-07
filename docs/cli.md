@@ -64,6 +64,7 @@ everything, since they need the whole command table.
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse export` | Export a hub store read-only: `create` writes the journal and AEF receipts as plain files with a manifest, `verify` checks their consistency, `to-sqlite` copies them into a plain SQLite file; see [Exporting the journal](export.md). |
+| `synapse mailbox handover` / `synapse mailbox close` | Act as `--name` on the pending directed mail of one name through the live hub. `handover NAME --to NEW --reason TEXT` re-addresses that mail to `NEW` (each message keeps its original sender, target and time, and cites its original journal sequence); `close NAME --reason TEXT` closes it and delivers nothing. `--through SEQ` bounds the covered mail. The name itself, its custodian from the hub's `--mailbox-custodians` map, and an operator granted `mailbox-handover` may act. One request covers at most 200 messages; exit 3 means more remain and running it again continues; exit 1 is a refusal with its reason. |
 | `synapse mailbox orphans` | Read a hub store read-only and list directed mail that waits for names with no journalled activity for `--dormant-after-days` (default 7): pending count, last activity and oldest pending message per name, most mail first; `--project`, `--active NAME`, `--all` and `--json` narrow or widen the view. It changes nothing. Roles are not journalled, so a dormant name's roles are not shown. |
 | `synapse multihub` | Observe/follow a peer log read-only, or explicitly recover a stopped local watcher's durable quarantine (see [Multi-hub sync](multi-hub-sync.md)). |
 | `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations, `costs` reports per-session spend and telemetry from a hub event store. |
@@ -1290,6 +1291,39 @@ synapse wait --for api-dev --wake-jitter 0  # disable the jitter
 The same herd from the *sending* side: to push a fleet-wide update, do **not**
 `--target all` a fleet of waiters at once — send directed, spaced a few seconds
 apart, so the wakes (and re-invocations) do not stampede the provider.
+
+## Mail for a name nobody uses any more
+
+A mailbox belongs to a name, and a session name rarely comes back. Mail sent to
+an ended session therefore waits for nobody. `synapse mailbox orphans` lists
+such names from the hub store; `handover` and `close` act on one of them
+through the live hub:
+
+```bash
+synapse mailbox orphans ~/.synapse/hub.db --project api
+synapse mailbox handover api/claude-1a2b --to api/claude-3c4d --name api/manager --reason "session ended"
+synapse mailbox close api/claude-1a2b --name api/manager --reason "superseded plan; nothing to act on"
+```
+
+The hub accepts the request from the name itself, from its custodian, or from
+an operator that `--acl-policy` grants `mailbox-handover` on the name.
+Custodians come from `synapse hub --mailbox-custodians FILE`, a JSON object:
+
+```json
+{"*": "owner/desk", "api": "api/manager", "api/claude-1a2b": "api/lead"}
+```
+
+The name's own entry wins, then its project's, then `*`. Without a matching
+entry there is no custodian. A missing file names no custodian; a malformed
+file stops the hub at startup. The usual map sends `*` to the owner and each
+project to its manager.
+
+A handover routes each pending message again, from the requester to the
+successor, with the original sender, target, time and journal sequence
+attached; a close delivers nothing. Both journal a `mailbox_handover` record
+and advance the old mailbox, and neither deletes a message. One request covers
+at most 200 messages; exit code 3 says more remain, and running the same
+command again continues.
 
 ## Messaging: broadcast, several, or one
 

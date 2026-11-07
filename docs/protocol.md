@@ -134,6 +134,18 @@ does not add agent grades to protocol envelopes.
   requester, `identity-enroll` ACL, `identity-enroller` role, namespace
   allow-list, rate and durable-audit gates pass. `identity_revoke` revokes one
   enrolled key behind the same gates.
+- **Mailbox succession:** `mailbox_handover` acts on the pending directed mail
+  of one name (`from`). With `to` it re-addresses that mail to the successor:
+  each pending chat is routed again as a chat from the requester to `to`,
+  carrying `handover_of` (the original `seq`), `handover_from`,
+  `original_sender`, `original_target` and `original_timestamp`. Without `to`
+  it closes the mail and delivers nothing. `reason` is required (at most 500
+  characters) and `through_seq` optionally bounds the covered mail. The name
+  itself, its custodian from the hub's `--mailbox-custodians` map, and an
+  operator granted `mailbox-handover` may act. The hub journals one
+  `mailbox_handover` event, then advances the old watermark with source
+  `handover` or `closed`. One request covers at most 200 chats; a repeat with
+  the same `from` and covered `through_seq` changes nothing. No chat is deleted.
 - **Fleet planning input:** `entitlement_advert` records one owner's redacted
   pool advertisement as an audit-only journal row after the proven-sender,
   `entitlement-advertise` ACL and durable-journal gates. It is never broadcast.
@@ -438,6 +450,11 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   `dark_seat_alert`, `dead_letter_escalation`, `dead_letter_forwarding`.
 - **Governed operator recovery:** `identity_pin_reclaim_result` is the private
   applied/refused verdict for an `identity_pin_reclaim` request.
+  `mailbox_handover_result` answers a `mailbox_handover` with `status`
+  (`applied`, `already_applied` or `refused`), `reason` (`invalid_request`,
+  `no_journal`, `not_authorised`, `nothing_pending` or `forward_refused`),
+  `mailbox`, `successor`, `through_seq`, `forwarded` and `remaining`, which is
+  true when more pending mail lies beyond the covered sequence.
   `identity_enroll_result` and `identity_revoke_result` are the verdicts for
   `identity_enroll` and `identity_revoke`. `entitlement_advert_result` is the
   private verdict for `entitlement_advert`. `spend_result` is the private

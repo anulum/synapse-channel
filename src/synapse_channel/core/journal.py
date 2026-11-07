@@ -130,6 +130,7 @@ class EventKind:
     DELIVERY_CANCEL_REQUESTED = DELIVERY_CANCEL_REQUESTED_KIND
     DELIVERY_RECEIVING_HUB_BOUND = DELIVERY_OWNER_BOUND
     MAILBOX_WATERMARK = "mailbox_watermark"
+    MAILBOX_HANDOVER = "mailbox_handover"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
     IDENTITY_ENROLLMENT = "identity_enrollment"
     ENTITLEMENT_ADVERT = "entitlement_advert"

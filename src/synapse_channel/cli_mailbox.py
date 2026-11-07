@@ -7,9 +7,11 @@
 # SYNAPSE_CHANNEL — mailbox views read from a hub journal
 """``synapse mailbox orphans``: directed mail waiting for names that went quiet.
 
-The command reads a hub's event store read-only and changes nothing. A name is
-an orphan when it has pending directed mail and no journalled activity for the
-chosen number of days. Names given with ``--active`` are never orphans.
+The ``orphans`` action reads a hub's event store read-only and changes nothing;
+``handover`` and ``close`` (:mod:`synapse_channel.cli_mailbox_handover`) act
+through the live hub. A name is an orphan when it has pending directed mail and
+no journalled activity for the chosen number of days. Names given with
+``--active`` are never orphans.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from synapse_channel.cli_mailbox_handover import add_handover_parsers
 from synapse_channel.core.event_row_mac import RowMacError, load_row_mac_key, row_mac_key_path
 from synapse_channel.core.mailbox_orphans import (
     MailboxStanding,
@@ -149,7 +152,8 @@ def _cmd_orphans(
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register ``synapse mailbox`` and its actions."""
     mailbox = subparsers.add_parser(
-        "mailbox", help="Inspect mailboxes from a hub's event store (read-only)."
+        "mailbox",
+        help="Find orphaned mailboxes in a hub store; hand one over or close it through the hub.",
     )
     actions = mailbox.add_subparsers(dest="mailbox_command", required=True)
     orphans = actions.add_parser(
@@ -180,3 +184,4 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="The store's row-authentication key (default: <db>.rowmac.key when present).",
     )
     orphans.set_defaults(func=_cmd_orphans)
+    add_handover_parsers(actions)

@@ -106,6 +106,8 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "IDENTITY_PIN_RECLAIM": "identity_pin_reclaim",
     "IDENTITY_PIN_RECLAIM_RESULT": "identity_pin_reclaim_result",
     "LEASE_GRANTED": "lease_granted",
+    "MAILBOX_HANDOVER": "mailbox_handover",
+    "MAILBOX_HANDOVER_RESULT": "mailbox_handover_result",
     "LEDGER_PROGRESS": "ledger_progress",
     "LEDGER_PROGRESS_POSTED": "ledger_progress_posted",
     "LEDGER_TASK": "ledger_task",

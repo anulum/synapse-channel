@@ -29,6 +29,18 @@ execution evidence when carrying a release claim forward.
   comes from the journal (the name's own events and its mailbox watermarks),
   not from the hub's in-memory presence. Names given with `--active` are
   never listed. It changes nothing.
+- **Hand an orphaned mailbox to a successor, or close it.** The new
+  `mailbox_handover` verb and `synapse mailbox handover NAME --to NEW` route a
+  name's pending directed mail to a successor; `synapse mailbox close NAME`
+  closes it with a reason and delivers nothing. Either way the hub journals a
+  `mailbox_handover` record and advances the old mailbox, and no message is
+  deleted. The name itself, its custodian and an operator granted the new
+  `mailbox-handover` ACL permission may act. Custodians come from the new hub
+  option `--mailbox-custodians FILE`: a JSON object mapping a name, a project
+  or `*` to a custodian name, where the name's entry wins, then its
+  project's, then `*`; a missing file names no custodian and a malformed file
+  refuses startup. One request covers at most 200 messages and says when more
+  remain.
 
 ### Changed
 

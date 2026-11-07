@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 
 from synapse_channel.core.acl import AclPolicy
@@ -127,6 +128,10 @@ class HubAuthConfigView(HubConfigOwner):
     role_grants: ConfigAttribute[RoleGrants | None] = ConfigAttribute(
         lambda config: config.auth.role_grants,
         lambda config, value: replace(config, auth=replace(config.auth, role_grants=value)),
+    )
+    mailbox_custodians: ConfigAttribute[Mapping[str, str] | None] = ConfigAttribute(
+        lambda config: config.auth.mailbox_custodians,
+        lambda config, value: replace(config, auth=replace(config.auth, mailbox_custodians=value)),
     )
     signed_event_trust_bundle: ConfigAttribute[EventSignatureTrustBundle | None] = ConfigAttribute(
         lambda config: config.auth.signed_event_trust_bundle,

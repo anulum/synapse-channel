@@ -33,6 +33,7 @@ from synapse_channel.core.handlers.identity_enrollments import (
 )
 from synapse_channel.core.handlers.identity_pins import VERB_SPECS as IDENTITY_PINS_VERBS
 from synapse_channel.core.handlers.leasing import VERB_SPECS as LEASING_VERBS
+from synapse_channel.core.handlers.mailbox_handover import VERB_SPECS as MAILBOX_HANDOVER_VERBS
 from synapse_channel.core.handlers.memory import VERB_SPECS as MEMORY_VERBS
 from synapse_channel.core.handlers.message_forward import VERB_SPECS as MESSAGE_FORWARD_VERBS
 from synapse_channel.core.handlers.messaging import VERB_SPECS as MESSAGING_VERBS
@@ -60,6 +61,7 @@ VERBS = build_registry(
         IDENTITY_ENROLLMENTS_VERBS,
         IDENTITY_PINS_VERBS,
         LEASING_VERBS,
+        MAILBOX_HANDOVER_VERBS,
         MEMORY_VERBS,
         MESSAGE_FORWARD_VERBS,
         MESSAGING_VERBS,

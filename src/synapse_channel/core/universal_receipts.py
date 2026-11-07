@@ -77,6 +77,7 @@ NON_RECEIPT_EVENT_KINDS = frozenset(
         EventKind.FINDING,
         EventKind.IDEMPOTENCY,
         EventKind.MAILBOX_WATERMARK,
+        EventKind.MAILBOX_HANDOVER,
         EventKind.DELIVERY_INTENT_ACCEPTED,
         EventKind.DELIVERY_INTENT_QUEUED,
         EventKind.DELIVERY_INTENT_TRANSITION,
@@ -96,7 +97,8 @@ NON_RECEIPT_EVENT_KINDS = frozenset(
 Delivery intent lifecycle events have their own correlated status and durable
 notification view; projecting them as legacy transport receipts would conflate
 queue admission, boundary acknowledgement, and task execution. Connect-token
-audit rows stay plain journal rows until a receipt mapping for them is defined.
+audit rows and mailbox handovers stay plain journal rows until a receipt
+mapping for them is defined.
 """
 
 

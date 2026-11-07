@@ -27,6 +27,7 @@ from synapse_channel.core.hub_frame_gates import HubFrameGates
 from synapse_channel.core.hub_identity_gate import HubIdentityGate
 from synapse_channel.core.hub_ingress import HubIngress
 from synapse_channel.core.hub_relay import RelayMirror
+from synapse_channel.core.mailbox_handover import HandoverLedger
 from synapse_channel.core.mailbox_pending import MailboxPendingTracker
 from synapse_channel.core.operator_relay_forwarding import OperatorRelayForwarding
 from synapse_channel.core.pending_receipts import PendingReceipts
@@ -41,6 +42,7 @@ class HubDeliveryComponents:
     dead_letters: DeadLetterLedger
     pending_receipts: PendingReceipts
     mailbox_pending: MailboxPendingTracker
+    mailbox_handovers: HandoverLedger
     relay: RelayMirror
     broadcaster: HubBroadcaster
 
@@ -70,6 +72,7 @@ def build_delivery(
         dead_letters=DeadLetterLedger(max_age_seconds=DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS),
         pending_receipts=PendingReceipts(),
         mailbox_pending=MailboxPendingTracker(config.journal),
+        mailbox_handovers=HandoverLedger(config.journal),
         relay=relay,
         broadcaster=HubBroadcaster(
             clients.clients, relay, system=callbacks.system, online_agents=callbacks.online_agents

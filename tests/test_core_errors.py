@@ -429,6 +429,16 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "kimi_hook_installer",
         ValueError,
     ),
+    "MailboxHandoverError": (
+        "synapse_channel.core.mailbox_handover",
+        "mailbox_handover",
+        ValueError,
+    ),
+    "MailboxCustodianError": (
+        "synapse_channel.core.mailbox_custodians",
+        "mailbox_custodian",
+        ValueError,
+    ),
     "McpAccessError": ("synapse_channel.core.mcp_outbound", "mcp_access", PermissionError),
     "McpConfigError": ("synapse_channel.core.mcp_outbound", "mcp_config", ValueError),
     "McpDependencyError": (

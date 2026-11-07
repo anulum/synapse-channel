@@ -171,6 +171,52 @@ class MailboxPendingTracker:
             return False
         return self.advance(name, seq, roles=role_names, source="ack")
 
+    def pending_chats(
+        self,
+        identity: str,
+        *,
+        through_seq: int,
+        limit: int,
+        page: int = 500,
+    ) -> tuple[tuple[StoredEvent, ...], int]:
+        """Return pending directed chats for ``identity`` and the last sequence they cover.
+
+        The window starts after the identity's watermark and ends at ``through_seq``
+        (capped to the store). The predicate and roles are the ones the pending count
+        uses. At most ``limit`` chats are returned; when the limit is reached the covered
+        sequence is the last returned chat, so a caller that advances the watermark to
+        it never skips a chat it did not see. Chats are read ``page`` rows at a time.
+        """
+        if self.store is None:
+            return (), 0
+        name = identity.strip()
+        start = self._watermarks.get(name, 0)
+        end = min(
+            safe_int(through_seq, default=0, min_value=0, allow_bool=False),
+            self.store.max_seq(),
+        )
+        bound = safe_int(limit, default=1, min_value=1, allow_bool=False)
+        size = safe_int(page, default=500, min_value=1, allow_bool=False)
+        roles = self._roles.get(name, ())
+        found: list[StoredEvent] = []
+        cursor = start
+        while cursor < end:
+            events = self.store.read_window(
+                min_seq=cursor + 1,
+                max_seq=end,
+                kinds=(EventKind.CHAT,),
+                limit=size,
+            )
+            if not events:
+                break
+            for event in events:
+                if self._matches(event, name, roles):
+                    found.append(event)
+                    if len(found) == bound:
+                        return tuple(found), event.seq
+            cursor = events[-1].seq
+        return tuple(found), max(end, start)
+
     def snapshot(
         self,
         online_names: Iterable[str],

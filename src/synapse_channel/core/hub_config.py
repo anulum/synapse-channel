@@ -200,6 +200,8 @@ class HubAuthConfig:
     acl_policy: AclPolicy | None = None
     require_acl: bool = False
     role_grants: RoleGrants | None = None
+    # Validated name/project/'*' -> custodian entries (see core.mailbox_custodians).
+    mailbox_custodians: Mapping[str, str] | None = None
     require_role_claim: bool = False
     require_fencing_epoch: bool = False
     require_signed_frames: bool = False

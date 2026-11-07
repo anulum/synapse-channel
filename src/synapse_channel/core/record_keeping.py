@@ -72,6 +72,7 @@ _OPERATION_KINDS = frozenset(
         "sandbox_run",
         "operator_relay",
         "mailbox_watermark",
+        "mailbox_handover",
         "dead_letter_forwarding",
         "delivery_receipt_requested",
         "delivery_receipt_immediate",
