@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.protocol import MessageType
@@ -80,7 +80,7 @@ async def handle_spend_request(
     ):
         logger.warning("spend request refused: peer %r is not served", sender)
     else:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         try:
             if action == "reserve":
                 result = await asyncio.to_thread(ledger.reserve, sender, document, now=now)
