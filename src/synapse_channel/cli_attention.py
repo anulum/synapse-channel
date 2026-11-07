@@ -18,7 +18,7 @@ import sqlite3
 import subprocess  # nosec B404
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from synapse_channel.core.approvals import build_approval_report
@@ -100,7 +100,7 @@ def _sync(args: argparse.Namespace) -> int:
             raise AttentionStoreError(f"missing entitlement ledger: {ledger}")
         quota = project_quota_attention(
             read_events(ledger),
-            at=datetime.fromtimestamp(now, tz=timezone.utc),
+            at=datetime.fromtimestamp(now, tz=UTC),
             stale_after_seconds=stale_seconds,
         )
     hub = EventStore(db_path, key_file=args.db_key_file)
