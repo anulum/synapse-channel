@@ -168,7 +168,7 @@ non-blocking hook returns success without releasing anything.
 The hub validates and compares identity values but never reads the worktree.
 Identity-aware claims compare conservatively with a legacy peer by projecting
 that peer's display paths under the known filesystem policy. Two legacy peers
-retain their historical literal-path behavior, so upgrade all Git-aware claim
+retain their historical literal-path behaviour, so upgrade all Git-aware claim
 producers to close alias gaps across an entire fleet.
 
 First-party ordinary file claims participate in the same identity model.

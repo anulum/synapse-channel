@@ -35,6 +35,8 @@ def test_public_guides_document_the_shipped_gate_and_identity_boundary() -> None
     assert "Parser/import/Git failures deny" in claims
     assert "Semantic claims release only when" in claims
     assert "retains the symbol claim for explicit manual release" in claims
+    assert "historical literal-path behaviour" in claims
+    assert "behavior" not in claims
     assert "Use isolated Git" in readme
 
 
