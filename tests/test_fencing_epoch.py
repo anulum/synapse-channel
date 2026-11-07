@@ -40,6 +40,7 @@ from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.handlers.leasing import FENCING_EPOCH_REQUIRED
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.release_confirmation import ReleaseIntent
 
 
 def _is(msg_type: str) -> Callable[[dict[str, Any]], bool]:
@@ -120,6 +121,39 @@ async def test_every_covered_mutation_needs_the_epoch_under_strict_fencing() -> 
             await close_agents(alice)
     assert [refusal["payload"] for refusal in refusals] == [FENCING_EPOCH_REQUIRED] * 4
     assert {refusal["task_id"] for refusal in refusals} == {"T2"}
+
+
+async def test_a_keyed_epochless_release_refusal_names_its_operation() -> None:
+    """The strict refusal of a keyed release carries the sender's exact intent."""
+    async with running_hub(SynapseHub(require_fencing_epoch=True)) as (_hub, uri):
+        alice = await connect_agent("P/alice", uri)
+        mallory = await connect_agent("P/mallory", uri)
+        try:
+            await _claim(alice, "T5")
+            request = mallory.agent.prepare_release("T5", idem_key="release-op-5")
+            assert "epoch" not in request
+            intent = ReleaseIntent.from_request(request)
+            await mallory.agent.send_message(
+                MessageType.RELEASE,
+                target=request["target"],
+                payload=request["payload"],
+                **{
+                    key: value
+                    for key, value in request.items()
+                    if key not in {"sender", "type", "target", "payload", "timestamp"}
+                },
+            )
+            refused = await mallory.recorder.wait_for(_is(MessageType.RELEASE_DENIED))
+            mallory.recorder.messages.clear()
+            await mallory.agent.save_checkpoint("T5", "x")
+            other = await mallory.recorder.wait_for(_is(MessageType.CHECKPOINT_DENIED))
+        finally:
+            await close_agents(alice, mallory)
+    assert refused["payload"] == FENCING_EPOCH_REQUIRED
+    assert (refused["task_id"], refused["target"]) == ("T5", "P/mallory")
+    assert refused["release_operation_id"] == intent.operation_id == "release-op-5"
+    assert refused["request_digest"] == intent.request_digest
+    assert "release_operation_id" not in other and "request_digest" not in other
 
 
 async def test_the_shipped_client_sends_its_own_epoch_and_passes_strict_fencing() -> None:

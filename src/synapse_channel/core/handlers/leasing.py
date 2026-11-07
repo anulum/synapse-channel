@@ -175,7 +175,9 @@ async def _refuse_unfenced(
     With ``require_fencing_epoch`` off the epoch stays optional, as before.
     With it on, a task update, release, handoff or checkpoint must name the
     lease epoch it acts under, so a writer holding a superseded lease is
-    refused by the state's epoch check instead of acting unchecked.
+    refused by the state's epoch check instead of acting unchecked. A refused
+    keyed release names its operation and request digest, as every other
+    release verdict does, so its sender sees a refusal, not an unanswered request.
 
     Returns
     -------
@@ -184,9 +186,12 @@ async def _refuse_unfenced(
     """
     if not hub.require_fencing_epoch or optional_int_field(data, "epoch") is not None:
         return False
+    binding = release_reply_binding(data) if msg_type == MessageType.RELEASE_DENIED else {}
     await hub.send_json(
         websocket,
-        hub.system(FENCING_EPOCH_REQUIRED, msg_type=msg_type, target=sender, task_id=task_id),
+        hub.system(
+            FENCING_EPOCH_REQUIRED, msg_type=msg_type, target=sender, task_id=task_id, **binding
+        ),
     )
     return True
 

@@ -296,6 +296,14 @@ execution evidence when carrying a release claim forward.
   fails or the pane is lost. Measured on a live fleet before the fix: one such
   bridge started 18 waits in 90 seconds.
 
+- **A strict-fencing refusal of a keyed release names its operation.** On a
+  hub started with `--require-fencing-epoch`, a keyed release without an epoch
+  was refused without its operation id and request digest. `synapse lock`
+  matches a refusal by operation id, so it waited out its reply timeout and
+  reported the release as unknown instead of refused. The refusal now carries
+  the same binding as every other release verdict. Other refused mutations are
+  unchanged.
+
 - **`synapse mcp --transport streamable-http --token-file FILE` starts.** The
   command read the hub token file before handing over to the private HTTPS
   profile, which then saw a raw token and refused to start, as it refuses
