@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Final
 
@@ -99,7 +99,7 @@ def parse_time(value: object, field: str) -> datetime:
         raise EntitlementError(f"{field} must be an offset-aware ISO timestamp") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise EntitlementError(f"{field} must include a UTC offset")
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def parse_quantity(value: object, field: str) -> Decimal:
