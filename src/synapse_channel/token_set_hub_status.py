@@ -39,7 +39,7 @@ import time
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -61,7 +61,7 @@ _LOG = logging.getLogger(__name__)
 
 def _instant(moment: float) -> str:
     """Return POSIX seconds as ``YYYY-MM-DDTHH:MM:SSZ``."""
-    return datetime.fromtimestamp(moment, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.fromtimestamp(moment, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class HubStateWriter:
