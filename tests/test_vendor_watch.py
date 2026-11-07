@@ -353,3 +353,8 @@ def test_public_tool_reports_bad_matrix_without_secret_echo(tmp_path: Path) -> N
     assert result.returncode == 2
     assert "private" not in result.stderr
     assert not (tmp_path / "report.json").exists()
+    guide = (Path(__file__).resolve().parents[1] / "docs" / "vendor-watch.md").read_text(
+        encoding="utf-8"
+    )
+    assert "tested behaviour" in guide
+    assert "behavior" not in guide

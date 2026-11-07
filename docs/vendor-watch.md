@@ -52,7 +52,7 @@ an isolated real integration journey. Update its accepted version only when
 those checks pass, or mark the affected capability unsupported and open an owned
 follow-up. Compare the release notes and schema; a newest tag alone is not a
 feature guarantee. Update `reviewed_at` only after the review record is
-complete, with source date, exact version, tested behavior, decision and next
+complete, with source date, exact version, tested behaviour, decision and next
 review. No automatic version bump, paid call, marketplace action or deployment
 follows from detection.
 
