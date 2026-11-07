@@ -34,7 +34,7 @@ local-first and dependency-light as before.
 
 This makes MCP an interoperability edge, not a replacement layer. MCP-compatible
 hosts such as Claude Code, Claude Desktop, Cursor, or other editor assistants
-still own their prompt/runtime/editor behavior; SYNAPSE only supplies shared
+still own their prompt/runtime/editor behaviour; SYNAPSE only supplies shared
 coordination state through MCP tools and resources.
 
 The MCP SDK is an **optional extra** — the core install keeps its transport
@@ -167,7 +167,7 @@ can uninstall its own assets without deleting user settings. A remote Synapse
 hub is still reached by this local stdio MCP process; pass `--uri wss://…` and
 an owner-only `--token-file` path rather than embedding a raw secret. See the
 [OpenCode bridge](opencode.md) for project/global paths, the participant and API
-connectors, remote attach behavior, native hook limits, and ACP IDE setup.
+connectors, remote attach behaviour, native hook limits, and ACP IDE setup.
 
 ### Cursor
 

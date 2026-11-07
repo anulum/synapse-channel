@@ -34,6 +34,11 @@ def _run_audit(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_mcp_surface_audit_passes_current_repository() -> None:
+    guide = DOCS.read_text(encoding="utf-8")
+    assert "prompt/runtime/editor behaviour" in guide
+    assert "remote attach behaviour" in guide
+    assert "behavior" not in guide
+
     result = _run_audit("--check")
 
     assert result.returncode == 0, result.stderr + result.stdout
