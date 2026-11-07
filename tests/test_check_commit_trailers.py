@@ -442,11 +442,6 @@ def test_hook_accepts_product_names_and_public_identifiers_in_the_body(
         ("Recorded in HANDOVER_2026-11-03T012903Z.", "coordination record name"),
         ("Review: RIGOR CLEAR.", "internal reviewer name in the message: RIGOR"),
         ("Routed at hub 227079.", "hub event citation in the message: hub 227079"),
-        ("Closes GPT6R2-13.", "internal planning code in the message: GPT6R2-13"),
-        ("Tracked as GWD-PERF.", "internal planning code in the message: GWD-PERF"),
-        ("See GWM-12 before landing.", "internal planning code in the message: GWM-12"),
-        ("D5 stays open.", "internal planning code in the message: D5"),
-        ("Part of U11 and CRR-02.", "internal planning code in the message: U11, CRR-02"),
     ],
 )
 def test_hook_rejects_internal_identifiers_in_the_body(
@@ -458,11 +453,13 @@ def test_hook_rejects_internal_identifiers_in_the_body(
     assert "private coordination records" in err
 
 
-def test_hook_rejects_an_internal_code_in_the_subject(tmp_path: Path) -> None:
-    message = _with_body("Plain body.", subject="feat(runtime): finish U11")
+def test_hook_leaves_planning_codes_to_the_commit_review(tmp_path: Path) -> None:
+    """Planning codes change with every programme, so the hook does not match them."""
+    body = "Closes GPT6R2-13 and GWD-PERF; D5, GWM-12, U11 and CRR-02 stay open."
+    message = _with_body(body, subject="feat(runtime): finish U11")
 
-    assert "internal planning code in the message: U11" in GATE.body_violations(message)
-    assert GATE.main([str(_message_file(tmp_path, message))]) == 1
+    assert GATE.body_violations(message) == []
+    assert GATE.main([str(_message_file(tmp_path, message))]) == 0
 
 
 def test_body_rule_leaves_its_own_trailers_alone() -> None:

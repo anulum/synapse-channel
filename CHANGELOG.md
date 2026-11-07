@@ -30,6 +30,15 @@ execution evidence when carrying a release claim forward.
   not from the hub's in-memory presence. Names given with `--active` are
   never listed. It changes nothing.
 
+### Changed
+
+- **The commit-message hook no longer matches planning codes.** Their set
+  changes with every programme, and short forms collide with ordinary text,
+  so a fixed pattern list was always behind. Keeping them out of public
+  messages is left to the commit rules and the review before each commit.
+  Seat ids, coordination record names, hub event citations and injected
+  attribution trailers are still refused.
+
 ### Fixed
 
 - **A token-set hub no longer closes a session a few milliseconds early.**

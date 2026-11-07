@@ -58,11 +58,13 @@ Ruff rules and the complete coverage gate remain unchanged.
    A commit message is public, so the same hook also reads its subject and
    body. It refuses attribution trailers that a tool adds by default
    (`Co-Authored-By`, `Claude-Session`, "Generated with …") and internal
-   coordination identifiers: agent seat ids, review or handover record names,
-   hub event citations and planning codes. Keep that provenance in the
-   private coordination records. Product names in prose, such as the name of
-   an integration, stay allowed. The history audit applies this rule to
-   commits made after it was introduced.
+   coordination identifiers: agent seat ids, review or handover record names
+   and hub event citations. Keep that provenance in the private coordination
+   records. Product names in prose, such as the name of an integration, stay
+   allowed. The history audit applies this rule to commits made after it was
+   introduced. Planning codes are not matched, because their set changes with
+   every programme; keep them out of public messages by reading each message
+   before you commit.
 
    The installed pre-push hooks are deliberately lightweight. They check the
    generated capability snapshot, commit-trailer history, and version surfaces

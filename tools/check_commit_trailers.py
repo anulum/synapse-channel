@@ -26,8 +26,10 @@ accidental bypass, not a determined forger.
 
 A commit message is a public surface, so its body is checked as well. It may
 not carry an attribution trailer that a vendor tool injects, an agent seat
-identifier, a coordination record name, a hub event citation or an internal
-planning code. Review provenance belongs in the private coordination records.
+identifier, a coordination record name or a hub event citation. Review
+provenance belongs in the private coordination records. Planning codes are not
+matched: their set changes with every programme, so keeping them out of public
+messages is left to the commit rules and the review before each commit.
 Product names in prose (for example an integration's name) stay allowed. The
 hook applies this rule to every new message. The history audit applies it
 only to commits whose own copy of this tool carries the rule, so history
@@ -129,15 +131,6 @@ BODY_TOKEN_RULES = (
     ),
     ("internal reviewer name", re.compile(r"\bRIGOR\b")),
     ("hub event citation", re.compile(r"\b(?:hub|event|seq)\s+#?\d{5,}\b", re.I)),
-    (
-        "internal planning code",
-        re.compile(
-            r"\b(?:GPT6(?:R2)?-[A-Z]?\d+|U(?:0[1-9]|1[0-2])|CRR-\d+|NMR-\d+|OPS-\d+"
-            r"|FDBG-\d+|SCDBG-\d+|CI-F\d+|K3-F\d+|REV-SEC-\d+|SOL4-[A-Z]+-\d+"
-            r"|EXT-?0\d|BL-\d+|WS-\d+|QWC-\d+|GWD-[A-Za-z0-9]+|GWM-[A-Za-z0-9]+"
-            r"|D\d+)\b"
-        ),
-    ),
 )
 
 
