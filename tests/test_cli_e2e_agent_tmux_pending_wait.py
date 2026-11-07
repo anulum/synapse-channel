@@ -93,13 +93,23 @@ def _capture(session: str) -> str:
 
 
 def _wait_children(pid: int) -> set[int]:
-    """Return the live children of ``pid`` that run ``synapse wait``, bound or not."""
+    """Return the live children of ``pid`` that run ``synapse wait``, bound or not.
+
+    A thread or child can exit between listing and reading. Its ``/proc`` entry
+    then raises ``FileNotFoundError`` or, for a process that is exiting,
+    ``ProcessLookupError``. Either way it is no longer a live child, so it is
+    skipped.
+    """
     children: set[int] = set()
     for task in Path(f"/proc/{pid}/task").iterdir():
-        for child in (task / "children").read_text().split():
+        try:
+            listed = (task / "children").read_text().split()
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        for child in listed:
             try:
                 argv = Path(f"/proc/{child}/cmdline").read_bytes().split(b"\0")
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
                 continue
             if b"wait" in argv and b"--name" in argv:
                 children.add(int(child))
