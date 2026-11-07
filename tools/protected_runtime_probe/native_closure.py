@@ -15,7 +15,7 @@ import re
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .native_provenance import (
@@ -373,7 +373,7 @@ def verify_native_runtime_content(
     )
     return {
         "schema": "synapse.native-runtime-provenance.v1",
-        "observed_at": datetime.now(timezone.utc).isoformat(),
+        "observed_at": datetime.now(UTC).isoformat(),
         "entry_modules": list(_ENTRYPOINTS + (_INSTRUMENTED_ENTRYPOINTS if instrumented else ())),
         "deferred_imports": list(
             _DEFERRED_IMPORTS + (_INSTRUMENTED_DEFERRED_IMPORTS if instrumented else ())

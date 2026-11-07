@@ -18,6 +18,7 @@ import shutil
 import sys
 import urllib.request
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -82,6 +83,11 @@ def test_actual_probe_closure_has_current_package_and_wheel_provenance(native_wh
     observed = observe_native_import_closure(_SOURCE, _DEPENDENCY)
     content = {item.payload: item.installed_source.read_bytes() for item in observed}
     result = verify_native_runtime_content(content, _SOURCE, _DEPENDENCY, native_wheel)
+    observed_at = result["observed_at"]
+    assert isinstance(observed_at, str)
+    stamp = datetime.fromisoformat(observed_at)
+    assert stamp.tzinfo is UTC
+    assert abs((datetime.now(UTC) - stamp).total_seconds()) < 30
     assert result["deferred_imports"] == ["fcntl"]
     assert result["account_resolution"] == {
         "owned_interpreters": "root-controlled-local-files",
