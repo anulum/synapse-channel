@@ -23,7 +23,7 @@ import tempfile
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -83,7 +83,7 @@ class ArchiveReportOptions:
 def _stamp(ts: float) -> str:
     """Return ``ts`` as a compact UTC ISO-8601 timestamp."""
     return (
-        datetime.fromtimestamp(float(ts), tz=timezone.utc)
+        datetime.fromtimestamp(float(ts), tz=UTC)
         .isoformat(timespec="seconds")
         .replace("+00:00", "Z")
     )
