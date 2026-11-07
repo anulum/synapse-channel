@@ -34,7 +34,7 @@ negotiation helper chooses the lower version and reports a warning; the Python
 agent instead records the advertised hub version and gates individual APIs by
 their feature floors. An absent advertisement does not admit its delivery API.
 Check the exact client profile rather than assume every implementation has the
-same warning and negotiation behavior.
+same warning and negotiation behaviour.
 
 Version `3` adds session-bound delivery requests, explicit recipient stages,
 cancellation and durable outcome evidence. The version `2` `ack` remains a
@@ -218,7 +218,7 @@ to access a local path.
 
 When only one side supplies the field, the hub projects the legacy display
 under the supplied filesystem policy. Two claims without the field retain the
-version-2 literal-path behavior. This supports rolling upgrades but means a
+version-2 literal-path behaviour. This supports rolling upgrades but means a
 fleet closes every alias gap only after all Git-aware claim producers upgrade.
 
 ### Session nonce
@@ -578,12 +578,12 @@ that cache bound does not delete journal events. The default `synapse who`
 presentation independently shows the 20 largest positive counts plus complete
 totals, while `--all-mailbox-pending` expands the retained map. Older clients
 ignore the WHO field; older hubs ignore the additive ACK identity and keep their
-receipt-only ACK behavior.
+receipt-only ACK behaviour.
 
 **Chat retry identity.** Chat delivery is **at least once**, and the hub does not
 consume `idem_key` for chat. A sender that may retry across reconnects supplies an
 optional printable `client_msg_id` of at most 256 UTF-8 bytes. The hub echoes the
-normalized value on live delivery, bounded history, the durable chat row, mailbox
+normalised value on live delivery, bounded history, the durable chat row, mailbox
 replay, immediate / deferred receipt frames, and the durable receipt ledger.
 
 Once a copy from a directly connected sender reaches a live recipient (or a peer
@@ -600,7 +600,7 @@ lives only in the hub process.
   redelivery attempt and is routed again.
 - **After a restart, outside the retention, or by other paths:** copies are still
   possible, so receivers should keep deduplicating on `(sender, client_msg_id)`.
-- **Invalid or missing `client_msg_id`:** plain at-least-once behavior.
+- **Invalid or missing `client_msg_id`:** plain at-least-once behaviour.
 - Chats a peer hub forwards are deduplicated by their `forward_id` instead.
 - The hub never treats this caller-chosen identity as authentication or
   authorization.
@@ -629,7 +629,7 @@ change the wire version. On a journal-backed hub the chat stays retained and may
 socket as a best effort, but transport presence is never promoted to a positive
 delivery verdict. This is reachability/acceptance evidence, not proof that a model
 understood or acted on the body. A hub with stale-recipient tracking explicitly
-disabled keeps the compatibility behavior and treats its socket matches as live.
+disabled keeps the compatibility behaviour and treats its socket matches as live.
 
 **Deferred receipts.** When a `receipt_requested` directed message dead-lettered,
 the hub remembers it in a bounded pending-receipt store keyed by its `seq`. When the
