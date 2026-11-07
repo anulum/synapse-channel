@@ -95,3 +95,17 @@ def test_no_mcp_extra_and_no_git_binary_both_warn(
     assert diagnosis.remedy == (
         f"{MCP_EXTRA_HINT}; run doctor from a git checkout before using MCP git-claim tools"
     )
+
+
+def test_claim_tools_missing_from_the_inventory_fail_the_posture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A build whose registration lost the claim tools fails with a rebuild remedy."""
+    from synapse_channel.mcp import registration
+
+    monkeypatch.setattr(registration, "registered_mcp_tool_names", lambda: frozenset())
+    diagnosis = check_mcp_posture(git_toplevel="/repo", mcp_extra_available=True)
+    assert diagnosis.status == "fail"
+    missing = ", ".join(sorted(REQUIRED_MCP_CLAIM_TOOLS))
+    assert f"claim tools missing from inventory: {missing}" in diagnosis.detail
+    assert "rebuild/update synapse-channel" in diagnosis.remedy

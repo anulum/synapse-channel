@@ -511,3 +511,19 @@ def test_failed_initialisation_reports_cleanup_failure(
     with pytest.raises(CapabilityCardTrustError, match="cannot open"):
         _history(path)
     assert "cannot remove failed capability-card history file" in caplog.text
+
+
+def test_a_history_file_that_cannot_be_secured_is_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A filesystem that refuses the owner-only floor leaves no history database behind."""
+    from synapse_channel.core import secure_path
+
+    def refuse(path: object) -> None:
+        raise secure_path.SecurePathError(f"{path}: modes are not supported here")
+
+    monkeypatch.setattr(secure_path, "apply_owner_only_file", refuse)
+    target = tmp_path / "state" / "capability-cards.db"
+    with pytest.raises(CapabilityCardTrustError, match="cannot secure capability-card history"):
+        history_module._prepare_history_file(target)
+    assert not target.exists()
