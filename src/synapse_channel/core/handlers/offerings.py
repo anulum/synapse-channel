@@ -29,10 +29,12 @@ from synapse_channel.core.verb_registry import VerbSpec
 from synapse_channel.core.waiter_identity import waiter_owner
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from typing import Protocol
 
     from synapse_channel.core.capability import CapabilityRegistry
     from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.persistence import EventStore
 
     class OfferingsContext(HandlerContext, Protocol):
         """Capabilities consumed by offerings handlers and their callees."""
@@ -163,6 +165,22 @@ async def handle_advertise(
     )
 
 
+def _resource_persister(
+    journal: EventStore | None,
+) -> Callable[[tuple[str | None, ResourceOffer | None]], None] | None:
+    """Return the step that journals a granted offer, or ``None`` without a journal."""
+    if journal is None:
+        return None
+    store = journal
+
+    def persist(result: tuple[str | None, ResourceOffer | None]) -> None:
+        offer = result[1]
+        if offer is not None:
+            record_resource(store, offer)
+
+    return persist
+
+
 async def handle_resource(
     hub: OfferingsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
@@ -193,13 +211,6 @@ async def handle_resource(
             meta=meta,
         )
         return key, state.resources.get(key) if key is not None else None
-
-    def persist(result: tuple[str | None, ResourceOffer | None]) -> None:
-        if journal is None:
-            raise RuntimeError("resource persistence requested without a journal")
-        offer = result[1]
-        if offer is not None:
-            record_resource(journal, offer)
 
     def prepare(result: tuple[str | None, ResourceOffer | None]) -> OperationDraft | None:
         key, offer = result
@@ -242,7 +253,7 @@ async def handle_resource(
         else await hub.state_mutations.run(
             hub.state,
             mutate,
-            persist=persist if journal is not None else None,
+            persist=_resource_persister(journal),
         )
     )
     if key is None:
