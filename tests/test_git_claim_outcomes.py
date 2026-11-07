@@ -16,7 +16,7 @@ import pytest
 
 from claim_outcome_helpers import ClaimProxy, claim_proxy
 from cli_e2e_helpers import git_repo, run_cli
-from hub_e2e_helpers import running_hub
+from hub_e2e_helpers import _free_port, running_hub
 from synapse_channel.git.gitclaim import run_git_claim
 
 
@@ -177,3 +177,29 @@ async def test_canonical_scope_failure_uses_fixed_refusal_text(
     output = capsys.readouterr().out
     assert output == "claim path identity error: could not resolve canonical claim paths\n"
     assert str(outside) not in output
+
+
+def test_git_claim_reports_an_unreachable_hub(tmp_path: Path) -> None:
+    """An absent hub is refused before a claim can be granted."""
+    repo = git_repo(tmp_path / "repo")
+    uri = f"ws://127.0.0.1:{_free_port()}"
+    result = run_cli(
+        "git-claim",
+        "T",
+        "--paths",
+        "README.md",
+        "--name",
+        "me",
+        "--reply-timeout",
+        "0.2",
+        uri=uri,
+        cwd=repo,
+        env={
+            "XDG_DATA_HOME": str(tmp_path / "data"),
+            "SYN_PROJECT": "",
+            "SYN_IDENTITY": "",
+        },
+    )
+    assert result.returncode == 1
+    assert f"[me] Could not reach hub at {uri}." in result.output
+    assert "claimed '" not in result.output
