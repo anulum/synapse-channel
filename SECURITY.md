@@ -711,7 +711,7 @@ or replaces host filesystem permissions.
 Hardware backend names identify an interface, not a qualified physical device.
 The PKCS#11 backend requires AES secret-key objects and AES key-wrap operations;
 YubiKey PIV is not supported by that interface. SoftHSM results demonstrate
-software behavior only. Hardware custody requires evidence for the selected
+software behaviour only. Hardware custody requires evidence for the selected
 token, firmware, module and key attributes. The separate `attest-*` gate verifies
 operator HMAC statements over declared values; its historical `tpm2-quote` label
 does not verify a TPM quote, measured boot or challenge freshness. See the
@@ -900,7 +900,7 @@ identifiers and actual receipts to resolve ambiguous outcomes.
   an interrupted full-suite run is not Windows acceptance evidence.
 - The A2A bridge is a local HTTP+JSON bridge over SYNAPSE capabilities, not
   externally validated for full A2A conformance. Remote conformance, real webhook
-  receiver behavior, and operator-visible production deployment receipts remain
+  receiver behaviour, and operator-visible production deployment receipts remain
   external validation work. The A2A-specific exposed-edge threat model is
   documented in `docs/a2a-deployment-threat-model.md`. Exact advertised Host
   authority is **always enforced** on every HTTP route. Browser Origin

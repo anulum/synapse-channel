@@ -29,6 +29,9 @@ def test_security_policy_uses_evidence_bounded_a2a_claim_language() -> None:
 
     assert "certified A2A implementation" not in prose
     assert "not externally validated for full A2A conformance" in prose
+    assert "software behaviour only" in prose
+    assert "receiver behaviour" in prose
+    assert "behavior" not in security
 
 
 def test_a2a_deployment_threat_model_pins_exposed_bridge_controls() -> None:
