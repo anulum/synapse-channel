@@ -22,6 +22,11 @@ from pathlib import Path
 
 from cli_e2e_helpers import free_port, run_cli
 
+# A cold CLI start on a loaded Windows runner once took longer than 10 s.
+# The loop still fails at once when the hub process exits, so a longer
+# wait only covers a slow start; it cannot hide a hub that crashed.
+HUB_START_SECONDS = 30.0
+
 
 def hub_environment(home: Path) -> dict[str, str]:
     """Give owned subprocesses a temporary home, keys and candidate imports."""
@@ -75,7 +80,7 @@ def owned_cli_hub(
             stderr=subprocess.STDOUT,
         )
         try:
-            deadline = time.monotonic() + 10
+            deadline = time.monotonic() + HUB_START_SECONDS
             while time.monotonic() < deadline:
                 if process.poll() is not None:
                     raise AssertionError((home / f"{label}.log").read_text())
@@ -85,7 +90,10 @@ def owned_cli_hub(
                 except OSError:
                     time.sleep(0.05)
             else:
-                raise AssertionError("owned CLI hub did not become reachable")
+                log = (home / f"{label}.log").read_text(encoding="utf-8")
+                raise AssertionError(
+                    f"owned CLI hub did not become reachable in {HUB_START_SECONDS:g} s:\n{log}"
+                )
             yield f"ws://127.0.0.1:{port}"
         finally:
             if process.poll() is None:
