@@ -78,7 +78,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -316,7 +316,7 @@ def spool(
         The entry's path, and whether this call created it. A call without an
         identifier always creates a new entry, because nothing identifies it.
     """
-    moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    moment = (now or datetime.now(UTC)).astimezone(UTC)
     stem = entry_stem(native_session, call_id or secrets.token_hex(12))
     path = directory / "pending" / f"{stem}.json"
     entry = {
@@ -342,7 +342,7 @@ def set_aside(
     directory: Path, kind: str, name: str, content: bytes, now: datetime | None = None
 ) -> Path:
     """Keep hook input that gives no record: ``skipped`` (dated) or ``unparsed``."""
-    moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    moment = (now or datetime.now(UTC)).astimezone(UTC)
     stamp = moment.strftime("%Y%m%dT%H%M%S%fZ")
     safe = _UNSAFE.sub("-", name)[:48] or "input"
     if kind == "skipped":
@@ -401,7 +401,7 @@ def flush(
     *,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     limit: int = 25,
-    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> FlushReport:
     """Try to put pending entries on the hub, oldest first.
 
@@ -451,7 +451,7 @@ def _flush_held(
         result = send(entry["record"])
         if result.sent_record is not None:
             entry["record"] = result.sent_record
-        moment = now().astimezone(timezone.utc)
+        moment = now().astimezone(UTC)
         entry["attempts"].append(
             {
                 "at": moment.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
