@@ -42,6 +42,7 @@ from synapse_channel.core.signature_suite import (
     SUITE_HYBRID,
     SignatureSuiteError,
     SuiteKey,
+    TrustedKey,
     preimage,
     verify,
 )
@@ -185,7 +186,7 @@ def check(text: str) -> list[str]:
     for vector in document["suite_vectors"]:
         if (verdict := suite_verdict(vector)) != vector["expected"]:
             problems.append(f"{vector['name']}: {verdict}, expected {vector['expected']}")
-    trust = {hybrid.key_id(): (SUITE_HYBRID, hybrid.public_bytes())}
+    trust = {hybrid.key_id(): TrustedKey(SUITE_HYBRID, hybrid.public_bytes())}
     for vector in document["countersign_vectors"]:
         report = verify_countersignature(vector["countersignature"], vector["sth"], trust=trust)
         if report.verdict.value != vector["expected"]:

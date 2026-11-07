@@ -63,7 +63,8 @@ def _cmd_pq_key_new(args: argparse.Namespace) -> int:
     except SignatureSuiteError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    for path, text in ((args.out, key_document(key)), (args.trust_out, trust_document(key))):
+    trust = trust_document(key, log_ids=tuple(args.log_id))
+    for path, text in ((args.out, key_document(key)), (args.trust_out, trust)):
         if (problem := _write(path, text)) is not None:
             print(problem, file=sys.stderr)
             return 2
@@ -218,6 +219,13 @@ def add_parsers(actions: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     new = pq_actions.add_parser("new", help="Write a new hybrid Ed25519 + ML-DSA-65 key.")
     new.add_argument("--out", required=True, help="New owner-only private key file.")
     new.add_argument("--trust-out", required=True, help="New trust file naming its public key.")
+    new.add_argument(
+        "--log-id",
+        action="append",
+        default=[],
+        metavar="LOG_ID",
+        help="Trust the key only for this AEF log. Repeatable; default: any log.",
+    )
     new.set_defaults(func=_cmd_pq_key_new)
     countersign = actions.add_parser(
         "countersign", help="Countersign a verified AEF tree head with a hybrid key."

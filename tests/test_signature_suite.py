@@ -25,6 +25,7 @@ from synapse_channel.core.signature_suite import (
     SUITE_HYBRID,
     SignatureSuiteError,
     SuiteKey,
+    TrustedKey,
     b64,
     generate_key,
     key_document,
@@ -213,7 +214,7 @@ def test_a_trust_file_names_derived_key_ids_only(tmp_path: Path) -> None:
     key = generate_key(SUITE_HYBRID)
     path = tmp_path / "trust.json"
     path.write_text(trust_document(key), encoding="utf-8")
-    assert load_trust(path) == {key.key_id(): (SUITE_HYBRID, key.public_bytes())}
+    assert load_trust(path) == {key.key_id(): TrustedKey(SUITE_HYBRID, key.public_bytes())}
 
 
 @pytest.mark.parametrize(
@@ -225,6 +226,20 @@ def test_a_trust_file_names_derived_key_ids_only(tmp_path: Path) -> None:
         ({"format": "synapse-signature-trust-v1", "keys": [1]}, "not an object"),
         ({"format": "synapse-signature-trust-v1", "keys": [{}]}, "names no suite"),
         ({"format": "synapse-signature-trust-v1", "keys": [{"suite": "rsa"}]}, "unknown"),
+        (
+            {
+                "format": "synapse-signature-trust-v1",
+                "keys": [
+                    {
+                        "suite": "ed25519",
+                        "key_id": "66687aadf862bd77",
+                        "public_key": b64(bytes(32)),
+                        "log_ids": [],
+                    }
+                ],
+            },
+            "log_ids must be a non-empty list",
+        ),
         (
             {
                 "format": "synapse-signature-trust-v1",
@@ -248,3 +263,43 @@ def test_the_published_key_matches_its_seeds() -> None:
     assert bytes.fromhex(document["ed25519_seed_hex"]) == key.ed25519_seed
     assert bytes.fromhex(document["ml_dsa_seed_hex"]) == key.ml_dsa_seed
     assert base64.b16encode(key.public_bytes()[:32]).decode().lower() in json.dumps(document)
+
+
+def test_every_supported_lane_provides_ml_dsa() -> None:
+    """The hybrid suite is a supported feature, so every CI lane must offer ML-DSA-65."""
+    assert signature_suite.ML_DSA_AVAILABLE is True
+
+
+def test_a_backend_that_rejects_ml_dsa_still_imports_the_cli(tmp_path: Path) -> None:
+    """``UnsupportedAlgorithm`` at the probe leaves every command importable."""
+    script = tmp_path / "probe.py"
+    script.write_text(
+        "from cryptography.exceptions import UnsupportedAlgorithm\n"
+        "from cryptography.hazmat.primitives.asymmetric import mldsa\n"
+        "def refuse(*_args):\n"
+        "    raise UnsupportedAlgorithm('ML-DSA is not supported by this backend')\n"
+        "mldsa.MLDSA65PrivateKey.from_seed_bytes = staticmethod(refuse)\n"
+        "import synapse_channel.cli\n"
+        "from synapse_channel.core import signature_suite as s\n"
+        "print('available', s.ML_DSA_AVAILABLE)\n"
+        "try:\n"
+        "    s.generate_key(s.SUITE_HYBRID)\n"
+        "except s.SignatureSuiteError as exc:\n"
+        "    print('refused', exc)\n",
+        encoding="utf-8",
+    )
+    import subprocess
+
+    completed = subprocess.run(  # noqa: S603 - this interpreter, a script the test wrote
+        [sys.executable, str(script)], capture_output=True, text=True, timeout=120, check=False
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "available False" in completed.stdout
+    assert "refused ed25519+ml-dsa-65/v1 needs ML-DSA-65" in completed.stdout
+
+
+def test_the_composite_label_is_not_a_domain() -> None:
+    label = COMPOSITE_LABEL.decode("ascii")
+    for suite in (SUITE_ED25519, SUITE_HYBRID):
+        with pytest.raises(SignatureSuiteError, match="composite label"):
+            preimage(suite, label, b"m")

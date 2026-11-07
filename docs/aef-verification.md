@@ -183,7 +183,9 @@ synapse aef verify hub-a.receipts.jsonl --trust hub-a.aef-trust.json --sth sth.j
 
 - **The key.** `pq-key new` writes a new owner-only hybrid key, Ed25519 plus
   ML-DSA-65 (suite `ed25519+ml-dsa-65/v1`), and a trust file naming its public
-  key. Commands read the key only from an owner-only file.
+  key. Commands read the key only from an owner-only file. With `--log-id`
+  (repeatable), the trust file binds the key to those logs, and a
+  countersignature of any other log is `UNTRUSTED`.
 - **Countersigning.** `countersign` first verifies the head under the log's
   AEF trust file, and refuses one that does not verify. It then signs a
   document `aef-sth-countersignature` `0.1` with the hybrid key. The document

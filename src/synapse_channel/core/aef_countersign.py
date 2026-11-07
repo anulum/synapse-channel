@@ -47,6 +47,7 @@ from synapse_channel.core.signature_suite import (
     SUITE_HYBRID,
     SignatureSuiteError,
     SuiteKey,
+    TrustedKey,
     b64,
     unb64,
     verify,
@@ -151,14 +152,15 @@ def verify_countersignature(
     document: Mapping[str, object],
     sth: Mapping[str, object],
     *,
-    trust: Mapping[str, tuple[str, bytes]],
+    trust: Mapping[str, TrustedKey],
 ) -> CountersignReport:
     """Return the verdict on ``document`` as a countersignature of ``sth``.
 
     The checks run in this order, and the first that fails gives the verdict:
 
     1. ``INVALID``: the document is malformed;
-    2. ``UNTRUSTED``: its key is not in ``trust`` as a hybrid key;
+    2. ``UNTRUSTED``: its key is not in ``trust`` as a hybrid key, or the trust
+       file binds the key to other logs than the document's ``log_id``;
     3. ``INVALID``: its signature fails;
     4. ``MISMATCH``: it is authentic but binds another head.
 
@@ -172,12 +174,20 @@ def verify_countersignature(
         return CountersignReport(CountersignVerdict.INVALID, "", named)
     key_id = str(envelope["key_id"])
     trusted = trust.get(key_id)
-    if trusted is None or trusted[0] != SUITE_HYBRID:
+    if (
+        trusted is None
+        or trusted.suite != SUITE_HYBRID
+        or (trusted.log_ids is not None and document.get("log_id") not in trusted.log_ids)
+    ):
         return CountersignReport(CountersignVerdict.UNTRUSTED, key_id, named)
     try:
         signature = unb64(envelope["value"], "countersignature value")
         authentic = verify(
-            SUITE_HYBRID, trusted[1], COUNTERSIGN_DOMAIN, _unsigned(document, envelope), signature
+            SUITE_HYBRID,
+            trusted.public,
+            COUNTERSIGN_DOMAIN,
+            _unsigned(document, envelope),
+            signature,
         )
     except (SignatureSuiteError, AefCanonicalizationError):
         authentic = False

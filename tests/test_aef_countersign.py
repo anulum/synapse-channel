@@ -31,7 +31,12 @@ from synapse_channel.core.receipt_signing import (
     generate_receipt_signing_key,
     load_receipt_signing_key,
 )
-from synapse_channel.core.signature_suite import SUITE_ED25519, SUITE_HYBRID, generate_key
+from synapse_channel.core.signature_suite import (
+    SUITE_ED25519,
+    SUITE_HYBRID,
+    TrustedKey,
+    generate_key,
+)
 
 _NOW_MS = 1_783_941_000_000
 
@@ -328,7 +333,7 @@ def test_each_verdict_of_a_countersignature(
         malformed.append(broken)
     assert {verdict(doc) for doc in malformed} == {"INVALID"}
     assert verdict(document, trust={}) == "UNTRUSTED"
-    as_ed = {key.key_id(): (SUITE_ED25519, key.public_bytes())}
+    as_ed = {key.key_id(): TrustedKey(SUITE_ED25519, key.public_bytes())}
     assert verdict(document, trust=as_ed) == "UNTRUSTED"
     flipped = copy.deepcopy(document)
     value = flipped["signature"]["value"]
@@ -346,3 +351,39 @@ def test_each_verdict_of_a_countersignature(
     other_root = dict(sth, root="0" * 64)
     assert verdict(document, other_root) == "MISMATCH"
     assert verdict(document, dict(sth, timestamp=float("nan"))) == "MISMATCH"
+
+
+def test_a_key_bound_to_other_logs_is_untrusted_for_this_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    paths = _log(tmp_path, capsys)
+    sth = _json(paths["sth"])
+    key = signature_suite.load_key(paths["key"], suite=SUITE_HYBRID)
+    document = countersign_sth(sth, trust_store=load_aef_trust(paths["trust"]), key=key)
+    bound_elsewhere = tmp_path / "bound-elsewhere.json"
+    bound_elsewhere.write_text(
+        signature_suite.trust_document(key, log_ids=("f" * 64,)), encoding="utf-8"
+    )
+    bound_here = tmp_path / "bound-here.json"
+    bound_here.write_text(
+        signature_suite.trust_document(key, log_ids=(str(sth["log_id"]),)), encoding="utf-8"
+    )
+    elsewhere = signature_suite.load_trust(bound_elsewhere)
+    here = signature_suite.load_trust(bound_here)
+    assert verify_countersignature(document, sth, trust=elsewhere).verdict.value == "UNTRUSTED"
+    assert verify_countersignature(document, sth, trust=here).verdict.value == "VALID"
+    new_key = tmp_path / "bound.key"
+    argv = [
+        "aef",
+        "pq-key",
+        "new",
+        "--out",
+        str(new_key),
+        "--trust-out",
+        str(tmp_path / "bound-trust.json"),
+        "--log-id",
+        str(sth["log_id"]),
+    ]
+    assert _run(capsys, *argv)[0] == 0
+    trusted = next(iter(signature_suite.load_trust(tmp_path / "bound-trust.json").values()))
+    assert trusted.log_ids == frozenset({str(sth["log_id"])})

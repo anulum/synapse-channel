@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
@@ -81,7 +81,7 @@ def _probe_ml_dsa() -> bool:
         from cryptography.hazmat.primitives.asymmetric import mldsa
 
         mldsa.MLDSA65PrivateKey.from_seed_bytes(bytes(_SEED))
-    except (ImportError, AttributeError, ValueError, TypeError):
+    except (ImportError, AttributeError, ValueError, TypeError, UnsupportedAlgorithm):
         return False
     return True
 
@@ -118,6 +118,9 @@ def preimage(suite: str, domain: str, message: bytes) -> bytes:
     """
     _require_suite(suite)
     domain_bytes = _text_part("domain", domain)
+    if domain_bytes == COMPOSITE_LABEL:
+        # An Ed25519 preimage under this domain would begin like a composite one.
+        raise SignatureSuiteError("the composite label may not be used as a domain")
     if suite == SUITE_ED25519:
         return domain_bytes + _NUL + message
     return _NUL.join((COMPOSITE_LABEL, _text_part("suite", suite), domain_bytes, message))
@@ -286,14 +289,45 @@ def load_key(path: str | Path, *, suite: str) -> SuiteKey:
     )
 
 
-def trust_document(key: SuiteKey) -> str:
-    """Return a trust file naming ``key``'s public key, its suite and id."""
-    entry = {"key_id": key.key_id(), "suite": key.suite, "public_key": b64(key.public_bytes())}
+@dataclass(frozen=True)
+class TrustedKey:
+    """A trusted public key, its suite, and the logs it may vouch for.
+
+    ``log_ids`` is ``None`` when the trust file binds the key to no particular
+    log; otherwise the key is trusted only for the named logs.
+    """
+
+    suite: str
+    public: bytes
+    log_ids: frozenset[str] | None = None
+
+
+def trust_document(key: SuiteKey, *, log_ids: tuple[str, ...] = ()) -> str:
+    """Return a trust file naming ``key``'s public key, its suite and id.
+
+    With ``log_ids`` the key is trusted only for those AEF logs.
+    """
+    entry: dict[str, object] = {
+        "key_id": key.key_id(),
+        "suite": key.suite,
+        "public_key": b64(key.public_bytes()),
+    }
+    if log_ids:
+        entry["log_ids"] = sorted(set(log_ids))
     return json.dumps({"format": TRUST_FILE_FORMAT, "keys": [entry]}, indent=2) + "\n"
 
 
-def load_trust(path: str | Path) -> dict[str, tuple[str, bytes]]:
-    """Return ``key_id -> (suite, public key)`` from a trust file.
+def _log_ids(entry: dict[str, object]) -> frozenset[str] | None:
+    raw = entry.get("log_ids")
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not raw or not all(isinstance(item, str) for item in raw):
+        raise SignatureSuiteError("a trust file key's log_ids must be a non-empty list of text")
+    return frozenset(str(item) for item in raw)
+
+
+def load_trust(path: str | Path) -> dict[str, TrustedKey]:
+    """Return ``key_id -> TrustedKey`` from a trust file.
 
     Each id must be the one derived from its public key.
     """
@@ -306,7 +340,7 @@ def load_trust(path: str | Path) -> dict[str, tuple[str, bytes]]:
     keys = document.get("keys")
     if not isinstance(keys, list) or not keys:
         raise SignatureSuiteError("the trust file names no keys")
-    trust: dict[str, tuple[str, bytes]] = {}
+    trust: dict[str, TrustedKey] = {}
     for entry in keys:
         if not isinstance(entry, dict):
             raise SignatureSuiteError("a trust file key entry is not an object")
@@ -317,5 +351,5 @@ def load_trust(path: str | Path) -> dict[str, tuple[str, bytes]]:
         public = unb64(entry.get("public_key"), "public_key")
         if entry.get("key_id") != receipt_key_id(public):
             raise SignatureSuiteError("a trust file key id is not derived from its public key")
-        trust[receipt_key_id(public)] = (suite, public)
+        trust[receipt_key_id(public)] = TrustedKey(suite, public, _log_ids(entry))
     return trust
