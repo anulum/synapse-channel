@@ -594,8 +594,25 @@ def test_admission_survives_a_worker_that_cannot_start_and_non_socket_requests(
         not_a_socket = (b"datagram", object())
         server.finish_request(not_a_socket, ("127.0.0.1", 1))
         assert handled == [not_a_socket]
-        # Nothing to write on: the refusal returns without touching a socket.
-        server._send_capacity_refusal(object())
+        # With the only slot held, a real connection gets the 503 refusal and is closed.
+        assert server._admission.acquire(blocking=False)
+        server.process_request(left, ("127.0.0.1", 1))
+        right.settimeout(5)
+        refused = right.recv(65536)
+        assert refused.startswith(b"HTTP/1.1 503 Service Unavailable\r\n")
+        assert b"A2A_HTTP_CAPACITY_EXHAUSTED" in refused
+        assert right.recv(1) == b""  # the server shut the refused connection
+        server._admission.release()
+        # Nothing to write on: a refusal for a non-socket request writes nowhere.
+        quiet_left, quiet_right = socket.socketpair()
+        try:
+            server._send_capacity_refusal((b"datagram", object()))
+            quiet_right.setblocking(False)
+            with pytest.raises(BlockingIOError):
+                quiet_right.recv(1)
+        finally:
+            quiet_left.close()
+            quiet_right.close()
     finally:
         left.close()
         right.close()
