@@ -92,6 +92,13 @@ def test_repository_uses_one_complete_immutable_compatibility_contract() -> None
     with pytest.raises(CompatibilityError, match="unknown OpenCode editor lane"):
         contract.client("unknown")
     assert_repository_contract(contract)
+    guide = (Path(__file__).resolve().parents[1] / "docs" / "opencode.md").read_text(
+        encoding="utf-8"
+    )
+    assert "permission behaviour" in guide
+    assert "pins that behaviour" in guide
+    assert "session behaviour" in guide
+    assert "behavior" not in guide
 
 
 def test_compatibility_types_import_without_workflow_parser_dependency() -> None:

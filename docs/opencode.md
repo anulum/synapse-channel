@@ -250,7 +250,7 @@ output, invalid UTF-8/JSON, or ambiguous verdict throws before the tool runs.
 OpenCode's ordinary permission policy still applies after an allowed verdict.
 
 Do not use `opencode run --auto` to compensate for a guard refusal. `--auto`
-changes OpenCode's permission behavior and is intentionally absent from the
+changes OpenCode's permission behaviour and is intentionally absent from the
 Synapse participant driver.
 
 The native hook is not an operating-system sandbox. Shell commands, custom
@@ -340,7 +340,7 @@ Prefer the API participant when Synapse must capture a returned answer.
 OpenCode 1.18.32's non-interactive `run --attach` path posts the prompt but
 returns before its event subscriber is awaited, so the real CLI can exit zero
 with empty stdout even though the server received and executed the prompt. The
-focused acceptance test pins that behavior instead of treating an empty stream
+focused acceptance test pins that behaviour instead of treating an empty stream
 as a successful answer.
 
 The Synapse headless participant can be constructed with `attach=…` and an
@@ -590,7 +590,7 @@ local scripted provider. Successful runs of the named profiles exercise:
 - real CodeCompanion.nvim, Agent Shell, Zed, and JetBrains AI Assistant ACP
   governance turns in their dedicated public-CI lanes;
 - Basic-auth refusal, authenticated `run --attach` prompt delivery, direct API
-  answer capture, and session behavior;
+  answer capture, and session behaviour;
 - adapter install/status/upgrade/uninstall ownership;
 - denied-before, claimed-and-allowed, receipt-release, and denied-after native
   writes driven through each real editor and OpenCode's own MCP catalog; and
