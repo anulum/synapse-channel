@@ -419,6 +419,7 @@ def _with_body(body: str, *, subject: str = "ci: enforce commit policy") -> str:
         "The opencode adapter and the Claude Code plugin keep their names in prose.",
         "Fixes CVE-2026-16221 and GHSA-g3hv-75wg-m249; digests stay SHA-256 and TLS 1.3.",
         "Ruff F401 and UP017 are lint rule codes, not planning codes.",
+        "Published names INV-12, ML-DSA-65 and RFC 8032 stay in the message.",
         "The hub refuses an event whose sequence is not the next one.",
     ],
 )
@@ -442,6 +443,9 @@ def test_hook_accepts_product_names_and_public_identifiers_in_the_body(
         ("Review: RIGOR CLEAR.", "internal reviewer name in the message: RIGOR"),
         ("Routed at hub 227079.", "hub event citation in the message: hub 227079"),
         ("Closes GPT6R2-13.", "internal planning code in the message: GPT6R2-13"),
+        ("Tracked as GWD-PERF.", "internal planning code in the message: GWD-PERF"),
+        ("See GWM-12 before landing.", "internal planning code in the message: GWM-12"),
+        ("D5 stays open.", "internal planning code in the message: D5"),
         ("Part of U11 and CRR-02.", "internal planning code in the message: U11, CRR-02"),
     ],
 )

@@ -134,7 +134,8 @@ BODY_TOKEN_RULES = (
         re.compile(
             r"\b(?:GPT6(?:R2)?-[A-Z]?\d+|U(?:0[1-9]|1[0-2])|CRR-\d+|NMR-\d+|OPS-\d+"
             r"|FDBG-\d+|SCDBG-\d+|CI-F\d+|K3-F\d+|REV-SEC-\d+|SOL4-[A-Z]+-\d+"
-            r"|EXT-?0\d|BL-\d+|WS-\d+|QWC-\d+)\b"
+            r"|EXT-?0\d|BL-\d+|WS-\d+|QWC-\d+|GWD-[A-Za-z0-9]+|GWM-[A-Za-z0-9]+"
+            r"|D\d+)\b"
         ),
     ),
 )
