@@ -30,7 +30,7 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -147,7 +147,7 @@ def _instant(value: object, *, field: str, label: str) -> float | None:
     if not isinstance(value, str) or not _INSTANT.fullmatch(value):
         raise TokenSetError(f"token {label}: {field} must be YYYY-MM-DDTHH:MM:SSZ")
     try:
-        moment = datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        moment = datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
     except ValueError as exc:
         raise TokenSetError(f"token {label}: {field} is not a real date") from exc
     return moment.timestamp()
