@@ -543,3 +543,31 @@ def test_the_task_listing_skips_a_dead_weak_proxy() -> None:
         "coro=test_the_task_listing_skips_a_dead_weak_proxy.<locals>.waiting" in listing
     )
     assert len(proxies) == 1
+
+
+def test_a_timeout_report_in_process_lists_the_pending_task() -> None:
+    """The in-process report writes the node id and then each pending task's chain."""
+    import asyncio
+
+    import tools.pytest_hang_identity as hang
+
+    async def parked_for_the_report() -> None:
+        await asyncio.Event().wait()
+
+    loop = asyncio.new_event_loop()
+    task = loop.create_task(parked_for_the_report())
+    read_fd, write_fd = os.pipe()
+    previous_fd = hang._stderr_fd
+    try:
+        hang._stderr_fd = write_fd
+        hang._write_timeout("node::pending")
+        text = os.read(read_fd, 65536).decode()
+    finally:
+        hang._stderr_fd = previous_fd
+        os.close(write_fd)
+        os.close(read_fd)
+        task.cancel()
+        loop.run_until_complete(asyncio.gather(task, return_exceptions=True))
+        loop.close()
+    assert text.startswith("TIMEOUT nodeid=node::pending\n")
+    assert "PENDING TASK" in text and "parked_for_the_report" in text
