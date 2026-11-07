@@ -43,6 +43,8 @@ def test_agent_trust_graph_design_is_publicly_discoverable() -> None:
     assert "docs/agent-trust-graph.md" in security
     assert "agent-trust-graph.md" in coordination
     assert "agent-trust-graph.md" in policy
+    assert "keep their present behaviour" in policy
+    assert "behavior" not in policy
     assert "agent-trust-graph.md" in identity
 
 

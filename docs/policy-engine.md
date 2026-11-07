@@ -186,7 +186,7 @@ deliberately ships first because it needs no hosting at all.
   receipt fields.
 - Let teams add stricter rules without changing the hub protocol.
 - Preserve simple local use: if no policy file is configured, current commands
-  keep their present behavior.
+  keep their present behaviour.
 
 ## Non-goals
 
