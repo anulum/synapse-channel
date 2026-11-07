@@ -216,7 +216,7 @@ The following figures are the earlier reference, not a fresh current-build resul
 **Reading it honestly.** These are in-process bridge numbers, useful for spotting
 local regressions and sizing the single-process edge. They do not measure remote
 HTTP server throughput, real webhook receiver latency, TLS, DNS, third-party A2A
-conformance, or multi-replica behavior.
+conformance, or multi-replica behaviour.
 
 ### Scoped execution outcomes
 

@@ -269,6 +269,8 @@ def test_benchmark_docs_describe_heap_expiry_not_stale_linear_sweeper() -> None:
     assert "min-heap" in benchmarks
     assert "now-stale expiry model" in benchmarks
     assert "future heap" not in benchmarks.lower()
+    assert "multi-replica behaviour" in benchmarks
+    assert "behavior" not in benchmarks
 
 
 def test_benchmark_docs_pin_scope_scan_indexing_decision() -> None:
