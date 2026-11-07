@@ -32,7 +32,7 @@ import tempfile
 import time
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from synapse_channel.advisory_lock import locked
@@ -142,7 +142,7 @@ def check_operator_secret(secret: str) -> None:
 
 def format_instant(moment: float) -> str:
     """Return POSIX seconds as the strict UTC form the token set stores."""
-    return datetime.fromtimestamp(moment, timezone.utc).strftime(_INSTANT_FORMAT)
+    return datetime.fromtimestamp(moment, UTC).strftime(_INSTANT_FORMAT)
 
 
 def parse_instant(text: str) -> float:
@@ -154,7 +154,7 @@ def parse_instant(text: str) -> float:
         If ``text`` is not that form.
     """
     try:
-        moment = datetime.strptime(text, _INSTANT_FORMAT).replace(tzinfo=timezone.utc)
+        moment = datetime.strptime(text, _INSTANT_FORMAT).replace(tzinfo=UTC)
     except ValueError:
         raise TokenSetError(f"{text!r} is not YYYY-MM-DDTHH:MM:SSZ") from None
     return moment.timestamp()
