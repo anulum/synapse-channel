@@ -128,6 +128,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "policy-check": GOVERNANCE,
     "policy": GOVERNANCE,
     "export": ANALYSIS,
+    "mailbox": ANALYSIS,
     "approval": GOVERNANCE,
     "verdict": GOVERNANCE,
     "postmortem": GOVERNANCE,
