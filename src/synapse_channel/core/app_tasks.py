@@ -15,7 +15,7 @@ import os
 import re
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -58,7 +58,7 @@ def default_app_task_store() -> Path:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _json(value: object) -> str:
