@@ -70,16 +70,17 @@ _InspectionResult = TypeVar("_InspectionResult")
 
 def retry_inspection(operation: Callable[[], _InspectionResult]) -> _InspectionResult:
     """Retry transient public metadata errors without retrying broken provenance."""
+    error = InspectionError("GitHub metadata request failed")
     for attempt in range(3):
         try:
             return operation()
         except (RepositoryMissing, RepositoryRedirected):
             raise
-        except InspectionError:
-            if attempt == 2:
-                raise
-            time.sleep(0.2 * (attempt + 1))
-    raise AssertionError("unreachable retry state")
+        except InspectionError as caught:
+            error = caught
+            if attempt < 2:
+                time.sleep(0.2 * (attempt + 1))
+    raise error
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -148,10 +149,13 @@ def _text_file(value: Mapping[str, Any]) -> str:
         raise InspectionError("GitHub text response is invalid")
     try:
         raw = base64.b64decode("".join(value["content"].split()), validate=True)
-        if len(raw) > MAX_TEXT_BYTES:
-            raise InspectionError("GitHub text exceeded byte limit")
+    except (binascii.Error, ValueError) as exc:
+        raise InspectionError("GitHub text encoding is invalid") from exc
+    if len(raw) > MAX_TEXT_BYTES:
+        raise InspectionError("GitHub text exceeded byte limit")
+    try:
         return raw.decode("utf-8")
-    except (binascii.Error, UnicodeError, ValueError) as exc:
+    except UnicodeError as exc:
         raise InspectionError("GitHub text encoding is invalid") from exc
 
 
@@ -234,8 +238,6 @@ def inspect_host(
         and entry.get("type") == "blob"
         and isinstance(entry.get("path"), str)
     ]
-    if len(paths) > MAX_TREE_ENTRIES:
-        raise InspectionError("GitHub tree exceeded entry limit")
     sources = _source_paths(paths)
     result: dict[str, Any] = {
         "code_file_count": len(sources),

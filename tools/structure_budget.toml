@@ -404,7 +404,7 @@ names = ["argparse._SubParsersAction"]
 "tools/vendor_discovery.py::collect" = 31
 "tools/vendor_discovery.py::load_inputs" = 40
 "tools/vendor_discovery.py::reconcile" = 66
-"tools/vendor_host_inspection.py::inspect_host" = 26
+"tools/vendor_host_inspection.py::inspect_host" = 25
 "tools/vendor_watch.py::load_matrix" = 22
 
 [ceilings.module_internal_imports]
