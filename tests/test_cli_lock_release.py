@@ -10,20 +10,30 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import shlex
 import socket
 import sys
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
+from websockets.asyncio.client import connect
+from websockets.asyncio.server import ServerConnection, serve
+from websockets.exceptions import ConnectionClosed
 
 from cli_e2e_helpers import run_cli
 from cli_lock_release_helpers import release_reply_proxy
 from hub_e2e_helpers import running_hub
+from synapse_channel.cli_lock_release import LockRelease
 from synapse_channel.cli_locking import _lock
+from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.acl import CLAIM, AclPolicy, AclRule
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protocol import MessageType
 
 _RENEW = """
 import asyncio,sys
@@ -425,3 +435,327 @@ async def test_invalid_release_deadline_cannot_acquire_or_execute(
         assert "timeouts must be finite" in result.stderr
         assert not marker.exists()
         assert not hub.state.claims
+
+
+def _isolated_factory(root: Path, *, persist: bool) -> Callable[..., SynapseAgent]:
+    """Build real clients whose lease epochs stay under ``root``."""
+
+    def build(
+        name: str,
+        callback: Any,
+        *,
+        uri: str,
+        verbose: bool = False,
+        token: str | None = None,
+    ) -> SynapseAgent:
+        """Construct one real client for this lock profile."""
+        return SynapseAgent(
+            name,
+            callback,
+            uri=uri,
+            verbose=verbose,
+            token=token,
+            persist_lease_epochs=persist,
+            lease_epoch_root=root,
+        )
+
+    return build
+
+
+@contextlib.asynccontextmanager
+async def _release_leg_proxy(uri: str, mode: str) -> AsyncIterator[tuple[str, dict[str, Any]]]:
+    """Forward a real hub, and fault only the connection that follows the grant."""
+    watch: dict[str, Any] = {
+        "granted": 0,
+        "releases": 0,
+        "epochs": [],
+        "owner": "",
+        "task_id": "",
+        "epoch": None,
+    }
+
+    async def bridge(client: ServerConnection) -> None:
+        """Relay one client socket until either side closes."""
+        release_leg = False
+        async with connect(uri) as upstream:
+
+            async def inbound() -> None:
+                """Count release mutations and forward the client's original bytes."""
+                async for raw in client:
+                    frame = json.loads(raw)
+                    if frame.get("type") == MessageType.RELEASE:
+                        watch["releases"] = int(watch["releases"]) + 1
+                        epochs = watch["epochs"]
+                        assert isinstance(epochs, list)
+                        epochs.append(frame.get("epoch"))
+                    await upstream.send(raw)
+
+            async def outbound() -> None:
+                """Apply the selected fault to the post-grant release welcome."""
+                nonlocal release_leg
+                async for raw in upstream:
+                    frame = json.loads(raw)
+                    if (
+                        frame.get("type") == MessageType.CLAIM_GRANTED
+                        and int(watch["granted"]) == 0
+                    ):
+                        watch["granted"] = 1
+                        watch["owner"] = str(frame.get("owner") or "")
+                        watch["task_id"] = str(frame.get("task_id") or "")
+                        watch["epoch"] = frame.get("epoch")
+                    if (
+                        frame.get("type") == MessageType.WELCOME
+                        and int(watch["granted"]) > 0
+                        and not release_leg
+                    ):
+                        release_leg = True
+                        if mode == "drop-welcome":
+                            await client.close()
+                            return
+                        if mode == "foreign-session":
+                            frame = {**frame, "lock_renewal_session": "foreign-renewal-session"}
+                            raw = json.dumps(frame)
+                    if (
+                        release_leg
+                        and frame.get("type") == MessageType.STATE_SNAPSHOT
+                        and "release_confirmation" not in frame
+                        and mode in {"bad-snapshot", "skipped-claims"}
+                    ):
+                        snapshot = frame.get("snapshot")
+                        base = snapshot if isinstance(snapshot, dict) else {}
+                        if mode == "bad-snapshot":
+                            claims: object = "not-a-list"
+                        else:
+                            owner = str(watch["owner"])
+                            task_id = str(watch["task_id"])
+                            claims = [
+                                "nope",
+                                {"task_id": "other-mutex", "owner": owner, "epoch": 1},
+                                {"task_id": task_id, "owner": "someone-else", "epoch": 1},
+                                {"task_id": task_id, "owner": owner, "epoch": "nope"},
+                            ]
+                        frame = {**frame, "snapshot": {**base, "active_claims": claims}}
+                        raw = json.dumps(frame)
+                    await client.send(raw)
+
+            tasks = [asyncio.create_task(inbound()), asyncio.create_task(outbound())]
+            try:
+                await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def handler(client: ServerConnection) -> None:
+        """Join one proxied connection and ignore an ordinary close."""
+        with contextlib.suppress(ConnectionClosed):
+            await bridge(client)
+
+    async with serve(handler, "127.0.0.1", 0) as server:
+        sockets = server.sockets
+        assert sockets is not None
+        yield f"ws://127.0.0.1:{sockets[0].getsockname()[1]}", watch
+
+
+async def _lock_child(
+    proxy: str,
+    root: Path,
+    *,
+    ready_timeout: float,
+) -> int:
+    """Run an immediate child under ``synapse lock`` against ``proxy``."""
+    return await _lock(
+        uri=proxy,
+        name="mutex-owner",
+        task_id="mutex",
+        command=[sys.executable, "-c", "pass"],
+        paths=[],
+        wait_timeout=0,
+        agent_factory=_isolated_factory(root, persist=True),
+        ready_timeout=ready_timeout,
+        release_timeout=3,
+    )
+
+
+async def _granted_lease(uri: str, root: Path, name: str, task_id: str) -> tuple[int, str, str]:
+    """Claim a real mutex and return its epoch, hub id, and renewal session."""
+    found: dict[str, object] = {}
+
+    async def receive(frame: dict[str, Any]) -> None:
+        """Record the welcome session and this owner's grant."""
+        if frame.get("type") == MessageType.WELCOME:
+            found["session"] = frame.get("lock_renewal_session")
+        if (
+            frame.get("type") == MessageType.CLAIM_GRANTED
+            and frame.get("task_id") == task_id
+            and frame.get("owner") == name
+        ):
+            found["epoch"] = frame.get("epoch")
+            found["hub_id"] = frame.get("hub_id")
+
+    agent = SynapseAgent(
+        name,
+        receive,
+        uri=uri,
+        verbose=False,
+        persist_lease_epochs=False,
+        lease_epoch_root=root,
+    )
+    listener = asyncio.create_task(agent.connect())
+    try:
+        assert await agent.wait_until_ready(3)
+        await agent.claim(task_id, worktree=task_id)
+        deadline = asyncio.get_running_loop().time() + 3
+        while "epoch" not in found:
+            assert asyncio.get_running_loop().time() < deadline
+            await asyncio.sleep(0.01)
+    finally:
+        agent.running = False
+        listener.cancel()
+        await asyncio.gather(listener, return_exceptions=True)
+    epoch = found["epoch"]
+    session = found["session"]
+    hub_id = found["hub_id"]
+    assert type(epoch) is int and epoch > 0
+    assert isinstance(session, str) and session
+    assert isinstance(hub_id, str) and hub_id
+    return epoch, hub_id, session
+
+
+@pytest.mark.asyncio
+async def test_unreadable_epoch_snapshot_keeps_the_claim(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A snapshot whose claims are not a list stays unknown and is not released."""
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (hub, uri):
+            async with _release_leg_proxy(uri, "bad-snapshot") as (proxy, watch):
+                code = await _lock_child(proxy, tmp_path / "epochs", ready_timeout=3)
+                captured = capsys.readouterr()
+                assert code == 3, captured.err
+                assert "lock: release unknown for 'mutex'" in captured.err
+                assert "mutex" in hub.state.claims
+                assert watch["releases"] == 0
+                assert not [row for row in journal.iter_events() if row.kind == "release"]
+    finally:
+        journal.close()
+
+
+@pytest.mark.asyncio
+async def test_noncontinuing_claims_fall_back_to_the_granted_epoch(tmp_path: Path) -> None:
+    """Skipped claim rows still release the epoch the hub actually granted."""
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (hub, uri):
+            async with _release_leg_proxy(uri, "skipped-claims") as (proxy, watch):
+                code = await _lock_child(proxy, tmp_path / "epochs", ready_timeout=3)
+                assert code == 0
+                assert "mutex" not in hub.state.claims
+                assert watch["releases"] == 1
+                assert watch["epochs"] == [watch["epoch"]]
+                assert len([row for row in journal.iter_events() if row.kind == "release"]) == 1
+    finally:
+        journal.close()
+
+
+@pytest.mark.asyncio
+async def test_foreign_renewal_session_refuses_release_before_mutation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A release welcome from a different renewal session does not drop the claim."""
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (hub, uri):
+            async with _release_leg_proxy(uri, "foreign-session") as (proxy, watch):
+                code = await _lock_child(proxy, tmp_path / "epochs", ready_timeout=3)
+                captured = capsys.readouterr()
+                assert code == 3, captured.err
+                assert "lock: release unknown for 'mutex'" in captured.err
+                assert "mutex" in hub.state.claims
+                assert watch["releases"] == 0
+                assert not [row for row in journal.iter_events() if row.kind == "release"]
+    finally:
+        journal.close()
+
+
+@pytest.mark.asyncio
+async def test_closed_release_welcome_leaves_the_claim_unknown(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Closing the release connection before its welcome is uncertainty, not a drop."""
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (hub, uri):
+            async with _release_leg_proxy(uri, "drop-welcome") as (proxy, watch):
+                code = await _lock_child(proxy, tmp_path / "epochs", ready_timeout=2)
+                captured = capsys.readouterr()
+                assert code == 3, captured.err
+                assert "lock: release unknown for 'mutex'" in captured.err
+                assert "mutex" in hub.state.claims
+                assert watch["releases"] == 0
+    finally:
+        journal.close()
+
+
+@pytest.mark.asyncio
+async def test_second_settle_confirms_without_replaying_the_release(tmp_path: Path) -> None:
+    """A retained release intent is confirmed on the next settle and not sent again."""
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (hub, uri):
+            async with _release_leg_proxy(uri, "observe") as (proxy, watch):
+                epoch, hub_id, session = await _granted_lease(
+                    proxy, tmp_path / "epochs", "mutex-owner", "mutex"
+                )
+                release = LockRelease(
+                    uri=proxy,
+                    name="mutex-owner",
+                    task_id="mutex",
+                    initial_epoch=epoch,
+                    token=None,
+                    agent_factory=_isolated_factory(tmp_path / "epochs", persist=False),
+                    ready_timeout=3,
+                    reply_timeout=3,
+                    pinned_epoch=True,
+                    expected_hub_id=hub_id,
+                    expected_session=session,
+                )
+                assert await release.run() == 0
+                assert "mutex" not in hub.state.claims
+                assert watch["releases"] == 1
+                assert await release.run() == 0
+                assert watch["releases"] == 1
+                assert len([row for row in journal.iter_events() if row.kind == "release"]) == 1
+    finally:
+        journal.close()
+
+
+@pytest.mark.asyncio
+async def test_fresh_unpinned_profile_sends_the_original_epoch(tmp_path: Path) -> None:
+    """A fresh unpinned profile binds the granted epoch before the release is sent."""
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (hub, uri):
+            async with _release_leg_proxy(uri, "observe") as (proxy, watch):
+                epoch, hub_id, session = await _granted_lease(
+                    proxy, tmp_path / "epochs", "mutex-owner", "mutex"
+                )
+                release = LockRelease(
+                    uri=proxy,
+                    name="mutex-owner",
+                    task_id="mutex",
+                    initial_epoch=epoch,
+                    token=None,
+                    agent_factory=_isolated_factory(tmp_path / "epochs", persist=False),
+                    ready_timeout=3,
+                    reply_timeout=3,
+                    pinned_epoch=False,
+                    expected_hub_id=hub_id,
+                    expected_session=session,
+                )
+                assert await release.run() == 0
+                assert "mutex" not in hub.state.claims
+                assert watch["epochs"] == [epoch]
+    finally:
+        journal.close()
