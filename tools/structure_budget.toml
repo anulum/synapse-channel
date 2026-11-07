@@ -368,7 +368,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/participants/grok_stream.py::parse_grok_stream" = 16
 "src/synapse_channel/participants/headless_pi.py::PiParticipant.take_turn" = 31
 "src/synapse_channel/participants/opencode_stream.py::parse_opencode_stream" = 23
-"src/synapse_channel/participants/pi_process.py::PiRpcProcess._collect_turn" = 16
 "src/synapse_channel/participants/provider_route.py::_rejection_code" = 25
 "src/synapse_channel/participants/remanentia_http.py::_endpoint" = 17
 "src/synapse_channel/pi_claim_guard.py::_parse_event" = 18

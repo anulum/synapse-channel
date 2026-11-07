@@ -18,7 +18,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from synapse_channel.participants.pi_rpc import (
     PiRpcDecoder,
@@ -30,6 +30,10 @@ from synapse_channel.participants.pi_rpc import (
 
 MAX_COMMAND_BYTES = 65_536
 EVENT_QUEUE_LIMIT = 128
+_PIPE_DRAIN_SECONDS = 2.0
+"""Seconds close() waits for the readers to reach EOF after the group is killed."""
+_PROCESS_GROUPS = os.name == "posix"
+"""Whether close() signals the child's whole process group (POSIX) or the child only."""
 
 
 @dataclass(frozen=True)
@@ -207,9 +211,9 @@ class PiRpcProcess:
                 if text:
                     texts.append(text)
                 is_error |= errored
-                metrics = assistant_metrics(record)
-                if metrics is None:
-                    raise PiRpcError("pi RPC assistant metrics are missing")
+                # assistant_text accepted an assistant message_end, for which
+                # assistant_metrics returns its usage or raises; it is never None here.
+                metrics = cast("tuple[int, int, float, str]", assistant_metrics(record))
                 input_tokens += metrics[0]
                 output_tokens += metrics[1]
                 cost_usd += metrics[2]
@@ -242,7 +246,7 @@ class PiRpcProcess:
         if process is None:
             return
         try:
-            if os.name == "posix":
+            if _PROCESS_GROUPS:
                 os.killpg(process.pid, signal.SIGTERM)
             elif process.returncode is None:
                 process.terminate()
@@ -254,15 +258,23 @@ class PiRpcProcess:
             if process.returncode is None:
                 process.kill()
             await process.wait()
-        if os.name == "posix":
+        if _PROCESS_GROUPS:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except (ProcessLookupError, PermissionError):
                 # The group may disappear after TERM and its id may be reused
                 # before the final sweep (observed on macOS runners).
                 pass
-        tasks = tuple(task for task in (self._reader, self._stderr) if task is not None)
-        for task in tasks:
+        # start() opens all three pipes and both readers together with the process.
+        cast(asyncio.StreamWriter, process.stdin).close()
+        tasks = {cast("asyncio.Task[None]", self._reader), cast("asyncio.Task[None]", self._stderr)}
+        # The readers end at EOF once nothing holds the pipes any more; a descendant
+        # that kept them open went with the group above. Returning before that left
+        # the pipe transports open for the collector to find after the loop closed.
+        _done, pending = await asyncio.wait(tasks, timeout=_PIPE_DRAIN_SECONDS)
+        for task in pending:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        # The transport closes on the loop turn after its last pipe reaches EOF.
+        await asyncio.sleep(0)
         self._process = None

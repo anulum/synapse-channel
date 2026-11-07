@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from synapse_channel.participants import pi_process
 from synapse_channel.participants.pi_process import PiRpcProcess
 from synapse_channel.participants.pi_rpc import PiRpcError
 
@@ -489,6 +490,8 @@ os._exit(0)
         timeout=5,
     )
     await child.start()
+    process = child._process
+    assert process is not None and process.stdin is not None and process.stdout is not None
     try:
         for _ in range(200):
             if ready.exists():
@@ -496,6 +499,10 @@ os._exit(0)
             await asyncio.sleep(0.01)
         assert ready.exists()
         await asyncio.wait_for(child.close(), timeout=6)
+        # close() returns only once the pipes are drained and closed, so nothing is
+        # left for the collector to find after this test's loop has closed.
+        assert process.stdout.at_eof()
+        assert process.stdin.is_closing()
         with pytest.raises(PiRpcError, match="unavailable"):
             await child.command("get_state")
     finally:
@@ -505,3 +512,73 @@ os._exit(0)
                 os.kill(int(descendant.read_text(encoding="ascii")), signal.SIGKILL)
             except (OSError, ValueError):
                 pass
+
+
+async def test_close_stops_waiting_for_pipes_held_outside_the_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A descendant in its own session survives the group kill; close() still returns."""
+    monkeypatch.setattr(pi_process, "_PIPE_DRAIN_SECONDS", 0.2)
+    escaped = tmp_path / "escaped"
+    holder = r"""
+import os, sys, time
+pid = os.fork()
+if pid == 0:
+    os.setsid()
+    open(sys.argv[1], "w", encoding="ascii").write(str(os.getpid()))
+    time.sleep(30)
+    os._exit(0)
+time.sleep(30)
+"""
+    child = PiRpcProcess(
+        [sys.executable, "-u", "-c", holder, str(escaped)],
+        cwd=tmp_path,
+        environment=os.environ,
+        timeout=5,
+    )
+    await child.start()
+    reader = child._reader
+    process_of_child = child._process
+    assert process_of_child is not None
+    try:
+        for _ in range(300):
+            if escaped.exists() and escaped.read_text(encoding="ascii"):
+                break
+            await asyncio.sleep(0.01)
+        assert escaped.read_text(encoding="ascii")
+        await asyncio.wait_for(child.close(), timeout=6)
+        assert reader is not None and reader.cancelled()
+    finally:
+        await child.close()
+        try:
+            os.kill(int(escaped.read_text(encoding="ascii")), signal.SIGKILL)
+        except (OSError, ValueError):
+            pass
+        # Let the pipes the escaped process held reach EOF before this loop closes.
+        process = process_of_child
+        for _ in range(200):
+            if process.stdout is None or process.stdout.at_eof():
+                break
+            await asyncio.sleep(0.01)
+
+
+@pytest.mark.parametrize("program", ["import time\ntime.sleep(30)", "pass"])
+async def test_close_without_process_groups_stops_only_the_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, program: str
+) -> None:
+    """Where groups are unavailable, close() terminates a running child and reaps an exited one."""
+    monkeypatch.setattr(pi_process, "_PROCESS_GROUPS", False)
+    child = PiRpcProcess(
+        [sys.executable, "-u", "-c", program],
+        cwd=tmp_path,
+        environment=os.environ,
+        timeout=5,
+    )
+    await child.start()
+    process = child._process
+    assert process is not None and process.stdout is not None
+    if program == "pass":
+        await asyncio.wait_for(process.wait(), timeout=5)
+    await asyncio.wait_for(child.close(), timeout=6)
+    assert process.returncode is not None
+    assert process.stdout.at_eof()
