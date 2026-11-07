@@ -9,11 +9,16 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import logging
+import time
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 from websockets.exceptions import ConnectionClosed
 
+from synapse_channel.core.attachment_store import AttachmentStore
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.hub_clients import HubClientRegistry
@@ -159,6 +164,8 @@ def _connection(
     presence: _Presence | None = None,
     dropped: list[str] | None = None,
     forgotten: list[str] | None = None,
+    abort_uploads: Any = None,
+    agent_left: Any = None,
 ) -> HubConnection:
     rec = recorder or _Recorder()
     pres = presence or _Presence()
@@ -177,6 +184,8 @@ def _connection(
         broadcast_presence=pres.broadcast_presence,
         drop_waits=drop_sink.append,
         forget_liveness=forget_sink.append,
+        abort_uploads=abort_uploads,
+        agent_left=agent_left,
     )
 
 
@@ -323,6 +332,92 @@ async def test_unregister_reports_every_socket_to_every_listener_despite_a_failu
     ]
     assert "a close listener failed for a closed socket" in caplog.text
     assert clients.connected_clients == set()
+
+
+def _pending_upload(store: AttachmentStore, sender: str, body: bytes) -> str:
+    """Reserve one real staged upload owned by ``sender``."""
+    return store.begin(
+        scope="proj",
+        sender=sender,
+        digest=hashlib.sha256(body).hexdigest(),
+        length=len(body),
+        media_type="text/plain",
+        provenance="claim:ATTACH-1",
+        expires_at=time.time() + 60,
+    )
+
+
+async def test_unregister_discards_only_that_sockets_uploads(tmp_path: Path) -> None:
+    """A named disconnect drops that socket's staged bytes and still departs."""
+    clients = _registry()
+    socket = _Socket()
+    clients.add_client(socket)
+    clients.socket_agent[socket] = "a"
+    clients.agent_sockets["a"] = socket
+    store = AttachmentStore(tmp_path / "private")
+    presence = _Presence()
+    dropped: list[str] = []
+    try:
+        own = _pending_upload(store, f"a@{id(socket)}", b"own")
+        other = _pending_upload(store, "b@other", b"other")
+        conn = _connection(
+            clients,
+            presence=presence,
+            dropped=dropped,
+            abort_uploads=store.abort_sender,
+        )
+        await conn.unregister(socket)
+        senders = [row[0] for row in store.db.execute("SELECT sender FROM uploads")]
+        assert senders == ["b@other"]
+        assert not (store.staging / own).exists()
+        assert (store.staging / other).exists()
+    finally:
+        store.close()
+    assert dropped == ["a"]
+    assert presence.calls == [("left", "a")]
+    assert "a" not in clients.agent_sockets
+
+
+async def test_unregister_still_departs_when_upload_discard_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failed upload discard is logged and does not keep the departed name."""
+    clients = _registry()
+    socket = _Socket()
+    clients.add_client(socket)
+    clients.socket_agent[socket] = "a"
+    clients.agent_sockets["a"] = socket
+    presence = _Presence()
+    dropped: list[str] = []
+
+    def fail(sender: str) -> None:
+        raise RuntimeError(f"staging stuck for {sender}")
+
+    conn = _connection(clients, presence=presence, dropped=dropped, abort_uploads=fail)
+    with caplog.at_level(logging.ERROR, logger="synapse.hub"):
+        await conn.unregister(socket)
+
+    assert dropped == ["a"]
+    assert presence.calls == [("left", "a")]
+    assert "a" not in clients.agent_sockets
+    assert "cannot discard disconnected attachment upload" in caplog.text
+    assert f"a@{id(socket)}" in caplog.text
+
+
+async def test_unregister_reports_the_name_to_the_claim_holder() -> None:
+    """A named disconnect tells the claim holder that this name left."""
+    clients = _registry()
+    socket = _Socket()
+    clients.add_client(socket)
+    clients.socket_agent[socket] = "a"
+    clients.agent_sockets["a"] = socket
+    left: list[str] = []
+    presence = _Presence()
+    conn = _connection(clients, presence=presence, agent_left=left.append)
+    await conn.unregister(socket)
+    assert left == ["a"]
+    assert presence.calls == [("left", "a")]
+    assert "a" not in clients.agent_sockets
 
 
 async def test_welcome_carries_fields_from_one_provider() -> None:
