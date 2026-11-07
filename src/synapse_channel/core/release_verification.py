@@ -17,7 +17,11 @@ from pathlib import Path
 from typing import Any, NamedTuple, TypedDict, cast
 
 from synapse_channel.core.merkle import MerkleRoot, root_to_json, run_root, verify_root
-from synapse_channel.core.receipts import ReleaseReceipt, build_release_receipt
+from synapse_channel.core.receipts import (
+    UNVERIFIED_EVIDENCE_REASON,
+    ReleaseReceipt,
+    build_release_receipt,
+)
 
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 1800.0
 """Default per-command verification timeout; a hung command is recorded as failed."""
@@ -28,7 +32,6 @@ GIT_TIMEOUT_SECONDS = 60.0
 _HASH_CHUNK_BYTES = 1 << 20
 """Streaming hash chunk size, bounding artifact-hash memory to a fixed window."""
 
-_UNVERIFIED_REASON = "fresh evidence present but unverified"
 _VERIFIED_REASON = "fresh evidence verified by executed release checks"
 
 
@@ -339,7 +342,7 @@ def build_verified_release_receipt(
         # The receipt classifier gives "unverified" only with this closing reason
         # (receipts._assess_release_evidence), which the executed checks now settle.
         verified["epistemic_reasons"] = [
-            _VERIFIED_REASON if reason == _UNVERIFIED_REASON else reason
+            _VERIFIED_REASON if reason == UNVERIFIED_EVIDENCE_REASON else reason
             for reason in verified["epistemic_reasons"]
         ]
     return verified

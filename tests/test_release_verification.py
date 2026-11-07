@@ -17,6 +17,7 @@ from pathlib import Path
 
 from synapse_channel.core.merkle import run_root
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.receipts import UNVERIFIED_EVIDENCE_REASON
 from synapse_channel.core.release_verification import (
     build_verified_release_receipt,
     check_receipt_merkle_commitment,
@@ -58,6 +59,11 @@ def test_build_verified_release_receipt_runs_commands_and_hashes_artifacts(
     assert receipt["changed_files"] == ["src/synapse_channel/core/release_verification.py"]
     assert receipt["freshness_seconds"] == 0.0
     assert receipt["epistemic_status"] == "supported"
+    # The executed checks settle the declared-evidence reason; it may not survive.
+    assert receipt["epistemic_reasons"][-1] == (
+        "fresh evidence verified by executed release checks"
+    )
+    assert UNVERIFIED_EVIDENCE_REASON not in receipt["epistemic_reasons"]
     assert receipt["confidence"] == "observed"
     assert verification["git_head"] == "abc123"
     assert verification["git_tree"] == "def456"

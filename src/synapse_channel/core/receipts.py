@@ -11,6 +11,13 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+UNVERIFIED_EVIDENCE_REASON = "fresh evidence present but unverified"
+"""The closing reason of an ``unverified`` verdict: evidence was declared, not executed.
+
+:mod:`~synapse_channel.core.release_verification` replaces exactly this reason
+once it has run the release checks itself, so both modules share this constant.
+"""
+
 MAX_RELEASE_RECEIPT_ITEMS = 50
 """Maximum number of values retained for any repeated receipt field."""
 
@@ -211,7 +218,7 @@ def _assess_release_evidence(
     if age > DEFAULT_RELEASE_EVIDENCE_FRESHNESS_SECONDS:
         reasons.append("evidence age exceeds 3600 seconds")
         return "stale", reasons
-    reasons.append("fresh evidence present but unverified")
+    reasons.append(UNVERIFIED_EVIDENCE_REASON)
     return "unverified", reasons
 
 
