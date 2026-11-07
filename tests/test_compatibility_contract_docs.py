@@ -126,6 +126,11 @@ def test_canonical_policy_distinguishes_package_and_wire_versioning() -> None:
     assert "wire-incompatible change" in stability
     assert "package major release" in stability
     assert "`WIRE_PROTOCOL_VERSION`" in contributing
+    assert "macOS behaviour" in contributing
+    assert "rejection behaviour" in contributing
+    assert "Linux behaviour" in contributing
+    assert "behavioural checks" in contributing
+    assert "behavior" not in contributing
     assert "`WIRE_PROTOCOL_VERSION`" in migration
 
 

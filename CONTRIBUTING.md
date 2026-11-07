@@ -137,7 +137,7 @@ coverage evidence. The Windows focused pack and its check name remain unchanged.
 
 `tests/test_ci_portable_shards.py` exercises real portable runner/artifact journeys
 and the aggregate shell gate. Local Linux qualification does not certify native
-macOS behavior; a successful hosted macOS run is required for that result.
+macOS behaviour; a successful hosted macOS run is required for that result.
 
 ## Standards a change must meet
 
@@ -225,7 +225,7 @@ Missing native prerequisites fail this profile. Default collection retains
 portable descriptor/input checks and
 the existing POSIX platform guards; it does not collect these Linux-only cases
 on macOS or Windows. The modeled architecture-refusal test proves only the
-guard's rejection behavior, while the explicit profile proves Linux behavior.
+guard's rejection behaviour, while the explicit profile proves Linux behaviour.
 
 Protected authority peer authentication requires Linux `SO_PEERCRED`. The
 shared `requires_linux_peer_credentials` marker in
@@ -575,7 +575,7 @@ otherwise unmeasured source growth could bypass the guard. Both `--check` and
 
 1. Branch from `main`.
 2. Make the change with tests and docs in the same commit sequence.
-3. Run the scoped lint, type and behavioral checks for the change and require
+3. Run the scoped lint, type and behavioural checks for the change and require
    the applicable hosted CI gates. Reserve an exhaustive local preflight only
    when the task explicitly has resources for it.
 4. Open a pull request describing the change, the rationale, and how it was
