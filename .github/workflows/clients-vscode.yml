@@ -16,6 +16,8 @@ permissions:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    # A normal run takes about 3 minutes; a hung editor must not hold a runner for 6 hours.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: clients/vscode
@@ -93,6 +95,7 @@ jobs:
             exit 1
           fi
       - name: Verify stateful packaged 0.2.0 to 0.3.0 upgrade
+        timeout-minutes: 10
         run: |
           baseline=b72fc22975021596c4ab34e4d6b9c3842fbc971a
           git cat-file -e "${baseline}^{commit}"

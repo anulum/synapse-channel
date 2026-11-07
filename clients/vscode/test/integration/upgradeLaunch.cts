@@ -66,7 +66,13 @@ function startEditor(
     "--password-store=basic",
     `--user-data-dir=${userData}`,
     `--extensions-dir=${extensions}`,
-  ], { env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+  ], {
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"],
+    // Its own process group, so stopping the editor also stops every helper it
+    // started (renderers, crash handlers, anything it opened with xdg-open).
+    detached: true,
+  });
   editor.stdout?.pipe(process.stdout);
   editor.stderr?.pipe(process.stderr);
   return editor;
@@ -111,17 +117,44 @@ async function runCommand(window: string, command: string, input?: string): Prom
   await delay(700);
 }
 
-async function stopEditor(editor: ChildProcess): Promise<void> {
-  if (editor.exitCode !== null || editor.signalCode !== null) {
+function signalEditorGroup(editor: ChildProcess, signal: NodeJS.Signals): void {
+  if (editor.pid === undefined) {
     return;
   }
-  const exited = new Promise<void>((resolveExit) => editor.once("exit", () => resolveExit()));
-  editor.kill("SIGTERM");
-  await Promise.race([exited, delay(10_000)]);
-  if (editor.exitCode === null && editor.signalCode === null) {
-    editor.kill("SIGKILL");
-    await exited;
+  try {
+    process.kill(-editor.pid, signal);
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+      throw error;
+    }
   }
+}
+
+async function stopEditor(editor: ChildProcess): Promise<void> {
+  if (editor.exitCode === null && editor.signalCode === null) {
+    const exited = new Promise<void>((resolveExit) => editor.once("exit", () => resolveExit()));
+    signalEditorGroup(editor, "SIGTERM");
+    await Promise.race([exited, delay(10_000)]);
+    if (editor.exitCode === null && editor.signalCode === null) {
+      signalEditorGroup(editor, "SIGKILL");
+      await exited;
+    }
+  }
+  // A helper left in the group would keep the output pipes open and this
+  // process alive after a failure, until the job is cancelled hours later.
+  signalEditorGroup(editor, "SIGKILL");
+  editor.stdout?.destroy();
+  editor.stderr?.destroy();
+}
+
+function windowReport(): string {
+  const visible = spawnSync("xdotool", ["search", "--onlyvisible", "--name", "."], { encoding: "utf8" });
+  const names = (visible.stdout?.trim().split(/\s+/).filter(Boolean) ?? []).map((window) => {
+    const name = spawnSync("xdotool", ["getwindowname", window], { encoding: "utf8" }).stdout?.trim();
+    return `  ${window}: ${name ?? ""}`;
+  });
+  const focused = spawnSync("xdotool", ["getwindowfocus", "getwindowname"], { encoding: "utf8" });
+  return [`Focused window: ${focused.stdout?.trim() ?? "unknown"}`, "Visible windows:", ...names].join("\n");
 }
 
 async function main(): Promise<void> {
@@ -169,6 +202,11 @@ async function main(): Promise<void> {
     await runCommand(currentWindow, "SYNAPSE: Clear hub token");
     await waitForRoster(hub.uri, hub.token, identity, false);
     console.log("SYNAPSE_VSCODE_020_TO_030_STATEFUL_UPGRADE_PASS");
+  } catch (error: unknown) {
+    if (editor !== undefined) {
+      console.error(windowReport());
+    }
+    throw error;
   } finally {
     if (editor !== undefined) {
       await stopEditor(editor);
@@ -182,7 +220,10 @@ async function main(): Promise<void> {
   }
 }
 
-void main().catch((error: unknown) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+main().then(
+  () => process.exit(0),
+  (error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  },
+);
