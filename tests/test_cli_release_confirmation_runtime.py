@@ -119,6 +119,10 @@ async def command(repo: Path, uri: str, *args: str) -> CliResult:
     return await asyncio.to_thread(run_cli, *args, uri=uri, cwd=repo, timeout=8)
 
 
+_SETUP_REPLY_TIMEOUT = "10"
+"""Reply budget for a claim that only sets a test up; a loaded CI runner can need more than 1 s."""
+
+
 async def claim(repo: Path, uri: str) -> None:
     """Obtain a real scoped claim whose on-disk fence the next process loads."""
     result = await command(
@@ -135,7 +139,7 @@ async def claim(repo: Path, uri: str) -> None:
         "--auto-release-on",
         "manual",
         "--reply-timeout",
-        "1",
+        _SETUP_REPLY_TIMEOUT,
     )
     assert result.ok(), result.output
 

@@ -166,7 +166,7 @@ async def test_published_hub_without_confirmation_refuses_manual_release(
                     "--auto-release-on",
                     "manual",
                     "--reply-timeout",
-                    "1",
+                    "10",
                     uri=uri,
                     cwd=repo,
                     env={"SYNAPSE_TOKEN": "", "SYNAPSE_TOKEN_FILE": ""},
