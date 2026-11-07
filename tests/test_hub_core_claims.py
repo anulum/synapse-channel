@@ -298,3 +298,18 @@ async def test_release_receipt_progress_records_into_a_journal(tmp_path: Path) -
         assert "ledger_progress" in kinds
     finally:
         journal.close()
+
+
+async def test_a_handoff_to_an_agent_that_is_not_online_is_denied_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        try:
+            await alpha.agent.claim("T1", worktree="wt-alpha")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            await alpha.agent.handoff("T1", "GHOST")
+            denied = await alpha.recorder.wait_for(lambda m: m.get("type") == "handoff_denied")
+        finally:
+            await close_agents(alpha)
+    assert denied["payload"] == "Handoff target 'GHOST' is not online."
+    assert (denied["task_id"], denied["target"]) == ("T1", "ALPHA")
+    assert hub.state.claims["T1"].owner == "ALPHA"

@@ -130,3 +130,17 @@ async def test_claim_denied_reply_matches_the_durable_reason_code(tmp_path: Path
     store.close()
     assert denied["reason_code"] == "LEASE_LIVE"
     assert events[-1].payload["reason_code"] == denied["reason_code"]
+
+
+def test_a_principal_quota_denial_is_recorded_as_quota_exceeded(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(journal=store, anti_rollback_checkpoint=False, max_claims_per_agent=1)
+    assert apply_claim(hub, "ALPHA", {"task_id": "first", "paths": ["a.py"]}).ok
+    denied = apply_claim(hub, "ALPHA", {"task_id": "second", "paths": ["b.py"]})
+    events = [event for event in store.read_all() if event.kind == EventKind.CLAIM_DENIAL]
+    store.close()
+
+    assert not denied.ok
+    assert "principal claim quota" in denied.message
+    assert denied.reason_code == "QUOTA_EXCEEDED"
+    assert [event.payload["reason_code"] for event in events] == ["QUOTA_EXCEEDED"]

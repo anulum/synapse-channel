@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from synapse_channel.core.acl import CLAIM
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
@@ -78,6 +78,9 @@ from synapse_channel.core.verb_access import (
     task_update_access,
 )
 from synapse_channel.core.verb_registry import VerbSpec
+
+_Result = TypeVar("_Result")
+"""The result type a state mutation passes to its persist step."""
 
 if TYPE_CHECKING:
     from synapse_channel.core.claim_holder_presence import ClaimHolderContext
@@ -195,6 +198,17 @@ async def _refuse_unfenced(
         ),
     )
     return True
+
+
+def _journal_bound(
+    journal: EventStore | None, step: Callable[[EventStore, _Result], None]
+) -> Callable[[_Result], None] | None:
+    """Bind a persist ``step`` to the hub's journal, or return ``None`` without one.
+
+    A mutation is persisted only when the hub has a journal, so the step never
+    has to handle a missing one.
+    """
+    return None if journal is None else partial(step, journal)
 
 
 def _claim_denial_reason(message: str) -> str:
@@ -466,11 +480,9 @@ async def apply_claim_async(
             quota_principal=quota_principal,
         )
 
-    def persist(application: ClaimApplication) -> None:
-        if journal is None:
-            raise RuntimeError("claim persistence requested without a journal")
+    def persist(store: EventStore, application: ClaimApplication) -> None:
         if application.claim is not None:
-            record_claim(journal, application.claim)
+            record_claim(store, application.claim)
             return
         raw_paths = body.get("paths")
         paths = [str(path) for path in raw_paths] if isinstance(raw_paths, list) else []
@@ -490,7 +502,7 @@ async def apply_claim_async(
     application = await hub.state_mutations.run(
         hub.state,
         mutate,
-        persist=persist if journal is not None else None,
+        persist=_journal_bound(journal, persist),
         publish=publish,
     )
     return application
@@ -564,9 +576,13 @@ def _persist_claim_denial(
     sender: str,
     data: dict[str, Any],
 ) -> None:
-    """Persist a refused claim through the facade's late-bound journal recorder."""
-    if application.claim is not None or hub.journal is None:
-        return
+    """Persist a refused claim through the facade's late-bound journal recorder.
+
+    The atomic operation runs this only for a mutation without a durable draft,
+    and :func:`~synapse_channel.core.handlers.leasing_drafts.prepare_claim`
+    gives no draft exactly when the claim was refused. The atomic operation
+    itself runs only with a journal.
+    """
     raw_paths = data.get("paths")
     _record_denial(
         hub,
@@ -655,12 +671,10 @@ async def handle_task_update(
         data=data,
     )
 
-    def persist(result: tuple[bool, str, TaskClaim | None]) -> None:
-        if journal is None:
-            raise RuntimeError("task-update persistence requested without a journal")
+    def persist(store: EventStore, result: tuple[bool, str, TaskClaim | None]) -> None:
         claim = result[2]
         if claim is not None:
-            record_task_update(journal, claim)
+            record_task_update(store, claim)
 
     prepare = partial(prepare_task_update, hub=hub, sender=sender, task_id=task_id)
 
@@ -675,7 +689,7 @@ async def handle_task_update(
         else await hub.state_mutations.run(
             hub.state,
             mutate,
-            persist=persist if journal is not None else None,
+            persist=_journal_bound(journal, persist),
         )
     )
     await _announce_task_update(
@@ -703,11 +717,9 @@ async def handle_release(
 
     mutate = partial(release_task, sender=sender, task_id=task_id, data=data)
 
-    def persist(result: tuple[bool, str]) -> None:
-        if journal is None:
-            raise RuntimeError("release persistence requested without a journal")
+    def persist(store: EventStore, result: tuple[bool, str]) -> None:
         if result[0]:
-            record_release(journal, task_id)
+            record_release(store, task_id)
 
     prepared_progress: list[ProgressNote] = []
 
@@ -733,7 +745,7 @@ async def handle_release(
         else await hub.state_mutations.run(
             hub.state,
             mutate,
-            persist=persist if journal is not None else None,
+            persist=_journal_bound(journal, persist),
             publish=publish,
         )
     )
@@ -854,12 +866,10 @@ async def handle_checkpoint(
         save_checkpoint, sender=sender, task_id=task_id, checkpoint=checkpoint, data=data
     )
 
-    def persist(result: tuple[bool, str, TaskClaim | None]) -> None:
-        if journal is None:
-            raise RuntimeError("checkpoint persistence requested without a journal")
+    def persist(store: EventStore, result: tuple[bool, str, TaskClaim | None]) -> None:
         claim = result[2]
         if claim is not None:
-            record_checkpoint(journal, claim)
+            record_checkpoint(store, claim)
 
     prepare = partial(prepare_checkpoint, hub=hub, sender=sender, task_id=task_id)
 
@@ -874,7 +884,7 @@ async def handle_checkpoint(
         else await hub.state_mutations.run(
             hub.state,
             mutate,
-            persist=persist if journal is not None else None,
+            persist=_journal_bound(journal, persist),
         )
     )
     if claim is not None:
@@ -1108,12 +1118,10 @@ async def _apply_handoff_request(
         handoff_task, sender=sender, task_id=task_id, to_agent=to_agent, note=note, data=data
     )
 
-    def persist(result: tuple[bool, str, TaskClaim | None]) -> None:
-        if journal is None:
-            raise RuntimeError("handoff persistence requested without a journal")
+    def persist(store: EventStore, result: tuple[bool, str, TaskClaim | None]) -> None:
         claim = result[2]
         if claim is not None:
-            record_handoff(journal, claim)
+            record_handoff(store, claim)
 
     prepared_progress: list[ProgressNote] = []
 
@@ -1143,7 +1151,7 @@ async def _apply_handoff_request(
         else await hub.state_mutations.run(
             hub.state,
             mutate,
-            persist=persist if journal is not None else None,
+            persist=_journal_bound(journal, persist),
             publish=publish,
         )
     )

@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.exceptions import ConnectionClosedOK
 
@@ -258,6 +260,37 @@ async def test_a_recheck_closes_only_untrusted_connections_and_each_once() -> No
     assert await gate.recheck() == 1
     assert [closed[0] for closed in sent.closed] == [unknown, expiring]
     assert await gate.recheck() == 0
+    assert len(sessions) == 0
+
+
+async def test_a_key_that_cannot_be_looked_up_closes_its_connection(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failing trust lookup counts as untrusted: the connection is closed and logged."""
+    now, enabled, sent = [100.0], [True], _Sent()
+    sessions = FrameSigningSessions()
+
+    def unreadable() -> EventSignatureTrustBundle:
+        raise OSError("the trust bundle could not be read")
+
+    gate = FrameSignatureGate(
+        sessions=sessions,
+        hub_id="h",
+        enabled=lambda: enabled[0],
+        bundle=unreadable,
+        pins=None,
+        send_json=sent.send_json,
+        system=lambda payload, **fields: {"payload": payload, **fields},
+        close_socket=sent.close_socket,
+        count_refusal=lambda: None,
+        clock=lambda: now[0],
+    )
+    socket = object()
+    sessions.record(socket, "P/a", "k", "bundle")
+    with caplog.at_level(logging.WARNING):
+        assert await gate.recheck() == 1
+    assert sent.closed == [(socket, IDENTITY_BINDING_CLOSE_CODE, "identity key no longer trusted")]
+    assert "cannot look up the key of P/a; closing it" in caplog.text
     assert len(sessions) == 0
 
 

@@ -278,3 +278,30 @@ async def test_a_live_edge_hub_forwards_a_claim_to_a_live_owning_hub(tmp_path: P
     # The lease lives on the owning hub, not the edge.
     assert owner.state.claims["t1"].owner == _AGENT
     assert "t1" not in edge.state.claims
+
+
+async def test_a_configured_connector_carries_the_live_forward(tmp_path: Path) -> None:
+    """A peer's own connector opens the socket to the owner; the default is not used."""
+    pin, der = _write_peer_cert(tmp_path)
+    owner = SynapseHub(
+        hub_id=_OWNER,
+        namespace_ownership=NamespaceOwnership(owners={_NAMESPACE: _OWNER}, local_hub_id=_OWNER),
+        multihub_serving_policy=_owner_serving_policy(pin, der),
+    )
+    opened: list[str] = []
+
+    def recording_connector(uri: str) -> Any:
+        opened.append(uri)
+        return connect(uri)
+
+    async with running_hub(owner) as (_, owner_uri):
+        edge = SynapseHub(
+            hub_id=_EDGE,
+            namespace_ownership=_edge_ownership(),
+            claim_peers={_OWNER: ClaimForwardPeer(uri=owner_uri, connector=recording_connector)},
+        )
+        async with running_hub(edge) as (_, edge_uri):
+            reply = await _claim(edge_uri, _AGENT, MessageType.CLAIM_GRANTED)
+    assert opened == [owner_uri]
+    assert reply["owner"] == _AGENT
+    assert owner.state.claims["t1"].owner == _AGENT
