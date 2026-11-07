@@ -35,7 +35,7 @@ import hashlib
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from synapse_channel import wake_marks
@@ -163,7 +163,7 @@ def relay(
     *,
     deadline_seconds: float = DEFAULT_DEADLINE_SECONDS,
     prompt_for: Callable[[str], str] = _fixed_prompt,
-    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> RelayResult:
     """Wake ``target`` for the message ``wake_id`` at most once.
 
