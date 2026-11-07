@@ -80,6 +80,9 @@ def test_spec_documents_the_model_and_guard() -> None:
     text = _spec_text()
     assert "tests/test_coordination_spec_model.py" in text
     assert "tests/test_coordination_spec.py" in text
+    assert "kernel and storage behaviour" in text
+    assert "kernel/storage behaviour" in text
+    assert "behavior" not in text
 
 
 def test_spec_binds_federated_identity_to_content_and_quarantine() -> None:

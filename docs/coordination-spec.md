@@ -506,7 +506,7 @@ holders and pre-existing kernel polling rings remain deployment obligations.
 These APIs are library mechanisms, without a new wire handler or installed
 supervisor. The native profiles in the
 [contributor guide](https://github.com/anulum/synapse-channel/blob/main/CONTRIBUTING.md) exercise
-actual kernel and storage behavior; they do not prove isolated installation.
+actual kernel and storage behaviour; they do not prove isolated installation.
 
 ::: synapse_channel.core.protected_write_execution_journal
 
@@ -586,7 +586,7 @@ conflict before the physical verifier runs.
 The handler is an explicit embedding API. These mechanisms register no default
 listener, install no recovery service and do not make an uncertain old writer
 safe to resume. The [native profiles](https://github.com/anulum/synapse-channel/blob/main/CONTRIBUTING.md#known-state-recovery-profiles)
-exercise actual kernel/storage behavior and the existing authenticated loopback
+exercise actual kernel/storage behaviour and the existing authenticated loopback
 transport; their result is not installed-role or independent physical-custody
 qualification.
 
