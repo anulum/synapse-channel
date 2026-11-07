@@ -98,12 +98,17 @@ def test_current_repo_symbol_selector_json_resolves_full_claim_surface() -> None
             "semantic_scopes": [
                 "src/synapse_channel/core/receipts.py/.synapse-symbol/build_release_receipt"
             ],
-            "tests": ["tests/test_hub_core_claims.py", "tests/test_release_receipts.py"],
+            "tests": [
+                "tests/test_hub_core_claims.py",
+                "tests/test_release_receipts.py",
+                "tests/test_release_verification.py",
+            ],
             "generated": ["README.md", "docs/_generated/capability_manifest.json"],
             "claim_paths": [
                 "src/synapse_channel/core/receipts.py/.synapse-symbol/build_release_receipt",
                 "tests/test_hub_core_claims.py",
                 "tests/test_release_receipts.py",
+                "tests/test_release_verification.py",
                 "README.md",
                 "docs/_generated/capability_manifest.json",
             ],
@@ -123,6 +128,7 @@ def test_current_repo_claim_args_are_stable_for_api_selector() -> None:
         "--paths=src/synapse_channel/core/receipts.py/.synapse-symbol/ReleaseReceipt "
         "--paths=tests/test_hub_core_claims.py "
         "--paths=tests/test_release_receipts.py "
+        "--paths=tests/test_release_verification.py "
         "--paths=README.md "
         "--paths=docs/_generated/capability_manifest.json"
     )
@@ -392,6 +398,7 @@ def test_companion_paths_reuse_test_and_generated_maps() -> None:
     ) == (
         "tests/test_hub_core_claims.py",
         "tests/test_release_receipts.py",
+        "tests/test_release_verification.py",
         "README.md",
         "docs/_generated/capability_manifest.json",
     )
