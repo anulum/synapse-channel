@@ -13,13 +13,13 @@ This page gives narrow, repeatable demos for common ways to place SYNAPSE under
 existing agent tools. Each demo uses the current public CLI, A2A, or MCP surface
 and keeps the boundary explicit: SYNAPSE coordinates claims, messages, board
 state, and adapter calls; the surrounding agent host still owns prompting,
-model choice, tool execution, and editor/runtime behavior.
+model choice, tool execution, and editor/runtime behaviour.
 
 External validation remains open. These demos are local evidence for the
 documented surfaces, not certification for every external MCP host, A2A server,
 reverse proxy, TLS stack, or webhook receiver.
 
-| Demo | Status | Supported behavior | Unsupported or still open |
+| Demo | Status | Supported behaviour | Unsupported or still open |
 | --- | --- | --- | --- |
 | Installed golden path | Supported, real local boundaries | Scripted in-process `SynapseAgent` identities labelled `CLAUDE`/`CODEX`, separate Git claims, deliberate conflict refusal, fail-closed mutation guard, atomic handoff, observed verification, receipt-backed release, static dashboard. | Uses a disposable local Git repository; it does not launch provider CLIs or model turns, and does not certify external client versions. |
 | CLI coding sessions | Supported | File-scope claims, claims release, board/status checks, direct messages. | Does not start or control the coding agent runtime. |
@@ -138,14 +138,14 @@ What this proves:
 
 - A live capability manifest can be projected into an A2A-shaped Agent Card.
 - Local HTTP+JSON message/task routes can bridge into a Synapse target.
-- Local persistence, quotas, retention, auth checks, and SSRF guard behavior are
+- Local persistence, quotas, retention, auth checks, and SSRF guard behaviour are
   covered by focused in-repo tests.
 
 What it does not prove:
 
 - Independent A2A interoperability validation remains open.
 - Real webhook receiver validation remains open.
-- TLS termination, reverse proxy behavior, and remote deployment threat-model
+- TLS termination, reverse proxy behaviour, and remote deployment threat-model
   review remain separate work.
 
 A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).

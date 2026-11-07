@@ -38,6 +38,12 @@ def test_integration_demo_matrix_documents_the_golden_path_and_three_adapters() 
     for section in expected_sections:
         assert section in matrix
 
+    assert "editor/runtime behaviour" in matrix
+    assert "Supported behaviour" in matrix
+    assert "SSRF guard behaviour" in matrix
+    assert "reverse proxy behaviour" in matrix
+    assert "behavior" not in matrix
+
     expected_commands = (
         "synapse demo --output ./synapse-golden-demo",
         "synapse hub --host 127.0.0.1 --port 8876",
