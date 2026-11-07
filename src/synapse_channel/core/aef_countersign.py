@@ -49,6 +49,7 @@ from synapse_channel.core.signature_suite import (
     SuiteKey,
     TrustedKey,
     b64,
+    require_available,
     unb64,
     verify,
 )
@@ -145,6 +146,15 @@ def _envelope(document: Mapping[str, object]) -> Mapping[str, object] | None:
         return None
     if not isinstance(envelope.get("key_id"), str):
         return None
+    size = document.get("tree_size")
+    if not (
+        isinstance(document.get("log_id"), str)
+        and isinstance(document.get("root"), str)
+        and isinstance(document.get("sth_sha256"), str)
+        and isinstance(size, int)
+        and not isinstance(size, bool)
+    ):
+        return None
     return envelope
 
 
@@ -166,7 +176,14 @@ def verify_countersignature(
 
     The verdict says nothing about whether ``sth`` itself is authentic or
     whether an export is complete up to it; a caller checks that separately.
+
+    Raises
+    ------
+    SignatureSuiteError
+        When this backend cannot verify the hybrid suite: a missing algorithm
+        is an error, never an ``INVALID`` verdict on a genuine signature.
     """
+    require_available(SUITE_HYBRID)
     claimed = document.get("sth_sha256")
     named = str(claimed) if isinstance(claimed, str) else ""
     envelope = _envelope(document)

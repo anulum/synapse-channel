@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from synapse_channel import cli
+from synapse_channel import cli, cli_aef_pq
 from synapse_channel.core import signature_suite
 from synapse_channel.core.aef_countersign import (
     AefCountersignError,
@@ -318,7 +318,7 @@ def test_each_verdict_of_a_countersignature(
         return verify_countersignature(doc, head, trust=kwargs.get("trust", trust)).verdict.value
 
     malformed: list[dict[str, Any]] = []
-    for change in ("extra", "format", "alg", "envelope", "key_id"):
+    for change in ("extra", "format", "alg", "envelope", "key_id", "log_id", "size", "root"):
         broken = copy.deepcopy(document)
         if change == "extra":
             broken["note"] = "x"
@@ -328,6 +328,13 @@ def test_each_verdict_of_a_countersignature(
             broken["signature"]["alg"] = SUITE_ED25519
         elif change == "envelope":
             broken["signature"] = "value"
+        elif change == "log_id":
+            # An unhashable log id must be malformed, not a crash in the trust check.
+            broken["log_id"] = [broken["log_id"]]
+        elif change == "size":
+            broken["tree_size"] = True
+        elif change == "root":
+            broken["root"] = {"hex": broken["root"]}
         else:
             broken["signature"]["key_id"] = 7
         malformed.append(broken)
@@ -387,3 +394,73 @@ def test_a_key_bound_to_other_logs_is_untrusted_for_this_one(
     assert _run(capsys, *argv)[0] == 0
     trusted = next(iter(signature_suite.load_trust(tmp_path / "bound-trust.json").values()))
     assert trusted.log_ids == frozenset({str(sth["log_id"])})
+
+
+def test_an_unhashable_log_id_is_invalid_even_for_a_log_bound_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The verifier reports a list log id as INVALID instead of failing on attacker input."""
+    paths = _log(tmp_path, capsys)
+    sth = _json(paths["sth"])
+    key = signature_suite.load_key(paths["key"], suite=SUITE_HYBRID)
+    document = countersign_sth(sth, trust_store=load_aef_trust(paths["trust"]), key=key)
+    document["log_id"] = [document["log_id"]]
+    paths["cs"].write_text(json.dumps(document), encoding="utf-8")
+    bound = tmp_path / "bound.json"
+    bound.write_text(
+        signature_suite.trust_document(key, log_ids=(str(sth["log_id"]),)), encoding="utf-8"
+    )
+    trust = signature_suite.load_trust(bound)
+    assert verify_countersignature(document, sth, trust=trust).verdict is CountersignVerdict.INVALID
+    code, out, _err = _run(
+        capsys,
+        *_verify(paths, "--countersignature", str(paths["cs"]), "--countersign-trust", str(bound)),
+    )
+    assert code == 0 and "countersignature INVALID" in out
+
+
+def test_without_ml_dsa_a_countersignature_is_an_error_not_invalid(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A verifier that cannot run ML-DSA must not call a genuine countersignature forged."""
+    paths = _log(tmp_path, capsys)
+    sth = _json(paths["sth"])
+    key = signature_suite.load_key(paths["key"], suite=SUITE_HYBRID)
+    document = countersign_sth(sth, trust_store=load_aef_trust(paths["trust"]), key=key)
+    paths["cs"].write_text(json.dumps(document), encoding="utf-8")
+    trust = signature_suite.load_trust(paths["pq_trust"])
+    monkeypatch.setattr(signature_suite, "ML_DSA_AVAILABLE", False)
+    with pytest.raises(signature_suite.SignatureSuiteError, match="needs ML-DSA-65"):
+        verify_countersignature(document, sth, trust=trust)
+    argv = _verify(
+        paths, "--countersignature", str(paths["cs"]), "--countersign-trust", str(paths["pq_trust"])
+    )
+    code, out, err = _run(capsys, *argv)
+    assert code == 2 and "needs ML-DSA-65" in err and "INVALID" not in out
+
+
+def test_an_oversized_or_deeply_nested_input_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tree heads and countersignatures are read bounded; nesting cannot crash the command."""
+    paths = _log(tmp_path, capsys)
+    nested = tmp_path / "nested.json"
+    nested.write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
+    argv = _verify(
+        paths, "--countersignature", str(nested), "--countersign-trust", str(paths["pq_trust"])
+    )
+    code, _out, err = _run(capsys, *argv)
+    assert code == 2 and "is not UTF-8 JSON" in err
+    monkeypatch.setattr(cli_aef_pq, "MAX_DOCUMENT_BYTES", 64)
+    code, _out, err = _run(
+        capsys,
+        "aef",
+        "countersign",
+        "--sth",
+        str(paths["sth"]),
+        "--trust",
+        str(paths["trust"]),
+        "--key",
+        str(paths["key"]),
+    )
+    assert code == 2 and "exceeds 64 bytes" in err

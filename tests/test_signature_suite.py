@@ -32,6 +32,7 @@ from synapse_channel.core.signature_suite import (
     load_key,
     load_trust,
     preimage,
+    require_available,
     trust_document,
     unb64,
     verify,
@@ -303,3 +304,48 @@ def test_the_composite_label_is_not_a_domain() -> None:
     for suite in (SUITE_ED25519, SUITE_HYBRID):
         with pytest.raises(SignatureSuiteError, match="composite label"):
             preimage(suite, label, b"m")
+
+
+def test_a_domain_longer_than_an_ml_dsa_context_is_refused_for_every_suite() -> None:
+    """255 bytes sign and verify; 256 are refused by name, not by a backend ValueError."""
+    for suite in (SUITE_ED25519, SUITE_HYBRID):
+        key = generate_key(suite)
+        longest = "d" * 255
+        assert verify(suite, key.public_bytes(), longest, b"m", key.sign(longest, b"m"))
+        with pytest.raises(SignatureSuiteError, match="at most 255 bytes"):
+            key.sign("d" * 256, b"m")
+        # A multi-byte character counts in bytes, not characters.
+        with pytest.raises(SignatureSuiteError, match="at most 255 bytes"):
+            preimage(suite, "\u00e9" * 128, b"m")
+
+
+def test_unpadded_base64_is_refused() -> None:
+    assert b64(b"\x01\x02") == "AQI="
+    with pytest.raises(SignatureSuiteError, match="not valid base64|not canonical"):
+        unb64("AQI", "x")
+
+
+def test_a_trust_file_naming_one_key_twice_is_refused(tmp_path: Path) -> None:
+    """A later unbound entry may not widen a key that an earlier entry binds to some logs."""
+    key = generate_key(SUITE_HYBRID)
+    bound = json.loads(trust_document(key, log_ids=("a" * 64,)))
+    unbound = json.loads(trust_document(key))
+    path = tmp_path / "trust.json"
+    path.write_text(
+        json.dumps({"format": bound["format"], "keys": bound["keys"] + unbound["keys"]}),
+        encoding="utf-8",
+    )
+    with pytest.raises(SignatureSuiteError, match="names key .* twice"):
+        load_trust(path)
+
+
+def test_require_available_refuses_an_unknown_or_unavailable_suite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    require_available(SUITE_ED25519)
+    with pytest.raises(SignatureSuiteError, match="unknown signature suite"):
+        require_available("rsa")
+    monkeypatch.setattr(signature_suite, "ML_DSA_AVAILABLE", False)
+    require_available(SUITE_ED25519)
+    with pytest.raises(SignatureSuiteError, match="needs ML-DSA-65"):
+        require_available(SUITE_HYBRID)

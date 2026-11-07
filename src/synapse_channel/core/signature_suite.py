@@ -56,6 +56,8 @@ if TYPE_CHECKING:
 SUITE_ED25519 = "ed25519"
 SUITE_HYBRID = "ed25519+ml-dsa-65/v1"
 SUITES = (SUITE_ED25519, SUITE_HYBRID)
+MAX_DOMAIN_BYTES = 255
+"""The longest domain in UTF-8 bytes; it is the ML-DSA context limit, applied to every suite."""
 """Every suite name this module knows."""
 
 COMPOSITE_LABEL = b"SYNAPSE-COMPOSITE-SIG-v1"
@@ -102,6 +104,17 @@ def _require_suite(suite: str) -> None:
         raise SignatureSuiteError(f"unknown signature suite {suite!r}")
 
 
+def require_available(suite: str) -> None:
+    """Refuse ``suite`` when it is unknown or this backend cannot run it.
+
+    A verifier calls this before checking a signature, so that a missing
+    algorithm is an error, never a signature that merely fails to verify.
+    """
+    _require_suite(suite)
+    if suite == SUITE_HYBRID:
+        _require_ml_dsa()
+
+
 def _text_part(label: str, value: str) -> bytes:
     if "\x00" in value:
         raise SignatureSuiteError(f"a signature {label} may not contain a NUL byte")
@@ -114,10 +127,13 @@ def preimage(suite: str, domain: str, message: bytes) -> bytes:
     Raises
     ------
     SignatureSuiteError
-        For an unknown suite, or a suite name or domain holding a NUL byte.
+        For an unknown suite, a suite name or domain holding a NUL byte, or a
+        domain longer than the 255 bytes an ML-DSA context may hold.
     """
     _require_suite(suite)
     domain_bytes = _text_part("domain", domain)
+    if len(domain_bytes) > MAX_DOMAIN_BYTES:
+        raise SignatureSuiteError(f"a signature domain is at most {MAX_DOMAIN_BYTES} bytes")
     if domain_bytes == COMPOSITE_LABEL:
         # An Ed25519 preimage under this domain would begin like a composite one.
         raise SignatureSuiteError("the composite label may not be used as a domain")
@@ -240,7 +256,7 @@ def b64(data: bytes) -> str:
 
 
 def unb64(text: object, label: str) -> bytes:
-    """Decode canonical unpadded-or-padded URL-safe base64, refusing anything else."""
+    """Decode canonical padded URL-safe base64, as :func:`b64` writes it; refuse anything else."""
     if not isinstance(text, str):
         raise SignatureSuiteError(f"{label} must be base64 text")
     try:
@@ -349,7 +365,12 @@ def load_trust(path: str | Path) -> dict[str, TrustedKey]:
             raise SignatureSuiteError("a trust file key names no suite")
         _require_suite(suite)
         public = unb64(entry.get("public_key"), "public_key")
-        if entry.get("key_id") != receipt_key_id(public):
+        key_id = receipt_key_id(public)
+        if entry.get("key_id") != key_id:
             raise SignatureSuiteError("a trust file key id is not derived from its public key")
-        trust[receipt_key_id(public)] = TrustedKey(suite, public, _log_ids(entry))
+        if key_id in trust:
+            # A second entry would silently replace the first, for example
+            # widening a key bound to some logs to every log.
+            raise SignatureSuiteError(f"the trust file names key {key_id} twice")
+        trust[key_id] = TrustedKey(suite, public, _log_ids(entry))
     return trust

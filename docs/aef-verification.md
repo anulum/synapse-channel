@@ -185,7 +185,8 @@ synapse aef verify hub-a.receipts.jsonl --trust hub-a.aef-trust.json --sth sth.j
   ML-DSA-65 (suite `ed25519+ml-dsa-65/v1`), and a trust file naming its public
   key. Commands read the key only from an owner-only file. With `--log-id`
   (repeatable), the trust file binds the key to those logs, and a
-  countersignature of any other log is `UNTRUSTED`.
+  countersignature of any other log is `UNTRUSTED`. A trust file that names
+  the same key twice is refused, so a later entry cannot widen a binding.
 - **Countersigning.** `countersign` first verifies the head under the log's
   AEF trust file, and refuses one that does not verify. It then signs a
   document `aef-sth-countersignature` `0.1` with the hybrid key. The document
@@ -194,7 +195,8 @@ synapse aef verify hub-a.receipts.jsonl --trust hub-a.aef-trust.json --sth sth.j
 - **Verdicts.** `verify --countersignature` (repeatable) matches each
   countersignature to the `--sth` head it names. The first check that fails
   gives the verdict:
-  1. `INVALID`: the document is malformed.
+  1. `INVALID`: the document is malformed, including a `log_id`, `root` or
+     digest that is not text, or a `tree_size` that is not an integer.
   2. `UNTRUSTED`: its key is not a hybrid key of `--countersign-trust`.
   3. `INVALID`: its signature fails.
   4. `MISMATCH`: it binds another head. A head that differs only in its own
@@ -203,7 +205,11 @@ synapse aef verify hub-a.receipts.jsonl --trust hub-a.aef-trust.json --sth sth.j
 - **Exit status.** Each countersignature is reported with its head's verdict.
   `--require-countersignature` fails the command unless every countersignature
   is `VALID` **and** its head is `STH_COMPLETE` for the export. It needs at
-  least one `--countersignature`, as `--require-sth` needs a `--sth`.
+  least one `--countersignature`, as `--require-sth` needs a `--sth`. A
+  verifier whose `cryptography` backend lacks ML-DSA exits `2` with an error
+  naming the missing algorithm; it never reports a genuine countersignature
+  as `INVALID`. Head and countersignature files over 1 MiB, or nested too
+  deeply to parse, are refused with exit `2`.
 - **What it proves.** After a break of Ed25519, the authenticity of the
   receipts up to `tree_size` rests on two things: the export matching the
   countersigned root, and the post-quantum countersignature. It does not rest

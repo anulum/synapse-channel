@@ -36,6 +36,9 @@ ML-DSA-65 also takes the domain as its FIPS 204 context.
   suite name, so it is never a valid signature over the plain domain
   preimage of a single-algorithm suite. The label itself is refused as a
   domain, so no Ed25519 preimage can begin like a composite one.
+- **A domain is at most 255 bytes** of UTF-8, the ML-DSA context limit. The
+  limit applies to every suite, so a domain valid for one suite is valid for
+  all.
 - **Keys stay in their suite.** A key file names its suite, and loading it for
   any other suite is refused.
 - **The version is in the name.** Changing the encoding, for example to the
@@ -44,7 +47,8 @@ ML-DSA-65 also takes the domain as its FIPS 204 context.
 - **ML-DSA must be available.** It comes from the installed `cryptography`
   backend. Synapse probes for it at import, and a backend without it leaves
   every other command working. Only selecting the hybrid suite is refused,
-  and the refusal names the missing algorithm.
+  and the refusal names the missing algorithm. Verifying a hybrid signature
+  without ML-DSA is that refusal too, never a signature that fails to verify.
 
 The vectors are in `tests/fixtures/signature_suite_v0_1.json`, checked with
 `tools/signature_suite_vectors.py --check`. ML-DSA signing is hedged, so the

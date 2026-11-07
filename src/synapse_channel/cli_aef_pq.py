@@ -75,9 +75,20 @@ def _cmd_pq_key_new(args: argparse.Namespace) -> int:
     return 0
 
 
+MAX_DOCUMENT_BYTES = 1 << 20
+"""The largest tree head or countersignature file read, far above either's real size."""
+
+
 def _read_object(path: str) -> dict[str, Any]:
-    with open(path, encoding="utf-8") as handle:
-        document = json.load(handle)
+    """Read one bounded JSON object; refuse oversized, malformed or deeply nested input."""
+    with open(path, "rb") as handle:
+        raw = handle.read(MAX_DOCUMENT_BYTES + 1)
+    if len(raw) > MAX_DOCUMENT_BYTES:
+        raise ValueError(f"{path} exceeds {MAX_DOCUMENT_BYTES} bytes")
+    try:
+        document = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        raise ValueError(f"{path} is not UTF-8 JSON") from None
     if not isinstance(document, dict):
         raise ValueError(f"{path} is not a JSON object")
     return document
