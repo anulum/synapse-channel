@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -77,7 +78,7 @@ def rewrite_retained_observation(
     reference = evidence.write(encoded)
     body = {**record.response, "evidence_reference": dict(reference)}
     replacements: dict[str, str] = {}
-    with sqlite3.connect(tmp_path / "completed.db") as database:
+    with closing(sqlite3.connect(tmp_path / "completed.db")) as database, database:
         rows = database.execute(
             "SELECT operation_key,response_json,response_sha256,first_event_seq,commit_seq "
             "FROM operations ORDER BY first_event_seq"

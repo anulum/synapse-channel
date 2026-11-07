@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -141,7 +142,7 @@ def test_two_cli_processes_respect_one_held_target_lock(tmp_path: Path) -> None:
 def test_corrupt_journal_refuses_target_mutation(tmp_path: Path, damage: str) -> None:
     """Changed or malformed ownership records remain unusable even with valid markers."""
     target, journal, _following = prepared(tmp_path)
-    with sqlite3.connect(journal) as connection:
+    with closing(sqlite3.connect(journal)) as connection, connection:
         row = connection.execute("SELECT document FROM custody WHERE id=1").fetchone()
         assert row is not None
         raw = str(row[0])
@@ -191,7 +192,7 @@ def test_unrecorded_stage_requires_inspection(tmp_path: Path) -> None:
 def test_incomplete_native_database_is_refused(tmp_path: Path, damage: str) -> None:
     """An incomplete database never silently initializes over prior ownership."""
     target, journal, _following = prepared(tmp_path)
-    with sqlite3.connect(journal) as connection:
+    with closing(sqlite3.connect(journal)) as connection, connection:
         if damage == "unsupported-version":
             connection.execute("PRAGMA user_version=0")
         elif damage == "missing-row":

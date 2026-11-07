@@ -43,7 +43,7 @@ def test_snapshot_excludes_concurrent_append_and_closes_on_early_exit(tmp_path: 
         assert [row.event.seq for row in iter_record_source(path)] == [1, 2, 3]
         with contextlib.closing(iter_record_source(path)) as early:
             assert next(early).event.seq == 1
-        with sqlite3.connect(path) as checkpoint:
+        with contextlib.closing(sqlite3.connect(path)) as checkpoint, checkpoint:
             assert checkpoint.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone() == (0, 0, 0)
         store.append("release", {"task_id": "T"}, ts=40)
         assert len(list(iter_record_source(path))) == 4
@@ -53,7 +53,7 @@ def test_snapshot_excludes_concurrent_append_and_closes_on_early_exit(tmp_path: 
 
 def test_existing_legacy_schema_is_not_migrated_or_chmodded(tmp_path: Path) -> None:
     path = tmp_path / "legacy.db"
-    with sqlite3.connect(path) as connection:
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(
             "CREATE TABLE events (seq INTEGER PRIMARY KEY, ts REAL, kind TEXT, payload TEXT)"
         )
@@ -64,7 +64,7 @@ def test_existing_legacy_schema_is_not_migrated_or_chmodded(tmp_path: Path) -> N
     assert hashlib.sha256(path.read_bytes()).hexdigest() == before
     assert path.stat().st_mode == mode
     assert not row_mac_key_path(path).exists()
-    with sqlite3.connect(path) as connection:
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         assert [row[1] for row in connection.execute("PRAGMA table_info(events)")] == [
             "seq",
             "ts",
@@ -88,15 +88,15 @@ def test_row_authentication_distinguishes_legacy_prefix_and_refuses_tampering(
         assert [row.authenticated for row in iter_record_source(path, row_mac=key)] == [False, True]
         with pytest.raises(ValueError, match="requires its existing row key"):
             list(iter_record_source(path, through_seq=0))
-        with sqlite3.connect(path) as connection:
+        with contextlib.closing(sqlite3.connect(path)) as connection, connection:
             connection.execute("UPDATE events SET payload='{}' WHERE seq=2")
         with pytest.raises(ValueError, match="authentication failed"):
             list(iter_record_source(path, row_mac=key))
-        with sqlite3.connect(path) as connection:
+        with contextlib.closing(sqlite3.connect(path)) as connection, connection:
             connection.execute("UPDATE events SET mac='😃' WHERE seq=2")
         with pytest.raises(ValueError, match="authentication failed"):
             list(iter_record_source(path, row_mac=key))
-        with sqlite3.connect(path) as connection:
+        with contextlib.closing(sqlite3.connect(path)) as connection, connection:
             connection.execute("UPDATE events SET mac=NULL WHERE seq=2")
         with pytest.raises(ValueError, match="authentication failed"):
             list(iter_record_source(path, row_mac=key))
@@ -132,7 +132,7 @@ def test_invalid_persisted_row_refuses_whole_read(
     store.append("claim", {"task_id": "T"}, ts=1)
     store.close()
     assert field in {"seq", "ts", "kind", "payload"}
-    with sqlite3.connect(path) as connection:
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         if value is None:
             connection.execute("ALTER TABLE events RENAME TO original_events")
             connection.execute(
@@ -187,12 +187,12 @@ def test_missing_unreadable_and_incompatible_journals_stay_unchanged(tmp_path: P
         list(iter_record_source(missing))
     assert not missing.exists()
     incompatible = tmp_path / "schema.db"
-    with sqlite3.connect(incompatible) as connection:
+    with contextlib.closing(sqlite3.connect(incompatible)) as connection, connection:
         connection.execute("CREATE TABLE events (seq TEXT, ts REAL, kind TEXT, payload TEXT)")
     with pytest.raises(ValueError, match="schema"):
         list(iter_record_source(incompatible))
     composite = tmp_path / "composite.db"
-    with sqlite3.connect(composite) as connection:
+    with contextlib.closing(sqlite3.connect(composite)) as connection, connection:
         connection.execute(
             "CREATE TABLE events (seq INTEGER, ts REAL, kind TEXT, payload TEXT, "
             "PRIMARY KEY (seq, kind))"

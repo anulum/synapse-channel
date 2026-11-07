@@ -14,6 +14,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -125,7 +126,7 @@ def test_authenticated_cli_refuses_nonascii_mac_and_oversized_deep_json_without_
     store.enable_row_mac(key)
     store.append("claim", {"task_id": "T"}, ts=1)
     store.close()
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE events SET mac='😃'")
     assert cli.main(["compliance", "export", str(path), "--row-mac-key-file", str(key_path)]) == 2
     assert "Record observation refused" in capsys.readouterr().err
@@ -134,7 +135,7 @@ def test_authenticated_cli_refuses_nonascii_mac_and_oversized_deep_json_without_
     store.append("claim", {"task_id": "T"}, ts=1)
     store.close()
     encoded = '{"x":' * 2000 + "0" + "}" * 2000
-    with sqlite3.connect(deep) as connection:
+    with closing(sqlite3.connect(deep)) as connection, connection:
         connection.execute("UPDATE events SET payload=?", (encoded,))
     child = subprocess.run(
         [

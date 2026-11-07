@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -177,7 +178,7 @@ def test_replay_refuses_malformed_internal_metadata(tmp_path: Path, case: str) -
     else:
         payload["admitted_at"] = "not-a-clock"
     store.close()
-    with sqlite3.connect(tmp_path / "admission-replay.db") as connection:
+    with closing(sqlite3.connect(tmp_path / "admission-replay.db")) as connection, connection:
         connection.execute("UPDATE events SET payload = ? WHERE seq = 2", (json.dumps(payload),))
     reopened = EventStore(tmp_path / "admission-replay.db")
     with pytest.raises(ValueError):
@@ -211,7 +212,7 @@ def test_replay_requires_exact_operation_and_commit_evidence(tmp_path: Path, cas
         "marker-changed": "UPDATE events SET payload = '{}' WHERE seq = 3",
         "claim-missing": "DELETE FROM events WHERE seq = 1",
     }
-    with sqlite3.connect(tmp_path / "admission-replay.db") as connection:
+    with closing(sqlite3.connect(tmp_path / "admission-replay.db")) as connection, connection:
         connection.execute(commands[case])
     reopened = EventStore(tmp_path / "admission-replay.db")
     with pytest.raises(ValueError):

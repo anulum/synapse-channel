@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -367,7 +368,7 @@ def test_attention_store_path_and_version_are_explicit(
     assert default_attention_store().is_absolute()
     queue = tmp_path / "private" / "queue.db"
     queue_view(queue, now=100)
-    with sqlite3.connect(queue) as db:
+    with closing(sqlite3.connect(queue)) as db, db:
         db.execute("PRAGMA user_version=99")
     with pytest.raises(AttentionStoreError, match="unsupported attention store version"):
         queue_view(queue, now=100)

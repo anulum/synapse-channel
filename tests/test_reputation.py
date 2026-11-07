@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -124,7 +125,7 @@ def test_authenticated_reader_requires_existing_key_and_refuses_tamper(tmp_path:
     with pytest.raises(ValueError):
         run_reputation(path, row_mac_key_file=missing)
     assert not missing.exists()
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn, conn:
         conn.execute("UPDATE events SET payload='{}' WHERE seq=2")
     with pytest.raises(ValueError, match="authentication"):
         run_reputation(path, row_mac_key_file=key_path)

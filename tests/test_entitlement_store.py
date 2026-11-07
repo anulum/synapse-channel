@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -53,11 +54,11 @@ def test_private_durable_record_and_duplicate_replay(tmp_path: Path) -> None:
 def test_version_mismatch_and_unversioned_file_fail_closed(tmp_path: Path) -> None:
     path = tmp_path / "private" / "ledger.sqlite3"
     append_event(path, _account())
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("PRAGMA user_version=2")
     with pytest.raises(EntitlementStoreError, match="unsupported.*version"):
         read_events(path)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("PRAGMA user_version=0")
     with pytest.raises(EntitlementStoreError, match="unversioned"):
         read_events(path)
@@ -66,7 +67,7 @@ def test_version_mismatch_and_unversioned_file_fail_closed(tmp_path: Path) -> No
 def test_corrupt_record_and_restricted_path_fail_closed(tmp_path: Path) -> None:
     path = tmp_path / "private" / "ledger.sqlite3"
     append_event(path, _account())
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE events SET payload='not-json'")
     with pytest.raises(EntitlementStoreError, match="corrupt"):
         read_events(path)
@@ -132,7 +133,7 @@ def test_default_store_is_private_and_independent_of_shared_syn_home(
 def test_corrupt_domain_record_cannot_be_replayed_as_valid(tmp_path: Path) -> None:
     path = tmp_path / "private" / "ledger.sqlite3"
     append_event(path, _account())
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE events SET payload='{}'")
     with pytest.raises(EntitlementStoreError, match="stored entitlement event is invalid"):
         append_event(path, _account())
@@ -141,11 +142,11 @@ def test_corrupt_domain_record_cannot_be_replayed_as_valid(tmp_path: Path) -> No
 def test_non_object_record_and_missing_table_fail_closed(tmp_path: Path) -> None:
     path = tmp_path / "private" / "ledger.sqlite3"
     append_event(path, _account())
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE events SET payload='42'")
     with pytest.raises(EntitlementStoreError, match="JSON object"):
         read_events(path)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("DROP TABLE events")
     with pytest.raises(EntitlementStoreError, match="cannot append"):
         append_event(path, _account())

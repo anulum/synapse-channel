@@ -14,6 +14,7 @@ import sqlite3
 import subprocess
 import sys
 from collections.abc import Callable, Mapping
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -377,7 +378,7 @@ def test_digest_valid_but_wrong_observation_is_not_accepted(
         "response_sha256": digest,
         "response": body,
     }
-    with sqlite3.connect(tmp_path / "completed.db") as database:
+    with closing(sqlite3.connect(tmp_path / "completed.db")) as database, database:
         database.execute(
             "UPDATE operations SET response_json=?, response_sha256=?, request_digest=? "
             "WHERE operation_key=?",

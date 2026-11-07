@@ -205,7 +205,7 @@ def test_causal_authored_refusals_preserve_status_and_exact_text(
 def test_invalid_journal_json_remains_quarantined_in_http_and_live_frames(tmp_path: Path) -> None:
     db = tmp_path / "hub.db"
     _seed(db)
-    with sqlite3.connect(db) as connection:
+    with contextlib.closing(sqlite3.connect(db)) as connection, connection:
         connection.execute("UPDATE events SET payload = ? WHERE seq = 1", ("{PRIVATE-ROW-CANARY",))
     digest = hashlib.sha256(db.read_bytes()).hexdigest()
     server = _feeds_server(reliability_db=db)

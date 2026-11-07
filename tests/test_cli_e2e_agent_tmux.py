@@ -29,7 +29,7 @@ import sys
 import time
 import uuid
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -1103,7 +1103,7 @@ def test_a_wake_for_a_lost_pane_is_not_injected_and_stays_in_the_hub(tmp_path: P
             assert not submissions.exists()
         finally:
             _release(bridge)
-        with sqlite3.connect(f"file:{hub.db_path}?mode=ro", uri=True) as journal:
+        with closing(sqlite3.connect(f"file:{hub.db_path}?mode=ro", uri=True)) as journal, journal:
             payloads = [
                 json.loads(row[0])
                 for row in journal.execute("SELECT payload FROM events WHERE kind = 'chat'")

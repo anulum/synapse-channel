@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -146,7 +147,7 @@ def test_stored_rows_project_a_legal_stage_and_refuse_a_malformed_frame(tmp_path
     with EventStore(path) as store:
         key = _queued(store)
         notification_id = f"delivery:{key}:1"
-        with sqlite3.connect(path) as edited:
+        with closing(sqlite3.connect(path)) as edited, edited:
             edited.execute(
                 "UPDATE delivery_requests SET stage = 'accepted' WHERE operation_key = ?", (key,)
             )

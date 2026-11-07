@@ -13,6 +13,7 @@ import hashlib
 import os
 import sqlite3
 import subprocess
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -325,13 +326,13 @@ def test_store_refuses_a_symlink_a_foreign_version_and_a_non_database(tmp_path: 
     assert not target.exists()
 
     newer = directory / "newer.sqlite3"
-    with sqlite3.connect(newer) as db:
+    with closing(sqlite3.connect(newer)) as db, db:
         db.execute("PRAGMA user_version=5")
     db.close()
     os.chmod(newer, 0o600)
     with pytest.raises(ReviewFeedbackError, match="unsupported review store version 5"):
         list_findings(newer)
-    with sqlite3.connect(newer) as db:
+    with closing(sqlite3.connect(newer)) as db, db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 5
     db.close()
 
@@ -363,7 +364,7 @@ def test_store_refuses_a_damaged_database(tmp_path: Path) -> None:
     assert save_finding(
         db_path, finding, webhook_body=body, webhook_signature="sha256=" + "a" * 64, observed_at=1
     )
-    with sqlite3.connect(db_path) as db:
+    with closing(sqlite3.connect(db_path)) as db, db:
         page_size = int(db.execute("PRAGMA page_size").fetchone()[0])
         pages = int(db.execute("PRAGMA page_count").fetchone()[0])
     db.close()

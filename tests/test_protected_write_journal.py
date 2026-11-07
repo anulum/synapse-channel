@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -41,7 +42,7 @@ def test_commit_marker_preserves_exact_numeric_types(tmp_path: Path) -> None:
     assert marker is not None
     payload = marker.payload
     payload["response"]["body"]["admission_sequence"] = 2.0
-    with sqlite3.connect(tmp_path / "admission-replay.db") as connection:
+    with closing(sqlite3.connect(tmp_path / "admission-replay.db")) as connection, connection:
         connection.execute("UPDATE events SET payload = ? WHERE seq = 3", (json.dumps(payload),))
     request, _ = _result("admit")
     with pytest.raises(ValueError, match="commit marker mismatch"):

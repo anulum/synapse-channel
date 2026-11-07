@@ -259,7 +259,7 @@ async def test_authenticated_mtls_peer_equivocation_still_fails_closed(
         # Model a compromised or rolled-back authenticated peer by rewriting its
         # temporary test journal, then pull the hostile old identity through the
         # same real mTLS serving path. Production code performs no such mutation.
-        with sqlite3.connect(tmp_path / "events.db") as connection:
+        with contextlib.closing(sqlite3.connect(tmp_path / "events.db")) as connection, connection:
             connection.execute(
                 "UPDATE events SET payload = ? WHERE seq = 1",
                 (json.dumps({"sender": "local-writer", "payload": "equivocated"}),),

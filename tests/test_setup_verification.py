@@ -12,6 +12,7 @@ import json
 import sqlite3
 import sys
 from collections.abc import Callable
+from contextlib import closing
 from pathlib import Path
 from typing import cast
 
@@ -431,7 +432,10 @@ def test_default_ledger_directory_and_single_use_transitions(tmp_path: Path) -> 
             ledger.finish("missing", outcome="other", receipt_digest="b" * 64)
     assert stat_mode(ledger_dir) == 0o700
     assert stat_mode(ledger_dir / "setup-verification-v1.sqlite3") == 0o600
-    with sqlite3.connect(ledger_dir / "setup-verification-v1.sqlite3") as connection:
+    with (
+        closing(sqlite3.connect(ledger_dir / "setup-verification-v1.sqlite3")) as connection,
+        connection,
+    ):
         (nonce_digest,) = connection.execute(
             "SELECT nonce_digest FROM verification_authorizations"
         ).fetchone()
@@ -643,7 +647,10 @@ def test_ledger_database_operation_errors_are_bounded(tmp_path: Path) -> None:
     )
     reserve_dir = tmp_path / "reserve"
     with SetupVerificationLedger(reserve_dir) as ledger:
-        with sqlite3.connect(reserve_dir / "setup-verification-v1.sqlite3") as connection:
+        with (
+            closing(sqlite3.connect(reserve_dir / "setup-verification-v1.sqlite3")) as connection,
+            connection,
+        ):
             connection.execute("DROP TABLE verification_authorizations")
         with pytest.raises(SetupVerificationError, match="verification_ledger_unavailable"):
             ledger.reserve(verification_plan, verification_authorization, now=201)
@@ -651,7 +658,10 @@ def test_ledger_database_operation_errors_are_bounded(tmp_path: Path) -> None:
     finish_dir = tmp_path / "finish"
     with SetupVerificationLedger(finish_dir) as ledger:
         ledger.reserve(verification_plan, verification_authorization, now=201)
-        with sqlite3.connect(finish_dir / "setup-verification-v1.sqlite3") as connection:
+        with (
+            closing(sqlite3.connect(finish_dir / "setup-verification-v1.sqlite3")) as connection,
+            connection,
+        ):
             connection.execute("DROP TABLE verification_authorizations")
         with pytest.raises(SetupVerificationError, match="verification_ledger_unavailable"):
             ledger.finish(

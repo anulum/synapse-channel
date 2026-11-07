@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -79,7 +80,7 @@ async def test_lost_task_confirmation_is_unknown_without_repeating_a_write(
                 assert trace.replies.count(reply_type) == 1
                 assert trace.connections == 1
                 assert "write-author" not in hub.clients.agent_sockets
-            with sqlite3.connect(tmp_path / "hub.db") as db:
+            with closing(sqlite3.connect(tmp_path / "hub.db")) as db, db:
                 committed = db.execute("SELECT count(*) FROM operations").fetchone()[0]
             assert committed == 1
             assert result.returncode == 1, result.output

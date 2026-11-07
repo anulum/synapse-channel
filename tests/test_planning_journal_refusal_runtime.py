@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Literal
 
@@ -71,7 +72,7 @@ async def test_plan_storage_refusal_is_private_atomic_and_recoverable(
                 before_events = store.read_all()
                 before_operations = store.read_operations()
                 observer_start = len(observer.recorder.messages)
-                with sqlite3.connect(path) as connection:
+                with closing(sqlite3.connect(path)) as connection, connection:
                     connection.execute(
                         "CREATE TRIGGER refuse_plan BEFORE INSERT ON events "
                         "WHEN NEW.kind IN ('ledger_task', 'ledger_progress') "
@@ -100,7 +101,7 @@ async def test_plan_storage_refusal_is_private_atomic_and_recoverable(
                 assert not any(message.get("type") == "error" for message in failed_stream)
                 assert _PRIVATE_DIAGNOSTIC not in json.dumps(failed_stream)
 
-                with sqlite3.connect(path) as connection:
+                with closing(sqlite3.connect(path)) as connection, connection:
                     connection.execute("DROP TRIGGER refuse_plan")
                 observer.recorder.messages.clear()
                 poster.recorder.messages.clear()

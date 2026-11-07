@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -82,7 +83,7 @@ def test_damaged_event_index_fails_the_integrity_check(tmp_path: Path) -> None:
     path = tmp_path / "home" / "ledger" / "ledger.sqlite3"
     for index in range(3):
         assert append_event(path, _account(index))
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         page_size = connection.execute("PRAGMA page_size").fetchone()[0]
         (root,) = connection.execute(
             "SELECT rootpage FROM sqlite_master WHERE name = 'sqlite_autoindex_events_1'"

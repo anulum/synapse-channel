@@ -8,18 +8,56 @@
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import importlib.util
 import logging
 import os
+import sqlite3
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
+from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.persistence import EventStore
+
 _HANG_IDENTITY_NAME = "synapse_pytest_hang_identity"
 _HANG_IDENTITY_PLUGIN = Path(__file__).resolve().parents[1] / "tools" / "pytest_hang_identity.py"
+_TESTS_DIR = str(Path(__file__).resolve().parent) + os.sep
+_TEST_OWNED: list[SynapseHub | EventStore] = []
+"""Hubs and event stores a test constructed itself, in creation order."""
+
+
+def _release_errors() -> tuple[type[BaseException], ...]:
+    """Return the errors a late close may raise: a still-bound hub or a closed database."""
+    errors: list[type[BaseException]] = [RuntimeError, sqlite3.Error]
+    with contextlib.suppress(ImportError):
+        from sqlcipher3 import dbapi2  # optional encrypted-store driver
+
+        errors.append(dbapi2.Error)
+    return tuple(errors)
+
+
+def _record_test_owned(init: Callable[..., None]) -> Callable[..., None]:
+    """Wrap ``__init__`` so an instance built directly by test code is remembered.
+
+    Only the frame that called the constructor is inspected. An object that
+    product code builds (even while a test is running) is not recorded, so a
+    leak in ``src`` still surfaces as a ResourceWarning.
+    """
+
+    @functools.wraps(init)
+    def wrapped(self: SynapseHub | EventStore, *args: Any, **kwargs: Any) -> None:
+        init(self, *args, **kwargs)
+        caller = sys._getframe(1).f_code.co_filename
+        if caller.startswith(_TESTS_DIR):
+            _TEST_OWNED.append(self)
+
+    return wrapped
 
 
 def _hang_identity_module() -> ModuleType:
@@ -91,3 +129,39 @@ def _restore_synapse_logger() -> Iterator[None]:
         logger.handlers[:] = saved_handlers
         logger.setLevel(saved_level)
         logger.propagate = saved_propagate
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _track_test_owned_stores() -> Iterator[None]:
+    """Record the hubs and event stores test code constructs, for the whole session."""
+    patcher = pytest.MonkeyPatch()
+    for owned_type in (SynapseHub, EventStore):
+        patcher.setattr(owned_type, "__init__", _record_test_owned(owned_type.__init__))
+    try:
+        yield
+    finally:
+        patcher.undo()
+
+
+@pytest.fixture(autouse=True)
+def _release_test_owned_stores() -> Iterator[None]:
+    """Close the hubs and event stores a test built itself and left open.
+
+    Python 3.13 reports an unclosed SQLite connection when the garbage collector
+    reaches it, which is usually during a later, unrelated test. Releasing test-
+    owned objects at the end of the test that made them keeps that report out of
+    other tests. Hubs close first: a hub anchors its checkpoint against its
+    journal while closing.
+    """
+    _TEST_OWNED.clear()
+    try:
+        yield
+    finally:
+        owned = _TEST_OWNED[:]
+        _TEST_OWNED.clear()
+        hubs = [item for item in owned if isinstance(item, SynapseHub)]
+        stores = [item for item in owned if isinstance(item, EventStore)]
+        releasable: list[SynapseHub | EventStore] = [*hubs, *stores]
+        for item in releasable:
+            with contextlib.suppress(*_release_errors()):
+                item.close()

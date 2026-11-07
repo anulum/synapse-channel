@@ -13,6 +13,7 @@ import asyncio
 import json
 import shlex
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -637,7 +638,7 @@ async def test_corrupt_durable_proof_never_confirms_or_leaks_storage_details(
                 assert recovered.ok(), recovered.output
                 assert "historical operation; no mutation replay" in recovered.stdout
                 assert sum(row.kind == "release" for row in journal.iter_events()) == 1
-                with sqlite3.connect(db) as conn:
+                with closing(sqlite3.connect(db)) as conn, conn:
                     if damage == "missing_operations_table":
                         conn.execute("DROP TABLE operations")
                     elif damage in {"release_witness", "commit_witness"}:

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -140,7 +141,7 @@ def test_verified_result_manual_correction_and_expiry(tmp_path: Path) -> None:
     attach_event = next(event for event in history(store, "done") if event["action"] == "attach")
     assert attach_event["detail"]["actor"] == "operator:cli"
     assert len(attach_event["detail"]["sha256"]) == 64
-    with sqlite3.connect(store) as db:
+    with closing(sqlite3.connect(store)) as db, db:
         assert [r[0] for r in db.execute("SELECT action FROM events WHERE task_id='done'")] == [
             "offer",
             "accept",
@@ -173,7 +174,7 @@ def test_store_refuses_symlink_and_wrong_version(tmp_path: Path) -> None:
     alias.symlink_to(store)
     with pytest.raises(AppTaskError, match="symlink"):
         get(alias, "safe", now=at)
-    with sqlite3.connect(store) as db:
+    with closing(sqlite3.connect(store)) as db, db:
         db.execute("PRAGMA user_version=3")
     with pytest.raises(AppTaskError, match="unsupported"):
         get(store, "safe", now=at)
@@ -212,11 +213,11 @@ def test_v1_task_store_migrates_with_legacy_operator_custody(tmp_path: Path) -> 
     _ledger(ledger, at)
     store = tmp_path / "queue" / "queue.sqlite3"
     offer(store, _bundle("legacy", at), ledger=ledger, now=at)
-    with sqlite3.connect(store) as db:
+    with closing(sqlite3.connect(store)) as db, db:
         db.execute("ALTER TABLE tasks DROP COLUMN offered_by")
         db.execute("PRAGMA user_version=1")
     assert get(store, "legacy", now=at)["offered_by"] == "operator:legacy"
-    with sqlite3.connect(store) as db:
+    with closing(sqlite3.connect(store)) as db, db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
@@ -235,7 +236,7 @@ def test_offer_refuses_missing_allowance_and_expired_bundle(tmp_path: Path) -> N
         offer(store, _bundle("missing-ledger", at), ledger=tmp_path / "absent.db", now=at)
     with pytest.raises(AppTaskError, match="already expired"):
         offer(store, _bundle("expired", at, seconds=-1), now=at)
-    with sqlite3.connect(store) as db:
+    with closing(sqlite3.connect(store)) as db, db:
         assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
 
 
@@ -246,7 +247,7 @@ def test_offer_refuses_corrupt_allowance_ledger_without_accepting_work(tmp_path:
     store = tmp_path / "queue.db"
     with pytest.raises(AppTaskError, match="allowance ledger unavailable"):
         offer(store, _bundle("corrupt-ledger", at), ledger=ledger, now=at)
-    with sqlite3.connect(store) as db:
+    with closing(sqlite3.connect(store)) as db, db:
         assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
 
 
@@ -349,7 +350,7 @@ def test_offer_refuses_an_unknown_or_closed_allowance_window(tmp_path: Path) -> 
     later = at + timedelta(days=2)
     with pytest.raises(AppTaskError, match="^allowance window is not currently usable$"):
         offer(store, _bundle("closed", later), ledger=ledger, now=later)
-    with sqlite3.connect(store) as db:
+    with closing(sqlite3.connect(store)) as db, db:
         assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
 
 
@@ -378,7 +379,7 @@ def test_store_refuses_foreign_bytes_and_a_failed_integrity_check(tmp_path: Path
     store = tmp_path / "queue" / "queue.sqlite3"
     for index in range(3):
         offer(store, _bundle(f"task-{index}", at), ledger=ledger, now=at)
-    with sqlite3.connect(store) as db:
+    with closing(sqlite3.connect(store)) as db, db:
         page_size = db.execute("PRAGMA page_size").fetchone()[0]
         (root,) = db.execute(
             "SELECT rootpage FROM sqlite_master WHERE name = 'sqlite_autoindex_tasks_1'"
@@ -401,7 +402,7 @@ def test_expiry_refuses_a_task_that_vanishes_inside_the_transition(tmp_path: Pat
     _ledger(ledger, at)
     store = tmp_path / "queue" / "queue.sqlite3"
     offer(store, _bundle("vanishing", at, seconds=60), ledger=ledger, now=at)
-    with sqlite3.connect(store) as db:
+    with closing(sqlite3.connect(store)) as db, db:
         db.execute(
             "CREATE TRIGGER vanish AFTER INSERT ON events WHEN NEW.action = 'expire' BEGIN "
             "DELETE FROM events WHERE task_id = NEW.task_id; "
@@ -410,7 +411,7 @@ def test_expiry_refuses_a_task_that_vanishes_inside_the_transition(tmp_path: Pat
     db.close()
     with pytest.raises(AppTaskError, match="^task disappeared during expiry transition$"):
         get(store, "vanishing", now=at + timedelta(minutes=5))
-    with sqlite3.connect(store) as db:
+    with closing(sqlite3.connect(store)) as db, db:
         assert db.execute("SELECT state FROM tasks WHERE task_id = 'vanishing'").fetchone() == (
             "offered",
         )

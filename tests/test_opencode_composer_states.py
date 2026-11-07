@@ -14,6 +14,7 @@ import sqlite3
 import threading
 import urllib.error
 import urllib.request
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -107,7 +108,10 @@ def test_file_picker_and_typed_attachment_survive_a_refused_wake(tmp_path: Path)
         native.wait_requests(2)
         database = tmp_path / "home/.local/share/opencode/opencode.db"
         assert database.is_file()
-        with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        with (
+            closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as connection,
+            connection,
+        ):
             parts = [json.loads(row[0]) for row in connection.execute("SELECT data FROM part")]
         files = [part for part in parts if part.get("type") == "file"]
         assert len(files) == 1, parts

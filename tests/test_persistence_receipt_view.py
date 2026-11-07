@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -106,12 +107,12 @@ def test_absent_and_unknown_sources_remain_unavailable_and_unmodified(tmp_path: 
     assert read_delivery_receipt(absent, 1) is None
     assert not absent.parent.exists()
     path = tmp_path / "legacy.db"
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("CREATE TABLE events (seq INTEGER PRIMARY KEY)")
     before = path.read_bytes()
     assert read_delivery_receipt(path, 1) is None
     assert path.read_bytes() == before
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("DROP TABLE events")
         connection.execute(
             "CREATE TABLE events (seq INTEGER PRIMARY KEY, ts REAL, kind TEXT, payload TEXT)"
@@ -156,14 +157,14 @@ def test_old_mac_schema_is_not_migrated_and_owner_upgrade_restores_the_projectio
     path = tmp_path / "old-mac.db"
     with EventStore(path) as store:
         seq = _request(store)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("DROP INDEX event_row_mac_idx")
     before = path.read_bytes()
     assert read_delivery_receipt(path, seq) is None
     assert path.read_bytes() == before
     with EventStore(path):
         assert read_delivery_receipt(path, seq) is not None
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("DROP INDEX event_row_mac_idx")
         connection.execute("ALTER TABLE events DROP COLUMN mac")
     assert read_delivery_receipt(path, seq) is not None
@@ -193,7 +194,7 @@ def test_damaged_or_foreign_receipt_payload_is_unavailable(tmp_path: Path, paylo
     path = tmp_path / "damaged.db"
     with EventStore(path) as store:
         seq = _request(store)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(
             "UPDATE events SET payload = ? WHERE kind = 'delivery_receipt_requested'", (payload,)
         )
@@ -208,7 +209,7 @@ def test_lookalike_schema_without_a_unique_integer_key_is_unavailable(
     path = tmp_path / "lookalike.db"
     with EventStore(path) as store:
         seq = _request(store)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(f"ALTER TABLE {table} RENAME TO backing")
         connection.execute(f"CREATE VIEW {table} AS SELECT * FROM backing")
     assert read_delivery_receipt(path, seq) is None
@@ -234,7 +235,7 @@ def test_damaged_aggregate_and_event_metadata_cannot_establish_delivery(
     path = tmp_path / "metadata.db"
     with EventStore(path) as store:
         seq = _request(store)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(sql, parameters)
     assert read_delivery_receipt(path, seq) is None
 
@@ -254,7 +255,7 @@ def test_impossible_event_verdict_is_unavailable(
     path = tmp_path / "verdict.db"
     with EventStore(path) as store:
         seq = _request(store)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         encoded = connection.execute("SELECT payload FROM events WHERE seq=2").fetchone()[0]
         payload = json.loads(encoded)
         payload["delivered"] = delivered
@@ -278,10 +279,10 @@ def test_enrolled_authentication_requires_and_verifies_the_exact_event_key(tmp_p
         _transition(store, seq, "immediate_delivered")
         delivered = read_delivery_receipt(path, seq, row_mac=key)
         assert delivered is not None and delivered.state == "immediate_delivered"
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE delivery_receipts SET state='expired'")
     assert read_delivery_receipt(path, seq, row_mac=key) is None
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE delivery_receipts SET state='immediate_delivered'")
         connection.execute("UPDATE events SET mac=NULL WHERE seq=3")
     assert read_delivery_receipt(path, seq, row_mac=key) is None

@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,7 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.merkle import build_root
 from synapse_channel.core.merkle_checkpoint import (
     AntiRollbackError,
+    MerkleCheckpoint,
     MerkleCheckpointStore,
     checkpoint_path_for,
 )
@@ -41,6 +43,12 @@ def _seed(path: Path, count: int = 5) -> EventStore:
 
 def _checkpoint(db: Path, ckpt_db: Path | None = None) -> MerkleCheckpointStore:
     return MerkleCheckpointStore(ckpt_db or checkpoint_path_for(db))
+
+
+def _latest(db: Path) -> MerkleCheckpoint | None:
+    """Read the newest checkpoint and release the store."""
+    with closing(_checkpoint(db)) as checkpoints:
+        return checkpoints.latest()
 
 
 def _delete_from(db: Path, seq: int) -> None:
@@ -81,7 +89,8 @@ def test_checkpoint_path_lives_beside_the_log() -> None:
 def test_first_run_verify_is_clean(tmp_path: Path) -> None:
     store = _seed(tmp_path / "hub.db")
     try:
-        _checkpoint(tmp_path / "hub.db").verify(store)
+        with closing(_checkpoint(tmp_path / "hub.db")) as checkpoints:
+            checkpoints.verify(store)
     finally:
         store.close()
 
@@ -169,8 +178,9 @@ def test_hub_anchors_checkpoint_on_startup(tmp_path: Path) -> None:
     db = tmp_path / "hub.db"
     store = _seed(db, 4)
     try:
-        SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
-        latest = _checkpoint(db).latest()
+        hub = SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+        latest = _latest(db)
+        hub.close()
         assert latest is not None
         assert latest.seq == store.max_seq()
         assert latest.root == build_root(store.read_all()).root
@@ -182,10 +192,12 @@ def test_hub_restart_is_clean_and_does_not_duplicate_checkpoint(tmp_path: Path) 
     db = tmp_path / "hub.db"
     store = _seed(db, 4)
     try:
-        SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
-        first = _checkpoint(db).latest()
-        SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
-        second = _checkpoint(db).latest()
+        hub = SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+        first = _latest(db)
+        hub.close()
+        hub = SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+        second = _latest(db)
+        hub.close()
         assert first is not None and second is not None
         assert second.checkpoint_hash == first.checkpoint_hash
     finally:
@@ -196,11 +208,13 @@ def test_hub_restart_after_growth_chains_new_link(tmp_path: Path) -> None:
     db = tmp_path / "hub.db"
     store = _seed(db, 4)
     try:
-        SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
-        first = _checkpoint(db).latest()
+        hub = SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+        first = _latest(db)
+        hub.close()
         store.append(EventKind.RECALL, {"actor": "alice", "seq": 5}, ts=5.0)
-        SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
-        second = _checkpoint(db).latest()
+        hub = SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+        second = _latest(db)
+        hub.close()
         assert first is not None and second is not None
         assert second.seq == store.max_seq()
         assert second.prev_hash == first.checkpoint_hash
@@ -211,7 +225,7 @@ def test_hub_restart_after_growth_chains_new_link(tmp_path: Path) -> None:
 def test_hub_startup_fails_closed_on_tail_truncation(tmp_path: Path) -> None:
     db = tmp_path / "hub.db"
     store = _seed(db, 5)
-    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store).close()
     store.close()
     _delete_from(db, 3)
     store = EventStore(db)
@@ -225,7 +239,7 @@ def test_hub_startup_fails_closed_on_tail_truncation(tmp_path: Path) -> None:
 def test_hub_startup_fails_closed_on_rewrite(tmp_path: Path) -> None:
     db = tmp_path / "hub.db"
     store = _seed(db, 5)
-    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store).close()
     store.close()
     _rewrite_payload(db, 2)
     store = EventStore(db)
@@ -245,7 +259,7 @@ def test_hub_checkpoint_can_be_disabled(tmp_path: Path) -> None:
             hub_id="syn-test",
             journal=store,
             anti_rollback_checkpoint=False,
-        )
+        ).close()
         assert not checkpoint_path_for(db).exists()
     finally:
         store.close()
@@ -262,7 +276,7 @@ def test_hub_checkpoint_store_path_override(tmp_path: Path) -> None:
             hub_id="syn-test",
             journal=store,
             checkpoint_store_path=override,
-        )
+        ).close()
         assert override.exists()
         assert not checkpoint_path_for(db).exists()
     finally:
@@ -306,7 +320,7 @@ def test_cli_checkpoint_show_after_anchor(
 ) -> None:
     db = tmp_path / "hub.db"
     store = _seed(db, 4)
-    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store).close()
     store.close()
     assert cli.main(["merkle", "checkpoint", str(db), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
@@ -318,7 +332,7 @@ def test_cli_checkpoint_show_after_anchor(
 def test_cli_checkpoint_verify_clean(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     db = tmp_path / "hub.db"
     store = _seed(db, 4)
-    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store).close()
     store.close()
     assert cli.main(["merkle", "checkpoint", str(db), "--verify", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
@@ -330,7 +344,7 @@ def test_cli_checkpoint_verify_detects_truncation(
 ) -> None:
     db = tmp_path / "hub.db"
     store = _seed(db, 5)
-    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store).close()
     store.close()
     _delete_from(db, 3)
     assert cli.main(["merkle", "checkpoint", str(db), "--verify", "--json"]) == 2
@@ -344,7 +358,7 @@ def test_cli_checkpoint_verify_detects_rewrite(
 ) -> None:
     db = tmp_path / "hub.db"
     store = _seed(db, 5)
-    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+    SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store).close()
     store.close()
     _rewrite_payload(db, 2)
     assert cli.main(["merkle", "checkpoint", str(db), "--verify"]) == 2
@@ -360,7 +374,7 @@ def test_cli_checkpoint_db_override(tmp_path: Path, capsys: pytest.CaptureFixtur
         hub_id="syn-test",
         journal=store,
         checkpoint_store_path=override,
-    )
+    ).close()
     store.close()
     assert (
         cli.main(["merkle", "checkpoint", str(db), "--checkpoint-db", str(override), "--json"]) == 0

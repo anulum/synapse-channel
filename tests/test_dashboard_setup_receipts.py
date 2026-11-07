@@ -12,6 +12,7 @@ import os
 import sqlite3
 import stat
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -169,7 +170,7 @@ def test_reopen_refuses_tampered_canonical_receipt(tmp_path: Path) -> None:
         store.append(_draft())
         path = store.path
 
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         raw = connection.execute(
             "SELECT canonical_receipt FROM setup_receipts WHERE sequence = 1"
         ).fetchone()[0]
@@ -191,7 +192,7 @@ def test_reopen_refuses_a_broken_chain_index(tmp_path: Path) -> None:
         store.append(_draft(request_id="123e4567-e89b-42d3-a456-426614174001"))
         path = store.path
 
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(
             "UPDATE setup_receipts SET previous_receipt_digest = ? WHERE sequence = 2",
             ("f" * 64,),
@@ -205,7 +206,7 @@ def test_append_refuses_corruption_introduced_after_open(tmp_path: Path) -> None
     directory = tmp_path / "receipts"
     with SetupReceiptStore(directory) as store:
         store.append(_draft())
-        with sqlite3.connect(store.path) as connection:
+        with closing(sqlite3.connect(store.path)) as connection, connection:
             connection.execute(
                 "UPDATE setup_receipts SET receipt_digest = ? WHERE sequence = 1",
                 ("f" * 64,),
@@ -333,7 +334,7 @@ def test_reopen_refuses_invalid_metadata_version(tmp_path: Path) -> None:
     directory = tmp_path / "receipts"
     with SetupReceiptStore(directory) as store:
         path = store.path
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE setup_receipt_metadata SET version = 2")
 
     with pytest.raises(SetupReceiptIntegrityError, match="metadata"):

@@ -26,6 +26,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -91,7 +92,7 @@ def test_quickstart_coordinate_from_code_snippet_runs_against_a_hub(
         # verbose SynapseAgent prints its connection banner once ready.
         assert "Online" in completed.stdout, completed.stdout
 
-        with sqlite3.connect(hub.db_path) as database:
+        with closing(sqlite3.connect(hub.db_path)) as database, database:
             rows = database.execute(
                 "SELECT payload FROM events WHERE kind='claim' ORDER BY seq"
             ).fetchall()
@@ -148,7 +149,7 @@ async def test_quickstart_conflict_aborts_before_checkpoint(tmp_path: Path, guid
                     await process.wait()
             assert process.returncode == 1, stderr.decode()
             assert "task operation refused or unexpected reply" in stderr.decode()
-            with sqlite3.connect(hub.db_path) as database:
+            with closing(sqlite3.connect(hub.db_path)) as database, database:
                 rows = database.execute(
                     "SELECT kind, payload FROM events WHERE kind IN "
                     "('claim', 'checkpoint', 'task_update', 'release') ORDER BY seq"

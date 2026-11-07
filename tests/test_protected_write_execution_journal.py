@@ -38,6 +38,7 @@ import sqlite3
 import sys
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -153,7 +154,7 @@ def test_verify_complete_execution_refuses_changed_retained_chain(
 ) -> None:
     prepared, begun, service, records = completed_execution
     start, result = records[0], records[1]
-    with sqlite3.connect(tmp_path / "completed.db") as database:
+    with closing(sqlite3.connect(tmp_path / "completed.db")) as database, database:
         if case == "missing":
             database.execute(
                 "DELETE FROM operations WHERE operation_key=?", (result.operation_key,)

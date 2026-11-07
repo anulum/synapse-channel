@@ -15,7 +15,7 @@ import os
 import sqlite3
 import struct
 import time
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, closing
 from dataclasses import replace
 from pathlib import Path
 
@@ -77,7 +77,7 @@ async def test_interrupted_operator_durable_append_preserves_registry_and_replay
             mutation_started.set()
         return time.time()
 
-    with EventStore(path) as store, sqlite3.connect(path, timeout=1) as blocker:
+    with EventStore(path) as store, closing(sqlite3.connect(path, timeout=1)) as blocker:
         control = ProtectedEnrollmentControl(
             hub=SynapseHub(journal=store, anti_rollback_checkpoint=False),
             sealed_keys=keys,

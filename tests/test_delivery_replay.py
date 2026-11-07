@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Literal
 
@@ -67,7 +68,7 @@ def _seed(path: Path) -> str:
 
 def _change_event(path: Path, seq: int, changes: dict[str, Any]) -> None:
     """Simulate a damaged or tampered persisted event outside the hub."""
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         row = connection.execute("SELECT payload FROM events WHERE seq = ?", (seq,)).fetchone()
         assert row is not None
         payload = json.loads(row[0])
@@ -89,7 +90,7 @@ def test_reopen_rejects_incompatible_delivery_history(tmp_path: Path, damage: st
     if damage == "wrong_profile":
         _change_event(path, 1, {"profile": 999})
     else:
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection, connection:
             if damage == "missing_queued":
                 connection.execute("DELETE FROM events WHERE seq = 2")
             elif damage == "wrong_aggregate":
@@ -158,7 +159,7 @@ def test_reopen_refuses_tampered_request_or_queue_field(
     """Every control field in a committed admission remains replay-verifiable."""
     path = tmp_path / "hub.db"
     _seed(path)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         row = connection.execute("SELECT payload FROM events WHERE seq = ?", (sequence,)).fetchone()
         assert row is not None
         payload = json.loads(row[0])
@@ -180,7 +181,7 @@ def test_reopen_refuses_non_object_delivery_event(tmp_path: Path, raw: str) -> N
     """Malformed event JSON cannot be projected into a plausible queue."""
     path = tmp_path / "hub.db"
     _seed(path)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE events SET payload = ? WHERE seq = 1", (raw,))
     with pytest.raises(DeliveryRefusal) as failure:
         EventStore(path)
@@ -201,7 +202,7 @@ def test_reopen_refuses_duplicate_admission_event(tmp_path: Path) -> None:
     """A second accepted event cannot replay as a new request or overwrite the first."""
     path = tmp_path / "hub.db"
     _seed(path)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         accepted = connection.execute("SELECT kind, payload FROM events WHERE seq = 1").fetchone()
         assert accepted is not None
         connection.execute("INSERT INTO events (ts, kind, payload) VALUES (1.0, ?, ?)", accepted)
@@ -350,7 +351,7 @@ def test_reopen_refuses_damaged_indexes_and_outbox(
                 source="recipient",
                 evidence={"boundary": "turn-1"},
             )
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(statement)
     with pytest.raises(DeliveryRefusal) as failure:
         EventStore(path)
@@ -359,7 +360,7 @@ def test_reopen_refuses_damaged_indexes_and_outbox(
 
 def _insert_event(path: Path, kind: str, payload: dict[str, Any]) -> None:
     """Append one forged delivery event outside the hub."""
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(
             "INSERT INTO events (ts, kind, payload) VALUES (1.0, ?, ?)",
             (kind, json.dumps(payload)),
@@ -370,7 +371,7 @@ def test_reopen_refuses_a_second_request_reusing_the_idempotency_key(tmp_path: P
     """A forged second admission with its own request id but the same idempotency key fails."""
     path = tmp_path / "hub.db"
     _seed(path)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         row = connection.execute("SELECT payload FROM events WHERE seq = 1").fetchone()
     assert row is not None
     forged = json.loads(row[0])
@@ -432,7 +433,7 @@ def test_reopen_refuses_a_missing_aggregate_row(tmp_path: Path) -> None:
     """Deleting the indexed aggregate of an admitted request is detected."""
     path = tmp_path / "hub.db"
     key = _seed(path)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("DELETE FROM delivery_requests WHERE operation_key = ?", (key,))
     with pytest.raises(DeliveryRefusal, match="aggregate count differs"):
         EventStore(path)

@@ -12,6 +12,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from collections.abc import Callable
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -353,13 +354,13 @@ def test_the_store_is_owner_only_versioned_and_needs_aware_times(tmp_path: Path)
     with pytest.raises(SpendLedgerError, match="symlink"):
         SpendLedger(home / "link.sqlite3", owner_hub_id=OWNER)
     foreign = home / "foreign.sqlite3"
-    with sqlite3.connect(foreign) as connection:
+    with closing(sqlite3.connect(foreign)) as connection, connection:
         connection.execute("CREATE TABLE other (x)")
     foreign.chmod(0o600)
     with pytest.raises(SpendLedgerError, match="unversioned"):
         SpendLedger(foreign, owner_hub_id=OWNER)
     future = home / "future.sqlite3"
-    with sqlite3.connect(future) as connection:
+    with closing(sqlite3.connect(future)) as connection, connection:
         connection.execute("PRAGMA user_version=9")
     future.chmod(0o600)
     with pytest.raises(SpendLedgerError, match="unsupported"):

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -79,7 +80,7 @@ async def test_mcp_reports_corrupt_private_store_without_disclosing_data(
             "status": "active",
         },
     )
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE events SET payload='not-json'")
     server = build_mcp_server(SynapseHubBridge(name="SYNAPSE-CHANNEL/untrusted-reader"))
     output = str(await server.call_tool("synapse_entitlements", {}))

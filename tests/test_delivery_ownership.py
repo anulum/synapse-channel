@@ -39,7 +39,7 @@ def _restore_legacy_journal(tmp_path: Path, fixture: Path) -> tuple[Path, str]:
     provenance = json.loads(fixture.with_suffix(".json").read_text())
     assert hashlib.sha256(fixture.read_bytes()).hexdigest() == provenance["sql_sha256"]
     path = tmp_path / "hub.db"
-    with sqlite3.connect(path) as connection:
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         connection.executescript(fixture.read_text())
         assert connection.execute("PRAGMA quick_check").fetchone() == ("ok",)
     return path, str(provenance["operation_key"])
@@ -53,7 +53,7 @@ def test_local_legacy_recovery_keeps_the_proven_receiving_hub(tmp_path: Path) ->
         before = store.delivery.get(key)
         assert before is not None and before.receiving_hub == "workstation"
         assert before.storage_profile == 3
-        with sqlite3.connect(path) as connection:
+        with contextlib.closing(sqlite3.connect(path)) as connection, connection:
             assert connection.execute(
                 "SELECT receiving_hub FROM delivery_requests WHERE operation_key = ?", (key,)
             ).fetchone() == (None,)
@@ -90,7 +90,7 @@ def test_local_legacy_binding_cannot_change_owner_when_replayed(tmp_path: Path) 
             )
             == 1
         )
-    with sqlite3.connect(path) as connection:
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         seq, raw = connection.execute(
             "SELECT seq, payload FROM events ORDER BY seq DESC LIMIT 1"
         ).fetchone()
@@ -333,7 +333,7 @@ def test_legacy_recovery_refuses_unauthenticated_event_rows(
 ) -> None:
     """Corrupt row authentication cannot be cleared by delivery ownership recovery."""
     path, key = authenticated_legacy_journal
-    with sqlite3.connect(path) as damaged:
+    with contextlib.closing(sqlite3.connect(path)) as damaged, damaged:
         damaged.execute("UPDATE events SET mac = ? WHERE seq = 3", (mac,))
     with EventStore(path) as store:
         row_key = load_or_create_row_mac_key(
@@ -448,7 +448,7 @@ def test_other_quarantine_reasons_survive_explicit_authority_retry(
 ) -> None:
     """An authority recovery cannot release an unrelated integrity refusal."""
     path, key = legacy_journal
-    with sqlite3.connect(path) as connection:
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE delivery_quarantine SET reason_code = 'replay_incompatible'")
     with EventStore(path) as store:
         assert (
@@ -471,7 +471,7 @@ def test_binding_storage_failure_rolls_back_owner_event_and_quarantine(
     """A real SQLite write refusal leaves the legacy recovery fully retryable."""
     path, key = legacy_journal
     with EventStore(path) as store:
-        with sqlite3.connect(path) as connection:
+        with contextlib.closing(sqlite3.connect(path)) as connection, connection:
             connection.execute(
                 "CREATE TRIGGER refuse_binding BEFORE UPDATE ON delivery_requests "
                 "BEGIN SELECT RAISE(ABORT, 'storage refusal'); END"
@@ -485,7 +485,7 @@ def test_binding_storage_failure_rolls_back_owner_event_and_quarantine(
         record = store.delivery.get(key)
         assert record is not None and record.receiving_hub is None
         assert len(tuple(store.iter_events())) == 2
-        with sqlite3.connect(path) as connection:
+        with contextlib.closing(sqlite3.connect(path)) as connection, connection:
             assert connection.execute("SELECT count(*) FROM delivery_quarantine").fetchone() == (1,)
             connection.execute("DROP TRIGGER refuse_binding")
         assert (
@@ -522,7 +522,7 @@ def test_replay_refuses_altered_binding_evidence(
         store.delivery.bind_legacy_receiving_hub(
             "laptop", recovery_ref="operator-custody/tamper-check"
         )
-    with sqlite3.connect(path) as connection:
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         seq, raw = connection.execute(
             "SELECT seq, payload FROM events ORDER BY seq DESC LIMIT 1"
         ).fetchone()

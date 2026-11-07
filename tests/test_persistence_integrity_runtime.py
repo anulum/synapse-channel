@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import cast
 
@@ -34,7 +35,7 @@ def _commit(
 
 
 def _rows(path: Path, query: str) -> list[tuple[object, ...]]:
-    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as reader:
+    with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as reader, reader:
         return reader.execute(query).fetchall()
 
 
@@ -88,7 +89,7 @@ def test_damaged_operation_rows_refuse_without_rewriting_then_recover(
         if surface == "response"
         else ("operation_outbox", "intent_json")
     )
-    with sqlite3.connect(path) as writer:
+    with closing(sqlite3.connect(path)) as writer, writer:
         original = writer.execute(f"SELECT {column} FROM {table}").fetchone()[0]
         writer.execute(f"UPDATE {table} SET {column} = ?", (encoded,))
     with EventStore(path) as store:
@@ -104,7 +105,7 @@ def test_damaged_operation_rows_refuse_without_rewriting_then_recover(
                 store.pending_operation_intents()
         assert store.count() == 2
         assert _rows(path, f"SELECT {column} FROM {table}") == [(encoded,)]
-        with sqlite3.connect(path) as writer:
+        with closing(sqlite3.connect(path)) as writer, writer:
             writer.execute(f"UPDATE {table} SET {column} = ?", (original,))
         assert _commit(store).outcome == "replayed"
         assert store.get_operation("operation") == winner.operation
@@ -155,7 +156,7 @@ def test_sqlite_trigger_refusal_rolls_back_outbox_binding_then_same_store_recove
     path = tmp_path / "outbox-trigger.db"
     with EventStore(path) as store:
         winner = _commit(store)
-        with sqlite3.connect(path) as writer:
+        with closing(sqlite3.connect(path)) as writer, writer:
             writer.execute(
                 "CREATE TRIGGER reject_binding BEFORE UPDATE ON operation_outbox "
                 "BEGIN SELECT RAISE(ABORT, 'binding unavailable'); END"
@@ -164,7 +165,7 @@ def test_sqlite_trigger_refusal_rolls_back_outbox_binding_then_same_store_recove
             store.mark_operation_intent_delivered("operation", "local:receipt")
         assert store.pending_operation_intents() == (("operation", {"family": "claim"}),)
         assert _rows(path, "SELECT receipt_id FROM operation_outbox") == [(None,)]
-        with sqlite3.connect(path) as writer:
+        with closing(sqlite3.connect(path)) as writer, writer:
             writer.execute("DROP TRIGGER reject_binding")
         store.mark_operation_intent_delivered("operation", "local:receipt")
     with EventStore(path) as reopened:

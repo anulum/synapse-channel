@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Literal, cast
 
@@ -39,7 +40,7 @@ def test_literal_namespace_is_complete_in_native_encoding_and_survives_reopen(
 ) -> None:
     """Real UTF databases preserve exact membership despite binary-range lookalikes."""
     path = tmp_path / "keys.db"
-    with sqlite3.connect(path) as database:
+    with closing(sqlite3.connect(path)) as database, database:
         database.execute('PRAGMA encoding="' + encoding + '"')
         database.execute("CREATE TABLE encoding_anchor(value TEXT)")
     expected = {prefix, prefix + "A", prefix + "a", prefix + "é", prefix + "\U00010000"}
@@ -81,7 +82,7 @@ def test_key_bytes_are_bounded_in_both_storage_and_return_encoding(
 ) -> None:
     """Native encoding and multibyte UTF-8 cannot evade the per-key bound."""
     path = tmp_path / "bytes.db"
-    with sqlite3.connect(path) as database:
+    with closing(sqlite3.connect(path)) as database, database:
         database.execute('PRAGMA encoding="' + encoding + '"')
         database.execute("CREATE TABLE encoding_anchor(value TEXT)")
     key = "scope/" + "漢" * 8
@@ -130,7 +131,7 @@ def test_key_metadata_read_does_not_deserialize_corrupted_response_json(tmp_path
     path = tmp_path / "metadata.db"
     with EventStore(path) as store:
         _commit(store, "scope/one")
-        with sqlite3.connect(path) as database:
+        with closing(sqlite3.connect(path)) as database, database:
             database.execute("UPDATE operations SET response_json='broken'")
         assert read_operation_keys(store, "scope/", max_entries=1, max_key_bytes=128) == (
             "scope/one",

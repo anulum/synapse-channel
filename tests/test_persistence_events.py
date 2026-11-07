@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from synapse_channel.core.event_row_recovery import CORRUPT_EVENT_KIND
@@ -32,7 +33,7 @@ def test_window_filters_limits_and_corruption_keep_real_sequence_boundaries(tmp_
         assert store.read_window(limit=0) == []
         assert store.read_window(limit=-1) == []
         assert store.corrupt_rows() == ()
-        with sqlite3.connect(path) as operator:
+        with closing(sqlite3.connect(path)) as operator, operator:
             operator.execute("UPDATE events SET payload=? WHERE seq=?", ("[]", second))
         markers = store.corrupt_rows()
         assert len(markers) == 1 and markers[0].seq == second

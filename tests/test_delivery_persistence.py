@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Literal
 
@@ -270,7 +271,7 @@ def test_live_delivery_read_refuses_corrupt_aggregate(
     with EventStore(path) as store:
         intent = _intent()
         _create(store, intent)
-        with sqlite3.connect(path) as damaged:
+        with closing(sqlite3.connect(path)) as damaged, damaged:
             damaged.execute(statement, (value, intent.operation_key))
         with pytest.raises(DeliveryRefusal) as caught:
             store.delivery.get(intent.operation_key)
@@ -280,7 +281,7 @@ def test_live_delivery_read_refuses_corrupt_aggregate(
 def test_reopen_migrates_legacy_notification_retirement_column(tmp_path: Path) -> None:
     """A durable pre-retirement outbox gains the new column on real reopen."""
     path = tmp_path / "hub.db"
-    with sqlite3.connect(path) as legacy:
+    with closing(sqlite3.connect(path)) as legacy, legacy:
         legacy.execute(
             "CREATE TABLE delivery_notifications ("
             "notification_id TEXT PRIMARY KEY, operation_key TEXT NOT NULL, "
@@ -288,7 +289,7 @@ def test_reopen_migrates_legacy_notification_retirement_column(tmp_path: Path) -
             "attempts INTEGER NOT NULL DEFAULT 0, delivered_at REAL)"
         )
     with EventStore(path):
-        with sqlite3.connect(path) as migrated:
+        with closing(sqlite3.connect(path)) as migrated, migrated:
             columns = {
                 row[1] for row in migrated.execute("PRAGMA table_info(delivery_notifications)")
             }
@@ -301,7 +302,7 @@ def test_hub_identity_check_refuses_malformed_durable_request(tmp_path: Path) ->
     intent = _intent()
     with EventStore(path) as store:
         _create(store, intent)
-        with sqlite3.connect(path) as damaged:
+        with closing(sqlite3.connect(path)) as damaged, damaged:
             damaged.execute(
                 "UPDATE delivery_requests SET request_json = ? WHERE operation_key = ?",
                 ("{", intent.operation_key),
@@ -315,18 +316,18 @@ def test_quarantine_write_rolls_back_on_storage_refusal(tmp_path: Path) -> None:
     """A SQLite refusal leaves no partial quarantine row or open transaction."""
     path = tmp_path / "hub.db"
     with EventStore(path) as store:
-        with sqlite3.connect(path) as damaged:
+        with closing(sqlite3.connect(path)) as damaged, damaged:
             damaged.execute(
                 "CREATE TRIGGER refuse_quarantine BEFORE INSERT ON delivery_quarantine "
                 "BEGIN SELECT RAISE(ABORT, 'storage refusal'); END"
             )
         with pytest.raises(sqlite3.IntegrityError, match="storage refusal"):
             store.delivery.quarantine("hub-1:operation", "replay_incompatible")
-        with sqlite3.connect(path) as checked:
+        with closing(sqlite3.connect(path)) as checked, checked:
             assert checked.execute("SELECT count(*) FROM delivery_quarantine").fetchone() == (0,)
             checked.execute("DROP TRIGGER refuse_quarantine")
         store.delivery.quarantine("hub-1:operation", "replay_incompatible")
-        with sqlite3.connect(path) as checked:
+        with closing(sqlite3.connect(path)) as checked, checked:
             assert checked.execute("SELECT count(*) FROM delivery_quarantine").fetchone() == (1,)
 
 

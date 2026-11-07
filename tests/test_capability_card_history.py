@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -225,7 +226,7 @@ def test_startup_rejects_unsafe_or_ambiguous_state_files(tmp_path: Path) -> None
 def test_startup_rejects_schema_row_and_capacity_corruption(tmp_path: Path) -> None:
     wrong_schema = tmp_path / "wrong.db"
     wrong_schema.touch(mode=0o600)
-    with sqlite3.connect(wrong_schema) as connection:
+    with closing(sqlite3.connect(wrong_schema)) as connection, connection:
         connection.execute("CREATE TABLE capability_card_history (agent TEXT)")
         connection.execute("PRAGMA user_version=1")
     with pytest.raises(CapabilityCardTrustError, match="schema does not match"):
@@ -234,7 +235,7 @@ def test_startup_rejects_schema_row_and_capacity_corruption(tmp_path: Path) -> N
     corrupt_row = tmp_path / "row.db"
     history = _history(corrupt_row)
     assert _assess(history) is CapabilityCardHistoryResult.ACCEPTED
-    with sqlite3.connect(corrupt_row) as connection:
+    with closing(sqlite3.connect(corrupt_row)) as connection, connection:
         connection.execute(
             "UPDATE capability_card_history SET route_capabilities = ?",
             ('["skills:z","skills:a"]',),
@@ -353,7 +354,7 @@ def test_startup_rejects_each_corrupt_retained_field(
     path = tmp_path / f"{column}-{abs(hash(match))}.db"
     history = _history(path)
     assert _assess(history) is CapabilityCardHistoryResult.ACCEPTED
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(_CORRUPTION_UPDATES[column], (value,))
     with pytest.raises(CapabilityCardTrustError, match=match):
         _history(path)
@@ -363,10 +364,10 @@ def test_runtime_corruption_rolls_back_and_projects_unavailable(tmp_path: Path) 
     path = tmp_path / "history.db"
     history = _history(path)
     assert _assess(history) is CapabilityCardHistoryResult.ACCEPTED
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE capability_card_history SET route_capabilities = '{'")
     assert _assess(history, sequence=2) is CapabilityCardHistoryResult.HISTORY_UNAVAILABLE
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         assert connection.execute(
             "SELECT route_capabilities FROM capability_card_history"
         ).fetchone() == ("{",)

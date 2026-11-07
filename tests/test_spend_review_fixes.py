@@ -94,7 +94,7 @@ def test_fine_settlements_aggregate_exactly_across_a_reopen(tmp_path: Path) -> N
 def test_a_legacy_row_outside_the_domain_fails_closed(tmp_path: Path) -> None:
     """A 0.99.35 ledger could hold an unbounded amount; evaluating it must refuse, not round."""
     ledger = _ledger(tmp_path)
-    with sqlite3.connect(ledger.path) as connection:
+    with contextlib.closing(sqlite3.connect(ledger.path)) as connection, connection:
         body = {
             "reservation_id": "rsv-legacy",
             "caller": PEER,
@@ -112,7 +112,7 @@ def test_a_legacy_row_outside_the_domain_fails_closed(tmp_path: Path) -> None:
     with pytest.raises(SpendLedgerError, match="cannot evaluate exactly|round"):
         ledger.reserve(PEER, _request(key="k9"), now=T0)
     legacy_config = _config(hard_bound="1E-28")
-    with sqlite3.connect(ledger.path) as connection:
+    with contextlib.closing(sqlite3.connect(ledger.path)) as connection, connection:
         connection.execute(
             "INSERT INTO events (pool_id, kind, recorded_at, body) VALUES (?, ?, ?, ?)",
             (
@@ -205,7 +205,7 @@ def test_a_legacy_grant_without_a_window_belongs_to_the_window_it_was_decided_in
     ledger = _ledger(tmp_path)
     grant = ledger.reserve(PEER, _request(upper_bound="30"), now=T0)
     ledger.settle(PEER, _settle(str(grant["reservation_id"]), amount="30"), now=T0)
-    with sqlite3.connect(ledger.path) as connection:
+    with contextlib.closing(sqlite3.connect(ledger.path)) as connection, connection:
         row = connection.execute("SELECT seq, body FROM events WHERE kind = 'grant'").fetchone()
         body: dict[str, Any] = json.loads(row[1])
         body.pop("window")
@@ -228,7 +228,7 @@ def test_a_malformed_grant_record_fails_closed(
     ledger = SpendLedger(home / "ledger.sqlite3", owner_hub_id=OWNER)
     if configured:
         ledger.configure(_config(), now=T0)
-    with sqlite3.connect(ledger.path) as connection:
+    with contextlib.closing(sqlite3.connect(ledger.path)) as connection, connection:
         connection.execute(
             "INSERT INTO events (pool_id, kind, recorded_at, body) VALUES (?, ?, ?, ?)",
             ("pool-a", "grant", T0.isoformat(), json.dumps({"reservation_id": "rsv-x"})),
@@ -307,7 +307,7 @@ def _legacy_ledger(tmp_path: Path) -> tuple[SpendLedger, dict[str, Any]]:
     home = tmp_path / "legacy"
     home.mkdir(mode=0o700)
     path = home / "ledger.sqlite3"
-    with sqlite3.connect(path) as connection:
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         for statement in dump["schema"]:
             connection.execute(statement)
         connection.executemany(
@@ -328,7 +328,7 @@ def test_a_core_0_99_35_ledger_is_migrated_without_losing_an_answer(tmp_path: Pa
     ledger, dump = _legacy_ledger(tmp_path)
     answers = dump["answers"]
     assert dump["user_version"] == 1
-    with sqlite3.connect(ledger.path) as connection:
+    with contextlib.closing(sqlite3.connect(ledger.path)) as connection, connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
     base = {"pool_id": "pool-a", "seat": "PROJ/alice", "task": "t1", "operation": "call-1"}
     assert ledger.query(PEER, {**base, "key": "k1"}) == {"found": True, "response": answers["k1"]}
@@ -398,5 +398,5 @@ def test_a_legacy_ledger_that_cannot_be_matched_is_refused(
         SpendLedger(path, owner_hub_id=OWNER)
     assert _open_handles(path) == 0  # the refused open closed its connection
     assert hashlib.sha256(path.read_bytes()).hexdigest() == before  # nothing changed
-    with sqlite3.connect(path) as connection:
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 1

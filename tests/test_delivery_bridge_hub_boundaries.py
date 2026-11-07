@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -67,7 +68,7 @@ def _offer(agent: SynapseAgent, key: str) -> dict[str, Any]:
 
 
 def _ledger_row(path: Path, key: str) -> tuple[str, str] | None:
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         row = connection.execute(
             "SELECT stage, outcome_code FROM delivery_bridge WHERE operation_key = ?", (key,)
         ).fetchone()

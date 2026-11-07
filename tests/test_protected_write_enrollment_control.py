@@ -12,6 +12,7 @@ import json
 import sqlite3
 import threading
 import time
+from contextlib import closing
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -270,7 +271,7 @@ async def test_cancellation_waits_for_the_actual_contended_enrollment_commit(
     """Native SQLite contention keeps the provisional enrollment out of live state."""
     grant = _enrollment()
     path = tmp_path / "contended.db"
-    with EventStore(path) as store, sqlite3.connect(path, isolation_level=None) as blocker:
+    with EventStore(path) as store, closing(sqlite3.connect(path, isolation_level=None)) as blocker:
         hub = SynapseHub(journal=store, protected_write_policies={}, anti_rollback_checkpoint=False)
         control = ProtectedEnrollmentControl(
             hub=hub, sealed_keys={grant.session_id: grant.key}, clock=time.time

@@ -15,6 +15,7 @@ import shutil
 import sqlite3
 import subprocess
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -310,7 +311,7 @@ async def test_terminal_status_unblocks_bridge_before_provider_turn(
         assert participant.calls == 0
     finally:
         await bridge.close()
-    with sqlite3.connect(ledger_path) as connection:
+    with closing(sqlite3.connect(ledger_path)) as connection, connection:
         assert connection.execute(
             "SELECT stage, outcome_code FROM delivery_bridge WHERE operation_key = ?", (key,)
         ).fetchone() == ("hub_refused", "terminal_delivery")
@@ -611,7 +612,7 @@ async def test_bridge_refuses_malformed_or_replayed_offer_before_provider_turn(
                 {"deadline": True},
             ):
                 await bridge.on_message(offer | change)
-            with sqlite3.connect(ledger_path) as local:
+            with closing(sqlite3.connect(ledger_path)) as local, local:
                 assert local.execute("SELECT COUNT(*) FROM delivery_bridge").fetchone() == (0,)
             await bridge.on_message(offer)
             await bridge.on_message(offer)
@@ -622,7 +623,7 @@ async def test_bridge_refuses_malformed_or_replayed_offer_before_provider_turn(
             assert participant.calls == 1
             await bridge.on_message(offer)
             assert participant.calls == 1
-            with sqlite3.connect(ledger_path) as local:
+            with closing(sqlite3.connect(ledger_path)) as local, local:
                 assert local.execute("SELECT COUNT(*) FROM delivery_bridge").fetchone() == (1,)
         finally:
             if sender.connection is not None:
