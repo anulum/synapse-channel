@@ -124,6 +124,37 @@ async def test_the_hub_can_close_a_session_when_its_token_expires(tmp_path: Path
     assert rows == [{"token_id": "short", "agent": "A", "closed": True, "reason": "expired"}]
 
 
+async def test_an_early_timer_never_closes_a_session_before_its_token_ends(
+    tmp_path: Path,
+) -> None:
+    """The loop may run a timer up to one tick early; the session then waits for its end.
+
+    An early run is simulated by calling the expiry callback while the
+    validity clock is 5 ms short of ``not_after``; the real re-armed timer
+    then closes the session once the clock has reached the end.
+    """
+    path, (end,) = _write(tmp_path / "tokens.json", ("short", "s-short", 600))
+    now = [end - 10.0]
+    authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True, clock=lambda: now[0])
+    closed: list[str] = []
+
+    async def close(_websocket: Any, reason: str) -> None:
+        closed.append(reason)
+
+    sessions = TokenSessions(authenticator, None, close)
+    socket = object()
+    sessions.admitted(socket, authenticator.entries[0], "A")
+    now[0] = end - 0.005
+    sessions._expire(socket)
+    await asyncio.sleep(0)
+    assert closed == []
+    assert len(sessions) == 1
+    now[0] = end
+    await _until(lambda: closed == [EXPIRY_CLOSE_REASON])
+    sessions.closed(socket)
+    assert len(sessions) == 0
+
+
 async def test_a_session_that_ends_first_leaves_no_timer_and_no_row(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

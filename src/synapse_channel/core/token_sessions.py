@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,6 +56,9 @@ WATCH_INTERVAL_SECONDS = 1.0
 """How often a closing hub checks the token-set file between authentications."""
 
 _LOG = logging.getLogger(__name__)
+
+_TIMER_SLACK = time.get_clock_info("monotonic").resolution
+"""Added to a re-armed expiry delay: the loop may run a timer up to one tick early."""
 
 
 @dataclass
@@ -131,8 +135,20 @@ class TokenSessions:
 
         A timer is cancelled whenever its session closes or is ended first, and
         a cancelled timer never runs, so the session is still followed here.
+
+        The event loop runs a timer up to one clock tick early (about 16 ms on
+        Windows), and its monotonic clock is not the clock that judges validity.
+        A timer that runs before ``not_after`` on the validity clock therefore
+        waits for the rest of the time instead of closing a session whose token
+        is still valid.
         """
         session = self._sessions[websocket]
+        not_after = session.entry.not_after
+        if not_after is not None and (remaining := not_after - self._authenticator.now()) > 0:
+            session.timer = asyncio.get_running_loop().call_later(
+                remaining + _TIMER_SLACK, self._expire, websocket
+            )
+            return
         session.ended = "expired"
         self._end(websocket, session, EXPIRY_CLOSE_REASON)
 

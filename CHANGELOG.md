@@ -30,6 +30,15 @@ execution evidence when carrying a release claim forward.
   not from the hub's in-memory presence. Names given with `--active` are
   never listed. It changes nothing.
 
+### Fixed
+
+- **A token-set hub no longer closes a session a few milliseconds early.**
+  With `--token-expiry-closes-sessions`, the hub closes a session when its
+  token reaches `not_after`. The event loop can run that timer up to one
+  clock tick early (about 16 ms on Windows), and its clock is not the one
+  that judges validity, so a session could be closed while its token was
+  still valid. A timer that runs early now waits for the rest of the time.
+
 ## [0.99.46] - 2026-11-07
 
 ### Added
