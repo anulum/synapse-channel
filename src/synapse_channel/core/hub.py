@@ -1832,8 +1832,12 @@ class SynapseHub(HubConfigView):
                     process_request=self._process_request,
                     ssl=ssl_context,
                     logger=ws_server_logger,
+                    # Accepting starts inside this block, so a cancellation that
+                    # arrives while the listener opens still closes its socket.
+                    start_serving=False,
                 ) as server,
             ):
+                await server.start_serving()
                 self._record_server_address(server, host)
                 started = True
                 self._serving.set()

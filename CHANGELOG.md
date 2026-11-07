@@ -287,6 +287,13 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A hub start cancelled at the wrong moment no longer leaves its listening
+  socket open.** `asyncio` yields once after it binds and starts accepting; a
+  cancellation delivered there escaped before the server reached the hub, so
+  the bound socket stayed open until garbage collection. The hub now starts
+  accepting inside its own server context, which closes the socket on every
+  exit.
+
 - **`synapse setup` verification closes the event store it reads.** The
   verifier opened the hub journal read-only for each canary check and never
   closed it, and it also left it open when the integrity check itself failed.
