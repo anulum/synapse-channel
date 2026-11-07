@@ -31,3 +31,5 @@ def test_migration_guide_is_linked_from_rendered_docs() -> None:
     assert "Migration to 1.0: migration-1.0.md" in mkdocs
     assert "migration-1.0.md" in index
     assert "migration-1.0.md" in api_stability
+    assert "existing behaviour" in api_stability
+    assert "behavior" not in api_stability

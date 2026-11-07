@@ -131,7 +131,7 @@ loading, also participate in this classification contract:
 
 Protected-write codes classify validation and custody-replay failures; execution
 still requires separately admitted authority. Exception messages, constructor
-arguments and historical built-in catches retain their existing behavior.
+arguments and historical built-in catches retain their existing behaviour.
 
 Boundary projections are explicit and frozen by focused tests. A2A validation,
 not-found, conflict, quota, and store codes map to HTTP 400, 404, 409, 429, and
