@@ -670,3 +670,42 @@ def test_push_delivery_evidence_route_is_authenticated_and_task_scoped() -> None
     }
     assert missing_status == HTTPStatus.NOT_FOUND
     assert missing_body["detail"] == "Unknown task: missing"
+
+
+def test_nested_delivery_path_is_not_read_as_delivery_evidence() -> None:
+    """A slash inside the task id does not expose that task's delivery history."""
+    store = A2ATaskStore()
+    bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card={},
+        target="WORKER",
+        store=store,
+        auth_token="secret",
+    )
+    task = bridge.create_completed_task(
+        {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hello"}]},
+        target="WORKER",
+    )
+    store.record_push_delivery_attempt(
+        PushDeliveryAttempt(
+            task_id=str(task["id"]),
+            config_id="cfg-a",
+            delivery_id="delivery-a",
+            attempt=1,
+            state=PushDeliveryState.SUCCEEDED,
+            occurred_at=10.0,
+            retry_window_seconds=1.25,
+        )
+    )
+    nested = HandlerHarness(
+        "GET",
+        f"/tasks/{task['id']}/extra/pushNotificationDeliveries",
+        headers={"Authorization": "Bearer secret"},
+    )
+    nested.handler.bridge = bridge
+
+    status, body = nested.run()
+
+    assert status == HTTPStatus.NOT_FOUND
+    assert body["detail"] == f"Unknown task: {task['id']}/extra/pushNotificationDeliveries"
+    assert "pushNotificationDeliveries" not in body
