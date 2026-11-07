@@ -366,17 +366,20 @@ was:
 | `asyncio` | 6.2 % |
 | other (standard library) | 12.1 % |
 
-The runs averaged 2.51 durable commits per operation. The median p50 was
+The median was 2.51 durable commits per operation. The median p50 was
 4,766 µs for a claim grant and 6,827 µs for a directed chat with its delivery
 receipt.
 
 **Decision: no Rust core and no sharding for these paths.**
 
-- **What a faster core could save.** All the Python code on these paths
-  (hub logic, client logic, WebSocket framing, JSON and `asyncio`) together
-  takes 21.1 % of the time. A rewrite that made it free would save at most
-  about a fifth.
-- **What dominates.** Durable SQLite commits take more than half, and a
+- **What a faster core could save.** The Python code the profile names on
+  these paths (hub logic, client logic, WebSocket framing, JSON and
+  `asyncio`) takes 21.1 % of the time. The "other" stage is mostly the rest
+  of the standard library, which is Python code too, so the bound is the sum
+  of the two: at most 33.2 %, about a third. A rewrite that made all of it
+  free would save no more than that.
+- **What dominates.** Durable SQLite commits take more than half, more than
+  that whole bound, and a
   rewrite in any language keeps them. They come from the guarantee that a
   grant is on disk before it is acknowledged (INV-JA-1).
 - **Where speed would come from instead.** A real gain would mean fewer

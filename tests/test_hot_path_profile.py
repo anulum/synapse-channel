@@ -100,8 +100,12 @@ def test_the_committed_result_backs_the_documented_decision() -> None:
     measured = json.loads(RESULT.read_text(encoding="utf-8"))
     share = measured["median_stage_share"]
     assert set(share) == set(_module()["STAGES"])
-    # The decision rests on durable commits outweighing every Python stage together.
-    assert share["sqlite durable commit"] > measured["median_python_share"]
+    # The decision rests on durable commits outweighing all Python code, and
+    # "other" (the rest of the standard library) counts as Python for the bound.
+    bound = measured["median_python_share"] + share["other"]
+    assert share["sqlite durable commit"] > bound
     docs = (Path(__file__).resolve().parents[1] / "docs/benchmarks.md").read_text("utf-8")
     assert f"{100 * share['sqlite durable commit']:.1f} %" in docs
     assert f"{100 * measured['median_python_share']:.1f} %" in docs
+    assert f"at most {100 * bound:.1f} %" in docs
+    assert f"median was {measured['median_durable_commits_per_operation']:.2f}" in docs
