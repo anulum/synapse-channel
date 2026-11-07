@@ -53,7 +53,7 @@ The bridge currently exposes Agent Card discovery, HTTP+JSON/REST routes,
 JSON-RPC dispatch, bridge-local task storage, local Server-Sent Events snapshots,
 push-notification configuration storage, and authenticated task-scoped delivery
 evidence. The matrix marks these as
-`supported` or `partial` according to the local behavior and its limits.
+`supported` or `partial` according to the local behaviour and its limits.
 
 The HTTP+JSON edge derives exact Host authorities from the advertised endpoint
 on every CLI start and enforces them before authentication and routing on every

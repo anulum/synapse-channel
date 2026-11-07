@@ -108,6 +108,11 @@ def test_cmd_a2a_conformance_prints_markdown(capsys: pytest.CaptureFixture[str])
     assert f"A2A conformance matrix (spec {SPEC_VERSION})" in captured.out
     assert "| Area | Item | Status | SYNAPSE surface | Evidence | Limitation |" in captured.out
     assert "| binding | gRPC | partial |" in captured.out
+    guide = (Path(__file__).resolve().parents[1] / "docs" / "a2a-conformance.md").read_text(
+        encoding="utf-8"
+    )
+    assert "local behaviour and its limits" in guide
+    assert "behavior" not in guide
 
 
 def test_cmd_a2a_conformance_prints_json(capsys: pytest.CaptureFixture[str]) -> None:
