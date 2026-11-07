@@ -290,6 +290,10 @@ def test_http_protocol_helpers_cover_safe_projection_and_error_mapping() -> None
     assert a2a_http_protocol.error_info_reason(a2a_errors.A2AValidationError()) is None
     assert a2a_http_protocol.parse_push_config_path("/other") is None
     assert a2a_http_protocol.parse_push_config_path("/tasks//pushNotificationConfigs") is None
+    assert a2a_http_protocol.parse_push_delivery_path("/tasks//pushNotificationDeliveries") is None
+    assert (
+        a2a_http_protocol.parse_push_delivery_path("/tasks/a/b/pushNotificationDeliveries") is None
+    )
     assert a2a_task_flow.stored_task_target({}, default="fallback") == "fallback"
     assert a2a_task_flow.stored_task_target({"metadata": {}}, default="fallback") == "fallback"
 
