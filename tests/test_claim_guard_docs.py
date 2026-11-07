@@ -28,6 +28,8 @@ def test_provider_claim_hook_guide_is_discoverable_and_honest() -> None:
     assert "guardrail rather than" in guide
     assert "complete enforcement boundary" in " ".join(guide.split())
     assert "hook runner itself as fail-open" in guide
+    assert "host-level behaviour" in guide
+    assert "behavior" not in guide
     assert "BeforeTool" in guide
     assert '{"decision": "deny", "reason": …}' in guide
     assert "milliseconds" in guide

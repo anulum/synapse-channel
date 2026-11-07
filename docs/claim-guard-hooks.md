@@ -284,7 +284,7 @@ avoids provider conventions in which an ordinary non-zero error means
 - **Kimi Code:** the handler converts all failures it receives into structured
   denial on exit zero. Kimi documents its hook runner itself as fail-open if the
   process crashes or exceeds the host timeout. Synapse leaves headroom and catches
-  runtime exceptions, but it cannot change that host-level behavior.
+  runtime exceptions, but it cannot change that host-level behaviour.
 - **OpenCode:** the generated plugin accepts only an explicit allow response from
   the bounded helper process. A helper crash, timeout, excessive output,
   invalid UTF-8/JSON, ambiguous response, missing claim, or hub failure throws
