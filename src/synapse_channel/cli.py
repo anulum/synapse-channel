@@ -211,6 +211,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_policy_check:add_parsers", ("policy-check",)),
     ("synapse_channel.cli_policy_signing:add_parsers", ("policy",)),
     ("synapse_channel.cli_export:add_parsers", ("export",)),
+    ("synapse_channel.cli_mailbox:add_parsers", ("mailbox",)),
     ("synapse_channel.cli_identity:add_parsers", ("identity",)),
     ("synapse_channel.cli_acl_shadow:add_parsers", ("acl",)),
     ("synapse_channel.cli_role:add_parsers", ("role",)),

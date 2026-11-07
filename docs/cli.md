@@ -64,6 +64,7 @@ everything, since they need the whole command table.
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse export` | Export a hub store read-only: `create` writes the journal and AEF receipts as plain files with a manifest, `verify` checks their consistency, `to-sqlite` copies them into a plain SQLite file; see [Exporting the journal](export.md). |
+| `synapse mailbox orphans` | Read a hub store read-only and list directed mail that waits for names with no journalled activity for `--dormant-after-days` (default 7): pending count, last activity and oldest pending message per name, most mail first; `--project`, `--active NAME`, `--all` and `--json` narrow or widen the view. It changes nothing. Roles are not journalled, so a dormant name's roles are not shown. |
 | `synapse multihub` | Observe/follow a peer log read-only, or explicitly recover a stopped local watcher's durable quarantine (see [Multi-hub sync](multi-hub-sync.md)). |
 | `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations, `costs` reports per-session spend and telemetry from a hub event store. |
 | `synapse adapters claude-plugin` | Inspect, preview, install, upgrade, diagnose and remove the optional [Claude Code plugin](claude-plugin.md) in one Claude profile. |

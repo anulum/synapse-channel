@@ -18,6 +18,18 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- **`synapse mailbox orphans`: find mail nobody will collect.** A mailbox
+  belongs to a name, and a session name rarely comes back, so directed mail
+  to an ended session waits indefinitely. The command reads a hub store
+  read-only and lists every name with pending directed mail and no
+  journalled activity for `--dormant-after-days` days (default 7), with its
+  pending count, last activity and oldest pending message. Last activity
+  comes from the journal (the name's own events and its mailbox watermarks),
+  not from the hub's in-memory presence. Names given with `--active` are
+  never listed. It changes nothing.
+
 ## [0.99.46] - 2026-11-07
 
 ### Added
