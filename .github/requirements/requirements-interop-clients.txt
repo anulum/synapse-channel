@@ -10,10 +10,11 @@
 #   --exclude-newer <pin date> --no-header \
 #   -o .github/requirements/requirements-interop-clients.txt:
 #   a2a-sdk==1.2.3
+# Exception: pyasn1 0.6.5 (released 2026-10-27) was pinned at 11 days old on 2026-11-07 because it fixes four
+# advisories in 0.6.4 (CVE-2026-119194, -119195, -119196, -119197) reported by the lock audit.
 a2a-sdk==1.2.3 \
     --hash=sha256:a28bc40b010d088ea4a10d05a5ba021d183f02cacab15929072ea5b34cde3fe6 \
     --hash=sha256:a89529ab7d026900170aefc1515f35c68d9a14b6a9133f8cc775c8fe598f8ae7
-    # via -r /tmp/claude-1000/-home-anulum/7fc7e70e-76eb-49d6-9fe1-7a41c4f8fec5/scratchpad/interop-in2.txt
 aiologic==0.17.1 ; python_full_version < '3.13' \
     --hash=sha256:2e1b93b9e88ced318c2a63ad7b382688f40cbfe40e3d42258d49dc9c5aea179d \
     --hash=sha256:c66b319830fedb7ca3d2b2125fa6f5b653f89418c2a27ea76f259ec5f00943c0
@@ -437,9 +438,9 @@ protobuf==7.36.2 \
     #   google-api-core
     #   googleapis-common-protos
     #   proto-plus
-pyasn1==0.6.4 \
-    --hash=sha256:9c447d8431c947fe4c8febc4ed9e760bc29011a5b01e5c74b67025bd9fb8ce81 \
-    --hash=sha256:deda9277cfd454080ec40b207fb6df82206a3a2688735233cdcd8d3d565f088b
+pyasn1==0.6.5 \
+    --hash=sha256:4017b0fce125096b8573b39c989fdb1a4b19cf761e683398184550fea0e66587 \
+    --hash=sha256:6b11616a6bcf3a40e635f082bb232fa57b5e0dd7f517bd7ddd69ec3794508a47
     # via pyasn1-modules
 pyasn1-modules==0.4.2 \
     --hash=sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a \
