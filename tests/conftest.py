@@ -18,18 +18,21 @@ import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.persistence import EventStore
+if TYPE_CHECKING:
+    from synapse_channel.core.hub import SynapseHub
+    from synapse_channel.core.persistence import EventStore
 
 _HANG_IDENTITY_NAME = "synapse_pytest_hang_identity"
 _HANG_IDENTITY_PLUGIN = Path(__file__).resolve().parents[1] / "tools" / "pytest_hang_identity.py"
 _TESTS_DIR = str(Path(__file__).resolve().parent) + os.sep
-_TEST_OWNED: list[SynapseHub | EventStore] = []
-"""Hubs and event stores a test constructed itself, in creation order."""
+_TEST_OWNED_HUBS: list[SynapseHub] = []
+"""Hubs the running test constructed itself, in creation order."""
+_TEST_OWNED_STORES: list[EventStore] = []
+"""Event stores the running test constructed itself, in creation order."""
 
 
 def _release_errors() -> tuple[type[BaseException], ...]:
@@ -42,8 +45,8 @@ def _release_errors() -> tuple[type[BaseException], ...]:
     return tuple(errors)
 
 
-def _record_test_owned(init: Callable[..., None]) -> Callable[..., None]:
-    """Wrap ``__init__`` so an instance built directly by test code is remembered.
+def _record_test_owned(init: Callable[..., None], owned: list[Any]) -> Callable[..., None]:
+    """Wrap ``__init__`` so an instance built directly by test code is added to ``owned``.
 
     Only the frame that called the constructor is inspected. An object that
     product code builds (even while a test is running) is not recorded, so a
@@ -51,11 +54,11 @@ def _record_test_owned(init: Callable[..., None]) -> Callable[..., None]:
     """
 
     @functools.wraps(init)
-    def wrapped(self: SynapseHub | EventStore, *args: Any, **kwargs: Any) -> None:
+    def wrapped(self: object, *args: Any, **kwargs: Any) -> None:
         init(self, *args, **kwargs)
         caller = sys._getframe(1).f_code.co_filename
         if caller.startswith(_TESTS_DIR):
-            _TEST_OWNED.append(self)
+            owned.append(self)
 
     return wrapped
 
@@ -133,10 +136,24 @@ def _restore_synapse_logger() -> Iterator[None]:
 
 @pytest.fixture(autouse=True, scope="session")
 def _track_test_owned_stores() -> Iterator[None]:
-    """Record the hubs and event stores test code constructs, for the whole session."""
+    """Record the hubs and event stores test code constructs, for the whole session.
+
+    A contract-only CI lane runs a few tests without installing the package. No
+    test there can build a hub or a store, so there is nothing to record.
+    """
+    if importlib.util.find_spec("synapse_channel") is None:
+        yield
+        return
+    from synapse_channel.core.hub import SynapseHub
+    from synapse_channel.core.persistence import EventStore
+
     patcher = pytest.MonkeyPatch()
-    for owned_type in (SynapseHub, EventStore):
-        patcher.setattr(owned_type, "__init__", _record_test_owned(owned_type.__init__))
+    patcher.setattr(
+        SynapseHub, "__init__", _record_test_owned(SynapseHub.__init__, _TEST_OWNED_HUBS)
+    )
+    patcher.setattr(
+        EventStore, "__init__", _record_test_owned(EventStore.__init__, _TEST_OWNED_STORES)
+    )
     try:
         yield
     finally:
@@ -153,15 +170,14 @@ def _release_test_owned_stores() -> Iterator[None]:
     other tests. Hubs close first: a hub anchors its checkpoint against its
     journal while closing.
     """
-    _TEST_OWNED.clear()
+    _TEST_OWNED_HUBS.clear()
+    _TEST_OWNED_STORES.clear()
     try:
         yield
     finally:
-        owned = _TEST_OWNED[:]
-        _TEST_OWNED.clear()
-        hubs = [item for item in owned if isinstance(item, SynapseHub)]
-        stores = [item for item in owned if isinstance(item, EventStore)]
-        releasable: list[SynapseHub | EventStore] = [*hubs, *stores]
+        releasable: list[SynapseHub | EventStore] = [*_TEST_OWNED_HUBS, *_TEST_OWNED_STORES]
+        _TEST_OWNED_HUBS.clear()
+        _TEST_OWNED_STORES.clear()
         for item in releasable:
             with contextlib.suppress(*_release_errors()):
                 item.close()
