@@ -24,9 +24,9 @@ if TYPE_CHECKING:
     )
 
     class PaneSafety(Protocol):
-        """Probe the current pane, optionally requiring the staged text."""
+        """Probe the current pane of an admitted provider, optionally requiring the staged text."""
 
-        def __call__(self, *, required_text: str | None = None) -> tuple[bool, str]:
+        def __call__(self, provider: str, *, required_text: str | None = None) -> tuple[bool, str]:
             """Return the pane safety verdict and its existing local reason."""
             ...
 
@@ -114,7 +114,7 @@ def _probe_prompt(
         else:
             safe, safety_detail = ports.screen_safe(provider, screen, required_text=prompt)
     else:
-        safe, safety_detail = ports.pane_safe()
+        safe, safety_detail = ports.pane_safe(provider)
     if not safe:
         ports.record(last_inject_returncode=0, pending_wake=True, wake_prompt_staged=staged)
         return ports.result(
@@ -223,7 +223,7 @@ def inject_pane_wake(
     if failure is not None:
         return failure
     sleeper(max(config.submit_delay, 0.0))
-    safe, detail = ports.pane_safe(required_text=ready.prompt)
+    safe, detail = ports.pane_safe(ready.provider, required_text=ready.prompt)
     if not safe:
         ports.record(last_inject_returncode=0, pending_wake=True, wake_prompt_staged=True)
         return ports.result(

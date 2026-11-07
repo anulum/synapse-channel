@@ -23,7 +23,9 @@ from synapse_channel.agent_tmux import (
     DEFAULT_AGENT_PANE_COMMANDS,
     AgentTmuxConfig,
     _backoff_delay,
+    _bounded_native_command,
     _pane_is_safe_for_submit,
+    _provider_family,
     agent_binary,
     build_wake_prompt,
     inject_wake,
@@ -659,13 +661,14 @@ def test_provider_profiles_accept_only_idle_composers(provider: str, tmp_path: P
     idle = RecordingRunner(
         [_result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS[provider]["idle"])]
     )
-    assert _pane_is_safe_for_submit(config, runner=idle)[0] is True
+    assert _provider_family(config) == provider
+    assert _pane_is_safe_for_submit(config, provider, runner=idle)[0] is True
 
     for state in ("busy", "modal"):
         runner = RecordingRunner(
             [_result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS[provider][state])]
         )
-        safe, detail = _pane_is_safe_for_submit(config, runner=runner)
+        safe, detail = _pane_is_safe_for_submit(config, provider, runner=runner)
         assert safe is False
         assert state not in detail or "pane" in detail
 
@@ -676,7 +679,8 @@ def test_node_wrapper_resolves_its_supported_provider_profile(tmp_path: Path) ->
         [_result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["idle"])]
     )
 
-    assert _pane_is_safe_for_submit(config, runner=runner)[0] is True
+    assert _provider_family(config) == "codex"
+    assert _pane_is_safe_for_submit(config, "codex", runner=runner)[0] is True
 
 
 def test_unknown_provider_queues_without_pane_mutation(tmp_path: Path) -> None:
@@ -1329,3 +1333,17 @@ def test_status_with_an_empty_display_message_reports_no_pane_command(tmp_path: 
     assert result.session_exists is True
     assert result.pane_command is None
     assert result.agent_active is False
+
+
+def test_native_startup_commands_never_take_a_replacement_environment(tmp_path: Path) -> None:
+    """The bounded native runner refuses an env argument before it starts any process."""
+    from synapse_channel.opencode_composer_files import ComposerError
+
+    marker = tmp_path / "ran"
+    with pytest.raises(ComposerError, match="do not replace the environment"):
+        _bounded_native_command(
+            ["touch", str(marker)], capture_output=True, text=True, env={"PATH": "/nowhere"}
+        )
+    assert not marker.exists()
+    completed = _bounded_native_command(["touch", str(marker)], capture_output=True, text=True)
+    assert completed.returncode == 0 and marker.exists()

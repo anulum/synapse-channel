@@ -523,6 +523,7 @@ def _observe_staged_wake(
 
 def _pane_is_safe_for_submit(
     config: AgentTmuxConfig,
+    provider: str,
     *,
     runner: CommandRunner,
     required_text: str | None = None,
@@ -530,12 +531,10 @@ def _pane_is_safe_for_submit(
     """Require a known idle composer and reject modal or busy provider state.
 
     Pane text is used only as a local classification input and is never included
-    in diagnostics or registry records. Unknown providers and ambiguous screens
-    queue the wake instead of emitting any key.
+    in diagnostics or registry records. ``provider`` is the family the wake was
+    admitted for: an unknown provider is queued before any probe, and ambiguous
+    screens queue the wake instead of emitting any key.
     """
-    provider = _provider_family(config)
-    if provider is None:
-        return False, "provider has no fail-closed idle profile"
     screen, detail = _capture_pane(config, runner=runner)
     if screen is None:
         return False, detail
