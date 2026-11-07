@@ -18,6 +18,8 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.46] - 2026-11-07
+
 ### Added
 
 - **A post-quantum countersignature for AEF tree heads.** The hybrid suite
