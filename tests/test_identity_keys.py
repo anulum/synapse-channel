@@ -132,3 +132,21 @@ def test_sign_registration_produces_a_frame_the_hub_verifies(tmp_path: Path) -> 
 
 def test_two_generated_keys_differ() -> None:
     assert public_key_b64(generate_signing_key()) != public_key_b64(generate_signing_key())
+
+
+def test_a_key_that_cannot_be_secured_is_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A filesystem that refuses the owner-only floor leaves no private key behind."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from synapse_channel.core import secure_path
+
+    def refuse(path: object) -> None:
+        raise secure_path.SecurePathError(f"{path}: modes are not supported here")
+
+    monkeypatch.setattr(secure_path, "apply_owner_only_file", refuse)
+    target = tmp_path / "agent.pem"
+    with pytest.raises(IdentityKeyError, match="cannot secure identity key"):
+        write_signing_key(target, Ed25519PrivateKey.generate())
+    assert not target.exists()

@@ -16,6 +16,7 @@ import pytest
 from cli_e2e_helpers import git_repo, git_run
 from hub_e2e_helpers import running_hub
 from mcp_server_helpers import start_bridge
+from synapse_channel.git.gitclaim import _default_git_runner
 from synapse_channel.mcp.git_claim import McpGitClaimError, resolve_mcp_git_claim_scope
 
 
@@ -127,6 +128,25 @@ def test_resolve_mcp_git_claim_scope_fails_closed_outside_git(tmp_path: Path) ->
             base="main",
             auto_release_on="manual",
             runner=failed_git,
+        )
+
+
+@pytest.mark.parametrize("branch", ["", "   ", "feature\x07bell"])
+def test_resolve_mcp_git_claim_scope_refuses_invalid_branch_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, branch: str
+) -> None:
+    """A branch answer that is empty or unprintable is refused, not recorded."""
+    repo = git_repo(tmp_path / "repo")
+    monkeypatch.chdir(repo)
+
+    def git(arguments: list[str]) -> str:
+        if arguments == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return branch
+        return _default_git_runner(arguments)
+
+    with pytest.raises(McpGitClaimError, match="invalid repository metadata"):
+        resolve_mcp_git_claim_scope(
+            ["src/owner.py"], base="main", auto_release_on="manual", runner=git
         )
 
 

@@ -559,3 +559,44 @@ def test_a2a_http_server_exposes_configured_limits() -> None:
         assert server.request_read_timeout_seconds == pytest.approx(1.25)
     finally:
         server.server_close()
+
+
+def test_admission_survives_a_worker_that_cannot_start_and_non_socket_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed worker start releases its slot; non-socket requests skip socket work."""
+    import socket
+    import socketserver
+    from http.server import BaseHTTPRequestHandler
+
+    from synapse_channel.a2a_http import A2AHTTPServer
+
+    server = A2AHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler, max_concurrent_requests=1)
+    left, right = socket.socketpair()
+    try:
+
+        def cannot_start(self: object, request: object, client_address: object) -> None:
+            raise RuntimeError("can't start new thread")
+
+        monkeypatch.setattr(socketserver.ThreadingMixIn, "process_request", cannot_start)
+        with pytest.raises(RuntimeError, match="can't start new thread"):
+            server.process_request(left, ("127.0.0.1", 1))
+        # The only slot is free again, so capacity did not leak.
+        assert server._admission.acquire(blocking=False)
+        server._admission.release()
+
+        handled: list[object] = []
+
+        def record(self: object, request: object, client_address: object) -> None:
+            handled.append(request)
+
+        monkeypatch.setattr(socketserver.BaseServer, "finish_request", record)
+        not_a_socket = (b"datagram", object())
+        server.finish_request(not_a_socket, ("127.0.0.1", 1))
+        assert handled == [not_a_socket]
+        # Nothing to write on: the refusal returns without touching a socket.
+        server._send_capacity_refusal(object())
+    finally:
+        left.close()
+        right.close()
+        server.server_close()

@@ -127,9 +127,8 @@ def _superseded_checkpoints(store: EventStore, *, floor: int, keep: int) -> list
     keeps coordination replay exact.
     """
     by_task: dict[str, list[int]] = defaultdict(list)
+    # The store filters by kind, so every event here is a checkpoint.
     for event in store.read_since(0, kinds=(EventKind.CHECKPOINT,)):
-        if event.kind != EventKind.CHECKPOINT:
-            continue
         if event.seq > floor:
             continue
         by_task[str(event.payload.get("task_id", ""))].append(event.seq)
@@ -155,9 +154,8 @@ def _valid_to(payload: dict[str, object]) -> float | None:
 def _expired_findings(store: EventStore, *, floor: int, cutoff: float) -> list[int]:
     """Return findings below the floor whose validity window closed at or before ``cutoff``."""
     doomed: list[int] = []
+    # The store filters by kind, so every event here is a finding.
     for event in store.read_since(0, kinds=(EventKind.FINDING,)):
-        if event.kind != EventKind.FINDING:
-            continue
         if event.seq > floor:
             continue
         valid_to = _valid_to(event.payload)

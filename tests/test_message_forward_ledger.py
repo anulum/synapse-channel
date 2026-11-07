@@ -12,6 +12,7 @@ from __future__ import annotations
 import gc
 import warnings
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -230,3 +231,31 @@ def test_pending_summary_reports_depth_and_oldest_age_per_peer() -> None:
             del retired
         gc.collect()
     assert not [warning for warning in observed if issubclass(warning.category, ResourceWarning)]
+
+
+def test_an_in_memory_ledger_that_fails_to_start_closes_its_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A schema that cannot be created leaves no open private database behind."""
+    import sqlite3
+
+    from synapse_channel.core import message_forward_ledger as module
+
+    opened: list[sqlite3.Connection] = []
+    real_connect = sqlite3.connect
+
+    def connect(*arguments: Any, **options: Any) -> sqlite3.Connection:
+        connection: sqlite3.Connection = real_connect(*arguments, **options)
+        opened.append(connection)
+        return connection
+
+    def refuse(self: object, connection: sqlite3.Connection, lock: object) -> None:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(sqlite3, "connect", connect)
+    monkeypatch.setattr(module.MessageForwardLedger, "__init__", refuse)
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O error"):
+        module.MessageForwardLedger.in_memory()
+    assert len(opened) == 1
+    with pytest.raises(sqlite3.ProgrammingError):
+        opened[0].execute("SELECT 1")

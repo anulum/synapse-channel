@@ -28,6 +28,9 @@ GIT_TIMEOUT_SECONDS = 60.0
 _HASH_CHUNK_BYTES = 1 << 20
 """Streaming hash chunk size, bounding artifact-hash memory to a fixed window."""
 
+_UNVERIFIED_REASON = "fresh evidence present but unverified"
+_VERIFIED_REASON = "fresh evidence verified by executed release checks"
+
 
 class GitState(NamedTuple):
     """Git state captured for a verified release receipt.
@@ -333,12 +336,12 @@ def build_verified_release_receipt(
     # release frame from laundering fabricated evidence into a "supported" verdict.
     if verified["epistemic_status"] == "unverified":
         verified["epistemic_status"] = "supported"
-        reasons = list(verified["epistemic_reasons"])
-        if reasons and reasons[-1] == "fresh evidence present but unverified":
-            reasons[-1] = "fresh evidence verified by executed release checks"
-        else:
-            reasons.append("verified by executed release checks")
-        verified["epistemic_reasons"] = reasons
+        # The receipt classifier gives "unverified" only with this closing reason
+        # (receipts._assess_release_evidence), which the executed checks now settle.
+        verified["epistemic_reasons"] = [
+            _VERIFIED_REASON if reason == _UNVERIFIED_REASON else reason
+            for reason in verified["epistemic_reasons"]
+        ]
     return verified
 
 
