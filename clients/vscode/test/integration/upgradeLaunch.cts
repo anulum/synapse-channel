@@ -9,7 +9,7 @@
 import { strict as assert } from "node:assert";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -147,6 +147,23 @@ async function stopEditor(editor: ChildProcess): Promise<void> {
   editor.stderr?.destroy();
 }
 
+/** Write a stand-in browser that records each URL instead of opening a window. */
+async function recordingBrowser(directory: string): Promise<{ script: string; log: string }> {
+  const script = join(directory, "record-browser.sh");
+  const log = join(directory, "external-urls.log");
+  await writeFile(script, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\n`, { flag: "wx" });
+  await chmod(script, 0o700);
+  return { script, log };
+}
+
+async function openedUrls(log: string): Promise<string> {
+  try {
+    return (await readFile(log, "utf8")).trim() || "none";
+  } catch {
+    return "none";
+  }
+}
+
 function windowReport(): string {
   const visible = spawnSync("xdotool", ["search", "--onlyvisible", "--name", "."], { encoding: "utf8" });
   const names = (visible.stdout?.trim().split(/\s+/).filter(Boolean) ?? []).map((window) => {
@@ -176,7 +193,14 @@ async function main(): Promise<void> {
   const hub = await startIntegrationHub(temporary, "upgrade", python, repositoryRoot);
   let editor: ChildProcess | undefined;
   try {
-    const settings = { "synapse.hubUri": hub.uri, "synapse.identity": identity };
+    // A host browser (Chrome's first-run terms window on Ubuntu 26.04 runners) took the
+    // focus while the command palette was typed into; the editor records URLs instead.
+    const browser = await recordingBrowser(temporary);
+    const settings = {
+      "synapse.hubUri": hub.uri,
+      "synapse.identity": identity,
+      "workbench.externalBrowser": browser.script,
+    };
     await writeFile(join(userData, "User", "settings.json"), JSON.stringify(settings));
     const cachePath = process.env["VSCODE_TEST_CACHE"] ?? join(extensionRoot, ".vscode-test-cache");
     const executable = await downloadAndUnzipVSCode({ version: codeVersion, cachePath });
@@ -206,6 +230,7 @@ async function main(): Promise<void> {
     if (editor !== undefined) {
       console.error(windowReport());
     }
+    console.error(`External URLs the editor asked to open: ${await openedUrls(join(temporary, "external-urls.log"))}`);
     throw error;
   } finally {
     if (editor !== undefined) {
