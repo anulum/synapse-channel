@@ -213,19 +213,27 @@ def _event_digest(seq: int, kind: str, payload: dict[str, object]) -> str:
 
 
 def _open_read_only_store(path: Path) -> sqlite3.Connection:
+    """Open the event store read-only after an integrity check; the caller closes it.
+
+    A failed check closes the connection before the refusal, whether the check
+    reports damage or raises.
+    """
     try:
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
             raise OSError("unsafe event-store leaf")
         uri = f"file:{quote(str(path), safe='/')}?mode=ro"
         connection = sqlite3.connect(uri, uri=True, timeout=1.0)
-        verdict = connection.execute("PRAGMA quick_check").fetchone()
-        if verdict != ("ok",):
-            connection.close()
-            raise sqlite3.DatabaseError("event-store integrity check failed")
-        return connection
     except (OSError, sqlite3.Error) as exc:
         raise VerificationProbeError("verification_replay_failed") from exc
+    try:
+        verdict = connection.execute("PRAGMA quick_check").fetchone()
+        if verdict != ("ok",):
+            raise sqlite3.DatabaseError("event-store integrity check failed")
+    except sqlite3.Error as exc:
+        connection.close()
+        raise VerificationProbeError("verification_replay_failed") from exc
+    return connection
 
 
 def _read_canary_evidence(
@@ -237,7 +245,7 @@ def _read_canary_evidence(
 ) -> CanaryEvidence | None:
     expected_client_id = f"setup-{canary_id}"
     expected_payload = f"synapse-setup-canary:{canary_id}"
-    with _open_read_only_store(database) as connection:
+    with contextlib.closing(_open_read_only_store(database)) as connection:
         try:
             chat_row = connection.execute(
                 "SELECT seq, kind, payload FROM events WHERE seq = ?",

@@ -493,7 +493,7 @@ async def test_systemd_adapter_real_canary_consumption_and_restart_replay(
             await writer.recorder.wait_for(
                 lambda m: m.get("type") == MessageType.HISTORY_SNAPSHOT, timeout=15.0
             )
-            with sqlite3.connect(database) as connection:
+            with contextlib.closing(sqlite3.connect(database)) as connection, connection:
                 size = connection.execute(
                     "SELECT sum(length(payload)) FROM events WHERE kind = ?", (EventKind.CHAT,)
                 ).fetchone()[0]
@@ -667,7 +667,7 @@ def _event_database(
         "payload": f"synapse-setup-canary:{canary_id}",
     }
     expected_ack = {"identity": "DEMO/x", "through_seq": 1, "source": "ack"}
-    with sqlite3.connect(path) as connection:
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("CREATE TABLE events (seq INTEGER, kind TEXT, payload TEXT)")
         connection.execute(
             "INSERT INTO events VALUES (1, ?, ?)",
@@ -695,7 +695,7 @@ def test_adapter_event_store_evidence_failures_are_bounded(
 ) -> None:
     canary_id = "0" * 32
     missing_chat = tmp_path / "missing-chat.db"
-    with sqlite3.connect(missing_chat) as connection:
+    with contextlib.closing(sqlite3.connect(missing_chat)) as connection, connection:
         connection.execute("CREATE TABLE events (seq INTEGER, kind TEXT, payload TEXT)")
     assert (
         setup_verifier._read_canary_evidence(
@@ -780,6 +780,46 @@ def test_adapter_event_store_evidence_failures_are_bounded(
     with pytest.raises(VerificationProbeError, match="verification_replay_failed"):
         setup_verifier._open_read_only_store(regular)
     assert bad.closed
+
+    class FailingCheck(BadCheck):
+        def execute(self, _sql: str) -> BadCheck:
+            raise sqlite3.DatabaseError("file is not a database")
+
+    failing = FailingCheck()
+    monkeypatch.setattr(
+        "synapse_channel.setup_verifier.sqlite3.connect",
+        lambda *_args, **_kwargs: failing,
+    )
+    with pytest.raises(VerificationProbeError, match="verification_replay_failed"):
+        setup_verifier._open_read_only_store(regular)
+    assert failing.closed
+
+
+def test_reading_canary_evidence_closes_the_store_it_opened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The read-only event store is closed after every read, found or not."""
+    database = tmp_path / "events.db"
+    with contextlib.closing(sqlite3.connect(database)) as connection, connection:
+        connection.execute("CREATE TABLE events (seq INTEGER, kind TEXT, payload TEXT)")
+    opened: list[sqlite3.Connection] = []
+    real_open = setup_verifier._open_read_only_store
+
+    def tracked(path: Path) -> sqlite3.Connection:
+        connection = real_open(path)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(setup_verifier, "_open_read_only_store", tracked)
+    assert (
+        setup_verifier._read_canary_evidence(
+            database, target="DEMO/x", canary_id="0" * 32, message_seq=1
+        )
+        is None
+    )
+    [connection] = opened
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        connection.execute("SELECT 1")
 
 
 def test_adapter_command_and_canary_refusals_are_bounded(tmp_path: Path) -> None:
@@ -1136,7 +1176,7 @@ def test_adapter_canary_skips_invalid_receipts_and_waits_for_durable_ack(tmp_pat
     assert evidence.message_seq == 1
 
     empty = tmp_path / "empty.db"
-    with sqlite3.connect(empty) as connection:
+    with contextlib.closing(sqlite3.connect(empty)) as connection, connection:
         connection.execute("CREATE TABLE events (seq INTEGER, kind TEXT, payload TEXT)")
     ticks = iter([0.0, 0.0, 2.0])
 

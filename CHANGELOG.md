@@ -287,6 +287,10 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **`synapse setup` verification closes the event store it reads.** The
+  verifier opened the hub journal read-only for each canary check and never
+  closed it, and it also left it open when the integrity check itself failed.
+
 - **A pane bridge with a queued wake no longer starts a wait every interval.**
   While a modal, busy turn or startup screen kept a wake from being injected,
   the bridge fell back to a new `synapse wait` process every probe interval
