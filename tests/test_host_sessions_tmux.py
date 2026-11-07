@@ -7,6 +7,7 @@
 # SYNAPSE_CHANNEL — real isolated tmux metadata tests
 """Observe a disposable pane without capturing or modifying provider content."""
 
+import os
 import shutil
 import subprocess
 import time
@@ -19,6 +20,57 @@ from synapse_channel.host_sessions_tmux import observe_tmux
 
 def test_missing_socket_is_unavailable(tmp_path: Path) -> None:
     assert observe_tmux(str(tmp_path / "absent.sock")) == ((), "unavailable")
+
+
+def _tmux_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str) -> Path:
+    """Put an executable named ``tmux`` first on PATH; it records its arguments."""
+    directory = tmp_path / "bin"
+    directory.mkdir()
+    program = directory / "tmux"
+    program.write_text(
+        f'#!/bin/sh\nprintf "%s\\n" "$@" > "{tmp_path}/argv"\n{body}\n', encoding="utf-8"
+    )
+    program.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{directory}{os.pathsep}{os.environ['PATH']}")
+    return tmp_path / "argv"
+
+
+def test_tmux_missing_from_path_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert observe_tmux() == ((), "unavailable")
+
+
+def test_no_socket_reads_the_default_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    argv = _tmux_on_path(tmp_path, monkeypatch, r"printf '42\t$1\t%%3\t0\t\t\n'")
+    panes, status = observe_tmux()
+    assert status == "complete"
+    assert [(pane.pid, pane.session, pane.pane, pane.attached) for pane in panes] == [
+        (42, "$1", "%3", False)
+    ]
+    assert panes[0].identity is None and panes[0].project is None
+    assert argv.read_text(encoding="utf-8").splitlines()[0] == "list-panes"
+
+
+def test_a_silent_tmux_is_stopped_at_the_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _tmux_on_path(tmp_path, monkeypatch, "exec sleep 30")
+    started = time.monotonic()
+    assert observe_tmux() == ((), "partial")
+    assert time.monotonic() - started < 5
+
+
+def test_a_tmux_that_closes_its_output_but_keeps_running_is_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _tmux_on_path(tmp_path, monkeypatch, "exec >&-\nexec sleep 30")
+    started = time.monotonic()
+    assert observe_tmux() == ((), "partial")
+    assert time.monotonic() - started < 5
 
 
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is not installed")
