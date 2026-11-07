@@ -14,6 +14,27 @@ JSON files under `results/` record their named fixtures and available host/sourc
 metadata. A result's figures qualify that recorded profile; the presence of a
 script or JSON file does not establish a fresh run of a current build.
 
+## `hot_path_profile.py`
+
+Profiles the claim-grant and mailbox hot paths stage by stage. It runs the
+`coordination_handlers_benchmark.py` workload under the deterministic profiler
+and assigns each function's own time to one fixed stage:
+
+- durable SQLite commits;
+- other SQLite statements;
+- `fsync`;
+- socket I/O;
+- WebSocket framing;
+- JSON;
+- hub and client logic;
+- `asyncio`.
+
+Run `PYTHONPATH=src python benchmarks/hot_path_profile.py`. The committed result
+is `results/hot_path_profile.json`, with the median of each stage's share over
+its runs, each run, and the host load. It is decision evidence from a shared
+host, not an isolated throughput claim. See the decision in
+[`docs/benchmarks.md`](../docs/benchmarks.md#hot-path-profile-and-the-rust-core-decision).
+
 ## `coordination_wire_benchmark.py`
 
 Measures six fixed current JSON coordination frames, including claim, directed

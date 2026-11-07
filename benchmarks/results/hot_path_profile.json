@@ -1,0 +1,90 @@
+{
+  "chats": 100,
+  "host": {
+    "cpu": "x86_64",
+    "cpus": 12,
+    "isolation": "shared host, serial loopback, deterministic profiler",
+    "load_average": [
+      2.64208984375,
+      3.4658203125,
+      4.37939453125
+    ],
+    "pid": 1849027,
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "lease_cycles": 20,
+  "median_chat_receipt_p50_us": 6826.694123446941,
+  "median_claim_p50_us": 4765.677498653531,
+  "median_durable_commits_per_operation": 2.51,
+  "median_python_share": 0.2105158095143695,
+  "median_stage_share": {
+    "asyncio": 0.06171175390789782,
+    "client logic": 0.0053130816695237,
+    "fsync": 0.04950195573025527,
+    "hub logic": 0.08411432728194787,
+    "json": 0.026781422986682544,
+    "other": 0.12144687948612332,
+    "socket io": 0.028565725181525118,
+    "sqlite durable commit": 0.54168370788812,
+    "sqlite statements": 0.027558147098877467,
+    "websocket framing": 0.03550667168600194
+  },
+  "per_run": [
+    {
+      "chat_receipt_p50_us": 7209.797622635961,
+      "claim_p50_us": 5215.202458202839,
+      "durable_commits_per_operation": 2.51,
+      "profiled_seconds": 1.4372766080000001,
+      "stage_share": {
+        "asyncio": 0.06111451164729457,
+        "client logic": 0.0053130816695237,
+        "fsync": 0.04806006903300273,
+        "hub logic": 0.08411432728194787,
+        "json": 0.02580077334703272,
+        "other": 0.12144687948612332,
+        "socket io": 0.03442558219106562,
+        "sqlite durable commit": 0.5250597580170177,
+        "sqlite statements": 0.06055217382345375,
+        "websocket framing": 0.034112843503538035
+      }
+    },
+    {
+      "chat_receipt_p50_us": 6826.694123446941,
+      "claim_p50_us": 4736.05515435338,
+      "durable_commits_per_operation": 2.51,
+      "profiled_seconds": 1.2785942709999998,
+      "stage_share": {
+        "asyncio": 0.06171175390789782,
+        "client logic": 0.0052498365996510865,
+        "fsync": 0.04950195573025527,
+        "hub logic": 0.08126612433413609,
+        "json": 0.026781422986682544,
+        "other": 0.10732930931457288,
+        "socket io": 0.027729516551228163,
+        "sqlite durable commit": 0.5773652617906968,
+        "sqlite statements": 0.027558147098877467,
+        "websocket framing": 0.03550667168600194
+      }
+    },
+    {
+      "chat_receipt_p50_us": 6276.414496824145,
+      "claim_p50_us": 4765.677498653531,
+      "durable_commits_per_operation": 2.51,
+      "profiled_seconds": 1.056088715,
+      "stage_share": {
+        "asyncio": 0.06645871223043982,
+        "client logic": 0.005720348029663398,
+        "fsync": 0.06040521226476698,
+        "hub logic": 0.0849890797289695,
+        "json": 0.027943231075999143,
+        "other": 0.12163096639092477,
+        "socket io": 0.028565725181525118,
+        "sqlite durable commit": 0.54168370788812,
+        "sqlite statements": 0.02656403065532236,
+        "websocket framing": 0.036038986554268806
+      }
+    }
+  ],
+  "runs": 3
+}

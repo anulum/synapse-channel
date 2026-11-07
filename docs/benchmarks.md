@@ -344,6 +344,57 @@ to five modules (2,981 lines, including native documentation and typed
 stage boundaries). Shorter procedures do not imply fewer source lines.
 
 
+## Hot path profile and the Rust core decision
+
+`PYTHONPATH=src python benchmarks/hot_path_profile.py` runs the workload of the
+previous section (100 receipt-requested directed chats and 20 keyed lease
+cycles) three times under the deterministic profiler. It splits the time into
+stages. On 2026-11-06 the workstation ran Python 3.12 with a load average of
+2.6, shared with other sessions. The median share of profiled time per stage
+was:
+
+| Stage | Share |
+| --- | ---: |
+| SQLite durable commit | 54.2 % |
+| `fsync` (outside SQLite) | 5.0 % |
+| other SQLite statements | 2.8 % |
+| socket I/O | 2.9 % |
+| WebSocket framing | 3.6 % |
+| JSON | 2.7 % |
+| hub logic | 8.4 % |
+| client logic | 0.5 % |
+| `asyncio` | 6.2 % |
+| other (standard library) | 12.1 % |
+
+The runs averaged 2.51 durable commits per operation. The median p50 was
+4,766 µs for a claim grant and 6,827 µs for a directed chat with its delivery
+receipt.
+
+**Decision: no Rust core and no sharding for these paths.**
+
+- **What a faster core could save.** All the Python code on these paths
+  (hub logic, client logic, WebSocket framing, JSON and `asyncio`) together
+  takes 21.1 % of the time. A rewrite that made it free would save at most
+  about a fifth.
+- **What dominates.** Durable SQLite commits take more than half, and a
+  rewrite in any language keeps them. They come from the guarantee that a
+  grant is on disk before it is acknowledged (INV-JA-1).
+- **Where speed would come from instead.** A real gain would mean fewer
+  commits per operation, for example group commit across concurrent
+  requests. That changes when a client may see an acknowledgement relative
+  to durability, so it is a behaviour decision for the project lead, not a
+  performance fix.
+- **Sharding.** At the local-first scale, a handful to a few dozen agents per
+  hub, one hub is far from saturated, and the scalability section above shows
+  the linear scope scan stays inside its budget up to 100 claims per
+  worktree.
+- **When to revisit.** Revisit with this profile if Python code grows above
+  about half of the time, or if a deployment regularly holds 1,000 or more
+  claims in one worktree.
+
+The full figures, each run and the host load are in
+`benchmarks/results/hot_path_profile.json`.
+
 ## A2A edge, dashboard edge and pane wake
 
 `PYTHONPATH=src python benchmarks/external_surfaces_benchmark.py` serves the
