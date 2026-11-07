@@ -15,6 +15,7 @@ import os
 import shutil
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -199,6 +200,11 @@ def test_actual_dpkg_accepts_a_labelled_copy_of_real_package_metadata(
     case = copied_package_tree
     raw = case.source.read_bytes()
     result = verify_dpkg_native_file(case.source, raw, tree=case.tree)
+    verified_at = result["verified_at"]
+    assert isinstance(verified_at, str)
+    stamp = datetime.fromisoformat(verified_at)
+    assert stamp.tzinfo is UTC
+    assert abs((datetime.now(UTC) - stamp).total_seconds()) < 30
     assert result["package"] == case.package and result["dpkg_md5_verified"] is True
     assert result["package_record_path"] == case.recorded_path
     assert result["source_context"] == "explicit-tree"

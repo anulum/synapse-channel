@@ -20,7 +20,7 @@ import re
 import stat
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .capsule import read_relative_file, require_posix_descriptors
@@ -306,7 +306,7 @@ def verify_dpkg_native_file(
         "dpkg_md5_verified": True,
         "sha256": hashlib.sha256(captured).hexdigest(),
         "size_bytes": len(captured),
-        "verified_at": datetime.now(timezone.utc).isoformat(),
+        "verified_at": datetime.now(UTC).isoformat(),
     }
 
 
