@@ -392,12 +392,11 @@ class SystemdVerificationAdapter:
                 await asyncio.wait(
                     {task, ready}, timeout=remaining, return_when=asyncio.FIRST_COMPLETED
                 )
-                if ready.done() and ready.result() and not task.done():
-                    connected = True
-                    return task
-                if not task.done():
-                    raise VerificationProbeError("verification_replay_failed")
-                await task
+                connected = bool(ready.done() and ready.result() and not task.done())
+                if not connected:
+                    if not task.done():
+                        raise VerificationProbeError("verification_replay_failed")
+                    await task
             finally:
                 ready.cancel()
                 await asyncio.gather(ready, return_exceptions=True)
@@ -405,6 +404,9 @@ class SystemdVerificationAdapter:
                     agent.running = False
                     task.cancel()
                     await asyncio.gather(task, return_exceptions=True)
+            # Returned after the cleanup above, so the live connection is never cancelled.
+            if connected:
+                return task
             await self._sleep(min(0.05, max(0.0, deadline - self._clock())))
         raise VerificationProbeError("verification_replay_failed")
 
