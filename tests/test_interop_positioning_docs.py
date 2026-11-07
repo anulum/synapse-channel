@@ -83,6 +83,10 @@ def test_adapter_docs_position_mcp_and_a2a_as_edges() -> None:
     assert "separate adapter process, not a hub change" in mcp_doc
     assert "bridge and keeps A2A at the edge of the system" in cli_doc
     assert "adapters are interop surfaces" in readme
+    assert "editor/runtime behaviour" in readme
+    assert "unsupported behaviour" in readme
+    assert "CWD-derived behaviour" in readme
+    assert "behavior" not in readme
 
 
 def test_readme_surfaces_mcp_in_the_lead_not_only_deep_in_the_body() -> None:

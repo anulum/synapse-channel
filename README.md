@@ -698,9 +698,9 @@ Synapse coordinates the agents you already run; it does not replace them.
 Its MCP and A2A adapters are interop surfaces: they let Claude Code, Claude
 Desktop, Cursor, Codex, Copilot-style hosts, Aider, orchestration frameworks,
 and other agent tools participate in one local coordination bus while those
-tools still own prompting, model choice, tool use, and editor/runtime behavior.
+tools still own prompting, model choice, tool use, and editor/runtime behaviour.
 The [integration demo matrix](docs/integration-demos.md) lists three narrow,
-repeatable paths and the unsupported behavior that remains outside each demo.
+repeatable paths and the unsupported behaviour that remains outside each demo.
 
 - **Claude Code / Codex / Claude Desktop / Cursor (MCP):** register the stdio
   server and its coordination tools load automatically — no shell hook or
@@ -1018,7 +1018,7 @@ mkdir -p .synapse
 printf '%s\n' myrepo > .synapse/project
 ```
 
-For legacy CWD-derived behavior, set `SYNAPSE_AUTO_PROJECT_FROM_CWD=1` in that
+For legacy CWD-derived behaviour, set `SYNAPSE_AUTO_PROJECT_FROM_CWD=1` in that
 terminal. The hook also wraps common provider commands (`codex`, `claude`,
 `kimi`, `grok`, `gemini`, `agent`, `ask`, `ollama`) through `synapse
 worker-session`, so cloud and local LLM sessions inherit the same Synapse
