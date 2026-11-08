@@ -18,6 +18,8 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.47] - 2026-11-08
+
 ### Added
 
 - **`synapse operation declare | outcome | verification`.** The client half of
