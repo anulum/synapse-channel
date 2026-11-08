@@ -8,7 +8,7 @@
 """Common execution semantics for bus-owned headless provider processes.
 
 Provider drivers keep their argv construction, context placement, resume rules,
-and output parser.  This kernel owns only the behavior that must be identical:
+and output parser.  This kernel owns only the behaviour that must be identical:
 identity/channel projection, binary health, bounded subprocess execution,
 process-failure conversion, typed result construction, and off-loop dispatch.
 OpenCode is deliberately excluded because its attach/auth/stream contract is a
