@@ -18,17 +18,20 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.50] - 2026-11-08
+
 ### Added
 
 - **One import surface for federation consumers.** `synapse_channel.federation_api`
-  offers, from one module, the 109 Core names an out-of-tree federation consumer
+  offers, from one package, the 109 Core names an out-of-tree federation consumer
   such as the fleet tier imports today: following and merging peer hubs, claim
   forwarding, shared spend, attachments, evidence and OpenTelemetry, receipts,
   identity and TLS. Each name is the defining module's own object and is loaded
-  on first use, so importing the module loads nothing else, and type checkers
-  see the real types. Core may now move a name between internal modules without
-  breaking such a consumer; the list is pinned by `tests/test_federation_api.py`
-  and must stay equal to the fleet inventory guard.
+  with its capability on first use, so importing the package loads nothing
+  else, and type checkers see the real types. Core may now move a name between
+  internal modules without breaking such a consumer; the list is pinned by
+  `tests/test_federation_api.py` and must stay equal to the fleet inventory
+  guard.
 
 ### Changed
 
