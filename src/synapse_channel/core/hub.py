@@ -585,6 +585,7 @@ class SynapseHub(HubConfigView):
         self.pending_receipts = delivery.pending_receipts
         self.mailbox_pending = delivery.mailbox_pending
         self.mailbox_handovers = delivery.mailbox_handovers
+        self.operation_records = delivery.operation_records
         self._relay = delivery.relay
         self._broadcaster = delivery.broadcaster
         self._ingress = gates.ingress

@@ -146,6 +146,23 @@ does not add agent grades to protocol envelopes.
   `mailbox_handover` event, then advances the old watermark with source
   `handover` or `closed`. One request covers at most 200 chats; a repeat with
   the same `from` and covered `through_seq` changes nothing. No chat is deleted.
+- **Operation records:** `operation_record` binds an operation and its evidence
+  to one claimed task. `record` is `declare`, `outcome` or `verification`;
+  `task_id` and `operation_id` (1–128 of `A-Z a-z 0-9 . _ : -`) are required.
+  A `declare` comes from the owner of the live claim and names the claim's
+  `epoch` or `ownership_epoch`, an `effect` (`file`, `git_publication`,
+  `deployment` or `migration`), its identifiers in `effect_target` (exactly
+  `path`+`sha256`; `repository`+`branch`+`revision`; `report`+`revision`; or
+  `database`+`migration`+`schema_sha256`) and optionally `budget_remaining`. A
+  repository URL that carries a credential, a query or a fragment is refused.
+  An id is declared once per hub; the journal keeps the claim's current epoch as
+  `snapshot_epoch`. An `outcome` carries one `synapse.execution-outcome.v1`
+  `report`; a `verification` carries one `synapse.result-verification.v1`
+  `verification` whose verifier matches the declared effect. Both need the
+  `operation-evidence` grant, a declared operation on the same task and fewer
+  than 32 earlier rows for it. The hub journals `operation_declared`,
+  `operation_outcome` or `operation_verified`; verification evidence keeps only
+  digest-shaped values. Records are observations and grant no authority.
 - **Fleet planning input:** `entitlement_advert` records one owner's redacted
   pool advertisement as an audit-only journal row after the proven-sender,
   `entitlement-advertise` ACL and durable-journal gates. It is never broadcast.
@@ -455,6 +472,12 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   `no_journal`, `not_authorised`, `nothing_pending` or `forward_refused`),
   `mailbox`, `successor`, `through_seq`, `forwarded` and `remaining`, which is
   true when more pending mail lies beyond the covered sequence.
+  `operation_record_result` answers an `operation_record` with `status`
+  (`accepted` or `refused`), `reason` (`invalid_request`, `no_journal`,
+  `not_claim_holder`, `stale_epoch`, `duplicate_operation`, `not_authorised`,
+  `unknown_operation`, `task_mismatch`, `operation_mismatch`,
+  `verifier_mismatch` or `record_limit`), the journal `seq` when accepted, and
+  the request's `record`, `task_id`, `operation_id` and `request_id`.
   `identity_enroll_result` and `identity_revoke_result` are the verdicts for
   `identity_enroll` and `identity_revoke`. `entitlement_advert_result` is the
   private verdict for `entitlement_advert`. `spend_result` is the private

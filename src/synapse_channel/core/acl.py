@@ -43,6 +43,7 @@ MAILBOX = "mailbox"
 ROLE_CLAIM = "role-claim"
 PIN_RECLAIM = "identity-pin-reclaim"
 MAILBOX_HANDOVER = "mailbox-handover"
+OPERATION_EVIDENCE = "operation-evidence"
 IDENTITY_ENROLL = "identity-enroll"
 ENTITLEMENT_ADVERTISE = "entitlement-advertise"
 EVIDENCE = "evidence"
@@ -68,6 +69,7 @@ PERMISSIONS = frozenset(
         ROLE_CLAIM,
         PIN_RECLAIM,
         MAILBOX_HANDOVER,
+        OPERATION_EVIDENCE,
         IDENTITY_ENROLL,
         ENTITLEMENT_ADVERTISE,
         EVIDENCE,
@@ -117,6 +119,12 @@ hub's enrolment allow-list.
 a redacted pool advertisement (``synapse entitlements advertise``) in the hub
 journal, for fleet planners. Target kind is ``pool-alias``; the pattern matches the
 advertised alias. It is always enforced by its handler.
+
+``OPERATION_EVIDENCE`` grants an identity the right to add an outcome report or
+a verification record to an operation declared on a task (``operation_record``).
+Target kind is ``claim``; the pattern matches the task id. The handler enforces
+it even when ``--require-acl`` is off, so an open hub never keeps third-party
+evidence. A declaration needs no grant: only the live claim holder may make it.
 
 ``EVIDENCE`` grants an authenticated recorder the right to append a bounded
 enforcement record. The shipped guard-denial target is

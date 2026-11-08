@@ -131,6 +131,9 @@ class EventKind:
     DELIVERY_RECEIVING_HUB_BOUND = DELIVERY_OWNER_BOUND
     MAILBOX_WATERMARK = "mailbox_watermark"
     MAILBOX_HANDOVER = "mailbox_handover"
+    OPERATION_DECLARED = "operation_declared"
+    OPERATION_OUTCOME = "operation_outcome"
+    OPERATION_VERIFIED = "operation_verified"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
     IDENTITY_ENROLLMENT = "identity_enrollment"
     ENTITLEMENT_ADVERT = "entitlement_advert"

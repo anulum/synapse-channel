@@ -20,6 +20,19 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **`operation_record`: the hub journals operations bound to a claimed task.**
+  The live claim holder declares an operation and its effect (a file, a git
+  publication, a deployment or a migration) before acting; later an outcome
+  report and verification records are added for it. Each accepted record is
+  one journal event (`operation_declared`, `operation_outcome`,
+  `operation_verified`), so a reader of the journal alone can tell whether an
+  effect was verified, found absent, or is still unknown. Evidence needs the
+  new `operation-evidence` permission, which the handler enforces even on an
+  open hub; a declaration needs the live claim at its epoch or ownership
+  epoch. Ids are declared once, rows are append-only and capped at 32 per
+  operation, credentials in repository URLs are refused, and records grant no
+  authority. This is the hub half of the recovery console; the client commands
+  follow.
 - **Outcome and verification records decode in the core.** The
   `synapse.execution-outcome.v1` and `synapse.result-verification.v1` record
   types now live in `synapse_channel.core` (`core.execution_outcome`,

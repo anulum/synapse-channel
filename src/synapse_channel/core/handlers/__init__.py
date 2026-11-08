@@ -41,6 +41,7 @@ from synapse_channel.core.handlers.multihub import VERB_SPECS as MULTIHUB_VERBS
 from synapse_channel.core.handlers.multihub_claim import VERB_SPECS as MULTIHUB_CLAIM_VERBS
 from synapse_channel.core.handlers.native_message import VERB_SPECS as NATIVE_MESSAGE_VERBS
 from synapse_channel.core.handlers.offerings import VERB_SPECS as OFFERINGS_VERBS
+from synapse_channel.core.handlers.operation_records import VERB_SPECS as OPERATION_RECORD_VERBS
 from synapse_channel.core.handlers.operator_relay import VERB_SPECS as OPERATOR_RELAY_VERBS
 from synapse_channel.core.handlers.planning import VERB_SPECS as PLANNING_VERBS
 from synapse_channel.core.handlers.snapshots import VERB_SPECS as SNAPSHOTS_VERBS
@@ -62,6 +63,7 @@ VERBS = build_registry(
         IDENTITY_PINS_VERBS,
         LEASING_VERBS,
         MAILBOX_HANDOVER_VERBS,
+        OPERATION_RECORD_VERBS,
         MEMORY_VERBS,
         MESSAGE_FORWARD_VERBS,
         MESSAGING_VERBS,

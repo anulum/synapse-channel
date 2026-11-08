@@ -29,6 +29,7 @@ from synapse_channel.core.hub_ingress import HubIngress
 from synapse_channel.core.hub_relay import RelayMirror
 from synapse_channel.core.mailbox_handover import HandoverLedger
 from synapse_channel.core.mailbox_pending import MailboxPendingTracker
+from synapse_channel.core.operation_records import OperationLedger
 from synapse_channel.core.operator_relay_forwarding import OperatorRelayForwarding
 from synapse_channel.core.pending_receipts import PendingReceipts
 from synapse_channel.core.token_audit import token_audit_for
@@ -43,6 +44,7 @@ class HubDeliveryComponents:
     pending_receipts: PendingReceipts
     mailbox_pending: MailboxPendingTracker
     mailbox_handovers: HandoverLedger
+    operation_records: OperationLedger
     relay: RelayMirror
     broadcaster: HubBroadcaster
 
@@ -73,6 +75,7 @@ def build_delivery(
         pending_receipts=PendingReceipts(),
         mailbox_pending=MailboxPendingTracker(config.journal),
         mailbox_handovers=HandoverLedger(config.journal),
+        operation_records=OperationLedger(config.journal),
         relay=relay,
         broadcaster=HubBroadcaster(
             clients.clients, relay, system=callbacks.system, online_agents=callbacks.online_agents
