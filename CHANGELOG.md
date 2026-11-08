@@ -20,6 +20,13 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **`worker-session` tells the provider its operation id.** The provider runs
+  with `SYN_OPERATION_ID` set to the operation id its outcome report carries,
+  and `synapse operation declare` uses it when `--operation-id` is omitted.
+  Before this, a provider could not declare the operation its own report and
+  the `verify-result` record bound to it would name, so the hub refused their
+  publication as an unknown operation.
+
 - **Correlation contract `synapse.correlation.v1`.** `synapse causality otel
   --correlate` now also places operation records into their task traces: a
   declaration becomes `operation <operation_id>`, spanning the declaration

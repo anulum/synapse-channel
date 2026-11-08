@@ -28,6 +28,7 @@ import argparse
 import asyncio
 import contextlib
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,7 @@ from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.terminal_text import terminal_text
+from synapse_channel.worker_outcome import OPERATION_ID_ENV
 
 EXIT_ACCEPTED = 0
 EXIT_REFUSED = 1
@@ -218,10 +220,14 @@ def _cmd_declare(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"operation declare refused: {exc}")
         return EXIT_UNREADABLE
+    operation_id = args.operation_id or os.environ.get(OPERATION_ID_ENV, "")
+    if not operation_id:
+        print(f"operation declare refused: name --operation-id or set {OPERATION_ID_ENV}")
+        return EXIT_UNREADABLE
     fields: dict[str, Any] = {
         "record": "declare",
         "task_id": args.task,
-        "operation_id": args.operation_id,
+        "operation_id": operation_id,
         "epoch": args.epoch,
         "effect": args.effect,
         "effect_target": target,
@@ -298,7 +304,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
 
     declare = actions.add_parser("declare", help="Declare an operation before its effect.")
     _add_common(declare)
-    declare.add_argument("--operation-id", required=True, help="Unique operation identity.")
+    declare.add_argument(
+        "--operation-id",
+        default=None,
+        help=f"Unique operation identity; defaults to ${OPERATION_ID_ENV}, which "
+        "worker-session sets to the id its outcome report carries.",
+    )
     declare.add_argument(
         "--epoch", required=True, type=int, help="The claim's epoch or ownership epoch."
     )

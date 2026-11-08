@@ -181,6 +181,12 @@ synapse worker-session --identity MY-PROJECT/worker \
 synapse worker-session --read-outcome /private/worker-runs/run-001.json
 ```
 
+The provider runs with `SYN_OPERATION_ID` set to the operation id its report
+carries. A provider that holds the claim on a task declares that operation on
+the hub before its effect (`synapse operation declare` uses the variable when
+`--operation-id` is omitted), so the report and a `verify-result --outcome`
+record bound to it can later be published for the same operation.
+
 The query requires no provider command or identity and never starts, stops or
 retries a process. It refuses malformed or unavailable reports without echoing
 their contents. Reports retain no argv, credentials, prompts or returned text.

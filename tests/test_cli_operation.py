@@ -81,6 +81,30 @@ def test_declare_builds_the_exact_effect_target(monkeypatch: pytest.MonkeyPatch)
             _args("declare", *common, "--effect", "file", "--budget", budget)
 
 
+def test_declare_takes_the_operation_id_worker_session_gives_its_provider(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without --operation-id the declaration names SYN_OPERATION_ID; with neither it is refused."""
+    seen: list[dict[str, Any]] = []
+
+    async def fake(*, fields: dict[str, Any], **_kwargs: Any) -> int:
+        seen.append(fields)
+        return 0
+
+    monkeypatch.setattr(command, "publish_operation_record", fake)
+    common = ["--task", "T1", "--name", "P/worker", "--epoch", "2", "--effect", "file"]
+    file_target = ["--path", "a", "--sha256", SHA]
+    monkeypatch.setenv("SYN_OPERATION_ID", "worker-0a1b")
+    assert command._cmd_declare(_args("declare", *common, *file_target)) == 0
+    explicit = _args("declare", *common, *file_target, "--operation-id", "op-2")
+    assert command._cmd_declare(explicit) == 0
+    assert [fields["operation_id"] for fields in seen] == ["worker-0a1b", "op-2"]
+    monkeypatch.delenv("SYN_OPERATION_ID")
+    assert command._cmd_declare(_args("declare", *common, *file_target)) == command.EXIT_UNREADABLE
+    assert "name --operation-id or set SYN_OPERATION_ID" in capsys.readouterr().out
+    assert len(seen) == 2
+
+
 def test_evidence_files_are_read_but_never_changed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

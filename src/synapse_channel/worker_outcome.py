@@ -29,6 +29,13 @@ from synapse_channel.launch_record import EVIDENCE_CLASS, process_identity
 MAX_REPORT_BYTES = 65536
 """Bound for a single owner-local outcome snapshot, without argv or returned content."""
 
+OPERATION_ID_ENV = "SYN_OPERATION_ID"
+"""Environment variable that names the provider's operation to the provider itself.
+
+``synapse worker-session`` sets it to the operation id its outcome report carries,
+so the provider can declare that operation on its claimed task before the effect.
+"""
+
 
 class WorkerExit(int):
     """Retain the provider/attachment exit code and an independently scoped observation."""

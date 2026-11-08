@@ -183,6 +183,29 @@ def test_real_cli_process_exit_does_not_verify_external_effects(
     assert effect.read_text() == "effect"
 
 
+def test_the_provider_is_told_the_operation_its_report_carries(tmp_path: Path) -> None:
+    """The provider reads SYN_OPERATION_ID and it names the operation of its own report."""
+    env = private_environment(tmp_path)
+    env.pop("SYN_OPERATION_ID", None)
+    report, seen = tmp_path / "private" / "outcome.json", tmp_path / "seen"
+    program = (
+        "import os,pathlib,sys; "
+        "pathlib.Path(sys.argv[1]).write_text(os.environ['SYN_OPERATION_ID'])"
+    )
+    run = subprocess.run(
+        launch_arguments(report, program, str(seen)),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    assert run.returncode == 0, run.stderr + run.stdout
+    operation_id = inquire(report, env)["operation_id"]
+    assert isinstance(operation_id, str) and operation_id.startswith("worker-")
+    assert seen.read_text() == operation_id
+
+
 @pytest.mark.parametrize("raw", [b"{UNTRUSTED_REPORT_CONTENT", b"[]"])
 def test_public_reader_refuses_truncated_or_nonobject_json(tmp_path: Path, raw: bytes) -> None:
     """Actual owner-local files cannot bypass the report document contract."""

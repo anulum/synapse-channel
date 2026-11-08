@@ -28,7 +28,7 @@ from synapse_channel.launch_record import (
     record_dir_for,
     write_record,
 )
-from synapse_channel.worker_outcome import WorkerExit, WorkerObservation
+from synapse_channel.worker_outcome import OPERATION_ID_ENV, WorkerExit, WorkerObservation
 
 SIDECAR_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 """Seconds to wait for a wake sidecar to exit after graceful termination."""
@@ -343,6 +343,10 @@ def run_worker_session(
 ) -> WorkerExit:
     """Run ``command`` with ``SYN_PROJECT``/``SYN_IDENTITY`` and an optional waker.
 
+    The provider also receives ``SYN_OPERATION_ID``, the operation id this launch's
+    outcome report carries, so it can declare that operation on its claimed task
+    (``synapse operation declare``) before its effect.
+
     The sidecar is a local ``syn arm`` process. It holds a socket and prints wake
     messages, but it does not call a model provider and therefore does not spend
     tokens while waiting. ``cwd`` sets the provider working directory in both
@@ -357,6 +361,7 @@ def run_worker_session(
     env["SYN_PROJECT"] = resolved_project
     env["SYN_IDENTITY"] = identity.strip()
     outcome = WorkerObservation(outcome_file)
+    env[OPERATION_ID_ENV] = outcome.operation_id
     if _terminal_tmux_enabled(command=command, mode=terminal_tmux, env=env):
         env["SYN_TMUX_PROVIDER"] = "1"
         env["SYNAPSE_AUTO_CONNECT"] = "0"
