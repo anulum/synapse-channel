@@ -15,7 +15,11 @@ permissions:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    # Pinned: on the ubuntu-26.04 image the packaged upgrade acceptance's editor opens a
+    # sign-in page (http://127.0.0.1:<port>/signin) while the test types into the command
+    # palette, so the hub token is never set. Move back to ubuntu-latest once the test
+    # drives the editor without keystrokes or that sign-in prompt is suppressed.
+    runs-on: ubuntu-24.04
     # A normal run takes about 3 minutes; a hung editor must not hold a runner for 6 hours.
     timeout-minutes: 30
     defaults:
