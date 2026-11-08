@@ -97,17 +97,22 @@ _CONTRACT_SIZE = (
 # Every Core symbol the fleet tier imports, by module, with its kind: ``class``, ``callable``
 # (a function or a callable type alias) or ``value`` (a constant or a non-callable type
 # alias). The list is the fleet tier's consumed-symbol inventory as of its admission of
-# Core 0.99.49 (attachment fetch and Core's record-keeping categories added). It pins
-# existence and kind only, so a removal, a rename or a change between kinds fails here,
-# in this repository's CI, before a release can break the consumer; the required fields
-# and parameters of the most used primitives stay pinned above.
+# Core 0.99.49, with attachment fetch and local import and Core's record-keeping
+# categories added. It pins existence and kind only, so a removal, a rename or a change
+# between kinds fails here, in this repository's CI, before a release can break the
+# consumer; the required fields and parameters of the most used primitives stay pinned
+# above.
 _FLEET_IMPORTS: dict[str, dict[str, str]] = {
+    "synapse_channel.client.agent": {
+        "SynapseAgent": "class",
+    },
     "synapse_channel.core.at_rest": {
         "load_key_file": "callable",
     },
     "synapse_channel.core.attachment_store": {
         "AttachmentError": "class",
         "AttachmentStore": "class",
+        "MAX_CHUNK_BYTES": "value",
     },
     "synapse_channel.core.attachment_transport": {
         "request_attachment": "callable",
@@ -175,6 +180,7 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     },
     "synapse_channel.core.identity_keys": {
         "IdentityKeyError": "class",
+        "load_signing_key": "callable",
     },
     "synapse_channel.core.journal": {
         "EventKind": "class",
@@ -237,6 +243,7 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
         "import_sqlcipher_module": "callable",
     },
     "synapse_channel.core.protocol": {
+        "MessageType": "class",
         "ProtocolNegotiation": "class",
         "WIRE_PROTOCOL_VERSION": "value",
     },
@@ -281,8 +288,8 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     },
 }
 
-_FLEET_SYMBOLS = 105
-_FLEET_MODULES = 36
+_FLEET_SYMBOLS = 109
+_FLEET_MODULES = 37
 
 
 def _kind(obj: object) -> str:
