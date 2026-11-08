@@ -89,7 +89,7 @@ def test_projection_matches_mailbox_replay_routing(tmp_path: Path) -> None:
     assert counts["PROJ/BOB"] == 3
 
 
-def test_role_change_recomputes_only_that_identity(tmp_path: Path) -> None:
+def test_a_bound_role_takes_its_mail_into_the_role_mailbox(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "hub.db")
     try:
         _chat(store, target="PROJ/reviewer")
@@ -102,8 +102,8 @@ def test_role_change_recomputes_only_that_identity(tmp_path: Path) -> None:
     finally:
         store.close()
 
-    assert without_role is not None and without_role["PROJ/BOB"] == 0
-    assert with_role is not None and with_role["PROJ/BOB"] == 1
+    assert without_role == {"PROJ/BOB": 0, "PROJ/reviewer": 1}
+    assert with_role == {"PROJ/BOB": 0, "role:PROJ/reviewer": 1}
 
 
 def test_cold_snapshot_reads_chat_history_once_for_all_identities(tmp_path: Path) -> None:
@@ -129,12 +129,12 @@ def test_cold_snapshot_reads_chat_history_once_for_all_identities(tmp_path: Path
     assert counts == {
         "PROJ/ALICE": 0,
         "PROJ/BOB": 2,
-        "PROJ/CAROL": 1,
-        "PROJ/reviewer": 1,
+        "PROJ/CAROL": 0,
+        "role:PROJ/reviewer": 1,
     }
 
 
-def test_logical_identity_and_sidecar_roles_are_combined(tmp_path: Path) -> None:
+def test_logical_identity_and_sidecar_roles_both_get_role_mailboxes(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "hub.db")
     try:
         _chat(store, target="PROJ/reviewer")
@@ -151,7 +151,7 @@ def test_logical_identity_and_sidecar_roles_are_combined(tmp_path: Path) -> None
     finally:
         store.close()
 
-    assert counts is not None and counts["PROJ/BOB"] == 2
+    assert counts == {"PROJ/BOB": 0, "role:PROJ/reviewer": 1, "role:PROJ/triage": 1}
 
 
 def test_pane_sidecar_maps_to_its_logical_identity() -> None:
@@ -192,11 +192,16 @@ def test_ack_validates_the_stored_chat_and_logical_recipient(tmp_path: Path) -> 
         assert tracker.acknowledge("PROJ/BOB", broadcast) is False
         assert tracker.acknowledge("PROJ/BOB", True) is False
         assert tracker.acknowledge("PROJ/BOB", 999_999) is False
+        assert tracker.acknowledge("PROJ/BOB", role) is False
         assert tracker.acknowledge("PROJ/BOB", role, roles=("PROJ/reviewer",)) is True
+        role_mark = tracker.watermark_for("role:PROJ/reviewer")
+        personal_after_role_ack = tracker.watermark_for("PROJ/BOB")
+        assert tracker.acknowledge("PROJ/BOB", exact) is True
     finally:
         store.close()
 
-    assert tracker.watermark_for("PROJ/BOB") == role
+    assert (role_mark, personal_after_role_ack) == (role, 0)
+    assert tracker.watermark_for("PROJ/BOB") == exact
 
 
 def test_watermark_and_pending_count_survive_restart(tmp_path: Path) -> None:

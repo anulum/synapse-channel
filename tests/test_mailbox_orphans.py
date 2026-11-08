@@ -69,6 +69,26 @@ def test_pending_mail_counts_only_directed_chats_after_the_watermark() -> None:
     assert _by_name(events)["Q/c"].pending == 1
 
 
+def test_a_role_mailbox_counts_role_mail_after_its_own_watermark() -> None:
+    """Once a holder acknowledged role mail, the role is its own mailbox in its project."""
+    events = [
+        _chat(1, 1.0, "X/z", "P/reviewer"),
+        _chat(2, 2.0, "X/z", "P/reviewer"),
+        _mark(3, 3.0, "role:P/reviewer", 1),
+        _chat(4, 4.0, "P/a", "P/review?r"),
+        _chat(5, 5.0, "X/z", "P/reviewer,P/a"),
+        _chat(6, 6.0, "X/z", "P/a"),
+        _chat(7, 7.0, "X/z", "P/a?"),
+    ]
+    standings = _by_name(events)
+    role = standings["role:P/reviewer"]
+    assert "P/reviewer" not in standings
+    assert (role.project, role.pending, role.watermark) == ("P", 3, 1)
+    assert (role.oldest_pending_ts, role.last_activity_ts) == (2.0, 3.0)
+    assert standings["P/a"].pending == 2
+    assert project_of("role:P/reviewer") == "P"
+
+
 def test_project_and_glob_targets_reach_every_listed_name() -> None:
     """A bare project and a single-name glob are directed; ``P/*`` is an audience, as in the hub."""
     events = [

@@ -21,6 +21,7 @@ from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL, NameOwnership
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.protocol import SENDER_HUB, MessageType
+from synapse_channel.core.role_mailbox import is_role_mailbox_key
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN, normalize_wake_capability
 
 logger = logging.getLogger("synapse.hub")
@@ -212,9 +213,15 @@ class HubClientRegistry:
         identity such as ``PROJ/system`` remains an ordinary agent address. Every
         name containing ``@`` is reserved as well: that form denotes a seat on a
         peer hub (:mod:`synapse_channel.core.hub_address`), so a local client may
-        never present a forwarded sender or a remote target as its own name.
+        never present a forwarded sender or a remote target as its own name. A name
+        starting with ``role:`` is the mailbox key of a role
+        (:mod:`synapse_channel.core.role_mailbox`), so no connection may take it.
         """
-        return sender.casefold() in _RESERVED_AGENT_NAMES or is_hub_qualified_name(sender)
+        return (
+            sender.casefold() in _RESERVED_AGENT_NAMES
+            or is_hub_qualified_name(sender)
+            or is_role_mailbox_key(sender)
+        )
 
     def record_identity_proof(self, websocket: Any, sender: str, key_id: str) -> None:
         """Remember that ``websocket`` registered as ``sender`` with a signature under ``key_id``.

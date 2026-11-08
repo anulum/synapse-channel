@@ -146,6 +146,8 @@ does not add agent grades to protocol envelopes.
   `mailbox_handover` event, then advances the old watermark with source
   `handover` or `closed`. One request covers at most 200 chats; a repeat with
   the same `from` and covered `through_seq` changes nothing. No chat is deleted.
+  `from` may be a role's mailbox `role:<project>/<role>`, whose custodian is
+  looked up under the role's project; `to` may name a role, never a `role:` key.
 - **Operation records:** `operation_record` binds an operation and its evidence
   to one claimed task. `record` is `declare`, `outcome` or `verification`;
   `task_id` and `operation_id` (1–128 of `A-Z a-z 0-9 . _ : -`) are required.
@@ -586,7 +588,9 @@ offline can ask for them on reconnect. On its *registration* heartbeat it sets:
 - `mailbox: true` — request a replay of the directed backlog.
 - `since_seq` — the last durable journal `seq` it has already processed; the hub
   advances that identity's receiver watermark and replays only chat after it. A
-  missing or malformed value degrades to `0` (the whole retained window).
+  missing or malformed value degrades to `0` (the whole retained window). Mail
+  addressed to a role the connection holds is replayed from the role's mailbox
+  instead (see **Role mailboxes** below), however far back it lies.
 - `mailbox_for` (optional) — the identity whose backlog to replay, when it differs
   from the connection name. A wake-listener connects under a receive-only `-rx` name
   but waits on its bare identity, so it names that identity here; absent or blank,
@@ -619,6 +623,28 @@ presentation independently shows the 20 largest positive counts plus complete
 totals, while `--all-mailbox-pending` expands the retained map. Older clients
 ignore the WHO field; older hubs ignore the additive ACK identity and keep their
 receipt-only ACK behaviour.
+
+**Role mailboxes.** Mail addressed to a role (`project/role`) is pending once,
+in the role's own mailbox `role:<project>/<role>`, not at each holder. A chat
+is pending in a personal mailbox when a target part matches the name or its
+bare project, and in a role mailbox when a target part matches the role (as a
+case-sensitive glob, exactly as `is_recipient` matches a bound role); a chat
+that matches both is pending in both, so no directed chat leaves every
+mailbox. A holder's `ack` advances its personal watermark when the chat matches
+its name or project, and the watermark of each role it holds that the chat
+matches, each journalled as `mailbox_watermark` with source `ack` and identity
+`role:<project>/<role>` for a role. A registration `since_seq` advances only the
+personal watermark: a cursor does not prove the connection held the role when
+earlier role mail arrived. On a mailbox registration the hub replays the
+personal backlog after `since_seq` plus, for each held role, the chats after
+the role's watermark (at most 1000 per role), merged by `seq` without
+duplicates. A role gets its mailbox once a connection binds it; until then a
+target naming it is counted under that plain name, as before. A name equal to a
+bound role counts as the role. Names starting with `role:` are reserved
+(any case), so a registration under one is refused with 4009. WHO lists role
+mailboxes under their keys in `mailbox_pending`; role mailboxes share the
+512-mailbox bound, and a role that leaves it keeps its watermark (up to 4096
+such roles), so its holders are not sent mail that was already acknowledged.
 
 **Chat retry identity.** Chat delivery is **at least once**, and the hub does not
 consume `idem_key` for chat. A sender that may retry across reconnects supplies an

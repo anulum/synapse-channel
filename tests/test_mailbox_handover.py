@@ -136,13 +136,22 @@ def test_pending_chats_without_a_store_are_empty() -> None:
     assert MailboxPendingTracker(None).pending_chats("P/old", through_seq=5, limit=1) == ((), 0)
 
 
-def test_a_role_chat_counts_for_a_name_that_held_the_role(tmp_path: Path) -> None:
+def test_a_role_chat_waits_in_the_role_mailbox_not_at_its_holder(tmp_path: Path) -> None:
     with EventStore(tmp_path / "hub.db") as store:
         seq = _chat(store, "X/z", "P/manager", "for the role")
         tracker = MailboxPendingTracker(store)
         tracker.snapshot(["P/old"], lambda _name: ["P/manager"])
-        chats, _covered = tracker.pending_chats("P/old", through_seq=seq, limit=5)
-        assert [event.seq for event in chats] == [seq]
+        personal, _covered = tracker.pending_chats("P/old", through_seq=seq, limit=5)
+        role, _covered = tracker.pending_chats("role:P/manager", through_seq=seq, limit=5)
+        assert personal == ()
+        assert [event.seq for event in role] == [seq]
+
+
+def test_a_role_mailbox_key_is_never_a_successor() -> None:
+    with pytest.raises(MailboxHandoverError, match="name the role itself"):
+        decode_handover_request({"from": "P/old", "to": "role:P/manager", "reason": "r"})
+    request = decode_handover_request({"from": "role:P/manager", "to": "P/manager", "reason": "r"})
+    assert (request.source, request.successor) == ("role:P/manager", "P/manager")
 
 
 def test_the_record_is_durable_and_the_ledger_restores_its_key(tmp_path: Path) -> None:

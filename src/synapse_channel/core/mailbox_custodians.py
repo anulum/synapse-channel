@@ -16,10 +16,11 @@ values are the custodian names::
     {"*": "OWNER/owner", "P": "P/manager", "P/seat": "P/lead"}
 
 One order decides: the entry for the name, else the entry for its project, else
-the ``*`` entry. With none of the three there is no custodian, and a custodian
-action is refused; nothing is guessed. The usual configuration maps ``*`` to the
-owner and each project to its manager, but that is the operator's choice, not a
-default.
+the ``*`` entry. A role's mailbox ``role:P/R`` is looked up under that key first
+and then under the role's project ``P``. With none of the three there is no
+custodian, and a custodian action is refused; nothing is guessed. The usual
+configuration maps ``*`` to the owner and each project to its manager, but that
+is the operator's choice, not a default.
 
 The file follows the role-grant store's rules: a missing file is an empty map, so
 every custodian action is refused, and a file that is not valid JSON or has the
@@ -35,6 +36,7 @@ from pathlib import Path
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.identity_namespace import project_of
+from synapse_channel.core.role_mailbox import mailbox_role
 
 ANY_NAME = "*"
 _GLOB_CHARACTERS = frozenset("*?[]")
@@ -53,13 +55,16 @@ class MailboxCustodians:
     entries: Mapping[str, str] = field(default_factory=dict)
 
     def custodian_for(self, name: str) -> str | None:
-        """Return the custodian of ``name`` (name, then project, then ``*``), or ``None``."""
+        """Return the custodian of ``name`` (name, then project, then ``*``), or ``None``.
+
+        The project of a role mailbox key ``role:P/R`` is the role's project ``P``.
+        """
         subject = str(name or "").strip()
         if not subject:
             return None
         if subject in self.entries:
             return self.entries[subject]
-        project = project_of(subject)
+        project = project_of(mailbox_role(subject) or subject)
         if project and project in self.entries:
             return self.entries[project]
         return self.entries.get(ANY_NAME)

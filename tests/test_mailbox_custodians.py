@@ -41,6 +41,13 @@ def test_the_name_entry_wins_then_the_project_then_the_wildcard() -> None:
     assert custodians.custodian_for("") is None
 
 
+def test_a_role_mailbox_is_looked_up_under_its_key_then_its_role_project() -> None:
+    custodians = MailboxCustodians({"*": "OWNER/owner", "P": "P/manager", "role:P/lead": "P/boss"})
+    assert custodians.custodian_for("role:P/lead") == "P/boss"
+    assert custodians.custodian_for(" role:P/reviewer ") == "P/manager"
+    assert custodians.custodian_for("role:Q/reviewer") == "OWNER/owner"
+
+
 def test_without_a_matching_entry_there_is_no_custodian() -> None:
     custodians = parse_mailbox_custodians({"P": "P/manager"})
     assert custodians.custodian_for("Q/seat") is None

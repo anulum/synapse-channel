@@ -65,7 +65,7 @@ everything, since they need the whole command table.
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse export` | Export a hub store read-only: `create` writes the journal and AEF receipts as plain files with a manifest, `verify` checks their consistency, `to-sqlite` copies them into a plain SQLite file; see [Exporting the journal](export.md). |
 | `synapse mailbox handover` / `synapse mailbox close` | Act as `--name` on the pending directed mail of one name through the live hub. `handover NAME --to NEW --reason TEXT` re-addresses that mail to `NEW` (each message keeps its original sender, target and time, and cites its original journal sequence); `close NAME --reason TEXT` closes it and delivers nothing. `--through SEQ` bounds the covered mail. The name itself, its custodian from the hub's `--mailbox-custodians` map, and an operator granted `mailbox-handover` may act. One request covers at most 200 messages; exit 3 means more remain and running it again continues; exit 1 is a refusal with its reason. |
-| `synapse mailbox orphans` | Read a hub store read-only and list directed mail that waits for names with no journalled activity for `--dormant-after-days` (default 7): pending count, last activity and oldest pending message per name, most mail first; `--project`, `--active NAME`, `--all` and `--json` narrow or widen the view; `--live` also asks the hub (`--uri`, `--token`) for its roster, and a name connected now is never listed. It changes nothing. Roles are not journalled, so a dormant name's roles are not shown. |
+| `synapse mailbox orphans` | Read a hub store read-only and list directed mail that waits for names with no journalled activity for `--dormant-after-days` (default 7): pending count, last activity and oldest pending message per name, most mail first; `--project`, `--active NAME`, `--all` and `--json` narrow or widen the view; `--live` also asks the hub (`--uri`, `--token`) for its roster, and a name connected now is never listed. It changes nothing. Roles are not journalled, so a dormant name's roles are not shown; a role's own mailbox `role:<project>/<role>` is listed once a holder has acknowledged role mail. |
 | `synapse multihub` | Observe/follow a peer log read-only, or explicitly recover a stopped local watcher's durable quarantine (see [Multi-hub sync](multi-hub-sync.md)). |
 | `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations, `costs` reports per-session spend and telemetry from a hub event store. |
 | `synapse adapters claude-plugin` | Inspect, preview, install, upgrade, diagnose and remove the optional [Claude Code plugin](claude-plugin.md) in one Claude profile. |
@@ -1328,6 +1328,28 @@ attached; a close delivers nothing. Both journal a `mailbox_handover` record
 and advance the old mailbox, and neither deletes a message. One request covers
 at most 200 messages; exit code 3 says more remain, and running the same
 command again continues.
+
+### Mail for a role
+
+Mail addressed to a role, such as `api/reviewer`, waits in the role's own
+mailbox, `role:api/reviewer`, not at the session that held the role when it
+arrived. A mailbox client that binds the role on registration receives every
+role message nobody has acknowledged yet, even one older than its own cursor,
+and its acknowledgement advances the role for every later holder. `synapse who`
+lists the role mailbox as `role:api/reviewer`; a message addressed to a name and
+a role waits in both. Names starting with `role:` are reserved, so no connection
+can take one. The custodian of `role:api/reviewer` is its own map entry, then
+`api`, then `*`, and the same commands act on it:
+
+```bash
+synapse mailbox close role:api/reviewer --name api/manager --reason "old review queue, already triaged"
+```
+
+When a hub is upgraded to this behaviour, each role mailbox starts at the
+beginning of the retained journal, so the first holder that reconnects receives
+the role's whole unacknowledged backlog, up to 1000 messages per reconnect.
+Close or hand over old role backlogs before their holders reconnect if they
+should not be delivered.
 
 ## Messaging: broadcast, several, or one
 

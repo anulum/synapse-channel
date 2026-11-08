@@ -16,12 +16,14 @@ which chats it covered; no chat is deleted.
 
 Who may act: the name itself, its custodian from the custodian map
 (:mod:`synapse_channel.core.mailbox_custodians`), or an operator that the ACL
-policy grants the ``mailbox_handover`` permission on the name. The successor is
-a local name. A request covers the mail up to ``through_seq``; one request
-forwards at most :data:`MAX_FORWARDS` chats, and the result names the last
-sequence it covered so the caller can repeat. ``(from, through_seq)`` is the
-idempotency key: a repeated request is answered "already applied" and does
-nothing.
+policy grants the ``mailbox_handover`` permission on the name. The mailbox may
+be a role's own mailbox ``role:<project>/<role>``; its custodian is looked up
+under the role's project. The successor is a local name or a role, never a
+role's mailbox key: forwards to a role are role mail. A request covers the mail
+up to ``through_seq``; one request forwards at most :data:`MAX_FORWARDS` chats,
+and the result names the last sequence it covered so the caller can repeat.
+``(from, through_seq)`` is the idempotency key: a repeated request is answered
+"already applied" and does nothing.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from typing import Any, Final
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.role_mailbox import is_role_mailbox_key
 
 MAX_FORWARDS: Final = 200
 """Chats one request re-addresses; the caller repeats for the rest."""
@@ -103,11 +106,16 @@ def decode_handover_request(data: Mapping[str, Any]) -> HandoverRequest:
     Raises
     ------
     MailboxHandoverError
-        When a field is missing, malformed, or the successor is the source itself.
+        When a field is missing, malformed, the successor is the source itself, or
+        the successor is a role's mailbox key.
     """
     source = _local_name(data.get("from"), "from")
     raw_successor = data.get("to")
     successor = None if raw_successor is None else _local_name(raw_successor, "to")
+    if successor is not None and is_role_mailbox_key(successor):
+        raise MailboxHandoverError(
+            f"to {successor!r} is a role's mailbox key; name the role itself as the successor"
+        )
     if successor == source:
         raise MailboxHandoverError("to must differ from from")
     raw_through = data.get("through_seq")

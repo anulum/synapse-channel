@@ -18,6 +18,25 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- **Mail addressed to a role waits in the role's own mailbox.** A chat to
+  `project/role` used to be pending at whichever identity held the role, so a
+  new session that took over the role started without it and the old session's
+  count never fell. It is now pending once, in `role:<project>/<role>`: a holder
+  that registers with its mailbox receives every role message nobody has
+  acknowledged, even one older than its own cursor, and its acknowledgement
+  advances the role for every later holder. A personal mailbox keeps the mail
+  addressed to the name or its project; a message addressed both ways is
+  pending in both. `synapse who` lists role mailboxes under their keys, and
+  `synapse mailbox orphans`, `handover` and `close` accept them, with the
+  custodian looked up under the role's project. Names starting with `role:` are
+  reserved and refused at registration. **Upgrade note:** each role mailbox
+  starts at the beginning of the retained journal, so the first holder that
+  reconnects receives the role's whole unacknowledged backlog, up to 1000
+  messages per reconnect; close or hand over old role backlogs first if they
+  should not be delivered.
+
 ### Fixed
 
 - **A tmux server no longer inherits the sandbox of the unit that first

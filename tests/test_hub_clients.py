@@ -299,7 +299,16 @@ def test_agent_binding_helpers_report_existing_socket_state() -> None:
 
 @pytest.mark.parametrize(
     "reserved_name",
-    ["SynapseHub", "synapsehub", "Synapse", "SYNAPSE", "system", "System"],
+    [
+        "SynapseHub",
+        "synapsehub",
+        "Synapse",
+        "SYNAPSE",
+        "system",
+        "System",
+        "role:P/manager",
+        "ROLE:P/manager",
+    ],
 )
 async def test_resolve_sender_refuses_reserved_protocol_identities(
     reserved_name: str,

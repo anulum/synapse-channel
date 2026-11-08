@@ -64,6 +64,7 @@ from synapse_channel.core.journal import (
     record_dead_letter_escalation,
     record_dead_letter_forwarding,
 )
+from synapse_channel.core.mailbox_pending import replayed_frames
 from synapse_channel.core.message_forward_origin import forward_chat
 from synapse_channel.core.message_response import validate_semantic_response
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
@@ -738,12 +739,16 @@ async def _replay_directed_backlog(
     """Push the directed chats ``recipient`` missed while offline, from the durable journal.
 
     On a mailbox-capable reconnect the hub resumes from the client's ``since_seq``
-    cursor: it reads journalled chat events after it, keeps only those directed at
-    ``recipient`` (by name, project, glob, or a role it holds) that ``recipient`` did
-    not send itself, and re-sends each to the reconnecting socket marked ``replayed``
-    with its durable journal ``seq`` — so the client wakes on and dedups the backlog by
-    ``seq`` exactly as it would live traffic. Dedup keys on ``seq``, not ``msg_id``,
-    because the per-hub ``msg_id`` counter resets on restart while ``seq`` never repeats.
+    cursor: it reads journalled chat events after it and keeps those directed at
+    ``recipient`` (by name, project or glob) that ``recipient`` did not send itself.
+    Mail addressed to a role is replayed from the role's own mailbox instead: for each
+    role the connection holds, the chats still pending after the role's watermark,
+    however far back they lie, because the role's mail may predate this holder. The
+    two sets are merged by ``seq`` without duplicates and re-sent to the reconnecting
+    socket marked ``replayed`` with their durable journal ``seq`` — so the client wakes
+    on and dedups the backlog by ``seq`` exactly as it would live traffic. Dedup keys on
+    ``seq``, not ``msg_id``, because the per-hub ``msg_id`` counter resets on restart
+    while ``seq`` never repeats.
 
     ``recipient`` is the identity whose backlog is wanted; it is the connecting ``name``
     for an agent that connects under its own identity, but a wake-listener connects under
@@ -759,19 +764,15 @@ async def _replay_directed_backlog(
     events = hub.journal.read_since(
         since_seq, kinds=(EventKind.CHAT,), limit=MAILBOX_REPLAY_READ_CAP
     )
-    frames: list[dict[str, Any]] = []
-    for event in events:
-        payload = event.payload
-        target = str(payload.get("target") or "all")
-        if str(payload.get("sender") or "") == recipient or not is_directed_target(target):
-            continue
-        if not is_recipient(target, recipient, roles):
-            continue
-        frame = dict(payload)
-        frame.pop("receipt_requested", None)
-        frame["replayed"] = True
-        frame["seq"] = event.seq
-        frames.append(frame)
+    personal = [
+        event
+        for event in events
+        if str(event.payload.get("sender") or "") != recipient
+        and is_directed_target(str(event.payload.get("target") or "all"))
+        and is_recipient(str(event.payload.get("target") or "all"), recipient)
+    ]
+    role_mail = hub.mailbox_pending.role_backlog(roles, limit=MAILBOX_REPLAY_READ_CAP)
+    frames = replayed_frames(personal, role_mail)
     if not frames:
         return
     # One backlog write holds live frames for this socket until the older

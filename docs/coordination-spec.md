@@ -927,15 +927,20 @@ bounded by a monotonic
 receiver watermark it advances by acknowledging (`ack`) or by a registration
 `since_seq`. Presence MUST NOT be promoted to a positive delivery verdict, and
 the pending count is a transport fact, not proof a model read the message.
+Mail addressed to a role MUST be pending once, in the role's mailbox
+`role:<project>/<role>`, and remain replayable to a later holder until a holder
+acknowledges it; mail addressed to a name and a role is pending in both.
 Without a journal, restart persistence and durable mailbox watermarks are absent.
 Compaction and configured history/identity bounds still limit recovery; the
 diagnostic target count itself is process-local and bounded, not a durable queue.
 
 **Implementation.** `core/handlers/messaging.py` (dead-letter record),
 `core/mailbox_pending.py:MailboxPendingTracker` (monotonic watermark, replay,
-restart projection).
+restart projection), `core/role_mailbox.py` (role mailbox keys and the
+personal/role split).
 
-**Pinned by.** `tests/test_hub_mailbox_pending.py`, `tests/test_hub_core_chat.py`.
+**Pinned by.** `tests/test_hub_mailbox_pending.py`, `tests/test_hub_core_chat.py`,
+`tests/test_hub_role_mailbox.py`, `tests/test_role_mailbox.py`.
 
 ### INV-DG-4 — durable audit kinds have an explicit receipt disposition
 

@@ -17,6 +17,12 @@ map: the latest event whose payload ``sender`` is the name (a receive-only
 sidecar such as ``<name>-rx`` counts for its owner), or the latest mailbox
 watermark for the name. Roles are not journalled, so a dormant name's roles are
 not known here.
+
+A role's own mailbox ``role:<project>/<role>`` is known once a holder has
+acknowledged role mail, which journals a watermark under that key. It counts the
+chats addressed to the role after that watermark, belongs to the role's project,
+and its last activity is its latest watermark. A plain name equal to such a role
+is not listed separately: it counts as the role.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.persistence import StoredEvent
 from synapse_channel.core.protocol import is_recipient
+from synapse_channel.core.role_mailbox import addresses_role, mailbox_project, mailbox_role
 from synapse_channel.core.waiter_identity import waiter_owner
 
 _GLOB_MARKERS = frozenset("*?[")
@@ -45,7 +52,8 @@ class MailboxStanding:
     identity : str
         The mailbox name.
     project : str
-        The part of the name before the first ``/``, or the whole name.
+        The part of the name before the first ``/``, or the whole name; for a role
+        mailbox, the role's project.
     pending : int
         Directed chats after the watermark that this name has not sent itself.
     watermark : int
@@ -71,8 +79,8 @@ class MailboxStanding:
 
 
 def project_of(identity: str) -> str:
-    """Return the project prefix of a mailbox name."""
-    return identity.split("/", 1)[0]
+    """Return the project of a mailbox: a name's prefix, or a role mailbox's role project."""
+    return mailbox_project(identity)
 
 
 def _exact_targets(target: str) -> tuple[str, ...]:
@@ -140,29 +148,51 @@ def _collect(events: Iterable[StoredEvent]) -> _Snapshot:
     return snapshot
 
 
+def _glob_reaches(part: str, name: str) -> bool:
+    """Return whether a glob part reaches a mailbox: a role key by its role, else the name."""
+    role = mailbox_role(name)
+    if role is not None:
+        return addresses_role(part, role)
+    return is_recipient(part, name)
+
+
 def _recipients(target: str, names: dict[str, None], by_address: dict[str, list[str]]) -> set[str]:
-    """Return the known names a directed target addresses."""
+    """Return the known mailboxes a directed target addresses."""
     recipients: set[str] = set()
     for part in (raw.strip() for raw in target.split(",")):
         if not part:
             continue
         if any(marker in part for marker in _GLOB_MARKERS):
-            recipients.update(name for name in names if is_recipient(part, name))
+            recipients.update(name for name in names if _glob_reaches(part, name))
         else:
             recipients.update(by_address.get(part, ()))
     return recipients
 
 
-def _pending_times(snapshot: _Snapshot) -> dict[str, list[float]]:
-    """Return, per name, the timestamps of the chats still pending for it."""
+def _addresses(name: str) -> tuple[str, ...]:
+    """Return the exact target parts that reach a mailbox."""
+    role = mailbox_role(name)
+    if role is not None:
+        return (role,)
+    return tuple(dict.fromkeys((name, name.split("/", 1)[0])))
+
+
+def _mailboxes(snapshot: _Snapshot) -> dict[str, None]:
+    """Return the snapshot's mailboxes, without plain names that are known roles."""
+    roles = {role for role in map(mailbox_role, snapshot.names) if role is not None}
+    return {name: None for name in snapshot.names if name not in roles}
+
+
+def _pending_times(snapshot: _Snapshot, names: dict[str, None]) -> dict[str, list[float]]:
+    """Return, per mailbox, the timestamps of the chats still pending in it."""
     by_address: dict[str, list[str]] = {}
-    for name in snapshot.names:
-        for address in dict.fromkeys((name, project_of(name))):
+    for name in names:
+        for address in _addresses(name):
             by_address.setdefault(address, []).append(name)
-    pending: dict[str, list[float]] = {name: [] for name in snapshot.names}
+    pending: dict[str, list[float]] = {name: [] for name in names}
     for chat in snapshot.chats:
         sender = str(chat.payload.get("sender") or "")
-        for name in _recipients(str(chat.payload.get("target")), snapshot.names, by_address):
+        for name in _recipients(str(chat.payload.get("target")), names, by_address):
             if chat.seq > snapshot.watermarks.get(name, 0) and sender != name:
                 pending[name].append(chat.ts)
     return pending
@@ -175,10 +205,13 @@ def mailbox_standings(events: Iterable[StoredEvent]) -> list[MailboxStanding]:
     watermark, the same set the hub's pending projection remembers. A chat is
     pending for a name when it is directed, not on a channel, not sent by that
     name, addresses the name (a glob or bare project target included), and lies
-    after the name's watermark. A watermark never counts beyond its own event.
+    after the name's watermark. A role mailbox ``role:P/R`` counts the chats whose
+    target reaches the role ``P/R``; a plain name equal to such a role is not
+    listed. A watermark never counts beyond its own event.
     """
     snapshot = _collect(events)
-    pending = _pending_times(snapshot)
+    names = _mailboxes(snapshot)
+    pending = _pending_times(snapshot, names)
     standings = [
         MailboxStanding(
             identity=name,
@@ -188,7 +221,7 @@ def mailbox_standings(events: Iterable[StoredEvent]) -> list[MailboxStanding]:
             oldest_pending_ts=min(pending[name], default=None),
             last_activity_ts=snapshot.activity.get(name),
         )
-        for name in snapshot.names
+        for name in names
     ]
     return sorted(standings, key=lambda item: (item.project, item.identity))
 

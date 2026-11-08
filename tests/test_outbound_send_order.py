@@ -20,6 +20,7 @@ import pytest
 from synapse_channel.core.handlers.messaging import _replay_directed_backlog
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
+from synapse_channel.core.mailbox_pending import MailboxPendingTracker
 from synapse_channel.core.outbound_send import OutboundSender
 from synapse_channel.core.persistence import EventStore
 
@@ -304,6 +305,7 @@ async def test_replay_without_backlog_sender_uses_send_json(tmp_path: Path) -> N
 
     class _Hub:
         journal = store
+        mailbox_pending = MailboxPendingTracker(store)
 
         def roles_of(self, name: str) -> tuple[str, ...]:
             del name
