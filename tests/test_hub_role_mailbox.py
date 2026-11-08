@@ -230,3 +230,37 @@ async def test_a_role_binding_is_journalled_and_survives_a_restart(tmp_path: Pat
         store.close()
     assert bindings == [{"identity": "P/claude-a", "roles": [ROLE]}]
     assert snapshot["mailbox_pending"][KEY] == 1
+
+
+async def test_a_custodian_role_held_by_a_new_session_closes_a_dormant_mailbox(
+    tmp_path: Path,
+) -> None:
+    """The custodian map can name a role, so custody follows whoever holds it now."""
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        hub = SynapseHub(journal=store, mailbox_custodians={"P": ROLE})
+        async with running_hub(hub) as (_hub, uri):
+            peer = await connect_agent("X/peer", uri)
+            try:
+                await peer.agent.send_message(MessageType.CHAT, target="P/gone", payload="lost")
+                await _journalled(store, "lost")
+            finally:
+                await close_agents(peer)
+            stranger = await connect_agent("P/claude-z", uri)
+            holder = await _holder("P/claude-a", uri, since_seq=store.max_seq())
+            try:
+                close: dict[str, Any] = {"from": "P/gone", "reason": "session ended"}
+                await stranger.agent.send_message(MessageType.MAILBOX_HANDOVER, **close)
+                refused = await stranger.recorder.wait_for(
+                    lambda message: message.get("type") == MessageType.MAILBOX_HANDOVER_RESULT
+                )
+                await holder.agent.send_message(MessageType.MAILBOX_HANDOVER, **close)
+                applied = await holder.recorder.wait_for(
+                    lambda message: message.get("type") == MessageType.MAILBOX_HANDOVER_RESULT
+                )
+            finally:
+                await close_agents(stranger, holder)
+    finally:
+        store.close()
+    assert (refused["status"], refused["reason"]) == ("refused", "not_authorised")
+    assert (applied["status"], applied["mailbox"]) == ("applied", "P/gone")

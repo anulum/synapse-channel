@@ -1319,7 +1319,9 @@ Custodians come from `synapse hub --mailbox-custodians FILE`, a JSON object:
 ```
 
 The name's own entry wins, then its project's, then `*`. Without a matching
-entry there is no custodian. A missing file names no custodian; a malformed
+entry there is no custodian. A custodian may be a role such as `api/manager`:
+whichever connection holds that role acts as the custodian, so custody does not
+change when the manager's session does. A missing file names no custodian; a malformed
 file stops the hub at startup. The usual map sends `*` to the owner and each
 project to its manager.
 

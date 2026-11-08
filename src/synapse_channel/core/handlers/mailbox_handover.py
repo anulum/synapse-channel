@@ -118,6 +118,7 @@ def _admit(hub: MailboxHandoverContext, sender: str, request: HandoverRequest) -
         request.source,
         custodian=custodian,
         operator_allowed=_operator_allowed(hub, sender, request.source),
+        actor_roles=hub.roles_of(sender),
     )
     if denial is not None:
         return _refused(denial, f"{sender} may not hand over or close {request.source}'s mailbox")

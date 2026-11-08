@@ -739,6 +739,8 @@ object from a name, a project or `*` to the custodian's name:
 {"*": "owner/desk", "api": "api/manager", "web": "web/manager"}
 ```
 
+A value may be a role: `api/manager` here is held by whichever session runs the
+api project's manager seat, so custody follows the role, not a session name.
 A name's own entry wins, then its project's (a role mailbox's project is the
 role's), then `*`. A missing file names no custodian, so every custodian action
 is refused; a malformed file stops the hub at startup. Changes take effect at the

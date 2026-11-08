@@ -137,14 +137,17 @@ def authorise_handover(
     *,
     custodian: str | None,
     operator_allowed: bool,
+    actor_roles: Iterable[str] = (),
 ) -> str | None:
     """Return ``None`` when ``actor`` may act on ``source``'s mailbox, else the refusal.
 
     The name itself, its custodian, and an operator granted ``mailbox_handover`` may act.
+    A custodian may be a role (``<project>/<role>``): any connection that holds that
+    role acts as the custodian, so a project's custody survives its manager's sessions.
     """
     if actor == source:
         return None
-    if custodian is not None and actor == custodian:
+    if custodian is not None and (actor == custodian or custodian in set(actor_roles)):
         return None
     if operator_allowed:
         return None

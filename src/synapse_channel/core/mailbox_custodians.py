@@ -11,7 +11,8 @@ A mailbox belongs to a name, and a session name rarely comes back, so mail can
 wait at a name nobody will use again. A custodian may hand that mail on to a
 successor or close it with a reason. The operator names custodians in a JSON
 object whose keys are a name (``P/seat``), a project (``P``) or ``*``, and whose
-values are the custodian names::
+values are the custodian names or roles (a connection holding the role acts as the
+custodian)::
 
     {"*": "OWNER/owner", "P": "P/manager", "P/seat": "P/lead"}
 

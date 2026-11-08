@@ -18,6 +18,13 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- **A mailbox custodian may be a role.** An entry of `--mailbox-custodians`
+  may name a role such as `api/manager`; any connection that holds the role may
+  hand over or close the mailboxes it is custodian of. Custody then follows the
+  role instead of a session name that changes with every manager session.
+
 ## [0.99.49] - 2026-11-08
 
 ### Changed

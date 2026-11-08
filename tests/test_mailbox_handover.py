@@ -82,6 +82,19 @@ def test_the_name_its_custodian_and_a_granted_operator_may_act() -> None:
     assert authorise_handover("P/old", "P/old", custodian=None, operator_allowed=False) is None
     assert authorise_handover("P/boss", "P/old", custodian="P/boss", operator_allowed=False) is None
     assert authorise_handover("OPS/x", "P/old", custodian=None, operator_allowed=True) is None
+    assert (
+        authorise_handover(
+            "P/claude-9",
+            "P/old",
+            custodian="P/manager",
+            operator_allowed=False,
+            actor_roles=("P/triage", "P/manager"),
+        )
+        is None
+    )
+    assert authorise_handover(
+        "P/claude-9", "P/old", custodian="P/manager", operator_allowed=False, actor_roles=("P/x",)
+    )
 
 
 def test_anyone_else_is_refused() -> None:

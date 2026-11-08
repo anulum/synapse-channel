@@ -147,7 +147,8 @@ does not add agent grades to protocol envelopes.
   `handover` or `closed`. One request covers at most 200 chats; a repeat with
   the same `from` and covered `through_seq` changes nothing. No chat is deleted.
   `from` may be a role's mailbox `role:<project>/<role>`, whose custodian is
-  looked up under the role's project; `to` may name a role, never a `role:` key.
+  looked up under the role's project; a custodian entry may name a role, and a
+  connection holding that role acts as the custodian; `to` may name a role, never a `role:` key.
 - **Operation records:** `operation_record` binds an operation and its evidence
   to one claimed task. `record` is `declare`, `outcome` or `verification`;
   `task_id` and `operation_id` (1–128 of `A-Z a-z 0-9 . _ : -`) are required.
