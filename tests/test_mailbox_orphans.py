@@ -22,7 +22,8 @@ import pytest
 
 from synapse_channel.cli import build_parser
 from synapse_channel.cli_doctor_mailbox import DoctorRoster
-from synapse_channel.cli_mailbox import DEFAULT_LIMIT, _cmd_orphans, _positive_days
+from synapse_channel.cli_mailbox import DEFAULT_LIMIT, _cmd_orphans
+from synapse_channel.cli_mailbox_query import positive_days
 from synapse_channel.core.event_row_mac import load_or_create_row_mac_key, row_mac_key_path
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.mailbox_orphans import (
@@ -252,8 +253,8 @@ def test_a_missing_store_or_key_is_refused(
 @pytest.mark.parametrize("text", ["0", "-2", "inf", "seven"])
 def test_the_day_option_refuses_what_is_not_a_positive_number(text: str) -> None:
     with pytest.raises(argparse.ArgumentTypeError):
-        _positive_days(text)
-    assert _positive_days("1.5") == 1.5
+        positive_days(text)
+    assert positive_days("1.5") == 1.5
 
 
 def test_live_names_are_active_and_the_probe_is_not_counted(

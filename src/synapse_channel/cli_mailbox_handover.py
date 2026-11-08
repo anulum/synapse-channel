@@ -24,6 +24,7 @@ import argparse
 import asyncio
 import contextlib
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 from synapse_channel.cli_messaging_types import AgentFactory
@@ -38,18 +39,44 @@ EXIT_NO_VERDICT = 2
 EXIT_MORE_REMAINS = 3
 
 
-async def mailbox_handover(
+class HandoverConnection:
+    """One live hub connection that sends handover requests and awaits each verdict."""
+
+    def __init__(self, agent: SynapseAgent, replies: list[dict[str, Any]]) -> None:
+        self._agent = agent
+        self._replies = replies
+
+    async def request(self, fields: dict[str, Any], *, timeout: float) -> dict[str, Any] | None:
+        """Send one ``mailbox_handover`` request and return its verdict or hub error.
+
+        Parameters
+        ----------
+        fields : dict[str, Any]
+            The request's ``from``, ``reason`` and optional ``to`` and ``through_seq``.
+        timeout : float
+            Seconds to wait for the answer.
+
+        Returns
+        -------
+        dict[str, Any] or None
+            The ``mailbox_handover_result`` or ``error`` frame, or ``None`` when the
+            hub answered nothing in time.
+        """
+        self._replies.clear()
+        await self._agent.send_message(MessageType.MAILBOX_HANDOVER, target="System", **fields)
+        return await _await_result(self._replies, timeout=timeout)
+
+
+@contextlib.asynccontextmanager
+async def handover_connection(
     *,
     uri: str,
     actor: str,
-    fields: dict[str, Any],
     token: str | None,
     ready_timeout: float,
-    result_timeout: float,
-    json_output: bool,
     agent_factory: AgentFactory = SynapseAgent,
-) -> int:
-    """Send one handover or close request as ``actor`` and print the hub's verdict."""
+) -> AsyncIterator[HandoverConnection | None]:
+    """Connect as ``actor`` for handover requests; yield ``None`` after a printed failure."""
     replies: list[dict[str, Any]] = []
 
     async def collect(data: dict[str, Any]) -> None:
@@ -72,18 +99,38 @@ async def mailbox_handover(
                     )
                 )
             )
-            return EXIT_NO_VERDICT
-        await agent.send_message(MessageType.MAILBOX_HANDOVER, target="System", **fields)
-        result = await _await_result(replies, timeout=result_timeout)
-        if result is None:
-            print("mailbox handover failed: the hub returned no verdict")
-            return EXIT_NO_VERDICT
-        return _report(result, fields, json_output=json_output)
+            yield None
+            return
+        yield HandoverConnection(agent, replies)
     finally:
         agent.running = False
         connection.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await connection
+
+
+async def mailbox_handover(
+    *,
+    uri: str,
+    actor: str,
+    fields: dict[str, Any],
+    token: str | None,
+    ready_timeout: float,
+    result_timeout: float,
+    json_output: bool,
+    agent_factory: AgentFactory = SynapseAgent,
+) -> int:
+    """Send one handover or close request as ``actor`` and print the hub's verdict."""
+    async with handover_connection(
+        uri=uri, actor=actor, token=token, ready_timeout=ready_timeout, agent_factory=agent_factory
+    ) as connection:
+        if connection is None:
+            return EXIT_NO_VERDICT
+        result = await connection.request(fields, timeout=result_timeout)
+        if result is None:
+            print("mailbox handover failed: the hub returned no verdict")
+            return EXIT_NO_VERDICT
+        return _report(result, fields, json_output=json_output)
 
 
 async def _await_result(replies: list[dict[str, Any]], *, timeout: float) -> dict[str, Any] | None:
@@ -97,26 +144,30 @@ async def _await_result(replies: list[dict[str, Any]], *, timeout: float) -> dic
     return None
 
 
-def _report(result: dict[str, Any], fields: dict[str, Any], *, json_output: bool) -> int:
-    """Print one verdict and return the exit code."""
+def render_verdict(result: dict[str, Any], fields: dict[str, Any]) -> dict[str, Any]:
+    """Return the normalised verdict of one request: status, reason, counts and detail."""
     if result.get("type") == MessageType.ERROR:
-        rendered: dict[str, Any] = {
+        return {
             "status": "refused",
             "reason": "hub_error",
             "mailbox": fields["from"],
             "detail": str(result.get("payload") or "the hub refused the request"),
         }
-    else:
-        rendered = {
-            "status": str(result.get("status") or "refused"),
-            "reason": str(result.get("reason") or ""),
-            "mailbox": str(result.get("mailbox") or fields["from"]),
-            "successor": result.get("successor"),
-            "through_seq": result.get("through_seq"),
-            "forwarded": int(result.get("forwarded") or 0),
-            "remaining": bool(result.get("remaining")),
-            "detail": str(result.get("payload") or ""),
-        }
+    return {
+        "status": str(result.get("status") or "refused"),
+        "reason": str(result.get("reason") or ""),
+        "mailbox": str(result.get("mailbox") or fields["from"]),
+        "successor": result.get("successor"),
+        "through_seq": result.get("through_seq"),
+        "forwarded": int(result.get("forwarded") or 0),
+        "remaining": bool(result.get("remaining")),
+        "detail": str(result.get("payload") or ""),
+    }
+
+
+def _report(result: dict[str, Any], fields: dict[str, Any], *, json_output: bool) -> int:
+    """Print one verdict and return the exit code."""
+    rendered = render_verdict(result, fields)
     if json_output:
         print(json.dumps(rendered, indent=2, sort_keys=True))
     elif rendered["status"] == "refused":

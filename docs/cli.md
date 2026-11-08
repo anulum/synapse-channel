@@ -65,6 +65,7 @@ everything, since they need the whole command table.
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse export` | Export a hub store read-only: `create` writes the journal and AEF receipts as plain files with a manifest, `verify` checks their consistency, `to-sqlite` copies them into a plain SQLite file; see [Exporting the journal](export.md). |
 | `synapse mailbox handover` / `synapse mailbox close` | Act as `--name` on the pending directed mail of one name through the live hub. `handover NAME --to NEW --reason TEXT` re-addresses that mail to `NEW` (each message keeps its original sender, target and time, and cites its original journal sequence); `close NAME --reason TEXT` closes it and delivers nothing. `--through SEQ` bounds the covered mail. The name itself, its custodian from the hub's `--mailbox-custodians` map, and an operator granted `mailbox-handover` may act. One request covers at most 200 messages; exit 3 means more remain and running it again continues; exit 1 is a refusal with its reason. |
+| `synapse mailbox drain` | Find a project's orphaned mailboxes as `orphans` does (`--project` required) and, with `--execute`, hand each one's mail to `--to NAME` (a name or a role) or `--close` it, as `--name`, over one hub connection, repeating while the hub says more remains. Without `--execute` it prints the plan and changes nothing. The hub decides each request as for `handover`; a refused mailbox is reported and the drain goes on. Exit 0 drained (or plan printed), 1 a refusal or unreadable store, 2 no verdict, 3 a mailbox still had mail after 100 requests. `--json` prints the plan or the outcome per mailbox. |
 | `synapse mailbox orphans` | Read a hub store read-only and list directed mail that waits for names with no journalled activity for `--dormant-after-days` (default 7): pending count, last activity and oldest pending message per name, most mail first; `--project`, `--active NAME`, `--all` and `--json` narrow or widen the view; `--live` also asks the hub (`--uri`, `--token`) for its roster, and a name connected now is never listed. It changes nothing. Roles are not journalled, so a dormant name's roles are not shown; a role's own mailbox `role:<project>/<role>` is listed once a holder has acknowledged role mail. |
 | `synapse multihub` | Observe/follow a peer log read-only, or explicitly recover a stopped local watcher's durable quarantine (see [Multi-hub sync](multi-hub-sync.md)). |
 | `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations, `costs` reports per-session spend and telemetry from a hub event store. |
@@ -1328,6 +1329,15 @@ attached; a close delivers nothing. Both journal a `mailbox_handover` record
 and advance the old mailbox, and neither deletes a message. One request covers
 at most 200 messages; exit code 3 says more remain, and running the same
 command again continues.
+
+A custodian drains a whole project at once with `synapse mailbox drain`. It
+prints the plan first; `--execute` applies it through the hub, mailbox by
+mailbox, and reports each one:
+
+```bash
+synapse mailbox drain ~/.synapse/hub.db --project api --name api/manager --live --close --reason "sessions ended"
+synapse mailbox drain ~/.synapse/hub.db --project api --name api/manager --live --to api/manager --reason "adopted by the manager role" --execute
+```
 
 ### Mail for a role
 

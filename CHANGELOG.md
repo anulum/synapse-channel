@@ -54,6 +54,14 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **`synapse mailbox drain` hands over or closes every orphaned mailbox of a
+  project.** It finds the project's orphans as `synapse mailbox orphans` does
+  and prints the plan; with `--execute` it connects once as `--name` and sends
+  a handover to `--to` (a name or a role) or a close for each orphan,
+  repeating while the hub says more mail remains. The hub decides every
+  request as for `synapse mailbox handover`, so a custodian's drain covers the
+  names it answers for and reports each refusal without stopping. Nothing is
+  deleted; each request is journalled with its reason.
 - **`synapse doctor --mailbox-orphans` and `synapse mailbox orphans --live`.**
   The doctor reads the hub store at `--db-path` and warns while its project
   has directed mail waiting for names quiet for 7 days or more, naming the

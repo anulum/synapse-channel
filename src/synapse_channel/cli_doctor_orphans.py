@@ -11,7 +11,7 @@ The check runs only when ``synapse doctor`` is given the hub's store
 (``--db-path``). It reads the journal read-only, counts a name as active when
 the live roster shows it connected, and applies the same rule as
 ``synapse mailbox orphans``: pending directed mail and no journalled activity
-for :data:`~synapse_channel.cli_mailbox.DEFAULT_DORMANT_DAYS` days.
+for :data:`~synapse_channel.cli_mailbox_query.DEFAULT_DORMANT_DAYS` days.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from synapse_channel.cli_mailbox import DEFAULT_DORMANT_DAYS, read_mailbox_standings
+from synapse_channel.cli_mailbox_query import DEFAULT_DORMANT_DAYS, read_mailbox_standings
 from synapse_channel.client.diagnostics import Diagnosis
 from synapse_channel.core.event_row_mac import RowMacError
 from synapse_channel.core.mailbox_orphans import orphaned_mailboxes
