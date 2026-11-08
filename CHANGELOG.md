@@ -59,6 +59,12 @@ execution evidence when carrying a release claim forward.
   clock tick early (about 16 ms on Windows), and its clock is not the one
   that judges validity, so a session could be closed while its token was
   still valid. A timer that runs early now waits for the rest of the time.
+- **Closing a pi participant no longer leaves its pipes open.** The pi RPC
+  child's close() killed the process group and returned while the pipe
+  transports were still open, so they were collected later, after their
+  event loop had closed, with resource warnings. close() now closes stdin
+  and waits (at most two seconds) for both pipes to reach end of file
+  before it returns.
 
 ## [0.99.46] - 2026-11-07
 
