@@ -564,6 +564,35 @@ def test_malformed_public_entries_are_rejected(source: str, raw: dict[str, objec
             discovery.parse_hosts(raw)
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("full_name", None, "GitHub repository identity is invalid"),
+        ("owner", "acme", "GitHub repository entry is invalid"),
+    ],
+)
+def test_collect_refuses_a_host_identity_that_parse_hosts_rejects(
+    field: str, value: object, message: str
+) -> None:
+    """A bad host name or owner is a discovery refusal, not an attribute crash.
+
+    parse_hosts raises the sentence. collect stores the exception type,
+    because DiscoveryError is a ValueError. Dropping either clause lets
+    the merge call casefold and leaves collect with AttributeError.
+    """
+    now = datetime(2026, 9, 19, tzinfo=UTC)
+    fixture = _fixture()
+    item = fixture["github_hosts"]["items"][0]
+    item[field] = value
+    with pytest.raises(discovery.DiscoveryError, match=message):
+        discovery.parse_hosts(fixture["github_hosts"])
+    rows, errors, complete = discovery.collect(fixture=fixture, now=now)
+    assert "github_hosts" not in rows
+    assert errors["github_hosts"] == "DiscoveryError"
+    assert complete["github_hosts"] is False
+    assert complete["github_host_inspection"] is False
+
+
 def test_live_fetch_path_uses_fixed_queries_and_rejects_bad_roots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
