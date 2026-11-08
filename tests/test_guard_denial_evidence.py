@@ -213,19 +213,21 @@ async def test_guard_evidence_replays_after_restart_and_conflicts_when_changed(
         journal=reopened,
     )
     changed = _frame(call_sha256="f" * 64, idem_key="guard-1")
-    async with running_hub(restarted) as (_, uri):
-        replayed = await _submit(uri, frame)
-        async with connect(uri) as websocket:
-            await send_json(
-                websocket,
-                sender=str(changed["sender"]),
-                type="heartbeat",
-                payload="online",
-                token=TOKEN,
-            )
-            await read_until_type(websocket, "welcome")
-            await websocket.send(json.dumps(changed))
-            conflict = await read_until_type(websocket, "error")
+    # One connection carries both calls: reconnecting under the same name right
+    # after a close can meet the hub before it has released that name (4009).
+    async with running_hub(restarted) as (_, uri), connect(uri) as websocket:
+        await send_json(
+            websocket,
+            sender=str(frame["sender"]),
+            type="heartbeat",
+            payload="online",
+            token=TOKEN,
+        )
+        await read_until_type(websocket, "welcome")
+        await websocket.send(json.dumps(frame))
+        replayed = await read_until_type(websocket, "guard_denial_recorded")
+        await websocket.send(json.dumps(changed))
+        conflict = await read_until_type(websocket, "error")
     assert replayed["audit_seq"] == first["audit_seq"]
     assert replayed["call_sha256"] == frame["call_sha256"]
     assert conflict["error_code"] == "idempotency_conflict"
