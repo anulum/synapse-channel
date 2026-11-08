@@ -265,7 +265,7 @@ def test_start_session_preserves_an_explicit_codex_update_policy(tmp_path: Path)
     assert runner.calls[2][-1].endswith("check_for_update_on_startup=true")
 
 
-def test_start_session_puts_a_new_tmux_server_in_a_scope_of_its_own(tmp_path: Path) -> None:
+def test_start_session_puts_a_new_tmux_server_in_a_service_of_its_own(tmp_path: Path) -> None:
     config = _config(tmp_path, agent_command=("kimi",))
     runner = RecordingRunner(
         [
@@ -273,6 +273,7 @@ def test_start_session_puts_a_new_tmux_server_in_a_scope_of_its_own(tmp_path: Pa
             _result(["tmux", "display-message"], 1, stderr="no server running\n"),
             _result(["systemctl", "--user", "show"], 0, stdout="255\n"),
             _result(["systemd-run"], 0),
+            _result(["tmux", "new-session"], 0),
         ]
     )
 
@@ -280,12 +281,30 @@ def test_start_session_puts_a_new_tmux_server_in_a_scope_of_its_own(tmp_path: Pa
 
     assert result.started is True
     assert runner.calls[2] == ["systemctl", "--user", "show", "--property=Version", "--value"]
-    started = runner.calls[3]
-    assert started[:5] == ["systemd-run", "--user", "--scope", "--quiet", "--collect"]
-    assert started[5].startswith("--unit=synapse-tmux-server-") and started[5].endswith(".scope")
-    assert started[6].startswith("--description=tmux server in a scope of its own")
-    assert started[7:12] == ["--", "tmux", "new-session", "-d", "-s"]
-    assert started[-1].endswith(" kimi")
+    server = runner.calls[3]
+    assert server[:5] == ["systemd-run", "--user", "--quiet", "--collect", "--service-type=forking"]
+    assert server[5].startswith("--unit=synapse-tmux-server-") and server[5].endswith(".service")
+    assert server[6].startswith("--description=tmux server in a service of its own")
+    end = server.index("--")
+    assert set(server[7:end]) <= {
+        "--setenv=PATH",
+        "--setenv=LANG",
+        "--setenv=LC_ALL",
+        "--setenv=TMUX_TMPDIR",
+    }
+    assert server[end + 1 :] == [
+        "tmux",
+        "start-server",
+        ";",
+        "set-option",
+        "-g",
+        "exit-empty",
+        "off",
+    ]
+    # The session itself is the caller's own command: its code and output are kept.
+    session = runner.calls[4]
+    assert session[:5] == ["tmux", "new-session", "-d", "-s", config.session]
+    assert session[-1].endswith(" kimi")
 
 
 def test_start_session_starts_tmux_plainly_without_a_user_manager(tmp_path: Path) -> None:

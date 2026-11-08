@@ -55,7 +55,7 @@ from synapse_channel.agent_pane_state import (
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.pane_bridge_wait import DEFAULT_BRIDGE_WAIT_TIMEOUT, run_probed_wait
 from synapse_channel.terminal_text import terminal_text
-from synapse_channel.tmux_server import new_server_prefix
+from synapse_channel.tmux_server import start_own_server
 from synapse_channel.waiter_identity import pane_waiter_name
 
 _pane_state = _pane_classification.pane_state
@@ -676,9 +676,9 @@ def _launch_tmux_session(
 ) -> subprocess.CompletedProcess[str]:
     """Create one new managed session under the caller's selected target."""
     command = shlex.join(["env", *provider_env, *_managed_agent_command(config)])
+    start_own_server(config.tmux_bin, runner=runner)
     return runner(
         [
-            *new_server_prefix(config.tmux_bin, runner=runner),
             config.tmux_bin,
             "new-session",
             "-d",

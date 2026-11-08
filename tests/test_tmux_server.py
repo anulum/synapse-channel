@@ -30,13 +30,14 @@ import pytest
 from synapse_channel.cli import main as cli_main
 from synapse_channel.tmux_server import (
     MOVED_SCOPE_PREFIX,
-    NEW_SCOPE_PREFIX,
-    SCOPE_DESCRIPTION,
+    NEW_SERVER_UNIT_PREFIX,
+    SERVER_DESCRIPTION,
     TmuxServerPlacement,
     move_to_own_scope,
-    new_server_prefix,
+    own_server_command,
     placement,
     server_pid,
+    start_own_server,
     unit_of_pid,
     user_manager_available,
 )
@@ -74,9 +75,14 @@ class Rig:
             wrapper.chmod(0o755)
         return str(wrapper)
 
-    def bridge(self, name: str, code: str) -> str:
-        """Run ``code`` as a service unit that stays active after it exits."""
+    def bridge(self, name: str, code: str, *properties: str) -> str:
+        """Run ``code`` as a service unit that stays active after it exits.
+
+        ``properties`` are extra unit properties, such as a sandbox. The unit
+        imports the same Synapse source as the test (``PYTHONPATH``).
+        """
         unit = f"synapse-test-{self.tag}-{name}.service"
+        source = ["--setenv=PYTHONPATH"] if os.environ.get("PYTHONPATH") else []
         completed = subprocess.run(
             [
                 "systemd-run",
@@ -85,6 +91,8 @@ class Rig:
                 f"--unit={unit}",
                 "--service-type=oneshot",
                 "--property=RemainAfterExit=yes",
+                *(f"--property={item}" for item in properties),
+                *source,
                 sys.executable,
                 "-c",
                 code,
@@ -106,12 +114,12 @@ class Rig:
         )
 
     def scoped_start(self) -> str:
-        """Code that starts a session with the prefix this module returns."""
+        """Code that starts the server in its own service, then a session plainly."""
         return (
             "import subprocess\n"
-            "from synapse_channel.tmux_server import new_server_prefix\n"
-            f"prefix = new_server_prefix({self.tmux_bin!r}, runner=subprocess.run)\n"
-            f"subprocess.run([*prefix, {self.tmux_bin!r}, 'new-session', '-d', '-s', 'work', "
+            "from synapse_channel.tmux_server import start_own_server\n"
+            f"start_own_server({self.tmux_bin!r}, runner=subprocess.run)\n"
+            f"subprocess.run([{self.tmux_bin!r}, 'new-session', '-d', '-s', 'work', "
             "'sleep', '600'], check=True)\n"
         )
 
@@ -168,14 +176,14 @@ def test_a_server_started_with_the_prefix_survives_the_unit_that_started_it(rig:
     found = rig.where()
     assert found.running and not found.in_service_unit
     assert found.unit is not None
-    assert found.unit.startswith(NEW_SCOPE_PREFIX) and found.unit.endswith(".scope")
+    assert found.unit.startswith(NEW_SERVER_UNIT_PREFIX) and found.unit.endswith(".service")
     described = subprocess.run(
         ["systemctl", "--user", "show", found.unit, "--property=Description", "--value"],
         capture_output=True,
         text=True,
         check=True,
     )
-    assert described.stdout.strip() == SCOPE_DESCRIPTION
+    assert described.stdout.strip() == SERVER_DESCRIPTION
 
     rig.stop(unit)
 
@@ -202,7 +210,7 @@ def test_a_session_started_by_the_product_survives_the_unit_that_started_it(rig:
 
     found = rig.where()
     assert found.running and found.unit is not None
-    assert found.unit.startswith(NEW_SCOPE_PREFIX) and not found.in_service_unit
+    assert found.unit.startswith(NEW_SERVER_UNIT_PREFIX) and not found.in_service_unit
     assert rig.has_session()
 
     rig.stop(unit)
@@ -211,31 +219,63 @@ def test_a_session_started_by_the_product_survives_the_unit_that_started_it(rig:
     assert rig.has_session()
 
 
-def test_the_prefix_names_one_scope_and_is_empty_once_a_server_runs(rig: Rig) -> None:
-    prefix = new_server_prefix(rig.tmux_bin, runner=subprocess.run, token="fixed")
-
-    assert prefix == [
+def test_the_server_starts_in_one_service_and_only_when_none_answers(rig: Rig) -> None:
+    caller = {"PATH": os.environ["PATH"], "LANG": "C.UTF-8", "SECRET_TOKEN": "never-copied"}
+    unit = f"{NEW_SERVER_UNIT_PREFIX}{rig.tag}.service"
+    assert own_server_command(rig.tmux_bin, unit=unit, environ=caller) == [
         "systemd-run",
         "--user",
-        "--scope",
         "--quiet",
         "--collect",
-        f"--unit={NEW_SCOPE_PREFIX}fixed.scope",
-        f"--description={SCOPE_DESCRIPTION}",
+        "--service-type=forking",
+        f"--unit={unit}",
+        f"--description={SERVER_DESCRIPTION}",
+        "--setenv=PATH",
+        "--setenv=LANG",
         "--",
+        rig.tmux_bin,
+        "start-server",
+        ";",
+        "set-option",
+        "-g",
+        "exit-empty",
+        "off",
     ]
-    random_unit = new_server_prefix(rig.tmux_bin, runner=subprocess.run)[5]
-    assert random_unit.startswith(f"--unit={NEW_SCOPE_PREFIX}")
-    assert random_unit != prefix[5]
 
-    scoped = [f"--unit={NEW_SCOPE_PREFIX}{rig.tag}.scope" if a == prefix[5] else a for a in prefix]
-    subprocess.run(
-        [*scoped, rig.tmux_bin, "new-session", "-d", "-s", "work", "sleep", "600"], check=True
-    )
+    started = start_own_server(rig.tmux_bin, runner=subprocess.run, token=rig.tag)
 
-    assert rig.where().unit == f"{NEW_SCOPE_PREFIX}{rig.tag}.scope"
-    # The server exists: a second command only talks to it and needs no scope.
-    assert new_server_prefix(rig.tmux_bin, runner=subprocess.run) == []
+    # systemd-run returns once the forking start is done: the empty server answers.
+    assert started.started and started.unit == unit
+    assert rig.where().unit == unit and not rig.where().in_service_unit
+    subprocess.run([rig.tmux_bin, "new-session", "-d", "-s", "work", "sleep", "600"], check=True)
+    assert rig.has_session() and rig.where().unit == unit
+    again = start_own_server(rig.tmux_bin, runner=subprocess.run)
+    assert (again.started, again.detail) == (False, "a tmux server already answers")
+
+
+def _no_new_privs(pid: int) -> str:
+    """Return the NoNewPrivs flag of one process."""
+    for line in Path(f"/proc/{pid}/status").read_text(encoding="utf-8").splitlines():
+        if line.startswith("NoNewPrivs:"):
+            return line.split(":", 1)[1].strip()
+    raise AssertionError("no NoNewPrivs line")
+
+
+def test_a_server_first_started_from_a_sandboxed_unit_does_not_inherit_its_sandbox(
+    rig: Rig,
+) -> None:
+    # The reported bug: with a scope the server kept the starting unit's
+    # NoNewPrivileges, and every later pane inherited it (sudo failed).
+    unit = rig.bridge("sandboxed", rig.scoped_start(), "NoNewPrivileges=yes")
+
+    found = rig.where()
+    assert found.pid is not None and found.unit is not None
+    assert found.unit.startswith(NEW_SERVER_UNIT_PREFIX) and not found.in_service_unit
+    assert _no_new_privs(found.pid) == "0"
+
+    rig.stop(unit)
+
+    assert rig.has_session()
 
 
 def test_a_running_server_is_moved_out_of_its_unit_without_a_restart(rig: Rig) -> None:
@@ -402,13 +442,13 @@ def _done(returncode: int, stdout: str = "", stderr: str = "") -> subprocess.Com
         subprocess.TimeoutExpired("systemctl", 5.0),
     ],
 )
-def test_without_a_user_manager_no_prefix_is_given(
+def test_without_a_user_manager_no_server_is_started(
     answer: subprocess.CompletedProcess[str] | BaseException, tmp_path: Path
 ) -> None:
     runner = Replay({"systemctl": answer, "tmux": _done(1, stderr="no server running\n")})
 
     assert not user_manager_available(runner=runner)
-    assert new_server_prefix("tmux", runner=runner) == []
+    assert start_own_server("tmux", runner=runner).detail == "no systemd user manager answers"
 
 
 @pytest.mark.parametrize(
@@ -494,3 +534,44 @@ def test_a_server_that_vanishes_during_the_move_is_not_claimed(tmp_path: Path) -
 
     assert not result.moved and result.unit is None
     assert result.detail == "tmux server pid 41 is still in an unknown unit"
+
+
+@pytest.mark.parametrize(
+    ("unit", "counts"),
+    [
+        ("my-bridge.service", True),
+        (f"{NEW_SERVER_UNIT_PREFIX}abc.service", False),
+        ("tmux-server-4810.scope", False),
+        (None, False),
+    ],
+)
+def test_only_another_service_unit_counts_as_holding_the_server(
+    unit: str | None, counts: bool
+) -> None:
+    """The service the prefix starts holds only the server, so it is not a hazard."""
+    assert TmuxServerPlacement(4810, unit).in_service_unit is counts
+
+
+@pytest.mark.parametrize(
+    ("answer", "detail"),
+    [
+        (
+            _done(1, stderr="Job failed\n"),
+            "could not start synapse-tmux-server-t.service — Job failed",
+        ),
+        (FileNotFoundError("systemd-run"), "could not start synapse-tmux-server-t.service"),
+    ],
+)
+def test_a_refused_server_start_is_reported_and_not_claimed(
+    answer: subprocess.CompletedProcess[str] | BaseException, detail: str
+) -> None:
+    """The caller then starts the server with its own command, as tmux always did."""
+    runner = Replay(
+        {
+            "tmux": _done(1, stderr="no server running\n"),
+            "systemctl": _done(0, stdout="255\n"),
+            "systemd-run": answer,
+        }
+    )
+    started = start_own_server("tmux", runner=runner, token="t")
+    assert (started.started, started.unit, started.detail) == (False, None, detail)

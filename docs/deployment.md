@@ -859,12 +859,22 @@ seat on the host.
 
 Synapse keeps the server out of every other unit in two ways:
 
-- **A new server starts in a scope of its own.** When `synapse agent-tmux
-  start` or `synapse worker-session` would create the tmux server, the command
-  runs under `systemd-run --user --scope`, in a transient scope named
-  `synapse-tmux-server-<id>.scope`. When a server already runs, the command
-  only talks to it and nothing changes. Without a systemd user manager tmux
-  starts as it always did.
+- **A new server starts in a service of its own.** When `synapse agent-tmux
+  start` or `synapse worker-session` would create the tmux server, Synapse
+  first starts an empty server with `systemd-run --user
+  --service-type=forking` in a transient service named
+  `synapse-tmux-server-<id>.service` that holds only the server
+  (`exit-empty` is off, so it waits for the first session). The user service
+  manager starts that service, so the server does not inherit the caller's
+  sandbox: a server first created from a unit with `NoNewPrivileges`, a user
+  namespace or a seccomp filter would otherwise pass them to every later pane,
+  and `sudo` or a helper that needs privileges would fail in every seat. The
+  caller's `PATH`, `LANG`, `LC_ALL` and `TMUX_TMPDIR` are passed on by name;
+  other variables come from the user manager. The session itself is then
+  created by the caller's own `tmux new-session`, so its exit code, output and
+  environment are unchanged. When a server already runs, nothing is started.
+  Without a systemd user manager, or when the start is refused, tmux starts as
+  it always did.
 - **A running server can be moved.** `synapse service tmux-server` prints
   where the server lives:
 
@@ -882,7 +892,8 @@ Synapse keeps the server out of every other unit in two ways:
   The move asks the user service manager for a new transient scope that holds
   the server process. The server is not restarted and no session is touched.
   The command reports the move only after it has read the server's control
-  group back. It exits 1 while the server is in a service unit and 0 otherwise.
+  group back. It exits 1 while the server is in another service unit and 0 otherwise;
+  the server's own `synapse-tmux-server-<id>.service` does not count.
 
 Only the server process is placed. A tmux built with systemd support, 3.4 and
 later, already runs every pane in a scope of its own. With an older tmux the

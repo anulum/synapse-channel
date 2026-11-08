@@ -18,6 +18,21 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A tmux server no longer inherits the sandbox of the unit that first
+  started it.** A new server started with `systemd-run --user --scope`, which
+  keeps the caller's execution context, so a server first created from a
+  sandboxed unit (a waker with `NoNewPrivileges`, a user namespace and a
+  seccomp filter) passed them to every later pane, and `sudo` or
+  `synapse arm --token-file` failed in every seat. An empty server now starts
+  first in a transient service of its own, `synapse-tmux-server-<id>.service`,
+  which the user service manager starts in a clean context (the caller's
+  `PATH`, locale and `TMUX_TMPDIR` are passed on by name); the caller's own
+  `tmux new-session` then creates the session, so its exit code and output are
+  unchanged. That service does not count as a service unit holding the server
+  in `synapse service tmux-server`.
+
 ### Added
 
 - **`synapse doctor --mailbox-orphans` and `synapse mailbox orphans --live`.**

@@ -14,9 +14,14 @@ every seat on the host.
 
 This module answers where the server lives and offers two remedies:
 
-* :func:`new_server_prefix` returns a ``systemd-run --user --scope`` prefix
-  for the command that would create the server, so that a new server starts
-  in a transient scope of its own;
+* :func:`start_own_server` starts a new server, before the command that
+  creates a session, in a transient service of its own. The user service
+  manager starts that service, so the server does not inherit the caller's
+  sandbox: a server first created from a unit with ``NoNewPrivileges``, a user
+  namespace or a seccomp filter would otherwise pass them to every later pane
+  (``sudo`` and helpers that need privileges then fail in every seat). The
+  caller's ``PATH``, locale and ``TMUX_TMPDIR`` are passed on by name, and the
+  caller's own command keeps its exit code, output and environment;
 * :func:`move_to_own_scope` asks the user service manager to put a server that
   already runs into a new transient scope, without restarting it.
 
@@ -30,10 +35,11 @@ panes stay children of the server in the original control group.
 
 from __future__ import annotations
 
+import os
 import subprocess  # nosec B404
 import time
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -45,8 +51,16 @@ SCOPE_DESCRIPTION = (
 )
 """Description given to every scope this module creates."""
 
-NEW_SCOPE_PREFIX = "synapse-tmux-server-"
-"""Name prefix of the scope a new server is started in."""
+SERVER_DESCRIPTION = (
+    "tmux server in a service of its own, started by the user manager outside any caller's sandbox"
+)
+"""Description given to the service a new server is started in."""
+
+NEW_SERVER_UNIT_PREFIX = "synapse-tmux-server-"
+"""Name prefix of the transient service a new server is started in."""
+
+INHERITED_ENVIRONMENT = ("PATH", "LANG", "LC_ALL", "TMUX_TMPDIR")
+"""Caller variables the new server keeps, when set: where commands and the socket are found."""
 
 MOVED_SCOPE_PREFIX = "tmux-server-"
 """Name prefix of the scope a running server is moved into; the process id follows."""
@@ -80,8 +94,14 @@ class TmuxServerPlacement:
 
     @property
     def in_service_unit(self) -> bool:
-        """Return whether stopping a service unit would kill this server."""
-        return self.unit is not None and self.unit.endswith(".service")
+        """Return whether stopping some other service unit would kill this server.
+
+        The service :func:`start_own_server` starts holds only the server, so a
+        server there is in its own unit and does not count.
+        """
+        if self.unit is None or not self.unit.endswith(".service"):
+            return False
+        return not self.unit.startswith(NEW_SERVER_UNIT_PREFIX)
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,43 +168,110 @@ def user_manager_available(*, runner: CommandRunner) -> bool:
     return completed is not None and completed.returncode == 0 and bool(completed.stdout.strip())
 
 
-def new_server_prefix(
-    tmux_bin: str, *, runner: CommandRunner, token: str | None = None
+@dataclass(frozen=True, slots=True)
+class ServerStart:
+    """Outcome of starting a tmux server in a service of its own."""
+
+    started: bool
+    unit: str | None
+    detail: str
+
+
+def own_server_command(
+    tmux_bin: str, *, unit: str, environ: Mapping[str, str] | None = None
 ) -> list[str]:
-    """Return the prefix for a tmux command that would create the server.
+    """Return the command that starts an empty tmux server in a transient service.
+
+    The service is ``forking``: the user manager runs the tmux client in a clean
+    execution context, the client forks the server and exits, and the server
+    stays as the service's main process. ``exit-empty off`` keeps the server
+    while it has no session yet. :data:`INHERITED_ENVIRONMENT` names the caller
+    variables passed on; ``--setenv=NAME`` copies the value, so it is not
+    written into the command line.
 
     Parameters
     ----------
     tmux_bin : str
-        The tmux executable the command will use.
-    runner : CommandRunner
-        Command boundary for the two read-only probes.
-    token : str or None
-        Suffix of the scope name; a random one by default.
+        The tmux executable.
+    unit : str
+        Name of the transient service.
+    environ : Mapping[str, str] or None
+        The caller's environment; defaults to :data:`os.environ`.
 
     Returns
     -------
     list of str
-        ``systemd-run --user --scope …`` arguments ending in ``--`` when no
-        server answers yet and a user manager is available. An empty list
-        when a server already runs, because the command then only talks to
-        it, or when no user manager answers.
+        The ``systemd-run --user …`` command.
     """
-    if server_pid(tmux_bin, runner=runner) is not None:
-        return []
-    if not user_manager_available(runner=runner):
-        return []
-    name = f"{NEW_SCOPE_PREFIX}{token or uuid.uuid4().hex[:12]}.scope"
+    env = os.environ if environ is None else environ
     return [
         "systemd-run",
         "--user",
-        "--scope",
         "--quiet",
         "--collect",
-        f"--unit={name}",
-        f"--description={SCOPE_DESCRIPTION}",
+        "--service-type=forking",
+        f"--unit={unit}",
+        f"--description={SERVER_DESCRIPTION}",
+        *(f"--setenv={key}" for key in INHERITED_ENVIRONMENT if key in env),
         "--",
+        tmux_bin,
+        "start-server",
+        ";",
+        "set-option",
+        "-g",
+        "exit-empty",
+        "off",
     ]
+
+
+def start_own_server(
+    tmux_bin: str,
+    *,
+    runner: CommandRunner,
+    token: str | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> ServerStart:
+    """Start the tmux server in a service of its own when none answers yet.
+
+    The command that then creates a session runs as the caller's own child, so
+    its exit code, output and environment are what they always were; only the
+    server it talks to was started by the user manager, outside any caller's
+    sandbox. ``systemd-run`` waits for the start, so the server answers when
+    this returns.
+
+    Parameters
+    ----------
+    tmux_bin : str
+        The tmux executable the caller will use.
+    runner : CommandRunner
+        Command boundary for the probes and the start.
+    token : str or None
+        Suffix of the service name; a random one by default.
+    environ : Mapping[str, str] or None
+        The caller's environment; defaults to :data:`os.environ`.
+
+    Returns
+    -------
+    ServerStart
+        ``started`` only when the service was started. Nothing is started
+        when a server already answers or no user manager does; a refused
+        start is reported, and the caller's own command then starts the
+        server as tmux always did.
+    """
+    if server_pid(tmux_bin, runner=runner) is not None:
+        return ServerStart(False, None, "a tmux server already answers")
+    if not user_manager_available(runner=runner):
+        return ServerStart(False, None, "no systemd user manager answers")
+    unit = f"{NEW_SERVER_UNIT_PREFIX}{token or uuid.uuid4().hex[:12]}.service"
+    completed = _run(own_server_command(tmux_bin, unit=unit, environ=environ), runner=runner)
+    if completed is None or completed.returncode != 0:
+        detail = "" if completed is None else (completed.stderr or completed.stdout).strip()
+        return ServerStart(
+            False,
+            None,
+            f"could not start {unit}" + (f" — {terminal_text(detail)}" if detail else ""),
+        )
+    return ServerStart(True, unit, f"tmux server started in {unit}")
 
 
 def move_to_own_scope(
