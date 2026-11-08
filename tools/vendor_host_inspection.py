@@ -16,7 +16,7 @@ import os
 import re
 import time
 from collections.abc import Callable, Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.message import Message
 from typing import Any, TypeVar, cast
 from urllib.error import HTTPError
@@ -293,7 +293,7 @@ def host_provenance(
     if isinstance(created, str):
         try:
             created_at = datetime.fromisoformat(created.replace("Z", "+00:00"))
-            result["owner_age_days"] = max(0, (datetime.now(timezone.utc) - created_at).days)
+            result["owner_age_days"] = max(0, (datetime.now(UTC) - created_at).days)
         except ValueError:
             pass
     public_repos = owner_data.get("public_repos")
