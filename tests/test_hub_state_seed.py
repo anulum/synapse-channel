@@ -21,6 +21,13 @@ from synapse_channel.core.state import SynapseState
 from test_protected_write_admission_journal import POLICIES, _committed
 
 
+def test_seed_states_that_missing_policies_keep_fail_closed_replay_behaviour() -> None:
+    """The shipped seed states that missing policies keep fail-closed replay behaviour."""
+    text = " ".join((seed_hub_state.__doc__ or "").split())
+    assert "preserve the existing fail-closed replay behaviour" in text
+    assert "behavior" not in text
+
+
 def _seed(
     journal: EventStore | None,
     *,

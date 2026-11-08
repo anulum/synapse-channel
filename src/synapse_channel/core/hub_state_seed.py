@@ -121,7 +121,7 @@ def seed_hub_state(
         hint (already clamped by the caller).
     protected_write_policies : Mapping or None
         Explicit retained enrollment policies for protected history. Missing
-        policies preserve the existing fail-closed replay behavior.
+        policies preserve the existing fail-closed replay behaviour.
 
     Returns
     -------
