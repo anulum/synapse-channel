@@ -500,7 +500,7 @@ class SynapseHub(HubConfigView):
 
         This method is safe before installation: it never reads live state or
         executes a callback. State sources remain late-bound so replacement of
-        the state or blackboard retains the previous runtime behavior.
+        the state or blackboard retains the previous runtime behaviour.
         """
         return HubComponentCallbacks(
             owner=self,

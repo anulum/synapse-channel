@@ -29,6 +29,13 @@ from synapse_channel.core.merkle_checkpoint import MerkleCheckpointStore
 from synapse_channel.core.persistence import EventStore
 
 
+def test_component_callbacks_state_that_replacement_keeps_runtime_behaviour() -> None:
+    """The shipped callback method states that replacement keeps runtime behaviour."""
+    text = " ".join((SynapseHub.component_callbacks.__doc__ or "").split())
+    assert "retains the previous runtime behaviour" in text
+    assert "behavior" not in text
+
+
 async def test_custom_graph_is_installed_once_and_routes_real_socket_messages(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
