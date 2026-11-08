@@ -20,6 +20,15 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **Outcome and verification records decode in the core.** The
+  `synapse.execution-outcome.v1` and `synapse.result-verification.v1` record
+  types now live in `synapse_channel.core` (`core.execution_outcome`,
+  `core.result_verification_record`), so the hub can validate them. The old
+  import paths `synapse_channel.execution_outcome` and
+  `synapse_channel.result_verification` re-export the same objects. New
+  `outcome_from_json` and `verification_from_json` decode one record from its
+  JSON object, read only the record's own fields, apply the record's rules, and
+  refuse a wrong schema or field type without echoing the rejected value.
 - **`synapse mailbox orphans`: find mail nobody will collect.** A mailbox
   belongs to a name, and a session name rarely comes back, so directed mail
   to an ended session waits indefinitely. The command reads a hub store

@@ -45,60 +45,25 @@ import os
 import re
 import stat
 import subprocess  # nosec B404 # explicit argv only, never a shell
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Sequence
 from pathlib import Path
 
+from synapse_channel.core.result_verification_record import EFFECTS as EFFECTS
+from synapse_channel.core.result_verification_record import RESULTS as RESULTS
+from synapse_channel.core.result_verification_record import SCHEMA as SCHEMA
+from synapse_channel.core.result_verification_record import (
+    ResultVerification as ResultVerification,
+)
+from synapse_channel.core.result_verification_record import (
+    verification_from_json as verification_from_json,
+)
 from synapse_channel.execution_outcome import OUTCOME_SCHEMA, OutcomeState
 
-SCHEMA = "synapse.result-verification.v1"
-"""Version of the result-verification record."""
-
-EFFECTS = frozenset({"observed", "absent", "unknown"})
-RESULTS = frozenset({"verified", "not_verified", "not_checked"})
 _HEX40 = re.compile(r"[0-9a-f]{40}")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
 _READ_CHUNK = 1 << 20
 _NOFOLLOW: int | None = getattr(os, "O_NOFOLLOW", None)
-
-
-@dataclass(frozen=True, slots=True)
-class ResultVerification:
-    """One verifier's account of communication, effect and result, kept apart."""
-
-    operation_id: str
-    verifier: str
-    communication: str
-    effect: str
-    result: str
-    observation: str
-    evidence: Mapping[str, str] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        """Refuse combinations that would blur the three facts."""
-        if self.effect not in EFFECTS or self.result not in RESULTS:
-            raise ValueError("unknown effect or result state")
-        if self.result == "verified" and self.effect != "observed":
-            raise ValueError("a result is verified only from an observed effect")
-
-    @property
-    def verified(self) -> bool:
-        """Return whether the requested result itself was verified."""
-        return self.result == "verified"
-
-    def to_json(self) -> dict[str, object]:
-        """Return the JSON record, schema first-class and evidence copied."""
-        return {
-            "schema": SCHEMA,
-            "operation_id": self.operation_id,
-            "verifier": self.verifier,
-            "communication": self.communication,
-            "effect": self.effect,
-            "result": self.result,
-            "observation": self.observation,
-            "evidence": dict(self.evidence),
-        }
 
 
 def read_outcome(path: Path) -> tuple[str, str]:
