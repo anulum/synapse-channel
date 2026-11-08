@@ -9,6 +9,7 @@
 
 import pytest
 
+from synapse_channel.participants import memory_boundary
 from synapse_channel.participants.memory_boundary import (
     MEMORY_FENCE_CLOSE,
     MEMORY_FENCE_OPEN,
@@ -30,6 +31,13 @@ def _hit(index: int, *, mode: str = "boundary", score: float | None = 0.5) -> Me
         presentation=mode,
         provenance="REMANENTIA /recall",
     )
+
+
+def test_boundary_module_states_that_framing_does_not_enforce_model_behaviour() -> None:
+    """The shipped module states that framing does not enforce model behaviour."""
+    text = memory_boundary.__doc__ or ""
+    assert "does not independently enforce a provider's or model's behaviour" in text
+    assert "behavior" not in text
 
 
 def test_hits_are_fenced_labelled_and_neutralised() -> None:

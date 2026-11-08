@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — prompt-injection boundary for recalled memory data
 """Render recalled memory with bounded framing and explicit data instructions.
 
-Text framing does not independently enforce a provider's or model's behavior.
+Text framing does not independently enforce a provider's or model's behaviour.
 """
 
 from __future__ import annotations
