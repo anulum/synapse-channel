@@ -539,6 +539,15 @@ def swap_at_open(event, args):
         os.close(descriptor)
 
 sys.addaudithook(swap_at_open)
+if os.environ.get("READ_DIRECT") == "1":
+    from synapse_channel.mutation_governance import _read_repository_text
+
+    try:
+        _read_repository_text(Path(config))
+    except ValueError as exc:
+        sys.stdout.write(str(exc))
+        raise SystemExit(0)
+    raise SystemExit("the read succeeded")
 from synapse_channel.cli import main
 
 captured = io.StringIO()
@@ -602,3 +611,38 @@ def test_real_cli_refuses_a_precommit_file_that_changes_before_open(
         assert (after.st_dev, after.st_ino) == (before.st_dev, before.st_ino)
         assert after.st_size > _READ_LIMIT
         assert config.read_bytes().startswith(b"repos: []\n")
+
+
+def test_an_append_at_open_is_refused_before_the_read_loop(tmp_path: Path) -> None:
+    """Growing past the limit at open is the stat refusal, not the read-loop limit."""
+    repo = git_repo(tmp_path / "repo")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    config = repo / ".pre-commit-config.yaml"
+    config.write_text("repos: []\n", encoding="utf-8")
+    replacement = tmp_path / "replacement.yaml"
+    replacement.write_text(_GATE_THAT_WOULD_LOOK_CONFIGURED, encoding="utf-8")
+    env = os.environ.copy()
+    env["READ_DIRECT"] = "1"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            _OPEN_SWAP_PROGRAM,
+            str(config),
+            str(replacement),
+            "grown-past-limit",
+            str(home),
+            str(repo),
+            str(_READ_LIMIT),
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+        env=env,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "repository inspection path changed" in result.stdout
+    assert "exceeds" not in result.stdout
