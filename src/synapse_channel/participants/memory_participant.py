@@ -61,7 +61,7 @@ class MemoryAugmentedParticipant:
         """Await recall with a configured async timeout, then delegate fenced context.
 
         Cancellation requires cooperation from the recall coroutine; it does not
-        forcibly terminate underlying worker threads or enforce model behavior.
+        forcibly terminate underlying worker threads or enforce model behaviour.
         """
         try:
             result = await asyncio.wait_for(

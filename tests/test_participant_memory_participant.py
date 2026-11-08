@@ -25,6 +25,15 @@ from synapse_channel.participants.memory_participant import MemoryAugmentedParti
 from synapse_channel.participants.participant import ParticipantChannel, ParticipantHealth
 
 
+def test_take_turn_states_that_cancellation_does_not_enforce_model_behaviour() -> None:
+    """The shipped turn states that cancellation does not enforce model behaviour."""
+    text = " ".join((MemoryAugmentedParticipant.take_turn.__doc__ or "").split())
+    assert (
+        "does not forcibly terminate underlying worker threads or enforce model behaviour" in text
+    )
+    assert "behavior" not in text
+
+
 def _turn_result(identity: str, request: TurnRequest) -> TurnResult:
     return TurnResult(
         kind="participant.turn_result",
