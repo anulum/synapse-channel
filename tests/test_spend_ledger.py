@@ -392,3 +392,43 @@ def test_the_store_is_owner_only_versioned_and_needs_aware_times(tmp_path: Path)
         ledger.status("pool-z", now=T0)
     with pytest.raises(SpendLedgerError, match="exactly the fields"):
         ledger.configure({"pool_id": "x"}, now=T0)
+
+
+def test_a_grantee_reads_the_pools_headroom_and_nothing_more(tmp_path: Path) -> None:
+    ledger = _ledger(tmp_path)
+    grant = ledger.reserve(PEER, _request(), now=T0)
+    assert grant["admitted"] is True
+    reading = ledger.peer_status(PEER, {"pool_id": "pool-a"}, now=T0)
+    full = ledger.status("pool-a", now=T0)
+    assert reading["found"] is True
+    view = reading["status"]
+    assert isinstance(view, dict)
+    assert view["headroom"] == full["headroom"]
+    assert (view["hard_bound"], view["settled"], view["outstanding"]) == (
+        full["hard_bound"],
+        full["settled"],
+        full["outstanding"],
+    )
+    assert view["as_of"] == T0.isoformat()
+    assert "overruns" not in view and "active_agents" not in view
+
+
+@pytest.mark.parametrize(
+    ("caller", "document"),
+    [
+        ("hub-stranger", {"pool_id": "pool-a"}),
+        (PEER, {"pool_id": "pool-z"}),
+        (PEER, {"pool_id": "pool-a", "extra": 1}),
+        (PEER, {"pool_id": "bad id with spaces"}),
+        (PEER, ["pool-a"]),
+    ],
+)
+def test_anyone_else_gets_the_same_not_found(tmp_path: Path, caller: str, document: object) -> None:
+    ledger = _ledger(tmp_path)
+    assert ledger.peer_status(caller, document, now=T0) == {"found": False}
+
+
+def test_a_status_reading_needs_an_aware_time(tmp_path: Path) -> None:
+    ledger = _ledger(tmp_path)
+    with pytest.raises(SpendLedgerError):
+        ledger.peer_status(PEER, {"pool_id": "pool-a"}, now=datetime(2026, 10, 1, 12))

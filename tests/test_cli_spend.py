@@ -110,7 +110,15 @@ async def test_request_asks_a_real_owner_hub(
         half = await asyncio.to_thread(
             _run, [*base, "query", "--file", str(tmp_path / "q.json"), "--peer-identity-key", "x"]
         )
+        capsys.readouterr()
+        status_file = _file(tmp_path / "s.json", {"pool_id": "pool-a"})
+        status = await asyncio.to_thread(_run, [*base, "status", "--file", status_file, *signing])
+        status_out = capsys.readouterr().out
+        hidden_file = _file(tmp_path / "z.json", {"pool_id": "pool-z"})
+        hidden = await asyncio.to_thread(_run, [*base, "status", "--file", hidden_file, *signing])
     capsys.readouterr()
+    assert status == 0 and json.loads(status_out)["status"]["headroom"] == "30"
+    assert hidden == 1
     assert admitted == 0 and json.loads(admitted_out)["admitted"] is True
     assert refused == 1
     assert unsigned == 2  # the identity-bound owner closes an unsigned registration

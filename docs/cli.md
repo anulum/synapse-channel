@@ -82,7 +82,7 @@ everything, since they need the whole command table.
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse trust-graph` | Query the evidence trust graph (receipts, stale claims, conflicts) as text, JSON, or Graphviz DOT. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
-| `synapse spend` | Operate a shared pool's owner-only spend ledger on the owner hub (`configure`, `status`, `audit`, `reconcile`), or send one peer `request reserve\|settle\|query` to an owner hub. |
+| `synapse spend` | Operate a shared pool's owner-only spend ledger on the owner hub (`configure`, `status`, `audit`, `reconcile`), or send one peer `request reserve\|settle\|query\|status` to an owner hub. |
 | `synapse entitlements` | Record private account/pool/window facts, inspect quota evidence, match digest-approved compute work through `compute-subjects` and `suggest-compute` in the owner-local ledger, and `advertise` one pool, redacted, to fleet planners; see [entitlements](entitlements.md). |
 | `synapse app-task` | Offer, accept, start, attach, verify and correct owner-local human app work with a private allowance snapshot; see [Human app tasks](app-tasks.md). |
 | `synapse fleet-scorecard` | Compose causality spans, opt-in accounting, live-claim contention, reliability findings, and optional benchmark history into an owner-only JSON bundle or a two-signal OTLP/HTTP collector push. |
@@ -2602,13 +2602,16 @@ reaches a peer.
   - `audit --pool ID` shows every event, including refusals with their reasons.
   - `reconcile --file RECONCILE.json` closes a reservation with an evidenced
     amount.
-- **Peer request.** `synapse spend request reserve|settle|query --uri OWNER
+- **Peer request.** `synapse spend request reserve|settle|query|status --uri OWNER
   --local-id HUB --file DOC.json` sends one request from a peer hub. Sign it with
   `--peer-identity-key/--peer-identity-key-id` for an identity-key grant.
   - The exit code is 0 when admitted, settled or found, 1 when refused, and 2 on
     an error or timeout.
   - After a timeout, `query` with the same seat, task, operation and key returns
     the owner's stored answer.
+  - `status` with `{"pool_id": ID}` reads the pool's headroom when this hub is
+    one of its grantees; it holds nothing, and any other caller is told only
+    that nothing was found.
 - **Refusals.** A refused peer sees only `not-admitted`.
 - **Amounts.** Every amount is a decimal string with at most 30 digits, at most
   18 decimals and a magnitude below 10**19. The ledger computes exactly: an

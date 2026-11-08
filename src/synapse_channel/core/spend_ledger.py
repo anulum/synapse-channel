@@ -660,6 +660,57 @@ class SpendLedger:
             "active_agents": len(state.active_seats(now)),
         }
 
+    @_exact
+    def peer_status(self, caller: str, document: object, *, now: datetime) -> dict[str, object]:
+        """Return one pool's headroom reading to ``caller`` when it is a grantee hub of the pool.
+
+        The reading is advisory: it holds nothing, and a reservation still decides alone. It
+        leaves out the overruns (they name other callers' reservations) and the active agents.
+        An unknown pool, a non-grantee and a malformed document all get ``{"found": False}``,
+        so the answer reveals nothing about pools ``caller`` may not use.
+
+        Parameters
+        ----------
+        caller : str
+            The verified peer hub id.
+        document : object
+            ``{"pool_id": ID}``.
+        now : datetime
+            Timezone-aware reading time.
+
+        Returns
+        -------
+        dict[str, object]
+            ``{"found": True, "status": {...}}`` or ``{"found": False}``.
+        """
+        _require_aware(now)
+        if not isinstance(document, Mapping) or set(document) != {"pool_id"}:
+            return {"found": False}
+        try:
+            pool_id = token(document["pool_id"], "pool_id")
+        except SpendPoolError:
+            return {"found": False}
+        with closing(self._connect()) as connection:
+            config = self._pool(connection, pool_id).config
+        if config is None or all(hub != caller for hub, _project in config.grantees):
+            return {"found": False}
+        reading = self.status(pool_id, now=now)
+        shared = (
+            "pool_id",
+            "owner_hub_id",
+            "epoch",
+            "revision",
+            "unit",
+            "window",
+            "hard_bound",
+            "settled",
+            "outstanding",
+            "headroom",
+        )
+        view: dict[str, object] = {key: reading[key] for key in shared}
+        view["as_of"] = now.isoformat()
+        return {"found": True, "status": view}
+
     def audit(self, pool_id: str) -> list[dict[str, Any]]:
         """Return every recorded event of a pool, oldest first, for the operator."""
         with closing(self._connect()) as connection:

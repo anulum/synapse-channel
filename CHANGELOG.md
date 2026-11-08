@@ -56,6 +56,13 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **A peer can read a shared pool's headroom.** `spend_request` gains the
+  action `status` (`synapse spend request status --file {"pool_id": ID}`): the
+  pool owner answers a served peer that is a grantee of the pool with the bound,
+  settled, outstanding and headroom amounts, epoch, revision, unit, window and
+  reading time, without other callers' reservations, and everyone else with the
+  same `{"found": false}`. The reading holds nothing. The project lead approved
+  the action; an owner hub older than it refuses it as malformed.
 - **An integrator contract.** `docs/integrator-contract.md` names the one
   command or call for each of the six things an integrator needs: register an
   executor, propose an operation, obtain authority, execute, follow the result

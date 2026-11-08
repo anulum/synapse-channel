@@ -175,8 +175,13 @@ does not add agent grades to protocol envelopes.
   body), and `verdict_gate_bypass` for an approval admitted while the gate is off;
   see [Verdicts and corrections](verdicts.md).
 - **Shared-pool reservations:** `spend_request` is a peer hub's request to
-  a pool owner hub. It carries `spend_action` (`reserve`, `settle` or `query`)
-  and a `spend` document.
+  a pool owner hub. It carries `spend_action` (`reserve`, `settle`, `query` or
+  `status`) and a `spend` document. `status` with `{"pool_id": ID}` reads that
+  pool's bound, settled, outstanding and headroom amounts, its epoch, revision,
+  unit and window, and the reading time; the owner answers it only when the
+  caller is a grantee hub of the pool, leaves out other callers' reservations,
+  and gives everyone else the same `{"found": false}`. The reading holds
+  nothing. An owner hub older than this action refuses it as malformed.
   - The owner answers only a peer its multi-hub serving policy authorises, and
     only with `--spend-ledger`.
   - It decides in its owner-only ledger, never in the replicated journal.

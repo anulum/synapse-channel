@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — the pool owner answers a peer hub's reservation
-"""Handle ``spend_request``: decide a peer hub's reservation, settlement or query.
+"""Handle ``spend_request``: decide a peer hub's reservation, settlement, query or status.
 
 Only the pool owner's hub answers, and it answers only a peer its
 ``--multihub-serving-policy`` authorises on this connection, by certificate or by an
@@ -86,6 +86,8 @@ async def handle_spend_request(
                 result = await asyncio.to_thread(ledger.reserve, sender, document, now=now)
             elif action == "settle":
                 result = await asyncio.to_thread(ledger.settle, sender, document, now=now)
+            elif action == "status":
+                result = await asyncio.to_thread(ledger.peer_status, sender, document, now=now)
             else:
                 result = await asyncio.to_thread(ledger.query, sender, document)
         except SpendLedgerError as exc:

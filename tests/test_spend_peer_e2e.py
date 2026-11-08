@@ -288,3 +288,25 @@ async def test_a_malformed_request_and_bytes_frames(tmp_path: Path) -> None:
     async with _server([binary]) as uri:
         answer = await request_spend("reserve", _reserve(), uri=uri, local_id=FOLLOWER, token="t")
     assert answer == {}
+
+
+async def test_a_served_grantee_reads_the_headroom_and_an_unserved_peer_does_not(
+    tmp_path: Path,
+) -> None:
+    granted, spare, trust = _material(tmp_path)
+    ledger = _ledger(tmp_path)
+    async with running_hub(_hub(trust, ledger)) as (_hub_ref, uri):
+        await request_spend("reserve", _reserve(), uri=uri, local_id=FOLLOWER, signer=granted)
+        reading = await request_spend(
+            "status", {"pool_id": "pool-a"}, uri=uri, local_id=FOLLOWER, signer=granted
+        )
+        unserved = await request_spend(
+            "status", {"pool_id": "pool-a"}, uri=uri, local_id=FOLLOWER, signer=spare
+        )
+    async with running_hub(_hub(trust, None)) as (_hub_ref, uri):
+        no_ledger = await request_spend(
+            "status", {"pool_id": "pool-a"}, uri=uri, local_id=FOLLOWER, signer=granted
+        )
+    assert reading["found"] is True
+    assert (reading["status"]["outstanding"], reading["status"]["headroom"]) == ("20", "30")
+    assert unserved == no_ledger == {"found": False}

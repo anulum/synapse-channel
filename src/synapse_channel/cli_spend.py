@@ -23,10 +23,12 @@ over the wire:
 - ``fail-over --pool ID --file SIGNED.json`` takes the pool over on the new owner, from
   an exact copy of the old ledger.
 
-``request reserve|settle|query --uri OWNER --local-id HUB --file DOC.json`` sends one
-peer request to an owner hub and prints its answer. Its exit code is 0 when the
+``request reserve|settle|query|status --uri OWNER --local-id HUB --file DOC.json`` sends
+one peer request to an owner hub and prints its answer. Its exit code is 0 when the
 owner admitted, settled or found; 1 when it refused; 2 on an error or timeout.
 After a timeout, send ``query`` with the same seat, task, operation and key.
+``status`` with ``{"pool_id": ID}`` reads the pool's headroom when this hub is a
+grantee of the pool; it holds nothing.
 """
 
 from __future__ import annotations
@@ -53,7 +55,7 @@ from synapse_channel.core.spend_transport import (
 )
 from synapse_channel.core.spend_wire import SPEND_ACTIONS
 
-_SUCCESS = {"reserve": "admitted", "settle": "settled", "query": "found"}
+_SUCCESS = {"reserve": "admitted", "settle": "settled", "query": "found", "status": "found"}
 
 
 def _document(path: str) -> dict[str, Any]:

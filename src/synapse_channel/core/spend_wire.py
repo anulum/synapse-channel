@@ -22,13 +22,17 @@ from typing import Any
 
 from synapse_channel.core.errors import SynapseError
 
-SPEND_ACTIONS = ("reserve", "settle", "query")
-"""Peer actions on the owner's ledger. Configuring and reconciling are never on the wire."""
+SPEND_ACTIONS = ("reserve", "settle", "query", "status")
+"""Peer actions on the owner's ledger. Configuring and reconciling are never on the wire.
+
+``status`` reads one pool's headroom for a grantee hub; it holds nothing and is advisory.
+"""
 
 REFUSALS: Mapping[str, Mapping[str, object]] = {
     "reserve": {"admitted": False, "reason": "not-admitted"},
     "settle": {"settled": False, "reason": "not-admitted"},
     "query": {"found": False},
+    "status": {"found": False},
 }
 """The uniform answer to a peer the owner will not serve, per action."""
 
