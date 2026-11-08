@@ -37,6 +37,7 @@ from synapse_channel.core.causality_otel import (
     OtelProjection,
     OtelSpanRecord,
 )
+from synapse_channel.core.correlation_contract import CONTRACT_RESOURCE_ATTRIBUTE
 
 OTEL_EXTRA_HINT = "OTLP export needs the optional 'otel' extra: pip install 'synapse-channel[otel]'"
 """Install hint raised when the OpenTelemetry SDK is not importable."""
@@ -148,12 +149,14 @@ def sdk_spans(
     -------
     list
         ``ReadableSpan`` objects, ids and links preserved from the records. A
-        correlated projection's schema URL is set on their shared resource.
+        correlated projection's schema URL and contract name are set on their
+        shared resource.
     """
     otel = _require_otel() if modules is None else modules
-    resource = otel.resources.Resource.create(
-        {"service.name": projection.service_name}, schema_url=projection.schema_url or None
-    )
+    attributes = {"service.name": projection.service_name}
+    if projection.correlation_contract:
+        attributes[CONTRACT_RESOURCE_ATTRIBUTE] = projection.correlation_contract
+    resource = otel.resources.Resource.create(attributes, schema_url=projection.schema_url or None)
     return [_sdk_span(span, otel, resource) for span in projection.spans]
 
 

@@ -18,6 +18,37 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- **Correlation contract `synapse.correlation.v1`.** `synapse causality otel
+  --correlate` now also places operation records into their task traces: a
+  declaration becomes `operation <operation_id>`, spanning the declaration
+  and its last outcome or verification row, and those rows become its
+  children. One task trace now reads from model call through policy decision
+  and operation to the verified outcome, with the recorded cost on each model
+  call. The exact attribute set of each of the five span families is frozen
+  and documented in the observability guide; any change to it is a new
+  contract version. The JSON document and the exported resource name the
+  contract (`correlation_contract`, `synapse.correlation.contract`).
+  Operation targets, observations and evidence digests are never read or
+  emitted, like prompts and completions. `correlation_points` gives the same
+  facts without span ids, for projections that derive their own.
+
+### Changed
+
+- The correlated projection's schema URL is now
+  `https://opentelemetry.io/schemas/1.41.1` instead of 1.44.0. From
+  semantic conventions 1.42.0 the GenAI attributes are deprecated there as
+  moved to their own repository, which has not released yet; 1.41.1 is the
+  newest release that defines `gen_ai.request.model`,
+  `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`. The names
+  themselves do not change.
+- A usage note that cannot be parsed is now counted as unreadable instead of
+  being skipped without a count. The `--correlate` summary says
+  `correlation record(s)` instead of `usage/denial record(s)` and adds
+  `N correlation record(s) unreadable`; the JSON document gains
+  `unreadable_events`.
+
 ## [0.99.47] - 2026-11-08
 
 ### Added

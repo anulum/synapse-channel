@@ -2102,8 +2102,9 @@ $ synapse causality otel ~/synapse/hub.db --out spans.json \
 exported 3 span(s) across 1 trace(s) to spans.json, 332 task(s) filtered out
 ```
 
-`--correlate` adds the two recorded facts an operator needs beside the
-coordination spans. Every usage note that `synapse accounting record` posted
+`--correlate` adds the recorded facts an operator needs beside the
+coordination spans, following correlation contract `synapse.correlation.v1`
+(the exact attribute table is in the observability guide). Every usage note that `synapse accounting record` posted
 becomes a point span `model usage <model>` in its task's trace, carrying the
 OpenTelemetry GenAI attributes `gen_ai.request.model`,
 `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` as integers, as
@@ -2112,17 +2113,24 @@ note recorded one, the float `synapse.usage.cost_usd`. Every durable claim
 denial becomes a point span `claim denied <task>` with
 `synapse.policy.decision=denied` and the recorded `synapse.policy.reason`.
 A denial row stores only the SHA-256 of the task id,
-so it is matched against the projected task ids and never guessed. Prompts,
-completions, messages and tool arguments are never read or emitted; the
-spans carry only what the notes and denial rows recorded, which is supplied
-evidence, not a provider bill. The exported resource names the schema the
-attribute names belong to (`https://opentelemetry.io/schemas/1.44.0`), and
-the JSON document gains `schema_url`, `uncorrelated_events` and
-`filtered_out_events`. Records that match no task the log records with
-coordination events are counted as `N usage/denial record(s) matched no
-task`; records of tasks that `--filter` excluded are counted apart, as
-`N usage/denial record(s) of filtered-out tasks`. Neither is silently
-dropped. They count toward `--max-nodes` like coordination events.
+so it is matched against the projected task ids and never guessed. Every
+operation declaration becomes `operation <operation_id>`, spanning the
+declaration and its last outcome or verification row, and those rows become
+its children `operation outcome <state>` and `operation verified <effect>
+<result>`. Prompts, completions, messages, tool arguments, operation targets,
+observations and evidence digests are never read or emitted; the spans carry
+only what the notes, denial rows and operation records recorded, which is
+supplied evidence, not a provider bill. The exported resource names the
+contract (`synapse.correlation.contract`) and the schema the attribute names
+belong to (`https://opentelemetry.io/schemas/1.41.1`), and the JSON document
+gains `correlation_contract`, `schema_url`, `uncorrelated_events`,
+`filtered_out_events` and `unreadable_events`. Records that match no task the
+log records with coordination events are counted as `N correlation record(s)
+matched no task`; records of tasks that `--filter` excluded are counted apart,
+as `N correlation record(s) of filtered-out tasks`; a usage note or operation
+row that cannot be read is counted as `N correlation record(s) unreadable`.
+None is silently dropped. They count toward `--max-nodes` like coordination
+events.
 Without the flag the projection, the JSON shape and the summary are
 unchanged. `--correlate` belongs to the `otel` mode only; any other mode
 refuses it with exit `2`.

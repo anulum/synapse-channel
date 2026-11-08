@@ -82,6 +82,7 @@ def test_correlated_projection_places_usage_and_denials_in_the_task_trace(
     assert projection.schema_url == CORRELATION_SCHEMA_URL
     assert projection.uncorrelated_events == 2
     assert projection.filtered_out_events == 0
+    assert projection.unreadable_events == 1
     by_name = {span.name: span for span in projection.spans}
     first = dict(by_name["model usage m-1"].attributes)
     assert first[GENAI_REQUEST_MODEL] == "m-1"
@@ -106,6 +107,7 @@ def test_correlated_projection_places_usage_and_denials_in_the_task_trace(
     assert document["schema_url"] == CORRELATION_SCHEMA_URL
     assert document["uncorrelated_events"] == 2
     assert document["filtered_out_events"] == 0
+    assert document["unreadable_events"] == 1
     parsed: dict[str, Any] = json.loads(json.dumps(document))
     assert parsed == document
     attributes = next(s["attributes"] for s in parsed["spans"] if s["name"] == "model usage m-1")
@@ -128,7 +130,9 @@ def test_uncorrelated_projection_keeps_its_previous_shape(tmp_path: Path) -> Non
     """Without the flag no correlation span, schema URL or new JSON key appears."""
     projection = run_otel_projection(_journal(tmp_path / "hub.db"))
     assert projection.schema_url == ""
+    assert projection.correlation_contract == ""
     assert projection.uncorrelated_events == 0
+    assert projection.unreadable_events == 0
     assert not any(
         span.name.startswith(("model usage", "claim denied")) for span in projection.spans
     )
@@ -136,6 +140,8 @@ def test_uncorrelated_projection_keeps_its_previous_shape(tmp_path: Path) -> Non
     assert "schema_url" not in document
     assert "uncorrelated_events" not in document
     assert "filtered_out_events" not in document
+    assert "correlation_contract" not in document
+    assert "unreadable_events" not in document
     assert projection.filtered_out_events == 0
 
 
@@ -186,7 +192,8 @@ def test_cli_correlate_writes_and_reports_unmatched_records(
     out = tmp_path / "spans.json"
     assert cli.main(["causality", "otel", str(db), "--out", str(out), "--correlate"]) == 0
     printed = capsys.readouterr().out
-    assert "2 usage/denial record(s) matched no task" in printed
+    assert "2 correlation record(s) matched no task" in printed
+    assert "1 correlation record(s) unreadable" in printed
     document = json.loads(out.read_text(encoding="utf-8"))
     assert document["schema_url"] == CORRELATION_SCHEMA_URL
     assert cli.build_parser().parse_args(["causality", "otel", "hub.db"]).correlate is False
@@ -194,8 +201,8 @@ def test_cli_correlate_writes_and_reports_unmatched_records(
     assert cli.main(narrowed) == 0
     printed = capsys.readouterr().out
     assert "1 task(s) filtered out" in printed
-    assert "1 usage/denial record(s) of filtered-out tasks" in printed
-    assert "2 usage/denial record(s) matched no task" in printed
+    assert "1 correlation record(s) of filtered-out tasks" in printed
+    assert "2 correlation record(s) matched no task" in printed
 
 
 def test_cli_refuses_correlate_outside_the_otel_mode(

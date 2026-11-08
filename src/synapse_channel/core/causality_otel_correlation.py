@@ -4,56 +4,93 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — correlate model usage and policy denials into task traces
-"""Place recorded model usage and claim denials into the task traces they belong to.
+# SYNAPSE_CHANNEL — correlation contract v1 spans in single-hub task traces
+"""Place model usage, policy denials and operation records into their task traces.
 
 The coordination projection in :mod:`synapse_channel.core.causality_otel` covers
 claims, handoffs, checkpoints, task updates and releases. This module adds the
-two recorded facts an operator needs next to them:
+facts of correlation contract v1 (:mod:`synapse_channel.core.correlation_contract`)
+next to them, so one task trace answers: which model calls ran, which policy
+decision refused a claim, which operation was declared, what its outcome was,
+what a verifier observed, and what the recorded calls cost.
 
-* a **model call**: every ``usage`` progress note becomes a span named
-  ``model usage <model>`` carrying ``gen_ai.request.model``,
-  ``gen_ai.usage.input_tokens`` and ``gen_ai.usage.output_tokens`` as
-  integers, plus the recorded call count and, when the recorder supplied it,
-  the cost as a float;
-* a **policy decision**: every claim denial becomes a span in the trace of the
-  task it refused. The denial row stores only the SHA-256 of the task id, so
-  it is matched against the projected task ids and never guessed.
+* a **model call**: a ``usage`` progress note becomes ``model usage <model>``
+  with ``gen_ai.request.model``, ``gen_ai.usage.input_tokens`` and
+  ``gen_ai.usage.output_tokens`` as integers, the recorded call count and,
+  when the recorder supplied it, the cost as a float;
+* a **policy decision**: a claim denial becomes ``claim denied <task>`` in the
+  trace of the task it refused. The denial row stores only the SHA-256 of the
+  task id, so it is matched against the projected task ids and never guessed;
+* an **operation**: a declaration becomes ``operation <operation_id>``, from
+  the declaration to its last outcome or verification row, and those rows
+  become its children ``operation outcome <state>`` and
+  ``operation verified <effect> <result>``.
 
-Attribute names follow the OpenTelemetry GenAI semantic conventions pinned by
-:data:`CORRELATION_SCHEMA_URL`. Prompts, completions, messages, tool arguments
-and tool results are never read or emitted. Records of tasks a filter
-excluded, and records that match no recorded task, are counted separately,
-never dropped silently.
+The facts are read by :func:`synapse_channel.core.correlation_points.correlation_points`;
+this module gives them single-hub span ids. Prompts, completions, messages,
+tool arguments and results, operation targets, observations and evidence
+digests are never read or emitted.
 """
 
 from __future__ import annotations
 
-import hashlib
-from collections import defaultdict
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 
-from synapse_channel.core.accounting import USAGE_NOTE_KIND, parse_usage_note
 from synapse_channel.core.causality_otel import (
     SPAN_STATUS_UNSET,
     OtelSpanRecord,
-    SpanAttributeValue,
     span_id_for_event,
     span_id_for_root,
     trace_id_for_task,
 )
-from synapse_channel.core.journal import EventKind
+from synapse_channel.core.correlation_contract import (
+    CORRELATION_CONTRACT,
+    CORRELATION_SCHEMA_URL,
+    GENAI_REQUEST_MODEL,
+    GENAI_USAGE_INPUT_TOKENS,
+    GENAI_USAGE_OUTPUT_TOKENS,
+)
+from synapse_channel.core.correlation_points import (
+    CORRELATION_KINDS,
+    CorrelationPoint,
+    correlation_points,
+)
 from synapse_channel.core.persistence import StoredEvent
 
-CORRELATION_SCHEMA_URL = "https://opentelemetry.io/schemas/1.44.0"
-"""OpenTelemetry schema the correlation attribute names belong to."""
+__all__ = [
+    "CORRELATION_CONTRACT",
+    "CORRELATION_KINDS",
+    "CORRELATION_SCHEMA_URL",
+    "GENAI_REQUEST_MODEL",
+    "GENAI_USAGE_INPUT_TOKENS",
+    "GENAI_USAGE_OUTPUT_TOKENS",
+    "CorrelatedSpans",
+    "correlation_spans",
+    "point_span",
+]
 
-CORRELATION_KINDS = frozenset({EventKind.LEDGER_PROGRESS, EventKind.CLAIM_DENIAL})
-"""Event kinds read to correlate model usage and policy denials."""
 
-GENAI_REQUEST_MODEL = "gen_ai.request.model"
-GENAI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
-GENAI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
+@dataclass(frozen=True)
+class CorrelatedSpans:
+    """Correlation spans per projected task, with what was counted instead.
+
+    Attributes
+    ----------
+    by_task : Mapping[str, tuple[OtelSpanRecord, ...]]
+        Spans per projected task in sequence order.
+    uncorrelated : int
+        Records that match no task the log records.
+    filtered_out : int
+        Records of recorded tasks outside the projection.
+    unreadable : int
+        Usage notes and operation rows that could not be read.
+    """
+
+    by_task: Mapping[str, tuple[OtelSpanRecord, ...]]
+    uncorrelated: int
+    filtered_out: int
+    unreadable: int
 
 
 def correlation_spans(
@@ -62,8 +99,8 @@ def correlation_spans(
     service_name: str,
     *,
     recorded_task_ids: Collection[str] | None = None,
-) -> tuple[dict[str, tuple[OtelSpanRecord, ...]], int, int]:
-    """Build model-usage and claim-denial spans for the projected tasks.
+) -> CorrelatedSpans:
+    """Build the contract v1 spans of the projected tasks.
 
     Parameters
     ----------
@@ -80,105 +117,57 @@ def correlation_spans(
 
     Returns
     -------
-    tuple[dict[str, tuple[OtelSpanRecord, ...]], int, int]
-        Spans per projected task id in sequence order, the number of usage or
-        denial records that match no recorded task, and the number that belong
-        to a recorded task outside ``task_ids``.
+    CorrelatedSpans
+        Spans per projected task and the three counters.
     """
-    projected = frozenset(task_ids)
-    recorded = projected | frozenset(recorded_task_ids or ())
-    by_digest = {hashlib.sha256(task.encode("utf-8")).hexdigest(): task for task in recorded}
-    spans: dict[str, list[OtelSpanRecord]] = defaultdict(list)
-    uncorrelated = filtered_out = 0
-    for event in sorted(events, key=lambda item: item.seq):
-        if event.kind == EventKind.LEDGER_PROGRESS:
-            record = _usage_span(event, service_name)
-        elif event.kind == EventKind.CLAIM_DENIAL:
-            record = _denial_span(event, by_digest, service_name)
-        else:
-            continue
-        if record is None:
-            continue
-        task_id, span = record
-        if task_id in projected:
-            spans[task_id].append(span)
-        elif task_id in recorded:
-            filtered_out += 1
-        else:
-            uncorrelated += 1
-    return {task: tuple(items) for task, items in spans.items()}, uncorrelated, filtered_out
-
-
-def _usage_span(event: StoredEvent, service_name: str) -> tuple[str, OtelSpanRecord] | None:
-    """Return the task id and usage span of one usage note, or ``None`` otherwise."""
-    payload = event.payload
-    if str(payload.get("kind", "")) != USAGE_NOTE_KIND:
-        return None
-    parsed = parse_usage_note(str(payload.get("text", "")))
-    if parsed is None:
-        return None
-    task_id = str(payload.get("task_id", ""))
-    cost = parsed.get("cost")
-    attributes = _attributes(
-        (GENAI_REQUEST_MODEL, str(parsed["model"])),
-        (GENAI_USAGE_INPUT_TOKENS, int(parsed["input_tokens"])),
-        (GENAI_USAGE_OUTPUT_TOKENS, int(parsed["output_tokens"])),
-        ("synapse.usage.calls", int(parsed["calls"])),
-        ("synapse.usage.cost_usd", None if cost is None else float(cost)),
-        ("synapse.agent", str(payload.get("author", ""))),
-        ("synapse.kind", event.kind),
-        ("synapse.seq", str(event.seq)),
-        ("synapse.task_id", task_id),
-        ("service.name", service_name),
+    points = correlation_points(events, task_ids, recorded_task_ids=recorded_task_ids)
+    return CorrelatedSpans(
+        by_task={
+            task: tuple(point_span(point, service_name) for point in items)
+            for task, items in points.by_task.items()
+        },
+        uncorrelated=points.uncorrelated,
+        filtered_out=points.filtered_out,
+        unreadable=points.unreadable,
     )
-    return task_id, _point_span(task_id, event, f"model usage {parsed['model']}", attributes)
 
 
-def _denial_span(
-    event: StoredEvent, by_digest: dict[str, str], service_name: str
-) -> tuple[str, OtelSpanRecord]:
-    """Return the matched task id (empty when none) and policy span of one denial."""
-    payload = event.payload
-    task_id = by_digest.get(str(payload.get("task_id_sha256", "")), "")
-    attributes = _attributes(
-        ("synapse.policy.decision", "denied"),
-        ("synapse.policy.reason", str(payload.get("reason_code", ""))),
-        ("synapse.claimant", str(payload.get("claimant", ""))),
-        ("synapse.kind", event.kind),
-        ("synapse.seq", str(event.seq)),
-        ("synapse.task_id", task_id),
-        ("service.name", service_name),
+def point_span(point: CorrelationPoint, service_name: str) -> OtelSpanRecord:
+    """Return one point as a span under its task root or its operation span.
+
+    Parameters
+    ----------
+    point : CorrelationPoint
+        The fact to project.
+    service_name : str
+        The ``service.name`` value stamped on the span.
+
+    Returns
+    -------
+    OtelSpanRecord
+        The span; its id is the event id of the point's row.
+    """
+    parent = (
+        span_id_for_root(point.task_id)
+        if point.parent_seq is None
+        else span_id_for_event(point.parent_seq)
     )
-    return task_id, _point_span(task_id, event, f"claim denied {task_id}".strip(), attributes)
-
-
-def _point_span(
-    task_id: str,
-    event: StoredEvent,
-    name: str,
-    attributes: tuple[tuple[str, SpanAttributeValue], ...],
-) -> OtelSpanRecord:
-    """Return one point span under the task root."""
-    timestamp = int(event.ts * 1_000_000_000)
+    attributes = sorted(
+        (*point.attributes, ("service.name", service_name)), key=lambda pair: pair[0]
+    )
     return OtelSpanRecord(
-        trace_id_hex=trace_id_for_task(task_id),
-        span_id_hex=span_id_for_event(event.seq),
-        parent_span_id_hex=span_id_for_root(task_id),
-        name=name,
-        start_ns=timestamp,
-        end_ns=timestamp,
-        attributes=attributes,
+        trace_id_hex=trace_id_for_task(point.task_id),
+        span_id_hex=span_id_for_event(point.seq),
+        parent_span_id_hex=parent,
+        name=point.name,
+        start_ns=_nanoseconds(point.start_ts),
+        end_ns=_nanoseconds(point.end_ts),
+        attributes=tuple(attributes),
         links=(),
         status=SPAN_STATUS_UNSET,
     )
 
 
-def _attributes(
-    *pairs: tuple[str, SpanAttributeValue | None],
-) -> tuple[tuple[str, SpanAttributeValue], ...]:
-    """Return the attribute pairs sorted by key, without absent or empty values.
-
-    A count of ``0`` is a recorded value and is kept.
-    """
-    present = [(key, value) for key, value in pairs if value is not None and value != ""]
-    return tuple(sorted(present, key=lambda pair: pair[0]))
+def _nanoseconds(timestamp: float) -> int:
+    """Return a journal timestamp in integer nanoseconds."""
+    return int(timestamp * 1_000_000_000)

@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -170,14 +170,21 @@ class OtelProjection:
         Tasks present in the log but excluded by a ``task_filter``; ``0`` when
         no filter narrowed the projection.
     schema_url : str
-        OpenTelemetry schema of the attribute names; set only when model usage
-        and policy denials were correlated, otherwise empty.
+        OpenTelemetry schema of the attribute names; set only when the
+        projection was correlated, otherwise empty.
     uncorrelated_events : int
-        Usage notes and claim denials that match no task the log records with
-        coordination events; ``0`` when correlation was not requested.
+        Usage notes, claim denials and operation records that match no task
+        the log records with coordination events; ``0`` when correlation was
+        not requested.
     filtered_out_events : int
-        Usage notes and claim denials of tasks a ``task_filter`` excluded;
-        ``0`` without a filter or without correlation.
+        Correlation records of tasks a ``task_filter`` excluded; ``0`` without
+        a filter or without correlation.
+    correlation_contract : str
+        Name of the correlation contract the correlated spans follow; empty
+        when the projection was not correlated.
+    unreadable_events : int
+        Usage notes and operation rows the contract could not read; ``0``
+        when correlation was not requested.
     """
 
     spans: tuple[OtelSpanRecord, ...]
@@ -188,6 +195,8 @@ class OtelProjection:
     schema_url: str = ""
     uncorrelated_events: int = 0
     filtered_out_events: int = 0
+    correlation_contract: str = ""
+    unreadable_events: int = 0
 
 
 def trace_id_for_task(task_id: str) -> str:
@@ -232,9 +241,10 @@ def build_otel_projection(
         other task — and the excluded tasks are counted, never silently
         truncated.
     correlate : bool, optional
-        Also place recorded model usage and claim denials into their task
-        traces (see :mod:`synapse_channel.core.causality_otel_correlation`)
-        and stamp the projection with that schema. Defaults to ``False``.
+        Also place recorded model usage, claim denials and operation records
+        into their task traces (correlation contract v1, see
+        :mod:`synapse_channel.core.causality_otel_correlation`) and stamp the
+        projection with the contract and its schema. Defaults to ``False``.
 
     Returns
     -------
@@ -242,7 +252,7 @@ def build_otel_projection(
         One trace per task: a root span covering the task's recorded lifetime,
         a child span per coordination event, links for the cross-task
         ``dependency``/``contention`` edges and, when correlating, one span per
-        usage note or claim denial of that task.
+        usage note, claim denial and operation record of that task.
 
     Raises
     ------
@@ -268,19 +278,23 @@ def build_otel_projection(
         filtered_out = len(by_task) - len(wanted)
         by_task = {task_id: nodes for task_id, nodes in by_task.items() if task_id in wanted}
     links = _links_by_destination(graph)
-    correlated: dict[str, tuple[OtelSpanRecord, ...]] = {}
-    uncorrelated = filtered_events = 0
-    schema_url = ""
+    correlated: Mapping[str, tuple[OtelSpanRecord, ...]] = {}
+    uncorrelated = filtered_events = unreadable = 0
+    schema_url = contract = ""
     if correlate:
         from synapse_channel.core.causality_otel_correlation import (
+            CORRELATION_CONTRACT,
             CORRELATION_SCHEMA_URL,
             correlation_spans,
         )
 
-        correlated, uncorrelated, filtered_events = correlation_spans(
+        found = correlation_spans(
             events, frozenset(by_task), service_name, recorded_task_ids=recorded_tasks
         )
-        schema_url = CORRELATION_SCHEMA_URL
+        correlated = found.by_task
+        uncorrelated, filtered_events = found.uncorrelated, found.filtered_out
+        unreadable = found.unreadable
+        schema_url, contract = CORRELATION_SCHEMA_URL, CORRELATION_CONTRACT
     spans: list[OtelSpanRecord] = []
     for task_id, nodes in by_task.items():
         spans.append(_root_span(task_id, nodes, service_name))
@@ -297,6 +311,8 @@ def build_otel_projection(
         schema_url=schema_url,
         uncorrelated_events=uncorrelated,
         filtered_out_events=filtered_events,
+        correlation_contract=contract,
+        unreadable_events=unreadable,
     )
 
 
@@ -329,8 +345,9 @@ def run_otel_projection(
     key_file : str or pathlib.Path or None, optional
         Owner-only SQLCipher key for an encrypted event store.
     correlate : bool, optional
-        Also read usage notes and claim denials and place them into their task
-        traces. They count toward ``max_nodes`` like coordination events.
+        Also read usage notes, claim denials and operation records and place
+        them into their task traces. They count toward ``max_nodes`` like
+        coordination events.
 
     Returns
     -------
@@ -374,9 +391,9 @@ def run_otel_projection(
 def projection_to_json(projection: OtelProjection) -> dict[str, object]:
     """Return a stable JSON-compatible representation of a span projection.
 
-    The schema URL and the uncorrelated and filtered-out record counts appear
-    only for a correlated projection, so an uncorrelated document keeps its
-    previous shape.
+    The correlation contract, its schema URL and the uncorrelated,
+    filtered-out and unreadable record counts appear only for a correlated
+    projection, so an uncorrelated document keeps its previous shape.
     """
     document: dict[str, object] = {
         "service_name": projection.service_name,
@@ -387,8 +404,10 @@ def projection_to_json(projection: OtelProjection) -> dict[str, object]:
     }
     if projection.schema_url:
         document["schema_url"] = projection.schema_url
+        document["correlation_contract"] = projection.correlation_contract
         document["uncorrelated_events"] = projection.uncorrelated_events
         document["filtered_out_events"] = projection.filtered_out_events
+        document["unreadable_events"] = projection.unreadable_events
     return document
 
 

@@ -304,8 +304,9 @@ def _otel_once(args: argparse.Namespace) -> int:
     counts = (
         (projection.skipped_events, "taskless event(s) skipped"),
         (projection.filtered_out_tasks, "task(s) filtered out"),
-        (projection.uncorrelated_events, "usage/denial record(s) matched no task"),
-        (projection.filtered_out_events, "usage/denial record(s) of filtered-out tasks"),
+        (projection.uncorrelated_events, "correlation record(s) matched no task"),
+        (projection.filtered_out_events, "correlation record(s) of filtered-out tasks"),
+        (projection.unreadable_events, "correlation record(s) unreadable"),
     )
     suffix = "".join(f", {count} {text}" for count, text in counts if count)
     print(
@@ -595,8 +596,9 @@ def _add_otel_arguments(parser: argparse.ArgumentParser) -> None:
         "--correlate",
         action="store_true",
         help="otel mode: also place recorded model usage (gen_ai token attributes, "
-        "calls, cost) and claim denials into their task traces and stamp the "
-        "OpenTelemetry 1.44.0 schema URL. Prompts and completions are never read.",
+        "calls, cost), claim denials and operation records into their task traces "
+        "(correlation contract synapse.correlation.v1, OpenTelemetry schema 1.41.1). "
+        "Prompts, completions, targets and observations are never read.",
     )
 
 

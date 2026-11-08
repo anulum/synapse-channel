@@ -164,11 +164,79 @@ Coordination causality exports to OpenTelemetry independently of this
 page: `synapse causality otel --out spans.json` writes span records with
 deterministic ids, `--endpoint` pushes OTLP/HTTP to a collector,
 `--watch` keeps the projection live, and `--correlate` places recorded model
-usage (`gen_ai.*` attributes) and claim denials into the task traces. See the CLI reference — that surface
+usage (`gen_ai.*` attributes), claim denials and operation records into the
+task traces. See the CLI reference — that surface
 reads the retained durable log, so it belongs to the analytics plane and works
 with the hub down. Stable trace/span ids support correlation; they do not enforce
 collector deduplication, eventual storage or provider processing. Backend retention
 and duplicate handling must be qualified for the selected observability system.
+
+### Correlation contract v1
+
+A correlated projection follows `synapse.correlation.v1`. One task trace
+holds the task's coordination spans and five families of point span: a model
+call (`model usage <model>`), a policy decision (`claim denied <task>`), an
+operation (`operation <operation_id>`), its outcome (`operation outcome
+<state>`) and its verification (`operation verified <effect> <result>`).
+An operation span runs from its declaration to the latest of its outcome and
+verification rows, and those rows are its children; when the declaration is
+not in the log, they hang from the task root. Every span has status `UNSET`,
+and the contract states no recovery verdict.
+
+The exported resource carries `synapse.correlation.contract` and the schema
+`https://opentelemetry.io/schemas/1.41.1`. The three `gen_ai.*` names are the
+OpenTelemetry GenAI attributes as semantic conventions 1.41.1 define them:
+from 1.42.0 those conventions moved to their own repository, which has not
+released yet, so 1.41.1 is the newest release that defines them. The JSON
+document gains `correlation_contract`, `schema_url`, `uncorrelated_events`,
+`filtered_out_events` and `unreadable_events`.
+
+The task's cost is the sum of `synapse.usage.cost_usd` over its model-call
+spans. No total or estimate is emitted, and a call without a recorded cost
+has no cost key, which is not zero. Prompts, completions, messages, tool
+arguments and results, operation targets, outcome and verification
+observations, and verification evidence digests are never read or emitted.
+The hub journal keeps them, and an incident reader reads them there.
+
+Each family carries exactly these attributes. Empty text is omitted; an
+integer `0` is kept. Any change to this table is a new contract version.
+
+| Family | Key | Type | Required |
+|---|---|---|---|
+| every | `service.name` | string | yes |
+| every | `synapse.kind` | string | yes |
+| every | `synapse.seq` | string | yes |
+| every | `synapse.task_id` | string | yes |
+| `model_call` | `gen_ai.request.model` | string | yes |
+| `model_call` | `gen_ai.usage.input_tokens` | int | yes |
+| `model_call` | `gen_ai.usage.output_tokens` | int | yes |
+| `model_call` | `synapse.usage.calls` | int | yes |
+| `model_call` | `synapse.usage.cost_usd` | double | no |
+| `model_call` | `synapse.agent` | string | no |
+| `policy_decision` | `synapse.policy.decision` | string | yes |
+| `policy_decision` | `synapse.policy.reason` | string | no |
+| `policy_decision` | `synapse.claimant` | string | no |
+| `operation` | `synapse.operation.id` | string | yes |
+| `operation` | `synapse.operation.effect` | string | yes |
+| `operation` | `synapse.operation.snapshot_epoch` | int | yes |
+| `operation` | `synapse.operation.budget_remaining` | int | no |
+| `operation` | `synapse.operation.sender` | string | yes |
+| `outcome` | `synapse.operation.id` | string | yes |
+| `outcome` | `synapse.outcome.state` | string | yes |
+| `outcome` | `synapse.outcome.boundary` | string | yes |
+| `outcome` | `synapse.outcome.external_effect` | string | yes |
+| `outcome` | `synapse.operation.sender` | string | yes |
+| `verification` | `synapse.operation.id` | string | yes |
+| `verification` | `synapse.verification.verifier` | string | yes |
+| `verification` | `synapse.verification.communication` | string | yes |
+| `verification` | `synapse.verification.effect` | string | yes |
+| `verification` | `synapse.verification.result` | string | yes |
+| `verification` | `synapse.operation.sender` | string | yes |
+
+A usage note that cannot be parsed, and an operation row missing a field the
+hub always writes, are counted as unreadable. Records of tasks the log does
+not record, and records of tasks `--filter` excluded, are counted apart.
+Nothing is dropped silently.
 
 ## One fleet scorecard
 
