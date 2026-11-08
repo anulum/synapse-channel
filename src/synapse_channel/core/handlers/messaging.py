@@ -852,7 +852,9 @@ async def handle_heartbeat(
     role-grant store does not authorise for this identity is dropped the same forgiving
     way (see :meth:`~synapse_channel.core.hub.MessagingContext.permitted_role_claims`), so a
     socket cannot squat a role no operator granted it. A keepalive with no ``roles``
-    field leaves an earlier binding untouched.
+    field leaves an earlier binding untouched. With a journal, a role set that differs
+    from the connection's last journalled one is recorded as a ``role_binding`` event,
+    so the role mailboxes and a quiet name's last roles survive a restart.
 
     A mailbox-capable client also sets ``mailbox: true`` and ``since_seq`` (the last
     durable chat ``seq`` it processed) on its *registration* heartbeat, and the hub
@@ -877,6 +879,7 @@ async def handle_heartbeat(
         cleaned = (item.strip() for item in raw_roles if isinstance(item, str) and item.strip())
         declared = tuple(dict.fromkeys(cleaned))
         hub.set_agent_roles(sender, hub.permitted_role_claims(sender, declared))
+        hub.mailbox_pending.bind_roles(sender, hub.roles_of(sender))
     if "wake_capability" in data:
         hub.set_wake_capability(sender, normalize_wake_capability(data.get("wake_capability")))
     if data.get("mailbox") is True:
@@ -940,7 +943,7 @@ VERB_SPECS = (
         replay_protected=False,
         mutation_guarded=False,
         accesses=None,
-        event_kinds=(EventKind.MAILBOX_WATERMARK,),
+        event_kinds=(EventKind.MAILBOX_WATERMARK, EventKind.ROLE_BINDING),
         minimum_wire_version=1,
         commands=(),
     ),

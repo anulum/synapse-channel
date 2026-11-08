@@ -59,15 +59,17 @@ def orphan_row(standing: MailboxStanding, now: float) -> dict[str, object]:
         "last_activity": _day(standing.last_activity_ts),
         "quiet_days": None if quiet is None else round(quiet / _DAY, 1),
         "oldest_pending": _day(standing.oldest_pending_ts),
+        "roles": list(standing.roles),
     }
 
 
 def orphan_line(standing: MailboxStanding) -> str:
     """Return the text line of one orphan."""
+    roles = f"  roles {terminal_text(','.join(standing.roles))}" if standing.roles else ""
     return (
         f"{standing.pending:7d}  {terminal_text(standing.identity)}  "
         f"last active {_day(standing.last_activity_ts)}  "
-        f"oldest pending {_day(standing.oldest_pending_ts)}"
+        f"oldest pending {_day(standing.oldest_pending_ts)}{roles}"
     )
 
 
@@ -93,7 +95,7 @@ def _cmd_orphans(
             "orphans": [orphan_row(item, now) for item in orphans],
             "orphaned_names": len(orphans),
             "orphaned_messages": total,
-            "roles": "not recorded in the journal",
+            "roles": "per mailbox: the roles it last bound, from role_binding events",
         }
         write(json.dumps(document, indent=2))
         return 0

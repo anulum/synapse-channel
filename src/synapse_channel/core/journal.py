@@ -131,6 +131,7 @@ class EventKind:
     DELIVERY_RECEIVING_HUB_BOUND = DELIVERY_OWNER_BOUND
     MAILBOX_WATERMARK = "mailbox_watermark"
     MAILBOX_HANDOVER = "mailbox_handover"
+    ROLE_BINDING = "role_binding"
     OPERATION_DECLARED = "operation_declared"
     OPERATION_OUTCOME = "operation_outcome"
     OPERATION_VERIFIED = "operation_verified"
@@ -696,6 +697,17 @@ def record_mailbox_watermark(
             "source": source,
         },
     )
+
+
+def record_role_binding(store: EventStore, *, identity: str, roles: tuple[str, ...]) -> None:
+    """Append the role set a connection bound, when it differs from its last binding.
+
+    A role binding is a coordination record, not an authority grant: it says which
+    ``<project>/<role>`` names the hub accepted for the connection at that time, so a
+    restarted hub and an offline reader know which roles have mailboxes and which roles
+    a name that has since gone quiet last held.
+    """
+    store.append(EventKind.ROLE_BINDING, {"identity": identity, "roles": list(roles)})
 
 
 def record_checkpoint(store: EventStore, claim: TaskClaim) -> None:

@@ -212,10 +212,11 @@ def test_the_command_reports_no_orphans_and_writes_json(tmp_path: Path) -> None:
         "last_activity": "1970-01-01",
         "quiet_days": round((NOW - 2.0) / DAY, 1),
         "oldest_pending": "1970-01-01",
+        "roles": [],
     }
     assert document["orphans"][1]["identity"] == "P/here"
     assert document["orphans"][1]["quiet_days"] is None
-    assert document["roles"] == "not recorded in the journal"
+    assert document["roles"] == "per mailbox: the roles it last bound, from role_binding events"
 
 
 def test_the_text_view_is_bounded_unless_all_is_asked(tmp_path: Path) -> None:
@@ -300,3 +301,35 @@ def test_a_role_mailbox_starts_at_its_plain_names_watermark_offline() -> None:
     ]
     role = _by_name(events)["role:P/reviewer"]
     assert (role.watermark, role.pending, role.oldest_pending_ts) == (2, 1, 4.0)
+
+
+def test_role_bindings_name_a_quiet_names_roles_and_give_roles_mailboxes() -> None:
+    """A journalled binding shows the roles a name last held; a sidecar's count for its owner."""
+    events = [
+        StoredEvent(1, 1.0, EventKind.ROLE_BINDING, {"identity": "P/gone", "roles": ["P/lead"]}),
+        StoredEvent(
+            2, 2.0, EventKind.ROLE_BINDING, {"identity": "P/gone-rx", "roles": [" P/triage ", ""]}
+        ),
+        StoredEvent(3, 3.0, EventKind.ROLE_BINDING, {"identity": "", "roles": ["P/x"]}),
+        StoredEvent(4, 4.0, EventKind.ROLE_BINDING, {"identity": "P/odd", "roles": "P/x"}),
+        _chat(5, 5.0, "X/z", "P/gone"),
+        _chat(6, 6.0, "X/z", "P/lead"),
+        StoredEvent(7, 7.0, EventKind.ROLE_BINDING, {"identity": "P/gone", "roles": ["P/lead", 3]}),
+    ]
+    standings = _by_name(events)
+    assert standings["P/gone"].roles == ("P/lead", "P/triage")
+    assert standings["P/gone"].last_activity_ts == 7.0
+    assert standings["role:P/lead"].pending == 1
+    assert standings["role:P/lead"].roles == ()
+    assert "P/lead" not in standings and "P/odd" not in standings
+
+
+def test_the_text_line_names_the_last_roles(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    with EventStore(db) as store:
+        store.append(EventKind.ROLE_BINDING, {"identity": "P/gone", "roles": ["P/lead"]}, ts=1.0)
+        store.append(EventKind.CHAT, {"sender": "X/z", "target": "P/gone", "payload": "a"}, ts=1.0)
+    _code, lines = _orphans(db)
+    assert lines[0] == (
+        "      1  P/gone  last active 1970-01-01  oldest pending 1970-01-01  roles P/lead"
+    )

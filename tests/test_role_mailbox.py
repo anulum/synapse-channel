@@ -325,3 +325,42 @@ def test_a_role_that_already_had_a_mailbox_takes_nothing_from_its_plain_name(
         assert tracker.advance(ROLE, later, source="cursor") is True
         tracker.learn_roles([ROLE])
     assert tracker.watermark_for(KEY) == acked
+
+
+def test_a_binding_is_journalled_once_per_change_and_restored(tmp_path: Path) -> None:
+    path = tmp_path / "hub.db"
+    with EventStore(path) as store:
+        tracker = MailboxPendingTracker(store)
+        assert tracker.bind_roles("P/bob", []) is False
+        assert tracker.bind_roles("P/bob", [ROLE, " P/triage ", ROLE]) is True
+        assert tracker.bind_roles("P/bob", ["P/triage", ROLE]) is False
+        assert tracker.bind_roles("P/bob", ["P/triage"]) is True
+        assert tracker.bind_roles("P/bob", []) is True
+        assert tracker.bind_roles("  ", [ROLE]) is False
+        bindings = [event.payload for event in store.read_since(0, kinds=(EventKind.ROLE_BINDING,))]
+        _chat(store, ROLE)
+    assert bindings == [
+        {"identity": "P/bob", "roles": ["P/reviewer", "P/triage"]},
+        {"identity": "P/bob", "roles": ["P/triage"]},
+        {"identity": "P/bob", "roles": []},
+    ]
+    with EventStore(path) as reopened:
+        reopened.append(EventKind.ROLE_BINDING, {"identity": "", "roles": [ROLE]})
+        reopened.append(EventKind.ROLE_BINDING, {"identity": "P/eve", "roles": "P/x"})
+        restored = MailboxPendingTracker(reopened)
+        assert restored.has_role_mailbox(ROLE)
+        assert restored.pending_count(KEY) == 1
+        assert restored.bind_roles("P/bob", []) is False
+        assert restored.bind_roles("P/eve", []) is False
+    assert MailboxPendingTracker(None).bind_roles("P/bob", [ROLE]) is False
+
+
+def test_remembered_bindings_are_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from synapse_channel.core import mailbox_pending
+
+    monkeypatch.setattr(mailbox_pending, "DEFAULT_MAX_ROLE_BINDINGS", 1)
+    with EventStore(tmp_path / "hub.db") as store:
+        tracker = MailboxPendingTracker(store)
+        assert tracker.bind_roles("P/a", [ROLE]) is True
+        assert tracker.bind_roles("P/b", [ROLE]) is True
+        assert tracker.bind_roles("P/a", [ROLE]) is True

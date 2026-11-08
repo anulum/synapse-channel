@@ -26,7 +26,7 @@ from typing import Any, cast
 from synapse_channel.core.agent_liveness import waiter_owner
 from synapse_channel.core.dead_letters import is_directed_target
 from synapse_channel.core.hub_address import is_hub_qualified_name
-from synapse_channel.core.journal import EventKind, record_mailbox_watermark
+from synapse_channel.core.journal import EventKind, record_mailbox_watermark, record_role_binding
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.role_mailbox import (
@@ -41,6 +41,9 @@ DEFAULT_MAX_MAILBOX_IDENTITIES = 512
 
 DEFAULT_MAX_ROLE_WATERMARKS = 4096
 """Role watermarks kept after their role left the bounded projection."""
+
+DEFAULT_MAX_ROLE_BINDINGS = 4096
+"""Connections whose last journalled role binding is remembered to skip repeats."""
 
 _GLOB_MARKERS = frozenset("*?[")
 
@@ -126,6 +129,7 @@ class MailboxPendingTracker:
         self._watermarks: dict[str, int] = {}
         self._counts: dict[str, int] = {}
         self._retired_role_watermarks: OrderedDict[str, int] = OrderedDict()
+        self._bindings: OrderedDict[str, tuple[str, ...]] = OrderedDict()
         self._restore()
 
     @property
@@ -170,6 +174,36 @@ class MailboxPendingTracker:
             if fresh and carried:
                 self._watermarks[key] = carried
         return normalised
+
+    def bind_roles(self, identity: str, roles: Iterable[str]) -> bool:
+        """Give the roles mailboxes and journal the binding when the role set changed.
+
+        A connection that registers again with the same roles writes nothing; an
+        identity's first empty binding writes nothing either. The set is compared
+        as sorted, unique, nonblank names.
+
+        Parameters
+        ----------
+        identity : str
+            The connection name that declared the roles.
+        roles : Iterable[str]
+            The roles the hub accepted for it.
+
+        Returns
+        -------
+        bool
+            Whether a ``role_binding`` event was journalled.
+        """
+        name = identity.strip()
+        bound = tuple(sorted(self.learn_roles(roles)))
+        if self.store is None or not name:
+            return False
+        previous = self._bindings.get(name)
+        if previous == bound or (previous is None and not bound):
+            return False
+        record_role_binding(self.store, identity=name, roles=bound)
+        self._remember_binding(name, bound)
+        return True
 
     def observe_chat(self, seq: int, payload: Mapping[str, Any]) -> None:
         """Fold one newly journalled chat into already-materialised counts."""
@@ -423,8 +457,11 @@ class MailboxPendingTracker:
         """Restore known mailboxes and the highest valid watermark of each."""
         if self.store is None:
             return
-        kinds = (EventKind.CHAT, EventKind.MAILBOX_WATERMARK)
+        kinds = (EventKind.CHAT, EventKind.MAILBOX_WATERMARK, EventKind.ROLE_BINDING)
         for event in self.store.iter_events(kinds=kinds):
+            if event.kind == EventKind.ROLE_BINDING:
+                self._restore_binding(event.payload)
+                continue
             if event.kind == EventKind.CHAT:
                 for identity in self._target_identities(str(event.payload.get("target") or "all")):
                     self._remember(identity)
@@ -475,6 +512,22 @@ class MailboxPendingTracker:
         self._counts.pop(evicted, None)
         if watermark is not None and mailbox_role(evicted) is not None:
             self._retire_role_watermark(evicted, watermark)
+
+    def _restore_binding(self, payload: Mapping[str, Any]) -> None:
+        """Learn the roles of one journalled binding and remember it as the last one."""
+        name = str(payload.get("identity") or "").strip()
+        raw = payload.get("roles")
+        if not name or not isinstance(raw, list):
+            return
+        roles = tuple(sorted(self.learn_roles(role for role in raw if isinstance(role, str))))
+        self._remember_binding(name, roles)
+
+    def _remember_binding(self, name: str, roles: tuple[str, ...]) -> None:
+        """Keep the last binding of ``name``, dropping the oldest beyond the bound."""
+        self._bindings[name] = roles
+        self._bindings.move_to_end(name)
+        while len(self._bindings) > DEFAULT_MAX_ROLE_BINDINGS:
+            self._bindings.popitem(last=False)
 
     def _retire_role_watermark(self, key: str, watermark: int) -> None:
         """Keep an evicted role's watermark, dropping the oldest beyond the bound."""

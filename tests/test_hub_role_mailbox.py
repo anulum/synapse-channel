@@ -203,3 +203,30 @@ async def test_role_mail_closed_under_the_plain_name_before_an_upgrade_stays_clo
     finally:
         store.close()
     assert stale == []
+
+
+async def test_a_role_binding_is_journalled_and_survives_a_restart(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+            first = await _holder("P/claude-a", uri, since_seq=0)
+            await close_agents(first)
+            again = await _holder("P/claude-a", uri, since_seq=0)
+            await close_agents(again)
+            peer = await connect_agent("X/peer", uri)
+            try:
+                await peer.agent.send_message(MessageType.CHAT, target=ROLE, payload="queued")
+                await _journalled(store, "queued")
+            finally:
+                await close_agents(peer)
+        bindings = [event.payload for event in store.read_since(0, kinds=(EventKind.ROLE_BINDING,))]
+        async with running_hub(SynapseHub(journal=store)) as (_restarted, uri):
+            observer = await connect_agent("OBSERVER", uri)
+            try:
+                snapshot = await _role_pending(observer, 1)
+            finally:
+                await close_agents(observer)
+    finally:
+        store.close()
+    assert bindings == [{"identity": "P/claude-a", "roles": [ROLE]}]
+    assert snapshot["mailbox_pending"][KEY] == 1

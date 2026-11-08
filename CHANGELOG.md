@@ -56,6 +56,14 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **The hub journals the roles a connection binds.** When a registration's
+  accepted role set differs from that connection's last one, a `role_binding`
+  event records the identity and its sorted roles; repeating the same set
+  writes nothing. A restarted hub learns its role mailboxes from these records,
+  and `synapse mailbox orphans` shows the roles each quiet name last bound (a
+  receive-only sidecar's bindings count for its owner) and lists a bound
+  role's mailbox before anyone acknowledged role mail. A binding records what
+  the hub accepted; it grants nothing.
 - **`synapse mailbox drain` hands over or closes every orphaned mailbox of a
   project.** It finds the project's orphans as `synapse mailbox orphans` does
   and prints the plan; with `--execute` it connects once as `--name` and sends

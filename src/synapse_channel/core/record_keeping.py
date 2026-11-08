@@ -73,6 +73,7 @@ _OPERATION_KINDS = frozenset(
         "operator_relay",
         "mailbox_watermark",
         "mailbox_handover",
+        "role_binding",
         "operation_declared",
         "operation_outcome",
         "operation_verified",

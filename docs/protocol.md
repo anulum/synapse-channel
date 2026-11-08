@@ -640,7 +640,13 @@ personal backlog after `since_seq` plus, for each held role, the chats after
 the role's watermark (at most 1000 per role), merged by `seq` without
 duplicates. A role gets its mailbox once a connection binds it; until then a
 target naming it is counted under that plain name, as before, and a new role
-mailbox starts at that plain name's watermark. A name equal to a bound role
+mailbox starts at that plain name's watermark. With a journal, a registration
+whose accepted role set differs from the connection's last journalled one is
+recorded as a `role_binding` event (`identity`, sorted `roles`); a repeat of the
+same set and a first empty set write nothing. A restarted hub learns its role
+mailboxes from these events, and `synapse mailbox orphans` shows the roles a
+quiet name last bound. A binding records what the hub accepted; it grants
+nothing. A name equal to a bound role
 counts as the role. Names starting with `role:` are reserved
 (any case), so a registration under one is refused with 4009. WHO lists role
 mailboxes under their keys in `mailbox_pending`; role mailboxes share the

@@ -15,11 +15,13 @@ mailbox watermark, and when the name was last active. It changes nothing.
 Last activity comes from the journal, not from the hub's in-memory presence
 map: the latest event whose payload ``sender`` is the name (a receive-only
 sidecar such as ``<name>-rx`` counts for its owner), or the latest mailbox
-watermark for the name. Roles are not journalled, so a dormant name's roles are
-not known here.
+watermark for the name. The roles a name last held come from journalled
+``role_binding`` events (a receive-only sidecar's bindings count for its owner);
+a name that never bound roles, or bound them before hubs journalled bindings,
+shows none.
 
-A role's own mailbox ``role:<project>/<role>`` is known once a holder has
-acknowledged role mail, which journals a watermark under that key. It counts the
+A role's own mailbox ``role:<project>/<role>`` is known once a connection has
+bound the role or a holder has acknowledged role mail. It counts the
 chats addressed to the role after that watermark, belongs to the role's project,
 and its last activity is its latest watermark. A plain name equal to such a role
 is not listed separately: it counts as the role, and the role mailbox starts at
@@ -37,7 +39,12 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.persistence import StoredEvent
 from synapse_channel.core.protocol import is_recipient
-from synapse_channel.core.role_mailbox import addresses_role, mailbox_project, mailbox_role
+from synapse_channel.core.role_mailbox import (
+    addresses_role,
+    mailbox_project,
+    mailbox_role,
+    role_mailbox_key,
+)
 from synapse_channel.core.waiter_identity import waiter_owner
 
 _GLOB_MARKERS = frozenset("*?[")
@@ -63,6 +70,9 @@ class MailboxStanding:
         Timestamp of the oldest pending chat.
     last_activity_ts : float or None
         Latest journalled activity of the name, or ``None`` when it never acted.
+    roles : tuple[str, ...]
+        The roles the name (or its receive-only sidecar) last bound; empty when
+        none was journalled, and always empty for a role mailbox.
     """
 
     identity: str
@@ -71,6 +81,7 @@ class MailboxStanding:
     watermark: int
     oldest_pending_ts: float | None
     last_activity_ts: float | None
+    roles: tuple[str, ...] = ()
 
     def dormant_for(self, now: float) -> float | None:
         """Return seconds since the last activity, or ``None`` when the name never acted."""
@@ -106,6 +117,7 @@ class _Snapshot:
     names: dict[str, None] = field(default_factory=dict)
     watermarks: dict[str, int] = field(default_factory=dict)
     activity: dict[str, float] = field(default_factory=dict)
+    bindings: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     def touch(self, name: str, ts: float) -> None:
         """Record activity of ``name`` at ``ts``."""
@@ -134,6 +146,32 @@ class _Snapshot:
         self.watermarks[name] = max(self.watermarks.get(name, 0), min(through, event.seq))
         self.touch(name, event.ts)
 
+    def add_binding(self, event: StoredEvent) -> None:
+        """Keep a connection's latest role binding and give each bound role its mailbox."""
+        name = str(event.payload.get("identity") or "").strip()
+        raw = event.payload.get("roles")
+        if not name or not isinstance(raw, list):
+            return
+        roles = tuple(
+            sorted({role.strip() for role in raw if isinstance(role, str) and role.strip()})
+        )
+        self.bindings[name] = roles
+        for role in roles:
+            self.names.setdefault(role_mailbox_key(role))
+        self.touch(waiter_owner(name), event.ts)
+
+    def roles_of(self, name: str) -> tuple[str, ...]:
+        """Return the roles ``name`` and its receive-only sidecars last bound."""
+        if mailbox_role(name) is not None:
+            return ()
+        held = {
+            role
+            for connection, roles in self.bindings.items()
+            if waiter_owner(connection) == name
+            for role in roles
+        }
+        return tuple(sorted(held))
+
 
 def _collect(events: Iterable[StoredEvent]) -> _Snapshot:
     """Read chats, watermarks and per-name activity from journal events."""
@@ -146,6 +184,8 @@ def _collect(events: Iterable[StoredEvent]) -> _Snapshot:
             snapshot.add_chat(event)
         elif event.kind == EventKind.MAILBOX_WATERMARK:
             snapshot.add_watermark(event)
+        elif event.kind == EventKind.ROLE_BINDING:
+            snapshot.add_binding(event)
     return snapshot
 
 
@@ -228,6 +268,7 @@ def mailbox_standings(events: Iterable[StoredEvent]) -> list[MailboxStanding]:
             watermark=_watermark(snapshot, name),
             oldest_pending_ts=min(pending[name], default=None),
             last_activity_ts=snapshot.activity.get(name),
+            roles=snapshot.roles_of(name),
         )
         for name in names
     ]
