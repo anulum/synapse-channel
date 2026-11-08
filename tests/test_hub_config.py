@@ -33,6 +33,7 @@ from synapse_channel.core.hub_config import (
     HubAuthConfig,
     HubConfig,
     HubLimits,
+    HubLiveness,
     HubMetricsConfig,
     MultiHubConfig,
     TakeoverDamping,
@@ -45,6 +46,13 @@ def _init_parameters() -> dict[str, inspect.Parameter]:
     parameters = dict(inspect.signature(SynapseHub.__init__).parameters)
     parameters.pop("self")
     return parameters
+
+
+def test_liveness_states_the_legacy_socket_presence_behaviour() -> None:
+    """The shipped liveness policy states the legacy socket-presence behaviour."""
+    text = " ".join((HubLiveness.__doc__ or "").split())
+    assert "legacy socket-presence behaviour" in text
+    assert "behavior" not in text
 
 
 def test_to_kwargs_covers_exactly_the_init_signature() -> None:

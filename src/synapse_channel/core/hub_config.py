@@ -239,7 +239,7 @@ class HubLiveness:
     ``waiter_liveness_window`` seconds, and no genuine reaction within
     ``recipient_liveness_window`` seconds — draws a private warning, cannot count
     as a positive directed delivery, and is marked distinctly by ``/who``.
-    Operators can opt out explicitly for the legacy socket-presence behavior.
+    Operators can opt out explicitly for the legacy socket-presence behaviour.
     """
 
     warn_stale_recipients: bool = DEFAULT_WARN_STALE_RECIPIENTS
