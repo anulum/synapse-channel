@@ -94,6 +94,190 @@ _CONTRACT_SIZE = (
 )
 
 
+# Every Core symbol the fleet tier imports, by module, with its kind: ``class``, ``callable``
+# (a function or a callable type alias) or ``value`` (a constant or a non-callable type
+# alias). The list is the fleet tier's consumed-symbol inventory at Fleet 0.11.0. It pins
+# existence and kind only, so a removal, a rename or a change between kinds fails here,
+# in this repository's CI, before a release can break the consumer; the required fields
+# and parameters of the most used primitives stay pinned above.
+_FLEET_IMPORTS: dict[str, dict[str, str]] = {
+    "synapse_channel.core.at_rest": {
+        "load_key_file": "callable",
+    },
+    "synapse_channel.core.causality": {
+        "DEFAULT_MAX_GRAPH_NODES": "value",
+        "GRAPH_KINDS": "value",
+        "LIFECYCLE": "value",
+    },
+    "synapse_channel.core.causality_federation": {
+        "FEDERATION": "value",
+        "FederatedCausalGraph": "class",
+        "FederatedNode": "class",
+        "HubEventRef": "class",
+        "build_federated_graph": "callable",
+    },
+    "synapse_channel.core.causality_otel": {
+        "OtelProjection": "class",
+        "OtelSpanRecord": "class",
+        "SERVICE_NAME": "value",
+        "SPAN_ID_HEX_LENGTH": "value",
+        "SPAN_STATUS_ERROR": "value",
+        "SPAN_STATUS_UNSET": "value",
+        "SpanAttributeValue": "value",
+        "SpanLinkRecord": "class",
+        "projection_to_json": "callable",
+        "span_id_for_root": "callable",
+        "trace_id_for_task": "callable",
+    },
+    "synapse_channel.core.clock_skew": {
+        "ClockSkew": "class",
+    },
+    "synapse_channel.core.correlation_contract": {
+        "CONTRACT_RESOURCE_ATTRIBUTE": "value",
+        "CORRELATION_CONTRACT": "value",
+        "CORRELATION_SCHEMA_URL": "value",
+    },
+    "synapse_channel.core.correlation_points": {
+        "CORRELATION_KINDS": "value",
+        "CorrelationPoint": "class",
+        "correlation_points": "callable",
+    },
+    "synapse_channel.core.entitlement_advert": {
+        "EntitlementAdvertError": "class",
+        "validate_advert": "callable",
+    },
+    "synapse_channel.core.event_row_mac": {
+        "RowMacKey": "class",
+        "load_or_create_row_mac_key": "callable",
+        "row_mac_key_path": "callable",
+    },
+    "synapse_channel.core.federation": {
+        "FederationBundle": "class",
+        "FederationPeer": "class",
+    },
+    "synapse_channel.core.federation_store": {
+        "FederationRecord": "class",
+        "STORE_VERSION": "value",
+        "load_store": "callable",
+        "peer_from_dict": "callable",
+        "save_store": "callable",
+    },
+    "synapse_channel.core.fleet_health": {
+        "build_local_fleet_health": "callable",
+    },
+    "synapse_channel.core.identity_keys": {
+        "IdentityKeyError": "class",
+    },
+    "synapse_channel.core.journal": {
+        "EventKind": "class",
+    },
+    "synapse_channel.core.lifecycle": {
+        "TaskStatus": "class",
+    },
+    "synapse_channel.core.merkle": {
+        "MerkleRoot": "class",
+        "RunningRoot": "class",
+        "build_root": "callable",
+        "render_root_markdown": "callable",
+        "root_to_json": "callable",
+        "run_root": "callable",
+        "verify_root": "callable",
+    },
+    "synapse_channel.core.multihub_claim_transport": {
+        "ClaimForwardError": "class",
+        "DEFAULT_FORWARD_TIMEOUT": "value",
+        "forward_claim": "callable",
+    },
+    "synapse_channel.core.multihub_claim_wire": {
+        "ClaimForwardRequest": "class",
+        "ClaimForwardResult": "class",
+        "ClaimWireError": "class",
+        "encode_claim_forward_request": "callable",
+    },
+    "synapse_channel.core.multihub_federation": {
+        "MultiHubAuthorisation": "class",
+        "MultiHubAuthoriser": "callable",
+        "authorise_multihub_peer": "callable",
+    },
+    "synapse_channel.core.multihub_fold": {
+        "ObservedBoardConflict": "class",
+        "ObservedBoardProvenance": "class",
+        "ObservedState": "class",
+        "fold_observed_state": "callable",
+    },
+    "synapse_channel.core.multihub_follower": {
+        "EventFetcher": "callable",
+    },
+    "synapse_channel.core.multihub_merge": {
+        "HubEvent": "class",
+        "merge_event_logs": "callable",
+        "tag_events": "callable",
+    },
+    "synapse_channel.core.multihub_transport": {
+        "PING_INTERVAL": "value",
+        "network_fetcher": "callable",
+    },
+    "synapse_channel.core.peer_identity": {
+        "PeerRegistrationSigner": "class",
+        "load_peer_registration_signer": "callable",
+    },
+    "synapse_channel.core.persistence": {
+        "StoredEvent": "class",
+    },
+    "synapse_channel.core.persistence_sqlcipher": {
+        "apply_sqlcipher_key": "callable",
+        "import_sqlcipher_module": "callable",
+    },
+    "synapse_channel.core.protocol": {
+        "ProtocolNegotiation": "class",
+        "WIRE_PROTOCOL_VERSION": "value",
+    },
+    "synapse_channel.core.receipt_signing": {
+        "check_receipt_merkle_signature": "callable",
+        "load_receipt_signing_key": "callable",
+        "load_receipt_verification_key": "callable",
+        "sign_merkle_commitment": "callable",
+    },
+    "synapse_channel.core.spend_epoch": {
+        "OwnerRevocation": "class",
+        "SpendEpochError": "class",
+        "usable_grant": "callable",
+        "verify_owner_revocation": "callable",
+    },
+    "synapse_channel.core.spend_transport": {
+        "Connector": "callable",
+        "DEFAULT_SPEND_TIMEOUT": "value",
+        "SpendTransportError": "class",
+        "SpendTransportTimeoutError": "class",
+        "request_spend": "callable",
+    },
+    "synapse_channel.core.task_causality": {
+        "TASK_CAUSAL_PARENT_FIELD": "value",
+        "parse_task_causal_parent": "callable",
+    },
+    "synapse_channel.core.tls": {
+        "MTLSPeerTrustBundle": "class",
+        "MTLSTrustedPeer": "class",
+        "certificate_sha256_pin": "callable",
+        "certificate_sha256_pin_from_der": "callable",
+    },
+    "synapse_channel.otel_export": {
+        "DEFAULT_EXPORT_TIMEOUT": "value",
+        "push_projection": "callable",
+    },
+}
+
+_FLEET_SYMBOLS = 98
+_FLEET_MODULES = 33
+
+
+def _kind(obj: object) -> str:
+    """Return ``class``, ``callable`` or ``value`` for one imported symbol."""
+    if isinstance(obj, type):
+        return "class"
+    return "callable" if callable(obj) else "value"
+
+
 def _resolve(module_path: str, symbol: str) -> object:
     """Import ``module_path`` and return its ``symbol`` (fails clearly if absent)."""
     module = importlib.import_module(module_path)
@@ -163,3 +347,30 @@ def test_contract_covers_the_full_consumer_surface() -> None:
     # verified against the current core stay accounted for, so dropping one is a
     # deliberate, reviewed edit here rather than an unnoticed regression.
     assert _CONTRACT_SIZE == 13
+
+
+@pytest.mark.parametrize(
+    ("module_path", "symbol", "kind"),
+    [
+        (module_path, symbol, kind)
+        for module_path, symbols in _FLEET_IMPORTS.items()
+        for symbol, kind in symbols.items()
+    ],
+)
+def test_every_symbol_the_fleet_tier_imports_keeps_its_name_and_kind(
+    module_path: str, symbol: str, kind: str
+) -> None:
+    assert _kind(_resolve(module_path, symbol)) == kind, (
+        f"{module_path}.{symbol} is no longer a {kind}; the fleet tier imports it as one"
+    )
+
+
+def test_the_fleet_import_inventory_is_complete() -> None:
+    # Dropping a symbol from the inventory is a deliberate, reviewed edit: the counts are
+    # the fleet tier's own inventory at Fleet 0.11.0.
+    assert sum(len(symbols) for symbols in _FLEET_IMPORTS.values()) == _FLEET_SYMBOLS
+    assert len(_FLEET_IMPORTS) == _FLEET_MODULES
+
+
+def test_the_kind_of_a_symbol_is_class_callable_or_value() -> None:
+    assert (_kind(int), _kind(len), _kind(7)) == ("class", "callable", "value")

@@ -51,7 +51,7 @@ fails CI rather than reaching a release:
 | --- | --- | --- |
 | Public Python API | the exact package `__all__` export list | `tests/test_public_api.py` |
 | Wire message vocabulary | every `MessageType` name→value pair, the envelope's reserved keys, and the wire-protocol version | `tests/test_wire_surface_freeze.py` |
-| Federation primitives | the deep `core.*` symbols out-of-tree consumers import — the persisted event shape, the multihub follower and its fetcher, claim forwarding, the federation store and its peer records, the TLS pin helper | `tests/test_federation_consumer_contract.py` |
+| Federation primitives | the deep `core.*` symbols out-of-tree consumers import — the persisted event shape, the multihub follower and its fetcher, claim forwarding, the federation store and its peer records, the TLS pin helper — with their required fields and parameters; and the name and kind (class, callable or value) of every Core symbol the fleet tier imports (98 symbols in 33 modules at Fleet 0.11.0) | `tests/test_federation_consumer_contract.py` |
 | CLI surface | every subcommand is classified into a stability tier | `tests/test_surface_taxonomy.py` |
 | First-use and usage profiles | exact concepts, journey, dependency extras, activation/deactivation boundaries, and full-surface preservation | `tests/test_surface_taxonomy.py`, `tests/test_cli_e2e_journey.py` |
 | Capability counts | class, module, wire-type, subcommand, and test counts | the capability manifest (`tools/capability_manifest.py --check`) |
