@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -426,11 +427,20 @@ def test_parser_lock_release_timeout() -> None:
 
 
 async def test_release_timeout_bounds_the_teardown_wait(tmp_path: Path) -> None:
-    """The explicit real deadline leads to exact recovery of one delayed operation."""
+    """The explicit real deadline leads to exact recovery of one delayed operation.
+
+    The proxy drops the release grant, so the release exchange waits out the
+    whole explicit deadline before the read-only confirmation recovers the
+    operation. The elapsed time therefore proves that the explicit value, not
+    the ~2 s default, bounded that wait. Five seconds leaves the confirmation
+    exchange room on a loaded runner; one second did not.
+    """
+    release_timeout = 5.0
     journal = EventStore(tmp_path / "hub.db")
     try:
         async with running_hub(SynapseHub(journal=journal)) as (_hub, uri):
-            async with release_reply_proxy(uri, drop_confirmation=False) as (proxy, _fault):
+            async with release_reply_proxy(uri, drop_confirmation=False) as (proxy, fault):
+                started = time.monotonic()
                 result = await asyncio.wait_for(
                     asyncio.to_thread(
                         run_cli,
@@ -439,16 +449,20 @@ async def test_release_timeout_bounds_the_teardown_wait(tmp_path: Path) -> None:
                         "--name",
                         "owner",
                         "--release-timeout",
-                        "1",
+                        str(release_timeout),
                         "--",
                         sys.executable,
                         "-c",
                         "pass",
                         uri=proxy,
                     ),
-                    10,
+                    60,
                 )
+                elapsed = time.monotonic() - started
                 assert result.returncode == 0, result.output
+                assert fault["release_seen"] is True
+                assert int(fault["confirmation_queries"]) >= 1
+                assert elapsed >= release_timeout
                 assert len([row for row in journal.iter_events() if row.kind == "release"]) == 1
     finally:
         journal.close()
