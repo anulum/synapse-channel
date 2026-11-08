@@ -215,6 +215,6 @@ VERB_SPECS = (
             EventKind.OPERATION_VERIFIED,
         ),
         minimum_wire_version=7,
-        commands=(),
+        commands=("operation",),
     ),
 )

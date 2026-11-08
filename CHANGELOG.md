@@ -20,6 +20,14 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **`synapse operation declare | outcome | verification`.** The client half of
+  operation records. `declare` comes from the live claim holder before the
+  effect and names the claim epoch, the effect and its identifiers. `outcome
+  FILE` publishes an execution-outcome report (a `worker-session
+  --outcome-file`, or its `--read-outcome` output). `verification FILE`
+  publishes a `verify-result` record. The local file is never changed. Exit
+  codes: 0 accepted, 1 refused, 2 no verdict, 4 the hub does not know
+  operation records, 5 the local record could not be read.
 - **`operation_record`: the hub journals operations bound to a claimed task.**
   The live claim holder declares an operation and its effect (a file, a git
   publication, a deployment or a migration) before acting; later an outcome
