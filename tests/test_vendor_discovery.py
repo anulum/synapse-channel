@@ -246,6 +246,92 @@ def test_bad_source_staleness_and_catalog_validation(tmp_path: Path) -> None:
     catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
     with pytest.raises(discovery.DiscoveryError):
         discovery.load_inputs(config_path, catalog_path)
+    broken_catalog = json.loads(discovery.DEFAULT_CATALOG.read_text(encoding="utf-8"))
+    broken_catalog["candidates"] = {
+        "host:acme/agent": {
+            "publisher": "acme",
+            "first_seen": "2026-01-01T00:00:00+00:00",
+            "sources": {discovery.HOST_URL: {"items": {}}},
+        }
+    }
+    catalog_path.write_text(json.dumps(broken_catalog), encoding="utf-8")
+    config_path.write_text(discovery.DEFAULT_CONFIG.read_text(encoding="utf-8"), encoding="utf-8")
+    with pytest.raises(discovery.DiscoveryError, match="sightings are invalid"):
+        discovery.load_inputs(config_path, catalog_path)
+    broken_catalog["candidates"]["host:acme/agent"]["sources"][discovery.HOST_URL] = {
+        "items": {"NOT KEY": {"evidence_sha256": "ab" * 32}}
+    }
+    catalog_path.write_text(json.dumps(broken_catalog), encoding="utf-8")
+    with pytest.raises(discovery.DiscoveryError, match="source key is invalid"):
+        discovery.load_inputs(config_path, catalog_path)
+
+    tree = "https://api.github.com/repos/acme/agent/git/trees/main?recursive=1"
+    absent = _fixture()
+    absent["github_api"][tree] = {"_http_status": 404}
+    rows, errors, _complete = discovery.collect(fixture=absent, now=now)
+    assert errors["github_host_inspection"] == "InspectionError"
+    assert rows["github_hosts"][0]["evidence"]["inspection"] == "unavailable"
+    malformed = _fixture()
+    malformed["github_api"][tree] = "not-an-object"
+    rows, errors, _complete = discovery.collect(fixture=malformed, now=now)
+    assert errors["github_host_inspection"] == "InspectionError"
+    bad_api = _fixture()
+    bad_api["github_api"] = []
+    with pytest.raises(discovery.DiscoveryError, match="GitHub API fixture is invalid"):
+        discovery.collect(fixture=bad_api, now=now)
+    invalid_best = _fixture()
+    invalid_best["github_hosts_best_match"] = []
+    _rows, errors, complete = discovery.collect(fixture=invalid_best, now=now)
+    assert errors["github_hosts"] == "DiscoveryError"
+    assert complete["github_hosts"] is False
+    assert complete["github_host_inspection"] is False
+    quiet = _fixture()
+    quiet["github_api"][tree] = {
+        "truncated": False,
+        "tree": [{"path": "README.md", "type": "blob"}],
+    }
+    rows, errors, _complete = discovery.collect(fixture=quiet, now=now)
+    assert errors == {}
+    assert rows["github_hosts"][0]["evidence"]["inspection"] == "source_absent"
+
+    def feeds(url: str) -> dict[str, Any]:
+        if url == discovery.MODEL_URL:
+            return cast(dict[str, Any], _fixture()["models_dev"])
+        if url.startswith(discovery.HOST_URL):
+            return cast(dict[str, Any], _fixture()["github_hosts"])
+        if url.startswith(discovery.MCP_URL):
+            return cast(dict[str, Any], _fixture()["mcp_registry"][0])
+        raise AssertionError(url)
+
+    def redirected(_url: str) -> dict[str, Any]:
+        raise discovery.RepositoryRedirected("moved")
+
+    rows, errors, _complete = discovery.collect(fetch=feeds, github_fetch=redirected, now=now)
+    assert errors == {}
+    assert rows["github_hosts"][0]["evidence"]["inspection"] == "redirected"
+    assert rows["github_hosts"][0]["evidence"]["repository_reachability"] == "unreachable"
+
+    def unavailable(_url: str) -> dict[str, Any]:
+        raise discovery.InspectionError("down")
+
+    def feeds_without_hosts(url: str) -> dict[str, Any]:
+        if url == discovery.MODEL_URL:
+            return cast(dict[str, Any], _fixture(host_names=())["models_dev"])
+        if url.startswith(discovery.HOST_URL):
+            return cast(dict[str, Any], _fixture(host_names=())["github_hosts"])
+        if url.startswith(discovery.MCP_URL):
+            listed = cast(dict[str, Any], _mcp("acme/tool"))
+            server = cast(dict[str, Any], listed["server"])
+            server["repository"] = {"url": "https://github.com/acme/tool"}
+            return {"servers": [listed], "metadata": {"count": 1}}
+        raise AssertionError(url)
+
+    rows, errors, complete = discovery.collect(
+        fetch=feeds_without_hosts, github_fetch=unavailable, now=now
+    )
+    assert errors["mcp_repository_check"] == "InspectionError"
+    assert rows["mcp_registry"][0]["evidence"]["repository_reachability"] == "unavailable"
+    assert complete["mcp_repository_check"] is False
 
 
 class _Response:
@@ -584,6 +670,12 @@ def test_page_and_candidate_bounds_are_fail_closed() -> None:
     assert errors["mcp_registry"] == "DiscoveryError"
     with pytest.raises(discovery.DiscoveryError):
         discovery.parse_models({f"vendor-{i}": _model(f"vendor-{i}") for i in range(1001)})
+    bounded = _fixture(model_names=tuple(f"p{index}" for index in range(1000)), mcp_names=())
+    rows, errors, complete = discovery.collect(fixture=bounded, now=now)
+    assert errors == {}
+    config, catalog = discovery.load_inputs(discovery.DEFAULT_CONFIG, discovery.DEFAULT_CATALOG)
+    with pytest.raises(discovery.DiscoveryError, match="candidate count exceeded"):
+        discovery.reconcile(config, catalog, rows, errors, complete, now=now)
 
 
 def test_query_contract_rejects_broadened_registry_reads() -> None:

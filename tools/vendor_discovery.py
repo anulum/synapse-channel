@@ -15,7 +15,7 @@ import json
 import re
 import sys
 from collections.abc import Callable, Mapping
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from pathlib import Path
 from typing import Any, cast
@@ -435,7 +435,7 @@ def collect(
     github_fetch: Callable[[str], Mapping[str, Any]] = fetch_github_json,
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, str], dict[str, bool]]:
     """Use the same parsers for live bounded sources and offline feed fixtures."""
-    stamp = now.astimezone(timezone.utc).date()
+    stamp = now.astimezone(UTC).date()
     since = stamp - timedelta(days=7)
     rows: dict[str, list[dict[str, Any]]] = {}
     errors: dict[str, str] = {}
@@ -486,8 +486,6 @@ def collect(
         _, recent_complete = parse_hosts(recent)
         merged: dict[str, dict[str, Any]] = {}
         for repo in (*best["items"], *recent["items"]):
-            if not isinstance(repo, dict) or not isinstance(repo.get("full_name"), str):
-                raise DiscoveryError("GitHub repository entry is invalid")
             merged.setdefault(repo["full_name"].casefold(), repo)
         count = max(best["total_count"], recent["total_count"], len(merged))
         raw = {
@@ -609,7 +607,7 @@ def reconcile(
     now: datetime,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build a review queue and next state without granting candidate authority."""
-    stamp = now.astimezone(timezone.utc).isoformat(timespec="seconds")
+    stamp = now.astimezone(UTC).isoformat(timespec="seconds")
     today = now.date()
     due = date.fromisoformat(config["reviewed_at"]) + timedelta(days=config["review_interval_days"])
     next_state = json.loads(json.dumps(previous))
@@ -838,7 +836,7 @@ def main() -> int:
         fixture = json.loads(args.fixture.read_text(encoding="utf-8")) if args.fixture else None
         if fixture is not None and not isinstance(fixture, dict):
             raise DiscoveryError("feed fixture root must be an object")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         feeds, errors, complete = collect(now=now, fixture=fixture, previous=previous)
         report, next_state = reconcile(config, previous, feeds, errors, complete, now=now)
         for path, data in ((args.report, report), (args.next_catalog, next_state)):
