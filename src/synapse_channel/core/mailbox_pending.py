@@ -153,15 +153,22 @@ class MailboxPendingTracker:
         """Give each bound role its mailbox and return the normalised role names.
 
         A personal entry with the same string as a role is dropped from the
-        projection: a name that is also a bound role counts as the role. The
-        journal keeps every event either way.
+        projection: a name that is also a bound role counts as the role. A role
+        mailbox that is new starts at that entry's watermark, because mail to the
+        role was counted under the plain name before roles had mailboxes, so mail
+        accepted or closed under it is not replayed again. The journal keeps every
+        event either way.
         """
         normalised = self._normalise_roles(roles)
         if self.store is None:
             return normalised
         for role in normalised:
-            self._forget(role)
-            self._remember(role_mailbox_key(role))
+            key = role_mailbox_key(role)
+            fresh = key not in self._known and key not in self._retired_role_watermarks
+            carried = self._adopt_plain_name(role)
+            self._remember(key)
+            if fresh and carried:
+                self._watermarks[key] = carried
         return normalised
 
     def observe_chat(self, seq: int, payload: Mapping[str, Any]) -> None:
@@ -432,13 +439,13 @@ class MailboxPendingTracker:
                 allow_bool=False,
             )
             role = mailbox_role(identity)
-            if role is not None:
-                self._forget(role)
+            carried = 0 if role is None else self._adopt_plain_name(role)
             self._remember(identity)
             if identity not in self._known:
                 continue
             self._watermarks[identity] = max(
                 self.watermark_for(identity),
+                carried,
                 min(through_seq, event.seq),
             )
 
@@ -475,6 +482,12 @@ class MailboxPendingTracker:
         self._retired_role_watermarks.move_to_end(key)
         while len(self._retired_role_watermarks) > self.max_role_watermarks:
             self._retired_role_watermarks.popitem(last=False)
+
+    def _adopt_plain_name(self, role: str) -> int:
+        """Drop the personal entry named like ``role`` and return its watermark."""
+        carried = self._watermarks.get(role, 0) if role in self._known else 0
+        self._forget(role)
+        return carried
 
     def _forget(self, name: str) -> None:
         """Drop a personal entry from the projection (never from the journal)."""

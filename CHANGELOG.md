@@ -31,11 +31,13 @@ execution evidence when carrying a release claim forward.
   pending in both. `synapse who` lists role mailboxes under their keys, and
   `synapse mailbox orphans`, `handover` and `close` accept them, with the
   custodian looked up under the role's project. Names starting with `role:` are
-  reserved and refused at registration. **Upgrade note:** each role mailbox
-  starts at the beginning of the retained journal, so the first holder that
-  reconnects receives the role's whole unacknowledged backlog, up to 1000
-  messages per reconnect; close or hand over old role backlogs first if they
-  should not be delivered.
+  reserved and refused at registration. **Upgrade note:** older hubs counted
+  role mail under the plain role name too, and a new role mailbox starts where
+  that name's mailbox stood, so mail acknowledged or closed under the plain name
+  is not delivered again. The rest of the role's retained mail goes to the first
+  holder that reconnects, up to 1000 messages per reconnect; to retire it, close
+  it under the plain role name on the old hub before upgrading (deployment
+  guide, "Mailboxes nobody collects").
 
 ### Fixed
 

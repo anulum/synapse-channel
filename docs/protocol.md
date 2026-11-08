@@ -639,8 +639,9 @@ earlier role mail arrived. On a mailbox registration the hub replays the
 personal backlog after `since_seq` plus, for each held role, the chats after
 the role's watermark (at most 1000 per role), merged by `seq` without
 duplicates. A role gets its mailbox once a connection binds it; until then a
-target naming it is counted under that plain name, as before. A name equal to a
-bound role counts as the role. Names starting with `role:` are reserved
+target naming it is counted under that plain name, as before, and a new role
+mailbox starts at that plain name's watermark. A name equal to a bound role
+counts as the role. Names starting with `role:` are reserved
 (any case), so a registration under one is refused with 4009. WHO lists role
 mailboxes under their keys in `mailbox_pending`; role mailboxes share the
 512-mailbox bound, and a role that leaves it keeps its watermark (up to 4096

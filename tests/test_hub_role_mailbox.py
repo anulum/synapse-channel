@@ -82,6 +82,11 @@ async def _journalled(store: EventStore, payload: str) -> int:
     raise TimeoutError(f"{payload!r} was not journalled")
 
 
+def _journalled_chat(text: str) -> dict[str, Any]:
+    """Return a chat payload as a hub journals it, addressed to ``ROLE``."""
+    return {"sender": "X/peer", "target": ROLE, "type": MessageType.CHAT, "payload": text}
+
+
 def _chats(handle: AgentHandle, payload: str) -> list[dict[str, Any]]:
     return [
         message
@@ -171,3 +176,30 @@ async def test_a_custodian_closes_a_role_mailbox_by_its_key(tmp_path: Path) -> N
         store.close()
     assert marks[-1].payload["identity"] == KEY
     assert marks[-1].payload["source"] == "closed"
+
+
+async def test_role_mail_closed_under_the_plain_name_before_an_upgrade_stays_closed(
+    tmp_path: Path,
+) -> None:
+    """An older hub counted role mail under the plain role name; closing it there carries over."""
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        for text in ("old one", "old two"):
+            store.append(EventKind.CHAT, _journalled_chat(text))
+        closed = store.max_seq()
+        store.append(
+            EventKind.MAILBOX_WATERMARK,
+            {"identity": ROLE, "through_seq": closed, "source": "closed"},
+        )
+        store.append(EventKind.CHAT, _journalled_chat("new"))
+        async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+            holder = await _holder("P/claude-a", uri, since_seq=store.max_seq())
+            try:
+                await holder.recorder.wait_for(lambda message: message.get("payload") == "new")
+                await _role_pending(holder, 0)
+                stale = _chats(holder, "old one") + _chats(holder, "old two")
+            finally:
+                await close_agents(holder)
+    finally:
+        store.close()
+    assert stale == []

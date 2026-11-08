@@ -262,3 +262,66 @@ def test_a_cold_role_count_is_projected_from_its_own_watermark(tmp_path: Path) -
         assert tracker.acknowledge("P/bob", first, roles=[ROLE]) is True
         cold = MailboxPendingTracker(store)
         assert cold.pending_count(KEY) == 1
+
+
+def test_a_new_role_mailbox_starts_where_its_plain_name_stood(tmp_path: Path) -> None:
+    """Mail closed under the plain role name before an upgrade is not replayed to a holder."""
+    with EventStore(tmp_path / "hub.db") as store:
+        _chat(store, ROLE)
+        closed = _chat(store, ROLE)
+        later = _chat(store, ROLE)
+        tracker = MailboxPendingTracker(store)
+        assert tracker.advance(ROLE, closed, source="closed") is True
+        tracker.learn_roles([ROLE])
+        backlog = tracker.role_backlog([ROLE], limit=10)
+        assert tracker.watermark_for(KEY) == closed
+        assert tracker.pending_count(KEY) == 1
+    assert [event.seq for event in backlog] == [later]
+
+
+def test_restart_starts_the_role_at_the_higher_of_its_own_and_its_plain_mark(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "hub.db"
+    with EventStore(path) as store:
+        first = _chat(store, ROLE)
+        closed = _chat(store, ROLE)
+        _chat(store, ROLE)
+        store.append(
+            EventKind.MAILBOX_WATERMARK,
+            {"identity": ROLE, "through_seq": closed, "source": "closed"},
+        )
+        store.append(
+            EventKind.MAILBOX_WATERMARK,
+            {"identity": KEY, "through_seq": first, "source": "ack"},
+        )
+    with EventStore(path) as reopened:
+        restored = MailboxPendingTracker(reopened)
+        assert restored.watermark_for(KEY) == closed
+        assert restored.pending_count(KEY) == 1
+    with EventStore(tmp_path / "plain.db") as plain:
+        _chat(plain, ROLE)
+        mark = _chat(plain, ROLE)
+        plain.append(
+            EventKind.MAILBOX_WATERMARK,
+            {"identity": ROLE, "through_seq": mark, "source": "closed"},
+        )
+        cold = MailboxPendingTracker(plain)
+        cold.learn_roles([ROLE])
+        assert cold.watermark_for(KEY) == mark
+
+
+def test_a_role_that_already_had_a_mailbox_takes_nothing_from_its_plain_name(
+    tmp_path: Path,
+) -> None:
+    with EventStore(tmp_path / "hub.db") as store:
+        acked = _chat(store, f"{ROLE},P/triage")
+        later = _chat(store, ROLE)
+        tracker = MailboxPendingTracker(store, max_identities=1)
+        assert tracker.acknowledge("P/bob", acked, roles=[ROLE]) is True
+        tracker.learn_roles(["P/triage"])
+        assert KEY not in tracker.known_identities
+        tracker.observe_chat(later, {"sender": "X/peer", "target": ROLE})
+        assert tracker.advance(ROLE, later, source="cursor") is True
+        tracker.learn_roles([ROLE])
+    assert tracker.watermark_for(KEY) == acked

@@ -288,3 +288,15 @@ def test_live_names_are_active_and_the_probe_is_not_counted(
     lines.clear()
     assert _cmd_orphans(offline, clock=lambda: NOW, write=lines.append, roster_probe=silent) == 0
     assert json.loads(lines[0])["live_roster"] is None
+
+
+def test_a_role_mailbox_starts_at_its_plain_names_watermark_offline() -> None:
+    events = [
+        _chat(1, 1.0, "X/z", "P/reviewer"),
+        _chat(2, 2.0, "X/z", "P/reviewer"),
+        _mark(3, 3.0, "P/reviewer", 2),
+        _chat(4, 4.0, "X/z", "P/reviewer"),
+        _mark(5, 5.0, "role:P/reviewer", 1),
+    ]
+    role = _by_name(events)["role:P/reviewer"]
+    assert (role.watermark, role.pending, role.oldest_pending_ts) == (2, 1, 4.0)

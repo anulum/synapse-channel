@@ -22,7 +22,8 @@ A role's own mailbox ``role:<project>/<role>`` is known once a holder has
 acknowledged role mail, which journals a watermark under that key. It counts the
 chats addressed to the role after that watermark, belongs to the role's project,
 and its last activity is its latest watermark. A plain name equal to such a role
-is not listed separately: it counts as the role.
+is not listed separately: it counts as the role, and the role mailbox starts at
+that name's watermark when it is higher, as the hub's projection does.
 """
 
 from __future__ import annotations
@@ -183,6 +184,13 @@ def _mailboxes(snapshot: _Snapshot) -> dict[str, None]:
     return {name: None for name in snapshot.names if name not in roles}
 
 
+def _watermark(snapshot: _Snapshot, name: str) -> int:
+    """Return a mailbox's watermark; a role mailbox starts where its plain role name stood."""
+    own = snapshot.watermarks.get(name, 0)
+    role = mailbox_role(name)
+    return own if role is None else max(own, snapshot.watermarks.get(role, 0))
+
+
 def _pending_times(snapshot: _Snapshot, names: dict[str, None]) -> dict[str, list[float]]:
     """Return, per mailbox, the timestamps of the chats still pending in it."""
     by_address: dict[str, list[str]] = {}
@@ -193,7 +201,7 @@ def _pending_times(snapshot: _Snapshot, names: dict[str, None]) -> dict[str, lis
     for chat in snapshot.chats:
         sender = str(chat.payload.get("sender") or "")
         for name in _recipients(str(chat.payload.get("target")), names, by_address):
-            if chat.seq > snapshot.watermarks.get(name, 0) and sender != name:
+            if chat.seq > _watermark(snapshot, name) and sender != name:
                 pending[name].append(chat.ts)
     return pending
 
@@ -217,7 +225,7 @@ def mailbox_standings(events: Iterable[StoredEvent]) -> list[MailboxStanding]:
             identity=name,
             project=project_of(name),
             pending=len(pending[name]),
-            watermark=snapshot.watermarks.get(name, 0),
+            watermark=_watermark(snapshot, name),
             oldest_pending_ts=min(pending[name], default=None),
             last_activity_ts=snapshot.activity.get(name),
         )

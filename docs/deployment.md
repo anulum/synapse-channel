@@ -725,6 +725,47 @@ receiving-hub ownership and rollback requirements.
 The `--relay-log` feed is derived state and bounded by `--relay-max-lines`; it is
 not a replacement for the journal and its keys.
 
+## Mailboxes nobody collects
+
+A session name rarely comes back, so directed mail to an ended session waits for
+nobody. Mail addressed to a role (`project/role`) waits in the role's own
+mailbox, `role:project/role`, for its next holder. Neither is ever deleted; a
+custodian hands it on or closes it, and the journal records who did it and why.
+
+**Name the custodians.** Start the hub with `--mailbox-custodians FILE`, a JSON
+object from a name, a project or `*` to the custodian's name:
+
+```json
+{"*": "owner/desk", "api": "api/manager", "web": "web/manager"}
+```
+
+A name's own entry wins, then its project's (a role mailbox's project is the
+role's), then `*`. A missing file names no custodian, so every custodian action
+is refused; a malformed file stops the hub at startup. Changes take effect at the
+next start.
+
+**Check regularly.** As a recurring task of each project's manager (a TODO item,
+not a timer), run:
+
+```bash
+synapse doctor --mailbox-orphans --db-path ~/.synapse/hub.db
+synapse mailbox drain ~/.synapse/hub.db --project api --name api/manager --live --close --reason "sessions ended"
+```
+
+The doctor warns while the project has mail waiting for names quiet for 7 days
+or more. `drain` prints the plan; review it, then add `--execute`, or use
+`--to NAME` instead of `--close` to hand the mail to a successor or a role.
+
+**Upgrading to role mailboxes.** Older hubs counted mail to a role under the
+plain role name as well. A role mailbox starts where that name's mailbox stood,
+so mail acknowledged or closed under the plain name is not delivered again; the
+rest of the role's retained mail goes to the first holder that reconnects with
+its mailbox, at most 1000 messages per reconnect. To retire old role mail,
+close it under the plain role name before the upgrade, while the old hub still
+runs (`synapse mailbox orphans` lists the plain role names with pending mail;
+`synapse mailbox close api/reviewer --name api/manager --reason "..."` or a
+`drain --close` of the project closes them). Then upgrade and restart the hub.
+
 ## When the hub stops on its own
 
 While it serves, the hub runs background work: the delivery deadline sweep,

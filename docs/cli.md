@@ -1355,11 +1355,12 @@ can take one. The custodian of `role:api/reviewer` is its own map entry, then
 synapse mailbox close role:api/reviewer --name api/manager --reason "old review queue, already triaged"
 ```
 
-When a hub is upgraded to this behaviour, each role mailbox starts at the
-beginning of the retained journal, so the first holder that reconnects receives
-the role's whole unacknowledged backlog, up to 1000 messages per reconnect.
-Close or hand over old role backlogs before their holders reconnect if they
-should not be delivered.
+Older hubs counted mail to a role under the plain role name as well, so a role
+mailbox starts where that name's mailbox stood: mail acknowledged or closed under
+the plain name is not delivered again. The rest of the role's retained mail goes
+to the first holder that reconnects, up to 1000 messages per reconnect; to retire
+it, close it under the plain role name before upgrading (see the deployment
+guide, "Mailboxes nobody collects").
 
 ## Messaging: broadcast, several, or one
 
