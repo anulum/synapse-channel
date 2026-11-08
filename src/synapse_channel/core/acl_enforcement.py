@@ -56,7 +56,7 @@ def required_accesses(msg_type: str, data: dict[str, Any]) -> list[tuple[str, Ta
     Parameters
     ----------
     msg_type : str
-        Normalized inbound message type, with existing unknown-type behavior.
+        Normalized inbound message type, with existing unknown-type behaviour.
     data : dict[str, Any]
         The frame fields consumed by the handler.
 

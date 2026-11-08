@@ -31,6 +31,13 @@ from synapse_channel.core.acl_enforcement import (
 from synapse_channel.core.protocol import MessageType
 
 
+def test_required_accesses_states_unknown_type_behaviour() -> None:
+    """The shipped mapper states the unknown-type behaviour in British spelling."""
+    text = " ".join((required_accesses.__doc__ or "").split())
+    assert "Normalized inbound message type, with existing unknown-type behaviour" in text
+    assert "behavior" not in text
+
+
 def test_project_of_extracts_namespace() -> None:
     assert project_of("SYNAPSE-CHANNEL/claude-e57b") == "SYNAPSE-CHANNEL"
     assert project_of("bare-name") == ""
