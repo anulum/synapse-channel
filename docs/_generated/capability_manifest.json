@@ -8,7 +8,7 @@
     "package_modules": 914,
     "public_api_exports": 70,
     "tests": 13323,
-    "version": "0.99.48",
+    "version": "0.99.49",
     "wire_message_types": 118,
     "workflows": 29
   },

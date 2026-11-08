@@ -18,6 +18,8 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.49] - 2026-11-08
+
 ### Changed
 
 - **Mail addressed to a role waits in the role's own mailbox.** A chat to
