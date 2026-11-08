@@ -71,6 +71,7 @@ nav:
   - Terminal label: terminal-label.md
   - Wake relay: wake-relay.md
   - Execution outcomes: execution-outcomes.md
+  - Integrator contract: integrator-contract.md
   - Operations catalogue: operations.md
   - Contract conflicts: contract-conflicts.md
   - Installation: installation.md

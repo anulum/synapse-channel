@@ -80,6 +80,18 @@ guard's provider-neutral check refuses an unclaimed covered mutation, and the fi
 directly when the API is ready. This is the worked version of the
 [parallel coding agents recipe](../docs/recipes.md).
 
+## `integrator_adapter.py`
+
+One file write carried through the six steps of the
+[integrator contract](../docs/integrator-contract.md): the worker registers and
+claims the task, `run_worker_session` starts `integrator_provider.py`, which
+declares its `SYN_OPERATION_ID` before writing, a separate checker granted
+`operation-evidence` publishes the outcome report and a file verification, the
+worker releases the claim, and the report is read again as an inquiry would. It
+prints `success: integrator adapter completed`. Its `run_adapter(uri, workdir)`
+coroutine is what `tests/test_integrator_contract.py` drives; it imports only
+the names the contract pins, plus the in-process hub it serves.
+
 Each demo exposes a `run_demo(port, ...)` coroutine that the test-suite drives, so
 maintained tests can qualify their exact source/runtime profiles; they do not
 qualify every future version or native provider host.

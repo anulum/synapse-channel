@@ -56,6 +56,15 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **An integrator contract.** `docs/integrator-contract.md` names the one
+  command or call for each of the six things an integrator needs: register an
+  executor, propose an operation, obtain authority, execute, follow the result
+  and recover after an unknown outcome. `tests/test_integrator_contract.py`
+  pins those command options (including their destinations, so a renamed
+  option fails even though argparse accepts prefixes), Python names and
+  parameters, wire names and schema identifiers, and runs
+  `examples/integrator_adapter.py`, which carries one file write through all
+  six steps against a real hub.
 - **The hub journals the roles a connection binds.** When a registration's
   accepted role set differs from that connection's last one, a `role_binding`
   event records the identity and its sorted roles; repeating the same set
