@@ -37,6 +37,8 @@ import typing
 
 import pytest
 
+from synapse_channel import federation_api
+
 # Record primitives (dataclass or NamedTuple) → the field names a consumer reads.
 # Required subset only, so a backward-compatible new field does not fail the contract.
 _RECORD_CONTRACT: dict[tuple[str, str], frozenset[str]] = {
@@ -391,6 +393,19 @@ def test_the_fleet_import_inventory_is_complete() -> None:
     # the fleet tier's own inventory after it admitted Core 0.99.49.
     assert sum(len(symbols) for symbols in _FLEET_IMPORTS.values()) == _FLEET_SYMBOLS
     assert len(_FLEET_IMPORTS) == _FLEET_MODULES
+
+
+def test_every_fleet_import_is_on_the_federation_interface_from_its_module() -> None:
+    # The fleet tier imports these names through ``synapse_channel.federation_api``; the
+    # inventory above says where each is defined, and the interface must agree exactly:
+    # the same names, each its defining module's own object.
+    inventory = {
+        symbol: module_path for module_path, symbols in _FLEET_IMPORTS.items() for symbol in symbols
+    }
+    assert set(federation_api.__all__) == set(inventory)
+    for symbol, module_path in inventory.items():
+        defined = getattr(importlib.import_module(module_path), symbol)
+        assert getattr(federation_api, symbol) is defined, f"{symbol} is not {module_path}'s"
 
 
 def test_the_kind_of_a_symbol_is_class_callable_or_value() -> None:

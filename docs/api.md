@@ -289,6 +289,21 @@ The remaining exports fall into a few families you reach for as needed:
 These coordination helpers are re-exported from the package root, so
 `from synapse_channel import X` works for names in the package reference.
 
+## Federation interface
+
+An out-of-tree consumer that follows peer hubs, forwards claims, shares spend,
+transfers attachments or exports evidence imports from
+`synapse_channel.federation_api` instead of Core's internal modules. Each name
+there is the defining module's own object, loaded on first use; Core may move a
+name between internal modules without changing the surface. The
+[API stability page](api-stability.md) says how it is guarded.
+
+::: synapse_channel.federation_api
+    options:
+      show_root_heading: true
+      show_source: false
+      members: false
+
 ## Full generated reference
 
 The package reference below is generated from the source docstrings.
