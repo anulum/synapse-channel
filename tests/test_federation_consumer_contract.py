@@ -96,13 +96,21 @@ _CONTRACT_SIZE = (
 
 # Every Core symbol the fleet tier imports, by module, with its kind: ``class``, ``callable``
 # (a function or a callable type alias) or ``value`` (a constant or a non-callable type
-# alias). The list is the fleet tier's consumed-symbol inventory at Fleet 0.11.0. It pins
+# alias). The list is the fleet tier's consumed-symbol inventory as of its admission of
+# Core 0.99.49 (attachment fetch and Core's record-keeping categories added). It pins
 # existence and kind only, so a removal, a rename or a change between kinds fails here,
 # in this repository's CI, before a release can break the consumer; the required fields
 # and parameters of the most used primitives stay pinned above.
 _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     "synapse_channel.core.at_rest": {
         "load_key_file": "callable",
+    },
+    "synapse_channel.core.attachment_store": {
+        "AttachmentError": "class",
+        "AttachmentStore": "class",
+    },
+    "synapse_channel.core.attachment_transport": {
+        "request_attachment": "callable",
     },
     "synapse_channel.core.causality": {
         "DEFAULT_MAX_GRAPH_NODES": "value",
@@ -238,6 +246,12 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
         "load_receipt_verification_key": "callable",
         "sign_merkle_commitment": "callable",
     },
+    "synapse_channel.core.record_keeping": {
+        "GENERAL_RECORD": "value",
+        "OPERATION_RECORD": "value",
+        "RISK_INDICATOR": "value",
+        "purpose_for_kind": "callable",
+    },
     "synapse_channel.core.spend_epoch": {
         "OwnerRevocation": "class",
         "SpendEpochError": "class",
@@ -267,8 +281,8 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     },
 }
 
-_FLEET_SYMBOLS = 98
-_FLEET_MODULES = 33
+_FLEET_SYMBOLS = 105
+_FLEET_MODULES = 36
 
 
 def _kind(obj: object) -> str:
@@ -367,7 +381,7 @@ def test_every_symbol_the_fleet_tier_imports_keeps_its_name_and_kind(
 
 def test_the_fleet_import_inventory_is_complete() -> None:
     # Dropping a symbol from the inventory is a deliberate, reviewed edit: the counts are
-    # the fleet tier's own inventory at Fleet 0.11.0.
+    # the fleet tier's own inventory after it admitted Core 0.99.49.
     assert sum(len(symbols) for symbols in _FLEET_IMPORTS.values()) == _FLEET_SYMBOLS
     assert len(_FLEET_IMPORTS) == _FLEET_MODULES
 
