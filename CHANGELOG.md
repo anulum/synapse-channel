@@ -18,6 +18,8 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.48] - 2026-11-08
+
 ### Added
 
 - **`worker-session` tells the provider its operation id.** The provider runs
