@@ -724,6 +724,14 @@ async def test_second_settle_confirms_without_replaying_the_release(tmp_path: Pa
                 assert await release.run() == 0
                 assert "mutex" not in hub.state.claims
                 assert watch["releases"] == 1
+                # The second settle reconnects under the same name. Wait until the hub has
+                # let the first socket go, so its 3 s registration budget is not spent on a
+                # disconnect a loaded runner has not processed yet.
+                loop = asyncio.get_running_loop()
+                deadline = loop.time() + 10
+                while "mutex-owner" in hub.clients.agent_sockets:
+                    assert loop.time() < deadline, "the first release socket never retired"
+                    await asyncio.sleep(0.02)
                 assert await release.run() == 0
                 assert watch["releases"] == 1
                 assert len([row for row in journal.iter_events() if row.kind == "release"]) == 1
