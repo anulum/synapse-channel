@@ -608,7 +608,10 @@ async def test_renewal_still_open_at_the_deadline_is_unknown(
                     _run_supervised(proxy, tmp_path, ready=30, release=30)
                 )
                 await wait_started(tmp_path / "started", command)
-                code = await asyncio.wait_for(command, 25)
+                # The hub grants this lock a 30 s lease; the supervisor stops the command
+                # STOP_ALLOWANCE (5 s) before it ends, i.e. 25 s after the grant, and then
+                # joins the child and releases. A 25 s wait left no room for that work.
+                code = await asyncio.wait_for(command, 45)
                 captured = capsys.readouterr()
                 assert code == 3, captured.err
                 assert "no renewal answer before the lease deadline" in captured.err
