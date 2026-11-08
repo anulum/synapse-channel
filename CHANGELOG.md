@@ -18,6 +18,15 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- **`synapse doctor --mailbox-orphans` and `synapse mailbox orphans --live`.**
+  The doctor reads the hub store at `--db-path` and warns while its project
+  has directed mail waiting for names quiet for 7 days or more, naming the
+  commands that list, hand over or close them. Both views count names on the
+  hub's live roster as active, so a name connected now is never reported. The
+  doctor check is opt-in because it reads the whole journal.
+
 ## [0.99.48] - 2026-11-08
 
 ### Added

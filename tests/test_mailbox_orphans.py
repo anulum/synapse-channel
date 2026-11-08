@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 
 from synapse_channel.cli import build_parser
+from synapse_channel.cli_doctor_mailbox import DoctorRoster
 from synapse_channel.cli_mailbox import DEFAULT_LIMIT, _cmd_orphans, _positive_days
 from synapse_channel.core.event_row_mac import load_or_create_row_mac_key, row_mac_key_path
 from synapse_channel.core.journal import EventKind
@@ -233,3 +234,36 @@ def test_the_day_option_refuses_what_is_not_a_positive_number(text: str) -> None
     with pytest.raises(argparse.ArgumentTypeError):
         _positive_days(text)
     assert _positive_days("1.5") == 1.5
+
+
+def test_live_names_are_active_and_the_probe_is_not_counted(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--live reads the hub roster; a connected name is never an orphan."""
+    db = _store(tmp_path)
+    seen: list[dict[str, Any]] = []
+
+    async def roster(**kwargs: Any) -> DoctorRoster:
+        seen.append(kwargs)
+        return DoctorRoster(agents=("P/gone", "mailbox-orphans"), mailbox_pending=None)
+
+    args = build_parser().parse_args(
+        ["mailbox", "orphans", str(db), "--live", "--uri", "ws://hub", "--json"]
+    )
+    lines: list[str] = []
+    assert _cmd_orphans(args, clock=lambda: NOW, write=lines.append, roster_probe=roster) == 0
+    document = json.loads(lines[0])
+    assert [row["identity"] for row in document["orphans"]] == ["P/here", "X/z"]
+    assert document["live_roster"] == 1
+    assert (seen[0]["uri"], seen[0]["name"]) == ("ws://hub", "mailbox-orphans")
+
+    async def silent(**_kwargs: Any) -> None:
+        return None
+
+    plain = build_parser().parse_args(["mailbox", "orphans", str(db), "--live", "--uri", "ws://x"])
+    assert _cmd_orphans(plain, clock=lambda: NOW, write=lines.append, roster_probe=silent) == 1
+    assert "no live roster from ws://x" in capsys.readouterr().err
+    offline = build_parser().parse_args(["mailbox", "orphans", str(db), "--json"])
+    lines.clear()
+    assert _cmd_orphans(offline, clock=lambda: NOW, write=lines.append, roster_probe=silent) == 0
+    assert json.loads(lines[0])["live_roster"] is None

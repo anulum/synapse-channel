@@ -11,19 +11,24 @@ The ``orphans`` action reads a hub's event store read-only and changes nothing;
 ``handover`` and ``close`` (:mod:`synapse_channel.cli_mailbox_handover`) act
 through the live hub. A name is an orphan when it has pending directed mail and
 no journalled activity for the chosen number of days. Names given with
-``--active`` are never orphans.
+``--active``, and with ``--live`` every name the hub's roster shows connected
+now, are never orphans.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from pathlib import Path
+from typing import Any
 
+from synapse_channel.cli_doctor_mailbox import DoctorRoster, fetch_doctor_roster
 from synapse_channel.cli_mailbox_handover import add_handover_parsers
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.event_row_mac import RowMacError, load_row_mac_key, row_mac_key_path
 from synapse_channel.core.mailbox_orphans import (
     MailboxStanding,
@@ -38,6 +43,12 @@ DEFAULT_DORMANT_DAYS = 7.0
 
 DEFAULT_LIMIT = 20
 """Orphans shown in text output unless ``--all`` is given."""
+
+LIVE_PROBE_NAME = "mailbox-orphans"
+"""Default name of the one-shot connection that reads the hub's live roster."""
+
+RosterProbe = Callable[..., Coroutine[Any, Any, DoctorRoster | None]]
+"""Reads a hub's live roster; ``None`` when the hub gave no roster."""
 
 _MAX_EVENTS = 50_000_000
 _MAX_PAYLOAD_BYTES = 64 * 1024**3
@@ -76,18 +87,41 @@ def _row(standing: MailboxStanding, now: float) -> dict[str, object]:
     }
 
 
-def _read_standings(args: argparse.Namespace) -> list[MailboxStanding]:
-    """Read the journal snapshot read-only and compute every mailbox standing."""
-    db = Path(args.db).expanduser()
-    if args.row_mac_key:
-        row_key = load_row_mac_key(Path(args.row_mac_key).expanduser())
-    elif row_mac_key_path(db).is_file():
-        row_key = load_row_mac_key(row_mac_key_path(db))
+def read_mailbox_standings(
+    db: Path, *, key_file: str | Path | None = None, row_mac_key: str | Path | None = None
+) -> list[MailboxStanding]:
+    """Read a hub journal read-only and compute every mailbox standing.
+
+    Parameters
+    ----------
+    db : pathlib.Path
+        The hub's event store (its ``--db``).
+    key_file : str or pathlib.Path or None, optional
+        Owner-only SQLCipher key of an encrypted store.
+    row_mac_key : str or pathlib.Path or None, optional
+        The store's row-authentication key; ``<db>.rowmac.key`` is used when
+        it exists and none is named.
+
+    Returns
+    -------
+    list[MailboxStanding]
+        One standing per name the journal knows.
+
+    Raises
+    ------
+    ValueError, OSError, RuntimeError, RowMacError
+        When the store or its keys cannot be read.
+    """
+    store = Path(db).expanduser()
+    if row_mac_key:
+        row_key = load_row_mac_key(Path(row_mac_key).expanduser())
+    elif row_mac_key_path(store).is_file():
+        row_key = load_row_mac_key(row_mac_key_path(store))
     else:
         row_key = None
     rows = iter_record_source(
-        db,
-        key_file=args.db_key_file,
+        store,
+        key_file=key_file,
         row_mac=row_key,
         max_events=_MAX_EVENTS,
         max_payload_bytes=_MAX_PAYLOAD_BYTES,
@@ -98,24 +132,52 @@ def _read_standings(args: argparse.Namespace) -> list[MailboxStanding]:
         rows.close()
 
 
+def _live_names(args: argparse.Namespace, probe: RosterProbe) -> tuple[str, ...] | None:
+    """Return the names the hub shows connected now, without the probe itself."""
+    roster = asyncio.run(
+        probe(
+            uri=args.uri,
+            name=args.name,
+            token=args.token,
+            agent_factory=SynapseAgent,
+            ready_timeout=args.ready_timeout,
+        )
+    )
+    if roster is None:
+        return None
+    return tuple(name for name in roster.agents if name != args.name)
+
+
 def _cmd_orphans(
     args: argparse.Namespace,
     *,
     clock: Callable[[], float] = time.time,
     write: Callable[[str], None] = print,
+    roster_probe: RosterProbe = fetch_doctor_roster,
 ) -> int:
     """List orphaned mailboxes, most pending mail first."""
     try:
-        standings = _read_standings(args)
+        standings = read_mailbox_standings(
+            Path(args.db), key_file=args.db_key_file, row_mac_key=args.row_mac_key
+        )
     except (ValueError, OSError, RuntimeError, RowMacError) as exc:
         print(f"synapse mailbox orphans: {exc}", file=sys.stderr)
         return 1
+    live: tuple[str, ...] | None = None
+    if args.live:
+        live = _live_names(args, roster_probe)
+        if live is None:
+            print(
+                f"synapse mailbox orphans: no live roster from {terminal_text(args.uri)}",
+                file=sys.stderr,
+            )
+            return 1
     now = clock()
     orphans = orphaned_mailboxes(
         standings,
         now=now,
         dormant_after_days=args.dormant_after_days,
-        active=args.active or (),
+        active=(*(args.active or ()), *(live or ())),
         project=args.project,
     )
     total = sum(item.pending for item in orphans)
@@ -123,6 +185,7 @@ def _cmd_orphans(
         document = {
             "dormant_after_days": args.dormant_after_days,
             "project": args.project,
+            "live_roster": None if live is None else len(live),
             "orphans": [_row(item, now) for item in orphans],
             "orphaned_names": len(orphans),
             "orphaned_messages": total,
@@ -172,6 +235,19 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="append",
         metavar="NAME",
         help="A name known to be connected now; never listed. Repeatable.",
+    )
+    orphans.add_argument(
+        "--live",
+        action="store_true",
+        help="Also read the hub's live roster; a name connected now is never listed.",
+    )
+    orphans.add_argument("--uri", default=default_hub_uri(), help="Hub for --live.")
+    orphans.add_argument(
+        "--name", default=LIVE_PROBE_NAME, help="Name of the --live roster query connection."
+    )
+    orphans.add_argument("--token", default=None, help="Shared-secret token for --live.")
+    orphans.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await the hub for --live."
     )
     orphans.add_argument("--all", action="store_true", help="Show every orphan.")
     orphans.add_argument("--json", action="store_true", help="Print a JSON document.")

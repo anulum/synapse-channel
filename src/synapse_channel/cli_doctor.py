@@ -48,6 +48,7 @@ from synapse_channel.cli_doctor_mcp_config import (
     validate_mcp_config_doctor_args,
 )
 from synapse_channel.cli_doctor_mcp_hosts import default_project, diagnose_mcp_hosts
+from synapse_channel.cli_doctor_orphans import add_orphan_doctor_argument, orphan_diagnoses
 from synapse_channel.cli_doctor_token_set import diagnose_token_set
 from synapse_channel.cli_queries import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
@@ -236,6 +237,26 @@ def _read_cursor_names(env: Mapping[str, str]) -> list[str]:
         return []
 
 
+def _split_roster(
+    roster_result: DoctorRoster | list[str] | None, probe_name: str
+) -> tuple[DoctorRoster | None, list[str] | None]:
+    """Return the WHO projection and the roster names without the probe itself.
+
+    The one-shot query socket is present in the snapshot it requests. It is
+    diagnostic plumbing, not a wakeable seat, so including it would make a
+    healthy doctor invocation diagnose itself as a deaf agent.
+    """
+    if isinstance(roster_result, DoctorRoster):
+        doctor_roster: DoctorRoster | None = roster_result
+        roster: list[str] | None = list(roster_result.agents)
+    else:
+        doctor_roster = None
+        roster = roster_result
+    if roster is not None:
+        roster = [name for name in roster if name != probe_name]
+    return doctor_roster, roster
+
+
 async def _diagnose(
     *,
     uri: str,
@@ -283,6 +304,7 @@ async def _diagnose(
     mcp_home: Path | None = None,
     mcp_project: Path | None = None,
     token_set: str | Path | None = None,
+    mailbox_orphans: bool = False,
 ) -> tuple[int, list[str], list[Diagnosis]]:
     """Resolve the identity, run every check, and return the summarised verdicts.
 
@@ -335,17 +357,7 @@ async def _diagnose(
         agent_factory=agent_factory,
         ready_timeout=ready_timeout,
     )
-    if isinstance(roster_result, DoctorRoster):
-        doctor_roster: DoctorRoster | None = roster_result
-        roster: list[str] | None = list(roster_result.agents)
-    else:
-        doctor_roster = None
-        roster = roster_result
-    if roster is not None:
-        # The one-shot query socket is present in the snapshot it requests. It is
-        # diagnostic plumbing, not a wakeable seat, so including it would make a
-        # healthy doctor invocation diagnose itself as a deaf agent.
-        roster = [name for name in roster if name != probe_name]
+    doctor_roster, roster = _split_roster(roster_result, probe_name)
     diagnoses.append(check_reachable(roster is not None, uri))
     diagnoses.append(check_waiter(roster, identity.waiter_name))
     diagnoses.append(check_deaf_agents(roster))
@@ -357,6 +369,15 @@ async def _diagnose(
             )
         )
     diagnoses.append(check_sqlcipher_event_store(event_store_path, event_store_key_file))
+    diagnoses.extend(
+        orphan_diagnoses(
+            mailbox_orphans,
+            event_store_path,
+            key_file=event_store_key_file,
+            project=identity.project,
+            roster=roster,
+        )
+    )
     diagnoses.append(
         check_multi_seat_posture(
             roster=roster,
@@ -631,6 +652,7 @@ def _cmd_doctor(
                 allow_repo_mcp_config=bool(getattr(args, "allow_repo_mcp_config", False)),
                 token_file=getattr(args, "token_file", None),
                 token_set=getattr(args, "token_set", None),
+                mailbox_orphans=bool(getattr(args, "mailbox_orphans", False)),
             )
         )
 
@@ -640,10 +662,7 @@ def _cmd_doctor(
             for flag, present in (
                 ("--fix", getattr(args, "fix", False)),
                 ("--redeploy-checklist", getattr(args, "redeploy_checklist", False)),
-                (
-                    "--redeploy-authorize-restart-pid",
-                    authorized_hub_pid is not None,
-                ),
+                ("--redeploy-authorize-restart-pid", authorized_hub_pid is not None),
                 ("--install-user-services", getattr(args, "install_user_services", False)),
                 ("--start-user-services", getattr(args, "start_user_services", False)),
             )
@@ -906,9 +925,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Inspect an imported federation store for revocation and bundle expiry state.",
     )
     doctor.add_argument(
-        "--federation-token",
-        default=None,
-        help="Token sent only on federation peer log probes.",
+        "--federation-token", default=None, help="Token sent only on federation peer log probes."
     )
     doctor.add_argument(
         "--federation-skew-warn-seconds",
@@ -942,6 +959,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "holds a fail-fast host-local lock; doctor never executes it."
         ),
     )
+    add_orphan_doctor_argument(doctor)
     doctor.add_argument(
         "--db-path",
         default="~/synapse/hub.db",

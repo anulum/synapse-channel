@@ -65,7 +65,7 @@ everything, since they need the whole command table.
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse export` | Export a hub store read-only: `create` writes the journal and AEF receipts as plain files with a manifest, `verify` checks their consistency, `to-sqlite` copies them into a plain SQLite file; see [Exporting the journal](export.md). |
 | `synapse mailbox handover` / `synapse mailbox close` | Act as `--name` on the pending directed mail of one name through the live hub. `handover NAME --to NEW --reason TEXT` re-addresses that mail to `NEW` (each message keeps its original sender, target and time, and cites its original journal sequence); `close NAME --reason TEXT` closes it and delivers nothing. `--through SEQ` bounds the covered mail. The name itself, its custodian from the hub's `--mailbox-custodians` map, and an operator granted `mailbox-handover` may act. One request covers at most 200 messages; exit 3 means more remain and running it again continues; exit 1 is a refusal with its reason. |
-| `synapse mailbox orphans` | Read a hub store read-only and list directed mail that waits for names with no journalled activity for `--dormant-after-days` (default 7): pending count, last activity and oldest pending message per name, most mail first; `--project`, `--active NAME`, `--all` and `--json` narrow or widen the view. It changes nothing. Roles are not journalled, so a dormant name's roles are not shown. |
+| `synapse mailbox orphans` | Read a hub store read-only and list directed mail that waits for names with no journalled activity for `--dormant-after-days` (default 7): pending count, last activity and oldest pending message per name, most mail first; `--project`, `--active NAME`, `--all` and `--json` narrow or widen the view; `--live` also asks the hub (`--uri`, `--token`) for its roster, and a name connected now is never listed. It changes nothing. Roles are not journalled, so a dormant name's roles are not shown. |
 | `synapse multihub` | Observe/follow a peer log read-only, or explicitly recover a stopped local watcher's durable quarantine (see [Multi-hub sync](multi-hub-sync.md)). |
 | `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations, `costs` reports per-session spend and telemetry from a hub event store. |
 | `synapse adapters claude-plugin` | Inspect, preview, install, upgrade, diagnose and remove the optional [Claude Code plugin](claude-plugin.md) in one Claude profile. |
@@ -100,7 +100,7 @@ everything, since they need the whole command table.
 | `synapse state` | Print active claims and their checkpoints (a resume view); `--observed-peer HUB=URI` appends advisory peer claims marked `observed@HUB`. |
 | `synapse dead-letters` | Print directed messages the hub delivered to no consume-live recipient — no socket, or only stale sockets without a recent reaction/live waiter — worst first with the `syn inbox --as NAME` drain remedy. |
 | `synapse approvals` | Print the relays awaiting a second operator under the two-person quorum — the pending set of the per-hub approval ledger (enforced but otherwise invisible), oldest first, naming each pending action and its first requester. Rides in the same state snapshot the dashboard and cockpit read. |
-| `synapse doctor` | Check common coordination misconfigs plus this identity's hub mailbox pending count, Synapse-named MCP servers the hosts would start (`mcp-host-sources`), and hosts running one without a claim guard (`mcp-claim-guard`); exit non-zero on a failure. `--fix` auto-repairs a down default local hub or missing waiter by installing and starting the user services; `--json` emits the verdicts for CI health gates. |
+| `synapse doctor` | Check common coordination misconfigs plus this identity's hub mailbox pending count, Synapse-named MCP servers the hosts would start (`mcp-host-sources`), and hosts running one without a claim guard (`mcp-claim-guard`); exit non-zero on a failure. `--fix` auto-repairs a down default local hub or missing waiter by installing and starting the user services; `--json` emits the verdicts for CI health gates. `--mailbox-orphans` reads the hub store at `--db-path` and warns when this identity's project has directed mail waiting for names quiet for 7 days or more, counting names on the live roster as active (`mailbox-orphans`). |
 | `synapse init` | Print or install the local user services (hub, waiter, presence) as systemd units. |
 | `synapse install-shell-hook` | Install auto-arming shell integration into Bash, Zsh, and Fish (idempotent, guarded block). |
 | `synapse shell-hook` | Print the shell code that auto-arms terminals and wraps agent commands, for manual sourcing. |
@@ -1297,11 +1297,14 @@ apart, so the wakes (and re-invocations) do not stampede the provider.
 
 A mailbox belongs to a name, and a session name rarely comes back. Mail sent to
 an ended session therefore waits for nobody. `synapse mailbox orphans` lists
-such names from the hub store; `handover` and `close` act on one of them
-through the live hub:
+such names from the hub store; with `--live` it also reads the hub's roster, so
+a name connected right now is never listed. `synapse doctor --mailbox-orphans`
+runs the same check for the doctor's project and warns while orphans remain.
+`handover` and `close` act on one of them through the live hub:
 
 ```bash
-synapse mailbox orphans ~/.synapse/hub.db --project api
+synapse mailbox orphans ~/.synapse/hub.db --project api --live
+synapse doctor --mailbox-orphans --db-path ~/.synapse/hub.db
 synapse mailbox handover api/claude-1a2b --to api/claude-3c4d --name api/manager --reason "session ended"
 synapse mailbox close api/claude-1a2b --name api/manager --reason "superseded plan; nothing to act on"
 ```
