@@ -28,11 +28,14 @@ import ast
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
+from tools.structure_initialisation import analyse_initialisation
+
 __all__ = ["MEASURES", "measure_roots", "measure_source"]
 
 MEASURES = (
     "constructor_parameters",
     "init_attributes",
+    "initialisation_attributes",
     "init_constructions",
     "function_body_lines",
     "function_branches",
@@ -192,6 +195,7 @@ def measure_source(
     module_key: str,
     package: str,
     allowed_private: frozenset[str] = frozenset(),
+    unresolved: dict[str, tuple[str, ...]] | None = None,
 ) -> Figures:
     """Measure one module's source text.
 
@@ -206,6 +210,9 @@ def measure_source(
     allowed_private : frozenset[str], optional
         ``name._attr`` spellings that are not counted as private access, such
         as a private type of the standard library used in an annotation.
+    unresolved : dict[str, tuple[str, ...]] or None, optional
+        Receive source-local initialisation effects that require review, keyed
+        by class unit. A figure with unresolved effects is a known lower bound.
 
     Returns
     -------
@@ -235,6 +242,10 @@ def measure_source(
             if isinstance(member, ast.FunctionDef) and member.name == "__init__":
                 figures["constructor_parameters"][key] = _parameters(member)
                 figures["init_attributes"][key] = _init_attributes(member)
+                initialisation = analyse_initialisation(node, member)
+                figures["initialisation_attributes"][key] = len(initialisation.attributes)
+                if unresolved is not None and initialisation.unresolved:
+                    unresolved[key] = tuple(sorted(initialisation.unresolved))
                 figures["init_constructions"][key] = _init_constructions(member)
                 break
     return figures
@@ -245,6 +256,7 @@ def measure_roots(
     roots: Iterable[str],
     *,
     allowed_private: frozenset[str] = frozenset(),
+    unresolved: dict[str, tuple[str, ...]] | None = None,
 ) -> Figures:
     """Measure every Python module below the given roots of a repository.
 
@@ -257,6 +269,8 @@ def measure_roots(
         of a root is the package name used for its internal imports.
     allowed_private : frozenset[str], optional
         See :func:`measure_source`.
+    unresolved : dict[str, tuple[str, ...]] or None, optional
+        Receive class-qualified initialisation effects requiring source review.
 
     Returns
     -------
@@ -285,6 +299,7 @@ def measure_roots(
                     module_key=key,
                     package=package,
                     allowed_private=allowed_private,
+                    unresolved=unresolved,
                 )
             except SyntaxError as error:
                 raise SyntaxError(f"{key}: {error.msg} (line {error.lineno})") from error

@@ -452,15 +452,15 @@ def test_additional_measured_root_keeps_existing_growth_guards(repo: Repo) -> No
 @pytest.mark.parametrize(
     ("damage", "reason"),
     [
-        ("schema = 1", "schema = 2"),
+        ("schema = 2", "schema = 3"),
         ("private_access = 0", "private_access = -1"),
         ("private_access = 0", "private_access = 0\nunknown_measure = 3"),
         ('roots = ["pkg"]', "roots = []"),
         ("[thresholds]", "[thresholds"),
         ("[thresholds]\n", "thresholds = 3\n[other]\n"),
-        ("schema = 1", "schema = 1\nexceptions = 3"),
-        ("schema = 1", "schema = 1\nmoves = [{from = 'a'}]"),
-        ("schema = 1", "schema = 1\nmoves = 3"),
+        ("schema = 2", "schema = 2\nexceptions = 3"),
+        ("schema = 2", "schema = 2\nmoves = [{from = 'a'}]"),
+        ("schema = 2", "schema = 2\nmoves = 3"),
     ],
 )
 def test_malformed_ledger_cannot_be_judged(repo: Repo, damage: str, reason: str) -> None:
@@ -570,3 +570,120 @@ def test_hook_and_ci_run_the_check_against_the_parent_commit() -> None:
     assert "fetch-depth: 2" in lint
     assert "run: python -m tools.check_structure_budget --check --baseline HEAD^\n" in lint
     assert "continue-on-error" not in lint
+
+
+def _legacy_initialisation(repo: Repo) -> str:
+    """Commit the original seven-measure format with fields hidden in a helper."""
+    source = (
+        "class Wide:\n"
+        " def __init__(self):\n"
+        "  self.a = self.b = self.c = 0\n"
+        "  self.receive()\n"
+        " def receive(self):\n" + "".join(f"  self.field{i} = {i}\n" for i in range(22))
+    )
+    repo.write("pkg/wide.py", source)
+    repo.write(
+        "budget.toml",
+        LEDGER_HEAD + '\n[ceilings.function_body_lines]\n"pkg/long.py::listed" = 70\n',
+    )
+    repo.commit()
+    return source
+
+
+def test_initialisation_migration_uses_parent_blobs_and_cannot_bless_child_growth(
+    repo: Repo,
+) -> None:
+    """The historical blind spot is measured without accepting added fields."""
+    parent_source = _legacy_initialisation(repo)
+    legacy = repo.ledger()
+    repo.write("pkg/wide.py", parent_source + "  self.added = 1\n")
+    repo.git("add", "pkg/wide.py")
+    code, out = repo.run("--update")
+    assert code == 1, out
+    assert "raised_ceiling: initialisation_attributes pkg/wide.py::Wide: 25 -> 26" in out
+    assert repo.ledger() == legacy
+
+    repo.write("pkg/wide.py", parent_source)
+    code, out = repo.run("--update")
+    assert code == 0, out
+    assert "schema = 2" in repo.ledger()
+    assert '"pkg/wide.py::Wide" = 25' in repo.ledger()
+    assert '"pkg/long.py::listed" = 70' in repo.ledger()
+    assert repo.run("--check")[0] == 0
+    repo.commit()
+
+    repo.write("pkg/wide.py", parent_source + "  self.added = 1\n")
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "above_ceiling: initialisation_attributes pkg/wide.py::Wide" in out
+    repo.write("budget.toml", repo.ledger().replace('Wide" = 25', 'Wide" = 26'))
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "raised_ceiling: initialisation_attributes" in out
+
+
+def test_new_helper_only_wide_class_is_refused_by_the_actual_gate(repo: Repo) -> None:
+    """Moving every assignment outside __init__ no longer escapes admission."""
+    repo.write(
+        "pkg/hidden.py",
+        "class Hidden:\n def __init__(self):\n  self.receive()\n def receive(self):\n"
+        + "".join(f"  self.field{i} = {i}\n" for i in range(21)),
+    )
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "over_threshold_unlisted: initialisation_attributes pkg/hidden.py::Hidden" in out
+    code, out = repo.run("--update")
+    assert code == 1
+    assert "new_debt: initialisation_attributes pkg/hidden.py::Hidden" in out
+
+
+def test_initialisation_uncertainty_is_visible_in_the_cli_result(repo: Repo) -> None:
+    """Inherited and dynamic effects are flagged instead of claimed to be zero."""
+    repo.write(
+        "pkg/dynamic.py",
+        "class Dynamic(Base):\n def __init__(self):\n"
+        "  self.inherited()\n  setattr(self, name, 1)\n",
+    )
+    code, out = repo.run("--check")
+    assert code == 0
+    assert "initialisation unresolved: pkg/dynamic.py::Dynamic" in out
+    assert "unresolved method inherited" in out
+    assert "dynamic attribute name" in out
+
+
+def test_schema_cannot_be_downgraded_to_reopen_measurement_bootstrap(repo: Repo) -> None:
+    """A current baseline cannot be reset by writing a legacy candidate ledger."""
+    repo.write(
+        "budget.toml",
+        LEDGER_HEAD + '\n[ceilings.function_body_lines]\n"pkg/long.py::listed" = 70\n',
+    )
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "schema_downgrade" in out
+
+
+def test_legacy_schema_cannot_claim_the_new_measure(repo: Repo) -> None:
+    """The closed upgrade accepts the indicator only in its declared format."""
+    repo.write(
+        "budget.toml",
+        LEDGER_HEAD.replace(
+            "init_attributes = 20", "init_attributes = 20\ninitialisation_attributes = 20"
+        ),
+    )
+    code, out = repo.run("--check")
+    assert code == 2
+    assert "initialisation measure requires schema 2" in out
+
+
+def test_missing_parent_blob_refuses_migration_without_rewriting_ledger(repo: Repo) -> None:
+    """A real missing historical object cannot supply a trusted replacement ceiling."""
+    _legacy_initialisation(repo)
+    before = repo.ledger()
+    blob = repo.git("rev-parse", "HEAD:pkg/wide.py").strip()
+    object_path = repo.root / ".git" / "objects" / blob[:2] / blob[2:]
+    assert object_path.is_file()
+    object_path.unlink()
+    code, out = repo.run("--update")
+    assert code == 2
+    assert "baseline_unavailable" in out
+    assert repo.ledger() == before

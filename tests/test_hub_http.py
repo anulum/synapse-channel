@@ -14,13 +14,50 @@ import contextlib
 import json
 
 import pytest
+from websockets.asyncio.server import ServerConnection, serve
 from websockets.datastructures import Headers
-from websockets.http11 import Request
+from websockets.http11 import Request, Response
 
 from hub_e2e_helpers import http_get, running_hub
 from synapse_channel.core import hub_http
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.metrics import HEALTH_CONTENT_TYPE, PROMETHEUS_CONTENT_TYPE
+
+
+async def test_non_upgrade_callback_refuses_a_real_http_connection() -> None:
+    """The legacy callback guard handles an actual HTTP connection without registration."""
+    hub = SynapseHub(enable_metrics=True)
+    port = 0
+    observed: list[tuple[ServerConnection, Response]] = []
+
+    def probe(_connection: ServerConnection, request: Request) -> Response | None:
+        """Use the production HTTP boundary on the actual listening address."""
+        return hub_http.http_request_response(hub, request, bind_host="127.0.0.1", bind_port=port)
+
+    async def callback(connection: ServerConnection, request: Request, response: Response) -> None:
+        """Present the real non-upgrade connection at the public callback boundary."""
+        assert connection.request is request
+        assert connection.response is response
+        assert response.status_code == 200
+        await hub.handler(connection)
+        observed.append((connection, response))
+        assert hub.connected_clients == set()
+
+    try:
+        async with serve(
+            hub.handler, "127.0.0.1", 0, process_request=probe, process_response=callback
+        ) as server:
+            port = int(server.sockets[0].getsockname()[1])
+            status, _headers, body = await http_get(
+                f"ws://127.0.0.1:{port}", "/health", host="127.0.0.1"
+            )
+            assert status == 200
+            assert json.loads(body)["status"] == "ok"
+        assert len(observed) == 1
+        assert hub.connected_clients == set()
+        assert hub.agent_sockets == {}
+    finally:
+        hub.close()
 
 
 def _request(path: str, *, authorization: str | None = None) -> Request:

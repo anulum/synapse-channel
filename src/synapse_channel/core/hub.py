@@ -23,7 +23,6 @@ routing core stays a table lookup rather than a growing branch ladder.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import ssl
 from collections.abc import Callable, Iterable, Mapping
@@ -45,11 +44,10 @@ from synapse_channel.core.atomic_operations import (
     AtomicExecution,
     OperationDraft,
     OperationRecord,
-    canonical_request_digest,
-    idempotency_conflict_response,
 )
 from synapse_channel.core.deadlock import prune_waits
 from synapse_channel.core.handlers import DISPATCH
+from synapse_channel.core.hub_atomic_operations import HubAtomicOperations
 from synapse_channel.core.hub_component_callbacks import HubComponentCallbacks
 from synapse_channel.core.hub_components import HubComponents
 from synapse_channel.core.hub_config import HubConfig, config_fingerprint
@@ -90,13 +88,14 @@ from synapse_channel.core.hub_frame_registration import (
     register_delivery_session,
     register_sender,
 )
-from synapse_channel.core.hub_http import http_endpoint_response
+from synapse_channel.core.hub_http import http_request_response
 from synapse_channel.core.hub_ingress import HubIngress
-from synapse_channel.core.hub_ledger_guard import FindingQuota
+from synapse_channel.core.hub_ledger_guard import FindingQuota, HubLedgerGuard
 from synapse_channel.core.hub_service_lifetime import (
     HubServiceHooks,
     HubServiceLifetime,
 )
+from synapse_channel.core.idempotency import IdempotencyCache
 from synapse_channel.core.identity_enrollments import (
     merge_enrolled_keys,
 )
@@ -110,14 +109,9 @@ from synapse_channel.core.message_auth import (
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
 from synapse_channel.core.protected_write_proposal import ProtectedWriteProposalLimits
-from synapse_channel.core.protected_write_request import (
-    parse_protected_write_request,
-    protected_write_operation_key,
-)
 from synapse_channel.core.protected_write_session_auth import (
     AuthenticatedProtectedRequest,
     ProtectedSessionEnrollment,
-    recheck_authenticated_protected_request,
 )
 from synapse_channel.core.protocol import (
     MessageType,
@@ -610,8 +604,7 @@ class SynapseHub(HubConfigView):
         self.chat_dedupe = state.chat_dedupe
         self.blackboard = seeded.blackboard
         self._dark_seats = state.dark_seats
-        self._ledger = state.ledger
-        self._idempotency = self._ledger.idempotency
+        self._operations = HubAtomicOperations(self, state.ledger)
 
     @classmethod
     def from_config(cls, config: HubConfig | None = None) -> SynapseHub:
@@ -636,6 +629,16 @@ class SynapseHub(HubConfigView):
         hub = cls(**resolved.to_kwargs())
         hub.config_epoch = config_fingerprint(resolved)
         return hub
+
+    @property
+    def _ledger(self) -> HubLedgerGuard:
+        """Read the original resumed ledger through its atomic-operation owner."""
+        return self._operations.ledger
+
+    @property
+    def _idempotency(self) -> IdempotencyCache:
+        """Read the cache from its ledger owner without retaining another alias."""
+        return self._operations.ledger.idempotency
 
     # -- helpers --------------------------------------------------------------
 
@@ -673,53 +676,11 @@ class SynapseHub(HubConfigView):
         Thin wrapper over :class:`HubLedgerGuard`, injecting the hub's per-socket
         send so the guard re-sends the original response to the duplicate's sender.
         """
-        outcomes: list[str] = []
-        replayed = await self._ledger.maybe_replay_duplicate(
-            msg_type,
-            data,
-            websocket,
-            self.send_json,
-            outcomes.append,
-        )
-        for outcome in outcomes:
-            self._record_atomic_outcome(outcome)
-        if replayed and outcomes == ["replayed"]:
-            await self.settle_atomic_operation(data)
-        return replayed
-
-    def _record_atomic_outcome(self, outcome: str) -> None:
-        """Increment one bounded, label-free atomic-operation decision counter."""
-        if outcome == "inserted":
-            self.counters.atomic_operations_inserted += 1
-            self.counters.operation_outbox_pending += 1
-        elif outcome == "replayed":
-            self.counters.atomic_operations_replayed += 1
-        elif outcome == "conflict":
-            self.counters.atomic_operations_conflicts += 1
+        return await self._operations.replay_duplicate(msg_type, data, websocket, self.send_json)
 
     async def settle_atomic_operation(self, data: dict[str, Any]) -> None:
         """Mark a committed evidence intent projected after successful transport."""
-        if self.journal is None:
-            return
-        operation_key = self._ledger.idempotency_key(data)
-        if not operation_key:
-            return
-        stored = self.journal.get_operation(operation_key)
-        if stored is None:
-            return
-        try:
-            settled = await asyncio.to_thread(
-                self.journal.mark_operation_intent_delivered,
-                operation_key,
-                f"local:{stored.response_sha256}",
-            )
-        except KeyError:
-            return
-        # A replayed duplicate settles the same receipt again; count it once.
-        if settled:
-            self.counters.operation_outbox_pending = max(
-                0, self.counters.operation_outbox_pending - 1
-            )
+        await self._operations.settle_atomic_operation(data)
 
     async def run_atomic_operation(
         self,
@@ -733,26 +694,14 @@ class SynapseHub(HubConfigView):
         publish: Callable[[Any], None] | None = None,
     ) -> AtomicExecution | None:
         """Run a keyed journal-backed mutation through the atomic operation actor."""
-        if self.journal is None:
-            return None
-        operation_key = self._ledger.idempotency_key(data)
-        if not operation_key:
-            return None
-        request_digest = canonical_request_digest(data)
-        return await self._run_keyed_atomic_operation(
-            operation_key,
-            request_digest,
+        return await self._operations.run_atomic_operation(
+            data,
             mutate,
             prepare,
-            conflict=lambda existing: idempotency_conflict_response(
-                sender=str(data.get("sender") or ""), reference=existing.response
-            ),
             subject=subject,
             publish_candidate=publish_candidate,
             persist_uncommitted=persist_uncommitted,
             publish=publish,
-            allow_legacy_digestless_replay=True,
-            require_committed_response=False,
         )
 
     async def run_authenticated_protected_write_operation(
@@ -793,26 +742,15 @@ class SynapseHub(HubConfigView):
         Authentication has consumed the replay nonce; callbacks are trusted, synchronous, I/O-free.
         Read-only verbs use separate admission; this installs no handler or OS isolation proof.
         """
-
-        def authorize() -> None:
-            recheck_authenticated_protected_request(
-                authenticated,
-                enrollments=current_enrollments(),
-                authenticated_principal=current_principal(),
-                now=clock(),
-            )
-
-        enrollment = authenticated.enrollment
-        return await self._run_protected_write_operation(
-            authenticated.parsed.canonical_bytes,
+        return await self._operations.run_authenticated_protected_write_operation(
+            authenticated,
             mutate,
             prepare,
             limits=limits,
-            authenticated_principal=enrollment.principal,
-            authority_id=enrollment.authority_id,
-            authority_continuity=enrollment.authority_continuity,
+            current_enrollments=current_enrollments,
+            current_principal=current_principal,
+            clock=clock,
             conflict=conflict,
-            authorize=authorize,
         )
 
     async def _run_protected_write_operation(
@@ -837,89 +775,17 @@ class SynapseHub(HubConfigView):
         lock; admission policy checked before waiting for that lock may be stale.
         Read-only prepare/status do not use this mutation boundary.
         """
-        operation_key = protected_write_operation_key(
+        return await self._operations.run_protected_write_operation(
             raw,
+            mutate,
+            prepare,
             limits=limits,
             authenticated_principal=authenticated_principal,
             authority_id=authority_id,
             authority_continuity=authority_continuity,
-        )
-        parsed = parse_protected_write_request(raw, limits=limits)
-        if json.loads(parsed.canonical_bytes)["type"] in (
-            "protected_write_prepare",
-            "protected_write_status",
-        ):
-            raise ValueError("read-only protected requests cannot use the mutation boundary")
-        return await self._run_keyed_atomic_operation(
-            operation_key,
-            parsed.request_digest,
-            mutate,
-            prepare,
             conflict=conflict,
-            allow_legacy_digestless_replay=False,
-            require_committed_response=True,
             authorize=authorize,
         )
-
-    async def _run_keyed_atomic_operation(
-        self,
-        operation_key: str,
-        request_digest: str,
-        mutate: Callable[[Any], Any],
-        prepare: Callable[[Any], OperationDraft | None],
-        *,
-        conflict: Callable[[OperationRecord], dict[str, Any]],
-        allow_legacy_digestless_replay: bool,
-        require_committed_response: bool,
-        authorize: Callable[[], None] | None = None,
-        subject: Any | None = None,
-        publish_candidate: Callable[[Any], None] | None = None,
-        persist_uncommitted: Callable[[Any], None] | None = None,
-        publish: Callable[[Any], None] | None = None,
-    ) -> AtomicExecution:
-        """Share one journal/cache/actor for legacy and protected operation keys."""
-        if self.journal is None:
-            raise ValueError("atomic execution requires a durable journal")
-        journal = self.journal
-
-        def commit(draft: OperationDraft) -> Any:
-            return journal.commit_operation(
-                operation_key=operation_key,
-                request_digest=request_digest,
-                response=draft.response,
-                events=draft.events,
-                intent=draft.intent,
-                response_event_seq_field=draft.response_event_seq_field,
-                finalize_response=draft.finalize_response,
-            )
-
-        mutation_subject = self.state if subject is None else subject
-        candidate_publisher: Callable[[Any], None]
-        if subject is None:
-            candidate_publisher = self.state.publish_from
-        elif publish_candidate is not None:
-            candidate_publisher = publish_candidate
-        else:
-            raise ValueError("a non-state atomic subject requires a candidate publisher")
-
-        execution = await self.state_mutations.run_atomic(
-            mutation_subject,
-            mutate,
-            request_digest=request_digest,
-            lookup=lambda: self._ledger.lookup_operation(operation_key),
-            prepare=prepare,
-            commit=commit,
-            remember=self._ledger.remember_operation,
-            conflict=conflict,
-            publish_candidate=candidate_publisher,
-            persist_uncommitted=persist_uncommitted,
-            publish=publish,
-            allow_legacy_digestless_replay=allow_legacy_digestless_replay,
-            require_committed_response=require_committed_response,
-            authorize=authorize,
-        )
-        self._record_atomic_outcome(execution.outcome)
-        return execution
 
     def system(self, payload: str, **extra: Any) -> dict[str, Any]:
         """Build a hub system message stamped with this hub's id."""
@@ -1607,31 +1473,9 @@ class SynapseHub(HubConfigView):
         :func:`~synapse_channel.core.hub_http.http_endpoint_response` (only when
         :attr:`enable_metrics` is set); other paths proceed to the WebSocket upgrade.
         """
-        from synapse_channel.core.hub_handshake import (
-            handshake_guard_response,
-            http_forbidden,
-            trusted_host_authorities,
+        return http_request_response(
+            self, request, bind_host=self._bind_host, bind_port=self._bind_port
         )
-
-        authorities = trusted_host_authorities(
-            bind_host=self._bind_host,
-            bind_port=self._bind_port,
-            advertised_host=self.advertised_host,
-        )
-        refusal = handshake_guard_response(
-            request,
-            allowed_origins=self.allowed_origins,
-            trusted_authorities=authorities,
-        )
-        if refusal is not None:
-            return refusal
-        route = request.path.split("?", 1)[0]
-        if route in ("/metrics", "/health"):
-            if self.enable_metrics:
-                return http_endpoint_response(self, request)
-            # Metrics off: do not upgrade probe paths to WebSocket either.
-            return http_forbidden("metrics disabled")
-        return None
 
     @property
     def bound_address(self) -> tuple[str, int] | None:

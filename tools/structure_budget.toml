@@ -7,12 +7,13 @@
 # SYNAPSE CHANNEL — structure budget ledger
 # Structure budget: recorded figures of units above their threshold.
 # Written by `python -m tools.check_structure_budget --update`. A figure may only fall.
-schema = 1
+schema = 2
 roots = ["src/synapse_channel", "tools"]
 
 [thresholds]
 constructor_parameters = 12
 init_attributes = 20
+initialisation_attributes = 20
 init_constructions = 5
 function_body_lines = 60
 function_branches = 15
@@ -33,6 +34,11 @@ names = ["argparse._SubParsersAction"]
 
 [ceilings.init_attributes]
 "src/synapse_channel/client/agent.py::SynapseAgent" = 43
+"src/synapse_channel/core/hub_clients.py::HubClientRegistry" = 25
+
+[ceilings.initialisation_attributes]
+"src/synapse_channel/client/agent.py::SynapseAgent" = 43
+"src/synapse_channel/core/hub.py::SynapseHub" = 74
 "src/synapse_channel/core/hub_clients.py::HubClientRegistry" = 25
 
 [ceilings.init_constructions]

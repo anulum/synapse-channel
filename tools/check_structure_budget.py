@@ -40,12 +40,15 @@ from typing import Any
 import tomllib
 
 from tools.structure_measures import MEASURES, Figures, measure_roots
+from tools.structure_revision import measure_revision
 
 __all__ = ["Ledger", "LedgerError", "Violation", "check_baseline", "check_tree", "main"]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LEDGER = "tools/structure_budget.toml"
-SCHEMA = 1
+SCHEMA = 2
+_INITIALISATION_MEASURE = "initialisation_attributes"
+_INITIALISATION_THRESHOLD = 20
 CONFIGURATION = "configuration"
 _EXCEPTION_FIELDS = ("unit", "measure", "allowed", "reason", "owner", "review_by")
 _HEADER = (
@@ -116,6 +119,7 @@ class Ledger:
     ceilings: dict[str, dict[str, int]]
     moves: tuple[dict[str, str], ...] = ()
     exceptions: tuple[dict[str, Any], ...] = field(default=())
+    schema: int = SCHEMA
 
     def excepted(self, measure: str, unit: str) -> dict[str, Any] | None:
         """Return the exception recorded for a unit under a measure, if any."""
@@ -158,6 +162,26 @@ def _exception_entries(raw: object) -> tuple[dict[str, Any], ...]:
     return tuple(dict(entry) for entry in raw)
 
 
+def _schema(data: dict[str, Any]) -> int:
+    """Accept only the retained legacy schema and the current schema."""
+    schema = data.get("schema")
+    if not isinstance(schema, int) or isinstance(schema, bool) or schema not in (1, SCHEMA):
+        raise LedgerError(f"ledger_malformed: schema must be 1 or {SCHEMA}")
+    return schema
+
+
+def _thresholds(data: dict[str, Any], schema: int) -> dict[str, int]:
+    """Supply the new indicator only when reading the exact legacy format."""
+    thresholds = _integer_table(data.get("thresholds"), "thresholds")
+    if schema == 1:
+        if _INITIALISATION_MEASURE in thresholds or _INITIALISATION_MEASURE in data.get(
+            "ceilings", {}
+        ):
+            raise LedgerError("ledger_malformed: initialisation measure requires schema 2")
+        thresholds[_INITIALISATION_MEASURE] = _INITIALISATION_THRESHOLD
+    return thresholds
+
+
 def parse_ledger(text: str) -> Ledger:
     """Parse and validate the text of a structure budget.
 
@@ -181,12 +205,11 @@ def parse_ledger(text: str) -> Ledger:
         data = tomllib.loads(text)
     except ValueError as error:
         raise LedgerError(f"ledger_malformed: {error}") from error
-    if data.get("schema") != SCHEMA:
-        raise LedgerError(f"ledger_malformed: schema must be {SCHEMA}")
+    schema = _schema(data)
     roots = data.get("roots")
     if not isinstance(roots, list) or not roots or not all(isinstance(r, str) for r in roots):
         raise LedgerError("ledger_malformed: roots must be a non-empty array of paths")
-    thresholds = _integer_table(data.get("thresholds"), "thresholds")
+    thresholds = _thresholds(data, schema)
     ceilings_raw = data.get("ceilings", {})
     unknown = (set(thresholds) ^ set(MEASURES)) | (set(ceilings_raw) - set(MEASURES))
     if unknown:
@@ -203,6 +226,7 @@ def parse_ledger(text: str) -> Ledger:
         ceilings={m: _integer_table(ceilings_raw.get(m, {}), f"ceilings.{m}") for m in MEASURES},
         moves=tuple(dict(move) for move in moves),
         exceptions=_exception_entries(data.get("exceptions", [])),
+        schema=schema,
     )
 
 
@@ -324,6 +348,8 @@ def _check_configuration_exceptions(ledger: Ledger, today: datetime.date) -> lis
 def _check_configuration(ledger: Ledger, baseline: Ledger) -> list[Violation]:
     """Reject reduced measurement scope and unrecorded configuration growth."""
     found: list[Violation] = []
+    if ledger.schema < baseline.schema:
+        found.append(Violation("schema_downgrade", CONFIGURATION, "schema", "schema may not fall"))
     removed_roots = sorted(set(baseline.roots) - set(ledger.roots))
     if removed_roots:
         detail = f"measured roots removed: {removed_roots}"
@@ -429,9 +455,27 @@ def load_baseline(root: Path, revision: str, ledger_path: str) -> Ledger | None:
     known = _git(root, "rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}")
     if known.returncode != 0:
         raise LedgerError(f"baseline_unavailable: unknown revision {revision!r}")
-    if not _git_output(root, "ls-tree", "--name-only", revision, "--", ledger_path).strip():
+    commit = known.stdout.strip()
+    if not _git_output(root, "ls-tree", "--name-only", commit, "--", ledger_path).strip():
         return None
-    return parse_ledger(_git_output(root, "show", f"{revision}:{ledger_path}"))
+    baseline = parse_ledger(_git_output(root, "show", f"{commit}:{ledger_path}"))
+    if baseline.schema == 1:
+        try:
+            measured = measure_revision(
+                root,
+                commit,
+                baseline.roots,
+                allowed_private=baseline.allowed_private,
+            )
+        except ValueError as error:
+            raise LedgerError(f"baseline_unavailable: {error}") from error
+        units = measured[_INITIALISATION_MEASURE]
+        ceilings = dict(baseline.ceilings)
+        ceilings[_INITIALISATION_MEASURE] = {
+            unit: figure for unit, figure in units.items() if figure > _INITIALISATION_THRESHOLD
+        }
+        baseline = replace(baseline, ceilings=ceilings, schema=SCHEMA)
+    return baseline
 
 
 def _with_measured_ceilings(ledger: Ledger, figures: Figures) -> Ledger:
@@ -444,7 +488,7 @@ def _with_measured_ceilings(ledger: Ledger, figures: Figures) -> Ledger:
         }
         for measure in MEASURES
     }
-    return replace(ledger, ceilings=ceilings)
+    return replace(ledger, ceilings=ceilings, schema=SCHEMA)
 
 
 def _report(ledger: Ledger, baseline: Ledger | None) -> list[str]:
@@ -483,7 +527,12 @@ def _run(arguments: argparse.Namespace) -> int:
         ledger = parse_ledger(path.read_text(encoding="utf-8"))
     except OSError as error:
         raise LedgerError(f"ledger_missing: {error}") from error
-    figures = measure_roots(root, ledger.roots, allowed_private=ledger.allowed_private)
+    unresolved: dict[str, tuple[str, ...]] = {}
+    figures = measure_roots(
+        root, ledger.roots, allowed_private=ledger.allowed_private, unresolved=unresolved
+    )
+    for unit, calls in sorted(unresolved.items()):
+        print(f"initialisation unresolved: {unit}: {'; '.join(calls)}")
     baseline = None
     if not arguments.no_baseline:
         baseline = load_baseline(root, arguments.baseline, arguments.ledger)

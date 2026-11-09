@@ -593,6 +593,31 @@ constructor builds, function length and branches, internal imports of a module,
 and access to another object's private members. Units above a threshold are
 listed with their exact figure in `tools/structure_budget.toml`.
 
+Known initialisation attributes are also counted through calls to methods of the same
+class, starting at `__init__`. The transitive union includes conditional helpers,
+recursive calls, assignment forms and literal attribute setters. Moving an
+assignment into a helper therefore does not reduce that figure. The original
+direct-constructor count remains a separate historical indicator. Calls whose
+effects cannot be resolved from the class source are printed as
+`initialisation unresolved`; they require source review and do not establish
+that the call assigns no attributes. The numeric figure is a known lower bound
+when such flags are present; source review must account for those effects.
+
+Schema 2 introduces this indicator without changing the original measures.
+When comparing with a schema-1 baseline, its initialisation figures come from
+the exact parent commit's Python blobs, measured with the current algorithm.
+They never come from the candidate working tree. A listed figure cannot grow
+during the migration, and the schema cannot subsequently be downgraded.
+
+The syntactic gate does not establish that a module has one responsibility.
+Review growth at the change boundary: name the component that owns the behaviour
+and check whether the module, function or class still does one thing. The
+300-line module, 50-line function and 10-method class guidelines trigger that
+review. A compatibility facade may retain existing entry points while the
+owning component holds their implementation; new behaviour belongs with its
+owner. Splitting a file or adding forwarding methods alone does not demonstrate
+that responsibility has been separated.
+
 ```bash
 python -m tools.check_structure_budget --check --baseline HEAD    # pre-commit and CI run this
 python -m tools.check_structure_budget --update --baseline HEAD   # after shortening a listed unit

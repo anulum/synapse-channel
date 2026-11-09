@@ -37,6 +37,13 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Hub atomic execution, replay and receipt settlement share an explicit owner
+  over the existing mutation actor and journal. HTTP admission and probe routing
+  live together in the HTTP component; the hub retains its public entry points.
+- Structure checks count attributes assigned through constructor helper calls.
+  The new indicator is bound to committed parent-source measurements during its
+  ledger migration, rejects growth beyond recorded limits and reports unresolved
+  dynamic effects for source review. Existing measurement limits are unchanged.
 - Protected transport reports handler and post-handler validation failures as
   unavailable, because their original operation may already be durable. Native
   frontend control refuses undersized envelope policy before serving and
