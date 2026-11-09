@@ -517,6 +517,14 @@ evidence. Run the owning `tests/test_protected_runtime_probe_*.py` tests for
 ordinary API, CLI and refusal contracts; successful ordinary tests alone do not
 establish dedicated host-role isolation.
 
+The [qualification evidence contract](docs/coordination-spec.md#finite-runtime-qualification-evidence)
+keeps host prerequisites, captured runtime, instrumented execution, ordinary
+analysis and portable observations separate. In particular, the complete
+application coverage gate does not qualify the probe tools' coverage, and
+source-bound observations cannot be transferred to changed source or another
+platform. The [security policy](SECURITY.md#threat-model-and-posture) also states
+the trusted writer's symmetric authority-key boundary.
+
 The ordinary role-boundary tests use private account files and single-UID user
 namespaces; they do not create host accounts. Setting `SYNAPSE_TEST_COVERAGE_DIR`
 to an existing writable directory records both real fixture CLI entries and

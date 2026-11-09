@@ -541,12 +541,68 @@ and exclusion of outside writable holders remain launch obligations. Signed
 current status is a point-in-time read, not revocation fencing. This API
 installs no writer or service and grants no settlement or recovery permission.
 
+`ProtectedWriteCurrentStatus` retains a `MessageAuthKey` for the authority
+response. This is a symmetric HMAC-SHA256 key held by the trusted writer, so a
+verified response does not establish non-forgery against that writer. Request
+binding, freshness and replay checks remain necessary, but they do not turn
+shared-key authentication into independent authority attestation. Separate
+Ed25519 event signatures do not replace this client's HMAC verification key.
+
 The [Linux profiles](https://github.com/anulum/synapse-channel/blob/main/CONTRIBUTING.md#kernel-checked-execution-and-authority-ipc-profiles)
 exercise pre-effect refusal, signed status under the descriptor filter, durable
 enrolment revocation, delayed-begin refusal and owned process cancellation.
 Their component results do not certify an installed writer profile.
 
 ::: synapse_channel.core.protected_write_kernel_execution
+
+### Finite runtime qualification evidence
+
+The source-checkout `tools.protected_runtime_probe` workflow prepares and checks
+one finite disposable guest attempt. It is separate from the installed library
+entry point above. Its public preparation and analysis commands expose their
+arguments without starting a guest:
+
+```bash
+python -m tools.protected_runtime_probe.prepare --help
+python -m tools.protected_runtime_probe.instrumentation_analysis --help
+```
+
+Preparation binds the source capsule, dependency bytes, bootstrap and a fresh
+per-attempt guest UUID. The independently reviewed launcher, guest identity,
+readonly seed, private disks, evidence return and resource envelope MUST also
+match before execution. A prepared packet or a printed guest-side command is
+not launch authority. Refusal or failed cleanup MUST preserve uncertainty and
+held inputs; it grants no automatic retry, repair or cleanup permission.
+
+| Evidence surface | What it checks | What it does not establish |
+| --- | --- | --- |
+| Default host-tools prerequisite packet | Its enrolled native prerequisites and finite role-boundary observations | A captured complete runtime or an installed service |
+| Captured-runtime packet | Exact captured executable, import closure and package/wheel provenance | Permission to substitute host Python or admit a different source |
+| Instrumented captured-runtime attempt | Six process contexts bound to exact enrolled collector and output bytes | An uninstrumented resource/performance result or whole-runtime acceptance |
+| Ordinary recording analysis | Report, capsule, sealed dataset and current-source associations before combining private working copies | A protected-operation grant, physical recovery custody or deployment authority |
+| Windows/macOS portability artifact | Actual branch observations bound to the successful producer, platform and committed source | Linux peer credentials, native role isolation or whole-scope qualification |
+
+Recording changes the controller's inherited file-size limit and the authority's
+shutdown profile; the report MUST keep those differences with the result.
+Instrumentation storage exhaustion is an instrumentation error, not a product
+result. Bootstrap admission, readonly recapture, collector startup and final
+sealing/publication are explicitly outside the recorded coverage scope.
+Registered sources and sources with executed arcs MUST remain distinguishable.
+
+Linux indexed CI retains actual probe child observations separately from the
+mandatory kernel-writer directories, then binds the combined data in its shard
+artifact. The complete application coverage gate applies to `src/synapse_channel`;
+it is not a coverage qualification of the probe tools. Portability artifacts
+likewise carry observation data without claiming whole-scope coverage. A consumer
+MUST check the producer result, source hashes, configuration, platform and data
+digest before using either kind of observation; another head or platform is not
+an interchangeable result.
+
+The [finite qualification procedure](https://github.com/anulum/synapse-channel/blob/main/CONTRIBUTING.md#finite-linux-runtime-qualification)
+defines prerequisites, collection and failure retention. These finite results
+do not establish an installed supervisor, writer, recovery service or authorised
+read service, complete consumer migration, settlement custody, revocation fencing
+or independent action-control admission.
 
 ### Known-state recovery inputs and evidence
 

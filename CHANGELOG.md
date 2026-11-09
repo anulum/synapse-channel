@@ -18,6 +18,14 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- Documented the protected file-operation library and finite qualification
+  workflow together, including the source-checkout commands, separate native
+  and portability evidence, measurement limits and the trusted writer's
+  symmetric authority-status key boundary. These documentation changes grant
+  no deployment, recovery or retry authority.
+
 ## [0.99.50] - 2026-11-08
 
 ### Added

@@ -115,6 +115,21 @@ independently establish installation integrity, separate principals, closed
 descriptors, syscall confinement and exclusion of outside writable holders.
 This library API grants no settlement, retry, recovery or deployment authority.
 
+The trusted writer's `ProtectedWriteCurrentStatus` holds the authority's symmetric
+HMAC verification key. Possession of that key is therefore inside the trust
+boundary: status authentication does not establish non-forgery against that
+writer. Fresh request binding and replay checks do not make this an independent
+authority attestation. The optional Ed25519 event-signature surface does not
+change the key used by this status client.
+
+The source-checkout qualification tools exercise a finite, reviewed disposable
+guest and preserve exact source, dependency, role and output bindings.
+Instrumented attempts additionally change the recorded resource and shutdown
+profile. Neither a successful attempt nor ordinary analysis of its sealed
+recordings authorises deployment, recovery or a retry. Portable CI observations
+carry their actual platform and source hashes and confer no native isolation
+qualification. See the [qualification evidence contract](docs/coordination-spec.md#finite-runtime-qualification-evidence).
+
 `ProtectedPathDescriptors.read_bytes()` captures only the expected regular
 file's bounded bytes using positional reads, then revalidates the retained
 topology and content. Substituting the external root pathname cannot redirect

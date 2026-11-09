@@ -1857,6 +1857,23 @@ claim, refuse an overlap, unblock, hand off), and `llm_team_demo.py` asks an
 on-channel model worker a question. Each starts its own in-process hub, so
 `python examples/coordination_demo.py` runs with nothing else set up.
 
+### Protected file-operation APIs
+
+Advanced library consumers can combine durable admission and execution records,
+retained filesystem descriptors, current authority status and known-state
+recovery evidence. The [protected execution contract](docs/coordination-spec.md#kernel-checked-execution-composition)
+states the required inputs and the limits of each observation. These mechanisms
+require an independently qualified supervisor and writer launch; installing the
+package does not install those services or grant filesystem authority.
+
+A source checkout also provides a
+[finite runtime qualification workflow](docs/coordination-spec.md#finite-runtime-qualification-evidence)
+with pinned guest inputs and separate ordinary-user recording analysis.
+See the [contributor procedure](CONTRIBUTING.md#finite-linux-runtime-qualification)
+for prerequisites and review boundaries. Component tests, portable CI observations
+and a successful finite guest attempt each retain their own scope; none certifies
+an installed protected runtime or revocation fencing.
+
 ## Architecture
 
 | Module | Responsibility |

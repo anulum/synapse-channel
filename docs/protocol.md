@@ -288,7 +288,7 @@ followed by the RFC 8785 canonical JSON of the whole frame with only
 `frame_signature.value` left out. Integers must stay within ±(2**53 − 1).
 The registration frame keeps its registration `signature` and carries no
 `frame_signature`. A refusal is an `error` whose `verification_result` names
-the reason; [per-message authentication](per-message-authentication.md#per-connection-identity-signatures---require-signed-frames)
+the reason; [per-message authentication](per-message-authentication.md#per-connection-identity-signatures-require-signed-frames)
 lists them, and `tests/fixtures/frame_signature_vectors.json` holds shared
 vectors that every signing client must reproduce. A hub without the flag adds
 no such field, and clients send it unchanged frames.
