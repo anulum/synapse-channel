@@ -115,12 +115,22 @@ independently establish installation integrity, separate principals, closed
 descriptors, syscall confinement and exclusion of outside writable holders.
 This library API grants no settlement, retry, recovery or deployment authority.
 
-The trusted writer's `ProtectedWriteCurrentStatus` holds the authority's symmetric
-HMAC verification key. Possession of that key is therefore inside the trust
+With a `MessageAuthKey`, the trusted writer's `ProtectedWriteCurrentStatus` holds
+the authority's symmetric HMAC verification key. That key is inside the trust
 boundary: status authentication does not establish non-forgery against that
 writer. Fresh request binding and replay checks do not make this an independent
-authority attestation. The optional Ed25519 event-signature surface does not
-change the key used by this status client.
+authority attestation.
+
+Passing an `EventSignatureKey` instead explicitly selects the existing Ed25519
+event-signature verifier. This profile retains only the authority's public
+verification key in the status client; the authority's private key is not an
+input to the writer. Public-key responses require the current domain-separated
+signature version; the legacy domain-less event profile is refused.
+Both profiles retain exact request/status binding,
+freshness and response replay checks, with no algorithm fallback. The Ed25519
+profile requires the `encryption` extra. Trusted key enrolment, isolated signer
+custody and an independently qualified launch remain deployment obligations;
+selecting a public key does not establish an installed protected runtime.
 
 The source-checkout qualification tools exercise a finite, reviewed disposable
 guest and preserve exact source, dependency, role and output bindings.

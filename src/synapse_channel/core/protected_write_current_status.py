@@ -15,10 +15,15 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from synapse_channel.core.message_auth import (
+    EVENT_SIGNATURE_VERSION,
+    EventSignatureKey,
+    EventSignatureTrustBundle,
     MessageAuthKey,
     MessageReplayCache,
+    SignedEventVerificationResult,
     VerificationResult,
     sign_frame,
+    verify_event_signature,
     verify_frame,
 )
 from synapse_channel.core.protected_write_lifecycle import ProtectedWriteReservation
@@ -54,7 +59,7 @@ class ProtectedWriteCurrentStatus:
         *,
         begun: ProtectedWriteReservation,
         enrollment: ProtectedSessionEnrollment,
-        authority_key: MessageAuthKey,
+        authority_key: MessageAuthKey | EventSignatureKey,
         limits: ProtectedWriteProposalLimits,
         reason_codes: frozenset[str],
         exchange: Callable[[bytes], bytes | str],
@@ -64,11 +69,41 @@ class ProtectedWriteCurrentStatus:
     ) -> None:
         """Bind status exchange to the exact enrolled durable writer begin.
 
-        Retain the authority verification key, wire limits, reason codes, replay
-        cache, sequence source and clock supplied by the caller. Construction
-        checks the begin, admission and enrollment scope without contacting the
-        authority. Raise ValueError for a conflicting phase or writer scope;
-        malformed serialized begin data also refuses construction.
+        Parameters
+        ----------
+        begun:
+            Exact retained begin and its original admission.
+        enrollment:
+            Current writer session with its own request-signing credential.
+        authority_key:
+            Explicit response-verification profile. ``MessageAuthKey`` retains
+            a shared HMAC secret; ``EventSignatureKey`` retains only an Ed25519
+            public key and uses the existing event-signature verifier. Neither
+            profile falls back to the other when verification fails.
+            Public-key responses require the current domain-separated signature
+            version; the legacy domain-less event profile is refused.
+        limits, reason_codes:
+            Enrolled wire representation bounds and response vocabulary.
+        exchange:
+            Bounded exchange with the separately isolated authority endpoint.
+        next_sequence:
+            Writer-owned sequence source retained across requests and restarts.
+        clock:
+            Trusted clock for request and response freshness.
+        response_replay:
+            Replay cache used by the selected response-verification profile.
+
+        Raises
+        ------
+        ValueError
+            If the begin, admission or writer enrolment scope conflicts.
+
+        Notes
+        -----
+        Construction contacts no authority. Public-key verification removes the
+        need to share the authority signing secret with this client; trusted key
+        enrolment, signer isolation and installed-role custody remain separate
+        deployment obligations.
         """
         source = cast(dict[str, Any], json.loads(begun.request_bytes))
         body = cast(dict[str, Any], json.loads(begun.result_bytes)["body"])
@@ -132,6 +167,37 @@ class ProtectedWriteCurrentStatus:
         )
         return json.dumps(signed, sort_keys=True, separators=(",", ":")).encode("ascii")
 
+    def _verify_response(self, response: dict[str, Any]) -> None:
+        """Verify the enrolled response profile without an algorithm fallback."""
+        if isinstance(self._authority_key, EventSignatureKey):
+            signature = response.get("signature")
+            valid = (
+                isinstance(signature, dict)
+                and signature.get("version") == EVENT_SIGNATURE_VERSION
+                and verify_event_signature(
+                    response,
+                    trust_bundle=EventSignatureTrustBundle(
+                        {self._authority_key.key_id: self._authority_key}, self._response_replay
+                    ),
+                    now=self._clock(),
+                    required_sender=self._source["target"],
+                )
+                == SignedEventVerificationResult.VALID
+            )
+        else:
+            valid = (
+                verify_frame(
+                    response,
+                    keys={self._authority_key.key_id: self._authority_key},
+                    replay_cache=self._response_replay,
+                    now=self._clock(),
+                    required_sender=self._source["target"],
+                )
+                == VerificationResult.OK
+            )
+        if not valid:
+            raise ValueError("current authority status signature refused")
+
     def __call__(self) -> ProtectedWriteReservation:
         """Return the pinned begin only when the authority still reports it open.
 
@@ -174,17 +240,7 @@ class ProtectedWriteCurrentStatus:
             reason_codes=self._reason_codes,
         )
         response = cast(dict[str, Any], json.loads(parsed.canonical_bytes))
-        if (
-            verify_frame(
-                response,
-                keys={self._authority_key.key_id: self._authority_key},
-                replay_cache=self._response_replay,
-                now=self._clock(),
-                required_sender=self._source["target"],
-            )
-            != VerificationResult.OK
-        ):
-            raise ValueError("current authority status signature refused")
+        self._verify_response(response)
         body = cast(dict[str, Any], response["body"])
         begun = cast(dict[str, Any], json.loads(self._begun.result_bytes)["body"])
         if (

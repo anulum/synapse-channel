@@ -18,6 +18,16 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- Writer-side current-status verification accepts an explicitly enrolled
+  Ed25519 public key through the existing event-signature profile. The writer
+  does not need the authority's signing secret. Public-key replies require the
+  current domain-separated signature version and refuse legacy domain-less
+  signatures. HMAC remains an explicit shared-key
+  profile; neither verification path falls back to the other. Key enrolment
+  and installed signer/writer isolation still require separate qualification.
+
 ### Changed
 
 - Documented the protected file-operation library and finite qualification

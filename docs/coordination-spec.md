@@ -541,12 +541,25 @@ and exclusion of outside writable holders remain launch obligations. Signed
 current status is a point-in-time read, not revocation fencing. This API
 installs no writer or service and grants no settlement or recovery permission.
 
-`ProtectedWriteCurrentStatus` retains a `MessageAuthKey` for the authority
-response. This is a symmetric HMAC-SHA256 key held by the trusted writer, so a
+When configured with `MessageAuthKey`, `ProtectedWriteCurrentStatus` retains a
+symmetric HMAC-SHA256 key for the authority response, held by the trusted writer. A
 verified response does not establish non-forgery against that writer. Request
 binding, freshness and replay checks remain necessary, but they do not turn
-shared-key authentication into independent authority attestation. Separate
-Ed25519 event signatures do not replace this client's HMAC verification key.
+shared-key authentication into independent authority attestation.
+
+An explicitly enrolled `EventSignatureKey` selects public-key verification
+through the existing Ed25519 event-signature verifier instead. The public-key
+profile requires the current domain-separated signature version and MUST refuse
+legacy domain-less version-one event signatures. The authority uses
+`sign_event_frame`; the writer supplies the public verification entry and
+its response replay cache, without receiving the authority's private key. The
+result still MUST match the original request digest, authority, continuity,
+session, enrolment revision and exact begun reservation. A wrong key, sender,
+expired or revoked key, replay or other signature profile refuses the read;
+verification never falls back to HMAC. This profile requires the `encryption`
+extra and changes neither request authentication nor the seven-verb state
+machine. Independent key provenance, signer/process isolation and physical
+writer custody MUST still be qualified separately.
 
 The [Linux profiles](https://github.com/anulum/synapse-channel/blob/main/CONTRIBUTING.md#kernel-checked-execution-and-authority-ipc-profiles)
 exercise pre-effect refusal, signed status under the descriptor filter, durable

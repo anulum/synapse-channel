@@ -20,12 +20,19 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.asyncio.server import unix_serve
 from websockets.exceptions import ConnectionClosed
 
 from protected_write_socket_examples import private_unix_directory as private_unix_directory
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.message_auth import MessageAuthKey, MessageReplayCache, sign_frame
+from synapse_channel.core.message_auth import (
+    EventSignatureKey,
+    MessageAuthKey,
+    MessageReplayCache,
+    sign_event_frame,
+    sign_frame,
+)
 from synapse_channel.core.message_auth_durable import (
     DurableMessageAuthReplayStore,
     SequenceFloorMode,
@@ -53,7 +60,7 @@ def _filtered_writer(
     socket_identity: tuple[int, int],
     begun: ProtectedWriteReservation,
     enrollment: ProtectedSessionEnrollment,
-    authority_key: MessageAuthKey,
+    authority_key: MessageAuthKey | EventSignatureKey,
     limits: ProtectedWriteProposalLimits,
     channel: Connection,
 ) -> None:
@@ -123,6 +130,7 @@ async def _exercise_filtered_status(
     tmp_path: Path,
     private_unix_directory: Path,
     state: Literal["active", "revoked", "cancelled", "unbound"],
+    response_profile: Literal["hmac", "ed25519"],
 ) -> None:
     """Own the actual hub, filtered process and cleanup for each authority state."""
     store, prepared, _state = _begun(tmp_path)
@@ -150,8 +158,18 @@ async def _exercise_filtered_status(
         begun = hub.state.protected_write_reservations[prepared.admission.reservation_id]
         source = json.loads(begun.request_bytes)
         writer_key = MessageAuthKey("filtered-writer", b"w" * 32, frozenset({"EXAMPLE/writer"}))
-        authority_key = MessageAuthKey(
+        shared_authority_key = MessageAuthKey(
             "filtered-authority", b"a" * 32, frozenset({"EXAMPLE/authority"})
+        )
+        authority_private = Ed25519PrivateKey.generate()
+        authority_key: MessageAuthKey | EventSignatureKey = (
+            EventSignatureKey.from_private_key(
+                key_id="filtered-authority",
+                private_key=authority_private,
+                senders=frozenset({"EXAMPLE/authority"}),
+            )
+            if response_profile == "ed25519"
+            else shared_authority_key
         )
         enrollment = ProtectedSessionEnrollment(
             session_id=source["session_id"],
@@ -176,9 +194,18 @@ async def _exercise_filtered_status(
         def sign(frame: dict[str, object]) -> dict[str, object]:
             """Sign actual authority responses with distinct replay sequences."""
             number = next(replies)
+            if response_profile == "ed25519":
+                return sign_event_frame(
+                    frame,
+                    key_id=authority_key.key_id,
+                    private_key=authority_private,
+                    nonce=f"filtered-reply-{number}",
+                    sequence=number,
+                    signed_at=CONTEXT.now + 1,
+                )
             return sign_frame(
                 frame,
-                key=authority_key,
+                key=shared_authority_key,
                 nonce=f"filtered-reply-{number}",
                 sequence=number,
                 timestamp=CONTEXT.now + 1,
@@ -257,10 +284,12 @@ async def _exercise_filtered_status(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("state", ["active", "revoked", "cancelled", "unbound"])
+@pytest.mark.parametrize("response_profile", ["hmac", "ed25519"])
 async def test_filtered_writer_status_and_process_lifecycle(
     tmp_path: Path,
     private_unix_directory: Path,
     state: Literal["active", "revoked", "cancelled", "unbound"],
+    response_profile: Literal["hmac", "ed25519"],
 ) -> None:
     """Bind status to the actor, and reap a waiting child or a refused launch.
 
@@ -272,7 +301,9 @@ async def test_filtered_writer_status_and_process_lifecycle(
     """
     if state == "unbound":
         with pytest.raises(OSError):
-            await _exercise_filtered_status(tmp_path, private_unix_directory, state)
+            await _exercise_filtered_status(
+                tmp_path, private_unix_directory, state, response_profile
+            )
         assert (private_unix_directory / "filtered-authority.sock").is_dir()
     else:
-        await _exercise_filtered_status(tmp_path, private_unix_directory, state)
+        await _exercise_filtered_status(tmp_path, private_unix_directory, state, response_profile)

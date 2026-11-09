@@ -19,6 +19,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.asyncio.server import serve, unix_serve
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect
@@ -27,7 +28,14 @@ from protected_write_socket_examples import private_unix_directory as private_un
 from protected_write_socket_examples import requires_linux_peer_credentials
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import replay
-from synapse_channel.core.message_auth import MessageAuthKey, MessageReplayCache, sign_frame
+from synapse_channel.core.message_auth import (
+    EventSignatureKey,
+    MessageAuthKey,
+    MessageReplayCache,
+    sign_event_frame,
+    sign_frame,
+    sign_legacy_event_frame,
+)
 from synapse_channel.core.message_auth_durable import (
     DurableMessageAuthReplayStore,
     SequenceFloorMode,
@@ -104,9 +112,10 @@ async def _status_exchange(
 @pytest.mark.parametrize(
     "transport", [pytest.param("unix", marks=requires_linux_peer_credentials), "tcp"]
 )
+@pytest.mark.parametrize("response_profile", ["hmac", "ed25519"])
 @pytest.mark.asyncio
 async def test_writer_checks_fresh_signed_actor_status_and_revoked_session(
-    tmp_path: Path, private_unix_directory: Path, transport: str
+    tmp_path: Path, private_unix_directory: Path, transport: str, response_profile: str
 ) -> None:
     """A real socket proves current begin; durable revocation refuses the next read."""
     store, prepared, _state = _begun(tmp_path)
@@ -136,8 +145,17 @@ async def test_writer_checks_fresh_signed_actor_status_and_revoked_session(
         writer_key = MessageAuthKey(
             "current-status-writer", b"w" * 32, frozenset({"EXAMPLE/writer"})
         )
-        authority_key = MessageAuthKey(
+        shared_authority_key = MessageAuthKey(
             "current-status-authority", b"a" * 32, frozenset({"EXAMPLE/authority"})
+        )
+        authority_private = Ed25519PrivateKey.generate()
+        public_authority_key = EventSignatureKey.from_private_key(
+            key_id="current-status-authority",
+            private_key=authority_private,
+            senders=frozenset({"EXAMPLE/authority"}),
+        )
+        authority_key: MessageAuthKey | EventSignatureKey = (
+            public_authority_key if response_profile == "ed25519" else shared_authority_key
         )
         enrollment = ProtectedSessionEnrollment(
             session_id=source["session_id"],
@@ -172,14 +190,27 @@ async def test_writer_checks_fresh_signed_actor_status_and_revoked_session(
         await control.issue(enrollment)
         await control.issue(operator)
         reply_numbers = itertools.count(1)
+        repeat_response_nonce = False
+        legacy_response = False
 
         def sign(frame: dict[str, object]) -> dict[str, object]:
             """Sign status replies with the retained authority key and fresh response sequence."""
             number = next(reply_numbers)
+            nonce = f"current-reply-{1 if repeat_response_nonce else number}"
+            if response_profile == "ed25519":
+                signer = sign_legacy_event_frame if legacy_response else sign_event_frame
+                return signer(
+                    frame,
+                    key_id=authority_key.key_id,
+                    private_key=authority_private,
+                    nonce=nonce,
+                    sequence=number,
+                    signed_at=CONTEXT.now + 1,
+                )
             return sign_frame(
                 frame,
-                key=authority_key,
-                nonce=f"current-reply-{number}",
+                key=shared_authority_key,
+                nonce=nonce,
                 sequence=number,
                 timestamp=CONTEXT.now + 1,
             )
@@ -252,27 +283,54 @@ async def test_writer_checks_fresh_signed_actor_status_and_revoked_session(
                 response_replay=MessageReplayCache(window_seconds=10, max_entries=32),
             )
             assert await asyncio.to_thread(client) == begun
+            if response_profile == "ed25519":
+                legacy_response = True
+                with pytest.raises(ValueError, match="signature refused"):
+                    await asyncio.to_thread(client)
+                legacy_response = False
+            repeat_response_nonce = True
+            with pytest.raises(ValueError, match="signature refused"):
+                await asyncio.to_thread(client)
+            repeat_response_nonce = False
+            assert await asyncio.to_thread(client) == begun
             custody = hub.state.protected_claim_custody.pop(begun.admission.reservation_id)
             try:
                 with pytest.raises(ConnectionClosed):
                     await asyncio.to_thread(client)
             finally:
                 hub.state.protected_claim_custody[begun.admission.reservation_id] = custody
-            wrong_authority = ProtectedWriteCurrentStatus(
-                begun=begun,
-                enrollment=enrollment,
-                authority_key=MessageAuthKey(
-                    authority_key.key_id, b"not-the-authority-key", authority_key.senders
-                ),
-                limits=prepared.policy.limits,
-                reason_codes=POLICY.reason_codes,
-                exchange=exchange,
-                next_sequence=sequence.next,
-                clock=lambda: CONTEXT.now + 1,
-                response_replay=MessageReplayCache(window_seconds=10, max_entries=32),
+            wrong_key = (
+                replace(
+                    authority_key,
+                    public_key=Ed25519PrivateKey.generate().public_key().public_bytes_raw(),
+                )
+                if isinstance(authority_key, EventSignatureKey)
+                else replace(authority_key, secret=b"not-the-authority-key")
             )
-            with pytest.raises(ValueError, match="signature refused"):
-                await asyncio.to_thread(wrong_authority)
+            other_profile_key = (
+                shared_authority_key if response_profile == "ed25519" else public_authority_key
+            )
+            refused_keys = [
+                wrong_key,
+                other_profile_key,
+                replace(authority_key, revoked=True),
+                replace(authority_key, senders=frozenset({"OTHER/authority"})),
+                replace(public_authority_key, expires_at=CONTEXT.now),
+            ]
+            for refused_key in refused_keys:
+                wrong_authority = ProtectedWriteCurrentStatus(
+                    begun=begun,
+                    enrollment=enrollment,
+                    authority_key=refused_key,
+                    limits=prepared.policy.limits,
+                    reason_codes=POLICY.reason_codes,
+                    exchange=exchange,
+                    next_sequence=sequence.next,
+                    clock=lambda: CONTEXT.now + 1,
+                    response_replay=MessageReplayCache(window_seconds=10, max_entries=32),
+                )
+                with pytest.raises(ValueError, match="signature refused"):
+                    await asyncio.to_thread(wrong_authority)
 
             def text_exchange(request: bytes) -> str:
                 """Expose a real server reply as text to exercise the writer wire-type refusal."""
