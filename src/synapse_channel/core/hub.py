@@ -26,14 +26,8 @@ import asyncio
 import json
 import logging
 import ssl
-import sys
 from collections.abc import Callable, Iterable, Mapping
-from typing import Any
-
-if sys.version_info >= (3, 11):
-    from typing import Unpack
-else:
-    from typing_extensions import Unpack
+from typing import Any, Unpack
 
 from websockets.asyncio.server import Server, serve
 from websockets.http11 import Request, Response
@@ -99,6 +93,10 @@ from synapse_channel.core.hub_frame_registration import (
 from synapse_channel.core.hub_http import http_endpoint_response
 from synapse_channel.core.hub_ingress import HubIngress
 from synapse_channel.core.hub_ledger_guard import FindingQuota
+from synapse_channel.core.hub_service_lifetime import (
+    HubServiceHooks,
+    HubServiceLifetime,
+)
 from synapse_channel.core.identity_enrollments import (
     merge_enrolled_keys,
 )
@@ -523,6 +521,7 @@ class SynapseHub(HubConfigView):
         self.attachment_store = components.requested.attachment_store
         self.journal = components.requested.journal
         self._checkpoint_path = lifetime.checkpoint_path
+        self._reopen_checkpoint = lifetime.reopen_checkpoint
         self._live_checkpoint = lifetime.live_checkpoint
         self._serving = lifetime.serving
         self.guard_evidence_quota = lifetime.guard_evidence_quota
@@ -1751,13 +1750,10 @@ class SynapseHub(HubConfigView):
 
         Fail closed BEFORE serving: a truncated or rewritten log is a hard error
         at startup, never a quiet restart. Only then is the current state anchored
-        as the newest chain link. A refused start owns no hub, so it releases the
-        checkpoint connection it opened.
+        as the newest chain link. The bound factory retains the configured
+        checkpoint location and releases its partial connection on refusal.
         """
-        assert self._checkpoint_path is not None
-        from synapse_channel.core.hub_component_lifetime import open_checkpoint
-
-        self._live_checkpoint = open_checkpoint(journal, self._checkpoint_path)
+        self._live_checkpoint = self._reopen_checkpoint(journal)
 
     async def _checkpoint_anchor_loop(self, live: LiveCheckpoint) -> None:
         """Anchor the live log every ``checkpoint_interval`` seconds while serving.
@@ -1818,10 +1814,10 @@ class SynapseHub(HubConfigView):
         """
         stop = self._prepare_serving(host, port, ssl_context)
         started = False
-        backgrounds: list[asyncio.Task[None]] = []
+        services = self._service_lifetime()
         try:
             async with (
-                self._dark_seats.running(),
+                services.monitoring(),
                 serve(
                     self.handler,
                     host,
@@ -1844,18 +1840,19 @@ class SynapseHub(HubConfigView):
                 started = True
                 self._serving.set()
                 self._log_server_address(host, ssl_context)
-                self._start_serving_tasks(stop, backgrounds)
+                services.start(stop)
                 await stop.wait()
-                for background in backgrounds:
-                    if background.done():
-                        background.result()
+                services.check_completed()
         except BaseException:
             if not started:
                 # A startup waiter must report a failed bind instead of a readiness timeout.
                 self._serving.set()
             raise
         finally:
-            await self._finish_serving(backgrounds, started)
+            await services.finish(started)
+            self._bound_address = None
+            if started:
+                self._serving.clear()
 
     def _prepare_serving(
         self, host: str, port: int, ssl_context: ssl.SSLContext | None
@@ -1899,48 +1896,17 @@ class SynapseHub(HubConfigView):
             self._bind_port,
         )
 
-    def _start_serving_tasks(
-        self, stop: asyncio.Event, backgrounds: list[asyncio.Task[None]]
-    ) -> None:
-        """Retain each owned task before starting the next or registering its stop callback."""
-        if self.journal is not None and self.stable_delivery_hub_id:
-            from synapse_channel.core.handlers.delivery_modes import (
-                delivery_expiry_loop,
-            )
-
-            delivery_sweeper = asyncio.create_task(delivery_expiry_loop(self))
-            backgrounds.append(delivery_sweeper)
-            delivery_sweeper.add_done_callback(lambda _task: stop.set())
-        if self.message_peers:
-            from synapse_channel.core.message_forward_origin import (
-                message_forward_retry_loop,
-            )
-
-            forward_retrier = asyncio.create_task(message_forward_retry_loop(self))
-            backgrounds.append(forward_retrier)
-            forward_retrier.add_done_callback(lambda _task: stop.set())
-        token_set_watcher = self._ingress.token_set_watcher()
-        if token_set_watcher is not None:
-            watcher = asyncio.create_task(token_set_watcher)
-            backgrounds.append(watcher)
-            watcher.add_done_callback(lambda _task: stop.set())
-        key_rechecker = asyncio.create_task(self._frame_gate.recheck_loop())
-        backgrounds.append(key_rechecker)
-        key_rechecker.add_done_callback(lambda _task: stop.set())
-        if self._live_checkpoint is not None:
-            anchorer = asyncio.create_task(self._checkpoint_anchor_loop(self._live_checkpoint))
-            backgrounds.append(anchorer)
-            anchorer.add_done_callback(lambda _task: stop.set())
-
-    async def _finish_serving(self, backgrounds: list[asyncio.Task[None]], started: bool) -> None:
-        """Join background work before the existing final anchor and readiness reset."""
-        for background in backgrounds:
-            background.cancel()
-            await asyncio.gather(background, return_exceptions=True)
-        if started:
-            self._ingress.flush_audit()
-            # Clean stops anchor the final writes; only crashes retain an unanchored window.
-            self._close_live_checkpoint()
-        self._bound_address = None
-        if started:
-            self._serving.clear()
+    def _service_lifetime(self) -> HubServiceLifetime:
+        """Bind listener-independent services to this exact composed hub."""
+        return HubServiceLifetime(
+            self,
+            HubServiceHooks(
+                monitoring=self._dark_seats.running,
+                token_watcher=self._ingress.token_set_watcher,
+                key_rechecker=self._frame_gate.recheck_loop,
+                current_checkpoint=lambda: self._live_checkpoint,
+                anchor_checkpoint=self._checkpoint_anchor_loop,
+                flush_audit=self._ingress.flush_audit,
+                close_checkpoint=self._close_live_checkpoint,
+            ),
+        )

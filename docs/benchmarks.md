@@ -1,8 +1,36 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Commercial license available -->
+<!-- © Concepts 1996–2026 Miroslav Šotek. All rights reserved. -->
+<!-- © Code 2020–2026 Miroslav Šotek. All rights reserved. -->
+<!-- ORCID: 0009-0009-3560-0851 -->
+<!-- Contact: www.anulum.li | protoscience@anulum.li -->
+<!-- SYNAPSE CHANNEL — measured performance and qualification boundaries -->
 # Benchmarks
 
 Benchmarks are runnable, committed scripts under `benchmarks/`, with their
 results checked in under `benchmarks/results/`. No number here is estimated by
 hand. Run them with `make bench`.
+
+## Service lifetime comparison
+
+The listener-independent service lifetime has been exercised through real hub
+startup, socket traffic, shutdown, checkpoint reopening and a second serving
+lifetime. Its performance qualification remains open.
+
+Two comparisons on a Linux notebook accessing the Samsung store over SSHFS
+exceeded the unchanged 25% regression tolerance. In the latest comparison,
+21 alternating baseline/candidate pairs completed all four full-default
+harnesses and supplied 43 metrics. The median of the per-run task-checkpoint
+p95 latencies rose from 36,042.226 to 51,835.408 microseconds (+43.82%).
+Earlier lease-release and short-record parsing failures are also retained;
+the later comparison does not re-grade them. These non-isolated observations
+do not establish the cause of the difference.
+
+A quiet direct-storage comparison is deferred. The current source and package
+have functional qualification, with no claim that the performance gate passed
+or that this refactor improves throughput. The older results elsewhere on this
+page remain observations of their recorded sources, rather than timings of
+this lifetime refactor.
 
 ## Installed-version scorecard: `synapse benchmark`
 
