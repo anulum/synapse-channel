@@ -19,7 +19,6 @@ from typing import Any, cast
 
 import pytest
 from websockets.asyncio.client import connect
-from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
 from protected_write_authority_examples import (
@@ -29,6 +28,9 @@ from protected_write_authority_examples import (
     WRITER_KEY,
     _grant,
 )
+from protected_write_control_examples import frontend_entry
+from protected_write_socket_examples import private_unix_directory as private_unix_directory
+from protected_write_socket_examples import requires_linux_peer_credentials
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import record_claim
 from synapse_channel.core.message_auth import (
@@ -56,7 +58,12 @@ from test_protected_write_request import _request
 
 
 @pytest.mark.asyncio
-async def test_seven_verbs_share_real_transport_actor_and_enrollment(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "frontend", [False, pytest.param(True, marks=requires_linux_peer_credentials)]
+)
+async def test_seven_verbs_share_real_transport_actor_and_enrollment(
+    tmp_path: Path, private_unix_directory: Path, frontend: bool
+) -> None:
     """One assembled ingress routes all verbs without inventing writer effects."""
     now = time.time()
     store = EventStore(tmp_path / "authority.db")
@@ -184,10 +191,9 @@ async def test_seven_verbs_share_real_transport_actor_and_enrollment(tmp_path: P
         sequence_floor_mode=SequenceFloorMode.STRICT,
     )
     try:
-        async with serve(
-            authority.ingress, "127.0.0.1", 0, max_size=LIMITS.json_limits.max_wire_bytes
-        ) as server:
-            port = server.sockets[0].getsockname()[1]
+        async with frontend_entry(
+            authority.ingress, private_unix_directory, frontend=frontend
+        ) as uri:
 
             async def send(
                 verb: str,
@@ -214,7 +220,7 @@ async def test_seven_verbs_share_real_transport_actor_and_enrollment(tmp_path: P
                 signed = sign_frame(
                     request, key=grant.key, nonce=nonce, sequence=number, timestamp=now
                 )
-                async with connect(f"ws://127.0.0.1:{port}") as client:
+                async with connect(uri) as client:
                     await client.send(json.dumps(signed))
                     if refused:
                         with pytest.raises(ConnectionClosed):

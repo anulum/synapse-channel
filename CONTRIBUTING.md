@@ -394,6 +394,37 @@ the existing inventory; Python 3.12 includes their actual subprocess coverage
 in the complete 99.21% gate. Missing prerequisites fail the profiles.
 Default macOS and Windows collection does not include these native profiles.
 
+### Protected frontend control tests
+
+The private protected frontend channel requires native Linux `SO_PEERCRED`.
+Its portable policy, codec and authenticated-session tests remain collectable
+on other platforms. Native cases reuse the existing peer-credential marker:
+
+```bash
+python -m pytest tests/test_protected_write_request_session.py
+python -m pytest tests/test_protected_write_control_policy.py
+python -m pytest tests/test_protected_write_control_wire.py
+python -m pytest tests/test_protected_write_control_server.py
+python -m pytest tests/test_protected_write_control_client.py
+python -m pytest tests/test_protected_write_control_gateway.py
+python -m pytest tests/test_protected_write_handler_binding.py
+```
+
+The gateway journeys spawn and reap an actual separate frontend process with
+no authority key or journal argument. They exercise two external WebSocket
+clients, all seven protected verbs, signed request/result binding, raw ambiguous
+JSON, unsigned and ordinary-frame refusal, revocation and shared durable replay.
+Native control tests check actual PID/UID/GID mismatch, foreign connection and
+epoch selectors, sequence refusal, bounded reservations and partial-frame
+deadlines. A separate native SQLite writer lock delays a real journal commit
+while the tests cancel a client or close the control server. The server must
+drain that admitted mutation before returning, with no automatic replay.
+
+These are same-UID diagnostic processes with private temporary sockets, not
+installed dedicated identities. They create no host accounts, production
+listeners or replacement actors, and do not prove isolated signer custody or
+the supervisor's prior-actor termination gate.
+
 ### Known-state recovery profiles
 
 The recovery handler's authenticated loopback and key-conflict journeys use

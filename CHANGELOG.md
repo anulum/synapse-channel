@@ -20,6 +20,13 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Optional protected frontend control relays original signed requests over
+  native Unix channels into the existing authority actor and durable stores.
+  It verifies enrolled process peers, binds connections and correlations,
+  reserves bounded in-flight capacity and drains admitted mutations on close.
+  The WebSocket frontend holds no authority state or signer argument. Ordinary
+  frames and operator enrolment commands are refused on this channel; installed
+  role isolation and replacement-actor qualification remain separate.
 - Writer-side current-status verification accepts an explicitly enrolled
   Ed25519 public key through the existing event-signature profile. The writer
   does not need the authority's signing secret. Public-key replies require the
@@ -30,6 +37,14 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Protected transport reports handler and post-handler validation failures as
+  unavailable, because their original operation may already be durable. Native
+  frontend control refuses undersized envelope policy before serving and
+  treats later encoding or delivery failure as an unknown outcome.
+  Explicit authority-owned pre-commit refusals retain their original refusal
+  semantics, including recovery that keeps the parent's custody unchanged.
+  Malformed or misdirected native replies after sending also remain unknown;
+  only a validated, correlated refusal is reported as refused.
 - Documented the protected file-operation library and finite qualification
   workflow together, including the source-checkout commands, separate native
   and portability evidence, measurement limits and the trusted writer's

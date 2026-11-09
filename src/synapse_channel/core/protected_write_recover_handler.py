@@ -27,6 +27,10 @@ from synapse_channel.core.protected_write_recovery_journal import (
     finalize_protected_recovery,
     protected_recovery_event_payload,
 )
+from synapse_channel.core.protected_write_refusal import (
+    ProtectedWriteRefusalError,
+    protected_write_pre_commit,
+)
 from synapse_channel.core.protected_write_request import protected_write_operation_key
 from synapse_channel.core.protected_write_result import parse_protected_write_result
 from synapse_channel.core.protected_write_session_auth import (
@@ -124,15 +128,16 @@ class ProtectedWriteRecoverHandler:
             On untrusted service, stale parent, absent writer, invalid effects,
             journal damage, missing evidence or custody-transfer conflict.
         """
+        self._require_journal()
         parsed = authenticated.parsed
         source = cast(dict[str, object], json.loads(parsed.canonical_bytes))
         if source["type"] != "protected_write_recover" or parsed.proposal is None:
-            raise ValueError("recovery handler requires a recover proposal")
+            raise ProtectedWriteRefusalError("recovery handler requires a recover proposal")
         if source["enrollment_revision"] != self._effects.enrollment_revision:
-            raise ValueError("recovery effect enrollment revision mismatch")
+            raise ProtectedWriteRefusalError("recovery effect enrollment revision mismatch")
         principal = authenticated.enrollment.principal
         if principal not in self._services:
-            raise ValueError("recovery requires an enrolled service principal")
+            raise ProtectedWriteRefusalError("recovery requires an enrolled service principal")
         proposal_bytes = parsed.proposal.canonical_bytes
         operation_key = protected_write_operation_key(
             parsed.canonical_bytes,
@@ -174,11 +179,13 @@ class ProtectedWriteRecoverHandler:
             reason_codes=self._policy.reason_codes,
         ).canonical_bytes
 
+    @protected_write_pre_commit
     def _require_journal(self) -> None:
         """Require the retained authority journal at each ordered recovery boundary."""
         if self._hub.journal is None or self._hub.journal_corrupt_rows:
             raise ValueError("recovery authority journal unavailable or incomplete")
 
+    @protected_write_pre_commit
     def _current_enrollments(self) -> Mapping[str, ProtectedSessionEnrollment]:
         """Read current registry only while the retained authority journal is available."""
         self._require_journal()
@@ -235,6 +242,7 @@ class ProtectedWriteRecoverHandler:
         )
         return envelope
 
+    @protected_write_pre_commit
     def _mutate(
         self,
         candidate: SynapseState,
@@ -282,6 +290,7 @@ class ProtectedWriteRecoverHandler:
         )
         return candidate, parent, context
 
+    @protected_write_pre_commit
     def _draft(
         self,
         value: _RecoveryMutation,
@@ -312,15 +321,16 @@ class ProtectedWriteRecoverHandler:
                 ),
             ),
             intent={"family": "protected-recovery"},
-            finalize_response=lambda draft, sequences: finalize_protected_recovery(
-                draft,
-                sequences,
-                candidate=candidate,
-                parent=parent,
-                request=authenticated.parsed.canonical_bytes,
-                context=context,
-                policy=self._policy,
-                sign_response=self._sign,
+            finalize_response=protected_write_pre_commit(
+                partial(
+                    finalize_protected_recovery,
+                    candidate=candidate,
+                    parent=parent,
+                    request=authenticated.parsed.canonical_bytes,
+                    context=context,
+                    policy=self._policy,
+                    sign_response=self._sign,
+                )
             ),
         )
 

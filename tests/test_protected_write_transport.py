@@ -53,11 +53,12 @@ async def test_default_hub_socket_does_not_activate_protected_protocol(tmp_path:
                     _request("admit"), key=KEY, nonce="default-hub", sequence=1, timestamp=NOW
                 )
                 await client.send(json.dumps(signed))
-                try:
-                    response = json.loads(await asyncio.wait_for(client.recv(), 0.5))
-                except (TimeoutError, ConnectionClosed):
-                    response = None
-                assert response is None or response["type"] != "protected_write_result"
+                async with asyncio.timeout(2):
+                    while True:
+                        response = json.loads(await client.recv())
+                        assert response["type"] != "protected_write_result"
+                        if response["type"] == "error":
+                            break
         assert hub.state.protected_write_reservations == {}
         assert not any(event.kind.startswith("protected_write") for event in store.read_all())
     finally:
@@ -222,7 +223,9 @@ async def test_socket_refusals_are_private(tmp_path: Path, case: str) -> None:
                     responses.release.set()
                 with pytest.raises(ConnectionClosed):
                     await asyncio.wait_for(client.recv(), 2)
-                assert client.close_code == (1011 if case == "storage" else 1008)
+                assert client.close_code == (
+                    1011 if case in {"storage", "type", "binding", "response-revoked"} else 1008
+                )
                 assert client.close_reason in {
                     "protected request refused",
                     "protected service unavailable",

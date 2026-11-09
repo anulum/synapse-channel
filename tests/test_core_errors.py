@@ -111,6 +111,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "protected_write_request",
         ValueError,
     ),
+    "ProtectedWriteRefusalError": (
+        "synapse_channel.core.protected_write_refusal",
+        "protected_write_refusal",
+        ValueError,
+    ),
     "ProtectedWriteResultError": (
         "synapse_channel.core.protected_write_result",
         "protected_write_result",

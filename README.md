@@ -1866,6 +1866,14 @@ states the required inputs and the limits of each observation. These mechanisms
 require an independently qualified supervisor and writer launch; installing the
 package does not install those services or grant filesystem authority.
 
+The optional [protected frontend control channel](docs/coordination-spec.md#protected-frontend-control-channel)
+relays original signed requests from a separate WebSocket frontend into that
+same authority. It checks native process peers, binds responses to individual
+connections, limits pending work and drains admitted mutations on shutdown.
+It carries protected requests only; ordinary hub traffic and operator enrolment
+control retain their existing paths. Its component tests do not qualify an
+installed role boundary.
+
 A source checkout also provides a
 [finite runtime qualification workflow](docs/coordination-spec.md#finite-runtime-qualification-evidence)
 with pinned guest inputs and separate ordinary-user recording analysis.
@@ -1928,11 +1936,11 @@ an installed protected runtime or revocation fencing.
 |---|---:|
 | Package version | 0.99.50 |
 | Public API exports | 70 |
-| Package modules | 923 |
-| Classes | 1324 |
+| Package modules | 930 |
+| Classes | 1332 |
 | Wire message types | 118 |
 | CLI subcommands | 303 |
-| Test functions | 13330 |
+| Test functions | 13368 |
 | Benchmark harnesses | 16 |
 | Documentation pages | 98 |
 | GitHub Actions workflows | 29 |

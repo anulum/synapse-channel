@@ -132,6 +132,34 @@ profile requires the `encryption` extra. Trusted key enrolment, isolated signer
 custody and an independently qualified launch remain deployment obligations;
 selecting a public key does not establish an installed protected runtime.
 
+The optional protected frontend control channel independently checks the
+enrolled native authority/frontend process pair and verifies original client
+intent inside the same authority. It does not trust forwarded identities or
+authentication flags, and carries neither ordinary unsigned hub frames nor
+operator enrolment commands. Native PID checks require the supervisor's
+retained process lifetime and root-owned endpoint ancestry/ACLs to exclude
+identity reuse. Same-UID component tests qualify channel mechanics only.
+
+The frontend can observe, drop, delay or misdeliver the plaintext it carries;
+availability and confidentiality therefore remain inside its trust boundary.
+Authority-minted connection/correlation fields prevent the private adapter
+from accepting a result for another session. End clients still require signed
+request-bound results because metadata cannot constrain a compromised
+frontend's external writes. Failure or cancellation after actor admission may
+leave a durable mutation; no automatic retry or replacement actor is launched.
+The server rejects control policies that cannot carry its authority's full
+request/result bounds after worst-case escaping. Once a handler is invoked,
+handler/result validation or delivery failure is an unknown outcome on both
+direct and relayed transports unless an authority-owned typed refusal proves
+the requested mutation never committed. Recovery marks only synchronous
+pre-commit checks and rollback-protected response builders; its marker cannot
+span async work or storage completion and cannot be asserted by a frontend.
+The native client treats malformed or misdirected replies after send as
+unknown. A refusal requires the exact bound `refused` message, rather than
+merely a result-validation error.
+See the [control contract](docs/coordination-spec.md#protected-frontend-control-channel)
+for fixed policy ceilings, direct operator credentials and supervisor obligations.
+
 The source-checkout qualification tools exercise a finite, reviewed disposable
 guest and preserve exact source, dependency, role and output bindings.
 Instrumented attempts additionally change the recorded resource and shutdown

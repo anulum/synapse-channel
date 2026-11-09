@@ -568,6 +568,112 @@ Their component results do not certify an installed writer profile.
 
 ::: synapse_channel.core.protected_write_kernel_execution
 
+### Protected frontend control channel
+
+An optional private Unix channel separates the protected WebSocket frontend
+from the existing authority ingress. `ProtectedWriteControlServer` opens one
+logical `ProtectedWriteRequestSession` per admitted connection, using the same
+live enrolment registry, durable nonce ledger, seven handlers and mutation
+actor as direct `ProtectedWriteTransport` connections. It creates no second hub,
+state or journal. `ProtectedWriteControlGateway` forwards the client's original
+UTF-8 request text; the authority independently decodes it, reconstructs its
+canonical form and verifies the existing client proof before dispatch. A
+frontend-supplied parsed object or authentication assertion grants nothing.
+
+The supervisor independently enrols each process pair's actual Linux PID,
+UID and GID, authority continuity and frontend incarnation. Both endpoints
+check `SO_PEERCRED` before exchanging commands. It must also retain process
+lifetime, the endpoint's complete ancestry and ACLs, and descriptor custody;
+these library checks alone do not exclude PID reuse or qualify separate roles.
+Operator enrolment issue/revoke control stays on its existing authority-owned local
+Unix listener, with the original operator's kernel credentials. It is never
+relayed through this frontend. Ordinary hub frames, unsigned client intent and
+unknown operation families are refused by the protected channel.
+
+The private `synapse.protected.frontend-control.v1` envelope is length-prefixed
+with a four-byte big-endian byte count. Its closed fields are `schema`, `kind`,
+`authority_continuity`, `frontend_incarnation`, `connection_id`, `sequence` and
+`data`. The authority mints a fresh 256-bit `connection_id` in a `hello` at
+sequence zero. Each `request` and its `result` use the next positive integer
+sequence on that same connection. A bound `refused` carries empty data and
+terminates the channel; no exception text is forwarded. Unknown fields,
+duplicate keys, nonfinite or out-of-profile numbers, lone surrogates, foreign
+bindings and wrong sequences refuse before dispatch. Embedded request text is
+not normalised by the frontend. Existing protected request limits and numeric
+rules apply again at authority admission, including strict number spellings.
+
+`ProtectedWriteControlPolicy` requires explicit positive byte, string, depth,
+node, deadline, connection and aggregate application payload ceilings. The
+server refuses a policy whose decoded string budget is smaller than the
+authority's original request/result byte limit, or whose envelope cannot hold
+six times that limit plus its exact fixed fields and maximum-correlation
+overhead. This conservative bound covers ASCII escape expansion before any
+handler can run. Unexpected result encoding or delivery failure after handler
+invocation aborts the channel as an unknown outcome; it is never a `refused`
+message. Direct transport likewise reports post-invocation handler/result or
+enrolment-recheck failures as unavailable (1011), rather than request refusal
+(1008). A refusal qualifies only before invoking a handler, or when an
+authority-owned `ProtectedWriteRefusalError` proves that the requested mutation
+never committed. Recovery marks its synchronous checks and I/O-free response
+builders with `protected_write_pre_commit`; a failed journal builder rolls
+back before that refusal propagates. This adapter does not enclose awaits or
+storage completion. Generic handler, journal and post-handler failures remain
+unknown. A frontend cannot supply a refusal marker or a pre-commit assertion.
+After sending a request, the client classifies malformed, foreign or
+misdirected private replies as unknown too. Only a complete `refused` envelope
+with the expected authority/process binding, connection and sequence proves
+a known refusal; a generic decoding error does not.
+A refusal concerns this invocation only. It never clears an earlier unknown
+outcome for the same operation identity; inspect the original durable record.
+Only dispatch can propagate the explicit pre-commit refusal. Post-dispatch
+validation always stays unknown, including a refusal marker raised by a
+registry callback after the requested mutation committed.
+
+The aggregate reservation includes one maximum envelope in each direction per
+connection; kernel and WebSocket buffers remain separate listener admission
+obligations. There is one pending request per connection and no pending queue.
+These are policy ceilings independent of hardware; host admission may only
+lower them. Frontend listeners must separately bound external connection
+capacity, frame size, receive queue, handshake and close deadlines.
+
+The authority selects the connection and correlation of every response. The
+client adapter refuses foreign or stale results. End clients still verify the
+authority signature and exact request binding: a compromised frontend can
+observe, drop, delay or misdeliver plaintext, so availability and confidentiality
+remain frontend-trusted. Private routing metadata alone cannot certify what a
+compromised process sends on an external socket.
+
+Use `ProtectedWriteControlServer.serve` with an independently prebound native
+socket that is not yet listening, and `open_protected_write_control` for an
+owned client context. Listening starts inside the authority so the connecting
+frontend observes that process's kernel credentials. Server
+shutdown stops accepts, invalidates admission, cancels and drains its owned
+requests before caller-owned stores close. Cancellation or a missing response
+can leave an admitted mutation durable; inspect its original operation identity
+instead of retrying it. Closure is terminal for these objects. This component
+launches no actor and offers no replacement or restart API. Before any later
+replacement launch, a supervisor must separately prove the previous actor has
+ended; control-session mechanics do not satisfy that requirement.
+
+The [native frontend tests](https://github.com/anulum/synapse-channel/blob/main/CONTRIBUTING.md#protected-frontend-control-tests)
+exercise process transport and durable authority behaviour. Same-UID component
+tests do not establish installed multi-role isolation, signer custody, an
+ordinary coordination frontend split or whole-runtime qualification.
+
+::: synapse_channel.core.protected_write_request_session
+
+::: synapse_channel.core.protected_write_refusal
+
+::: synapse_channel.core.protected_write_control_policy
+
+::: synapse_channel.core.protected_write_control_wire
+
+::: synapse_channel.core.protected_write_control_server
+
+::: synapse_channel.core.protected_write_control_client
+
+::: synapse_channel.core.protected_write_control_gateway
+
 ### Finite runtime qualification evidence
 
 The source-checkout `tools.protected_runtime_probe` workflow prepares and checks

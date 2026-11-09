@@ -13,7 +13,6 @@ authority handlers. This class neither creates services nor executes writes.
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Awaitable, Callable, Mapping
 
@@ -26,13 +25,10 @@ from synapse_channel.core.message_auth_durable import (
     SequenceFloorMode,
 )
 from synapse_channel.core.protected_write_proposal import ProtectedWriteProposalLimits
-from synapse_channel.core.protected_write_request import parse_protected_write_request
-from synapse_channel.core.protected_write_result import parse_protected_write_result
+from synapse_channel.core.protected_write_request_session import ProtectedWriteRequestSession
 from synapse_channel.core.protected_write_session_auth import (
     AuthenticatedProtectedRequest,
     ProtectedSessionEnrollment,
-    authenticate_protected_request,
-    recheck_authenticated_protected_request,
 )
 
 
@@ -95,6 +91,29 @@ class ProtectedWriteTransport:
             sequence_floor_mode=sequence_floor_mode,
         )
 
+    def open_session(self) -> ProtectedWriteRequestSession:
+        """Create one logical connection using the existing registry and replay ledger.
+
+        Returns
+        -------
+        ProtectedWriteRequestSession
+            Independent connection binding with the same actor-bound dispatch.
+            This object stays inside the authority and is never deserialised.
+        """
+        return ProtectedWriteRequestSession(
+            limits=self._limits,
+            current_enrollments=self._current_enrollments,
+            replay_cache=self._replay,
+            clock=self._clock,
+            dispatch=self._dispatch,
+            reason_codes=self._reason_codes,
+        )
+
+    @property
+    def max_wire_bytes(self) -> int:
+        """Return the authority's immutable bound on request and result bytes."""
+        return self._limits.json_limits.max_wire_bytes
+
     async def __call__(self, connection: ServerConnection) -> None:
         """Handle one socket without exposing request bodies or error details.
 
@@ -103,41 +122,10 @@ class ProtectedWriteTransport:
         connection:
             Accepted socket on the separately isolated, bounded listener.
         """
-        bound: ProtectedSessionEnrollment | None = None
+        session = self.open_session()
         try:
             async for raw in connection:
-                parsed = parse_protected_write_request(raw, limits=self._limits)
-                frame = json.loads(parsed.canonical_bytes)
-                registry = self._current_enrollments()
-                enrolled = registry.get(frame["session_id"])
-                if enrolled is None or (bound is not None and bound != enrolled):
-                    raise ValueError("connection session unavailable or changed")
-                authenticated = authenticate_protected_request(
-                    raw,
-                    limits=self._limits,
-                    enrollments=registry,
-                    authenticated_principal=enrolled.principal,
-                    replay_cache=self._replay,
-                    now=self._clock(),
-                )
-                # Only a successfully verified signature can establish binding.
-                bound = authenticated.enrollment
-                response = await self._dispatch(authenticated)
-                recheck_authenticated_protected_request(
-                    authenticated,
-                    enrollments=self._current_enrollments(),
-                    authenticated_principal=bound.principal,
-                    now=self._clock(),
-                )
-                if type(response) is not bytes:
-                    raise ValueError("authority response must be immutable wire bytes")
-                verified = parse_protected_write_result(
-                    response,
-                    request=authenticated.parsed.canonical_bytes,
-                    limits=self._limits,
-                    reason_codes=self._reason_codes,
-                )
-                await connection.send(verified.canonical_bytes)
+                await connection.send(await session.exchange(raw))
         except ConnectionClosed:
             return
         except ValueError:
