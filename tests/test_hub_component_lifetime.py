@@ -95,7 +95,7 @@ async def test_restart_reverifies_the_original_configured_checkpoint(
         with closing(MerkleCheckpointStore(checkpoint_path)) as checkpoints:
             original = checkpoints.latest()
             assert original is not None and original.seq == written
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection, connection:
             if tampering == "truncate":
                 connection.execute("DELETE FROM events WHERE seq = ?", (written,))
             else:

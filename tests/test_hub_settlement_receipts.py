@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -57,7 +58,7 @@ async def test_local_settlement_retains_another_transport_receipt(tmp_path: Path
             assert len(journal.read_operations()) == 1
             assert journal.read_all() == events_before
             assert journal.get_operation(pending.operation_key) == stored
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection:
                 receipt = connection.execute(
                     "SELECT receipt_id FROM operation_outbox WHERE operation_key = ?",
                     (pending.operation_key,),
