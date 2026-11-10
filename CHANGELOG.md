@@ -33,7 +33,8 @@ execution evidence when carrying a release claim forward.
   a metrics request. With a journal, an entry that passes its `not_after` is
   recorded once (`metrics_token_expired`), and a request admitted by an older
   entry while a newer valid entry exists is recorded once per entry and hour
-  (`metrics_token_retiring_admission`).
+  (`metrics_token_retiring_admission`). Both are remembered for the life of the
+  hub process; a restarted hub records them again.
 - Optional protected frontend control relays original signed requests over
   native Unix channels into the existing authority actor and durable stores.
   It verifies enrolled process peers, binds connections and correlations,

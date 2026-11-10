@@ -22,8 +22,17 @@ rest of the set's life:
 An entry E is *retiring* at time t when E is valid at t and another valid entry F
 is newer: ``F.not_before`` is later than ``E.not_before``, an open ``not_before``
 counting as the earliest, and on equal values the entry later in the file is the
-newer. Valid means inside the validity window and naming no agents, because an
-entry that names agents admits no metrics request.
+newer. Valid means able to admit a metrics request at t: inside the validity
+window, naming no agents, and not refused by the set's token policy
+(``require_expiry``, ``max_token_days``).
+
+Both kinds of row are remembered by the running hub process only. A restarted hub
+records an entry that is still expired again, and an hour it already recorded for
+an entry in an earlier process again. Within one process, the hours recorded per
+entry are kept for :data:`RETIRING_MEMORY_HOURS` behind the latest one, so a
+validity clock that steps back into a recorded hour writes no second row; an
+admission in an hour further back than that writes none, because its use is
+already shown by the later rows.
 
 Without a journal the file is still checked periodically; nothing is recorded.
 An entry is marked as recorded only after its row is written, so a failed write
@@ -34,6 +43,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.persistence import EventStore
@@ -44,15 +54,23 @@ from synapse_channel.core.token_set import TokenEntry, TokenOutcome, TokenSetAut
 HOUR_SECONDS = 3600.0
 """Length of one retiring-admission window."""
 
+RETIRING_MEMORY_HOURS = 24
+"""How many hours behind its latest recorded hour an entry's recorded hours are kept."""
+
 _LOG = logging.getLogger(__name__)
 
 
-def _valid(entry: TokenEntry, now: float) -> bool:
+PolicyRefusal = Callable[[TokenEntry, float], str | None]
+"""A set's token policy: why it refuses an entry at an instant, or ``None``."""
+
+
+def _valid(entry: TokenEntry, now: float, policy_refusal: PolicyRefusal | None) -> bool:
     """Whether ``entry`` could admit a metrics request at ``now``."""
     return (
         not entry.agents
         and (entry.not_before is None or now >= entry.not_before)
         and (entry.not_after is None or now < entry.not_after)
+        and (policy_refusal is None or policy_refusal(entry, now) is None)
     )
 
 
@@ -61,7 +79,9 @@ def _start(entry: TokenEntry) -> float:
     return float("-inf") if entry.not_before is None else entry.not_before
 
 
-def newest_valid(entries: tuple[TokenEntry, ...], now: float) -> TokenEntry | None:
+def newest_valid(
+    entries: tuple[TokenEntry, ...], now: float, policy_refusal: PolicyRefusal | None = None
+) -> TokenEntry | None:
     """Return the newest entry valid at ``now``, or ``None`` when none is valid.
 
     Parameters
@@ -70,6 +90,10 @@ def newest_valid(entries: tuple[TokenEntry, ...], now: float) -> TokenEntry | No
         The set in force, in file order.
     now : float
         The instant on the validity clock.
+    policy_refusal : callable, optional
+        The set's token policy, such as
+        :meth:`~synapse_channel.core.token_set.TokenSetAuthenticator.policy_refusal`;
+        an entry it refuses is not valid. ``None`` applies no policy.
 
     Returns
     -------
@@ -79,7 +103,9 @@ def newest_valid(entries: tuple[TokenEntry, ...], now: float) -> TokenEntry | No
     """
     newest: TokenEntry | None = None
     for entry in entries:
-        if _valid(entry, now) and (newest is None or _start(entry) >= _start(newest)):
+        if _valid(entry, now, policy_refusal) and (
+            newest is None or _start(entry) >= _start(newest)
+        ):
             newest = entry
     return newest
 
@@ -100,8 +126,7 @@ class MetricsTokenWatch:
         self._token_set = token_set
         self._audit = audit
         self._expired: set[str] = set()
-        self._hour: int | None = None
-        self._retiring_seen: set[str] = set()
+        self._retiring_hours: dict[str, set[int]] = {}
         token_set.observe_outcomes(self._observed)
 
     def check(self) -> None:
@@ -145,17 +170,17 @@ class MetricsTokenWatch:
         if self._audit is None:
             return
         now = self._token_set.now()
-        newest = newest_valid(self._token_set.entries, now)
+        newest = newest_valid(self._token_set.entries, now, self._token_set.policy_refusal)
         if newest is None or newest.token_id == entry.token_id:
             return
         hour = int(now // HOUR_SECONDS)
-        if hour != self._hour:
-            self._hour = hour
-            self._retiring_seen.clear()
-        if entry.token_id in self._retiring_seen:
+        recorded = self._retiring_hours.setdefault(entry.token_id, set())
+        if hour in recorded or (recorded and hour <= max(recorded) - RETIRING_MEMORY_HOURS):
             return
         self._audit.retiring_admission(entry.token_id, newest.token_id, hour * HOUR_SECONDS)
-        self._retiring_seen.add(entry.token_id)
+        recorded.add(hour)
+        floor = max(recorded) - RETIRING_MEMORY_HOURS
+        recorded.difference_update({kept for kept in recorded if kept <= floor})
 
 
 def metrics_token_watch_for(

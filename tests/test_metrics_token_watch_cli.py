@@ -123,7 +123,12 @@ def test_an_entry_that_expires_while_the_hub_serves_is_one_row(tmp_path: Path) -
 def test_requests_with_the_older_of_two_valid_tokens_are_journaled_once_per_hour(
     tmp_path: Path,
 ) -> None:
-    """The older entry is retiring; its admissions give one row per hour, the newer none."""
+    """The older entry is retiring; its admissions give one row per hour, the newer none.
+
+    Each older request is bracketed by the hour before and after it. An hour in which a
+    request began and ended must have its row; a row may only name an hour some older
+    request touched; no hour appears twice. Newer-token requests add no row.
+    """
     tokens = tmp_path / "metrics-tokens.json"
     now = time.time()
     _write(
@@ -131,18 +136,21 @@ def test_requests_with_the_older_of_two_valid_tokens_are_journaled_once_per_hour
         _entry("older", "older-secret", not_before=_instant(now - 7200)),
         _entry("newer", "newer-secret", not_before=_instant(now - 3600)),
     )
+    brackets: list[tuple[int, int]] = []
     with isolated_hub(
         tmp_path, extra_args=["--metrics", "--metrics-token-set", str(tokens)]
     ) as hub:
         url = f"http://127.0.0.1:{hub.port}/metrics"
-        first_hour = int(time.time() // 3600)
-        assert [_status(url, "older-secret") for _ in range(3)] == [200, 200, 200]
+        for _ in range(3):
+            before = int(time.time() // 3600)
+            assert _status(url, "older-secret") == 200
+            brackets.append((before, int(time.time() // 3600)))
         assert [_status(url, "newer-secret") for _ in range(2)] == [200, 200]
-        last_hour = int(time.time() // 3600)
         db_path = hub.db_path
     rows = _rows(db_path, METRICS_RETIRING_ADMISSION_KIND)
-    hours = range(first_hour, last_hour + 1)
-    assert [payload for _, _, payload in rows] == [
-        {"token_id": "older", "newest_token_id": "newer", "hour_start": hour * 3600.0}
-        for hour in hours
-    ]
+    assert {(p["token_id"], p["newest_token_id"]) for _, _, p in rows} == {("older", "newer")}
+    hours = [int(payload["hour_start"] // 3600) for _, _, payload in rows]
+    certain = {start for start, end in brackets if start == end}
+    touched = {hour for start, end in brackets for hour in range(start, end + 1)}
+    assert len(hours) == len(set(hours))
+    assert certain <= set(hours) <= touched

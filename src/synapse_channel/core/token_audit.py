@@ -40,14 +40,15 @@ connect-token counterparts:
 ``metrics_token_expired``
     An entry of the set in force passed its ``not_after``: the token identifier,
     its ``not_after`` and whether the periodic check or a request saw it first
-    (``observed`` ``watcher`` or ``request``). One row per identifier for the
-    life of the hub.
+    (``observed`` ``watcher`` or ``request``). One row per identifier while one
+    hub process runs; a restarted hub records an entry that is still expired
+    again.
 ``metrics_token_retiring_admission``
     A metrics request was admitted by a *retiring* entry, one that a newer valid
     entry is meant to replace: the token identifier, the newest valid
     identifier and the start of the hour (``hour_start``). One row per
-    identifier and hour, so an overlap still in use shows without flooding the
-    journal.
+    identifier and hour while one hub process runs, so an overlap still in use
+    shows without flooding the journal.
 """
 
 from __future__ import annotations

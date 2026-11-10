@@ -558,7 +558,10 @@ When that boundary is crossed, the proportionate controls are:
   its `not_after`, and `metrics_token_retiring_admission`, once per entry and
   hour while a request is still admitted by an older entry that a newer valid
   one is meant to replace, so a scraper left on the old token shows before the
-  old entry is removed.
+  old entry is removed. A newer entry that the hub's token policy refuses does
+  not count as a replacement. Both rows are remembered by the running hub
+  process only: after a restart, an entry that is still expired, or an hour
+  already recorded for an entry, is recorded again.
 - **A2A HTTP bridge.** `synapse a2a-serve` is a separate stdlib HTTP edge that
   defaults to `127.0.0.1`. Its public Agent Card is intentionally readable; the
   task, RPC, extended-card, and push-configuration routes can require HTTP

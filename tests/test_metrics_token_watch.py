@@ -28,6 +28,7 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.metrics_token_watch import (
     HOUR_SECONDS,
+    RETIRING_MEMORY_HOURS,
     MetricsTokenWatch,
     metrics_token_watch_for,
     newest_valid,
@@ -248,6 +249,128 @@ def test_the_equal_start_earlier_in_the_file_is_the_retiring_one(
     assert _admits(token_set, "first-secret")
     rows = _rows(store, METRICS_RETIRING_ADMISSION_KIND)
     assert [payload["token_id"] for _, payload in rows] == ["first"]
+
+
+def _retiring(store: EventStore) -> list[tuple[str, str, float]]:
+    """Return each retiring-admission row as (entry, its newest replacement, hour start)."""
+    return [
+        (row["token_id"], row["newest_token_id"], row["hour_start"])
+        for _, row in _rows(store, METRICS_RETIRING_ADMISSION_KIND)
+    ]
+
+
+def test_a_newer_entry_the_policy_refuses_is_no_replacement(
+    tmp_path: Path, store: EventStore
+) -> None:
+    """With ``require_expiry`` an endless newer entry admits nothing, so the older is no retiree."""
+    path = tmp_path / "metrics-tokens.json"
+    _write(
+        path,
+        _entry(
+            "older",
+            "older-secret",
+            not_before=_instant(_BASE - 7200),
+            not_after=_instant(_BASE + 3600),
+        ),
+        _entry("endless", "endless-secret", not_before=_instant(_BASE - 3600)),
+    )
+    clock = _Clock(_BASE + 10)
+    token_set = TokenSetAuthenticator(path, clock=clock, require_expiry=True)
+    assert metrics_token_watch_for(token_set, store) is not None
+    assert not _admits(token_set, "endless-secret")
+    assert _admits(token_set, "older-secret")
+    assert _retiring(store) == []
+
+    _write(
+        path,
+        _entry(
+            "older",
+            "older-secret",
+            not_before=_instant(_BASE - 7200),
+            not_after=_instant(_BASE + 3600),
+        ),
+        _entry("endless", "endless-secret", not_before=_instant(_BASE - 3600)),
+        _entry(
+            "bounded",
+            "bounded-secret",
+            not_before=_instant(_BASE - 1800),
+            not_after=_instant(_BASE + 7200),
+        ),
+    )
+    assert _admits(token_set, "older-secret")
+    assert _retiring(store) == [("older", "bounded", _BASE)]
+
+
+def test_a_newer_entry_beyond_the_day_limit_is_no_replacement(
+    tmp_path: Path, store: EventStore
+) -> None:
+    """With ``max_token_days`` a newer entry valid too long admits and replaces nothing."""
+    path = tmp_path / "metrics-tokens.json"
+    _write(
+        path,
+        _entry(
+            "older",
+            "older-secret",
+            not_before=_instant(_BASE - 7200),
+            not_after=_instant(_BASE + 3600),
+        ),
+        _entry(
+            "long",
+            "long-secret",
+            not_before=_instant(_BASE - 3600),
+            not_after=_instant(_BASE + 30 * 86_400),
+        ),
+    )
+    token_set = TokenSetAuthenticator(path, clock=_Clock(_BASE + 10), max_token_days=1)
+    assert metrics_token_watch_for(token_set, store) is not None
+    assert not _admits(token_set, "long-secret")
+    assert _admits(token_set, "older-secret")
+    assert _retiring(store) == []
+
+
+def test_newest_valid_applies_the_given_policy() -> None:
+    older = TokenEntry("older", "0" * 64, frozenset(), _BASE - 20, None)
+    newer = TokenEntry("newer", "1" * 64, frozenset(), _BASE - 10, None)
+
+    def refuse_newer(entry: TokenEntry, _now: float) -> str | None:
+        return "refused" if entry.token_id == "newer" else None
+
+    assert newest_valid((older, newer), _BASE) == newer
+    assert newest_valid((older, newer), _BASE, refuse_newer) == older
+
+
+def test_a_clock_that_steps_back_writes_no_second_row_for_an_hour(
+    tmp_path: Path, store: EventStore
+) -> None:
+    """Hours already recorded stay recorded; an unrecorded hour within the memory gets its row."""
+    path = tmp_path / "metrics-tokens.json"
+    _write(
+        path,
+        _entry("older", "older-secret", not_before=_instant(_BASE - 40 * 3600)),
+        _entry("newer", "newer-secret", not_before=_instant(_BASE - 39 * 3600)),
+    )
+    clock = _Clock(_BASE + 3599.8)
+    token_set = TokenSetAuthenticator(path, clock=clock)
+    assert metrics_token_watch_for(token_set, store) is not None
+    hour = HOUR_SECONDS
+    steps = (
+        3599.8,  # hour 0: a row
+        3600.1,  # hour 1: a row
+        3599.9,  # back to hour 0: already recorded
+        -3 * hour + 10,  # hour -3, never recorded and within the memory: a row
+        -(RETIRING_MEMORY_HOURS + 6) * hour,  # further back than the memory: no row
+        (RETIRING_MEMORY_HOURS + 3) * hour + 5,  # far ahead: a row, older hours drop out
+        hour + 20,  # hour 1 again, now behind the memory: no row
+    )
+    for offset in steps:
+        clock.now = _BASE + offset
+        assert _admits(token_set, "older-secret")
+    assert _retiring(store) == [
+        ("older", "newer", _BASE),
+        ("older", "newer", _BASE + hour),
+        ("older", "newer", _BASE - 3 * hour),
+        ("older", "newer", _BASE + (RETIRING_MEMORY_HOURS + 3) * hour),
+    ]
 
 
 class _FailureCounter(logging.Handler):
