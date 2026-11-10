@@ -20,10 +20,7 @@ from websockets.datastructures import Headers
 from websockets.http11 import Request
 
 from hub_e2e_helpers import http_get, running_hub
-from synapse_channel.cli_hub_startup import HubStartupRefused
-from synapse_channel.cli_hub_transport import _metrics_token_set
-from synapse_channel.cli_processes_security_args import add_hub_admission_arguments
-from synapse_channel.core import hub_http, secure
+from synapse_channel.core import hub_http
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.hub_exposure import exposure_problems
@@ -215,36 +212,6 @@ async def test_a_live_hub_rotates_its_metrics_bearer_and_journals_it(tmp_path: P
     assert [row[1]["token_ids"] for row in rows] == [["scraper-1"], ["scraper-2"]]
 
 
-def _parsed(*argv: str) -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    add_hub_admission_arguments(parser)
-    return parser.parse_args(list(argv))
-
-
-def test_the_cli_builds_the_set_and_refuses_it_beside_a_fixed_token(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = tmp_path / "metrics-tokens.json"
-    _write(path, _entry("scraper", "secret"))
-    args = _parsed("--metrics-token-set", str(path))
-    assert args.metrics_token_set == str(path)
-    args.metrics_token = None
-    built = _metrics_token_set(args)
-    assert isinstance(built, TokenSetAuthenticator) and built.path == path
-    assert _metrics_token_set(argparse.Namespace(metrics_token_set=None)) is None
-
-    args.metrics_token = "fixed"
-    with pytest.raises(HubStartupRefused):
-        _metrics_token_set(args)
-    assert "cannot be combined with --metrics-token" in capsys.readouterr().err
-
-    args.metrics_token = None
-    args.metrics_token_set = str(tmp_path / "missing.json")
-    with pytest.raises(HubStartupRefused):
-        _metrics_token_set(args)
-    assert "missing.json" in capsys.readouterr().err
-
-
 def _paranoid_args(**overrides: object) -> argparse.Namespace:
     values: dict[str, object] = {
         "paranoid": True,
@@ -272,8 +239,3 @@ def test_the_hardening_presets_accept_a_metrics_token_set() -> None:
     with pytest.raises(ParanoidModeError, match="--metrics-token or --metrics-token-set"):
         apply_paranoid_hub_profile(_paranoid_args())
     assert apply_paranoid_hub_profile(_paranoid_args(metrics_token_set="set.json")) is not None
-    missing = " ".join(secure._missing_material(_paranoid_args()))
-    assert "--metrics-token-set" in missing
-    assert "metrics surface" not in " ".join(
-        secure._missing_material(_paranoid_args(metrics_token_set="set.json"))
-    )

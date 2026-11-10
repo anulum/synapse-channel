@@ -178,13 +178,13 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
     hub.add_argument(
         "--secure",
         action="store_true",
-        help="Strict multi-seat production umbrella: compose --team-secure and "
-        "--paranoid, then bound per-agent (100/s), per-host (500/s), and per-host "
-        "connection (10) flood limits. Requires a token, --db, --identity-trust, "
-        "--role-grants, a --message-auth-key, --acl-policy, and --tls-certfile/"
-        "--tls-keyfile (plus --metrics-token when --metrics is on); fails closed "
-        "listing all missing material at once. A stricter positive limit is kept; a "
-        "limit above a preset ceiling is refused. Prints one consolidated report.",
+        help="Strict multi-seat production umbrella: compose --team-secure and --paranoid, then "
+        "bound per-agent (100/s), per-host (500/s), and per-host connection (10) flood limits. "
+        "Requires a token, --db, --identity-trust, --role-grants, a --message-auth-key, "
+        "--acl-policy, and --tls-certfile/--tls-keyfile (plus --metrics-token, "
+        "--metrics-token-file or --metrics-token-set when --metrics is on); fails closed listing "
+        "all missing material at once. A stricter positive limit is kept; a limit above a preset "
+        "ceiling is refused. Prints one consolidated report.",
     )
     hub.add_argument(
         "--token",
