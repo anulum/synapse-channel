@@ -51,6 +51,7 @@ from synapse_channel.core.multihub_transport import (
 )
 from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipOutcome
 from synapse_channel.core.peer_identity import PeerRegistrationSigner
+from synapse_channel.core.peer_token import PeerToken
 from synapse_channel.core.peer_uri import require_peer_uri
 from synapse_channel.core.persistence import EventStore
 
@@ -154,8 +155,9 @@ class MultiHubWatch:
         Peer hub id to websocket URI; every peer here was named explicitly by the operator.
     local_id : str
         The identity stamped on each poll's request frame.
-    token : str or None, optional
-        Authentication token for secured peers; ``None`` sends no token.
+    token : str, PeerTokenFile or None, optional
+        Authentication token for secured peers, a token file being read at each poll;
+        ``None`` sends no token.
     interval : float, optional
         Seconds between poll rounds, clamped to at least :data:`MIN_WATCH_INTERVAL`.
     namespace_of : Callable[[str], str], optional
@@ -195,7 +197,7 @@ class MultiHubWatch:
         peers: Mapping[str, str],
         *,
         local_id: str,
-        token: str | None = None,
+        token: PeerToken = None,
         interval: float = DEFAULT_WATCH_INTERVAL,
         namespace_of: Callable[[str], str] = project_of,
         follower: MultiHubFollower | None = None,

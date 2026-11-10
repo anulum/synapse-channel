@@ -29,6 +29,7 @@ from synapse_channel.core.operator_relay_wire import (
     decode_relay_result,
     encode_relay_request,
 )
+from synapse_channel.core.peer_token import PeerToken
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.tls import MTLSPeerTrustBundle, MTLSTrustedPeer, certificate_sha256_pin
@@ -54,10 +55,10 @@ class _FakeRelayForwarder:
     ) -> None:
         self._result = result
         self._error = error
-        self.calls: list[tuple[RelayActionRequest, str, str, str | None]] = []
+        self.calls: list[tuple[RelayActionRequest, str, str, PeerToken]] = []
 
     async def __call__(
-        self, request: RelayActionRequest, *, uri: str, local_id: str, token: str | None = None
+        self, request: RelayActionRequest, *, uri: str, local_id: str, token: PeerToken = None
     ) -> RelayActionResult:
         self.calls.append((request, uri, local_id, token))
         if self._error is not None:

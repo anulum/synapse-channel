@@ -58,6 +58,7 @@ from synapse_channel.core.multihub_wire import (
     encode_log_request,
 )
 from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
+from synapse_channel.core.peer_token import PeerToken, current_peer_token
 from synapse_channel.core.persistence import StoredEvent
 from synapse_channel.core.protocol import (
     MessageType,
@@ -98,21 +99,18 @@ class MultiHubFetchError(SynapseError, RuntimeError):
 class _Socket(Protocol):
     """The minimal connection surface a fetch uses: send a frame, receive frames."""
 
-    async def send(self, message: str) -> None:  # pragma: no cover
+    async def send(self, message: str) -> None:
         """Send one text frame to the peer."""
-        ...
 
-    async def recv(self) -> str | bytes:  # pragma: no cover
+    async def recv(self) -> str | bytes:
         """Receive the next frame from the peer."""
-        ...
 
 
 class _Connector(Protocol):
     """Opens a peer connection as an async context manager yielding a :class:`_Socket`."""
 
-    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]:  # pragma: no cover
+    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]:
         """Open a connection to ``uri``."""
-        ...
 
 
 def _default_connector(uri: str) -> AbstractAsyncContextManager[_Socket]:
@@ -126,9 +124,8 @@ def _default_connector(uri: str) -> AbstractAsyncContextManager[_Socket]:
 class _ExtraInfoTransport(Protocol):
     """Transport surface needed to inspect the live TLS object."""
 
-    def get_extra_info(self, name: str, default: object = None) -> object:  # pragma: no cover
+    def get_extra_info(self, name: str, default: object = None) -> object:
         """Return transport metadata by name."""
-        ...
 
 
 class _PinnedSocket(_Socket, Protocol):
@@ -212,7 +209,7 @@ def network_fetcher(
     uri: str,
     *,
     local_id: str,
-    token: str | None = None,
+    token: PeerToken = None,
     limit: int | None = None,
     timeout: float = DEFAULT_FETCH_TIMEOUT,
     authoriser: MultiHubAuthoriser | None = None,
@@ -229,9 +226,10 @@ def network_fetcher(
         The peer hub's websocket URI (``ws://`` or, with TLS, ``wss://``).
     local_id : str
         The identity stamped as the request sender, so the peer addresses the snapshot back.
-    token : str or None, optional
+    token : str, PeerTokenFile or None, optional
         An authentication token carried on the request frame, where a secured hub gates the
-        first frame. ``None`` (the default) sends no token, for an open hub.
+        first frame; a token file is read at each fetch, so a replaced file is used by the
+        next poll. ``None`` (the default) sends no token, for an open hub.
     limit : int or None, optional
         Maximum events per fetch. ``None`` (the default) leaves the batch uncapped; a cap lets
         the follower walk a large backlog forward one bounded batch per poll.
@@ -284,7 +282,7 @@ class _NetworkFetcher:
         uri: str,
         *,
         local_id: str,
-        token: str | None,
+        token: PeerToken,
         limit: int | None,
         timeout: float,
         authoriser: MultiHubAuthoriser | None,
@@ -317,8 +315,12 @@ class _NetworkFetcher:
         fields: dict[str, Any] = dict(
             encode_log_request(LogRequest(after_seq=after_seq, limit=self._limit))
         )
-        if self._token is not None:
-            fields["token"] = self._token
+        try:
+            current = current_peer_token(self._token)
+        except ValueError as exc:
+            raise MultiHubFetchError(f"multi-hub peer token unavailable: {exc}") from None
+        if current is not None:
+            fields["token"] = current
         request = signed(
             build_envelope(self._local_id, MessageType.MULTIHUB_LOG_REQUEST, **fields),
             self._signer,

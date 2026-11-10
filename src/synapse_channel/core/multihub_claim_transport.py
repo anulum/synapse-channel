@@ -47,6 +47,7 @@ from synapse_channel.core.multihub_claim_wire import (
 )
 from synapse_channel.core.multihub_transport import pinned_connector
 from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
+from synapse_channel.core.peer_token import PeerToken, current_peer_token
 from synapse_channel.core.peer_uri import require_peer_uri
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
 
@@ -90,9 +91,10 @@ class ClaimForwardPeer:
     ----------
     uri : str
         The owning hub's websocket URI (``ws://`` or, with TLS, ``wss://``).
-    token : str or None
+    token : str, PeerTokenFile or None
         An authentication token carried on the forwarded request where the owner gates the
-        first frame; ``None`` for an open or mutual-TLS-only owner.
+        first frame; ``None`` for an open or mutual-TLS-only owner. A token file is read
+        again at each forward.
     connector : Connector or None
         Pinned, optionally client-authenticated connection factory.  ``None``
         keeps the default system-CA transport.
@@ -101,7 +103,7 @@ class ClaimForwardPeer:
     """
 
     uri: str
-    token: str | None = None
+    token: PeerToken = None
     connector: Connector | None = field(default=None, repr=False, compare=False)
     signer: PeerRegistrationSigner | None = field(default=None, repr=False, compare=False)
 
@@ -109,7 +111,7 @@ class ClaimForwardPeer:
 def parse_claim_peers(
     values: list[str],
     *,
-    token: str | None = None,
+    token: PeerToken = None,
     pins: Mapping[str, str] | None = None,
     client_certificate_file: str | None = None,
     client_key_file: str | None = None,
@@ -129,10 +131,10 @@ def parse_claim_peers(
     values : list[str]
         Raw flag values, each ``HUB_ID=URI`` — the owning hub id and its
         ``ws://`` / ``wss://`` URI.
-    token : str or None, optional
+    token : str, PeerTokenFile or None, optional
         Authentication token applied to every route's forwarded requests, for
-        owners that gate the first frame. ``None`` leaves each route unauthenticated
-        (an open or mutual-TLS-only owner).
+        owners that gate the first frame; a token file is read at each forward.
+        ``None`` leaves each route unauthenticated (an open or mutual-TLS-only owner).
     pins : Mapping[str, str] or None, optional
         Certificate pin per owning hub id.
     client_certificate_file, client_key_file : str or None, optional
@@ -203,30 +205,26 @@ class ClaimForwarder(Protocol):
         *,
         uri: str,
         local_id: str,
-        token: str | None = None,
-    ) -> ClaimForwardResult:  # pragma: no cover
+        token: PeerToken = None,
+    ) -> ClaimForwardResult:
         """Forward ``request`` to the owner at ``uri`` and return the result."""
-        ...
 
 
 class _Socket(Protocol):
     """The minimal connection surface a forward uses: send a frame, receive frames."""
 
-    async def send(self, message: str) -> None:  # pragma: no cover
+    async def send(self, message: str) -> None:
         """Send one text frame to the peer."""
-        ...
 
-    async def recv(self) -> str | bytes:  # pragma: no cover
+    async def recv(self) -> str | bytes:
         """Receive the next frame from the peer."""
-        ...
 
 
 class _Connector(Protocol):
     """Opens a peer connection as an async context manager yielding a :class:`_Socket`."""
 
-    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]:  # pragma: no cover
+    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]:
         """Open a connection to ``uri``."""
-        ...
 
 
 def _default_connector(uri: str) -> AbstractAsyncContextManager[_Socket]:
@@ -242,7 +240,7 @@ async def forward_claim(
     *,
     uri: str,
     local_id: str,
-    token: str | None = None,
+    token: PeerToken = None,
     timeout: float = DEFAULT_FORWARD_TIMEOUT,
     connector: _Connector = _default_connector,
     signer: PeerRegistrationSigner | None = None,
@@ -258,9 +256,10 @@ async def forward_claim(
     local_id : str
         The identity stamped as the request sender, so the owner addresses the result back and
         its serving policy authorises this hub as the forwarding peer.
-    token : str or None, optional
+    token : str, PeerTokenFile or None, optional
         An authentication token carried on the request frame, where a secured hub gates the
-        first frame. ``None`` (the default) sends no token, for an open hub.
+        first frame; a token file is read now, so a replaced file is used by this forward.
+        ``None`` (the default) sends no token, for an open hub.
     timeout : float, optional
         Seconds the forward waits for the result before failing closed.
     connector : _Connector, optional
@@ -280,11 +279,16 @@ async def forward_claim(
     ------
     ClaimForwardError
         On any transport failure: a refused or dropped connection, a hub error frame, a
-        malformed or absent result, or a timeout. The caller falls back to refusing the claim.
+        malformed or absent result, a timeout, or an unreadable token file. The caller falls
+        back to refusing the claim.
     """
     fields: dict[str, Any] = dict(encode_claim_forward_request(request))
-    if token is not None:
-        fields["token"] = token
+    try:
+        current = current_peer_token(token)
+    except ValueError as exc:
+        raise ClaimForwardError(f"claim peer token unavailable: {exc}") from None
+    if current is not None:
+        fields["token"] = current
     envelope = signed(
         build_envelope(local_id, MessageType.MULTIHUB_CLAIM_REQUEST, **fields), signer
     )

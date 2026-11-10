@@ -878,7 +878,8 @@ local seat can never pose as a forwarded sender.
 
 **Configuration.** The origin hub names each peer with
 `synapse hub --message-peer HUB_ID=URI` (repeatable), plus
-`--message-peer-token`/`--message-peer-token-file`, a `--message-peer-pin` per
+`--message-peer-token`/`--message-peer-token-file` (the file is read at each
+forward, so replacing it rotates the token), a `--message-peer-pin` per
 `wss://` peer, and the multi-hub client certificate for mutual TLS. The
 receiving hub accepts a forward only from a peer that holds a grant in its
 [multi-hub serving policy](multi-hub-sync.md#boundaries) and presents its configured

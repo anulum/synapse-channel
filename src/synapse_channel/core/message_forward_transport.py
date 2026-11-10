@@ -48,6 +48,7 @@ from synapse_channel.core.message_forward_wire import (
 )
 from synapse_channel.core.multihub_transport import pinned_connector
 from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
+from synapse_channel.core.peer_token import PeerToken, current_peer_token
 from synapse_channel.core.peer_uri import require_peer_uri
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
 
@@ -82,9 +83,9 @@ class MessageForwardPeer:
     ----------
     uri : str
         The peer hub's websocket URI (``ws://`` or, with TLS, ``wss://``).
-    token : str or None
-        Connect token for a peer that gates the first frame; ``None`` for an open or
-        mutual-TLS-only peer.
+    token : str, PeerTokenFile or None
+        Connect token for a peer that gates the first frame, a token file being read at each
+        forward; ``None`` for an open or mutual-TLS-only peer.
     connector : Connector or None
         Pinned, optionally client-authenticated connection factory; ``None`` keeps the
         default system-CA transport.
@@ -93,7 +94,7 @@ class MessageForwardPeer:
     """
 
     uri: str
-    token: str | None = None
+    token: PeerToken = None
     connector: Connector | None = field(default=None, repr=False, compare=False)
     signer: PeerRegistrationSigner | None = field(default=None, repr=False, compare=False)
 
@@ -101,7 +102,7 @@ class MessageForwardPeer:
 def parse_message_peers(
     values: list[str],
     *,
-    token: str | None = None,
+    token: PeerToken = None,
     pins: Mapping[str, str] | None = None,
     client_certificate_file: str | None = None,
     client_key_file: str | None = None,
@@ -113,8 +114,8 @@ def parse_message_peers(
     ----------
     values : list[str]
         Raw ``--message-peer`` values, each ``HUB_ID=URI``.
-    token : str or None, optional
-        Connect token applied to every peer.
+    token : str, PeerTokenFile or None, optional
+        Connect token applied to every peer; a token file is read at each forward.
     pins : Mapping[str, str] or None, optional
         ``sha256:`` certificate pin per peer hub id.
     client_certificate_file, client_key_file : str or None, optional
@@ -237,14 +238,18 @@ async def forward_message(
     Raises
     ------
     MessageForwardTransportError
-        On a refused or dropped connection, a timeout, a result for another forward, or an
-        undecodable reply.
+        On a refused or dropped connection, a timeout, a result for another forward, an
+        undecodable reply, or an unreadable token file.
     MessageForwardRejectedError
         When the peer answers with an ``error`` frame instead of a result.
     """
     fields: dict[str, Any] = dict(encode_message_forward_request(request))
-    if peer.token is not None:
-        fields["token"] = peer.token
+    try:
+        current = current_peer_token(peer.token)
+    except ValueError as exc:
+        raise MessageForwardTransportError(f"message peer token unavailable: {exc}") from None
+    if current is not None:
+        fields["token"] = current
     envelope = signed(
         build_envelope(local_id, MessageType.MULTIHUB_MESSAGE_FORWARD, **fields), peer.signer
     )

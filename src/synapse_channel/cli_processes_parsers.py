@@ -116,6 +116,26 @@ def _add_logging_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_peer_token_file(hub: argparse.ArgumentParser, stem: str) -> None:
+    """Add ``--<stem>-token-file``, the rotating file form of ``--<stem>-token``.
+
+    Parameters
+    ----------
+    hub:
+        The ``synapse hub`` parser.
+    stem:
+        The peer kind's option stem, such as ``claim-peer`` or ``multihub-watch``.
+    """
+    hub.add_argument(
+        f"--{stem}-token-file",
+        default=None,
+        metavar="PATH",
+        help=f"Read the {stem} token from this owner-only (chmod 600) file at every connection "
+        "attempt, so replacing the file rotates it without a restart; an argv value is visible "
+        f"to anyone running `ps`. An explicit --{stem}-token wins and does not rotate.",
+    )
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``hub``, ``worker``, ``team``, and ``supervisor`` subparsers."""
     hub = subparsers.add_parser("hub", help="Run the coordination hub.")
@@ -502,6 +522,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         metavar="TOKEN",
         help="Authentication token sent to secured watch peers.",
     )
+    _add_peer_token_file(hub, "multihub-watch")
     hub.add_argument(
         "--multihub-watch-pin",
         action="append",
@@ -529,6 +550,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Authentication token sent on forwarded claims to secured owning hubs "
         "(applies to every --claim-peer route).",
     )
+    _add_peer_token_file(hub, "claim-peer")
     hub.add_argument(
         "--claim-peer-pin",
         action="append",
@@ -551,6 +573,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         metavar="TOKEN",
         help="Authentication token sent to every configured relay peer.",
     )
+    _add_peer_token_file(hub, "relay-peer")
     hub.add_argument(
         "--relay-peer-pin",
         action="append",
@@ -574,14 +597,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         metavar="TOKEN",
         help="Connect token sent to every --message-peer that gates its first frame.",
     )
-    hub.add_argument(
-        "--message-peer-token-file",
-        default=None,
-        metavar="PATH",
-        help="Read the message-peer token from this owner-only (chmod 600) file instead of "
-        "--message-peer-token; an argv value is visible to anyone running `ps`. An "
-        "explicit --message-peer-token wins.",
-    )
+    _add_peer_token_file(hub, "message-peer")
     hub.add_argument(
         "--message-peer-pin",
         action="append",

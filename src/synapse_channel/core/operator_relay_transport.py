@@ -44,6 +44,7 @@ from synapse_channel.core.operator_relay_wire import (
     encode_relay_request,
 )
 from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
+from synapse_channel.core.peer_token import PeerToken, current_peer_token
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
 
 DEFAULT_RELAY_TIMEOUT = 10.0
@@ -82,9 +83,10 @@ class OperatorRelayPeer:
     ----------
     uri : str
         The owning hub's websocket URI (``ws://`` or, with TLS, ``wss://``).
-    token : str or None
+    token : str, PeerTokenFile or None
         An authentication token carried on the relayed request where the owner gates the
-        first frame; ``None`` for an open or mutual-TLS-only owner. The origin hub holds this
+        first frame, a token file being read at each relay; ``None`` for an open or
+        mutual-TLS-only owner. The origin hub holds this
         so the operator relaying through it never needs the peer's credentials directly.
     connector : Connector or None
         Pinned, optionally client-authenticated connection factory.
@@ -93,7 +95,7 @@ class OperatorRelayPeer:
     """
 
     uri: str
-    token: str | None = None
+    token: PeerToken = None
     connector: Connector | None = field(default=None, repr=False, compare=False)
     signer: PeerRegistrationSigner | None = field(default=None, repr=False, compare=False)
 
@@ -101,7 +103,7 @@ class OperatorRelayPeer:
 def parse_relay_peers(
     values: list[str],
     *,
-    token: str | None = None,
+    token: PeerToken = None,
     pins: Mapping[str, str] | None = None,
     client_certificate_file: str | None = None,
     client_key_file: str | None = None,
@@ -159,30 +161,26 @@ class RelayForwarder(Protocol):
         *,
         uri: str,
         local_id: str,
-        token: str | None = None,
-    ) -> RelayActionResult:  # pragma: no cover
+        token: PeerToken = None,
+    ) -> RelayActionResult:
         """Relay ``request`` to the owner at ``uri`` and return the result."""
-        ...
 
 
 class _Socket(Protocol):
     """The minimal connection surface a relay uses: send a frame, receive frames."""
 
-    async def send(self, message: str) -> None:  # pragma: no cover
+    async def send(self, message: str) -> None:
         """Send one text frame to the peer."""
-        ...
 
-    async def recv(self) -> str | bytes:  # pragma: no cover
+    async def recv(self) -> str | bytes:
         """Receive the next frame from the peer."""
-        ...
 
 
 class _Connector(Protocol):
     """Opens a peer connection as an async context manager yielding a :class:`_Socket`."""
 
-    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]:  # pragma: no cover
+    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]:
         """Open a connection to ``uri``."""
-        ...
 
 
 def _default_connector(uri: str) -> AbstractAsyncContextManager[_Socket]:
@@ -198,7 +196,7 @@ async def relay_operator_action(
     *,
     uri: str,
     local_id: str,
-    token: str | None = None,
+    token: PeerToken = None,
     timeout: float = DEFAULT_RELAY_TIMEOUT,
     connector: _Connector = _default_connector,
     signer: PeerRegistrationSigner | None = None,
@@ -215,9 +213,10 @@ async def relay_operator_action(
         The identity stamped as the request sender, so the peer addresses the result back and
         its serving policy authorises this origin as the relaying peer. It must match a grant
         the peer's serving policy holds, or the relay is refused.
-    token : str or None, optional
+    token : str, PeerTokenFile or None, optional
         An authentication token carried on the request frame, where a secured hub gates the
-        first frame. ``None`` (the default) sends no token, for an open hub.
+        first frame; a token file is read now, so a replaced file is used by this relay.
+        ``None`` (the default) sends no token, for an open hub.
     timeout : float, optional
         Seconds the relay waits for the result before failing closed.
     connector : _Connector, optional
@@ -236,11 +235,15 @@ async def relay_operator_action(
     ------
     RelayTransportError
         On any transport failure: a refused or dropped connection, a hub error frame, a
-        malformed or absent result, or a timeout.
+        malformed or absent result, a timeout, or an unreadable token file.
     """
     fields: dict[str, Any] = dict(encode_relay_request(request))
-    if token is not None:
-        fields["token"] = token
+    try:
+        current = current_peer_token(token)
+    except ValueError as exc:
+        raise RelayTransportError(f"relay peer token unavailable: {exc}") from None
+    if current is not None:
+        fields["token"] = current
     envelope = signed(
         build_envelope(local_id, MessageType.OPERATOR_RELAY_REQUEST, **fields), signer
     )

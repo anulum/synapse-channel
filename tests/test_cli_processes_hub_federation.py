@@ -25,6 +25,7 @@ from synapse_channel import cli_processes
 from synapse_channel.core.hub import (
     SynapseHub,
 )
+from synapse_channel.core.peer_token import PeerTokenFile, current_peer_token
 from synapse_channel.core.tls import HubTLSConfigError
 
 
@@ -647,11 +648,9 @@ def test_cmd_hub_wires_message_peers_with_a_file_token_and_ttl(tmp_path: Path) -
     )
     assert cli_processes._cmd_hub(ns, runner=_close_runner, hub_factory=build_hub) == 0
     peer = captured["message_peers"]["laptop"]
-    assert (peer.uri, peer.token, peer.connector) == (
-        "ws://laptop.example:8876",
-        "peer-secret",
-        None,
-    )
+    assert (peer.uri, peer.connector) == ("ws://laptop.example:8876", None)
+    assert isinstance(peer.token, PeerTokenFile) and peer.token.path == token_file
+    assert current_peer_token(peer.token) == "peer-secret"
     assert captured["message_forward_ttl"] == 60.0
 
 

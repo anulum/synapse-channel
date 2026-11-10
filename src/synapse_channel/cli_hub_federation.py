@@ -26,6 +26,7 @@ from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.operator_relay_transport import parse_relay_peers
 from synapse_channel.core.peer_identity import load_peer_registration_signer
+from synapse_channel.core.peer_token import PeerToken, PeerTokenFile
 
 
 def _parse_namespace_owners(values: list[str]) -> dict[str, str]:
@@ -40,6 +41,59 @@ def _parse_namespace_owners(values: list[str]) -> dict[str, str]:
             raise ValueError(f"--namespace-owner names namespace {namespace!r} twice")
         owners[namespace] = hub_id
     return owners
+
+
+def _peer_token(ctx: HubStartup, option: str) -> PeerToken:
+    """Return the token for one kind of peer: inline, a token file, or none.
+
+    ``option`` is the inline option's attribute (``claim_peer_token`` and the like);
+    its file companion is ``<option>_file``. An explicit inline value wins and stays
+    fixed. A token file is read once here, so an unreadable file refuses startup,
+    and again at every connection attempt, so replacing it rotates the token.
+
+    Raises
+    ------
+    SecretFileError
+        If the token file cannot be read as an owner-only secret.
+    """
+    inline = getattr(ctx.args, option, None)
+    if inline:
+        return str(inline)
+    path = getattr(ctx.args, option + "_file", None)
+    if not path:
+        return None
+    token = PeerTokenFile(path, flag="--" + option.replace("_", "-") + "-file")
+    token.read()
+    return token
+
+
+PEER_TOKEN_OPTIONS = (
+    "multihub_watch_token",
+    "claim_peer_token",
+    "message_peer_token",
+    "relay_peer_token",
+)
+"""Inline peer token options; each has a ``<option>_file`` companion that rotates."""
+
+
+def check_peer_token_files(ctx: HubStartup) -> None:
+    """Refuse startup on an unreadable peer token file before any durable resource exists.
+
+    Every configured token file is read once here, ahead of the journal and the
+    listeners, so a bad file leaves no database behind. The files are read again
+    at every connection attempt once the hub runs.
+
+    Raises
+    ------
+    HubStartupRefused
+        After printing which option's file cannot be read as an owner-only secret.
+    """
+    for option in PEER_TOKEN_OPTIONS:
+        try:
+            _peer_token(ctx, option)
+        except ValueError as exc:
+            print(f"synapse hub: {exc}", file=sys.stderr)
+            raise HubStartupRefused() from None
 
 
 def _parse_named_pins(values: list[str], *, flag: str) -> dict[str, str]:
@@ -280,7 +334,7 @@ def load_namespace_and_watch(ctx: HubStartup) -> None:
             ctx.transport.watch = MultiHubWatch(
                 watch_peers,
                 local_id=ctx.args.hub_id,
-                token=ctx.args.multihub_watch_token,
+                token=_peer_token(ctx, "multihub_watch_token"),
                 interval=ctx.args.multihub_watch_interval,
                 pins=parse_watch_pins(ctx.args.multihub_watch_pin, watch_peers),
                 client_certificate_file=ctx.transport.client_certfile,
@@ -312,7 +366,7 @@ def load_claim_routes(ctx: HubStartup) -> None:
                     ctx.config.multihub,
                     claim_peers=parse_claim_peers(
                         ctx.args.claim_peer,
-                        token=ctx.args.claim_peer_token,
+                        token=_peer_token(ctx, "claim_peer_token"),
                         pins=_parse_named_pins(
                             getattr(ctx.args, "claim_peer_pin", []), flag="--claim-peer-pin"
                         ),
@@ -337,7 +391,7 @@ def load_message_routes(ctx: HubStartup) -> None:
                     ctx.config.multihub,
                     message_peers=parse_message_peers(
                         ctx.transport.message_peer_values,
-                        token=getattr(ctx.args, "message_peer_token", None),
+                        token=_peer_token(ctx, "message_peer_token"),
                         pins=_parse_named_pins(
                             getattr(ctx.args, "message_peer_pin", []), flag="--message-peer-pin"
                         ),
@@ -362,7 +416,7 @@ def load_relay_routes(ctx: HubStartup) -> None:
                     ctx.config.multihub,
                     relay_peers=parse_relay_peers(
                         ctx.transport.relay_peer_values,
-                        token=getattr(ctx.args, "relay_peer_token", None),
+                        token=_peer_token(ctx, "relay_peer_token"),
                         pins=_parse_named_pins(
                             getattr(ctx.args, "relay_peer_pin", []), flag="--relay-peer-pin"
                         ),

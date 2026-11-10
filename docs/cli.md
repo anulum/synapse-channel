@@ -2780,8 +2780,8 @@ matching route is relayed to the owner and its verdict returned, carrying the
 owner's authentic lease, while a remote-owned claim whose owner has no route stays
 refused with the owner named — the routing is opt-in and fail-closed, so adding a
 route never opens a claim the hub could not already resolve. `--claim-peer-token
-TOKEN` sends an authentication token on every forwarded claim to owners that gate
-the first frame. A client certificate does not waive a configured connect-token
+TOKEN` or `--claim-peer-token-file PATH` sends an authentication token on every
+forwarded claim to owners that gate the first frame. A client certificate does not waive a configured connect-token
 gate. An unreachable owner is refused
 in place with `forward_error=timeout`, not hidden behind the generic ownership
 refusal, so a forwarding outage never silently resumes local granting:
@@ -2807,10 +2807,23 @@ kinds of quote mark) makes `synapse hub` exit 2 with the reason. The
 message names the option and the peer, not the URI, so a credential in it is not
 echoed.
 
+Peer tokens rotate through files. `--multihub-watch-token-file`,
+`--claim-peer-token-file`, `--relay-peer-token-file` and `--message-peer-token-file`
+each name an owner-only (chmod 600) file holding the token for that kind of peer.
+The hub reads the file when it starts, before it opens its journal, so an
+unreadable file makes `synapse hub` exit 2 naming the option and leaves no
+database behind. It reads the file again at every connection attempt (each
+watch poll, forwarded claim, relay and message forward), so replacing the file
+rotates the token without a restart. Replace it atomically: write the new file
+and rename it over the old one. An explicit inline token (`--claim-peer-token`
+and the like) wins over its file and stays fixed. If the file cannot be read at
+an attempt, only that attempt fails, as for an unreachable peer, and the error
+names the option, never the token.
+
 The other message-peer options are:
 
-- `--message-peer-token TOKEN` or `--message-peer-token-file PATH` (owner-only)
-  authenticates to peers that gate the first frame.
+- `--message-peer-token TOKEN` or `--message-peer-token-file PATH` (owner-only,
+  read at every forward) authenticates to peers that gate the first frame.
 - `--message-peer-pin HUB_ID=sha256:<hex>` pins a `wss://` peer's certificate. It
   is required for every peer when the multi-hub client certificate is configured,
   and it must name a configured peer.

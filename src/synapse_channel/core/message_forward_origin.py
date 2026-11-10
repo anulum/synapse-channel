@@ -61,6 +61,7 @@ from synapse_channel.core.message_forward_wire import (
     encode_message_forward_request,
     encode_message_forward_result,
 )
+from synapse_channel.core.peer_token import mask_peer_token
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
@@ -588,7 +589,7 @@ def _without_secrets(text: str, peer: MessageForwardPeer) -> str:
     hostport = parts.netloc.rpartition("@")[2]
     shown = f"{parts.scheme}://{hostport}{parts.path}"
     text = text.replace(repr(peer.uri)[1:-1], shown).replace(peer.uri, shown)
-    return text.replace(peer.token, "<token>") if peer.token else text
+    return mask_peer_token(text, peer.token)
 
 
 def _log_sync_failure(

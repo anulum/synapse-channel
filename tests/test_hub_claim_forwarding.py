@@ -22,6 +22,7 @@ from synapse_channel.core.multihub_claim_transport import ClaimForwardError, Cla
 from synapse_channel.core.multihub_claim_wire import ClaimForwardRequest, ClaimForwardResult
 from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
+from synapse_channel.core.peer_token import PeerToken
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.tls import MTLSPeerTrustBundle, MTLSTrustedPeer, certificate_sha256_pin
 
@@ -46,10 +47,10 @@ class _FakeForwarder:
     ) -> None:
         self._result = result
         self._error = error
-        self.calls: list[tuple[ClaimForwardRequest, str, str, str | None]] = []
+        self.calls: list[tuple[ClaimForwardRequest, str, str, PeerToken]] = []
 
     async def __call__(
-        self, request: ClaimForwardRequest, *, uri: str, local_id: str, token: str | None = None
+        self, request: ClaimForwardRequest, *, uri: str, local_id: str, token: PeerToken = None
     ) -> ClaimForwardResult:
         self.calls.append((request, uri, local_id, token))
         if self._error is not None:

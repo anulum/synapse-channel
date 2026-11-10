@@ -32,7 +32,9 @@ def _resolve_file_backed_secrets(args: argparse.Namespace) -> None:
     """Fold the owner-only ``*-file`` secret companions into their argv fields.
 
     An explicit ``--metrics-token`` wins over its file, mirroring the global
-    ``--token``/``--token-file`` precedence; ``--message-auth-key-file`` entries
+    ``--token``/``--token-file`` precedence. Outbound peer token files are not folded
+    here: the hub reads them at every connection attempt so that they rotate
+    (``cli_hub_federation``). ``--message-auth-key-file`` entries
     merge after any argv keys so both sources can rotate together. Runs before
     the hardening presets, so file-delivered material satisfies their presence
     checks exactly as argv material does.
@@ -40,11 +42,6 @@ def _resolve_file_backed_secrets(args: argparse.Namespace) -> None:
     metrics_token_file = getattr(args, "metrics_token_file", None)
     if metrics_token_file and (not args.metrics_token):
         args.metrics_token = read_secret_file(metrics_token_file, flag="--metrics-token-file")
-    peer_token_file = getattr(args, "message_peer_token_file", None)
-    if peer_token_file and (not getattr(args, "message_peer_token", None)):
-        args.message_peer_token = read_secret_file(
-            peer_token_file, flag="--message-peer-token-file"
-        )
     key_file = getattr(args, "message_auth_key_file", None)
     if key_file:
         entries = read_secret_lines(key_file, flag="--message-auth-key-file")

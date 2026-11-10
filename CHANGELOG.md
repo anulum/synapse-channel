@@ -20,6 +20,16 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Outbound peer tokens rotate without a restart. `synapse hub` gains
+  `--multihub-watch-token-file`, `--claim-peer-token-file` and
+  `--relay-peer-token-file`, and `--message-peer-token-file` now behaves like
+  them: the hub reads the owner-only file at startup, before it opens its
+  journal, and again at every watch poll, forwarded claim, relay and message
+  forward, so replacing the file changes the token the next attempt sends. An
+  unreadable file refuses startup, or fails only the attempt once the hub runs;
+  errors name the option, never the token, and the message-forward log masks
+  every recently read value. An explicit inline token still wins over its file
+  and stays fixed.
 - `synapse hub --message-auth-key-set PATH` reads the per-message HMAC keys
   from an owner-only JSON key set whose entries name an owner-only secret file,
   their senders and an optional validity window. The hub re-reads the set and
