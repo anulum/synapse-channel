@@ -618,6 +618,16 @@ worth stating plainly:
   `--base-url`. The hub is local-first, but a worker is an intentional bridge to
   whatever backend it is pointed at, so `--base-url` must be trusted. A rule-based
   worker (`--provider rule`) never leaves the machine.
+- **A model-driven identity's output carries exactly the grants that identity
+  holds.** Core never turns memory recall, documents or tool output into authority:
+  approvals, verdicts, compute-credit decisions and operation evidence each rest on
+  the bound identity of their author plus a grant, a signature or a digest. A model
+  worker acts under its own identity, though. If an operator names that identity as
+  a verdict approver or a compute-credit reviewer, or grants it
+  `operation-evidence`, whatever the model writes becomes approval or evidence
+  through a legitimate grant, including text an attacker placed in its context. Keep
+  approval, verdict and evidence grants for identities a person controls; give
+  model-driven identities the claim and message permissions their work needs.
 - **Outbound MCP config is process-launch authority.** `synapse mcp-tools` and
   `synapse mcp-call` start the configured server before its MCP tool allowlist can
   apply. Their config therefore defaults to an owner-only, single-link file
