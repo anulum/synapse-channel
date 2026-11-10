@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 import signal
-import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -192,12 +191,10 @@ def test_reap_waiter_reports_unlink_failure(
     identity = _identity()
     pidfile = tmp_path / "SYNAPSE-CHANNEL_codex-1.pid"
     pidfile.write_text("1234\n", encoding="utf-8")
-    original_unlink = Path.unlink
 
     def fail_unlink(self: Path, missing_ok: bool = False) -> None:
-        if self == pidfile:
-            raise OSError("locked")
-        original_unlink(self, missing_ok=missing_ok)
+        assert self == pidfile, f"unexpected unlink of {self}"
+        raise OSError("locked")
 
     monkeypatch.setattr(Path, "unlink", fail_unlink)
 
@@ -357,10 +354,7 @@ def test_main_cleanup_reports_refusal_as_error(
 
 
 def test_syn_reap_alias_is_packaged() -> None:
-    if sys.version_info >= (3, 11):
-        import tomllib
-    else:  # pragma: no cover - exercised only on Python 3.10
-        import tomli as tomllib
+    import tomllib
 
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     scripts: dict[str, Any] = pyproject["project"]["scripts"]

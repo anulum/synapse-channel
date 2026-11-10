@@ -32,6 +32,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import tomllib
+
 #: Git environment overrides a hook inherits (``git push``/``git commit`` set these).
 #: They take precedence over ``git -C <dir>`` and would make a subprocess resolve the
 #: hook's repository instead of the directory we asked about.
@@ -65,11 +67,6 @@ def _git_env() -> dict[str, str]:
         env.pop(key, None)
     return env
 
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - Python 3.10 compatibility path.
-    import tomli as tomllib  # pragma: no cover
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO_ROOT / "tools" / "capability_manifest.toml"

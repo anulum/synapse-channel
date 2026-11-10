@@ -12,6 +12,7 @@ import ast
 import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -367,3 +368,73 @@ def test_the_snapshot_counts_tracked_tests_despite_inherited_git_env(
     manifest = scanned / "docs" / "_generated" / "capability_manifest.json"
     assert json.loads(manifest.read_text(encoding="utf-8"))["metrics"]["tests"] == 1
     assert cap.main(["--check"], root=scanned) == 0
+
+
+def _committed_manifest_repo_with_untracked_files(root: Path) -> None:
+    """Commit the scratch manifest tree, then add one untracked module and one untracked test."""
+    _write_manifest_repo(root)
+    _git(root, "init", "-q")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "init")
+    (root / "src" / "synapse_channel" / "untracked.py").write_text(
+        "class Extra:\n    pass\n", encoding="utf-8"
+    )
+    (root / "tests" / "test_untracked.py").write_text(
+        "def test_extra():\n    assert True\n", encoding="utf-8"
+    )
+
+
+def _counts(metrics: dict[str, object]) -> tuple[object, object, object]:
+    return metrics["package_modules"], metrics["classes"], metrics["tests"]
+
+
+def test_the_snapshot_counts_files_on_disk_without_a_git_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without ``git`` on PATH the snapshot falls back from tracked files to files on disk."""
+    _committed_manifest_repo_with_untracked_files(tmp_path)
+    config = cap.load_config()
+    assert _counts(cap.collect_metrics(tmp_path, config)) == (3, 2, 1)
+    no_git = tmp_path / "no-git-bin"
+    no_git.mkdir()
+    monkeypatch.setenv("PATH", str(no_git))
+
+    assert _counts(cap.collect_metrics(tmp_path, config)) == (4, 3, 2)
+
+
+def test_the_snapshot_counts_files_on_disk_when_the_work_tree_is_configured_elsewhere(
+    tmp_path: Path,
+) -> None:
+    """A repository whose ``core.worktree`` lies elsewhere does not list the scanned package."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _committed_manifest_repo_with_untracked_files(repo)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    _git(repo, "config", "core.worktree", str(elsewhere))
+
+    metrics = cap.collect_metrics(repo, cap.load_config())
+
+    assert (metrics["package_modules"], metrics["classes"]) == (4, 3)
+
+
+def test_the_snapshot_counts_files_on_disk_when_the_index_cannot_be_read(tmp_path: Path) -> None:
+    """A damaged Git index makes the tracked listing fail; the files on disk are counted."""
+    _committed_manifest_repo_with_untracked_files(tmp_path)
+    (tmp_path / ".git" / "index").write_bytes(b"not an index")
+
+    assert _counts(cap.collect_metrics(tmp_path, cap.load_config())) == (4, 3, 2)
+
+
+def test_the_script_entry_point_checks_the_checkout() -> None:
+    """The pre-commit hook's command, run as a script, finds the checkout's snapshot current."""
+    result = subprocess.run(
+        [sys.executable, str(_PATH), "--check"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=300,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "capability snapshot is up to date\n"

@@ -8,7 +8,10 @@
 from __future__ import annotations
 
 import copy
+import errno
 import json
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -20,6 +23,20 @@ from tools import invariant_conformance as conformance
 @pytest.fixture
 def registry() -> dict[str, Any]:
     return conformance.load_registry()
+
+
+def _scratch_root(root: Path, registry: dict[str, Any]) -> None:
+    """Give ``root`` the specification and an empty file at every cited evidence path."""
+    (root / "docs").mkdir()
+    (root / "docs" / "coordination-spec.md").write_text(
+        (conformance.REPO_ROOT / conformance.SPEC_PATH).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    for row in registry["boundary"]:
+        for value in [*row["sources"], *row["tests"]]:
+            target = root / value
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch()
 
 
 def test_live_registry_is_valid_and_generated_json_is_current(registry: dict[str, Any]) -> None:
@@ -104,6 +121,20 @@ def test_required_text_list_rejects_wrong_empty_and_duplicate_values() -> None:
             lambda raw: raw["boundary"][0]["sources"].append("src/synapse_channel/not_present.py"),
             "does not exist",
         ),
+        (
+            lambda raw: raw["boundary"][0]["sources"].append(
+                "src/synapse_channel/../../outside.py"
+            ),
+            "repository-relative",
+        ),
+        (
+            lambda raw: raw["boundary"][0]["tests"].append("/tests/test_absolute.py"),
+            "repository-relative",
+        ),
+        (
+            lambda raw: raw["boundary"].__setitem__(2, "not a table"),
+            r"boundary\[2\] must be a table",
+        ),
     ],
 )
 def test_registry_shape_and_evidence_fail_closed(
@@ -126,16 +157,7 @@ def test_output_path_rejects_escape(registry: dict[str, Any]) -> None:
 
 def test_check_rejects_stale_generated_json(tmp_path: Path, registry: dict[str, Any]) -> None:
     root = tmp_path
-    (root / "docs").mkdir()
-    (root / "docs" / "coordination-spec.md").write_text(
-        (conformance.REPO_ROOT / conformance.SPEC_PATH).read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
-    for row in registry["boundary"]:
-        for value in [*row["sources"], *row["tests"]]:
-            target = root / value
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.touch()
+    _scratch_root(root, registry)
     output = root / registry["generated_output"]
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("{}\n", encoding="utf-8")
@@ -146,16 +168,7 @@ def test_check_rejects_stale_generated_json(tmp_path: Path, registry: dict[str, 
 
 def test_update_is_atomic_and_makes_check_pass(tmp_path: Path, registry: dict[str, Any]) -> None:
     root = tmp_path
-    (root / "docs").mkdir()
-    (root / "docs" / "coordination-spec.md").write_text(
-        (conformance.REPO_ROOT / conformance.SPEC_PATH).read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
-    for row in registry["boundary"]:
-        for value in [*row["sources"], *row["tests"]]:
-            target = root / value
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.touch()
+    _scratch_root(root, registry)
 
     conformance.update_registry(registry, root)
     conformance.check_registry(registry, root)
@@ -169,19 +182,11 @@ def test_enforcement_passes_when_all_boundaries_conform(
     tmp_path: Path, registry: dict[str, Any]
 ) -> None:
     root = tmp_path
-    (root / "docs").mkdir()
-    (root / "docs" / "coordination-spec.md").write_text(
-        (conformance.REPO_ROOT / conformance.SPEC_PATH).read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
     complete = copy.deepcopy(registry)
     for row in complete["boundary"]:
         row["status"] = "conformant"
         row["limitations"] = []
-        for value in [*row["sources"], *row["tests"]]:
-            target = root / value
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.touch()
+    _scratch_root(root, complete)
 
     conformance.update_registry(complete, root)
     conformance.enforce_registry(complete, root)
@@ -211,3 +216,51 @@ def test_main_reports_registry_error(
 
     assert conformance.main(["--check"]) == 1
     assert "invariant-conformance: bad registry" in capsys.readouterr().err
+
+
+def test_evidence_that_resolves_outside_the_repository_fails_closed(
+    tmp_path: Path, registry: dict[str, Any]
+) -> None:
+    """A cited path that is a symlink out of the repository is refused, not followed."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    _scratch_root(root, registry)
+    outside = tmp_path / "outside.py"
+    outside.write_text("", encoding="utf-8")
+    cited = root / registry["boundary"][0]["sources"][0]
+    cited.unlink()
+    cited.symlink_to(outside)
+
+    with pytest.raises(conformance.RegistryError, match="escapes the repository"):
+        conformance.validate_registry(registry, root)
+
+
+def test_update_leaves_nothing_when_its_temporary_file_cannot_be_created(
+    tmp_path: Path, registry: dict[str, Any]
+) -> None:
+    """A generated name too long for its temporary sibling fails before any byte is written."""
+    _scratch_root(tmp_path, registry)
+    long_output = copy.deepcopy(registry)
+    long_output["generated_output"] = "docs/generated/" + "c" * 250 + ".json"
+    target = conformance.output_path(long_output, tmp_path)
+
+    with pytest.raises(OSError) as raised:
+        conformance.update_registry(long_output, tmp_path)
+
+    assert raised.value.errno == errno.ENAMETOOLONG
+    assert list(target.parent.iterdir()) == []
+
+
+def test_the_script_entry_point_checks_the_checkout() -> None:
+    """The pre-commit hook's command, run as a script, finds the generated registry current."""
+    script = conformance.REPO_ROOT / "tools" / "invariant_conformance.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--check"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")

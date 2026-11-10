@@ -18,10 +18,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - Python 3.10 compatibility path.
-    import tomli as tomllib  # pragma: no cover
+import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO_ROOT / "tools" / "invariant_conformance.toml"
@@ -102,8 +99,8 @@ def _validate_evidence_path(root: Path, value: str, *, test: bool) -> None:
         raise RegistryError(f"evidence path does not exist as a file: {value}")
 
 
-def validate_registry(raw: dict[str, Any], root: Path = REPO_ROOT) -> list[dict[str, Any]]:
-    """Return normalized boundary rows after strict schema and evidence checks."""
+def _boundary_tables(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the boundary tables once the registry's top-level shape is valid."""
     if set(raw) != TOP_LEVEL_FIELDS:
         top_missing = sorted(TOP_LEVEL_FIELDS - set(raw))
         top_unknown = sorted(set(raw) - TOP_LEVEL_FIELDS)
@@ -122,16 +119,22 @@ def validate_registry(raw: dict[str, Any], root: Path = REPO_ROOT) -> list[dict[
     rows = raw.get("boundary")
     if not isinstance(rows, list):
         raise RegistryError("boundary must be a list")
-    identifiers = tuple(row.get("id") if isinstance(row, dict) else None for row in rows)
+    for index, item in enumerate(rows):
+        if not isinstance(item, dict):
+            raise RegistryError(f"boundary[{index}] must be a table")
+    identifiers = tuple(row.get("id") for row in rows)
     if identifiers != BOUNDARY_ORDER:
         raise RegistryError(f"boundary ids must appear exactly once in order: {BOUNDARY_ORDER!r}")
+    return rows
 
+
+def validate_registry(raw: dict[str, Any], root: Path = REPO_ROOT) -> list[dict[str, Any]]:
+    """Return normalized boundary rows after strict schema and evidence checks."""
+    rows = _boundary_tables(raw)
     spec_text = (root / SPEC_PATH).read_text(encoding="utf-8")
     spec_ids = set(re.findall(r"^### (INV-[A-Z]+-[0-9]+)\s", spec_text, flags=re.MULTILINE))
     normalized: list[dict[str, Any]] = []
     for index, item in enumerate(rows):
-        if not isinstance(item, dict):
-            raise RegistryError(f"boundary[{index}] must be a table")
         unknown = set(item) - REQUIRED_FIELDS
         missing = REQUIRED_FIELDS - set(item)
         if unknown or missing:
