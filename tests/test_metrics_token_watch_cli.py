@@ -94,14 +94,19 @@ def test_an_idle_hub_applies_and_rejects_a_replaced_file_within_two_intervals(
 
 
 def test_an_entry_that_expires_while_the_hub_serves_is_one_row(tmp_path: Path) -> None:
-    """``not_after`` a few seconds ahead: valid first, then 401, and one expiry row."""
+    """``not_after`` a few seconds ahead: valid first, then 401, and one expiry row.
+
+    The short entry is written only once the hub listens, so a slow start cannot use up
+    its window; the request that follows also applies it.
+    """
     tokens = tmp_path / "metrics-tokens.json"
-    end = float(int(time.time()) + 3)
-    _write(tokens, _entry("short", "short-secret", not_after=_instant(end)))
+    _write(tokens, _entry("starter", "starter-secret"))
     with isolated_hub(
         tmp_path, extra_args=["--metrics", "--metrics-token-set", str(tokens)]
     ) as hub:
         url = f"http://127.0.0.1:{hub.port}/metrics"
+        end = float(int(time.time()) + 4)
+        _write(tokens, _entry("short", "short-secret", not_after=_instant(end)))
         assert _status(url, "short-secret") == 200
         time.sleep(max(0.0, end + _TWO_INTERVALS + 0.5 - time.time()))
         assert _status(url, "short-secret") == 401
