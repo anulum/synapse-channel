@@ -367,6 +367,7 @@ class TokenSetAuthenticator(TokenAuthenticator):
         self._stale_reason: str | None = None
         self._stale_code: str | None = None
         self._observers: list[TokenSetObserver] = []
+        self._outcome_observers: list[Callable[[TokenOutcome], None]] = []
 
     @property
     def policy(self) -> dict[str, object]:
@@ -405,6 +406,15 @@ class TokenSetAuthenticator(TokenAuthenticator):
         observer.set_applied(self._path, self._token_ids())
         if self._stale_reason is not None:
             observer.set_rejected(self._path, self._stale_reason)
+
+    def observe_outcomes(self, observer: Callable[[TokenOutcome], None]) -> None:
+        """Send the outcome of every later authentication to ``observer``.
+
+        Observers are called in the order they were added, after the verdict is
+        reached and before it is returned. A failing observer is logged; the
+        verdict is not changed by it.
+        """
+        self._outcome_observers.append(observer)
 
     def _token_ids(self) -> tuple[str, ...]:
         """Return the identifiers of the set in force, in file order."""
@@ -519,6 +529,16 @@ class TokenSetAuthenticator(TokenAuthenticator):
         TokenOutcome
             The verdict with the matched identifier, if any.
         """
+        outcome = self._judge(token, agent)
+        for observer in self._outcome_observers:
+            try:
+                observer(outcome)
+            except Exception:
+                _LOG.exception("a token-set outcome observer failed")
+        return outcome
+
+    def _judge(self, token: str, agent: str) -> TokenOutcome:
+        """Reach the verdict on ``token`` for ``agent`` against the set in force."""
         self.refresh()
         candidate = str(token)
         if not candidate:

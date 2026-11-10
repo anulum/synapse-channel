@@ -96,6 +96,8 @@ NON_RECEIPT_EVENT_KINDS = frozenset(
         EventKind.CONNECT_TOKEN_SESSION_ENDED,
         EventKind.METRICS_TOKEN_SET_APPLIED,
         EventKind.METRICS_TOKEN_SET_REJECTED,
+        EventKind.METRICS_TOKEN_EXPIRED,
+        EventKind.METRICS_TOKEN_RETIRING_ADMISSION,
     }
 )
 """Event kinds outside the universal receipt projection.

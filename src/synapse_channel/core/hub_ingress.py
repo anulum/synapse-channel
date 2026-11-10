@@ -25,6 +25,7 @@ hub never mutates it after ``__init__``; the guard warns through a logger named
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
@@ -32,6 +33,7 @@ from typing import Any
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_exposure import exposure_problems, guard_exposure
+from synapse_channel.core.metrics_token_watch import MetricsTokenWatch
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.token_audit import TokenAudit
 from synapse_channel.core.token_sessions import TokenSessions, watch_token_set
@@ -49,6 +51,11 @@ client could smuggle a type-confused sender or target past name binding. ``paylo
 is deliberately excluded: a structured JSON payload is legitimate on the wire (an A2A
 task frame carries ``payload`` as an object), so it keeps its documented coercion.
 """
+
+
+async def _run_together(loops: list[Coroutine[Any, Any, None]]) -> None:
+    """Run every check loop until all end; cancelling this cancels each of them."""
+    await asyncio.gather(*loops)
 
 
 class HubIngress:
@@ -89,6 +96,8 @@ class HubIngress:
     metrics_token_set : TokenAuthenticator or None, optional
         The token set gating the metrics endpoint beside (or instead of)
         ``metrics_token``; consulted by the exposure guard like the fixed token.
+    metrics_token_watch : MetricsTokenWatch or None, optional
+        The periodic check of a metrics token-set file; ``None`` runs none.
     """
 
     def __init__(
@@ -105,6 +114,7 @@ class HubIngress:
         token_audit: TokenAudit | None = None,
         token_sessions: TokenSessions | None = None,
         metrics_token_set: TokenAuthenticator | None = None,
+        metrics_token_watch: MetricsTokenWatch | None = None,
     ) -> None:
         self._clients = clients
         self._authenticator = authenticator
@@ -113,6 +123,7 @@ class HubIngress:
         self._enable_metrics = enable_metrics
         self._metrics_token = metrics_token
         self._metrics_token_set = metrics_token_set
+        self._metrics_token_watch = metrics_token_watch
         self._metrics_query_token_ok = metrics_query_token_ok
         self._insecure_off_loopback = insecure_off_loopback
         self._send_json = send_json
@@ -190,11 +201,22 @@ class HubIngress:
         return outcome.ok, outcome.reason, outcome.principal
 
     def token_set_watcher(self) -> Coroutine[Any, Any, None] | None:
-        """Return the token-set check loop a token-set hub runs while serving, if any."""
-        authenticator = self._authenticator
-        if isinstance(authenticator, TokenSetAuthenticator):
-            return watch_token_set(authenticator)
-        return None
+        """Return the check loop of the token-set files this hub serves, if any.
+
+        A connect token set and a metrics token set each have a loop. A hub with
+        both runs them in one coroutine, so the service lifetime starts and
+        cancels them together.
+        """
+        loops: list[Coroutine[Any, Any, None]] = []
+        if isinstance(self._authenticator, TokenSetAuthenticator):
+            loops.append(watch_token_set(self._authenticator))
+        if self._metrics_token_watch is not None:
+            loops.append(self._metrics_token_watch.run())
+        if not loops:
+            return None
+        if len(loops) == 1:
+            return loops[0]
+        return _run_together(loops)
 
     def flush_audit(self) -> None:
         """Write the counts of refusal windows still open; called when serving stops."""

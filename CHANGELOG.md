@@ -28,6 +28,12 @@ execution evidence when carrying a release claim forward.
   With a journal, applied and rejected sets are audit rows
   (`metrics_token_set_applied`, `metrics_token_set_rejected`). `SynapseHub`
   takes it as `metrics_token_set`.
+- The metrics token set is checked every second while the hub serves, like a
+  connect-token set, so an idle hub applies or rejects a replaced file without
+  a metrics request. With a journal, an entry that passes its `not_after` is
+  recorded once (`metrics_token_expired`), and a request admitted by an older
+  entry while a newer valid entry exists is recorded once per entry and hour
+  (`metrics_token_retiring_admission`).
 - Optional protected frontend control relays original signed requests over
   native Unix channels into the existing authority actor and durable stores.
   It verifies enrolled process peers, binds connections and correlations,

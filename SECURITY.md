@@ -542,8 +542,9 @@ When that boundary is crossed, the proportionate controls are:
   `--metrics-token-set PATH` guards the endpoint with a token set in the
   `--token-set` format instead of one fixed token, so the metrics bearer
   rotates without a restart: add the new entry, move the scraper to it, then
-  remove the old one. The hub re-reads the file at the next metrics request
-  after it changed; a file that fails validation is not applied and the last
+  remove the old one. The hub checks the file every second, as it does a
+  connect-token set, and again at each metrics request, so an idle hub also
+  picks up a change; a file that fails validation is not applied and the last
   accepted set keeps working. Entries honour their `not_before`/`not_after`
   window, and an entry that names `agents` admits no metrics request. It
   cannot be combined with `--metrics-token` or `--metrics-token-file`, and
@@ -552,7 +553,12 @@ When that boundary is crossed, the proportionate controls are:
   connect-token file: an entry present in both files admits both. With a
   journal, each applied or rejected metrics set is written as an audit row
   (`metrics_token_set_applied`, `metrics_token_set_rejected`) holding the
-  token identifiers or the reason, never a secret or a digest.
+  token identifiers or the reason, never a secret or a digest. Two more rows
+  follow the set's life: `metrics_token_expired`, once per entry that passes
+  its `not_after`, and `metrics_token_retiring_admission`, once per entry and
+  hour while a request is still admitted by an older entry that a newer valid
+  one is meant to replace, so a scraper left on the old token shows before the
+  old entry is removed.
 - **A2A HTTP bridge.** `synapse a2a-serve` is a separate stdlib HTTP edge that
   defaults to `127.0.0.1`. Its public Agent Card is intentionally readable; the
   task, RPC, extended-card, and push-configuration routes can require HTTP

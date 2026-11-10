@@ -29,14 +29,25 @@ Coordination replay skips them; they hold no secret and no digest.
 Agent names come from the connecting client and are cut to
 :data:`AGENT_FIELD_LIMIT` characters.
 
-A hub whose metrics bearer follows a token set (``--metrics-token-set``) writes two
-more audit-only kinds for that set, with the same fields as their connect-token
-counterparts:
+A hub whose metrics bearer follows a token set (``--metrics-token-set``) writes four
+more audit-only kinds for that set. The first two have the same fields as their
+connect-token counterparts:
 
 ``metrics_token_set_applied``
     The metrics token-set file now in force, with its token identifiers.
 ``metrics_token_set_rejected``
     A metrics token-set file that was not applied and why.
+``metrics_token_expired``
+    An entry of the set in force passed its ``not_after``: the token identifier,
+    its ``not_after`` and whether the periodic check or a request saw it first
+    (``observed`` ``watcher`` or ``request``). One row per identifier for the
+    life of the hub.
+``metrics_token_retiring_admission``
+    A metrics request was admitted by a *retiring* entry, one that a newer valid
+    entry is meant to replace: the token identifier, the newest valid
+    identifier and the start of the hour (``hour_start``). One row per
+    identifier and hour, so an overlap still in use shows without flooding the
+    journal.
 """
 
 from __future__ import annotations
@@ -58,6 +69,8 @@ SET_REJECTED_KIND = "connect_token_set_rejected"
 SESSION_ENDED_KIND = "connect_token_session_ended"
 METRICS_SET_APPLIED_KIND = "metrics_token_set_applied"
 METRICS_SET_REJECTED_KIND = "metrics_token_set_rejected"
+METRICS_EXPIRED_KIND = "metrics_token_expired"
+METRICS_RETIRING_ADMISSION_KIND = "metrics_token_retiring_admission"
 
 REFUSAL_WINDOW_SECONDS = 60.0
 """Length of one refusal aggregation window."""
@@ -210,7 +223,7 @@ def token_audit_for(
 
 
 class MetricsTokenAudit:
-    """Write the applied and rejected rows of a metrics token set to a hub journal.
+    """Write the rows of a metrics token set to a hub journal.
 
     Parameters
     ----------
@@ -233,6 +246,42 @@ class MetricsTokenAudit:
         """Record that the metrics token set at ``path`` was not applied."""
         self._journal.append(
             METRICS_SET_REJECTED_KIND, {"path": str(path), "reason": reason}, durable=True
+        )
+
+    def expired(self, token_id: str, not_after: float, observed: str) -> None:
+        """Record that the metrics token ``token_id`` passed its ``not_after``.
+
+        Parameters
+        ----------
+        token_id : str
+            The entry that expired.
+        not_after : float
+            Its end of validity, in POSIX seconds.
+        observed : str
+            ``watcher`` or ``request``: which check saw the expiry first.
+        """
+        self._journal.append(
+            METRICS_EXPIRED_KIND,
+            {"token_id": token_id, "not_after": not_after, "observed": observed},
+            durable=True,
+        )
+
+    def retiring_admission(self, token_id: str, newest_token_id: str, hour_start: float) -> None:
+        """Record that a retiring metrics token admitted a request in this hour.
+
+        Parameters
+        ----------
+        token_id : str
+            The retiring entry that admitted the request.
+        newest_token_id : str
+            The newest valid entry, the one meant to replace it.
+        hour_start : float
+            Start of the hour the row stands for, in POSIX seconds.
+        """
+        self._journal.append(
+            METRICS_RETIRING_ADMISSION_KIND,
+            {"token_id": token_id, "newest_token_id": newest_token_id, "hour_start": hour_start},
+            durable=True,
         )
 
 
