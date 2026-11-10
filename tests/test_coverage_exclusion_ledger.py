@@ -35,9 +35,6 @@ Justification classes
     through the supported API.
 ``entrypoint``
     ``if __name__ == "__main__"`` dispatch lines.
-``interpreter-guard``
-    Compatibility branches that execute only on another supported Python
-    interpreter version (for example, the Python 3.10 ``tomli`` fallback).
 ``blocking-wrapper``
     A process-blocking serve wrapper whose factory is covered by real tests.
 ``platform-guard``
@@ -87,8 +84,6 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/a2a_scenario_responses.py": (1, "validated-helper-boundary"),
     "src/synapse_channel/ack.py": (2, "protocol-body"),
     "src/synapse_channel/cli.py": (1, "env-defensive"),
-    "src/synapse_channel/cli_doctor_mcp_hosts.py": (1, "interpreter-guard"),
-    "src/synapse_channel/codex_mcp_package.py": (1, "interpreter-guard"),
     "src/synapse_channel/cli_doctor_federation.py": (5, "protocol-body"),
     # Lease renewal: register_owner and the exchange absorb connection errors.
     "src/synapse_channel/cli_lock_supervision.py": (1, "validated-helper-boundary"),
@@ -119,9 +114,7 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/core/tls.py": (2, "protocol-body"),
     "src/synapse_channel/ergonomics.py": (1, "entrypoint"),
     "src/synapse_channel/ergonomics_inbox.py": (2, "protocol-body"),
-    "src/synapse_channel/kimi_hook_installer.py": (1, "interpreter-guard"),
     "src/synapse_channel/locks.py": (2, "protocol-body"),
-    "src/synapse_channel/mutation_governance.py": (1, "optional-import"),
     "src/synapse_channel/observed_peers.py": (1, "protocol-body"),
     "src/synapse_channel/reap.py": (3, "protocol-body"),
     "src/synapse_channel/setup_authorization.py": (1, "env-defensive"),

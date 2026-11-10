@@ -22,10 +22,11 @@ import shlex
 import shutil
 import stat
 import subprocess  # nosec B404
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
+
+import tomllib
 
 from synapse_channel.claude_plugin_install import plugin_path
 from synapse_channel.kimi_hook_config_file import (
@@ -48,11 +49,6 @@ from synapse_channel.opencode_adapter_files import (
     OpenCodeAdapterFileError,
     read_text_snapshot,
 )
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - exercised only on Python 3.10
-    import tomli as tomllib
 
 ConfigurationState = Literal["configured", "partial", "not-configured", "invalid"]
 HookState = Literal["installed", "not-installed", "invalid", "not-a-repository", "inspection-limit"]

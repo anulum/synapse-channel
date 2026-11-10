@@ -16,18 +16,14 @@ bounded, race-aware filesystem boundary.
 from __future__ import annotations
 
 import json
-import sys
+
+import tomllib
 
 from synapse_channel.cli_claim_hook_common import (
     hook_timeout,
     render_hook_command,
 )
 from synapse_channel.core.errors import SynapseError
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - exercised only on Python 3.10
-    import tomli as tomllib
 
 KIMI_HOOK_MARKER_BEGIN = "synapse-channel:kimi-hook:begin"
 """Opening marker for the Synapse-owned hook block inside ``config.toml``."""

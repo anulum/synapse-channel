@@ -38,15 +38,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+import tomllib
+
 from synapse_channel.claude_plugin_install import inspect_plugin
 from synapse_channel.cli_claim_hook_common import resolve_synapse_binary
 from synapse_channel.client.diagnostics import Diagnosis
 from synapse_channel.mutation_governance import inspect_mutation_governance
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - exercised on Python 3.10
-    import tomli as tomllib
 
 DefinitionStatus = Literal["genuine", "other-install", "foreign", "remote"]
 

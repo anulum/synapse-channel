@@ -14,18 +14,14 @@ import json
 import os
 import re
 import subprocess  # nosec B404
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from synapse_channel.core.errors import SynapseError
+import tomllib
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - exercised on Python 3.10
-    import tomli as tomllib
+from synapse_channel.core.errors import SynapseError
 
 TESTED_CODEX_VERSION = "0.156.0"
 MARKER_NAME = ".synapse-codex-mcp.json"
