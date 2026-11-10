@@ -13,6 +13,8 @@ import argparse
 import asyncio
 import json
 import logging
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -484,3 +486,24 @@ def test_the_durable_ledger_decides_while_its_memory_mirror_stays_bounded(tmp_pa
         assert cache.admit("k", "P/a", "second", 4, timestamp=later, now=later) is None
     finally:
         ledger.close()
+
+
+def test_message_auth_imports_without_the_optional_security_extra() -> None:
+    """Without ``cryptography`` the module imports and Ed25519 verification refuses."""
+    script = """import json, sys
+sys.modules["cryptography"] = None
+from synapse_channel.core import message_auth
+key = message_auth.EventSignatureKey(key_id="k", public_key=bytes(32))
+try:
+    key.verifier()
+except ImportError:
+    refused = True
+else:
+    refused = False
+print(json.dumps({"available": message_auth.CRYPTOGRAPHY_AVAILABLE, "refused": refused}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=60, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"available": False, "refused": True}

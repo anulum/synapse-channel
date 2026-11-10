@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from synapse_channel.core.aef_domain import AEF_LEGACY_EVENT_DOMAIN, aef_signature_preimage
 from synapse_channel.core.message_auth_durable import (
@@ -29,11 +29,22 @@ from synapse_channel.core.message_auth_durable import (
 )
 from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, MessageType
 
-if TYPE_CHECKING:
+CRYPTOGRAPHY_AVAILABLE: bool
+"""Whether the optional security extra (``cryptography``) can be imported.
+
+Without it the module still imports; Ed25519 signing and verification raise
+``ImportError`` when used, as :meth:`EventSignatureKey.verifier` does.
+"""
+
+try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PrivateKey,
         Ed25519PublicKey,
     )
+except ImportError:  # the optional security extra is not installed
+    CRYPTOGRAPHY_AVAILABLE = False
+else:
+    CRYPTOGRAPHY_AVAILABLE = True
 
 AUTH_ALGORITHM = "hmac-sha256"
 """Authentication algorithm value carried in signed frame metadata."""
