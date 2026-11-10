@@ -14,7 +14,11 @@ pre-commit hook:
 
 - a configuration that grows after those checks is refused by the loop's own byte
   count, so the gate is reported incomplete;
-- a configuration of exactly the limit is read whole, so the same gate is ready.
+- a configuration of exactly the limit is read whole and reported configured, so the
+  same gate is ready wherever file modes carry execute bits.
+
+The growth case runs in a child interpreter bound to the candidate package under
+test, and the child reports the origin of the module it inspected with.
 """
 
 from __future__ import annotations
@@ -25,7 +29,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cli_e2e_helpers import git_repo
+from cli_e2e_helpers import _candidate_environment, git_repo
+from synapse_channel import mutation_governance
 from synapse_channel.mutation_governance import _READ_LIMIT, inspect_mutation_governance
 
 _GATE = """\
@@ -40,6 +45,17 @@ repos:
 """
 
 _HOOK = "#!/bin/sh\nexec python3 -m pre_commit hook-impl --hook-type=pre-commit\n"
+
+# The staged gate trusts a hook only when the mode from its open descriptor has an
+# execute bit. Native Windows reports a regular file as 0o444 or 0o666 whatever chmod
+# asked for, so there the same real hook reads as invalid and the gate cannot be
+# ready. The configuration read, and so the configured/invalid outcome, is the same
+# on every platform.
+_POSIX_MODES = os.name != "nt"
+_HOOK_STATE = "installed" if _POSIX_MODES else "invalid"
+_EXACT_LIMIT_GATE = (
+    ("ready-not-exercised", "not-exercised") if _POSIX_MODES else ("incomplete", "not-configured")
+)
 
 
 def _gated_repository(tmp_path: Path, config_text: str) -> tuple[Path, Path, Path]:
@@ -62,6 +78,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+from synapse_channel import mutation_governance
 from synapse_channel.mutation_governance import inspect_mutation_governance
 
 home, repo, config, limit_text = sys.argv[1:5]
@@ -89,7 +106,8 @@ report = inspect_mutation_governance(home=Path(home), project=Path(repo))
 sys.setprofile(None)
 if not grown:
     raise SystemExit("the configuration never grew during its read")
-sys.stdout.write(json.dumps(asdict(report.staged_gate)))
+origin = str(Path(mutation_governance.__file__).resolve())
+sys.stdout.write(json.dumps({"origin": origin, "gate": asdict(report.staged_gate)}))
 """
 
 
@@ -111,6 +129,7 @@ def test_a_configuration_that_grows_during_its_read_leaves_the_gate_incomplete(
             str(_READ_LIMIT),
         ],
         cwd=repo,
+        env=_candidate_environment(None),
         capture_output=True,
         text=True,
         check=False,
@@ -118,9 +137,11 @@ def test_a_configuration_that_grows_during_its_read_leaves_the_gate_incomplete(
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    gate = json.loads(result.stdout)
+    answer = json.loads(result.stdout)
+    assert answer["origin"] == str(Path(mutation_governance.__file__).resolve())
+    gate = answer["gate"]
     assert gate["repository"] is not None
-    assert (gate["configuration_state"], gate["hook_state"]) == ("invalid", "installed")
+    assert (gate["configuration_state"], gate["hook_state"]) == ("invalid", _HOOK_STATE)
     assert (gate["gate_status"], gate["enforcement_status"]) == ("incomplete", "not-configured")
     after = config.stat()
     assert (after.st_dev, after.st_ino) == (before.st_dev, before.st_ino)
@@ -128,7 +149,7 @@ def test_a_configuration_that_grows_during_its_read_leaves_the_gate_incomplete(
     assert config.read_text(encoding="utf-8").startswith(_GATE)
 
 
-def test_a_configuration_of_exactly_the_limit_is_read_and_the_gate_is_ready(
+def test_a_configuration_of_exactly_the_limit_is_read_as_configured(
     tmp_path: Path,
 ) -> None:
     """The byte limit is inclusive: a configured gate of exactly the limit is accepted."""
@@ -139,7 +160,7 @@ def test_a_configuration_of_exactly_the_limit_is_read_and_the_gate_is_ready(
 
     gate = inspect_mutation_governance(home=home, project=repo).staged_gate
 
-    assert (gate.configuration_state, gate.hook_state) == ("configured", "installed")
-    assert (gate.gate_status, gate.enforcement_status) == ("ready-not-exercised", "not-exercised")
+    assert (gate.configuration_state, gate.hook_state) == ("configured", _HOOK_STATE)
+    assert (gate.gate_status, gate.enforcement_status) == _EXACT_LIMIT_GATE
     assert os.path.samefile(gate.repository or "", repo)
     assert config.read_bytes() == before
