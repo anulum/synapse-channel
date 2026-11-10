@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from cli_e2e_helpers import CliResult, git_repo, git_run, run_cli
+from cli_e2e_helpers import CliResult, _candidate_environment, git_repo, git_run, run_cli
 from synapse_channel import cli
 from synapse_channel.mutation_governance import _READ_LIMIT, inspect_mutation_governance
 
@@ -589,6 +589,7 @@ def test_real_cli_refuses_a_precommit_file_that_changes_before_open(
             str(_READ_LIMIT),
         ],
         cwd=repo,
+        env=_candidate_environment(None),
         capture_output=True,
         text=True,
         check=False,
@@ -622,8 +623,7 @@ def test_an_append_at_open_is_refused_before_the_read_loop(tmp_path: Path) -> No
     config.write_text("repos: []\n", encoding="utf-8")
     replacement = tmp_path / "replacement.yaml"
     replacement.write_text(_GATE_THAT_WOULD_LOOK_CONFIGURED, encoding="utf-8")
-    env = os.environ.copy()
-    env["READ_DIRECT"] = "1"
+    env = _candidate_environment({"READ_DIRECT": "1"})
     result = subprocess.run(
         [
             sys.executable,
