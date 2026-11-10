@@ -302,14 +302,6 @@ class SynapseHub(HubConfigView):
         <token>`` — and answer ``401`` without it, so an exposed metrics endpoint
         does not leak operational metadata. ``None`` leaves the endpoint open, which
         is the right default for a loopback bind.
-    metrics_token_set : TokenAuthenticator or None, optional
-        An authenticator for ``/metrics`` and ``/health`` beside (or instead of)
-        ``metrics_token``, normally a
-        :class:`~synapse_channel.core.token_set.TokenSetAuthenticator` read from an
-        owner-only token-set file (``--metrics-token-set``). The file is re-read when
-        it changes, so the metrics bearer rotates without a restart; entries carry
-        validity windows, and an entry that names agents admits no metrics request.
-        With a journal, each applied or rejected set is an audit row.
     metrics_query_token_ok : bool, optional
         Also accept the token as a ``?token=<token>`` query parameter. Off by
         default because a query token can leak into access logs, shell history, and

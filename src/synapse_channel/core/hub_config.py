@@ -221,7 +221,16 @@ class HubAuthConfig:
 
 @dataclass(frozen=True, kw_only=True)
 class HubMetricsConfig:
-    """The optional HTTP ``/metrics`` and ``/health`` endpoint and its token or token set."""
+    """The optional HTTP ``/metrics`` and ``/health`` endpoint and its token or token set.
+
+    ``metrics_token_set`` (hub keyword of the same name) is an authenticator for the two
+    routes beside, or instead of, ``metrics_token``: normally a
+    :class:`~synapse_channel.core.token_set.TokenSetAuthenticator` read from an owner-only
+    token-set file (``--metrics-token-set``). The file is re-read when it changes, so the
+    metrics bearer rotates without a restart; entries carry validity windows, and an entry
+    that names agents admits no metrics request. With a journal, each applied or rejected
+    set is an audit row.
+    """
 
     enable_metrics: bool = False
     metrics_token: str | None = None
