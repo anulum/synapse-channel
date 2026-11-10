@@ -162,7 +162,10 @@ def _read_repository_text(path: Path) -> tuple[str, int] | None:
         return None
     if not stat.S_ISREG(before.st_mode) or before.st_size > _READ_LIMIT:
         raise ValueError(f"unsafe repository inspection path: {path}")
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    # O_BINARY: on Windows a descriptor opened without it translates CRLF and stops at
+    # Ctrl-Z, so the byte limit and the content checks would not see the real bytes.
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    descriptor = os.open(path, flags)
     try:
         after = os.fstat(descriptor)
         if (

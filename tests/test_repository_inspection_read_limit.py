@@ -15,7 +15,9 @@ pre-commit hook:
 - a configuration that grows after those checks is refused by the loop's own byte
   count, so the gate is reported incomplete;
 - a configuration of exactly the limit is read whole and reported configured, so the
-  same gate is ready wherever file modes carry execute bits.
+  same gate is ready wherever file modes carry execute bits;
+- the read counts and returns the file's raw bytes: CRLF line ends and a Ctrl-Z byte,
+  which a Windows text-mode descriptor would translate or stop at, change nothing.
 
 The growth case runs in a child interpreter bound to the candidate package under
 test, and the child reports the origin of the module it inspected with.
@@ -53,12 +55,12 @@ _HOOK = "#!/bin/sh\nexec python3 -m pre_commit hook-impl --hook-type=pre-commit\
 # on every platform.
 _POSIX_MODES = os.name != "nt"
 _HOOK_STATE = "installed" if _POSIX_MODES else "invalid"
-_EXACT_LIMIT_GATE = (
+_CONFIGURED_GATE = (
     ("ready-not-exercised", "not-exercised") if _POSIX_MODES else ("incomplete", "not-configured")
 )
 
 
-def _gated_repository(tmp_path: Path, config_text: str) -> tuple[Path, Path, Path]:
+def _gated_repository(tmp_path: Path, config_bytes: bytes) -> tuple[Path, Path, Path]:
     """Return a home, a real Git repository with an installed hook, and its configuration."""
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
@@ -67,7 +69,7 @@ def _gated_repository(tmp_path: Path, config_text: str) -> tuple[Path, Path, Pat
     hook.write_text(_HOOK, encoding="utf-8")
     hook.chmod(0o755)
     config = repo / ".pre-commit-config.yaml"
-    config.write_text(config_text, encoding="utf-8")
+    config.write_bytes(config_bytes)
     return home, repo, config
 
 
@@ -114,8 +116,13 @@ sys.stdout.write(json.dumps({"origin": origin, "gate": asdict(report.staged_gate
 def test_a_configuration_that_grows_during_its_read_leaves_the_gate_incomplete(
     tmp_path: Path,
 ) -> None:
-    """Growth after the open-time checks is caught by the read loop, not read as configured."""
-    home, repo, config = _gated_repository(tmp_path, _GATE)
+    """Growth after the open-time checks is caught by the read loop, not read as configured.
+
+    The configuration has CRLF line ends, so a read that translated them would count
+    fewer bytes than the file holds and miss the limit.
+    """
+    crlf_gate = _GATE.replace("\n", "\r\n").encode("utf-8")
+    home, repo, config = _gated_repository(tmp_path, crlf_gate)
     before = config.stat()
 
     result = subprocess.run(
@@ -146,7 +153,7 @@ def test_a_configuration_that_grows_during_its_read_leaves_the_gate_incomplete(
     after = config.stat()
     assert (after.st_dev, after.st_ino) == (before.st_dev, before.st_ino)
     assert after.st_size == _READ_LIMIT + 1
-    assert config.read_text(encoding="utf-8").startswith(_GATE)
+    assert config.read_bytes().startswith(crlf_gate)
 
 
 def test_a_configuration_of_exactly_the_limit_is_read_as_configured(
@@ -154,13 +161,23 @@ def test_a_configuration_of_exactly_the_limit_is_read_as_configured(
 ) -> None:
     """The byte limit is inclusive: a configured gate of exactly the limit is accepted."""
     padding = "#" * (_READ_LIMIT - len(_GATE.encode("utf-8")) - 1) + "\n"
-    home, repo, config = _gated_repository(tmp_path, _GATE + padding)
+    home, repo, config = _gated_repository(tmp_path, (_GATE + padding).encode("utf-8"))
     assert config.stat().st_size == _READ_LIMIT
     before = config.read_bytes()
 
     gate = inspect_mutation_governance(home=home, project=repo).staged_gate
 
     assert (gate.configuration_state, gate.hook_state) == ("configured", _HOOK_STATE)
-    assert (gate.gate_status, gate.enforcement_status) == _EXACT_LIMIT_GATE
+    assert (gate.gate_status, gate.enforcement_status) == _CONFIGURED_GATE
     assert os.path.samefile(gate.repository or "", repo)
     assert config.read_bytes() == before
+
+
+def test_a_ctrl_z_byte_does_not_end_the_configuration_read(tmp_path: Path) -> None:
+    """A Ctrl-Z byte before the gate does not hide the gate from the inspection."""
+    home, repo, config = _gated_repository(tmp_path, b"# \x1a\n" + _GATE.encode("utf-8"))
+
+    gate = inspect_mutation_governance(home=home, project=repo).staged_gate
+
+    assert (gate.configuration_state, gate.hook_state) == ("configured", _HOOK_STATE)
+    assert (gate.gate_status, gate.enforcement_status) == _CONFIGURED_GATE
