@@ -218,6 +218,7 @@ def _tracked_test_files(tests_root: Path) -> list[Path]:
             check=False,
             capture_output=True,
             text=True,
+            env=_git_env(),
         )  # nosec B603,B607
     except OSError:
         return []

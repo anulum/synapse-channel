@@ -331,3 +331,39 @@ def test_git_tracked_py_files_ignores_inherited_git_env(
     names = {path.name for path in tracked}
     assert {"module.py", "cli.py", "__init__.py"} <= names
     assert all("src/synapse_channel" in path.as_posix() for path in tracked)
+
+
+def test_the_snapshot_counts_tracked_tests_despite_inherited_git_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hook's leaked GIT_DIR/GIT_WORK_TREE must not misdirect the snapshot's test count.
+
+    ``git push`` and ``git commit`` run their hooks with another repository's Git
+    environment possibly inherited. ``git -C <repo> ls-files`` then lists that
+    repository's tests; joined to the scanned root they name files that do not exist,
+    and the update fails. The test scan strips those overrides as the module scan does.
+    """
+    scanned = tmp_path / "scanned"
+    scanned.mkdir()
+    _write_manifest_repo(scanned)
+    _git(scanned, "init", "-q")
+    _git(scanned, "add", "-A")
+    _git(scanned, "commit", "-qm", "init")
+
+    leaked = tmp_path / "leaked"
+    (leaked / "tests").mkdir(parents=True)
+    (leaked / "tests" / "test_leaked.py").write_text(
+        "def test_one():\n    assert True\n\n\ndef test_two():\n    assert True\n",
+        encoding="utf-8",
+    )
+    _git(leaked, "init", "-q")
+    _git(leaked, "add", "-A")
+    _git(leaked, "commit", "-qm", "init")
+
+    monkeypatch.setenv("GIT_DIR", str(leaked / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(leaked))
+
+    assert cap.main(["--update"], root=scanned) == 0
+    manifest = scanned / "docs" / "_generated" / "capability_manifest.json"
+    assert json.loads(manifest.read_text(encoding="utf-8"))["metrics"]["tests"] == 1
+    assert cap.main(["--check"], root=scanned) == 0
