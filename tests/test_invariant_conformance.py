@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import errno
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Callable
@@ -18,6 +19,15 @@ from typing import Any
 
 import pytest
 from tools import invariant_conformance as conformance
+
+# An absolute path on this platform: "/tests/..." has no drive on Windows and is
+# relative there, so the root anchor of the working directory is used instead.
+_ABSOLUTE_TEST_PATH = str(Path(Path.cwd().anchor, "tests", "test_absolute.py"))
+
+# A temporary name over the 255-byte component limit is refused as ENAMETOOLONG on
+# POSIX. Native Windows (Python 3.12.10 on Windows 11, long paths not enabled) refuses
+# the same create as EINVAL.
+_NAME_TOO_LONG = errno.EINVAL if os.name == "nt" else errno.ENAMETOOLONG
 
 
 @pytest.fixture
@@ -128,7 +138,7 @@ def test_required_text_list_rejects_wrong_empty_and_duplicate_values() -> None:
             "repository-relative",
         ),
         (
-            lambda raw: raw["boundary"][0]["tests"].append("/tests/test_absolute.py"),
+            lambda raw: raw["boundary"][0]["tests"].append(_ABSOLUTE_TEST_PATH),
             "repository-relative",
         ),
         (
@@ -247,7 +257,7 @@ def test_update_leaves_nothing_when_its_temporary_file_cannot_be_created(
     with pytest.raises(OSError) as raised:
         conformance.update_registry(long_output, tmp_path)
 
-    assert raised.value.errno == errno.ENAMETOOLONG
+    assert raised.value.errno == _NAME_TOO_LONG
     assert list(target.parent.iterdir()) == []
 
 
