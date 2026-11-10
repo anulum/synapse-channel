@@ -166,7 +166,9 @@ def test_family_overrides_reach_the_constructed_hub() -> None:
     assert hub.enable_metrics is True
     assert hub.metrics_token == "mtok"
     assert hub.observed_asserting_hubs is asserting
+    assert hub.observed_asserting_hubs("BENCH") == []
     assert hub.federation_cert_source is cert_source
+    assert hub.federation_cert_source(object()) is None
     assert hub.state.default_ttl_seconds == 120.0
 
 
