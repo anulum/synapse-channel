@@ -37,16 +37,19 @@ import logging
 import sqlite3
 import time
 import uuid
+from collections.abc import Callable
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
+from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
 from synapse_channel.core.delivery_modes import DeliveryRefusal
-from synapse_channel.core.handler_context import HandlerContext
 from synapse_channel.core.hub_address import (
     HubQualifiedAddress,
     is_single_seat,
     parse_hub_qualified,
 )
+from synapse_channel.core.hub_clients import HubClientRegistry
+from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.journal import record_chat
 from synapse_channel.core.message_forward_attempts import own_forward_work
 from synapse_channel.core.message_forward_ledger import (
@@ -69,11 +72,75 @@ from synapse_channel.core.message_forward_wire import (
     encode_message_forward_result,
 )
 from synapse_channel.core.peer_token import mask_peer_token
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.state import SynapseState
+from synapse_channel.core.state_transaction import SerializedStateMutationActor
 
 
-class ForwardOriginContext(HandlerContext, Protocol):
-    """Capabilities consumed by message forward origin handlers and their callees."""
+class ForwardOriginContext(Protocol):
+    """Capabilities consumed by message forward origin handlers and their callees.
+
+    A runtime ``Protocol``. It declares every member of the typing-only
+    ``HandlerContext`` with the same signature, so handler contexts built on
+    either keep the full hub surface, and mypy checks the two agree wherever a
+    context combines them.
+    """
+
+    async def broadcast(self, data: dict[str, Any]) -> frozenset[str]:
+        """Fan out with bounded writes, returning successful bound socket names."""
+
+    @property
+    def clients(self) -> HubClientRegistry:
+        """Return the clients used by this handler family."""
+
+    @property
+    def counters(self) -> HubCounters:
+        """Return the counters used by this handler family."""
+
+    @property
+    def hub_id(self) -> str:
+        """Return the hub id used by this handler family."""
+
+    @property
+    def journal(self) -> EventStore | None:
+        """Return the journal used by this handler family."""
+
+    def remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
+        """Cache the response of an applied mutation under its idempotency key."""
+
+    async def run_atomic_operation(
+        self,
+        data: dict[str, Any],
+        mutate: Callable[[Any], Any],
+        prepare: Callable[[Any], OperationDraft | None],
+        *,
+        subject: Any | None = None,
+        publish_candidate: Callable[[Any], None] | None = None,
+        persist_uncommitted: Callable[[Any], None] | None = None,
+        publish: Callable[[Any], None] | None = None,
+    ) -> AtomicExecution | None:
+        """Run a keyed journal-backed mutation through the atomic operation actor."""
+
+    async def send_json(self, websocket: Any, data: dict[str, Any]) -> None:
+        """Serialise and send one message to a single socket (handler surface)."""
+
+    async def send_to_agent(self, agent: str, data: dict[str, Any]) -> bool:
+        """Send to a named agent's socket; return whether the send succeeded."""
+
+    async def settle_atomic_operation(self, data: dict[str, Any]) -> None:
+        """Mark a committed evidence intent projected after successful transport."""
+
+    @property
+    def state(self) -> SynapseState:
+        """Return the state used by this handler family."""
+
+    @property
+    def state_mutations(self) -> SerializedStateMutationActor:
+        """Return the state mutations used by this handler family."""
+
+    def system(self, payload: str, **extra: Any) -> dict[str, Any]:
+        """Build a hub system message stamped with this hub's id."""
 
     @property
     def chat_history(self) -> list[dict[str, Any]]:
