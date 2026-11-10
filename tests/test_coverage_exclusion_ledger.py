@@ -173,6 +173,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_cli_token_set.py": (1, "platform-guard"),
     "tests/test_token_set_hub_status.py": (1, "platform-guard"),
     "tests/test_cli_doctor_token_set.py": (1, "platform-guard"),
+    # POSIX mode bits define the group-readable token-set file the CLI must refuse.
+    "tests/test_metrics_token_set_cli.py": (1, "platform-guard"),
     "tests/test_worker_session_waiter_cleanup.py": (1, "platform-guard"),
     # Includes the real Linux executable-format fallback/process-image regression.
     "tests/test_launch_record.py": (7, "platform-guard"),
