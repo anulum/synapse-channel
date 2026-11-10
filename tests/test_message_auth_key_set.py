@@ -460,3 +460,27 @@ def test_the_kinds_are_registered_like_the_other_secret_set_kinds() -> None:
         EventKind.MESSAGE_AUTH_KEY_EXPIRED,
         EventKind.MESSAGE_AUTH_KEY_RETIRING_ADMISSION,
     } <= NON_RECEIPT_EVENT_KINDS
+
+
+def test_the_durable_ledger_decides_while_its_memory_mirror_stays_bounded(tmp_path: Path) -> None:
+    """A durable replay ledger admits past a full memory mirror and re-admits after its window.
+
+    The mirror drops its oldest entry instead of growing; a nonce the ledger has let go
+    is admitted again by the ledger and kept, moved to the end, in the mirror.
+    """
+    from synapse_channel.core.message_auth_durable import DurableMessageAuthReplayStore
+
+    ledger = DurableMessageAuthReplayStore(
+        tmp_path / "replay.db", max_entries=10, window_seconds=1.0
+    )
+    cache = MessageReplayCache(window_seconds=300.0, max_entries=1, durable=ledger)
+    try:
+        assert cache.admit("k", "P/a", "first", 1, timestamp=_BASE, now=_BASE) is None
+        assert cache.admit("k", "P/a", "second", 2, timestamp=_BASE, now=_BASE) is None
+        assert cache.admit("k", "P/a", "second", 3, timestamp=_BASE, now=_BASE) is (
+            VerificationResult.REPLAYED
+        )
+        later = _BASE + 5
+        assert cache.admit("k", "P/a", "second", 4, timestamp=later, now=later) is None
+    finally:
+        ledger.close()

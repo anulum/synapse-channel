@@ -81,6 +81,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         ValueError,
     ),
     "TokenSetError": ("synapse_channel.core.token_set", "token_set_invalid", ValueError),
+    "MessageAuthKeySetError": (
+        "synapse_channel.core.message_auth_key_set",
+        "message_auth_key_set_invalid",
+        ValueError,
+    ),
     "FrameCanonicalError": (
         "synapse_channel.core.frame_canonical",
         "frame_canonical_invalid",

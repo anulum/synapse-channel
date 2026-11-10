@@ -399,7 +399,6 @@ class MessageReplayCache:
                 sequence_int,
                 auth_ts,
                 now_float,
-                require_capacity=False,
             )
             return None
 
@@ -421,7 +420,6 @@ class MessageReplayCache:
             sequence_int,
             auth_ts,
             now_float,
-            require_capacity=True,
         )
         return None
 
@@ -433,18 +431,19 @@ class MessageReplayCache:
         sequence: int,
         timestamp: float,
         now: float,
-        *,
-        require_capacity: bool,
     ) -> None:
-        """Update process-local nonce and floor maps after a successful admit."""
+        """Update process-local nonce and floor maps after a successful admit.
+
+        The process-local path refuses a full map before it gets here, so only a
+        durable accept can find the map full: the mirror then drops its oldest
+        entry rather than grow without bound. A durable accept may also name a
+        nonce the mirror still holds, once the durable ledger's own window let it
+        go; the mirror keeps that entry and moves it to the end.
+        """
         self._evict(now)
         cache_key = (key_id, sender, nonce)
         if cache_key not in self._entries:
-            if require_capacity and len(self._entries) >= self.max_entries:
-                return
-            if not require_capacity and len(self._entries) >= self.max_entries:
-                # Best-effort process-local mirror after a durable accept: drop
-                # the oldest entry rather than retaining an unbounded map.
+            if len(self._entries) >= self.max_entries:
                 self._entries.popitem(last=False)
             self._entries[cache_key] = (key_id, sender, nonce, float(timestamp))
         self._entries.move_to_end(cache_key)

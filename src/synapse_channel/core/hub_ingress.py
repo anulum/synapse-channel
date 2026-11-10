@@ -57,7 +57,6 @@ class SecretWatch(Protocol):
 
     def run(self) -> Coroutine[Any, Any, None]:
         """Return the check loop; it never ends on its own."""
-        ...
 
 
 async def _run_together(loops: list[Coroutine[Any, Any, None]]) -> None:

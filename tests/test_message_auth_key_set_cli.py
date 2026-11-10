@@ -69,12 +69,12 @@ async def _claim(uri: str, sender: str, key_id: str, secret: str, task: str) -> 
 
 async def _answer(recorder: Recorder, number: int) -> dict[str, Any]:
     """Wait for the ``number``-th claim answer (from 1) the agent received."""
-    for _ in range(500):
-        answers = [m for m in recorder.messages if m.get("type") in _ANSWERS]
-        if len(answers) >= number:
-            return answers[number - 1]
-        await asyncio.sleep(0.01)
-    raise TimeoutError(f"claim answer {number} did not arrive")
+
+    def answers() -> list[dict[str, Any]]:
+        return [m for m in recorder.messages if m.get("type") in _ANSWERS]
+
+    await recorder.wait_for(lambda _message: len(answers()) >= number, timeout=5.0)
+    return answers()[number - 1]
 
 
 def _rows(db_path: Path, *kinds: str) -> list[tuple[str, dict[str, Any]]]:
