@@ -94,7 +94,7 @@ JSON, query parameter, source file, or workspace file.
 
 Use VS Code 1.101 or newer (or an editor with a Node 22 extension host).
 Build with Node 22.12 or newer from the extension directory; the dedicated CI
-workflow uses Node 22.23.3. The VSIX contains no development dependencies.
+workflow uses Node 22.23.4. The VSIX contains no development dependencies.
 
 Build from the extension directory:
 

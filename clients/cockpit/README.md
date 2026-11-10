@@ -207,7 +207,7 @@ attached every panel waits honestly and the spine baseline stays flat.
 
 Use Node 22.22.2 or newer on the Node 22 line, Node 24.15 or newer on the
 Node 24 line, or Node 26 or newer. The jsdom 30 test environment sets this
-floor; the dedicated CI workflow uses Node 22.23.3.
+floor; the dedicated CI workflow uses Node 22.23.4.
 
 ```bash
 npm run build      # strict typecheck (app + node configs), then vite build -> dist/
