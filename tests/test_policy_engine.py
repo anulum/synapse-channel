@@ -111,38 +111,11 @@ def test_load_policy_rejects_invalid_toml(tmp_path: Path) -> None:
         load_policy(path)
 
 
-def test_toml_policy_without_any_loader_raises_with_a_hint(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def _no_toml(name: str) -> Any:
-        raise ModuleNotFoundError(name)
-
-    monkeypatch.setattr("synapse_channel.core.policy_engine.importlib.import_module", _no_toml)
+def test_load_policy_rejects_a_toml_file_that_is_not_utf8(tmp_path: Path) -> None:
     path = tmp_path / "p.toml"
-    path.write_text("version = 1\n")
-    with pytest.raises(PolicyError, match="need Python 3.11"):
+    path.write_bytes(b'version = 1\nmode = "\xff"\n')
+    with pytest.raises(PolicyError, match="invalid TOML policy"):
         load_policy(path)
-
-
-def test_toml_loader_falls_back_to_tomli(monkeypatch: pytest.MonkeyPatch) -> None:
-    import importlib
-    import types
-
-    from synapse_channel.core import policy_engine
-
-    fake_tomli = types.SimpleNamespace(loads=lambda text: {"loaded_by": "tomli", "text": text})
-    real_import = importlib.import_module
-
-    def _only_tomli(name: str) -> Any:
-        if name == "tomllib":
-            raise ModuleNotFoundError(name)
-        if name == "tomli":
-            return fake_tomli
-        return real_import(name)
-
-    monkeypatch.setattr("synapse_channel.core.policy_engine.importlib.import_module", _only_tomli)
-    loader = policy_engine._toml_loader()
-    assert loader(b"x = 1")["loaded_by"] == "tomli"
 
 
 # --- decision aggregation --------------------------------------------------

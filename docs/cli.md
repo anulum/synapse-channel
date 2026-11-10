@@ -2316,7 +2316,7 @@ dependency manifests — `pyproject.toml`, `Cargo.toml`, `package.json`,
 scanned repository declares (external dependencies create no edge), and a
 `shared_owner` edge where two repositories cite the same CODEOWNERS handle. A
 manifest that exists but cannot be parsed is reported as a problem, never
-silently skipped (TOML manifests need Python 3.11+ or the `tomli` package).
+silently skipped.
 With `--db` the live claims of a hub event log join the graph — a claim's
 `worktree` is its repository — and with `--repo` the report focuses on one
 repository and the exit code becomes a coordination signal: `1` when a live

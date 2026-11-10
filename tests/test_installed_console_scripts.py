@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import importlib
 import os
 import subprocess
 import sys
@@ -262,32 +261,6 @@ def test_console_script_check_ignores_namespace_module_without_file(
     assert len(loaded) == len(expected)
 
 
-def test_toml_loader_falls_back_and_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    real_import = importlib.import_module
-
-    def without_stdlib_toml(module_name: str) -> ModuleType:
-        if module_name == "tomllib":
-            raise ModuleNotFoundError(name=module_name)
-        return real_import(module_name)
-
-    monkeypatch.setattr(importlib, "import_module", without_stdlib_toml)
-    assert checker._load_toml_module().loads("[project]\nname='x'\n")["project"]["name"] == "x"
-
-    def without_toml(module_name: str) -> ModuleType:
-        raise ModuleNotFoundError(name=module_name)
-
-    monkeypatch.setattr(importlib, "import_module", without_toml)
-    with pytest.raises(ModuleNotFoundError, match="tomllib or tomli"):
-        checker._load_toml_module()
-
-    def missing_nested_dependency(module_name: str) -> ModuleType:
-        raise ModuleNotFoundError(f"{module_name} dependency missing", name="nested-dependency")
-
-    monkeypatch.setattr(importlib, "import_module", missing_nested_dependency)
-    with pytest.raises(ModuleNotFoundError, match="dependency missing"):
-        checker._load_toml_module()
-
-
 def test_console_script_check_cli_reports_success_and_failure(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -334,6 +307,19 @@ def installed_wheel_python(tmp_path_factory: pytest.TempPathFactory) -> Path:
         check=True,
     )
     python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    # ``--system-site-packages`` exposes the BASE interpreter's packages. When this suite
+    # itself runs inside a virtual environment, the wheel's runtime dependencies live in
+    # that environment instead, so name its package directory to the new environment as
+    # a plain path entry. The installed wheel's own site-packages still comes first.
+    child_purelib = subprocess.run(
+        [os.fspath(python), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (Path(child_purelib) / "test-interpreter-dependencies.pth").write_text(
+        sysconfig.get_path("purelib") + "\n", encoding="utf-8"
+    )
     install_result = subprocess.run(
         [
             os.fspath(python),
@@ -371,6 +357,31 @@ def test_real_built_wheel_loads_all_scripts_from_its_site_packages(
         capture_output=True,
         text=True,
         env=_WHEEL_ENV,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "installed-console-scripts OK: 13 scripts loaded" in result.stdout
+
+
+def test_the_tool_runs_as_a_script_against_the_current_distribution() -> None:
+    """The publish workflow's command, run as a script, loads every declared script."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            os.fspath(TOOL),
+            "--project-metadata",
+            os.fspath(PYPROJECT),
+            "--site-packages",
+            os.fspath(_source_module_root()),
+            "--scripts-dir",
+            os.fspath(_scripts_dir()),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**_WHEEL_ENV, "PYTHONPATH": os.fspath(_source_module_root())},
     )
 
     assert result.returncode == 0, result.stderr

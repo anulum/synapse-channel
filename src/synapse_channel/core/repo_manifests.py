@@ -15,21 +15,21 @@ uses — ``pyproject.toml`` (Python), ``Cargo.toml`` (Rust), ``package.json``
 names, dependency names, and version constraints exactly as written by the
 repository, never resolved versions, lockfiles, or network lookups.
 
-TOML manifests need a TOML parser: the standard-library ``tomllib`` on
-Python 3.11+ or the ``tomli`` backport. When neither is importable the TOML
-manifests of a repository are reported in :attr:`RepoManifest.problems`
+TOML manifests are read with the standard-library ``tomllib``. A manifest
+that cannot be read or parsed is reported in :attr:`RepoManifest.problems`
 instead of being silently skipped, so a graph built from the scan states
 what it could not see.
 """
 
 from __future__ import annotations
 
-import importlib
 import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import tomllib
 
 PYTHON_ECOSYSTEM = "python"
 RUST_ECOSYSTEM = "rust"
@@ -182,24 +182,6 @@ def requirement_constraint(requirement: str) -> str:
     if rest.startswith("(") and rest.endswith(")"):
         rest = rest[1:-1].strip()
     return rest
-
-
-def _toml_loads(raw: bytes) -> dict[str, Any]:
-    """Parse TOML bytes with ``tomllib`` or the ``tomli`` backport.
-
-    Raises
-    ------
-    ModuleNotFoundError
-        When neither parser is importable (Python 3.10 without ``tomli``).
-    """
-    for module_name in ("tomllib", "tomli"):
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError:
-            continue
-        loaded: dict[str, Any] = module.loads(raw.decode("utf-8"))
-        return loaded
-    raise ModuleNotFoundError("TOML manifests need Python 3.11+ or the 'tomli' package")
 
 
 def _python_manifest(
@@ -445,7 +427,7 @@ def read_repo_manifest(repo_dir: Path) -> RepoManifest:
             continue
         try:
             if filename in ("pyproject.toml", "Cargo.toml"):
-                data = _toml_loads(path.read_bytes())
+                data = tomllib.loads(path.read_bytes().decode("utf-8"))
                 extractor = _python_manifest if filename == "pyproject.toml" else _rust_manifest
                 found_packages, found_dependencies = extractor(data, filename)
             elif filename == "package.json":
@@ -457,7 +439,7 @@ def read_repo_manifest(repo_dir: Path) -> RepoManifest:
                 found_packages, found_dependencies = _go_manifest(
                     path.read_text(encoding="utf-8", errors="replace"), filename
                 )
-        except (ValueError, ModuleNotFoundError) as exc:
+        except ValueError as exc:
             problems.append(f"{filename}: {exc}")
             continue
         packages.extend(found_packages)

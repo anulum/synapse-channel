@@ -9,9 +9,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
-import pytest
 
 from synapse_channel.core.repo_manifests import (
     discover_repositories,
@@ -114,30 +111,41 @@ def test_non_object_json_manifest_is_a_visible_problem(tmp_path: Path) -> None:
     assert manifest.problems == ("package.json: top-level value is not an object",)
 
 
+def test_a_pyproject_without_optional_dependencies_lists_only_its_dependencies(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(
+        tmp_path,
+        "plain",
+        {"pyproject.toml": '[project]\nname = "plain"\ndependencies = ["alpha>=1"]\n'},
+    )
+    manifest = read_repo_manifest(repo)
+    assert manifest.problems == ()
+    assert [dependency.name for dependency in manifest.dependencies] == ["alpha"]
+
+
+def test_an_optional_dependency_group_that_is_not_a_list_is_skipped(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        "odd-extras",
+        {
+            "pyproject.toml": (
+                '[project]\nname = "odd"\ndependencies = ["alpha>=1"]\n'
+                '[project.optional-dependencies]\nbroken = "beta"\ndev = ["gamma"]\n'
+            )
+        },
+    )
+    manifest = read_repo_manifest(repo)
+    assert manifest.problems == ()
+    assert sorted(dependency.name for dependency in manifest.dependencies) == ["alpha", "gamma"]
+
+
 def test_invalid_toml_manifest_is_a_visible_problem(tmp_path: Path) -> None:
     repo = _repo(tmp_path, "broken-py", {"pyproject.toml": "[project\nname ="})
     manifest = read_repo_manifest(repo)
     assert manifest.packages == ()
     assert len(manifest.problems) == 1
     assert manifest.problems[0].startswith("pyproject.toml:")
-
-
-def test_missing_toml_parser_is_a_visible_problem(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # On Python 3.10 without tomli, TOML manifests must surface as problems,
-    # never vanish silently from the graph.
-    repo = _repo(tmp_path, "py310", {"pyproject.toml": '[project]\nname = "x"\n'})
-
-    def refuse(name: str) -> Any:
-        raise ModuleNotFoundError(name)
-
-    monkeypatch.setattr("synapse_channel.core.repo_manifests.importlib.import_module", refuse)
-    manifest = read_repo_manifest(repo)
-    assert manifest.packages == ()
-    assert manifest.problems == (
-        "pyproject.toml: TOML manifests need Python 3.11+ or the 'tomli' package",
-    )
 
 
 def test_go_mod_reads_module_block_and_single_line_requires(tmp_path: Path) -> None:

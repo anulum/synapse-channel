@@ -234,9 +234,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Evaluate a release receipt against a policy file (advisory by default).",
     )
     parser.add_argument("task", help="Task id / subject label for the report.")
-    parser.add_argument(
-        "--policy", required=True, help="Policy file (.json always; .toml on 3.11+ or with tomli)."
-    )
+    parser.add_argument("--policy", required=True, help="Policy file (.json or .toml).")
     parser.add_argument(
         "--receipt-json",
         required=True,

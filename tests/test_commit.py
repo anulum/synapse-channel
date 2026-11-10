@@ -9,13 +9,14 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 import subprocess
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
+import tomllib
 
 from synapse_channel import commit as commit_command
 from synapse_channel.ergonomics import Identity
@@ -120,11 +121,11 @@ def test_main_holds_project_git_lock_and_commits_only_requested_paths(
 
 
 def test_main_returns_usage_error_before_lock(capsys: pytest.CaptureFixture[str]) -> None:
-    async def fake_lock(**kwargs: Any) -> int:
-        raise AssertionError("lock runner must not be called")
+    lock_runner = AsyncMock(return_value=0)
 
-    assert commit_command.main(_identity(), ["README.md"], lock_runner=fake_lock) == 2
+    assert commit_command.main(_identity(), ["README.md"], lock_runner=lock_runner) == 2
     assert "syn commit needs -m/--message" in capsys.readouterr().err
+    lock_runner.assert_not_called()
 
 
 def test_stage_failure_stops_before_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,13 +150,9 @@ def test_stage_failure_stops_before_commit(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_syn_commit_is_packaged_and_documented() -> None:
-    try:
-        toml_parser = importlib.import_module("tomllib")
-    except ModuleNotFoundError:  # pragma: no cover
-        toml_parser = importlib.import_module("tomli")
 
     root = Path(__file__).resolve().parents[1]
-    pyproject = toml_parser.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     scripts = pyproject["project"]["scripts"]
     readme = (root / "README.md").read_text(encoding="utf-8")
     cli_docs = (root / "docs" / "cli.md").read_text(encoding="utf-8")

@@ -24,11 +24,12 @@ rules stay unit-testable. See ``docs/policy-engine`` for the design.
 
 from __future__ import annotations
 
-import importlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import tomllib
 
 from synapse_channel.core.errors import SynapseError
 
@@ -119,14 +120,13 @@ def read_policy_mapping(path: str | Path) -> dict[str, Any]:
 
 
 def load_policy(path: str | Path) -> PolicyConfig:
-    """Load and validate a policy file (``.json``, or ``.toml`` where supported).
+    """Load and validate a policy file (``.json`` or ``.toml``).
 
     Parameters
     ----------
     path : str or pathlib.Path
-        Policy file path. ``.json`` is always supported (standard library);
-        ``.toml`` is supported on Python 3.11+ (``tomllib``) or when ``tomli`` is
-        installed.
+        Policy file path, ``.json`` or ``.toml``; both are read with the standard
+        library.
 
     Returns
     -------
@@ -174,31 +174,11 @@ def _parse_policy_bytes(raw: bytes, suffix: str) -> Any:
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise PolicyError(f"invalid JSON policy: {exc}") from exc
     if suffix == ".toml":
-        loader = _toml_loader()
         try:
-            return loader(raw)
-        except Exception as exc:  # noqa: BLE001 - surface any TOML parse error uniformly
+            return tomllib.loads(raw.decode("utf-8"))
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
             raise PolicyError(f"invalid TOML policy: {exc}") from exc
     raise PolicyError(f"unsupported policy file type '{suffix}' (use .json or .toml)")
-
-
-def _toml_loader() -> Any:
-    """Return a ``loads(bytes) -> dict`` TOML loader, or raise PolicyError.
-
-    Prefers the standard-library ``tomllib`` (Python 3.11+) and falls back to the
-    ``tomli`` backport; raises when neither is importable so the operator gets a
-    clear hint to use a ``.json`` policy instead.
-    """
-    for module_name in ("tomllib", "tomli"):
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError:
-            continue
-        return lambda raw, loader=module: loader.loads(raw.decode("utf-8"))
-    raise PolicyError(
-        "TOML policy files need Python 3.11+ or the 'tomli' package; "
-        "use a .json policy file instead"
-    )
 
 
 def overall_status(decisions: list[PolicyDecision]) -> str:

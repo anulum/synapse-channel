@@ -17,9 +17,9 @@ The advisory decision layer is implemented in
 :mod:`synapse_channel.core.policy_rules`:
 
 - `synapse policy-check TASK --policy <file> --receipt-json <file> [--json]`
-  evaluates a release receipt against a small JSON (or TOML on Python 3.11+ /
-  with `tomli`) policy and prints deterministic pass / warn / fail /
-  not_applicable decisions, each with the evidence it used and a next action.
+  evaluates a release receipt against a small JSON or TOML policy and prints
+  deterministic pass / warn / fail / not_applicable decisions, each with the
+  evidence it used and a next action.
 - The rule families evaluated from receipt evidence are required tests, strict
   type checking, owner approval, evidence freshness, no-merge-without-receipt,
   known-failure acknowledgement, and generated artifact parity.

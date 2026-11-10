@@ -18,39 +18,20 @@ from the selected interpreter's site-packages directory.
 from __future__ import annotations
 
 import argparse
-import importlib
 import os
 import shutil
 import sys
 import sysconfig
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import EntryPoint, PackageNotFoundError, distribution
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Protocol, cast
+from typing import Any
+
+import tomllib
 
 DEFAULT_DISTRIBUTION = "synapse-channel"
-
-
-class _TomlModule(Protocol):
-    TOMLDecodeError: type[Exception]
-    loads: Callable[[str], dict[str, Any]]
-
-
-def _load_toml_module() -> _TomlModule:
-    for module_name in ("tomllib", "tomli"):
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError as exc:
-            if exc.name != module_name:
-                raise
-            continue
-        return cast(_TomlModule, module)
-    raise ModuleNotFoundError("tomllib or tomli is required", name="tomli")
-
-
-tomllib = _load_toml_module()
 
 
 class ConsoleScriptCheckError(RuntimeError):

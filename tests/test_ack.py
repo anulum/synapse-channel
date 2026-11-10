@@ -9,12 +9,12 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
+import tomllib
 
 from hub_e2e_helpers import _free_port, connect_agent, running_hub
 from synapse_channel import ack
@@ -55,8 +55,7 @@ class ScriptedAgent:
 
     async def connect(self) -> None:
         """Stay alive until the acknowledgement flow cancels the connection."""
-        while self.running:
-            await asyncio.sleep(0.01)
+        await asyncio.get_running_loop().create_future()
 
     async def wait_until_ready(self, timeout: float = 5.0) -> bool:
         """Report a ready fake connection."""
@@ -98,23 +97,19 @@ class ScriptedAgent:
         status: str | None = None,
         suggested_owner: str | None = None,
     ) -> None:
-        """Emit the scripted task-update response."""
-        del suggested_owner
+        """Emit the scripted task-update failure.
+
+        Only update failures are scripted here; the successful update runs against a
+        real hub in ``test_ack_task_posts_assessment_and_marks_done``.
+        """
+        del task_id, status, suggested_owner
         if self.mode == "update_missing":
-            return
-        if self.mode == "update_error":
-            await self.callback(
-                {
-                    "type": MessageType.ERROR,
-                    "target": self.name,
-                    "payload": "update rejected",
-                }
-            )
             return
         await self.callback(
             {
-                "type": MessageType.LEDGER_TASK_UPDATED,
-                "task": {"task_id": task_id, "status": status},
+                "type": MessageType.ERROR,
+                "target": self.name,
+                "payload": "update rejected",
             }
         )
 
@@ -395,11 +390,7 @@ def test_main_parses_ack_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_syn_ack_is_packaged_and_documented() -> None:
     root = Path(__file__).resolve().parents[1]
-    try:
-        toml_parser = importlib.import_module("tomllib")
-    except ModuleNotFoundError:  # pragma: no cover
-        toml_parser = importlib.import_module("tomli")
-    pyproject = toml_parser.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     scripts = pyproject["project"]["scripts"]
 
     assert scripts["syn-ack"] == "synapse_channel.ergonomics:alias_ack"

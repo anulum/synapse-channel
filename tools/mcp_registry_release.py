@@ -17,14 +17,15 @@ publishing or authenticating.
 
 from __future__ import annotations
 
-import importlib
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from http.client import HTTPConnection, HTTPException, HTTPSConnection
 from pathlib import Path
-from typing import Literal, Protocol, cast
+from typing import Literal, cast
 from urllib.parse import quote, urlencode, urlsplit
+
+import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_NAME = "io.github.anulum/synapse-channel"
@@ -39,13 +40,6 @@ REGISTRY_MAX_PAGES = 100
 
 Phase = Literal["package", "registry"]
 JsonFetcher = Callable[[str, float], Mapping[str, object]]
-
-
-class _TomlModule(Protocol):
-    """Structural type shared by ``tomllib`` and its ``tomli`` backport."""
-
-    def loads(self, value: str, /) -> dict[str, object]:
-        """Decode one TOML document."""
 
 
 class ReleaseContractError(ValueError):
@@ -119,26 +113,14 @@ def _read_json(path: Path) -> Mapping[str, object]:
     return mapping
 
 
-def _read_toml(path: Path) -> Mapping[str, object]:
-    """Read TOML with the available standard or compatibility parser."""
-    raw = path.read_text(encoding="utf-8")
-    for module_name in ("tomllib", "tomli"):
-        try:
-            parser = cast(_TomlModule, importlib.import_module(module_name))
-        except ModuleNotFoundError:
-            continue
-        return parser.loads(raw)
-    raise ModuleNotFoundError("TOML metadata needs Python 3.11+ or the 'tomli' package")
-
-
 def load_contract(root: Path = REPO_ROOT, *, expect_version: str | None = None) -> ReleaseContract:
     """Load and cross-check the local MCP release identity."""
     server = _read_json(root / "server.json")
     try:
-        project_data = _read_toml(root / "pyproject.toml")
+        project_data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
         project = project_data["project"]
         readme = (root / "README.md").read_text(encoding="utf-8")
-    except (OSError, KeyError, ModuleNotFoundError, ValueError) as exc:
+    except (OSError, KeyError, ValueError) as exc:
         raise ReleaseContractError(f"cannot read package metadata: {exc}") from exc
 
     if not isinstance(project, dict):

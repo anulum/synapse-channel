@@ -8,12 +8,12 @@
 
 from __future__ import annotations
 
-import importlib
 import os
 from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+import tomllib
 
 import synapse_channel.ack as ack_module
 from synapse_channel import ergonomics
@@ -1139,13 +1139,9 @@ def test_alias_arm_honours_an_explicit_no_mailbox_opt_out() -> None:
 
 
 def test_syn_ask_is_packaged_and_documented() -> None:
-    try:
-        toml_parser = importlib.import_module("tomllib")
-    except ModuleNotFoundError:  # pragma: no cover
-        toml_parser = importlib.import_module("tomli")
 
     root = Path(__file__).resolve().parents[1]
-    pyproject = toml_parser.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     scripts = pyproject["project"]["scripts"]
     readme = (root / "README.md").read_text(encoding="utf-8")
     cli_docs = (root / "docs" / "cli.md").read_text(encoding="utf-8")

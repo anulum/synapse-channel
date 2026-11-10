@@ -8,14 +8,12 @@
 
 from __future__ import annotations
 
-import importlib
 import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
-from types import ModuleType
 
 import pytest
 from tools.mcp_registry_release import (
@@ -178,38 +176,6 @@ def test_load_contract_accepts_the_exact_local_distribution_identity(tmp_path: P
     assert contract.name == REGISTRY_NAME
     assert contract.package == "synapse-channel"
     assert contract.version == _VERSION
-
-
-def test_load_contract_uses_the_supported_python_310_tomli_fallback(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _write_contract(tmp_path)
-    real_import = importlib.import_module
-
-    def import_without_tomllib(module_name: str) -> ModuleType:
-        if module_name == "tomllib":
-            raise ModuleNotFoundError("tomllib unavailable", name=module_name)
-        return real_import(module_name)
-
-    monkeypatch.setattr(
-        "tools.mcp_registry_release.importlib.import_module", import_without_tomllib
-    )
-
-    assert load_contract(tmp_path).version == _VERSION
-
-
-def test_load_contract_fails_closed_without_a_toml_parser(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _write_contract(tmp_path)
-
-    def import_without_parser(module_name: str) -> ModuleType:
-        raise ModuleNotFoundError(f"{module_name} unavailable", name=module_name)
-
-    monkeypatch.setattr("tools.mcp_registry_release.importlib.import_module", import_without_parser)
-
-    with pytest.raises(ReleaseContractError, match="TOML metadata needs"):
-        load_contract(tmp_path)
 
 
 @pytest.mark.parametrize("drift", ("schema", "name", "version", "marker", "package"))
