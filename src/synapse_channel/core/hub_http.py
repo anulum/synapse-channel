@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from websockets.datastructures import Headers
 from websockets.http11 import Request, Response
 
+from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.metrics import (
     HEALTH_CONTENT_TYPE,
     PROMETHEUS_CONTENT_TYPE,
@@ -25,7 +26,6 @@ from synapse_channel.core.metrics import (
 )
 
 if TYPE_CHECKING:
-    from synapse_channel.core.auth import TokenAuthenticator
     from synapse_channel.core.hub import SynapseHub
 
 
