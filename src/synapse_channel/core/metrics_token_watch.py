@@ -46,13 +46,20 @@ import logging
 from collections.abc import Callable
 
 from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.hourly_once import HOUR_SECONDS, HourlyOnce, hour_of
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.token_audit import MetricsTokenAudit, metrics_token_audit_for
 from synapse_channel.core.token_sessions import WATCH_INTERVAL_SECONDS
 from synapse_channel.core.token_set import TokenEntry, TokenOutcome, TokenSetAuthenticator
 
-HOUR_SECONDS = 3600.0
-"""Length of one retiring-admission window."""
+__all__ = [
+    "HOUR_SECONDS",
+    "RETIRING_MEMORY_HOURS",
+    "MetricsTokenWatch",
+    "PolicyRefusal",
+    "metrics_token_watch_for",
+    "newest_valid",
+]
 
 RETIRING_MEMORY_HOURS = 24
 """How many hours behind its latest recorded hour an entry's recorded hours are kept."""
@@ -126,7 +133,7 @@ class MetricsTokenWatch:
         self._token_set = token_set
         self._audit = audit
         self._expired: set[str] = set()
-        self._retiring_hours: dict[str, set[int]] = {}
+        self._retiring = HourlyOnce(RETIRING_MEMORY_HOURS)
         token_set.observe_outcomes(self._observed)
 
     def check(self) -> None:
@@ -173,14 +180,11 @@ class MetricsTokenWatch:
         newest = newest_valid(self._token_set.entries, now, self._token_set.policy_refusal)
         if newest is None or newest.token_id == entry.token_id:
             return
-        hour = int(now // HOUR_SECONDS)
-        recorded = self._retiring_hours.setdefault(entry.token_id, set())
-        if hour in recorded or (recorded and hour <= max(recorded) - RETIRING_MEMORY_HOURS):
+        hour = hour_of(now)
+        if not self._retiring.is_new(entry.token_id, hour):
             return
         self._audit.retiring_admission(entry.token_id, newest.token_id, hour * HOUR_SECONDS)
-        recorded.add(hour)
-        floor = max(recorded) - RETIRING_MEMORY_HOURS
-        recorded.difference_update({kept for kept in recorded if kept <= floor})
+        self._retiring.mark(entry.token_id, hour)
 
 
 def metrics_token_watch_for(

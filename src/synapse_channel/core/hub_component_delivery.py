@@ -29,6 +29,7 @@ from synapse_channel.core.hub_ingress import HubIngress
 from synapse_channel.core.hub_relay import RelayMirror
 from synapse_channel.core.mailbox_handover import HandoverLedger
 from synapse_channel.core.mailbox_pending import MailboxPendingTracker
+from synapse_channel.core.message_auth_key_watch import message_auth_key_watch_for
 from synapse_channel.core.metrics_token_watch import metrics_token_watch_for
 from synapse_channel.core.operation_records import OperationLedger
 from synapse_channel.core.operator_relay_forwarding import OperatorRelayForwarding
@@ -164,6 +165,8 @@ def build_gates(
     """Construct all admission gates without an implicit hub dependency."""
     audit = token_audit_for(config.auth.authenticator, config.journal)
     metrics_watch = metrics_token_watch_for(config.metrics.metrics_token_set, config.journal)
+    key_watch = message_auth_key_watch_for(config.auth.per_message_auth_keys, config.journal)
+    secret_watches = tuple(watch for watch in (metrics_watch, key_watch) if watch is not None)
     sessions = token_sessions_for(config.auth.authenticator, audit)
     connection = build_connection(config, clients, reactions, callbacks)
     if sessions is not None:
@@ -201,7 +204,7 @@ def build_gates(
             token_audit=audit,
             token_sessions=sessions,
             metrics_token_set=config.metrics.metrics_token_set,
-            metrics_token_watch=metrics_watch,
+            secret_watches=secret_watches,
         ),
         identity=identity,
         connection=connection,

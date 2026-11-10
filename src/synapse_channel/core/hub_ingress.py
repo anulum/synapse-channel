@@ -27,13 +27,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
+from typing import Any, Protocol
 
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_exposure import exposure_problems, guard_exposure
-from synapse_channel.core.metrics_token_watch import MetricsTokenWatch
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.token_audit import TokenAudit
 from synapse_channel.core.token_sessions import TokenSessions, watch_token_set
@@ -51,6 +50,14 @@ client could smuggle a type-confused sender or target past name binding. ``paylo
 is deliberately excluded: a structured JSON payload is legitimate on the wire (an A2A
 task frame carries ``payload`` as an object), so it keeps its documented coercion.
 """
+
+
+class SecretWatch(Protocol):
+    """A periodic check of a rotating secret file, run while the hub serves."""
+
+    def run(self) -> Coroutine[Any, Any, None]:
+        """Return the check loop; it never ends on its own."""
+        ...
 
 
 async def _run_together(loops: list[Coroutine[Any, Any, None]]) -> None:
@@ -96,8 +103,10 @@ class HubIngress:
     metrics_token_set : TokenAuthenticator or None, optional
         The token set gating the metrics endpoint beside (or instead of)
         ``metrics_token``; consulted by the exposure guard like the fixed token.
-    metrics_token_watch : MetricsTokenWatch or None, optional
-        The periodic check of a metrics token-set file; ``None`` runs none.
+    secret_watches : Sequence of SecretWatch, optional
+        The periodic checks of other rotating secret files, such as a metrics
+        token set or a per-message key set; they run beside the connect-token
+        loop.
     """
 
     def __init__(
@@ -114,7 +123,7 @@ class HubIngress:
         token_audit: TokenAudit | None = None,
         token_sessions: TokenSessions | None = None,
         metrics_token_set: TokenAuthenticator | None = None,
-        metrics_token_watch: MetricsTokenWatch | None = None,
+        secret_watches: Sequence[SecretWatch] = (),
     ) -> None:
         self._clients = clients
         self._authenticator = authenticator
@@ -123,7 +132,7 @@ class HubIngress:
         self._enable_metrics = enable_metrics
         self._metrics_token = metrics_token
         self._metrics_token_set = metrics_token_set
-        self._metrics_token_watch = metrics_token_watch
+        self._secret_watches = tuple(secret_watches)
         self._metrics_query_token_ok = metrics_query_token_ok
         self._insecure_off_loopback = insecure_off_loopback
         self._send_json = send_json
@@ -201,17 +210,16 @@ class HubIngress:
         return outcome.ok, outcome.reason, outcome.principal
 
     def token_set_watcher(self) -> Coroutine[Any, Any, None] | None:
-        """Return the check loop of the token-set files this hub serves, if any.
+        """Return the check loop of the rotating secret files this hub serves, if any.
 
-        A connect token set and a metrics token set each have a loop. A hub with
-        both runs them in one coroutine, so the service lifetime starts and
-        cancels them together.
+        A connect token set and each other rotating secret have a loop. A hub
+        with more than one runs them in one coroutine, so the service lifetime
+        starts and cancels them together.
         """
         loops: list[Coroutine[Any, Any, None]] = []
         if isinstance(self._authenticator, TokenSetAuthenticator):
             loops.append(watch_token_set(self._authenticator))
-        if self._metrics_token_watch is not None:
-            loops.append(self._metrics_token_watch.run())
+        loops.extend(watch.run() for watch in self._secret_watches)
         if not loops:
             return None
         if len(loops) == 1:

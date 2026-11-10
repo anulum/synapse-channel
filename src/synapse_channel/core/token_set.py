@@ -30,13 +30,13 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
 from synapse_channel.core.auth import _QUOTA_PRINCIPAL_DOMAIN, TokenAuthenticator
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
+from synapse_channel.core.utc_instants import parse_utc_instant
 
 TOKEN_DIGEST_DOMAIN = b"synapse-channel:connect-token:v1\x00"
 """Domain prefix hashed before a secret, separate from the quota principal."""
@@ -48,7 +48,6 @@ SET_FILE_FLAG = "--token-set"
 _LOG = logging.getLogger(__name__)
 _ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 _DIGEST = re.compile(r"[0-9a-f]{64}")
-_INSTANT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 _ENTRY_KEYS = frozenset({"id", "sha256", "agents", "not_before", "not_after"})
 
 
@@ -144,13 +143,10 @@ def _instant(value: object, *, field: str, label: str) -> float | None:
     """Parse an optional strict RFC 3339 UTC instant ending in ``Z``."""
     if value is None:
         return None
-    if not isinstance(value, str) or not _INSTANT.fullmatch(value):
-        raise TokenSetError(f"token {label}: {field} must be YYYY-MM-DDTHH:MM:SSZ")
     try:
-        moment = datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+        return parse_utc_instant(value)
     except ValueError as exc:
-        raise TokenSetError(f"token {label}: {field} is not a real date") from exc
-    return moment.timestamp()
+        raise TokenSetError(f"token {label}: {field} {exc}") from exc
 
 
 def _entry(raw: object, position: int) -> TokenEntry:

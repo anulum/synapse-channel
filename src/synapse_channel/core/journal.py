@@ -57,6 +57,12 @@ from synapse_channel.core.ledger import (
     LedgerTask,
     ProgressNote,
 )
+from synapse_channel.core.message_auth_key_watch import (
+    MESSAGE_KEY_EXPIRED_KIND,
+    MESSAGE_KEY_RETIRING_ADMISSION_KIND,
+    MESSAGE_KEY_SET_APPLIED_KIND,
+    MESSAGE_KEY_SET_REJECTED_KIND,
+)
 from synapse_channel.core.multihub_equivocation import FederationQuarantine, valid_fingerprint
 from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.path_identity import parse_optional_claim_scope_identity
@@ -158,6 +164,10 @@ class EventKind:
     METRICS_TOKEN_SET_REJECTED = METRICS_SET_REJECTED_KIND
     METRICS_TOKEN_EXPIRED = METRICS_EXPIRED_KIND
     METRICS_TOKEN_RETIRING_ADMISSION = METRICS_RETIRING_ADMISSION_KIND
+    MESSAGE_AUTH_KEY_SET_APPLIED = MESSAGE_KEY_SET_APPLIED_KIND
+    MESSAGE_AUTH_KEY_SET_REJECTED = MESSAGE_KEY_SET_REJECTED_KIND
+    MESSAGE_AUTH_KEY_EXPIRED = MESSAGE_KEY_EXPIRED_KIND
+    MESSAGE_AUTH_KEY_RETIRING_ADMISSION = MESSAGE_KEY_RETIRING_ADMISSION_KIND
     CORRUPT = CORRUPT_EVENT_KIND
 
 

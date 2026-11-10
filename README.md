@@ -1936,11 +1936,11 @@ an installed protected runtime or revocation fencing.
 |---|---:|
 | Package version | 0.99.50 |
 | Public API exports | 70 |
-| Package modules | 933 |
-| Classes | 1338 |
+| Package modules | 937 |
+| Classes | 1346 |
 | Wire message types | 118 |
 | CLI subcommands | 303 |
-| Test functions | 13441 |
+| Test functions | 13465 |
 | Benchmark harnesses | 16 |
 | Documentation pages | 98 |
 | GitHub Actions workflows | 29 |

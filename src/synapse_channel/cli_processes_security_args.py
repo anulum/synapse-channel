@@ -36,6 +36,7 @@ def add_hub_admission_arguments(hub: argparse.ArgumentParser) -> None:
     add_hub_mailbox_custodians_argument(hub)
     add_hub_token_set_argument(hub)
     add_hub_metrics_token_set_argument(hub)
+    add_hub_message_auth_key_set_argument(hub)
     add_hub_frame_signature_argument(hub)
     add_policy_arguments(hub)
 
@@ -71,6 +72,21 @@ def add_hub_metrics_token_set_argument(hub: argparse.ArgumentParser) -> None:
         "agents). The hub re-reads it when it changes, so the metrics bearer "
         "rotates without a restart. Cannot be combined with --metrics-token or "
         "--metrics-token-file.",
+    )
+
+
+def add_hub_message_auth_key_set_argument(hub: argparse.ArgumentParser) -> None:
+    """Add ``--message-auth-key-set``, the rotatable source of per-message keys."""
+    hub.add_argument(
+        "--message-auth-key-set",
+        default=None,
+        metavar="PATH",
+        help="Read per-message HMAC keys from an owner-only JSON key set whose entries "
+        "name an owner-only secret_file, their senders and an optional not_before/"
+        "not_after window. The hub re-reads it when the set or a secret file changes, "
+        "so keys rotate without a restart; a key past its not_after is refused "
+        "'expired'. Cannot be combined with --message-auth-key or "
+        "--message-auth-key-file.",
     )
 
 

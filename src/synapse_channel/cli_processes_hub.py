@@ -17,7 +17,7 @@ from typing import Any
 
 from synapse_channel.cli_hub_attachments import prepare_hub_attachments
 from synapse_channel.cli_hub_auth import _parse_message_auth_keys as _parse_message_auth_keys
-from synapse_channel.cli_hub_auth import prepare_hub_trust
+from synapse_channel.cli_hub_auth import load_message_auth_key_set, prepare_hub_trust
 from synapse_channel.cli_hub_federation import prepare_hub_peers
 from synapse_channel.cli_hub_journal import prepare_hub_journal
 from synapse_channel.cli_hub_profiles import _apply_auto_rate_policy as _apply_auto_rate_policy
@@ -70,6 +70,7 @@ def _cmd_hub(
         try:
             apply_hub_profiles(ctx)
             prepare_hub_transport(ctx)
+            load_message_auth_key_set(ctx)
             prepare_hub_identity_pins(ctx)
             prepare_hub_journal(ctx)
             configure_ingress_limits(ctx)

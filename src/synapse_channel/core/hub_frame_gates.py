@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import Any
 
 from synapse_channel.core.acl import AclPolicy
@@ -47,6 +47,7 @@ from synapse_channel.core.message_auth import (
     verify_event_signature,
     verify_frame,
 )
+from synapse_channel.core.message_auth_key_set import MessageAuthKeySet
 from synapse_channel.core.multihub_claim_transport import (
     ClaimForwarder,
     ClaimForwardError,
@@ -72,8 +73,9 @@ class HubFrameGates:
     require_per_message_auth : bool
         When ``True``, a selected mutating frame must carry valid per-message
         authentication before it may mutate state.
-    per_message_auth_keys : dict[str, MessageAuthKey]
+    per_message_auth_keys : Mapping[str, MessageAuthKey]
         HMAC keys accepted for opt-in per-message authentication, keyed by key id.
+        A rotating key set is told of every frame it verifies.
     message_replay : MessageReplayCache
         The shared replay cache that rejects a re-sent signed frame; the same
         instance the hub holds, so freshness and nonce state survive across gates.
@@ -114,7 +116,7 @@ class HubFrameGates:
         self,
         *,
         require_per_message_auth: bool,
-        per_message_auth_keys: dict[str, MessageAuthKey],
+        per_message_auth_keys: Mapping[str, MessageAuthKey],
         message_replay: MessageReplayCache,
         signed_event_trust_bundle: EventSignatureTrustBundle | None,
         require_acl: bool,
@@ -159,6 +161,8 @@ class HubFrameGates:
                 required_sender=sender,
             )
             if result is VerificationResult.OK:
+                if isinstance(self._per_message_auth_keys, MessageAuthKeySet):
+                    self._per_message_auth_keys.admitted(str(data["auth"].get("kid")), sender)
                 return True
         elif "signature" in data and self._signed_event_trust_bundle is not None:
             result = verify_event_signature(

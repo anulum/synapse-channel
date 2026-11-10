@@ -20,6 +20,17 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- `synapse hub --message-auth-key-set PATH` reads the per-message HMAC keys
+  from an owner-only JSON key set whose entries name an owner-only secret file,
+  their senders and an optional validity window. The hub re-reads the set and
+  its secret files every second and at each verification, so keys rotate
+  without a restart; a key past its `not_after` is refused `expired`, a file
+  that fails validation keeps the last accepted keys, and a reload never resets
+  the replay cache. With a journal, applied and rejected sets, expiries and
+  admissions by a key a newer key for the same sender replaces are audit rows.
+  It cannot be combined with `--message-auth-key(-file)`; the presets and the
+  attachment posture accept it. `SynapseHub` takes it as
+  `per_message_auth_keys=MessageAuthKeySet(path)`.
 - `synapse hub --metrics-token-set PATH` guards `/metrics` and `/health` with a
   token set in the `--token-set` format, so the metrics bearer rotates without a
   restart. Entries honour their validity window; a file that fails validation

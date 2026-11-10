@@ -27,7 +27,8 @@ overlapping definition of "secure".
 - role-claim grants (`--role-grants`);
 - private directed routing;
 - fenced lease mutations (`--require-fencing-epoch`, forced by team-secure);
-- sender-bound per-message authentication (`--message-auth-key`);
+- sender-bound per-message authentication (`--message-auth-key`, or the
+  rotating `--message-auth-key-set`);
 - deny-by-default ACL enforcement (`--acl-policy`);
 - native WSS (`--tls-certfile`/`--tls-keyfile`);
 - bearer-only metrics authentication when `--metrics` is enabled;

@@ -28,6 +28,7 @@ from synapse_channel.core.message_auth import (
     MessageReplayCache,
 )
 from synapse_channel.core.message_auth_durable import SequenceFloorMode
+from synapse_channel.core.message_auth_key_set import MessageAuthKeySet
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 
 
@@ -35,7 +36,7 @@ from synapse_channel.core.numeric_coercion import safe_float, safe_int
 class HubSecurityComponents:
     """Mutable security services and their normalized live identity inputs."""
 
-    message_keys: dict[str, MessageAuthKey]
+    message_keys: Mapping[str, MessageAuthKey]
     sequence_floor: SequenceFloorMode
     message_replay: MessageReplayCache
     identity_trust: EventSignatureTrustBundle | None
@@ -50,11 +51,13 @@ class HubSecurityComponents:
 def build_security(config: HubConfig) -> HubSecurityComponents:
     """Build security state, refusing enrollment without trust and durability."""
     auth = config.auth
-    keys = (
-        dict(auth.per_message_auth_keys)
-        if isinstance(auth.per_message_auth_keys, Mapping)
-        else {key.key_id: key for key in auth.per_message_auth_keys or []}
-    )
+    keys: Mapping[str, MessageAuthKey]
+    if isinstance(auth.per_message_auth_keys, MessageAuthKeySet):
+        keys = auth.per_message_auth_keys  # live: it rotates while the hub runs
+    elif isinstance(auth.per_message_auth_keys, Mapping):
+        keys = dict(auth.per_message_auth_keys)
+    else:
+        keys = {key.key_id: key for key in auth.per_message_auth_keys or []}
     floor = SequenceFloorMode(auth.per_message_auth_sequence_floor_mode)
     replay = MessageReplayCache(
         window_seconds=safe_float(

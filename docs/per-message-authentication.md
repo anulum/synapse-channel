@@ -236,9 +236,48 @@ The runtime keeps keys local and explicit:
   diagnostics. Prefer environment files or a local secret manager when running
   a long-lived service.
 
-There is no managed key store, no key-file lifecycle command, and no automatic
-rotation workflow yet. Lost-key recovery is an operator action, not a hub
-action.
+### Rotating keys without a restart (`--message-auth-key-set`)
+
+`synapse hub --message-auth-key-set PATH` reads the keys from an owner-only
+JSON key set instead of the command line. Each entry names its key id, the
+owner-only file that holds its secret (a relative path is resolved against the
+set file's directory), the senders that may sign with it, and an optional
+validity window; the set file itself holds no secret:
+
+```json
+{"version": 1, "keys": [
+  {"key_id": "agent-a-2026-11", "secret_file": "agent-a-2026-11.key",
+   "senders": ["project/agent-a"], "not_after": "2026-12-01T00:00:00Z"},
+  {"key_id": "agent-a-2026-12", "secret_file": "agent-a-2026-12.key",
+   "senders": ["project/agent-a"], "not_before": "2026-11-25T00:00:00Z"}
+]}
+```
+
+- The hub checks the set file and every secret file it names every second and
+  again at each verification. Replacing the set file, or only a secret file,
+  rotates the keys without a restart. A file that fails validation, or a
+  secret file that is missing, empty, linked or readable by others, is not
+  applied: the last accepted keys stay in force.
+- A key before its `not_before` is unknown (`unknown_key`); a key at or past
+  its `not_after` is refused `expired`; a key removed from the file is unknown.
+- The replay cache, and its durable ledger when configured, is never reset by a
+  reload: a frame admitted once stays refused `replayed` for the whole window,
+  even if its key is removed and later added back.
+- To rotate one sender, list the new key beside the old one with a later
+  `not_before`, move the client to it, then remove the old key or let it reach
+  its `not_after`.
+- With a journal the hub writes audit rows that hold key ids and names, never a
+  secret: `message_auth_key_set_applied`, `message_auth_key_set_rejected`,
+  `message_auth_key_expired` (once per key while one hub process runs) and
+  `message_auth_key_retiring_admission` (once per key, sender and hour while
+  one hub process runs, when a frame is verified with a key that a newer key
+  valid for the same sender is meant to replace).
+- It cannot be combined with `--message-auth-key` or `--message-auth-key-file`.
+  The secure, team-secure and paranoid presets and the attachment posture
+  accept it as per-message authentication. Embedded hubs pass
+  `MessageAuthKeySet(path)` as `per_message_auth_keys`.
+
+Lost-key recovery remains an operator action, not a hub action.
 
 ## Relationship to signed events
 

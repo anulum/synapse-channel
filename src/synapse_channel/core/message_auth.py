@@ -130,12 +130,17 @@ class MessageAuthKey:
         Sender names allowed to use this key. An empty set rejects every sender.
     revoked : bool, optional
         When ``True``, frames naming this key id fail with ``revoked_key``.
+    not_after : float or None, optional
+        POSIX time from which frames naming this key id fail with ``expired``.
+        ``None`` means the key does not expire; keys given on the command line
+        never do. A rotating key set gives its entries an end.
     """
 
     key_id: str
     secret: bytes
     senders: frozenset[str] = frozenset()
     revoked: bool = False
+    not_after: float | None = None
 
 
 @dataclass(frozen=True)
@@ -796,6 +801,26 @@ def verify_event_signature(
     return SignedEventVerificationResult.VALID
 
 
+def _usable_key(
+    key: MessageAuthKey | None, now: float, sender: str, required_sender: str
+) -> MessageAuthKey | VerificationResult:
+    """Return ``key`` when it may verify a frame from ``sender`` now, else why not.
+
+    Unknown, revoked and expired keys are refused before the sender binding is
+    compared, so a frame naming a key that no longer admits reveals nothing
+    about who may use it.
+    """
+    if key is None:
+        return VerificationResult.UNKNOWN_KEY
+    if key.revoked:
+        return VerificationResult.REVOKED_KEY
+    if key.not_after is not None and now >= key.not_after:
+        return VerificationResult.EXPIRED
+    if sender != required_sender or not key.senders or required_sender not in key.senders:
+        return VerificationResult.SENDER_MISMATCH
+    return key
+
+
 def verify_frame(
     frame: Mapping[str, Any],
     *,
@@ -811,7 +836,8 @@ def verify_frame(
     frame : Mapping[str, Any]
         Decoded Synapse frame.
     keys : Mapping[str, MessageAuthKey]
-        Known HMAC keys by key id.
+        Known HMAC keys by key id. A key whose ``not_after`` has passed is
+        refused ``expired`` before any other check of the frame.
     replay_cache : MessageReplayCache
         Bounded cache that records accepted nonces and sequences.
     now : float
@@ -829,14 +855,10 @@ def verify_frame(
     if not isinstance(auth, Mapping):
         return VerificationResult.MISSING
     key_id = str(auth.get("kid") or "")
-    key = keys.get(key_id)
-    if key is None:
-        return VerificationResult.UNKNOWN_KEY
-    if key.revoked:
-        return VerificationResult.REVOKED_KEY
-    sender = str(frame.get("sender") or "")
-    if sender != required_sender or not key.senders or required_sender not in key.senders:
-        return VerificationResult.SENDER_MISMATCH
+    now_float = float(now)
+    key = _usable_key(keys.get(key_id), now_float, str(frame.get("sender") or ""), required_sender)
+    if isinstance(key, VerificationResult):
+        return key
     if str(auth.get("alg") or "") != AUTH_ALGORITHM:
         return VerificationResult.BAD_AUTHENTICATION
     try:
@@ -846,7 +868,6 @@ def verify_frame(
         return VerificationResult.BAD_AUTHENTICATION
     if isinstance(sequence_raw, bool) or not isinstance(sequence_raw, int) or sequence_raw < 1:
         return VerificationResult.SEQUENCE_MISMATCH
-    now_float = float(now)
     if (
         timestamp < now_float - replay_cache.window_seconds
         or timestamp > now_float + replay_cache.future_skew_seconds

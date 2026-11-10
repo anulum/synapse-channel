@@ -29,6 +29,7 @@ from synapse_channel.core.mailbox_custodians import (
     load_mailbox_custodians,
 )
 from synapse_channel.core.message_auth import MessageAuthKey
+from synapse_channel.core.message_auth_key_set import MessageAuthKeySet
 from synapse_channel.core.role_grants import RoleGrantError, load_role_grants
 
 
@@ -55,8 +56,36 @@ def _parse_message_auth_keys(values: list[str]) -> list[MessageAuthKey]:
     return keys
 
 
+def load_message_auth_key_set(ctx: HubStartup) -> None:
+    """Load a rotating per-message key set before any durable resource is acquired.
+
+    A key set cannot be combined with static keys from argv or a key file. A set
+    or secret file that cannot be accepted refuses startup, so a refused start
+    leaves no store, no identity pins and no listener; the error names the
+    file, never a secret.
+    """
+    key_set = getattr(ctx.args, "message_auth_key_set", None)
+    if not key_set:
+        return
+    if ctx.args.message_auth_key:
+        print(
+            "synapse hub: --message-auth-key-set cannot be combined with "
+            "--message-auth-key or --message-auth-key-file",
+            file=sys.stderr,
+        )
+        raise HubStartupRefused()
+    try:
+        keys = MessageAuthKeySet(key_set)
+    except ValueError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        raise HubStartupRefused() from None
+    ctx.config = replace(ctx.config, auth=replace(ctx.config.auth, per_message_auth_keys=keys))
+
+
 def load_message_auth_keys(ctx: HubStartup) -> None:
-    """Load the sender-bound per-message authentication keys."""
+    """Load the static sender-bound per-message keys, unless a key set already did."""
+    if getattr(ctx.args, "message_auth_key_set", None):
+        return
     try:
         ctx.config = replace(
             ctx.config,

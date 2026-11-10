@@ -34,7 +34,8 @@ The hub switch maps to these concrete settings:
 - **Durable event log required** through `--db`, so accepted mutations can be
   replayed after restart.
 - **Per-message authentication required** for selected mutating frames. Provide
-  at least one `--message-auth-key KEY_ID:SECRET:SENDER[,SENDER...]` and set
+  at least one `--message-auth-key KEY_ID:SECRET:SENDER[,SENDER...]`, or a
+  rotating `--message-auth-key-set`, and set
   `--require-message-auth`, so HMAC verification runs after WebSocket connect
   authentication.
 - **ACL enforcement required** through `--require-acl` with an `--acl-policy`, so

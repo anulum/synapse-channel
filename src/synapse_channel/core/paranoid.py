@@ -21,6 +21,7 @@ import argparse
 from dataclasses import dataclass
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.message_auth_key_set import message_auth_key_configured
 from synapse_channel.core.token_set import connect_token_configured, metrics_token_configured
 
 MISSING_PARANOID_HOOKS: tuple[str, ...] = (
@@ -108,8 +109,10 @@ def apply_paranoid_hub_profile(args: argparse.Namespace) -> ParanoidHubReport | 
             "paranoid mode requires --metrics-token or --metrics-token-set when --metrics "
             "is enabled"
         )
-    if not getattr(args, "message_auth_key", None):
-        raise ParanoidModeError("paranoid mode requires --message-auth-key")
+    if not message_auth_key_configured(args):
+        raise ParanoidModeError(
+            "paranoid mode requires --message-auth-key or --message-auth-key-set"
+        )
     if not bool(getattr(args, "require_message_auth", False)):
         raise ParanoidModeError("paranoid mode requires --require-message-auth")
     if not bool(getattr(args, "require_acl", False)) or not getattr(args, "acl_policy", None):

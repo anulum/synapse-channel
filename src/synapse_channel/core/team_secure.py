@@ -24,6 +24,7 @@ import argparse
 from dataclasses import dataclass
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.message_auth_key_set import message_auth_key_configured
 from synapse_channel.core.token_set import connect_token_configured
 
 
@@ -116,11 +117,11 @@ def apply_team_secure_hub_profile(args: argparse.Namespace) -> TeamSecureHubRepo
     if floors:
         enforced.append(floors)
     recommended: list[str] = []
-    if not getattr(args, "message_auth_key", None) or not bool(
+    if not message_auth_key_configured(args) or not bool(
         getattr(args, "require_message_auth", False)
     ):
         recommended.append(
-            "--message-auth-key and --require-message-auth "
+            "--message-auth-key (or --message-auth-key-set) and --require-message-auth "
             "(cryptographically bind the sender beyond the connect token)"
         )
     if (

@@ -29,6 +29,7 @@ from dataclasses import dataclass
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.hub import DEFAULT_MAX_CONNECTIONS_PER_HOST
+from synapse_channel.core.message_auth_key_set import message_auth_key_configured
 from synapse_channel.core.paranoid import apply_paranoid_hub_profile
 from synapse_channel.core.team_secure import apply_team_secure_hub_profile
 from synapse_channel.core.token_set import connect_token_configured, metrics_token_configured
@@ -97,9 +98,9 @@ def _missing_material(args: argparse.Namespace) -> list[str]:
         missing.append("--identity-trust (Ed25519 connection identity binding)")
     if not str(getattr(args, "role_grants", "") or "").strip():
         missing.append("--role-grants (deny-by-default role store)")
-    if not getattr(args, "message_auth_key", None):
+    if not message_auth_key_configured(args):
         missing.append(
-            "--message-auth-key or --message-auth-key-file "
+            "--message-auth-key, --message-auth-key-file or --message-auth-key-set "
             "(sender-bound per-message authentication)"
         )
     if not str(getattr(args, "acl_policy", "") or "").strip():
