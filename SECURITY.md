@@ -343,7 +343,7 @@ override.
 | Transport encryption (TLS / WSS) | — | — | **required** off-loopback (proxy or `--tls-certfile`; override `--insecure-off-loopback`) | **required** (proxy or `--tls-certfile`) |
 | ACL policy (`--require-acl`) | — | optional | recommended | **required** |
 | Per-message auth (`--require-message-auth`) | — | optional | recommended | **required** |
-| Metrics token (`--metrics-token`) | — | required if `--metrics` | **required** if `--metrics` | **required** if `--metrics` |
+| Metrics token (`--metrics-token` or `--metrics-token-set`) | — | required if `--metrics` | **required** if `--metrics` | **required** if `--metrics` |
 | Metrics query token | loopback debug only | loopback debug only | disabled | disabled |
 | Durable log (`--db`) | optional | recommended | recommended | recommended |
 | At-rest store encryption (`--db-key-file`) | — | — | **required** with `--db` off-loopback (override `--insecure-plaintext-at-rest`) | **required** with `--db` |
@@ -539,6 +539,20 @@ When that boundary is crossed, the proportionate controls are:
   form is accepted only when the operator opts in with the deprecated
   `--metrics-query-token-ok` compatibility flag. It warns at parse time and is
   scheduled for removal in 0.101.0; migrate probes to the bearer header now.
+  `--metrics-token-set PATH` guards the endpoint with a token set in the
+  `--token-set` format instead of one fixed token, so the metrics bearer
+  rotates without a restart: add the new entry, move the scraper to it, then
+  remove the old one. The hub re-reads the file at the next metrics request
+  after it changed; a file that fails validation is not applied and the last
+  accepted set keeps working. Entries honour their `not_before`/`not_after`
+  window, and an entry that names `agents` admits no metrics request. It
+  cannot be combined with `--metrics-token` or `--metrics-token-file`, and
+  `--require-token-expiry` and `--max-token-days` act on connect tokens only.
+  Both sets use the same digest, so keep the metrics secrets out of the
+  connect-token file: an entry present in both files admits both. With a
+  journal, each applied or rejected metrics set is written as an audit row
+  (`metrics_token_set_applied`, `metrics_token_set_rejected`) holding the
+  token identifiers or the reason, never a secret or a digest.
 - **A2A HTTP bridge.** `synapse a2a-serve` is a separate stdlib HTTP edge that
   defaults to `127.0.0.1`. Its public Agent Card is intentionally readable; the
   task, RPC, extended-card, and push-configuration routes can require HTTP

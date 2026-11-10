@@ -35,6 +35,7 @@ def add_hub_admission_arguments(hub: argparse.ArgumentParser) -> None:
     add_hub_security_arguments(hub)
     add_hub_mailbox_custodians_argument(hub)
     add_hub_token_set_argument(hub)
+    add_hub_metrics_token_set_argument(hub)
     add_hub_frame_signature_argument(hub)
     add_policy_arguments(hub)
 
@@ -56,6 +57,20 @@ def add_hub_frame_signature_argument(hub: argparse.ArgumentParser) -> None:
         "signature by the identity key that proved the connection, bound to this hub, the "
         "connection's session nonce and a growing sequence. A connection that registers "
         "without a verified identity signature is refused. Off by default.",
+    )
+
+
+def add_hub_metrics_token_set_argument(hub: argparse.ArgumentParser) -> None:
+    """Add ``--metrics-token-set``, the rotatable bearer source for ``/metrics``."""
+    hub.add_argument(
+        "--metrics-token-set",
+        default=None,
+        metavar="PATH",
+        help="Guard /metrics and /health with an owner-only JSON token set (the "
+        "--token-set format: digests, validity windows; entries must not name "
+        "agents). The hub re-reads it when it changes, so the metrics bearer "
+        "rotates without a restart. Cannot be combined with --metrics-token or "
+        "--metrics-token-file.",
     )
 
 

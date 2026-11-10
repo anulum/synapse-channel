@@ -89,6 +89,7 @@ LEGACY_DEFAULTS: dict[str, object] = {
     "enable_metrics": False,
     "auth_timeout": DEFAULT_AUTH_TIMEOUT,
     "metrics_token": None,
+    "metrics_token_set": None,
     "metrics_query_token_ok": False,
     "allowed_origins": (),
     "advertised_host": None,

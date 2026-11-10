@@ -73,6 +73,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "metrics": False,
         "auth_timeout": 10.0,
         "metrics_token": None,
+        "metrics_token_set": None,
         "metrics_query_token_ok": False,
         "message_auth_key": [],
         "require_message_auth": False,

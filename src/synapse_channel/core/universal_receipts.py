@@ -94,15 +94,17 @@ NON_RECEIPT_EVENT_KINDS = frozenset(
         EventKind.CONNECT_TOKEN_SET_APPLIED,
         EventKind.CONNECT_TOKEN_SET_REJECTED,
         EventKind.CONNECT_TOKEN_SESSION_ENDED,
+        EventKind.METRICS_TOKEN_SET_APPLIED,
+        EventKind.METRICS_TOKEN_SET_REJECTED,
     }
 )
 """Event kinds outside the universal receipt projection.
 
 Delivery intent lifecycle events have their own correlated status and durable
 notification view; projecting them as legacy transport receipts would conflate
-queue admission, boundary acknowledgement, and task execution. Connect-token
-audit rows, mailbox handovers and role bindings stay plain journal rows until a
-receipt mapping for them is defined.
+queue admission, boundary acknowledgement, and task execution. Connect-token and
+metrics-token audit rows, mailbox handovers and role bindings stay plain journal
+rows until a receipt mapping for them is defined.
 """
 
 

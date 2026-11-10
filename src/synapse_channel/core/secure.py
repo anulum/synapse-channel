@@ -31,7 +31,7 @@ from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.hub import DEFAULT_MAX_CONNECTIONS_PER_HOST
 from synapse_channel.core.paranoid import apply_paranoid_hub_profile
 from synapse_channel.core.team_secure import apply_team_secure_hub_profile
-from synapse_channel.core.token_set import connect_token_configured
+from synapse_channel.core.token_set import connect_token_configured, metrics_token_configured
 
 #: Per-agent message rate ceiling (messages/second) and burst applied when the
 #: parser value is disabled. A stricter positive value is preserved.
@@ -106,9 +106,10 @@ def _missing_material(args: argparse.Namespace) -> list[str]:
         missing.append("--acl-policy (deny-by-default ACL enforcement)")
     if not getattr(args, "tls_certfile", None) or not getattr(args, "tls_keyfile", None):
         missing.append("--tls-certfile and --tls-keyfile (native WSS)")
-    if bool(getattr(args, "metrics", False)) and not getattr(args, "metrics_token", None):
+    if bool(getattr(args, "metrics", False)) and not metrics_token_configured(args):
         missing.append(
-            "--metrics-token or --metrics-token-file (bearer auth for the enabled metrics surface)"
+            "--metrics-token, --metrics-token-file or --metrics-token-set (bearer auth for "
+            "the enabled metrics surface)"
         )
     return missing
 

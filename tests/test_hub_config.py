@@ -105,6 +105,7 @@ def test_default_config_builds_the_same_hub_as_bare_construction() -> None:
         "auth_timeout",
         "enable_metrics",
         "metrics_token",
+        "metrics_token_set",
         "metrics_query_token_ok",
         "insecure_off_loopback",
         "insecure_plaintext_at_rest",

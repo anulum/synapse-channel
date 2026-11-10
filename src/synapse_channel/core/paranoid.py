@@ -21,7 +21,7 @@ import argparse
 from dataclasses import dataclass
 
 from synapse_channel.core.errors import SynapseError
-from synapse_channel.core.token_set import connect_token_configured
+from synapse_channel.core.token_set import connect_token_configured, metrics_token_configured
 
 MISSING_PARANOID_HOOKS: tuple[str, ...] = (
     "at-rest encryption (available separately; not enabled by --paranoid)",
@@ -103,8 +103,11 @@ def apply_paranoid_hub_profile(args: argparse.Namespace) -> ParanoidHubReport | 
     if not getattr(args, "db", None):
         raise ParanoidModeError("paranoid mode requires --db for durable event-log replay")
     metrics_enabled = bool(getattr(args, "metrics", False))
-    if metrics_enabled and not getattr(args, "metrics_token", None):
-        raise ParanoidModeError("paranoid mode requires --metrics-token when --metrics is enabled")
+    if metrics_enabled and not metrics_token_configured(args):
+        raise ParanoidModeError(
+            "paranoid mode requires --metrics-token or --metrics-token-set when --metrics "
+            "is enabled"
+        )
     if not getattr(args, "message_auth_key", None):
         raise ParanoidModeError("paranoid mode requires --message-auth-key")
     if not bool(getattr(args, "require_message_auth", False)):

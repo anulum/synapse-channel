@@ -57,6 +57,7 @@ _RISK_KINDS = frozenset(
         "connect_token_refused",
         "connect_token_set_rejected",
         "connect_token_session_ended",
+        "metrics_token_set_rejected",
     }
 )
 _OPERATION_KINDS = frozenset(
@@ -83,6 +84,7 @@ _OPERATION_KINDS = frozenset(
         "delivery_receipt_deferred",
         "connect_token_admitted",
         "connect_token_set_applied",
+        "metrics_token_set_applied",
     }
 )
 

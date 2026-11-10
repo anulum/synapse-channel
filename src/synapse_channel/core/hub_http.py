@@ -25,6 +25,7 @@ from synapse_channel.core.metrics import (
 )
 
 if TYPE_CHECKING:
+    from synapse_channel.core.auth import TokenAuthenticator
     from synapse_channel.core.hub import SynapseHub
 
 
@@ -69,14 +70,26 @@ def request_metrics_token(request: Request, *, query_token_ok: bool) -> str:
 
 
 def metrics_authorised(
-    request: Request, *, metrics_token: str | None, query_token_ok: bool
+    request: Request,
+    *,
+    metrics_token: str | None,
+    query_token_ok: bool,
+    metrics_token_set: TokenAuthenticator | None = None,
 ) -> bool:
-    """Return whether a metrics request carries the configured token, if any."""
-    if metrics_token is None:
+    """Return whether a metrics request carries a configured token, if any is configured.
+
+    The request is admitted by the fixed ``metrics_token`` or by an entry of
+    ``metrics_token_set`` that is valid now. A token set is re-read when its file
+    changed, so an operator rotates the metrics bearer without a restart; its
+    entries are presented no agent name, so an entry that names agents admits no
+    metrics request.
+    """
+    if metrics_token is None and metrics_token_set is None:
         return True
-    return hmac.compare_digest(
-        request_metrics_token(request, query_token_ok=query_token_ok), metrics_token
-    )
+    presented = request_metrics_token(request, query_token_ok=query_token_ok)
+    if metrics_token is not None and hmac.compare_digest(presented, metrics_token):
+        return True
+    return metrics_token_set is not None and metrics_token_set.authenticate(presented, "")[0]
 
 
 def http_endpoint_response(hub: SynapseHub, request: Request) -> Response | None:
@@ -88,6 +101,7 @@ def http_endpoint_response(hub: SynapseHub, request: Request) -> Response | None
         request,
         metrics_token=hub.metrics_token,
         query_token_ok=hub.metrics_query_token_ok,
+        metrics_token_set=hub.metrics_token_set,
     ):
         return http_unauthorized()
     if route == "/metrics":

@@ -91,6 +91,8 @@ from synapse_channel.core.state import (
 from synapse_channel.core.task_causality import TaskCausalParent, task_event_payload
 from synapse_channel.core.token_audit import (
     ADMITTED_KIND,
+    METRICS_SET_APPLIED_KIND,
+    METRICS_SET_REJECTED_KIND,
     REFUSED_KIND,
     SESSION_ENDED_KIND,
     SET_APPLIED_KIND,
@@ -150,6 +152,8 @@ class EventKind:
     CONNECT_TOKEN_SET_APPLIED = SET_APPLIED_KIND
     CONNECT_TOKEN_SET_REJECTED = SET_REJECTED_KIND
     CONNECT_TOKEN_SESSION_ENDED = SESSION_ENDED_KIND
+    METRICS_TOKEN_SET_APPLIED = METRICS_SET_APPLIED_KIND
+    METRICS_TOKEN_SET_REJECTED = METRICS_SET_REJECTED_KIND
     CORRUPT = CORRUPT_EVENT_KIND
 
 

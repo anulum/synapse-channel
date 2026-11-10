@@ -570,3 +570,21 @@ def connect_token_configured(args: Any) -> bool:
         ``True`` when either a shared secret or a token set is configured.
     """
     return bool(getattr(args, "token", None) or getattr(args, "token_set", None))
+
+
+def metrics_token_configured(args: Any) -> bool:
+    """Return whether hub arguments guard the metrics surface with a token.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed hub arguments; ``metrics_token`` is the resolved fixed metrics
+        token and ``metrics_token_set`` the optional metrics token-set path.
+
+    Returns
+    -------
+    bool
+        ``True`` when either a fixed metrics token or a metrics token set is
+        configured.
+    """
+    return bool(getattr(args, "metrics_token", None) or getattr(args, "metrics_token_set", None))

@@ -20,6 +20,14 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- `synapse hub --metrics-token-set PATH` guards `/metrics` and `/health` with a
+  token set in the `--token-set` format, so the metrics bearer rotates without a
+  restart. Entries honour their validity window; a file that fails validation
+  keeps the last accepted set. The exposure guard and the secure and paranoid
+  presets accept it like `--metrics-token`, with which it cannot be combined.
+  With a journal, applied and rejected sets are audit rows
+  (`metrics_token_set_applied`, `metrics_token_set_rejected`). `SynapseHub`
+  takes it as `metrics_token_set`.
 - Optional protected frontend control relays original signed requests over
   native Unix channels into the existing authority actor and durable stores.
   It verifies enrolled process peers, binds connections and correlations,

@@ -28,6 +28,15 @@ Coordination replay skips them; they hold no secret and no digest.
 
 Agent names come from the connecting client and are cut to
 :data:`AGENT_FIELD_LIMIT` characters.
+
+A hub whose metrics bearer follows a token set (``--metrics-token-set``) writes two
+more audit-only kinds for that set, with the same fields as their connect-token
+counterparts:
+
+``metrics_token_set_applied``
+    The metrics token-set file now in force, with its token identifiers.
+``metrics_token_set_rejected``
+    A metrics token-set file that was not applied and why.
 """
 
 from __future__ import annotations
@@ -47,6 +56,8 @@ REFUSED_KIND = "connect_token_refused"
 SET_APPLIED_KIND = "connect_token_set_applied"
 SET_REJECTED_KIND = "connect_token_set_rejected"
 SESSION_ENDED_KIND = "connect_token_session_ended"
+METRICS_SET_APPLIED_KIND = "metrics_token_set_applied"
+METRICS_SET_REJECTED_KIND = "metrics_token_set_rejected"
 
 REFUSAL_WINDOW_SECONDS = 60.0
 """Length of one refusal aggregation window."""
@@ -195,4 +206,58 @@ def token_audit_for(
         return None
     audit = TokenAudit(journal)
     authenticator.observe(audit)
+    return audit
+
+
+class MetricsTokenAudit:
+    """Write the applied and rejected rows of a metrics token set to a hub journal.
+
+    Parameters
+    ----------
+    journal : EventStore
+        The hub's durable event store.
+    """
+
+    def __init__(self, journal: EventStore) -> None:
+        self._journal = journal
+
+    def set_applied(self, path: Path, token_ids: tuple[str, ...]) -> None:
+        """Record that the metrics token set at ``path`` is in force."""
+        self._journal.append(
+            METRICS_SET_APPLIED_KIND,
+            {"path": str(path), "token_ids": list(token_ids)},
+            durable=True,
+        )
+
+    def set_rejected(self, path: Path, reason: str) -> None:
+        """Record that the metrics token set at ``path`` was not applied."""
+        self._journal.append(
+            METRICS_SET_REJECTED_KIND, {"path": str(path), "reason": reason}, durable=True
+        )
+
+
+def metrics_token_audit_for(
+    token_set: TokenAuthenticator | None, journal: EventStore | None
+) -> MetricsTokenAudit | None:
+    """Attach an audit to the metrics token set when the hub has a journal.
+
+    Parameters
+    ----------
+    token_set : TokenAuthenticator or None
+        The authenticator the metrics bearer follows; only a
+        :class:`~synapse_channel.core.token_set.TokenSetAuthenticator` has a set to
+        audit.
+    journal : EventStore or None
+        The hub's durable event store.
+
+    Returns
+    -------
+    MetricsTokenAudit or None
+        The attached audit, already holding the set in force; ``None`` for a hub
+        without a metrics token set or without a journal.
+    """
+    if journal is None or not isinstance(token_set, TokenSetAuthenticator):
+        return None
+    audit = MetricsTokenAudit(journal)
+    token_set.observe(audit)
     return audit

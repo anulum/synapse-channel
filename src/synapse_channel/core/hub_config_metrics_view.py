@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub_config_attribute import ConfigAttribute, HubConfigOwner
 
 
@@ -44,6 +45,12 @@ class HubMetricsConfigView(HubConfigOwner):
     metrics_token: ConfigAttribute[str | None] = ConfigAttribute(
         lambda config: config.metrics.metrics_token,
         lambda config, value: replace(config, metrics=replace(config.metrics, metrics_token=value)),
+    )
+    metrics_token_set: ConfigAttribute[TokenAuthenticator | None] = ConfigAttribute(
+        lambda config: config.metrics.metrics_token_set,
+        lambda config, value: replace(
+            config, metrics=replace(config.metrics, metrics_token_set=value)
+        ),
     )
     recipient_liveness_window: ConfigAttribute[float] = ConfigAttribute(
         lambda config: config.liveness.recipient_liveness_window,

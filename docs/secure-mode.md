@@ -137,6 +137,8 @@ the hub under WSL/POSIX or use a separately validated native secret provider.
 Missing material fails closed with one aggregate error. Add
 `--metrics-token-file` (or `--metrics-token`) when `--metrics` is enabled; the
 explicit argv token wins when both are present, mirroring `--token`/`--token-file`.
+A metrics token set (`--metrics-token-set`, rotatable without a restart)
+satisfies the same requirement.
 
 ## What the report says
 

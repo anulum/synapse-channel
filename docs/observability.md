@@ -36,6 +36,10 @@ Two planes, deliberately separate:
    synapse hub --metrics --metrics-token-file ~/.synapse-metrics-token
    ```
 
+   To rotate the scraper's token without restarting the hub, give
+   `--metrics-token-set FILE` instead: an owner-only token set in the
+   `synapse token-set` format, kept separate from any connect-token set.
+
 2. **Scrape.** Merge
    [`integrations/observability/prometheus-scrape.yml`](https://github.com/anulum/synapse-channel/blob/main/integrations/observability/prometheus-scrape.yml)
    into your `prometheus.yml` `scrape_configs:`. With a metrics token, use

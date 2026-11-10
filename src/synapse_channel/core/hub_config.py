@@ -221,10 +221,11 @@ class HubAuthConfig:
 
 @dataclass(frozen=True, kw_only=True)
 class HubMetricsConfig:
-    """The optional HTTP ``/metrics`` and ``/health`` endpoint and its token."""
+    """The optional HTTP ``/metrics`` and ``/health`` endpoint and its token or token set."""
 
     enable_metrics: bool = False
     metrics_token: str | None = None
+    metrics_token_set: TokenAuthenticator | None = None
     metrics_query_token_ok: bool = False
     allowed_origins: tuple[str, ...] = ()
     advertised_host: str | None = None

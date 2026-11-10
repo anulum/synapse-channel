@@ -126,6 +126,25 @@ def _connect_authenticator(args: argparse.Namespace) -> TokenAuthenticator | Non
     return TokenAuthenticator([args.token]) if args.token else None
 
 
+def _metrics_token_set(args: argparse.Namespace) -> TokenSetAuthenticator | None:
+    """Build the metrics token set, refusing it beside a fixed metrics token."""
+    path = getattr(args, "metrics_token_set", None)
+    if not path:
+        return None
+    if getattr(args, "metrics_token", None):
+        print(
+            "synapse hub: --metrics-token-set cannot be combined with --metrics-token "
+            "or --metrics-token-file",
+            file=sys.stderr,
+        )
+        raise HubStartupRefused()
+    try:
+        return TokenSetAuthenticator(path)
+    except (SecretFileError, TokenSetError) as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        raise HubStartupRefused() from None
+
+
 def guard_transport_exposure(ctx: HubStartup) -> None:
     """Refuse unsafe transport exposure before opening a durable store.
 
@@ -137,9 +156,11 @@ def guard_transport_exposure(ctx: HubStartup) -> None:
         writer = publish_hub_state(authenticator)
         if writer is not None:
             ctx.resources.callback(writer.close)
+    metrics_token_set = _metrics_token_set(ctx.args)
     ctx.config = replace(
         ctx.config,
         auth=replace(ctx.config.auth, authenticator=authenticator),
+        metrics=replace(ctx.config.metrics, metrics_token_set=metrics_token_set),
     )
     try:
         guard_exposure(
@@ -148,6 +169,7 @@ def guard_transport_exposure(ctx: HubStartup) -> None:
             enable_metrics=ctx.args.metrics,
             metrics_token=ctx.args.metrics_token,
             metrics_query_token_ok=ctx.args.metrics_query_token_ok,
+            metrics_token_set=metrics_token_set,
             insecure_off_loopback=ctx.args.insecure_off_loopback,
             tls_active=ctx.transport.ssl_context is not None,
             logger=_PRECHECK_LOGGER,

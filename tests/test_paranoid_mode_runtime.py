@@ -68,8 +68,9 @@ def test_cmd_hub_paranoid_refuses_metrics_without_metrics_token(
 
     assert cli_processes._cmd_hub(args, runner=_close_runner) == 2
 
-    assert "paranoid mode requires --metrics-token when --metrics is enabled" in (
-        capsys.readouterr().err
+    assert (
+        "paranoid mode requires --metrics-token or --metrics-token-set when --metrics is enabled"
+        in (capsys.readouterr().err)
     )
 
 

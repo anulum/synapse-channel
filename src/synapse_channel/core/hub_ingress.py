@@ -86,6 +86,9 @@ class HubIngress:
         nothing.
     token_sessions : TokenSessions or None, optional
         Follows sessions admitted by an expiring token; ``None`` follows none.
+    metrics_token_set : TokenAuthenticator or None, optional
+        The token set gating the metrics endpoint beside (or instead of)
+        ``metrics_token``; consulted by the exposure guard like the fixed token.
     """
 
     def __init__(
@@ -101,6 +104,7 @@ class HubIngress:
         system: Callable[..., dict[str, Any]],
         token_audit: TokenAudit | None = None,
         token_sessions: TokenSessions | None = None,
+        metrics_token_set: TokenAuthenticator | None = None,
     ) -> None:
         self._clients = clients
         self._authenticator = authenticator
@@ -108,6 +112,7 @@ class HubIngress:
         self._token_sessions = token_sessions
         self._enable_metrics = enable_metrics
         self._metrics_token = metrics_token
+        self._metrics_token_set = metrics_token_set
         self._metrics_query_token_ok = metrics_query_token_ok
         self._insecure_off_loopback = insecure_off_loopback
         self._send_json = send_json
@@ -248,6 +253,7 @@ class HubIngress:
             enable_metrics=self._enable_metrics,
             metrics_token=self._metrics_token,
             metrics_query_token_ok=self._metrics_query_token_ok,
+            metrics_token_set=self._metrics_token_set,
         )
 
     def guard_exposure(self, host: str, *, tls_active: bool = False) -> None:
@@ -268,6 +274,7 @@ class HubIngress:
             enable_metrics=self._enable_metrics,
             metrics_token=self._metrics_token,
             metrics_query_token_ok=self._metrics_query_token_ok,
+            metrics_token_set=self._metrics_token_set,
             insecure_off_loopback=self._insecure_off_loopback,
             tls_active=tls_active,
             logger=logger,

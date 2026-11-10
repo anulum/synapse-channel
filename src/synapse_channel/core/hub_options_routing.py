@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import TypedDict
 
+from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
 from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.message_forward_transport import MessageForwarder, MessageForwardPeer
@@ -34,6 +35,7 @@ class HubRoutingOptions(TypedDict, total=False):
     lease_offline_ttl: float
     enable_metrics: bool
     metrics_token: str | None
+    metrics_token_set: TokenAuthenticator | None
     metrics_query_token_ok: bool
     allowed_origins: tuple[str, ...] | list[str]
     advertised_host: str | None

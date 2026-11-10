@@ -87,6 +87,7 @@ def exposure_problems(
     enable_metrics: bool,
     metrics_token: str | None,
     metrics_query_token_ok: bool = False,
+    metrics_token_set: Any | None = None,
 ) -> list[str]:
     """Return the transport-independent exposure problems for binding on ``host``.
 
@@ -96,7 +97,8 @@ def exposure_problems(
     dependent plaintext-token refusal (a token over plaintext ``ws://`` off
     loopback) is evaluated separately at bind time by :func:`guard_exposure`, which
     knows ``tls_active``; a token-set hub can therefore report no problems here yet
-    still be refused by the guard when it would bind off loopback without TLS.
+    still be refused by the guard when it would bind off loopback without TLS. A
+    metrics token set guards the metrics surface as a fixed metrics token does.
     """
     if is_loopback_host(host):
         return []
@@ -106,10 +108,11 @@ def exposure_problems(
             f"bound to non-loopback host {host!r} with no token; set an "
             "authenticator (synapse hub --token ...) before exposing it"
         )
-    if enable_metrics and metrics_token is None:
+    if enable_metrics and metrics_token is None and metrics_token_set is None:
         problems.append(
             f"metrics enabled on non-loopback host {host!r} with no "
-            "--metrics-token; /metrics and /health would be unauthenticated"
+            "--metrics-token or --metrics-token-set; /metrics and /health would be "
+            "unauthenticated"
         )
     if enable_metrics and metrics_query_token_ok:
         problems.append(
@@ -128,6 +131,7 @@ def guard_exposure(
     enable_metrics: bool,
     metrics_token: str | None,
     metrics_query_token_ok: bool = False,
+    metrics_token_set: Any | None = None,
     insecure_off_loopback: bool,
     tls_active: bool = False,
     logger: logging.Logger,
@@ -148,6 +152,7 @@ def guard_exposure(
         enable_metrics=enable_metrics,
         metrics_token=metrics_token,
         metrics_query_token_ok=metrics_query_token_ok,
+        metrics_token_set=metrics_token_set,
     )
     problems += plaintext_token_problems(host, authenticator=authenticator, tls_active=tls_active)
     if not problems:
@@ -159,7 +164,8 @@ def guard_exposure(
     joined = "; ".join(problems)
     raise InsecureBindError(
         f"Refusing to bind: Synapse Hub {joined}. Resolve the problem above "
-        "(configure a token and --metrics-token when metrics are on, or terminate "
+        "(configure a token and --metrics-token or --metrics-token-set when metrics "
+        "are on, or terminate "
         "TLS off loopback), or pass --insecure-off-loopback to bind anyway "
         "(not recommended)."
     )

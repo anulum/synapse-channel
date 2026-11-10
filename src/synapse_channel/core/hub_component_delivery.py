@@ -32,7 +32,7 @@ from synapse_channel.core.mailbox_pending import MailboxPendingTracker
 from synapse_channel.core.operation_records import OperationLedger
 from synapse_channel.core.operator_relay_forwarding import OperatorRelayForwarding
 from synapse_channel.core.pending_receipts import PendingReceipts
-from synapse_channel.core.token_audit import token_audit_for
+from synapse_channel.core.token_audit import metrics_token_audit_for, token_audit_for
 from synapse_channel.core.token_sessions import token_sessions_for
 
 
@@ -162,6 +162,7 @@ def build_gates(
 ) -> HubGateComponents:
     """Construct all admission gates without an implicit hub dependency."""
     audit = token_audit_for(config.auth.authenticator, config.journal)
+    metrics_token_audit_for(config.metrics.metrics_token_set, config.journal)
     sessions = token_sessions_for(config.auth.authenticator, audit)
     connection = build_connection(config, clients, reactions, callbacks)
     if sessions is not None:
@@ -198,6 +199,7 @@ def build_gates(
             system=callbacks.system,
             token_audit=audit,
             token_sessions=sessions,
+            metrics_token_set=config.metrics.metrics_token_set,
         ),
         identity=identity,
         connection=connection,
