@@ -37,10 +37,11 @@ import logging
 import sqlite3
 import time
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from synapse_channel.core.delivery_modes import DeliveryRefusal
+from synapse_channel.core.handler_context import HandlerContext
 from synapse_channel.core.hub_address import (
     HubQualifiedAddress,
     is_single_seat,
@@ -48,8 +49,14 @@ from synapse_channel.core.hub_address import (
 )
 from synapse_channel.core.journal import record_chat
 from synapse_channel.core.message_forward_attempts import own_forward_work
-from synapse_channel.core.message_forward_ledger import OutboxEntry, RemoteDelivery
+from synapse_channel.core.message_forward_ledger import (
+    MessageForwardLedger,
+    OutboxEntry,
+    RemoteDelivery,
+)
 from synapse_channel.core.message_forward_transport import (
+    MessageForwarder,
+    MessageForwardPeer,
     MessageForwardRejectedError,
     MessageForwardTransportError,
 )
@@ -64,50 +71,37 @@ from synapse_channel.core.message_forward_wire import (
 from synapse_channel.core.peer_token import mask_peer_token
 from synapse_channel.core.protocol import MessageType
 
-if TYPE_CHECKING:
-    from typing import Protocol
 
-    from synapse_channel.core.handler_context import HandlerContext
-    from synapse_channel.core.message_forward_ledger import MessageForwardLedger
-    from synapse_channel.core.message_forward_transport import MessageForwarder, MessageForwardPeer
+class ForwardOriginContext(HandlerContext, Protocol):
+    """Capabilities consumed by message forward origin handlers and their callees."""
 
-    class ForwardOriginContext(HandlerContext, Protocol):
-        """Capabilities consumed by message forward origin handlers and their callees."""
+    @property
+    def chat_history(self) -> list[dict[str, Any]]:
+        """Return the chat history used by this handler family."""
 
-        @property
-        def chat_history(self) -> list[dict[str, Any]]:
-            """Return the chat history used by this handler family."""
-            ...
+    @property
+    def max_history(self) -> int:
+        """Return the max history used by this handler family."""
 
-        @property
-        def max_history(self) -> int:
-            """Return the max history used by this handler family."""
-            ...
+    @property
+    def message_forward_ledger(self) -> MessageForwardLedger:
+        """Return the message forward ledger used by this handler family."""
 
-        @property
-        def message_forward_ledger(self) -> MessageForwardLedger:
-            """Return the message forward ledger used by this handler family."""
-            ...
+    @property
+    def message_forward_ttl(self) -> float:
+        """Return the message forward ttl used by this handler family."""
 
-        @property
-        def message_forward_ttl(self) -> float:
-            """Return the message forward ttl used by this handler family."""
-            ...
+    @property
+    def message_forwarder(self) -> MessageForwarder:
+        """Return the message forwarder used by this handler family."""
 
-        @property
-        def message_forwarder(self) -> MessageForwarder:
-            """Return the message forwarder used by this handler family."""
-            ...
+    @property
+    def message_peers(self) -> dict[str, MessageForwardPeer] | None:
+        """Return the message peers used by this handler family."""
 
-        @property
-        def message_peers(self) -> dict[str, MessageForwardPeer] | None:
-            """Return the message peers used by this handler family."""
-            ...
-
-        @property
-        def private_directed_messages(self) -> bool:
-            """Return the private directed messages used by this handler family."""
-            ...
+    @property
+    def private_directed_messages(self) -> bool:
+        """Return the private directed messages used by this handler family."""
 
 
 logger = logging.getLogger("synapse.message_forward")
