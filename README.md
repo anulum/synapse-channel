@@ -1940,7 +1940,7 @@ an installed protected runtime or revocation fencing.
 | Classes | 1338 |
 | Wire message types | 118 |
 | CLI subcommands | 303 |
-| Test functions | 13441 |
+| Test functions | 13442 |
 | Benchmark harnesses | 16 |
 | Documentation pages | 98 |
 | GitHub Actions workflows | 29 |

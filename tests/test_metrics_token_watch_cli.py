@@ -120,6 +120,32 @@ def test_an_entry_that_expires_while_the_hub_serves_is_one_row(tmp_path: Path) -
     assert "short-secret" not in json.dumps(rows)
 
 
+def _bracketed_hours(brackets: list[tuple[int, int]]) -> tuple[set[int], set[int]]:
+    """Return the hours that must have a row and the hours that may have one.
+
+    Each bracket is the hour sampled just before and just after one request. A
+    request whose two samples agree was admitted in that hour, so it must have
+    its row. Every hour between the two samples, in either order, is one the
+    admission may have fallen in: a validity clock may also step back during a
+    request.
+    """
+    certain = {start for start, end in brackets if start == end}
+    touched = {
+        hour for start, end in brackets for hour in range(min(start, end), max(start, end) + 1)
+    }
+    return certain, touched
+
+
+def test_bracketed_hours_cover_a_clock_that_steps_back_during_a_request() -> None:
+    """A descending bracket still names both of its hours as possible admission hours."""
+    certain, touched = _bracketed_hours([(101, 100), (100, 100), (100, 100)])
+    assert certain == {100}
+    assert touched == {100, 101}
+    certain, touched = _bracketed_hours([(100, 101), (101, 101)])
+    assert certain == {101}
+    assert touched == {100, 101}
+
+
 def test_requests_with_the_older_of_two_valid_tokens_are_journaled_once_per_hour(
     tmp_path: Path,
 ) -> None:
@@ -150,7 +176,6 @@ def test_requests_with_the_older_of_two_valid_tokens_are_journaled_once_per_hour
     rows = _rows(db_path, METRICS_RETIRING_ADMISSION_KIND)
     assert {(p["token_id"], p["newest_token_id"]) for _, _, p in rows} == {("older", "newer")}
     hours = [int(payload["hour_start"] // 3600) for _, _, payload in rows]
-    certain = {start for start, end in brackets if start == end}
-    touched = {hour for start, end in brackets for hour in range(start, end + 1)}
-    assert len(hours) == len(set(hours))
+    certain, touched = _bracketed_hours(brackets)
+    assert hours and len(hours) == len(set(hours))
     assert certain <= set(hours) <= touched
