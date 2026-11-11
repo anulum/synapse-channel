@@ -18,6 +18,8 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.51] - 2026-11-11
+
 ### Added
 
 - Outbound peer tokens rotate without a restart. `synapse hub` gains
