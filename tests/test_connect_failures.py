@@ -272,7 +272,8 @@ async def test_closed_after_ready_waits_for_the_close_after_an_identity_refusal(
     }
     conn = _FakeConn(answers=(refusal, CAPACITY_CLOSE_CODE), close_reason="identity binding failed")
 
-    assert await closed_after_ready(conn, timeout=2.0) is True
+    # The close ends the wait; the long budget is never used up.
+    assert await asyncio.wait_for(closed_after_ready(conn, timeout=60.0), 10) is True
     assert conn.last_close_code == CAPACITY_CLOSE_CODE
     assert "identity proof refused" in describe_connect_failure(
         "A", "ws://h", close_code=conn.last_close_code, close_reason=conn.last_close_reason
@@ -302,13 +303,13 @@ async def test_closed_after_ready_records_a_refusal_that_leaves_the_socket_open(
 async def test_closed_after_ready_reports_a_close_instead_of_an_answer() -> None:
     conn = _FakeConn(answers=(NAME_CONFLICT_CLOSE_CODE,), close_reason="name conflict")
 
-    assert await closed_after_ready(conn, timeout=2.0) is True
+    assert await asyncio.wait_for(closed_after_ready(conn, timeout=60.0), 10) is True
     assert conn.last_close_code == NAME_CONFLICT_CLOSE_CODE
 
 
 async def test_closed_after_ready_detects_a_close_recorded_before_the_request() -> None:
-    assert await closed_after_ready(_FakeConn(close=NAME_CONFLICT_CLOSE_CODE), timeout=2.0)
-    assert await closed_after_ready(_FakeConn(running=False), timeout=2.0)
+    for conn in (_FakeConn(close=NAME_CONFLICT_CLOSE_CODE), _FakeConn(running=False)):
+        assert await asyncio.wait_for(closed_after_ready(conn, timeout=60.0), 10) is True
 
 
 async def test_closed_after_ready_refuses_when_the_request_cannot_be_sent() -> None:
