@@ -172,15 +172,17 @@ class _FakeConn:
     """A one-shot client whose roster request is answered by a scripted hub.
 
     ``answers`` are the frames the hub sends after the request, delivered in
-    order in one burst once the request is out. Each one is either a frame for
-    the callback, or an ``int`` close code that the client records with
-    ``close_reason`` and stops on, as a real hub close does.
+    order once the request is out. Each one is a frame for the callback, an
+    ``int`` close code that the client records with ``close_reason`` and stops
+    on, as a real hub close does, or a ``float`` pause in seconds. Frames with
+    no pause between them arrive in one burst. ``answering`` is the task that
+    delivers them.
     """
 
     def __init__(
         self,
         *,
-        answers: tuple[dict[str, Any] | int, ...] = (),
+        answers: tuple[dict[str, Any] | int | float, ...] = (),
         running: bool = True,
         close: int | None = None,
         close_reason: str = "",
@@ -195,22 +197,26 @@ class _FakeConn:
         self._answers = answers
         self._close_reason = close_reason
         self._send_error = send_error
+        self.answering: asyncio.Task[None] | None = None
 
     async def request_who(self, hub: str | None = None) -> None:
         assert hub is None
         self.requests += 1
         if self._send_error is not None:
             raise self._send_error
-        asyncio.get_running_loop().create_task(self._answer())
+        self.answering = asyncio.get_running_loop().create_task(self._answer())
 
     async def _answer(self) -> None:
         for answer in self._answers:
-            if isinstance(answer, int):
+            if isinstance(answer, float):
+                await asyncio.sleep(answer)
+            elif isinstance(answer, int):
                 self.last_close_code, self.last_close_reason = answer, self._close_reason
                 self.running = False
                 return
-            assert self.callback is not None
-            await self.callback(answer)
+            else:
+                assert self.callback is not None
+                await self.callback(answer)
 
 
 def _recorder() -> tuple[list[dict[str, Any]], MessageCallback]:
@@ -260,10 +266,13 @@ async def test_closed_after_ready_without_a_callback_drops_other_frames() -> Non
 
 async def test_closed_after_ready_waits_past_a_heartbeat_error_for_the_roster_answer() -> None:
     seen, record = _recorder()
-    conn = _FakeConn(answers=(_HEARTBEAT_ERROR, _WHO), callback=record)
+    conn = _FakeConn(answers=(_HEARTBEAT_ERROR, 0.2, _WHO), callback=record)
 
     # The roster answer ends the wait; the long budget is never used up.
     assert await asyncio.wait_for(closed_after_ready(conn, timeout=60.0), 10) is False
+    # The check returned only after the delayed roster answer, so neither frame
+    # was left for the command's callback.
+    assert conn.answering is not None and conn.answering.done()
     assert seen == []
     assert conn.last_close_reason == ""
 
