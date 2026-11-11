@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from mypy import api as mypy_api
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from mypy_process import run_mypy
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 
@@ -26,7 +26,7 @@ def _check_contract(tmp_path: Path, source: str) -> tuple[str, str, int]:
     """Check an independent consumer with the actual repository strict profile."""
     fixture = tmp_path / "handler_consumer.py"
     fixture.write_text(source, encoding="utf-8")
-    return mypy_api.run(
+    return run_mypy(
         [
             "--strict",
             "--config-file",

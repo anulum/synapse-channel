@@ -19,7 +19,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from mypy import api as mypy_api
+from mypy_process import run_mypy
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "src" / "synapse_channel" / "core"
@@ -88,7 +88,7 @@ def test_mypy_accepts_a_forward_origin_context_as_a_handler_context(tmp_path: Pa
         "    return context\n",
         encoding="utf-8",
     )
-    stdout, stderr, status = mypy_api.run(
+    stdout, stderr, status = run_mypy(
         [
             "--strict",
             "--config-file",

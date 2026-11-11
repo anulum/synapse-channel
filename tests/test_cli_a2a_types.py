@@ -14,8 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import get_args, get_origin
 
-from mypy import api as mypy_api
-
+from mypy_process import run_mypy
 from synapse_channel import cli_a2a_types
 from synapse_channel.a2a import agent_card_from_manifest
 from synapse_channel.a2a_server import A2ABridge
@@ -26,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _run_mypy(path: Path) -> tuple[str, str, int]:
     """Type-check one explicit contract fixture with the repository's strict config."""
-    return mypy_api.run(
+    return run_mypy(
         [
             "--strict",
             "--config-file",

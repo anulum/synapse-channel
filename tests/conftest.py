@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from garbage_collector_guard import garbage_collector_unchanged
+
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
     from synapse_channel.core.persistence import EventStore
@@ -132,6 +134,18 @@ def _restore_synapse_logger() -> Iterator[None]:
         logger.handlers[:] = saved_handlers
         logger.setLevel(saved_level)
         logger.propagate = saved_propagate
+
+
+@pytest.fixture(autouse=True)
+def _keep_garbage_collector_configuration() -> Iterator[None]:
+    """Fail the test that leaves the garbage collector reconfigured.
+
+    In-process ``mypy.api.run`` once raised the thresholds for the rest of the
+    session, and the resulting multi-second collections broke unrelated hub
+    tests much later. The guard names the test that changed the collector.
+    """
+    with garbage_collector_unchanged():
+        yield
 
 
 @pytest.fixture(autouse=True, scope="session")
