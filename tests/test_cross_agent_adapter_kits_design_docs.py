@@ -52,6 +52,8 @@ def test_cross_agent_adapter_kits_pins_the_adapter_contract() -> None:
     assert ".kimi-code/skills/synapse/skill.md" in text
     assert "project > user" in text
     assert "--with-hook" in text
+    assert "windows acl or replacement behaviour" in text
+    assert "behavior" not in text
 
 
 def test_cross_agent_adapter_kits_grounds_in_shipped_wiring() -> None:

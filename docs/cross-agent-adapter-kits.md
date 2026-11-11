@@ -178,7 +178,7 @@ if a later target refuses.
 The lock coordinates cooperating installers on one host. Cross-host filesystem
 locks, hostile same-account writers and measured power-loss durability are outside
 this contract. Native Windows qualification is tracked separately; Linux results
-do not establish Windows ACL or replacement behavior.
+do not establish Windows ACL or replacement behaviour.
 
 ## Prior art
 
