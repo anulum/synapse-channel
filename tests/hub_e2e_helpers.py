@@ -11,13 +11,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import errno
+import io
 import json
 import socket
 import sqlite3
 import sys
 import threading
 import traceback
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
@@ -221,11 +222,12 @@ class Recorder:
     ) -> dict[str, Any]:
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
-        while loop.time() < deadline:
-            for message in list(self.messages):
-                if predicate(message):
-                    return message
-            await asyncio.sleep(0.01)
+        with _watch_stall("Recorder.wait_for"):
+            while loop.time() < deadline:
+                for message in list(self.messages):
+                    if predicate(message):
+                        return message
+                await asyncio.sleep(0.01)
         raise TimeoutError("expected message did not arrive")
 
 
@@ -287,17 +289,8 @@ async def connect_agent(
         )
     task = asyncio.create_task(agent.connect())
     handle = AgentHandle(agent=agent, recorder=recorder, task=task)
-    watchdog = threading.Timer(
-        WELCOME_STALL_REPORT_SECONDS,
-        _report_overdue_welcome,
-        args=(name, threading.get_ident()),
-    )
-    watchdog.daemon = True
-    watchdog.start()
-    try:
+    with _watch_stall(f"connect_agent {name} welcome"):
         ready = await agent.wait_until_ready(3.0)
-    finally:
-        watchdog.cancel()
     if not ready:
         await handle.close()
         raise TimeoutError(f"agent {name} did not receive hub welcome")
@@ -309,26 +302,53 @@ async def connect_agent(
 
 
 WELCOME_STALL_REPORT_SECONDS = 2.0
-"""After this long without a hub welcome, print where every thread is."""
+"""After this long without an awaited hub frame, print where every thread and task is."""
 
 
-def _report_overdue_welcome(name: str, loop_thread: int) -> None:
-    """Print every thread's stack while a hub welcome is overdue.
+def _report_stall(label: str, loop_thread: int, loop: asyncio.AbstractEventLoop) -> None:
+    """Print every thread's stack now, and every task's stack once the loop runs.
 
-    The hub and the client share the test's event loop, so a welcome that does
-    not arrive in time usually means that loop is blocked. The report is printed
-    while the delay is still happening, from a timer thread, so it shows the
-    blocking frame itself rather than the state after it ended.
+    The hub and the client share the test's event loop. A frame that does not
+    arrive in time means either that loop is blocked, which the thread stacks
+    printed here show while it is still happening, or that the hub is waiting
+    on something, which the task stacks show once the loop gets to them.
     """
     frames = sys._current_frames()
     lines = [
-        f"[connect_agent {name}] no hub welcome after {WELCOME_STALL_REPORT_SECONDS:g} s; "
-        f"sqlite {sqlite3.sqlite_version}; thread stacks follow, the event loop first",
+        f"[{label}] stalled for {WELCOME_STALL_REPORT_SECONDS:g} s; "
+        f"python {sys.version.split()[0]}; sqlite {sqlite3.sqlite_version}; "
+        "thread stacks follow, the event loop first",
     ]
     for ident in sorted(frames, key=lambda thread: thread != loop_thread):
         role = "event loop" if ident == loop_thread else f"thread {ident}"
         lines.append(f"--- {role}\n" + "".join(traceback.format_stack(frames[ident])))
     print("\n".join(lines), file=sys.stderr, flush=True)
+
+    def tasks() -> None:
+        report = [f"[{label}] asyncio tasks when the loop ran again"]
+        for task in asyncio.all_tasks(loop):
+            stack = io.StringIO()
+            task.print_stack(file=stack)
+            report.append(f"--- {task.get_name()}\n{stack.getvalue()}")
+        print("\n".join(report), file=sys.stderr, flush=True)
+
+    loop.call_soon_threadsafe(tasks)
+
+
+@contextlib.contextmanager
+def _watch_stall(label: str) -> Iterator[None]:
+    """Report the threads and tasks if the guarded wait lasts too long."""
+    watchdog = threading.Timer(
+        WELCOME_STALL_REPORT_SECONDS,
+        _report_stall,
+        args=(label, threading.get_ident(), asyncio.get_running_loop()),
+    )
+    watchdog.daemon = True
+    watchdog.start()
+    try:
+        yield
+    finally:
+        watchdog.cancel()
 
 
 async def close_agents(*handles: AgentHandle) -> None:
