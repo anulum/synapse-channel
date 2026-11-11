@@ -108,10 +108,14 @@ execution evidence when carrying a release claim forward.
   later was missed and `send` exited `0`. They now send a roster request first
   and wait, up to their own ready timeout, for the hub's answer. The hub
   handles one connection's frames in order, so that answer follows its verdict
-  on the registration frame. A roster answer, or an error without a
-  verification result, accepts the sender; a close or a verification error
-  refuses it with its reason; silence is a failure. A refusal that leaves the
-  socket open is reported as such instead of as an unreachable hub.
+  on the registration frame. A roster answer accepts the sender; a close or a
+  verification error refuses it with its reason; silence is a failure. An
+  error without a verification result means the sender passed the identity
+  gate: the check still waits for a roster answer, and lets the operation go
+  out if none comes in time. No roster or error frame that arrives during the
+  check reaches the command, since none of them can answer its operation. A
+  refusal that leaves the socket open is reported as such instead of as an
+  unreachable hub.
 
 ## [0.99.50] - 2026-11-08
 

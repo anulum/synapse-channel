@@ -78,7 +78,7 @@ async def closed_after_ready(
     refused and never routed, and a fixed grace window only made that less
     likely. So before the operation goes out this sends ``WHO_REQUEST`` and
     waits for the hub's answer. The hub handles one connection's frames in
-    order, so that answer comes after its verdict on the heartbeat:
+    order, so the roster answer comes after its verdict on the heartbeat:
 
     - ``WHO_SNAPSHOT``: the sender is accepted.
     - A close, or a socket that cannot carry the request: refused. The caller
@@ -88,12 +88,17 @@ async def closed_after_ready(
       the hub keeps the socket open, the refusal text becomes
       ``last_close_reason`` with no close code.
     - ``ERROR`` without ``verification_result``: the sender passed the identity
-      gate (for example the hub's ACL refused the roster request). The
-      operation's own result still decides.
-    - No answer before ``timeout``: refused, never treated as success.
+      gate. Such an error can answer the heartbeat (a mutation gate refusing
+      it) or the roster request (a rate limit), and nothing tells the two
+      apart, so the check still waits for a roster answer. If none comes
+      before ``timeout`` the gate counts as passed and the operation's own
+      result decides.
+    - Nothing before ``timeout``: refused, never treated as success.
 
-    The frame that answers the request is not passed on to ``agent.callback``;
-    every other frame is, and the callback is restored on return.
+    Nothing the command sent is in flight while the check runs, so no
+    ``WHO_SNAPSHOT`` or ``ERROR`` that arrives meanwhile can be the result of
+    its operation. Those frames are consumed here; every other frame reaches
+    ``agent.callback``, which is restored on return.
 
     Parameters
     ----------
@@ -108,12 +113,17 @@ async def closed_after_ready(
     bool
         ``False`` once the hub accepted the sender, ``True`` otherwise.
     """
-    answer: list[dict[str, Any]] = []
+    rosters: list[dict[str, Any]] = []
+    refusals: list[dict[str, Any]] = []
+    passed: list[dict[str, Any]] = []
     forward = agent.callback
 
     async def observe(data: dict[str, Any]) -> None:
-        if not answer and data.get("type") in (MessageType.WHO_SNAPSHOT, MessageType.ERROR):
-            answer.append(data)
+        kind = data.get("type")
+        if kind == MessageType.WHO_SNAPSHOT:
+            rosters.append(data)
+        elif kind == MessageType.ERROR:
+            (refusals if "verification_result" in data else passed).append(data)
         elif forward is not None:
             await invoke_message_callback(forward, data)
 
@@ -128,12 +138,13 @@ async def closed_after_ready(
         while loop.time() < deadline:
             if not agent.running or agent.last_close_code is not None:
                 return True
-            if answer and "verification_result" not in answer[0]:
+            if rosters and not refusals:
                 return False
             await asyncio.sleep(0.02)
-        if answer:
-            agent.last_close_reason = str(answer[0].get("payload") or "frame refused")
-        return True
+        if refusals:
+            agent.last_close_reason = str(refusals[0].get("payload") or "frame refused")
+            return True
+        return not passed
     finally:
         agent.callback = forward
 

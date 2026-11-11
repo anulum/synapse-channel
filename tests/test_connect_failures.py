@@ -226,15 +226,19 @@ _WHO = {"type": MessageType.WHO_SNAPSHOT, "online_agents": ["A"]}
 _PRESENCE = {"type": "presence_update", "agent": "B"}
 
 
-async def test_closed_after_ready_accepts_on_the_roster_answer_and_hides_only_it() -> None:
+_HEARTBEAT_ERROR = {"type": MessageType.ERROR, "payload": "journal recovery refuses mutations"}
+_ROSTER_ERROR = {"type": MessageType.ERROR, "payload": "Rate limit exceeded."}
+
+
+async def test_closed_after_ready_accepts_on_the_roster_answer_and_consumes_answers() -> None:
     seen, record = _recorder()
     conn = _FakeConn(answers=(_PRESENCE, _WHO, dict(_WHO)), callback=record)
 
     assert await closed_after_ready(conn, timeout=2.0) is False
     assert conn.requests == 1
-    # Only the first roster frame answers the request; the frame before it and
-    # a later roster frame both reach the caller's callback.
-    assert seen == [_PRESENCE, _WHO]
+    # Nothing the command sent is in flight yet, so no roster or error frame
+    # reaches its callback; every other frame does.
+    assert seen == [_PRESENCE]
     assert conn.callback is record
 
 
@@ -254,14 +258,42 @@ async def test_closed_after_ready_without_a_callback_drops_other_frames() -> Non
     assert conn.callback is None
 
 
-async def test_closed_after_ready_treats_a_plain_error_as_a_passed_gate() -> None:
+async def test_closed_after_ready_waits_past_a_heartbeat_error_for_the_roster_answer() -> None:
     seen, record = _recorder()
-    acl = {"type": MessageType.ERROR, "payload": "who is not permitted"}
-    conn = _FakeConn(answers=(acl,), callback=record)
+    conn = _FakeConn(answers=(_HEARTBEAT_ERROR, _WHO), callback=record)
 
-    assert await closed_after_ready(conn, timeout=2.0) is False
+    # The roster answer ends the wait; the long budget is never used up.
+    assert await asyncio.wait_for(closed_after_ready(conn, timeout=60.0), 10) is False
     assert seen == []
     assert conn.last_close_reason == ""
+
+
+async def test_closed_after_ready_consumes_a_roster_error_after_a_heartbeat_error() -> None:
+    seen, record = _recorder()
+    conn = _FakeConn(answers=(_HEARTBEAT_ERROR, _ROSTER_ERROR), callback=record)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    # Neither error can be the operation's result, so neither reaches the
+    # callback. With no roster answer the gate counts as passed at the timeout.
+    assert await closed_after_ready(conn, timeout=0.1) is False
+    assert loop.time() - started >= 0.1
+    assert seen == []
+    assert conn.last_close_reason == ""
+
+
+async def test_closed_after_ready_lets_a_verification_error_outrank_a_roster_answer() -> None:
+    seen, record = _recorder()
+    refusal = {
+        "type": MessageType.ERROR,
+        "payload": "frame signature refused: invalid",
+        "verification_result": "invalid",
+    }
+    conn = _FakeConn(answers=(refusal, _WHO), callback=record)
+
+    assert await closed_after_ready(conn, timeout=0.1) is True
+    assert conn.last_close_reason == "frame signature refused: invalid"
+    assert seen == []
 
 
 async def test_closed_after_ready_waits_for_the_close_after_an_identity_refusal() -> None:
