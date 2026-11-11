@@ -24,8 +24,8 @@ per send/reply exchange by default, then requests one correlated state snapshot
 before deciding the outcome. `--reply-timeout` accepts a finite positive duration
 up to 300 seconds. Confirmation has its own equally bounded exchange; this is
 not an overall command deadline. Local Git/semantic resolution happens first,
-and connection readiness has a separate five-second wait plus a short
-post-welcome refusal check.
+and connection readiness has a separate five-second wait, followed by a wait
+of the same bound for the hub's verdict on the sender.
 
 | Exit | Meaning | Permission to edit |
 | --- | --- | --- |

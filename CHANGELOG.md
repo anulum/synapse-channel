@@ -94,6 +94,21 @@ execution evidence when carrying a release claim forward.
   symmetric authority-status key boundary. These documentation changes grant
   no deployment, recovery or retry authority.
 
+### Fixed
+
+- One-shot commands no longer report success for a sender the hub refuses
+  after the welcome. `send`, the operator, release, review, identity, approval,
+  accounting, entitlement, workflow, mailbox-handover and verdict commands, the
+  dashboard operator relay and `git-claim` used to wait a fixed 0.25 seconds
+  for a post-welcome close and then send, so an identity refusal that arrived
+  later was missed and `send` exited `0`. They now send a roster request first
+  and wait, up to their own ready timeout, for the hub's answer. The hub
+  handles one connection's frames in order, so that answer follows its verdict
+  on the registration frame. A roster answer, or an error without a
+  verification result, accepts the sender; a close or a verification error
+  refuses it with its reason; silence is a failure. A refusal that leaves the
+  socket open is reported as such instead of as an unreachable hub.
+
 ## [0.99.50] - 2026-11-08
 
 ### Added

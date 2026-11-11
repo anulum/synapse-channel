@@ -8,7 +8,13 @@
 
 from __future__ import annotations
 
+import asyncio
+from typing import Any, cast
+
+from websockets.exceptions import ConnectionClosed
+
 from synapse_channel import connect_failures
+from synapse_channel.client.agent_dispatch import MessageCallback
 from synapse_channel.connect_failures import (
     AUTH_TIMEOUT_CLOSE_CODE,
     CAPACITY_CLOSE_CODE,
@@ -20,6 +26,7 @@ from synapse_channel.connect_failures import (
     describe_connect_failure,
     explain_silent_outcome,
 )
+from synapse_channel.core.protocol import MessageType
 
 
 def test_absent_hub_keeps_the_generic_unreachable_line() -> None:
@@ -162,21 +169,171 @@ def test_silent_outcome_surfaces_the_close_code_when_present() -> None:
 
 
 class _FakeConn:
-    """Minimal stand-in exposing the surface ``closed_after_ready`` observes."""
+    """A one-shot client whose roster request is answered by a scripted hub.
 
-    def __init__(self, *, running: bool = True, close: int | None = None) -> None:
+    ``answers`` are the frames the hub sends after the request, delivered in
+    order in one burst once the request is out. Each one is either a frame for
+    the callback, or an ``int`` close code that the client records with
+    ``close_reason`` and stops on, as a real hub close does.
+    """
+
+    def __init__(
+        self,
+        *,
+        answers: tuple[dict[str, Any] | int, ...] = (),
+        running: bool = True,
+        close: int | None = None,
+        close_reason: str = "",
+        send_error: BaseException | None = None,
+        callback: MessageCallback | None = None,
+    ) -> None:
         self.running = running
         self.last_close_code = close
+        self.last_close_reason = ""
+        self.callback = callback
+        self.requests = 0
+        self._answers = answers
+        self._close_reason = close_reason
+        self._send_error = send_error
+
+    async def request_who(self, hub: str | None = None) -> None:
+        assert hub is None
+        self.requests += 1
+        if self._send_error is not None:
+            raise self._send_error
+        asyncio.get_running_loop().create_task(self._answer())
+
+    async def _answer(self) -> None:
+        for answer in self._answers:
+            if isinstance(answer, int):
+                self.last_close_code, self.last_close_reason = answer, self._close_reason
+                self.running = False
+                return
+            assert self.callback is not None
+            await self.callback(answer)
 
 
-async def test_closed_after_ready_detects_a_post_welcome_close() -> None:
-    # a name conflict sets last_close_code; a dropped socket clears running
-    assert await closed_after_ready(_FakeConn(close=NAME_CONFLICT_CLOSE_CODE), grace_seconds=0.1)
-    assert await closed_after_ready(_FakeConn(running=False), grace_seconds=0.1)
+def _recorder() -> tuple[list[dict[str, Any]], MessageCallback]:
+    seen: list[dict[str, Any]] = []
+
+    async def record(data: dict[str, Any]) -> None:
+        seen.append(data)
+
+    return seen, record
 
 
-async def test_closed_after_ready_returns_false_for_a_healthy_socket() -> None:
-    assert await closed_after_ready(_FakeConn(), grace_seconds=0.05) is False
+_WHO = {"type": MessageType.WHO_SNAPSHOT, "online_agents": ["A"]}
+_PRESENCE = {"type": "presence_update", "agent": "B"}
+
+
+async def test_closed_after_ready_accepts_on_the_roster_answer_and_hides_only_it() -> None:
+    seen, record = _recorder()
+    conn = _FakeConn(answers=(_PRESENCE, _WHO, dict(_WHO)), callback=record)
+
+    assert await closed_after_ready(conn, timeout=2.0) is False
+    assert conn.requests == 1
+    # Only the first roster frame answers the request; the frame before it and
+    # a later roster frame both reach the caller's callback.
+    assert seen == [_PRESENCE, _WHO]
+    assert conn.callback is record
+
+
+async def test_closed_after_ready_forwards_to_a_sync_callback() -> None:
+    seen: list[dict[str, Any]] = []
+    conn = _FakeConn(answers=(_PRESENCE, _WHO))
+    conn.callback = cast(MessageCallback, seen.append)
+
+    assert await closed_after_ready(conn, timeout=2.0) is False
+    assert seen == [_PRESENCE]
+
+
+async def test_closed_after_ready_without_a_callback_drops_other_frames() -> None:
+    conn = _FakeConn(answers=(_PRESENCE, _WHO))
+
+    assert await closed_after_ready(conn, timeout=2.0) is False
+    assert conn.callback is None
+
+
+async def test_closed_after_ready_treats_a_plain_error_as_a_passed_gate() -> None:
+    seen, record = _recorder()
+    acl = {"type": MessageType.ERROR, "payload": "who is not permitted"}
+    conn = _FakeConn(answers=(acl,), callback=record)
+
+    assert await closed_after_ready(conn, timeout=2.0) is False
+    assert seen == []
+    assert conn.last_close_reason == ""
+
+
+async def test_closed_after_ready_waits_for_the_close_after_an_identity_refusal() -> None:
+    refusal = {
+        "type": MessageType.ERROR,
+        "payload": "identity binding failed",
+        "verification_result": "invalid_signature",
+    }
+    conn = _FakeConn(answers=(refusal, CAPACITY_CLOSE_CODE), close_reason="identity binding failed")
+
+    assert await closed_after_ready(conn, timeout=2.0) is True
+    assert conn.last_close_code == CAPACITY_CLOSE_CODE
+    assert "identity proof refused" in describe_connect_failure(
+        "A", "ws://h", close_code=conn.last_close_code, close_reason=conn.last_close_reason
+    )
+
+
+async def test_closed_after_ready_records_a_refusal_that_leaves_the_socket_open() -> None:
+    refusal = {
+        "type": MessageType.ERROR,
+        "payload": "frame signature refused: missing",
+        "verification_result": "missing",
+    }
+    conn = _FakeConn(answers=(refusal,))
+
+    assert await closed_after_ready(conn, timeout=0.1) is True
+    assert conn.last_close_code is None
+    assert conn.last_close_reason == "frame signature refused: missing"
+    assert describe_connect_failure(
+        "A", "ws://h", close_code=None, close_reason=conn.last_close_reason
+    ) == ("[A] Hub refused this sender without closing: frame signature refused: missing.")
+
+    bare = _FakeConn(answers=({"type": MessageType.ERROR, "verification_result": "x"},))
+    assert await closed_after_ready(bare, timeout=0.1) is True
+    assert bare.last_close_reason == "frame refused"
+
+
+async def test_closed_after_ready_reports_a_close_instead_of_an_answer() -> None:
+    conn = _FakeConn(answers=(NAME_CONFLICT_CLOSE_CODE,), close_reason="name conflict")
+
+    assert await closed_after_ready(conn, timeout=2.0) is True
+    assert conn.last_close_code == NAME_CONFLICT_CLOSE_CODE
+
+
+async def test_closed_after_ready_detects_a_close_recorded_before_the_request() -> None:
+    assert await closed_after_ready(_FakeConn(close=NAME_CONFLICT_CLOSE_CODE), timeout=2.0)
+    assert await closed_after_ready(_FakeConn(running=False), timeout=2.0)
+
+
+async def test_closed_after_ready_refuses_when_the_request_cannot_be_sent() -> None:
+    for error in (ConnectionClosed(None, None), OSError("broken pipe")):
+        seen, record = _recorder()
+        conn = _FakeConn(send_error=error, callback=record)
+
+        assert await closed_after_ready(conn, timeout=2.0) is True
+        assert conn.callback is record
+
+
+async def test_closed_after_ready_never_reads_silence_as_acceptance() -> None:
+    conn = _FakeConn()
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    assert await closed_after_ready(conn, timeout=0.1) is True
+    assert loop.time() - started >= 0.1
+    assert conn.last_close_code is None
+    assert conn.last_close_reason == ""
+    assert describe_connect_failure("A", "ws://h", close_code=None) == (
+        "[A] Could not reach hub at ws://h."
+    )
+    # A negative budget is clamped to zero, which still refuses.
+    assert await closed_after_ready(_FakeConn(), timeout=-1.0) is True
 
 
 # --- the yield verdicts a re-arming waiter acts on ---

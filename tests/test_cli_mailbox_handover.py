@@ -136,6 +136,12 @@ class _FakeAgent:
         if self.outcome is not None:
             await self.callback(self.outcome)
 
+    async def request_who(self, hub: str | None = None) -> None:
+        """Answer the acceptance check the way an accepting hub does."""
+        del hub
+        if self.running and self.last_close_code is None:
+            await self.callback({"type": MessageType.WHO_SNAPSHOT})
+
 
 def _factory(outcome: dict[str, Any] | None, *, ready: bool = True, closed: bool = False) -> Any:
     def factory(_name: str, callback: Any, **_kwargs: Any) -> _FakeAgent:

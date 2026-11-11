@@ -175,12 +175,12 @@ async def _send(
                 )
             )
             return 1
-        # The hub accepts the welcome and only then closes a socket whose name
-        # conflicts with a live identity (close code 4009), so a ready connection
-        # can already be doomed. Detect that close before sending, otherwise the
-        # message is written into a dying socket and silently lost — which reads as
-        # "messages between terminals don't arrive".
-        if await closed_after_ready(agent):
+        # The hub judges the sender only after the welcome: a name that conflicts
+        # with a live identity (4009) or an identity proof it refuses (4013)
+        # closes a ready connection. Wait for its verdict before sending,
+        # otherwise the message is written into a dying socket and silently lost,
+        # which reads as "messages between terminals don't arrive".
+        if await closed_after_ready(agent, timeout=ready_timeout):
             print(
                 describe_connect_failure(
                     sender_name,

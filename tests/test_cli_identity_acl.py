@@ -18,6 +18,7 @@ import pytest
 
 from synapse_channel import cli, cli_acl_shadow, cli_identity
 from synapse_channel.core.acl import PIN_RECLAIM, load_acl_policy
+from synapse_channel.core.protocol import MessageType
 
 
 def _run(argv: list[str]) -> int:
@@ -304,6 +305,12 @@ class _FakeReclaimAgent:
     async def send_message(self, _msg_type: str, **_fields: Any) -> None:
         if self.outcome is not None:
             await self.callback(self.outcome)
+
+    async def request_who(self, hub: str | None = None) -> None:
+        """Answer the acceptance check the way an accepting hub does."""
+        del hub
+        if self.running and self.last_close_code is None:
+            await self.callback({"type": MessageType.WHO_SNAPSHOT})
 
 
 def _reclaim_factory(

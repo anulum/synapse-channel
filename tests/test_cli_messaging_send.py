@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import sys
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,105 @@ from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+async def _answer_who(websocket: ServerConnection, message: str | bytes) -> None:
+    """Answer a roster request the way a hub that accepted the sender does."""
+    if json.loads(message).get("type") == MessageType.WHO_REQUEST:
+        await websocket.send(json.dumps({"type": MessageType.WHO_SNAPSHOT, "sender": "Hub"}))
+
+
+async def _scripted_verdict_hub(
+    frames: list[dict[str, object]], *, accept: bool
+) -> tuple[str, Callable[[], Awaitable[None]]]:
+    """Start a hub that gives its verdict on the sender only after a delay.
+
+    It records every frame it receives. Half a second after the roster request
+    it either answers it (``accept``) or refuses the identity proof the way the
+    hub's identity gate does: an ``ERROR`` with ``verification_result``, then a
+    ``4013`` close with the identity reason. The delay is longer than the old
+    fixed post-welcome grace window, which read silence as acceptance.
+    """
+
+    async def hub(websocket: ServerConnection) -> None:
+        await websocket.send(json.dumps({"type": "welcome", "sender": "Hub", "target": "self"}))
+        async for message in websocket:
+            frame = json.loads(message)
+            frames.append(frame)
+            if frame.get("type") != MessageType.WHO_REQUEST:
+                continue
+            await asyncio.sleep(0.5)
+            if accept:
+                await _answer_who(websocket, message)
+                continue
+            await websocket.send(
+                json.dumps(
+                    {
+                        "type": MessageType.ERROR,
+                        "sender": "Hub",
+                        "payload": "identity pin mismatch",
+                        "verification_result": "pin_mismatch",
+                    }
+                )
+            )
+            await websocket.close(4013, "identity pin mismatch")
+            return
+
+    port = _free_port()
+    server = await serve(hub, "localhost", port)
+
+    async def stop() -> None:
+        server.close()
+        await server.wait_closed()
+
+    return f"ws://localhost:{port}", stop
+
+
+async def test_send_reports_an_identity_refusal_that_comes_after_the_welcome(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    frames: list[dict[str, object]] = []
+    uri, stop = await _scripted_verdict_hub(frames, accept=False)
+    try:
+        code = await cli_messaging._send(
+            uri=uri,
+            name="P/pinned",
+            target="all",
+            message="must not count as sent",
+            wait_seconds=0.0,
+            ready_timeout=5.0,
+        )
+    finally:
+        await stop()
+
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "identity proof refused" in out
+    assert "code 4013" in out
+    assert [frame["type"] for frame in frames] == [MessageType.HEARTBEAT, MessageType.WHO_REQUEST]
+
+
+async def test_send_goes_out_once_the_hub_accepts_the_sender_after_the_welcome(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    frames: list[dict[str, object]] = []
+    uri, stop = await _scripted_verdict_hub(frames, accept=True)
+    try:
+        code = await cli_messaging._send(
+            uri=uri,
+            name="P/pinned",
+            target="all",
+            message="accepted",
+            wait_seconds=0.0,
+            ready_timeout=5.0,
+        )
+    finally:
+        await stop()
+
+    assert code == 0
+    assert "identity" not in capsys.readouterr().out
+    chats = [frame for frame in frames if frame["type"] == MessageType.CHAT]
+    assert [frame["payload"] for frame in chats] == ["accepted"]
 
 
 async def test_send_delivers_message_and_prints_replies(
@@ -701,8 +801,8 @@ async def test_send_require_recipient_fails_without_hub_receipt(
 ) -> None:
     async def receiptless_hub(websocket: ServerConnection) -> None:
         await websocket.send(json.dumps({"type": "welcome", "sender": "Hub", "target": "self"}))
-        async for _message in websocket:
-            await asyncio.sleep(1)
+        async for message in websocket:
+            await _answer_who(websocket, message)
 
     port = _free_port()
     server = await serve(receiptless_hub, "localhost", port)
@@ -729,8 +829,8 @@ async def test_default_directed_receipt_reports_unknown_for_an_older_hub(
 ) -> None:
     async def receiptless_hub(websocket: ServerConnection) -> None:
         await websocket.send(json.dumps({"type": "welcome", "sender": "Hub", "target": "self"}))
-        async for _message in websocket:
-            await asyncio.sleep(1)
+        async for message in websocket:
+            await _answer_who(websocket, message)
 
     port = _free_port()
     server = await serve(receiptless_hub, "localhost", port)

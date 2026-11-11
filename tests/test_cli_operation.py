@@ -248,6 +248,12 @@ class _FakeAgent:
         del timeout
         return self.ready
 
+    async def request_who(self, hub: str | None = None) -> None:
+        """Answer the acceptance check the way an accepting hub does."""
+        del hub
+        if self.running and self.last_close_code is None:
+            await self.callback({"type": MessageType.WHO_SNAPSHOT})
+
     async def send_message(self, _msg_type: str, **fields: Any) -> None:
         if self.reply is not None:
             frame = dict(self.reply)

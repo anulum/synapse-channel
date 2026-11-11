@@ -23,7 +23,12 @@ specific, actionable sentence while preserving the original generic line for the
 from __future__ import annotations
 
 import asyncio
-from typing import Protocol
+from typing import Any, Protocol
+
+from websockets.exceptions import ConnectionClosed
+
+from synapse_channel.client.agent_dispatch import MessageCallback, invoke_message_callback
+from synapse_channel.core.protocol import MessageType
 
 CAPACITY_CLOSE_CODE = 4013
 """Hub close code for a full connection table — also used for identity refusals.
@@ -44,43 +49,93 @@ retry a name that can never register.
 """
 
 
+ACCEPTANCE_TIMEOUT_SECONDS = 5.0
+"""How long a one-shot client waits for the hub's verdict on its sender."""
+
+
 class _ObservableConnection(Protocol):
-    """The minimal client surface :func:`closed_after_ready` observes."""
+    """The client surface :func:`closed_after_ready` drives and observes."""
 
     running: bool
     last_close_code: int | None
+    last_close_reason: str
+    callback: MessageCallback | None
+
+    async def request_who(self, hub: str | None = None) -> None:
+        """Ask the hub for its roster as an ordinary sender frame."""
 
 
-async def closed_after_ready(agent: _ObservableConnection, *, grace_seconds: float = 0.25) -> bool:
-    """Return whether a just-ready connection was closed by the hub.
+async def closed_after_ready(
+    agent: _ObservableConnection, *, timeout: float = ACCEPTANCE_TIMEOUT_SECONDS
+) -> bool:
+    """Return whether the hub refused a just-ready connection's sender.
 
-    Several refusals — a name conflict (4009) above all — are reported only after
-    the welcome handshake, so a successful ``wait_until_ready`` can already be
-    doomed. A one-shot send or emit must wait briefly for such a close, otherwise
-    it writes its message into a dying socket and loses it with no error. This is
-    that wait.
+    The hub judges a sender only after the welcome. The client's registration
+    heartbeat, its first sender frame, carries the identity proof; a name
+    conflict (4009), a failed identity proof (4013) or an ownership lease (4016)
+    closes the socket once the hub has judged it. A one-shot command that sent
+    its operation straight away could report success for a frame the hub then
+    refused and never routed, and a fixed grace window only made that less
+    likely. So before the operation goes out this sends ``WHO_REQUEST`` and
+    waits for the hub's answer. The hub handles one connection's frames in
+    order, so that answer comes after its verdict on the heartbeat:
+
+    - ``WHO_SNAPSHOT``: the sender is accepted.
+    - A close, or a socket that cannot carry the request: refused. The caller
+      describes it from the recorded close code and reason.
+    - ``ERROR`` with ``verification_result``: an identity or frame-signature
+      refusal. The close that follows is awaited so the caller can name it. If
+      the hub keeps the socket open, the refusal text becomes
+      ``last_close_reason`` with no close code.
+    - ``ERROR`` without ``verification_result``: the sender passed the identity
+      gate (for example the hub's ACL refused the roster request). The
+      operation's own result still decides.
+    - No answer before ``timeout``: refused, never treated as success.
+
+    The frame that answers the request is not passed on to ``agent.callback``;
+    every other frame is, and the callback is restored on return.
 
     Parameters
     ----------
     agent : _ObservableConnection
-        The just-connected client to observe (its ``running`` flag and recorded
-        ``last_close_code``).
-    grace_seconds : float, optional
-        How long to wait for a post-welcome close before assuming the connection
-        is healthy.
+        The just-connected client: its ``running`` flag, recorded close code and
+        reason, message ``callback`` and ``request_who``.
+    timeout : float, optional
+        Seconds to wait for the hub's answer.
 
     Returns
     -------
     bool
-        ``True`` if the connection was closed within the grace window.
+        ``False`` once the hub accepted the sender, ``True`` otherwise.
     """
+    answer: list[dict[str, Any]] = []
+    forward = agent.callback
+
+    async def observe(data: dict[str, Any]) -> None:
+        if not answer and data.get("type") in (MessageType.WHO_SNAPSHOT, MessageType.ERROR):
+            answer.append(data)
+        elif forward is not None:
+            await invoke_message_callback(forward, data)
+
+    agent.callback = observe
     loop = asyncio.get_running_loop()
-    deadline = loop.time() + max(0.0, grace_seconds)
-    while loop.time() < deadline:
-        if not agent.running or agent.last_close_code is not None:
+    deadline = loop.time() + max(0.0, timeout)
+    try:
+        try:
+            await agent.request_who()
+        except (ConnectionClosed, OSError):
             return True
-        await asyncio.sleep(0.02)
-    return False
+        while loop.time() < deadline:
+            if not agent.running or agent.last_close_code is not None:
+                return True
+            if answer and "verification_result" not in answer[0]:
+                return False
+            await asyncio.sleep(0.02)
+        if answer:
+            agent.last_close_reason = str(answer[0].get("payload") or "frame refused")
+        return True
+    finally:
+        agent.callback = forward
 
 
 SUPERSEDED_CLOSE_CODE = 4010
@@ -245,18 +300,23 @@ def describe_connect_failure(
         Hub URI shown when the failure is an absent or unreachable hub.
     close_code : int or None, optional
         WebSocket close code the client recorded for the most recent connection,
-        or ``None`` when the socket never connected (a refused or absent hub).
+        or ``None`` when the socket never connected (a refused or absent hub) or
+        the hub refused the sender without closing it.
     close_reason : str, optional
         Close reason text the hub supplied, appended verbatim when it adds detail
-        beyond the recognised guidance.
+        beyond the recognised guidance. With no close code it is the refusal
+        :func:`closed_after_ready` recorded for an open socket.
 
     Returns
     -------
     str
-        A specific, actionable line for a recognised deliberate close, otherwise
-        the generic ``Could not reach hub`` line for an absent or silent hub.
+        A specific, actionable line for a recognised deliberate close, the
+        recorded refusal for an open socket, otherwise the generic
+        ``Could not reach hub`` line for an absent or silent hub.
     """
     if close_code is None:
+        if close_reason:
+            return f"[{name}] Hub refused this sender without closing: {close_reason}."
         return f"[{name}] Could not reach hub at {uri}."
     guidance = _guidance_for(close_code, close_reason)
     if guidance is None:

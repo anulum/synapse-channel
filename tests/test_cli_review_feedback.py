@@ -19,12 +19,15 @@ import sys
 from pathlib import Path
 
 import pytest
+from websockets.asyncio.server import ServerConnection, serve
 
-from hub_e2e_helpers import connect_agent, running_hub
+from hub_e2e_helpers import _free_port, connect_agent, running_hub
+from synapse_channel import cli_review_feedback
 from synapse_channel.core.approvals import APPROVAL_NOTE_KIND, format_approval_note
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.review_feedback_store import get_finding, mark_routed
 
 AUTHOR = "SYNAPSE-CHANNEL/codex-2970473"
@@ -778,3 +781,34 @@ async def test_route_to_an_offline_author_is_not_recorded_as_delivered(tmp_path:
     assert json.loads(routed.stdout)["delivered"] is False
     found = get_finding(store, KEY)
     assert found is not None and found[1]["routed_at"] is None
+
+
+async def test_delivery_without_a_hub_receipt_is_not_delivered() -> None:
+    """A hub that accepts the sender but never answers the chat leaves it undelivered."""
+    received: list[str] = []
+
+    async def receiptless_hub(websocket: ServerConnection) -> None:
+        await websocket.send(json.dumps({"type": "welcome", "sender": "Hub", "target": "self"}))
+        async for message in websocket:
+            frame = json.loads(message)
+            received.append(str(frame.get("type")))
+            if frame.get("type") == MessageType.WHO_REQUEST:
+                await websocket.send(json.dumps({"type": MessageType.WHO_SNAPSHOT}))
+
+    port = _free_port()
+    server = await serve(receiptless_hub, "localhost", port)
+    try:
+        delivered = await cli_review_feedback._deliver(
+            uri=f"ws://localhost:{port}",
+            name="review-router",
+            target=AUTHOR,
+            payload="finding",
+            msg_id="m-1",
+            token=None,
+        )
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert delivered is False
+    assert MessageType.CHAT in received

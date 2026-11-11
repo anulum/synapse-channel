@@ -233,7 +233,9 @@ async def _deliver(
     agent = SynapseAgent(name, collect, uri=uri, verbose=False, token=token)
     connection = asyncio.create_task(agent.connect())
     try:
-        if not await agent.wait_until_ready(timeout=5) or await closed_after_ready(agent):
+        if not await agent.wait_until_ready(timeout=5) or await closed_after_ready(
+            agent, timeout=5
+        ):
             return False
         await agent.send_message(
             MessageType.CHAT,

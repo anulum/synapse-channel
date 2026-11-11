@@ -304,7 +304,7 @@ async def _send_advert(
     connection = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout) or await closed_after_ready(
-            agent
+            agent, timeout=ready_timeout
         ):
             print(
                 describe_connect_failure(

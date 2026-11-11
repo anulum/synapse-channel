@@ -55,6 +55,7 @@ class _FakeAgent:
     ) -> None:
         self.name = name
         self.collect = collect
+        self.callback = collect
         self.uri = uri
         self.token = token
         self.running = True
@@ -71,6 +72,12 @@ class _FakeAgent:
 
     async def wait_until_ready(self, timeout: float) -> bool:
         return self._ready
+
+    async def request_who(self, hub: str | None = None) -> None:
+        """Answer the acceptance check the way an accepting hub does."""
+        del hub
+        if self.running and self.last_close_code is None:
+            await self.callback({"type": MessageType.WHO_SNAPSHOT})
 
     async def send_message(
         self, message_type: str, *, target: str, payload: str, **extra: Any
@@ -288,6 +295,32 @@ def test_relay_message_response_generates_a_visible_default_body() -> None:
     assert outcome.status == UNDELIVERED
     agent = factory.holder["agent"]  # type: ignore[attr-defined]
     assert agent.sent[0][2] == "acknowledged message #9."
+
+
+def test_relay_message_response_reports_denied_on_acl_error() -> None:
+    outcome = asyncio.run(
+        _relay(_factory(on_send=_deny)).relay_message_response(5, "team-b", "acknowledged")
+    )
+
+    assert outcome.status == DENIED
+    assert outcome.ok is False
+    assert "team-b" in outcome.detail
+
+
+def test_relay_message_response_waits_out_frames_for_another_operator() -> None:
+    async def foreign_frames(agent: _FakeAgent, target: str, payload: str) -> None:
+        await _foreign_receipt(agent, target, payload)
+        await agent.collect(
+            {"type": MessageType.ERROR, "target": "operator:OTHER", "payload": "not this one"}
+        )
+        await agent.collect({"type": MessageType.PRESENCE_UPDATE, "target": agent.name})
+
+    outcome = asyncio.run(
+        _relay(_factory(on_send=foreign_frames)).relay_message_response(5, "ALPHA", "done")
+    )
+
+    assert outcome.status == UNREACHABLE
+    assert "no semantic-response delivery outcome" in outcome.detail
 
 
 def test_relay_message_unreachable_when_not_ready() -> None:

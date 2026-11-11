@@ -67,7 +67,7 @@ async def _emit_approval(
                 file=sys.stderr,
             )
             return 1
-        if await closed_after_ready(agent):
+        if await closed_after_ready(agent, timeout=ready_timeout):
             print(
                 describe_connect_failure(
                     sender,

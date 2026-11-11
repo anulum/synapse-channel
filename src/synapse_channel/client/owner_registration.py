@@ -52,7 +52,7 @@ async def _registered_profile(agent: SynapseAgent, timeout: float) -> bool:
         if not supports_confirmation:
             return not await closed_after_ready(
                 agent,
-                grace_seconds=min(0.25, max(0.0, deadline - asyncio.get_running_loop().time())),
+                timeout=max(0.0, deadline - asyncio.get_running_loop().time()),
             )
         await agent.send_message(
             MessageType.STATE_REQUEST,
@@ -122,14 +122,11 @@ async def register_owner(agent: SynapseAgent, timeout: float) -> asyncio.Task[No
     while (remaining := deadline - loop.time()) > 0:
         listener = asyncio.create_task(agent.connect())
         ready = asyncio.create_task(_registered_profile(agent, remaining))
-        connected = False
-        pending_listener = False
         try:
             done, _ = await asyncio.wait(
                 (listener, ready), timeout=remaining, return_when=asyncio.FIRST_COMPLETED
             )
             if ready in done and ready.result() and not listener.done():
-                connected = True
                 return listener
             if listener in done and not (
                 agent.last_close_code == 4009 and agent.last_close_reason == "name conflict"
@@ -139,9 +136,11 @@ async def register_owner(agent: SynapseAgent, timeout: float) -> asyncio.Task[No
                 await asyncio.wait((ready,), timeout=max(0.0, deadline - loop.time()))
             elif ready in done and not ready.result():
                 await asyncio.wait((listener,), timeout=max(0.0, deadline - loop.time()))
-        finally:
-            if not connected:
-                pending_listener = await _cancel_registration(agent, listener, ready)
+        except BaseException:
+            # A cancelled or failed attempt still joins both of its tasks.
+            await _cancel_registration(agent, listener, ready)
+            raise
+        pending_listener = await _cancel_registration(agent, listener, ready)
         # A Git hook can finish before the hub retires its socket. Retry only
         # that precise admission refusal; credentials and ownership rules
         # remain unchanged, and no release has crossed the send boundary.

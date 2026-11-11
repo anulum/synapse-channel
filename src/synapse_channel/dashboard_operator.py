@@ -452,7 +452,7 @@ class OperatorRelay:
         try:
             if not await agent.wait_until_ready(timeout=self.ready_timeout):
                 return RelayOutcome(UNREACHABLE, f"could not reach hub at {self.uri}")
-            if await closed_after_ready(agent):
+            if await closed_after_ready(agent, timeout=self.ready_timeout):
                 reason = agent.last_close_reason or "connection closed after ready"
                 return RelayOutcome(UNREACHABLE, str(reason))
             await send(agent)

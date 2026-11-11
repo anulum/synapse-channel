@@ -9,17 +9,22 @@
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
+from websockets.exceptions import ConnectionClosed
 
 from claim_outcome_helpers import ClaimProxy, claim_proxy
 from hub_e2e_helpers import running_hub
+from synapse_channel.client import owner_registration
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.client.owner_registration import close_owner, register_owner
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.protocol import MessageType
 from test_cli_lock_supervision import renewal_proxy
 
 
@@ -109,9 +114,6 @@ async def test_pending_retry_retains_the_last_observed_name_refusal(tmp_path: Pa
 
 async def test_cancelling_registration_outlasts_a_swallowed_cancellation() -> None:
     """A probe that ignores one cancellation, as wait_for can on 3.11, is cancelled again."""
-    import asyncio
-
-    from synapse_channel.client import owner_registration
 
     async def swallows_one_cancel() -> bool:
         try:
@@ -140,3 +142,86 @@ async def test_cancelling_registration_outlasts_a_swallowed_cancellation() -> No
         assert listener.done()
         assert unfinished is (listener_body is plain_listener)
         assert agent.running is False
+
+
+class _ScriptedOwner:
+    """A client whose readiness, sending and listening are scripted per test."""
+
+    def __init__(
+        self,
+        *,
+        ready: bool = True,
+        confirmation: bool = False,
+        send_error: BaseException | None = None,
+        hang: bool = False,
+    ) -> None:
+        self.name = "P/owner"
+        self.hub_id = "hub"
+        self.callback: Any = None
+        self.running = True
+        self.last_close_code: int | None = None
+        self.last_close_reason = ""
+        self._ready = ready
+        self._confirmation = confirmation
+        self._send_error = send_error
+        self._hang = hang
+
+    async def connect(self) -> None:
+        while self.running:
+            await asyncio.sleep(0.01)
+
+    async def wait_until_ready(self, timeout: float) -> bool:
+        if self._hang:
+            await asyncio.Event().wait()
+        if self._confirmation:
+            await self.callback({"type": MessageType.WELCOME, "lock_renewal_session": "s"})
+        return self._ready
+
+    async def send_message(self, _msg_type: str, **_fields: Any) -> None:
+        assert self._send_error is not None
+        raise self._send_error
+
+
+def _as_agent(owner: _ScriptedOwner) -> SynapseAgent:
+    return cast(SynapseAgent, owner)
+
+
+async def test_binding_probe_reports_a_client_that_never_became_ready() -> None:
+    owner = _ScriptedOwner(ready=False)
+
+    assert await owner_registration._registered_profile(_as_agent(owner), 0.05) is False
+    assert owner.callback is None
+
+
+@pytest.mark.parametrize("error", [ConnectionClosed(None, None), OSError("broken pipe")])
+async def test_binding_probe_reports_a_socket_lost_before_the_confirmation(
+    error: BaseException,
+) -> None:
+    owner = _ScriptedOwner(confirmation=True, send_error=error)
+
+    assert await owner_registration._registered_profile(_as_agent(owner), 1.0) is False
+    assert owner.callback is None
+
+
+async def test_registration_waits_for_a_live_listener_after_a_refused_probe() -> None:
+    # The probe fails while the listener still runs: the attempt keeps the
+    # rest of its budget for that listener, then joins both and refuses.
+    owner = _ScriptedOwner(ready=False)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    assert await register_owner(_as_agent(owner), 0.2) is None
+    assert loop.time() - started >= 0.2
+    assert owner.running is False
+    assert owner.last_close_code is None
+
+
+async def test_cancelled_registration_joins_its_tasks_and_propagates() -> None:
+    owner = _ScriptedOwner(hang=True)
+    registration = asyncio.create_task(register_owner(_as_agent(owner), 30))
+    await asyncio.sleep(0.05)
+    registration.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await registration
+    assert owner.running is False

@@ -369,7 +369,7 @@ async def _drive_run(
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=_READY_TIMEOUT) or await closed_after_ready(
-            agent
+            agent, timeout=_READY_TIMEOUT
         ):
             print(
                 terminal_text(

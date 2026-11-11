@@ -91,7 +91,7 @@ async def claim_outcome(
             pending = None
 
     try:
-        if conn_task is None or await closed_after_ready(agent):
+        if conn_task is None or await closed_after_ready(agent, timeout=ready_timeout):
             print(
                 describe_connect_failure(
                     intent.owner,
