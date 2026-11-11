@@ -256,6 +256,9 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 addopts = "-q --tb=short --strict-markers"
 asyncio_mode = "auto"
+# Every async fixture in tests/ is function-scoped, so this matches the plugin's
+# current per-fixture default and keeps it when the plugin's default changes.
+asyncio_default_fixture_loop_scope = "function"
 # A test still running after 15 minutes dumps every thread's traceback, so a
 # hung test names itself in the CI log instead of only stopping the dots.
 faulthandler_timeout = 900
