@@ -154,6 +154,7 @@ class _ScriptedOwner:
         confirmation: bool = False,
         send_error: BaseException | None = None,
         hang: bool = False,
+        listener_steps: int | None = None,
     ) -> None:
         self.name = "P/owner"
         self.hub_id = "hub"
@@ -165,16 +166,28 @@ class _ScriptedOwner:
         self._confirmation = confirmation
         self._send_error = send_error
         self._hang = hang
+        self._listener_steps = listener_steps
+        self._probe_refused = asyncio.Event()
+        self.listener_finished = False
 
     async def connect(self) -> None:
-        while self.running:
-            await asyncio.sleep(0.01)
+        if self._listener_steps is None:
+            while self.running:
+                await asyncio.sleep(0.01)
+            return
+        # Outlive the refused probe by a few loop turns, then end by itself.
+        await self._probe_refused.wait()
+        for _ in range(self._listener_steps):
+            await asyncio.sleep(0)
+        self.listener_finished = True
 
     async def wait_until_ready(self, timeout: float) -> bool:
         if self._hang:
             await asyncio.Event().wait()
         if self._confirmation:
             await self.callback({"type": MessageType.WELCOME, "lock_renewal_session": "s"})
+        if not self._ready:
+            self._probe_refused.set()
         return self._ready
 
     async def send_message(self, _msg_type: str, **_fields: Any) -> None:
@@ -204,14 +217,13 @@ async def test_binding_probe_reports_a_socket_lost_before_the_confirmation(
 
 
 async def test_registration_waits_for_a_live_listener_after_a_refused_probe() -> None:
-    # The probe fails while the listener still runs: the attempt keeps the
-    # rest of its budget for that listener, then joins both and refuses.
-    owner = _ScriptedOwner(ready=False)
-    loop = asyncio.get_running_loop()
-    started = loop.time()
+    # The probe fails while the listener still runs. The attempt spends the rest
+    # of its budget waiting for that listener instead of cancelling it at once,
+    # so the listener, which ends by itself a few loop turns later, finishes.
+    owner = _ScriptedOwner(ready=False, listener_steps=5)
 
-    assert await register_owner(_as_agent(owner), 0.2) is None
-    assert loop.time() - started >= 0.2
+    assert await asyncio.wait_for(register_owner(_as_agent(owner), 30), 10) is None
+    assert owner.listener_finished is True
     assert owner.running is False
     assert owner.last_close_code is None
 
