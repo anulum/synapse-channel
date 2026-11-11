@@ -181,6 +181,10 @@ synapse aef verify hub-a.receipts.jsonl --trust hub-a.aef-trust.json --sth sth.j
   --require-countersignature
 ```
 
+- **The extra.** These commands need `cryptography` with ML-DSA-65, which the
+  `encryption` extra installs: `pip install 'synapse-channel[encryption]'`.
+  Without it the CLI still starts, and these commands refuse with an error
+  that names the extra.
 - **The key.** `pq-key new` writes a new owner-only hybrid key, Ed25519 plus
   ML-DSA-65 (suite `ed25519+ml-dsa-65/v1`), and a trust file naming its public
   key. Commands read the key only from an owner-only file. With `--log-id`

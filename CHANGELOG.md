@@ -118,6 +118,15 @@ execution evidence when carrying a release claim forward.
   check reaches the command, since none of them can answer its operation. A
   refusal that leaves the socket open is reported as such instead of as an
   unreachable hub.
+- A core-only install starts again. `pip install synapse-channel` brings
+  websockets alone, and from 0.99.46 to 0.99.50 `synapse --version`,
+  `synapse --help` and every command that builds the full parser stopped with
+  `No module named 'cryptography'`: the AEF countersigning commands loaded the
+  signature suites, which imported `cryptography` at load time. The suites now
+  load without it. Signing, deriving a public key or verifying a signature
+  without the `encryption` extra is refused with an error that names
+  `pip install 'synapse-channel[encryption]'`. A test now blocks every runtime
+  extra in a fresh interpreter and starts the CLI.
 
 ## [0.99.50] - 2026-11-08
 

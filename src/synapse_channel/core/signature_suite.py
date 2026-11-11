@@ -28,6 +28,11 @@ Composite key halves belong to the composite only: a composite key file names
 its suite, and the loader refuses it for any other suite. ML-DSA support depends
 on the ``cryptography`` backend; :data:`ML_DSA_AVAILABLE` records the probe made
 at import, and selecting the composite without it is refused with a clear error.
+
+Every suite needs ``cryptography``, which only the ``encryption`` extra
+installs. The module imports without it, so a core-only install keeps every
+command that imports it available; signing, deriving a public key or verifying
+then raises :class:`SignatureSuiteError` naming the extra.
 """
 
 from __future__ import annotations
@@ -38,20 +43,10 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.receipt_signing import receipt_key_id
 from synapse_channel.core.secret_files import read_secret_file
-
-if TYPE_CHECKING:
-    from cryptography.hazmat.primitives.asymmetric.mldsa import MLDSA65PrivateKey
 
 SUITE_ED25519 = "ed25519"
 SUITE_HYBRID = "ed25519+ml-dsa-65/v1"
@@ -72,18 +67,35 @@ _SEED = 32
 _NUL = b"\x00"
 
 
+NEEDS_CRYPTOGRAPHY = (
+    "signature suites need the cryptography package, which the encryption extra "
+    "installs: pip install 'synapse-channel[encryption]'"
+)
+"""Why every suite is refused on a core-only install."""
+
+
 class SignatureSuiteError(SynapseError, ValueError):
     """A suite, key, key file or signature input is unknown, malformed or unavailable."""
 
     code = "signature_suite"
 
 
+def _require_cryptography() -> None:
+    try:
+        import cryptography  # noqa: F401 - the import is the availability check
+    except ImportError as exc:
+        raise SignatureSuiteError(NEEDS_CRYPTOGRAPHY) from exc
+
+
 def _probe_ml_dsa() -> bool:
     try:
+        from cryptography.exceptions import UnsupportedAlgorithm
         from cryptography.hazmat.primitives.asymmetric import mldsa
-
+    except ImportError:
+        return False
+    try:
         mldsa.MLDSA65PrivateKey.from_seed_bytes(bytes(_SEED))
-    except (ImportError, AttributeError, ValueError, TypeError, UnsupportedAlgorithm):
+    except (AttributeError, ValueError, TypeError, UnsupportedAlgorithm):
         return False
     return True
 
@@ -93,6 +105,7 @@ ML_DSA_AVAILABLE = _probe_ml_dsa()
 
 
 def _require_ml_dsa() -> None:
+    _require_cryptography()
     if not ML_DSA_AVAILABLE:
         raise SignatureSuiteError(
             f"{SUITE_HYBRID} needs ML-DSA-65, which this cryptography backend does not provide"
@@ -111,6 +124,7 @@ def require_available(suite: str) -> None:
     algorithm is an error, never a signature that merely fails to verify.
     """
     _require_suite(suite)
+    _require_cryptography()
     if suite == SUITE_HYBRID:
         _require_ml_dsa()
 
@@ -159,18 +173,38 @@ class SuiteKey:
         if len(self.ml_dsa_seed) != expected:
             raise SignatureSuiteError(f"a {self.suite} key holds {expected} ML-DSA seed bytes")
 
-    def _ml_dsa(self) -> MLDSA65PrivateKey:
+    def _ed25519_public(self) -> bytes:
+        _require_cryptography()
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        private = Ed25519PrivateKey.from_private_bytes(self.ed25519_seed)
+        return private.public_key().public_bytes_raw()
+
+    def _ed25519_sign(self, data: bytes) -> bytes:
+        _require_cryptography()
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        return Ed25519PrivateKey.from_private_bytes(self.ed25519_seed).sign(data)
+
+    def _ml_dsa_public(self) -> bytes:
         _require_ml_dsa()
         from cryptography.hazmat.primitives.asymmetric import mldsa
 
-        return mldsa.MLDSA65PrivateKey.from_seed_bytes(self.ml_dsa_seed)
+        private = mldsa.MLDSA65PrivateKey.from_seed_bytes(self.ml_dsa_seed)
+        return private.public_key().public_bytes_raw()
+
+    def _ml_dsa_sign(self, data: bytes, context: bytes) -> bytes:
+        _require_ml_dsa()
+        from cryptography.hazmat.primitives.asymmetric import mldsa
+
+        private = mldsa.MLDSA65PrivateKey.from_seed_bytes(self.ml_dsa_seed)
+        return private.sign(data, context=context)
 
     def public_bytes(self) -> bytes:
         """Return the suite's public key bytes."""
-        ed25519 = Ed25519PrivateKey.from_private_bytes(self.ed25519_seed).public_key()
-        public = ed25519.public_bytes_raw()
+        public = self._ed25519_public()
         if self.suite == SUITE_HYBRID:
-            public += self._ml_dsa().public_key().public_bytes_raw()
+            public += self._ml_dsa_public()
         return public
 
     def key_id(self) -> str:
@@ -180,9 +214,9 @@ class SuiteKey:
     def sign(self, domain: str, message: bytes) -> bytes:
         """Sign ``message`` under ``domain`` with every half of this suite."""
         data = preimage(self.suite, domain, message)
-        signature = Ed25519PrivateKey.from_private_bytes(self.ed25519_seed).sign(data)
+        signature = self._ed25519_sign(data)
         if self.suite == SUITE_HYBRID:
-            signature += self._ml_dsa().sign(data, context=_text_part("domain", domain))
+            signature += self._ml_dsa_sign(data, _text_part("domain", domain))
         return signature
 
 
@@ -198,6 +232,10 @@ def generate_key(suite: str) -> SuiteKey:
 
 
 def _verify_ed25519(public: bytes, data: bytes, signature: bytes) -> bool:
+    _require_cryptography()
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
     try:
         Ed25519PublicKey.from_public_bytes(public).verify(signature, data)
     except InvalidSignature:
@@ -206,6 +244,7 @@ def _verify_ed25519(public: bytes, data: bytes, signature: bytes) -> bool:
 
 
 def _verify_ml_dsa(public: bytes, data: bytes, signature: bytes, context: bytes) -> bool:
+    from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.asymmetric import mldsa
 
     try:
@@ -223,8 +262,9 @@ def verify(suite: str, public: bytes, domain: str, message: bytes, signature: by
     Raises
     ------
     SignatureSuiteError
-        For an unknown suite, a NUL in the suite or domain, or the composite on
-        a backend without ML-DSA.
+        For an unknown suite, a NUL in the suite or domain, the composite on a
+        backend without ML-DSA, or a well-formed signature to check on an
+        install without ``cryptography``.
     """
     data = preimage(suite, domain, message)
     if suite == SUITE_ED25519:

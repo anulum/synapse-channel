@@ -349,3 +349,35 @@ def test_require_available_refuses_an_unknown_or_unavailable_suite(
     require_available(SUITE_ED25519)
     with pytest.raises(SignatureSuiteError, match="needs ML-DSA-65"):
         require_available(SUITE_HYBRID)
+
+
+def _block_cryptography(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every ``cryptography`` import fail, as on a core-only install."""
+    for name in list(sys.modules):
+        if name == "cryptography" or name.startswith("cryptography."):
+            monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setitem(sys.modules, "cryptography", None)
+
+
+def test_a_core_only_install_refuses_every_suite_by_naming_the_extra(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ed25519_key = SuiteKey(SUITE_ED25519, bytes(32))
+    _block_cryptography(monkeypatch)
+
+    assert signature_suite._probe_ml_dsa() is False
+    attempts = (
+        lambda: require_available(SUITE_ED25519),
+        lambda: require_available(SUITE_HYBRID),
+        lambda: generate_key(SUITE_HYBRID),
+        ed25519_key.public_bytes,
+        lambda: ed25519_key.sign("domain", b"message"),
+        lambda: verify(SUITE_ED25519, bytes(32), "domain", b"message", bytes(64)),
+    )
+    for attempt in attempts:
+        with pytest.raises(SignatureSuiteError, match=r"synapse-channel\[encryption\]"):
+            attempt()
+    # Nothing that needs no algorithm is refused: a seed-only key and a
+    # malformed signature are judged without the backend.
+    assert generate_key(SUITE_ED25519).suite == SUITE_ED25519
+    assert verify(SUITE_ED25519, bytes(1), "domain", b"message", bytes(64)) is False
