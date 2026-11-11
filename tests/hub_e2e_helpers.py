@@ -13,6 +13,10 @@ import contextlib
 import errno
 import json
 import socket
+import sqlite3
+import sys
+import threading
+import traceback
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -283,7 +287,18 @@ async def connect_agent(
         )
     task = asyncio.create_task(agent.connect())
     handle = AgentHandle(agent=agent, recorder=recorder, task=task)
-    if not await agent.wait_until_ready(3.0):
+    watchdog = threading.Timer(
+        WELCOME_STALL_REPORT_SECONDS,
+        _report_overdue_welcome,
+        args=(name, threading.get_ident()),
+    )
+    watchdog.daemon = True
+    watchdog.start()
+    try:
+        ready = await agent.wait_until_ready(3.0)
+    finally:
+        watchdog.cancel()
+    if not ready:
         await handle.close()
         raise TimeoutError(f"agent {name} did not receive hub welcome")
     if wait_presence:
@@ -291,6 +306,29 @@ async def connect_agent(
             lambda m: m.get("type") == "presence_update" and m.get("agent") == name
         )
     return handle
+
+
+WELCOME_STALL_REPORT_SECONDS = 2.0
+"""After this long without a hub welcome, print where every thread is."""
+
+
+def _report_overdue_welcome(name: str, loop_thread: int) -> None:
+    """Print every thread's stack while a hub welcome is overdue.
+
+    The hub and the client share the test's event loop, so a welcome that does
+    not arrive in time usually means that loop is blocked. The report is printed
+    while the delay is still happening, from a timer thread, so it shows the
+    blocking frame itself rather than the state after it ended.
+    """
+    frames = sys._current_frames()
+    lines = [
+        f"[connect_agent {name}] no hub welcome after {WELCOME_STALL_REPORT_SECONDS:g} s; "
+        f"sqlite {sqlite3.sqlite_version}; thread stacks follow, the event loop first",
+    ]
+    for ident in sorted(frames, key=lambda thread: thread != loop_thread):
+        role = "event loop" if ident == loop_thread else f"thread {ident}"
+        lines.append(f"--- {role}\n" + "".join(traceback.format_stack(frames[ident])))
+    print("\n".join(lines), file=sys.stderr, flush=True)
 
 
 async def close_agents(*handles: AgentHandle) -> None:
