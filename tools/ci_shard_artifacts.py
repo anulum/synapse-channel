@@ -283,7 +283,7 @@ def verify(
     coverage_python: str,
     config: Path,
     output: Path,
-    fail_under: float = 99.21,
+    fail_under: float = 99.36,
     timings: Path | None = None,
     *,
     allow_earlier_attempts: bool = False,
@@ -307,7 +307,7 @@ def verify(
     output : Path
         New combined data and authoritative report directory.
     fail_under : float, optional
-        Whole-package threshold; defaults to 99.21 percent.
+        Whole-package threshold; defaults to 99.36 percent.
     timings : Path or None, optional
         Exact shared scheduling snapshot; when supplied, every main shard must
         bind its digest and interpreter weights. Native follow-ups remain independent.
@@ -368,7 +368,7 @@ def main() -> int:
     check.add_argument("--python", nargs="+", required=True)
     check.add_argument("--count", type=int, required=True)
     check.add_argument("--coverage-python", default="3.12")
-    check.add_argument("--fail-under", type=float, default=99.21)
+    check.add_argument("--fail-under", type=float, default=99.36)
     check.add_argument("--timings", type=Path)
     check.add_argument("--allow-earlier-attempts", action="store_true")
     args = parser.parse_args()

@@ -110,7 +110,7 @@ completed outcomes, bound to the source SHA, run, interpreter and configuration.
 Only successful shards publish authoritative indexed artifacts. `test-complete`
 requires every shard, verifies identical interpreter inventories and an exact
 union without omissions or duplicates, combines actual Python 3.12 branch and
-subprocess coverage, then applies the whole-package 99.21% threshold.
+subprocess coverage, then applies the whole-package 99.36% threshold.
 A shard has no individual coverage floor because it measures only its partition.
 Missing, failed, skipped, duplicate, foreign or altered artifacts fail the gate.
 A failed-job rerun keeps this run's successful shard artifacts and its original
@@ -279,7 +279,7 @@ They capture real retained descriptors, migration controls and namespace mount
 tables, and terminate only disposable owned process groups. Their transient user
 services have bounded lifetimes and resource limits. The Linux matrix prepares
 the runner's user bus and collects every profile in each indexed interpreter
-inventory; Python 3.12 includes their coverage in the complete 99.21% union.
+inventory; Python 3.12 includes their coverage in the complete 99.36% union.
 On disposable GitHub-hosted Linux runners, the native-session composite action
 loads a Bubblewrap-only AppArmor profile admitting user namespaces while leaving
 the global restriction unchanged. Before tests, a delegated unprivileged process
@@ -296,7 +296,7 @@ fixture setup. Each selected case must supply its own valid branch coverage
 file before any data is merged; extra observations from one case cannot replace
 a missing observation from another. Unassigned or invalid files fail the merge.
 The complete interpreter inventory and
-99.21% union gate remain mandatory; an empty native directory does not represent
+99.36% union gate remain mandatory; an empty native directory does not represent
 native qualification.
 Missing prerequisites fail the profiles. Default collection retains both
 portable filename patterns and excludes these explicitly named Linux profiles
@@ -304,7 +304,7 @@ on other operating systems. Successful observations do not certify a dedicated
 installed authority, migration exclusion or recovery custody.
 
 - **Tests.** Every new module, function, and branch ships with tests. Aggregate
-  coverage stays at or above the 99.21% floor; a change must not lower it.
+  coverage stays at or above the 99.36% floor; a change must not lower it.
   [Checking the coverage figure](docs/coverage.md) shows how to read the
   measured figure of a CI run and how to measure it again.
 - **Test taxonomy.** Reserve the `e2e` name and real-runtime CI mental
@@ -391,7 +391,7 @@ certify a dedicated installed writer, revocation fencing or recovery custody.
 
 Both Linux interpreter commands collect the exact profile filenames alongside
 the existing inventory; Python 3.12 includes their actual subprocess coverage
-in the complete 99.21% gate. Missing prerequisites fail the profiles.
+in the complete 99.36% gate. Missing prerequisites fail the profiles.
 Default macOS and Windows collection does not include these native profiles.
 
 ### Protected frontend control tests
@@ -453,7 +453,7 @@ group and a frozen packet do not prove current filesystem custody.
 Both complete Linux interpreter inventories include all six exact filenames
 alongside the two existing default patterns and all earlier native profiles.
 Python 3.12 includes their actual subprocess coverage in the complete
-99.21% gate. Missing prerequisites fail; these profiles add no conditional skips
+99.36% gate. Missing prerequisites fail; these profiles add no conditional skips
 and stay outside default macOS/Windows collection. Passing component journeys
 qualify observation, binding and refusal mechanics, not an installed recovery
 service or separate-principal writer isolation.

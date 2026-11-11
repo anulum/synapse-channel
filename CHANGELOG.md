@@ -73,6 +73,10 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **The CI coverage floor rises from 99.21% to 99.36%.** The complete Python
+  3.12 line-and-branch report on `main` reached 99.36% (99.3625% exact) on
+  2026-11-10, and the gate now holds that level. As before, the floor is the
+  reached value rounded down to the report precision.
 - Hub atomic execution, replay and receipt settlement share an explicit owner
   over the existing mutation actor and journal. HTTP admission and probe routing
   live together in the HTTP component; the hub retains its public entry points.

@@ -10,7 +10,7 @@ SYNAPSE CHANNEL — how to check the coverage figure yourself
 
 # Checking the coverage figure
 
-The coverage gate requires 99.21 % line and branch coverage of
+The coverage gate requires 99.36 % line and branch coverage of
 `src/synapse_channel` (`[tool.coverage.report]` in `pyproject.toml`). This page
 shows how to read the measured figure from CI and how to measure it again.
 
@@ -26,7 +26,7 @@ shows how to read the measured figure from CI and how to measure it again.
   subprocesses and the native Linux profiles listed in `CONTRIBUTING.md`.
 - **Gate.** `tools/ci_shard_artifacts.py verify` checks that the shards
   together ran every collected test exactly once. It then combines their
-  coverage and fails the run below 99.21 %. A shard has no floor of its own.
+  coverage and fails the run below 99.36 %. A shard has no floor of its own.
 
 ## Read the figure of a CI run
 
