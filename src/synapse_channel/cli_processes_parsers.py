@@ -401,7 +401,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "no armed -rx waiter sidecar and no genuine reaction within "
         "--recipient-liveness-window seconds. Such a stale-only match is dead-lettered and "
         "returns no_live_recipient instead of a positive receipt. Enabled by default; use "
-        "--no-warn-stale-recipients for the legacy socket-presence compatibility behavior.",
+        "--no-warn-stale-recipients for the legacy socket-presence compatibility behaviour.",
     )
     hub.add_argument(
         "--recipient-liveness-window",

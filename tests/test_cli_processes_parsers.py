@@ -165,10 +165,24 @@ class TestHubParser:
             _parser().parse_args(["hub", "--aef-drain-interval", "0"])
 
     def test_boolean_optional_action_toggles_both_ways(self) -> None:
-        armed = _parser().parse_args(["hub", "--warn-stale-recipients"])
-        disarmed = _parser().parse_args(["hub", "--no-warn-stale-recipients"])
+        """The hub flag toggles both ways and describes British compatibility behaviour."""
+        parser = _parser()
+        armed = parser.parse_args(["hub", "--warn-stale-recipients"])
+        disarmed = parser.parse_args(["hub", "--no-warn-stale-recipients"])
         assert armed.warn_stale_recipients is True
         assert disarmed.warn_stale_recipients is False
+        subparsers = next(
+            action for action in parser._actions if isinstance(action, argparse._SubParsersAction)
+        )
+        hub = subparsers.choices["hub"]
+        flag = next(
+            action for action in hub._actions if "--warn-stale-recipients" in action.option_strings
+        )
+        help_text = flag.help or ""
+        assert "legacy socket-presence compatibility behaviour" in help_text
+        assert "behavior" not in help_text
+        shown = " ".join(hub.format_help().split())
+        assert "legacy socket-presence compatibility behaviour" in shown
 
     def test_append_and_store_true_flags(self) -> None:
         args = _parser().parse_args(
