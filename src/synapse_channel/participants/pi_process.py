@@ -250,7 +250,9 @@ class PiRpcProcess:
                 os.killpg(process.pid, signal.SIGTERM)
             elif process.returncode is None:
                 process.terminate()
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
+            # macOS refuses a signal to a group that holds only exited processes;
+            # the wait below reaps the child either way.
             pass
         try:
             await asyncio.wait_for(process.wait(), timeout=3.0)

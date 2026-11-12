@@ -582,3 +582,30 @@ async def test_close_without_process_groups_stops_only_the_child(
     await asyncio.wait_for(child.close(), timeout=6)
     assert process.returncode is not None
     assert process.stdout.at_eof()
+
+
+async def test_close_reaps_a_child_whose_group_refuses_the_termination_signal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """macOS answers a group of exited processes with EPERM; close() still reaps the child."""
+    child = PiRpcProcess(
+        [sys.executable, "-u", "-c", "pass"],
+        cwd=tmp_path,
+        environment=os.environ,
+        timeout=5,
+    )
+    await child.start()
+    process = child._process
+    assert process is not None
+    await asyncio.wait_for(process.wait(), timeout=5)
+    signals: list[int] = []
+
+    def refused(pid: int, signum: int) -> None:
+        assert pid == process.pid
+        signals.append(signum)
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", refused)
+    await asyncio.wait_for(child.close(), timeout=6)
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+    assert process.returncode == 0
