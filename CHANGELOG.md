@@ -63,6 +63,9 @@ execution evidence when carrying a release claim forward.
   have no input on either platform.
 - A missing ``python-pkcs11`` install is named when the PKCS#11 at-rest
   backend is requested.
+- A missing ``tpm2-pytss`` install is named when the TPM 2.0 at-rest
+  backend is requested. An older cryptography without the decrepit
+  ciphers skips that compatibility shim and still loads the binding.
 
 ## [0.99.51] - 2026-11-11
 

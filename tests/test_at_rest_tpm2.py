@@ -284,3 +284,30 @@ def test_cli_reports_a_missing_dependency(
     args = cli.build_parser().parse_args(_tpm2_cli_args(tmp_path / "x.key", "--tcti", "swtpm:x"))
     assert cli_encrypt_key_hardware._cmd_generate_wrapped_tpm2(args) == 2
     assert "generate-wrapped-tpm2" in capsys.readouterr().out
+
+
+def _block_import(monkeypatch: pytest.MonkeyPatch, needle: str) -> None:
+    """Make one import name raise ``ImportError`` and leave the rest alone."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def blocked(name: str, *args: object, **kwargs: object) -> object:
+        if needle in name:
+            raise ImportError("blocked for test")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", blocked)
+
+
+def test_an_older_cryptography_skips_the_decrepit_shim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _block_import(monkeypatch, "cryptography.hazmat.decrepit")
+    assert require_tpm2() is not None
+
+
+def test_require_tpm2_names_the_missing_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    _block_import(monkeypatch, "tpm2_pytss")
+    with pytest.raises(RuntimeError, match="tpm2-pytss"):
+        require_tpm2()
