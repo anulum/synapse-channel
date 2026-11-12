@@ -32,6 +32,14 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- The Studio command centre shows its verdict, counters, coordination clock and
+  panels before the shared-plan board. A panel lists its first eight rows and a
+  board column its first six cards; the rest stay on the page inside a closed
+  disclosure that states how many more there are, and the Closed column is
+  folded as a whole. Counts remain full counts, and a disclosure the reader
+  opens stays open across snapshot refreshes. With a plan of a thousand tasks
+  the page is now a few screens long instead of tens. No feed, projection or
+  authority changes, and the page still carries no button, input or form.
 - The roadmap's research candidates are restated. The first candidate is now
   an agent change transaction: a declared intent, scoped authority, an approval
   bound to that exact intent and applied once, and independently verifiable

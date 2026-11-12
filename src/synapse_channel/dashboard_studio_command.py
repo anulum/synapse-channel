@@ -8,6 +8,8 @@
 """Render the Studio command-centre shell.
 
 The shell is hub-independent and contains no mutable coordination behaviour.
+The verdict, the counters, the coordination clock and the panels come before
+the shared-plan board, so the instruments stay in view however long the plan is.
 Focused package assets own the instrument layout, snapshot polling, durable-feed
 polling, and safe board-column DOM rendering. A non-executable JSON data block
 carries the server-authored, secret-free runtime configuration containing fixed
@@ -145,13 +147,6 @@ def render_studio_command_html(
         <div class="cc-stat"><b id="cc-posture">unknown</b><span>security posture</span></div>
         <div class="cc-stat"><b id="cc-peers">—</b><span>peers reachable</span></div>
       </div>
-      <section class="syn-panel cc-board-panel" aria-labelledby="cc-board-title">
-        <div id="cc-board-title" class="syn-label">shared plan · exact board and claim states</div>
-        <p class="cc-board-boundary">Read-only projection; actions remain hub-enforced.</p>
-        <div id="cc-board-columns" class="syn-board-columns" aria-live="polite">
-          <div class="syn-board-empty">Waiting for snapshot</div>
-        </div>
-      </section>
       <div class="cc-grid">
         <section class="syn-panel cc-clock-wrap">
           <div class="syn-label">coordination clock</div>
@@ -208,6 +203,13 @@ def render_studio_command_html(
           </section>
         </div>
       </div>
+      <section class="syn-panel cc-board-panel" aria-labelledby="cc-board-title">
+        <div id="cc-board-title" class="syn-label">shared plan · exact board and claim states</div>
+        <p class="cc-board-boundary">Read-only projection; actions remain hub-enforced.</p>
+        <div id="cc-board-columns" class="syn-board-columns" aria-live="polite">
+          <div class="syn-board-empty">Waiting for snapshot</div>
+        </div>
+      </section>
     </main>
   </div>
   <script id="syn-studio-config" type="application/json">{runtime_config}</script>

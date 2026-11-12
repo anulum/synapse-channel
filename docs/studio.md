@@ -170,6 +170,15 @@ the rim and a slow radar sweep; the dial centre carries the verdict and the live
 count. Around it sit the verdict pill, the headline counters, a board-column view, and
 the agents, claims, tasks, and risk panels.
 
+The verdict, the counters, the clock and the panels come first on the page; the
+shared-plan board follows them, so the instruments stay in view however long the plan
+is. A panel shows its first eight rows and a board column its first six cards. The
+rest stay on the page inside a closed disclosure that states how many more there are,
+and the Closed column is folded as a whole. Every count shown is the full count, not
+the count of what is visible. A disclosure the reader opens stays open when the next
+snapshot arrives. The disclosures are native elements that work from the keyboard;
+the page still carries no button, input or form.
+
 ### Shared-plan columns
 
 The board view joins the blackboard plan with live claim leases by task id. It preserves

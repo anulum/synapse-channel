@@ -157,3 +157,70 @@ it("marks retained data non-current after timeout and resumes polling", async ()
   expect(document.getElementById("cc-hub")?.textContent).toBe("recovered");
   expect(document.getElementById("cc-offline")?.hidden).toBe(true);
 });
+
+it("bounds the panel lists and the board, stating each remainder and keeping every row", () => {
+  mount();
+  const command = loadCommand(vi.fn());
+  const ids = Array.from({ length: 30 }, (_unused, index) => `TASK-${index + 1}`);
+
+  command.render({
+    verdict: "amber",
+    headline: { agents_live: 30, tasks_ready: 30 },
+    agents: { live: ids.map((id) => `seat/${id}`), missing_waiters: [] },
+    claims: { active: [], stale: [] },
+    tasks: {
+      ready: ids,
+      blocked: [],
+      columns: {
+        columns: [
+          { id: "open", label: "Open", tasks: ids.map((id) => ({ task_id: id, title: id })) },
+          { id: "closed", label: "Closed", tasks: ids.slice(0, 5).map((id) => ({ task_id: `done-${id}`, title: id })) },
+        ],
+      },
+    },
+    risk: { signals: [{ level: "amber", subject: "one", detail: "only" }] },
+  });
+
+  const tasks = document.getElementById("cc-tasks-list");
+  expect(tasks?.querySelectorAll(":scope > .syn-row")).toHaveLength(8);
+  expect(tasks?.querySelector(":scope > details.cc-more > summary")?.textContent).toBe("22 more of 30");
+  expect(tasks?.querySelectorAll(".syn-row")).toHaveLength(30);
+  expect(tasks?.textContent).toContain("TASK-30");
+
+  const agents = document.getElementById("cc-agents-list");
+  expect(agents?.querySelectorAll(":scope > .syn-row")).toHaveLength(8);
+  expect(agents?.querySelector("details.cc-more > summary")?.textContent).toBe("22 more of 30");
+
+  const risk = document.getElementById("cc-risk-list");
+  expect(risk?.querySelectorAll(":scope > .syn-row")).toHaveLength(1);
+  expect(risk?.querySelector("details")).toBeNull();
+
+  const board = document.getElementById("cc-board-columns");
+  const open = board?.querySelector('[data-column="open"].syn-board-column');
+  expect(open?.querySelector(".syn-board-column__count")?.textContent).toBe("30");
+  expect(open?.querySelectorAll(".syn-board-column__body > .syn-board-card")).toHaveLength(6);
+  expect(open?.querySelector("details.syn-board-more > summary")?.textContent).toBe("24 more of 30");
+  const closed = board?.querySelector('[data-column="closed"].syn-board-column');
+  expect(closed?.querySelectorAll(".syn-board-column__body > .syn-board-card")).toHaveLength(0);
+  expect(closed?.querySelector("details.syn-board-more > summary")?.textContent).toBe("5 closed");
+  expect(document.querySelector("button,input,form")).toBeNull();
+});
+
+it("keeps an opened panel list open when the next snapshot arrives", () => {
+  mount();
+  const command = loadCommand(vi.fn());
+  const snapshot = {
+    tasks: { ready: Array.from({ length: 12 }, (_unused, index) => `TASK-${index + 1}`), blocked: [] },
+    agents: { live: Array.from({ length: 12 }, (_unused, index) => `seat/${index + 1}`), missing_waiters: [] },
+  };
+
+  command.render(snapshot);
+  const first = document.querySelector<HTMLDetailsElement>("#cc-tasks-list details.cc-more");
+  expect(first?.open).toBe(false);
+  first!.open = true;
+  first!.dispatchEvent(new Event("toggle"));
+
+  command.render(snapshot);
+  expect(document.querySelector<HTMLDetailsElement>("#cc-tasks-list details.cc-more")?.open).toBe(true);
+  expect(document.querySelector<HTMLDetailsElement>("#cc-agents-list details.cc-more")?.open).toBe(false);
+});

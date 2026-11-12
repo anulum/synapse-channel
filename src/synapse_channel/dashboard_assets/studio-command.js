@@ -31,6 +31,13 @@
   const centreY = 180;
   const radius = 132;
   let started = false;
+  // A panel shows this many rows; the rest stay in the page inside a closed
+  // disclosure that states how many more there are.
+  const PANEL_ROW_LIMIT = 8;
+  const BOARD_OPTIONS = Object.freeze({ cardLimit: 6, collapsed: Object.freeze(["closed"]) });
+  // Panel lists the reader opened. Each snapshot rebuilds the lists, so the open
+  // state is kept here and restored, keyed by list id.
+  const openLists = new Set();
 
   function svgNode(tag, attributes, value) {
     const item = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -126,11 +133,25 @@
       host.appendChild(htmlNode("div", "cc-empty", "none"));
       return;
     }
-    for (const item of items) {
+    const rowFor = (item) => {
       const row = htmlNode("div", "syn-row");
       row.append(...renderRow(item));
-      host.appendChild(row);
-    }
+      return row;
+    };
+    for (const item of items.slice(0, PANEL_ROW_LIMIT)) host.appendChild(rowFor(item));
+    const hidden = items.slice(PANEL_ROW_LIMIT);
+    if (!hidden.length) return;
+    const details = htmlNode("details", "cc-more");
+    details.open = openLists.has(id);
+    details.addEventListener("toggle", () => {
+      if (details.open) openLists.add(id);
+      else openLists.delete(id);
+    });
+    details.appendChild(
+      htmlNode("summary", "cc-more__summary", hidden.length + " more of " + items.length),
+    );
+    for (const item of hidden) details.appendChild(rowFor(item));
+    host.appendChild(details);
   }
 
   function setStat(id, stat) {
@@ -189,7 +210,9 @@
       .concat((tasks.blocked || []).map((task) => ({ taskId: task.task_id || task, tone: "warn" })));
     list("cc-tasks-list", taskRows, (task) => [dot(task.tone), value(task.taskId)]);
     if (window.SynapseBoardColumns) {
-      window.SynapseBoardColumns.render(document.getElementById("cc-board-columns"), tasks.columns || {});
+      window.SynapseBoardColumns.render(
+        document.getElementById("cc-board-columns"), tasks.columns || {}, BOARD_OPTIONS,
+      );
     }
 
     const risk = data.risk || {};

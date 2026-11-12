@@ -74,6 +74,21 @@ def test_page_carries_every_instrument_hook() -> None:
         assert hook in html, hook
 
 
+def test_verdict_counters_and_clock_come_before_the_board() -> None:
+    html = render_studio_command_html()
+    order = [
+        html.index('id="cc-verdict"'),
+        html.index('class="cc-bar"'),
+        html.index('id="cc-clock"'),
+        html.index('id="cc-agents-list"'),
+        html.index('id="cc-actions-list"'),
+        html.index('id="cc-board-columns"'),
+    ]
+    assert order == sorted(order)
+    assert html.count('id="cc-board-columns"') == 1
+    assert html.count('id="cc-clock"') == 1
+
+
 def test_page_navigates_between_command_and_design() -> None:
     html = render_studio_command_html()
     assert f'href="{STUDIO_COMMAND_PATH}" aria-current="page"' in html

@@ -18,6 +18,20 @@
     other: "neutral",
   });
 
+  // Disclosures the reader opened. A refresh rebuilds the columns, so the open
+  // state is kept here and restored, keyed by host and column.
+  const openDisclosures = new Set();
+
+  function cardLimit(options) {
+    const limit = options && typeof options === "object" ? options.cardLimit : undefined;
+    return Number.isInteger(limit) && limit > 0 ? limit : null;
+  }
+
+  function collapsedColumns(options) {
+    const ids = options && typeof options === "object" ? options.collapsed : undefined;
+    return Array.isArray(ids) ? ids.map(String) : [];
+  }
+
   function rows(value) {
     return Array.isArray(value) ? value.filter((item) => item && typeof item === "object") : [];
   }
@@ -67,10 +81,24 @@
     return article;
   }
 
-  function renderColumn(column) {
+  function disclosure(key, summary, hidden) {
+    const details = node("details", "syn-board-more");
+    details.open = openDisclosures.has(key);
+    details.addEventListener("toggle", () => {
+      if (details.open) openDisclosures.add(key);
+      else openDisclosures.delete(key);
+    });
+    details.appendChild(node("summary", "syn-board-more__summary", summary));
+    for (const card of hidden) details.appendChild(renderCard(card));
+    return details;
+  }
+
+  function renderColumn(column, hostKey, limit, collapsed) {
     const section = node("section", "syn-board-column");
     const columnId = String(column.id || "other");
     const tasks = rows(column.tasks);
+    const folded = collapsed.includes(columnId);
+    const shown = folded ? 0 : limit === null ? tasks.length : Math.min(limit, tasks.length);
     section.dataset.column = columnId;
     section.dataset.tone = COLUMN_TONES[columnId] || "neutral";
     const heading = node("div", "syn-board-column__head");
@@ -80,7 +108,14 @@
     );
     const body = node("div", "syn-board-column__body");
     if (tasks.length) {
-      for (const task of tasks) body.appendChild(renderCard(task));
+      for (const task of tasks.slice(0, shown)) body.appendChild(renderCard(task));
+      const hidden = tasks.slice(shown);
+      if (hidden.length) {
+        const summary = folded
+          ? hidden.length + " " + String(column.label || columnId).toLowerCase()
+          : hidden.length + " more of " + tasks.length;
+        body.appendChild(disclosure(hostKey + ":" + columnId, summary, hidden));
+      }
     } else {
       body.appendChild(node("div", "syn-board-column__empty", "No tasks"));
     }
@@ -88,15 +123,24 @@
     return section;
   }
 
-  function render(host, projection) {
+  // options.cardLimit: a positive integer bounds the cards shown per column; the
+  // rest stay in the page inside a closed disclosure. options.collapsed: column
+  // ids whose cards are all inside the disclosure. Without usable options every
+  // card is rendered, as before. The count in a column head is always the whole.
+  function render(host, projection, options) {
     if (!host) return;
+    const limit = cardLimit(options);
+    const collapsed = collapsedColumns(options);
+    const hostKey = host.id || "board";
     host.replaceChildren();
     const columns = rows(projection && projection.columns);
     if (!columns.length) {
       host.appendChild(node("div", "syn-board-empty", "Board projection unavailable"));
       return;
     }
-    for (const column of columns) host.appendChild(renderColumn(column));
+    for (const column of columns) {
+      host.appendChild(renderColumn(column, hostKey, limit, collapsed));
+    }
     if (projection.source_truncated === true) {
       const shown = Number(projection.declared_tasks) || 0;
       const total = Number(projection.total_declared_tasks) || shown;

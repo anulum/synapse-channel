@@ -125,6 +125,21 @@
   margin: 0;
 }
 
+.syn-board-more {
+  display: grid;
+  gap: var(--syn-sp-2);
+}
+.syn-board-more__summary {
+  padding: var(--syn-sp-2);
+  border: 1px dashed var(--syn-hairline);
+  color: var(--syn-muted);
+  cursor: pointer;
+  font-family: var(--syn-font-mono);
+  font-size: var(--syn-fs-label);
+}
+.syn-board-more[open] > .syn-board-more__summary {
+  margin-bottom: var(--syn-sp-2);
+}
 @media (max-width: 760px) {
   .syn-board-columns {
     grid-auto-flow: row;
