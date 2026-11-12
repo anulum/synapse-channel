@@ -625,6 +625,10 @@ def _hidden_proc_names_the_gap(directory: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.skipif(
+    shutil.which("bwrap") is None and Path("/proc/self/stat").is_file(),
+    reason="bubblewrap is not installed",
+)
 def test_root_discovery_does_not_scan_the_machine() -> None:
     """An unnamed scan as root is refused instead of listing every process."""
     if not hasattr(os, "geteuid") or not Path("/proc/self/stat").is_file():
@@ -658,9 +662,7 @@ def test_root_discovery_does_not_scan_the_machine() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_unreadable_process_scan_is_unavailable(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_unreadable_process_scan_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     """A scan the kernel refuses is unavailable, not an empty success."""
     if not hasattr(os, "geteuid") or not Path("/proc/self/stat").is_file():
         _assert_named_pid_without_proc()
@@ -673,6 +675,11 @@ def test_unreadable_process_scan_is_unavailable(
     rows, status = discover_processes()
     assert rows == {}
     assert status == "unavailable"
+
+
+@pytest.mark.skipif(shutil.which("bwrap") is None, reason="bubblewrap is not installed")
+def test_a_hidden_proc_mount_names_the_gap(tmp_path: Path) -> None:
+    """An empty proc mount reports the same gap as a host without procfs."""
     _hidden_proc_names_the_gap(tmp_path)
 
 
