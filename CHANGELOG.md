@@ -25,6 +25,12 @@ execution evidence when carrying a release claim forward.
   platform separator. Native tests state the platform contract for inbox
   paths, Unix mode bits, POSIX-only uid and fchmod injection, a missing
   `mkfifo`, a read-only Git object, and a Codex host that Windows can run.
+- Native mutation-status and console-script tests state the Windows
+  contract. A real pre-commit hook has no stored execute bit, so the gate
+  stays incomplete. A group-writable provider file is an extra DACL entry,
+  not a mode bit. An oversized Git answer is recorded in the repository
+  config because CreateProcess rejects that argument. The preserved config
+  prefix is LF, and a console-script wrapper is a name Windows can resolve.
 
 ## [0.99.51] - 2026-11-11
 

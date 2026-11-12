@@ -45,6 +45,20 @@ def _scripts_dir() -> Path:
     return Path(sysconfig.get_path("scripts"))
 
 
+def _wrapper(directory: Path, name: str = "script") -> None:
+    """Create a wrapper that ``shutil.which(name)`` resolves inside ``directory``.
+
+    On Windows that lookup uses PATHEXT. An extensionless shebang file is not
+    a console script, and the check never executes the wrapper.
+    """
+    if os.name == "nt":
+        (directory / f"{name}.cmd").write_text("@echo off\r\nexit /b 0\r\n", encoding="utf-8")
+        return
+    path = directory / name
+    path.write_text("#!/bin/sh\n", encoding="utf-8")
+    path.chmod(0o755)
+
+
 def test_current_distribution_loads_every_declared_console_script() -> None:
     expected = checker.declared_console_scripts(PYPROJECT)
 
@@ -209,9 +223,7 @@ def test_console_script_check_rejects_unloadable_or_noncallable_target(
     module = tmp_path / "installed_console_script_target.py"
     module.write_text("value = 7\n", encoding="utf-8")
     monkeypatch.syspath_prepend(tmp_path)
-    wrapper = tmp_path / "script"
-    wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
-    wrapper.chmod(0o755)
+    _wrapper(tmp_path)
     entry = EntryPoint(name="script", value=target, group="console_scripts")
     fake_distribution = SimpleNamespace(entry_points=(entry,))
     monkeypatch.setattr(checker, "distribution", lambda _name: fake_distribution)
@@ -229,9 +241,7 @@ def test_console_script_check_rejects_target_module_without_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    wrapper = tmp_path / "script"
-    wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
-    wrapper.chmod(0o755)
+    _wrapper(tmp_path)
     entry = EntryPoint(name="script", value="sys:exit", group="console_scripts")
     fake_distribution = SimpleNamespace(entry_points=(entry,))
     monkeypatch.setattr(checker, "distribution", lambda _name: fake_distribution)

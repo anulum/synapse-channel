@@ -23,10 +23,33 @@ from cli_e2e_helpers import CliResult, _candidate_environment, git_repo, git_run
 from synapse_channel import cli
 from synapse_channel.mutation_governance import _READ_LIMIT, inspect_mutation_governance
 
-_SYNAPSE_BIN = Path(sys.executable).with_name("synapse")
+
+def _launchable_beside_python(name: str) -> Path:
+    """Return the console script installed next to this interpreter.
+
+    pip on Windows writes ``name.exe``. CreateProcess does not apply PATHEXT
+    to an exact path, so the extensionless POSIX name is not that file.
+    """
+    directory = Path(sys.executable).parent
+    if os.name == "nt":
+        for suffix in (".exe", ".cmd", ".bat", ".com"):
+            candidate = directory / f"{name}{suffix}"
+            if candidate.is_file():
+                return candidate
+    return directory / name
+
+
+_SYNAPSE_BIN = _launchable_beside_python("synapse")
 _PRE_COMMIT_BIN = Path(
-    os.environ.get("SYNAPSE_TEST_PRE_COMMIT_BIN", str(Path(sys.executable).with_name("pre-commit")))
+    os.environ.get(
+        "SYNAPSE_TEST_PRE_COMMIT_BIN",
+        str(_launchable_beside_python("pre-commit")),
+    )
 )
+# Windows stores no execute bit: a regular file stays 0o666 whatever chmod
+# asked for, so a real pre-commit hook reads as not installed. The
+# configuration read is the same on every platform.
+_POSIX_EXECUTE_BIT = os.name != "nt"
 
 
 def _run(*args: str, cwd: Path) -> CliResult:
@@ -37,6 +60,43 @@ def _private_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     path.chmod(0o600)
+
+
+def _break_owner_only(path: Path) -> str:
+    """Make ``path`` fail its owner-only floor and return the detail that names it.
+
+    POSIX stores that floor in the mode bits. Windows keeps a normal file at
+    mode 0o666 and proves the floor with the DACL, so chmod cannot create it.
+    """
+    if os.name == "nt":
+        completed = subprocess.run(
+            ["icacls", os.fspath(path), "/grant", "*S-1-1-0:(R)"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        return "not owner-only"
+    path.chmod(0o666)
+    return "writable by group or others"
+
+
+def _record_hooks_path(repo: Path, value: str) -> None:
+    """Record ``core.hooksPath`` so Git will print it back.
+
+    CreateProcess rejects an argument of this length before Git starts
+    (WinError 206). The inspection limit is about Git's answer, so on
+    Windows the value is written into the repository config.
+    """
+    if os.name != "nt":
+        git_run(repo, "config", "core.hooksPath", value)
+        return
+    config = repo / ".git" / "config"
+    config.write_text(
+        config.read_text(encoding="utf-8") + f"\n[core]\n\thooksPath = {value}\n",
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def _provider_fragment(repo: Path, provider: str) -> str:
@@ -255,9 +315,14 @@ def test_real_generated_provider_configs_and_precommit_gate_are_detected(
     gate = report["staged_gate"]
     assert isinstance(gate, dict)
     assert gate["configuration_state"] == "configured"
-    assert gate["hook_state"] == "installed"
-    assert gate["gate_status"] == "ready-not-exercised"
-    assert gate["enforcement_status"] == "not-exercised"
+    if _POSIX_EXECUTE_BIT:
+        assert gate["hook_state"] == "installed"
+        assert gate["gate_status"] == "ready-not-exercised"
+        assert gate["enforcement_status"] == "not-exercised"
+    else:
+        assert gate["hook_state"] == "invalid"
+        assert gate["gate_status"] == "incomplete"
+        assert gate["enforcement_status"] == "not-configured"
     assert before == {
         path: (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_mode)
         for path in guarded_files
@@ -271,7 +336,7 @@ def test_real_cli_reports_invalid_and_partial_configuration(tmp_path: Path) -> N
     _private_write(home / ".codex" / "hooks.json", "{not-json\n")
     unsafe_gemini = home / ".gemini" / "settings.json"
     _private_write(unsafe_gemini, _provider_fragment(repo, "gemini"))
-    unsafe_gemini.chmod(0o666)
+    unsafe_detail = _break_owner_only(unsafe_gemini)
 
     installed = _run(
         "adapters",
@@ -302,7 +367,7 @@ def test_real_cli_reports_invalid_and_partial_configuration(tmp_path: Path) -> N
     gemini = next(
         item for item in providers if isinstance(item, dict) and item.get("provider") == "gemini"
     )
-    assert "writable by group or others" in gemini["configuration_detail"]
+    assert unsafe_detail in gemini["configuration_detail"]
 
 
 def test_real_cli_treats_malformed_hook_commands_as_not_configured(tmp_path: Path) -> None:
@@ -444,7 +509,7 @@ def test_real_cli_fails_closed_when_git_answers_beyond_the_inspection_limit(
     must not read on and must not call the repository gated.
     """
     repo = git_repo(tmp_path / "repo")
-    git_run(repo, "config", "core.hooksPath", "/" + "h" * 70_000)
+    _record_hooks_path(repo, "/" + "h" * 70_000)
     answer = subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "--git-path", "hooks/pre-commit"],
         capture_output=True,
@@ -571,7 +636,9 @@ def test_real_cli_refuses_a_precommit_file_that_changes_before_open(
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
     config = repo / ".pre-commit-config.yaml"
-    config.write_text("repos: []\n", encoding="utf-8")
+    # newline="\n" keeps the LF the later byte assertion names. The default
+    # writer would store the platform line ending, which on Windows is CRLF.
+    config.write_text("repos: []\n", encoding="utf-8", newline="\n")
     before = config.stat()
     replacement = tmp_path / "replacement.yaml"
     replacement.write_text(_GATE_THAT_WOULD_LOOK_CONFIGURED, encoding="utf-8")
