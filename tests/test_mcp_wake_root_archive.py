@@ -22,6 +22,9 @@ from typing import Any
 
 import pytest
 
+from synapse_channel.core.secure_path import read_owner_only_file_bytes
+from synapse_channel.durable_dir import sync_directory
+from synapse_channel.mcp import wake_root_archive
 from synapse_channel.mcp.http_config import load_http_auth_config
 from synapse_channel.mcp.wake_admission import WakeAdmission
 from synapse_channel.mcp.wake_ledger import WakeLedger
@@ -455,29 +458,37 @@ def test_interrupted_publication_repairs_only_the_exact_matching_two_link_inode(
 def test_source_changes_during_real_archive_sync_never_remove_original_work(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
 ) -> None:
+    """A source changed after a real directory sync is refused and stays in place.
+
+    The change is made right after the archive's own directory sync of the
+    watched folder, at the module boundary, so it happens on every platform:
+    a POSIX directory descriptor and the Windows path take different routes.
+    """
     _, old, control, info = inactive_generation(tmp_path)
     before = old.path.read_bytes()
     parent = tmp_path / "archive"
     directory = parent / (info["key"] + "-" + info["fingerprint"])
-    real_sync = os.fsync
+    real_sync = sync_directory
     changed = False
 
-    def alter_after_real_sync(descriptor: int) -> None:
+    def alter_after_real_sync(path: Path) -> None:
         nonlocal changed
-        real_sync(descriptor)
+        real_sync(path)
         watched = directory if mutation == "source-bytes" else parent
-        if changed or not watched.exists() or os.fstat(descriptor).st_ino != watched.stat().st_ino:
+        if changed or Path(path) != watched:
             return
         if mutation == "source-bytes":
             changed = True
             old.path.write_bytes(bytes([before[0] ^ 1]) + before[1:])
-        elif (directory / "manifest.json").exists():
+        else:
+            # The archive syncs the parent only after its manifest is published.
+            assert (directory / "manifest.json").exists()
             changed = True
             journal = Path(str(old.path) + "-journal")
             journal.write_bytes(b"late rollback work")
             journal.chmod(0o600)
 
-    monkeypatch.setattr(os, "fsync", alter_after_real_sync)
+    monkeypatch.setattr(wake_root_archive, "sync_directory", alter_after_real_sync)
     refusal = "bytes changed" if mutation == "source-bytes" else "source changed"
     with pytest.raises(WakeLedgerError, match=refusal):
         archive(control, info, parent)
@@ -492,21 +503,26 @@ def test_source_changes_during_real_archive_sync_never_remove_original_work(
 def test_source_change_at_real_copy_open_refuses_before_publishing_archive_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A source changed just before its real read for the copy publishes no archive bytes.
+
+    The change is made at the archive's call of the secure reader, which opens
+    the file with ``os.open`` on POSIX and through the Win32 API on Windows.
+    """
     _, old, control, info = inactive_generation(tmp_path)
     before = old.path.read_bytes()
     parent = tmp_path / "archive"
     directory = parent / (info["key"] + "-" + info["fingerprint"])
-    original_open = os.open
+    real_read = read_owner_only_file_bytes
     changed = False
 
-    def alter_before_real_open(path: str | Path, flags: int, *args: Any, **kwargs: Any) -> int:
+    def alter_before_real_read(path: str | Path, **kwargs: Any) -> bytes:
         nonlocal changed
         if not changed and Path(path) == old.path and directory.exists():
             changed = True
             old.path.write_bytes(bytes([before[0] ^ 1]) + before[1:])
-        return original_open(path, flags, *args, **kwargs)
+        return real_read(path, **kwargs)
 
-    monkeypatch.setattr(os, "open", alter_before_real_open)
+    monkeypatch.setattr(wake_root_archive, "read_owner_only_file_bytes", alter_before_real_read)
     with pytest.raises(WakeLedgerError, match="source changed"):
         archive(control, info, parent)
     assert changed and old.path.read_bytes() == bytes([before[0] ^ 1]) + before[1:]
