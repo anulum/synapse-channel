@@ -18,6 +18,22 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- **The federation interface offers record keeping as a feature, not its parts.**
+  `synapse_channel.federation_api` gains the record-keeping functions an
+  out-of-tree consumer needs (`build_export`, `export_to_json`, `render_human`,
+  `utc_event_time`, `iter_record_source`, its two export budgets, and
+  `assess_retention`, `render_retention`, `retention_to_json`) and no longer
+  offers the eight lower-level names only a copy of those modules needed
+  (`RunningRoot`, the three record categories, `purpose_for_kind`,
+  `load_key_file`, `apply_sqlcipher_key`, `import_sqlcipher_module`). The fleet
+  tier can then call Core's record keeping instead of carrying a copy that falls
+  behind. `WIRE_PROTOCOL_VERSION` also leaves the surface: the fleet tier's
+  compatibility check reads it where it is defined, because it also inspects
+  older Core releases. The surface holds 110 names; the defining modules are
+  unchanged.
+
 ### Added
 
 - A local `synapse pid-monitor` run counts each observed process: birth,

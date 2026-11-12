@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — federation interface: evidence, causality and opentelemetry
 """Evidence, causality and OpenTelemetry: the federation interface names of this capability.
 
-Journal kinds, record purposes, causal graphs across hubs, correlation and OpenTelemetry
+Journal kinds, task states, causal graphs across hubs, correlation and OpenTelemetry
 export. Import these names from ``synapse_channel.federation_api``; this module only
 groups them.
 """
@@ -55,12 +55,6 @@ from synapse_channel.core.journal import (
 from synapse_channel.core.lifecycle import (
     TaskStatus,
 )
-from synapse_channel.core.record_keeping import (
-    GENERAL_RECORD,
-    OPERATION_RECORD,
-    RISK_INDICATOR,
-    purpose_for_kind,
-)
 from synapse_channel.core.task_causality import (
     TASK_CAUSAL_PARENT_FIELD,
     parse_task_causal_parent,
@@ -82,14 +76,11 @@ __all__ = [
     "FEDERATION",
     "FederatedCausalGraph",
     "FederatedNode",
-    "GENERAL_RECORD",
     "GRAPH_KINDS",
     "HubEventRef",
     "LIFECYCLE",
-    "OPERATION_RECORD",
     "OtelProjection",
     "OtelSpanRecord",
-    "RISK_INDICATOR",
     "SERVICE_NAME",
     "SPAN_ID_HEX_LENGTH",
     "SPAN_STATUS_ERROR",
@@ -102,7 +93,6 @@ __all__ = [
     "correlation_points",
     "parse_task_causal_parent",
     "projection_to_json",
-    "purpose_for_kind",
     "push_projection",
     "span_id_for_root",
     "trace_id_for_task",

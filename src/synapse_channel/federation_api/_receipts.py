@@ -21,7 +21,6 @@ from synapse_channel.core.event_row_mac import (
 )
 from synapse_channel.core.merkle import (
     MerkleRoot,
-    RunningRoot,
     build_root,
     render_root_markdown,
     root_to_json,
@@ -38,7 +37,6 @@ from synapse_channel.core.receipt_signing import (
 __all__ = [
     "MerkleRoot",
     "RowMacKey",
-    "RunningRoot",
     "build_root",
     "check_receipt_merkle_signature",
     "load_or_create_row_mac_key",

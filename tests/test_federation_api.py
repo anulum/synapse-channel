@@ -25,9 +25,10 @@ import pytest
 import synapse_channel
 from synapse_channel import federation_api
 
-# The fleet tier's inventory at the release that introduced this module; changing the
+# The fleet tier's inventory (109 at the introduction, 110 once the fleet tier dropped its
+# record-keeping copies and read Core's wire version where it is defined); changing the
 # count is a reviewed edit here, in the inventory guard and on the API stability page.
-_SURFACE_SIZE = 109
+_SURFACE_SIZE = 110
 
 
 def test_the_surface_is_sorted_unique_and_of_the_promised_size() -> None:

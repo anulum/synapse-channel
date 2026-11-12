@@ -17,7 +17,6 @@ from synapse_channel.client.agent import (
     SynapseAgent,
 )
 from synapse_channel.core.protocol import (
-    WIRE_PROTOCOL_VERSION,
     MessageType,
     ProtocolNegotiation,
 )
@@ -26,5 +25,4 @@ __all__ = [
     "MessageType",
     "ProtocolNegotiation",
     "SynapseAgent",
-    "WIRE_PROTOCOL_VERSION",
 ]

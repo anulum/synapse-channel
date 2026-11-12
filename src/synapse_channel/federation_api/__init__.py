@@ -24,12 +24,12 @@ stability page. The private submodules only group the names by capability:
 - Claim forwarding: ``multihub_claim_transport``, ``multihub_claim_wire``.
 - Shared spend: ``spend_epoch``, ``spend_transport``.
 - Attachments: ``attachment_store``, ``attachment_transport``.
-- Evidence, causality and OpenTelemetry: ``journal``, ``lifecycle``, ``record_keeping``,
-  ``task_causality``, ``causality``, ``causality_federation``, ``causality_otel``,
-  ``correlation_contract``, ``correlation_points``, ``otel_export``.
+- Evidence, causality and OpenTelemetry: ``journal``, ``lifecycle``, ``task_causality``,
+  ``causality``, ``causality_federation``, ``causality_otel``, ``correlation_contract``,
+  ``correlation_points``, ``otel_export``.
 - Receipts and integrity: ``merkle``, ``receipt_signing``, ``event_row_mac``.
-- Identity, TLS and keys at rest: ``identity_keys``, ``peer_identity``, ``tls``,
-  ``at_rest``, ``persistence_sqlcipher``.
+- Identity and TLS: ``identity_keys``, ``peer_identity``, ``tls``.
+- Record keeping: ``record_keeping``, ``record_keeping_source``, ``record_retention``.
 - Health and entitlement: ``fleet_health``, ``entitlement_advert``.
 - Protocol and client: ``protocol``, ``client.agent``.
 """
@@ -63,11 +63,8 @@ if TYPE_CHECKING:
         DEFAULT_EXPORT_TIMEOUT,
         DEFAULT_MAX_GRAPH_NODES,
         FEDERATION,
-        GENERAL_RECORD,
         GRAPH_KINDS,
         LIFECYCLE,
-        OPERATION_RECORD,
-        RISK_INDICATOR,
         SERVICE_NAME,
         SPAN_ID_HEX_LENGTH,
         SPAN_STATUS_ERROR,
@@ -87,7 +84,6 @@ if TYPE_CHECKING:
         correlation_points,
         parse_task_causal_parent,
         projection_to_json,
-        purpose_for_kind,
         push_projection,
         span_id_for_root,
         trace_id_for_task,
@@ -102,11 +98,8 @@ if TYPE_CHECKING:
         MTLSPeerTrustBundle,
         MTLSTrustedPeer,
         PeerRegistrationSigner,
-        apply_sqlcipher_key,
         certificate_sha256_pin,
         certificate_sha256_pin_from_der,
-        import_sqlcipher_module,
-        load_key_file,
         load_peer_registration_signer,
         load_signing_key,
     )
@@ -135,7 +128,6 @@ if TYPE_CHECKING:
         tag_events,
     )
     from synapse_channel.federation_api._protocol import (
-        WIRE_PROTOCOL_VERSION,
         MessageType,
         ProtocolNegotiation,
         SynapseAgent,
@@ -143,7 +135,6 @@ if TYPE_CHECKING:
     from synapse_channel.federation_api._receipts import (
         MerkleRoot,
         RowMacKey,
-        RunningRoot,
         build_root,
         check_receipt_merkle_signature,
         load_or_create_row_mac_key,
@@ -155,6 +146,18 @@ if TYPE_CHECKING:
         run_root,
         sign_merkle_commitment,
         verify_root,
+    )
+    from synapse_channel.federation_api._records import (
+        DEFAULT_MAX_EVENTS,
+        DEFAULT_MAX_PAYLOAD_BYTES,
+        assess_retention,
+        build_export,
+        export_to_json,
+        iter_record_source,
+        render_human,
+        render_retention,
+        retention_to_json,
+        utc_event_time,
     )
     from synapse_channel.federation_api._spend import (
         DEFAULT_SPEND_TIMEOUT,
@@ -227,14 +230,11 @@ _CAPABILITY_OF: dict[str, str] = {
     "FEDERATION": "_evidence",
     "FederatedCausalGraph": "_evidence",
     "FederatedNode": "_evidence",
-    "GENERAL_RECORD": "_evidence",
     "GRAPH_KINDS": "_evidence",
     "HubEventRef": "_evidence",
     "LIFECYCLE": "_evidence",
-    "OPERATION_RECORD": "_evidence",
     "OtelProjection": "_evidence",
     "OtelSpanRecord": "_evidence",
-    "RISK_INDICATOR": "_evidence",
     "SERVICE_NAME": "_evidence",
     "SPAN_ID_HEX_LENGTH": "_evidence",
     "SPAN_STATUS_ERROR": "_evidence",
@@ -247,14 +247,12 @@ _CAPABILITY_OF: dict[str, str] = {
     "correlation_points": "_evidence",
     "parse_task_causal_parent": "_evidence",
     "projection_to_json": "_evidence",
-    "purpose_for_kind": "_evidence",
     "push_projection": "_evidence",
     "span_id_for_root": "_evidence",
     "trace_id_for_task": "_evidence",
     # Receipts and integrity
     "MerkleRoot": "_receipts",
     "RowMacKey": "_receipts",
-    "RunningRoot": "_receipts",
     "build_root": "_receipts",
     "check_receipt_merkle_signature": "_receipts",
     "load_or_create_row_mac_key": "_receipts",
@@ -266,18 +264,26 @@ _CAPABILITY_OF: dict[str, str] = {
     "run_root": "_receipts",
     "sign_merkle_commitment": "_receipts",
     "verify_root": "_receipts",
-    # Identity, TLS and keys at rest
+    # Identity and TLS
     "IdentityKeyError": "_identity",
     "MTLSPeerTrustBundle": "_identity",
     "MTLSTrustedPeer": "_identity",
     "PeerRegistrationSigner": "_identity",
-    "apply_sqlcipher_key": "_identity",
     "certificate_sha256_pin": "_identity",
     "certificate_sha256_pin_from_der": "_identity",
-    "import_sqlcipher_module": "_identity",
-    "load_key_file": "_identity",
     "load_peer_registration_signer": "_identity",
     "load_signing_key": "_identity",
+    # Record keeping
+    "DEFAULT_MAX_EVENTS": "_records",
+    "DEFAULT_MAX_PAYLOAD_BYTES": "_records",
+    "assess_retention": "_records",
+    "build_export": "_records",
+    "export_to_json": "_records",
+    "iter_record_source": "_records",
+    "render_human": "_records",
+    "render_retention": "_records",
+    "retention_to_json": "_records",
+    "utc_event_time": "_records",
     # Health and entitlement
     "EntitlementAdvertError": "_health",
     "build_local_fleet_health": "_health",
@@ -286,7 +292,6 @@ _CAPABILITY_OF: dict[str, str] = {
     "MessageType": "_protocol",
     "ProtocolNegotiation": "_protocol",
     "SynapseAgent": "_protocol",
-    "WIRE_PROTOCOL_VERSION": "_protocol",
 }
 """Each promised name and the private submodule of its capability."""
 
@@ -306,7 +311,9 @@ __all__ = [
     "CorrelationPoint",
     "DEFAULT_EXPORT_TIMEOUT",
     "DEFAULT_FORWARD_TIMEOUT",
+    "DEFAULT_MAX_EVENTS",
     "DEFAULT_MAX_GRAPH_NODES",
+    "DEFAULT_MAX_PAYLOAD_BYTES",
     "DEFAULT_SPEND_TIMEOUT",
     "EntitlementAdvertError",
     "EventFetcher",
@@ -317,7 +324,6 @@ __all__ = [
     "FederationBundle",
     "FederationPeer",
     "FederationRecord",
-    "GENERAL_RECORD",
     "GRAPH_KINDS",
     "HubEvent",
     "HubEventRef",
@@ -330,7 +336,6 @@ __all__ = [
     "MessageType",
     "MultiHubAuthorisation",
     "MultiHubAuthoriser",
-    "OPERATION_RECORD",
     "ObservedBoardConflict",
     "ObservedBoardProvenance",
     "ObservedState",
@@ -340,9 +345,7 @@ __all__ = [
     "PING_INTERVAL",
     "PeerRegistrationSigner",
     "ProtocolNegotiation",
-    "RISK_INDICATOR",
     "RowMacKey",
-    "RunningRoot",
     "SERVICE_NAME",
     "SPAN_ID_HEX_LENGTH",
     "SPAN_STATUS_ERROR",
@@ -357,9 +360,9 @@ __all__ = [
     "SynapseAgent",
     "TASK_CAUSAL_PARENT_FIELD",
     "TaskStatus",
-    "WIRE_PROTOCOL_VERSION",
-    "apply_sqlcipher_key",
+    "assess_retention",
     "authorise_multihub_peer",
+    "build_export",
     "build_federated_graph",
     "build_local_fleet_health",
     "build_root",
@@ -368,10 +371,10 @@ __all__ = [
     "check_receipt_merkle_signature",
     "correlation_points",
     "encode_claim_forward_request",
+    "export_to_json",
     "fold_observed_state",
     "forward_claim",
-    "import_sqlcipher_module",
-    "load_key_file",
+    "iter_record_source",
     "load_or_create_row_mac_key",
     "load_peer_registration_signer",
     "load_receipt_signing_key",
@@ -383,11 +386,13 @@ __all__ = [
     "parse_task_causal_parent",
     "peer_from_dict",
     "projection_to_json",
-    "purpose_for_kind",
     "push_projection",
+    "render_human",
+    "render_retention",
     "render_root_markdown",
     "request_attachment",
     "request_spend",
+    "retention_to_json",
     "root_to_json",
     "row_mac_key_path",
     "run_root",
@@ -397,6 +402,7 @@ __all__ = [
     "tag_events",
     "trace_id_for_task",
     "usable_grant",
+    "utc_event_time",
     "validate_advert",
     "verify_owner_revocation",
     "verify_root",

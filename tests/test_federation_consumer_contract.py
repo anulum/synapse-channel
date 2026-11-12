@@ -99,17 +99,14 @@ _CONTRACT_SIZE = (
 # Every Core symbol the fleet tier imports, by module, with its kind: ``class``, ``callable``
 # (a function or a callable type alias) or ``value`` (a constant or a non-callable type
 # alias). The list is the fleet tier's consumed-symbol inventory as of its admission of
-# Core 0.99.49, with attachment fetch and local import and Core's record-keeping
-# categories added. It pins existence and kind only, so a removal, a rename or a change
-# between kinds fails here, in this repository's CI, before a release can break the
-# consumer; the required fields and parameters of the most used primitives stay pinned
-# above.
+# Core 0.99.49, with attachment fetch and local import added, and with its copies of
+# Core's record-keeping modules replaced by their functions. It pins existence and kind
+# only, so a removal, a rename or a change between kinds fails here, in this repository's
+# CI, before a release can break the consumer; the required fields and parameters of the
+# most used primitives stay pinned above.
 _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     "synapse_channel.client.agent": {
         "SynapseAgent": "class",
-    },
-    "synapse_channel.core.at_rest": {
-        "load_key_file": "callable",
     },
     "synapse_channel.core.attachment_store": {
         "AttachmentError": "class",
@@ -192,7 +189,6 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     },
     "synapse_channel.core.merkle": {
         "MerkleRoot": "class",
-        "RunningRoot": "class",
         "build_root": "callable",
         "render_root_markdown": "callable",
         "root_to_json": "callable",
@@ -240,14 +236,9 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     "synapse_channel.core.persistence": {
         "StoredEvent": "class",
     },
-    "synapse_channel.core.persistence_sqlcipher": {
-        "apply_sqlcipher_key": "callable",
-        "import_sqlcipher_module": "callable",
-    },
     "synapse_channel.core.protocol": {
         "MessageType": "class",
         "ProtocolNegotiation": "class",
-        "WIRE_PROTOCOL_VERSION": "value",
     },
     "synapse_channel.core.receipt_signing": {
         "check_receipt_merkle_signature": "callable",
@@ -256,10 +247,20 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
         "sign_merkle_commitment": "callable",
     },
     "synapse_channel.core.record_keeping": {
-        "GENERAL_RECORD": "value",
-        "OPERATION_RECORD": "value",
-        "RISK_INDICATOR": "value",
-        "purpose_for_kind": "callable",
+        "build_export": "callable",
+        "export_to_json": "callable",
+        "render_human": "callable",
+        "utc_event_time": "callable",
+    },
+    "synapse_channel.core.record_keeping_source": {
+        "DEFAULT_MAX_EVENTS": "value",
+        "DEFAULT_MAX_PAYLOAD_BYTES": "value",
+        "iter_record_source": "callable",
+    },
+    "synapse_channel.core.record_retention": {
+        "assess_retention": "callable",
+        "render_retention": "callable",
+        "retention_to_json": "callable",
     },
     "synapse_channel.core.spend_epoch": {
         "OwnerRevocation": "class",
@@ -290,7 +291,7 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     },
 }
 
-_FLEET_SYMBOLS = 109
+_FLEET_SYMBOLS = 110
 _FLEET_MODULES = 37
 
 

@@ -1936,7 +1936,7 @@ an installed protected runtime or revocation fencing.
 |---|---:|
 | Package version | 0.99.51 |
 | Public API exports | 70 |
-| Package modules | 939 |
+| Package modules | 940 |
 | Classes | 1350 |
 | Wire message types | 118 |
 | CLI subcommands | 303 |
