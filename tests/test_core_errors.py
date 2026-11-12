@@ -466,6 +466,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         ValueError,
     ),
     "McpAccessError": ("synapse_channel.core.mcp_outbound", "mcp_access", PermissionError),
+    "AttemptMarkerError": (
+        "synapse_channel.core.attempt_markers",
+        "attempt_marker",
+        ValueError,
+    ),
     "OperationAttemptError": (
         "synapse_channel.core.operation_attempts",
         "operation_attempt",
