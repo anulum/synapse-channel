@@ -234,17 +234,24 @@ async def test_a_live_hub_accepts_a_declaration_and_its_evidence(
 class _FakeAgent:
     """A client that answers a request with a fixed frame, or with nothing."""
 
-    def __init__(self, callback: Any, *, reply: dict[str, Any] | None, ready: bool) -> None:
+    def __init__(
+        self,
+        callback: Any,
+        *,
+        reply: dict[str, Any] | None,
+        ready: bool,
+        close_code: int | None = None,
+    ) -> None:
         self.callback = callback
         self.reply = reply
         self.ready = ready
         self.running = True
-        self.last_close_code: int | None = None
-        self.last_close_reason = ""
+        self.last_close_code = close_code
+        self.last_close_reason = "" if close_code is None else "name in use"
 
     async def connect(self) -> None:
-        while self.running:
-            await asyncio.sleep(1.0)
+        """Stay connected until the command cancels this task, as it always does."""
+        await asyncio.Event().wait()
 
     async def wait_until_ready(self, timeout: float) -> bool:
         del timeout
@@ -265,15 +272,17 @@ class _FakeAgent:
             await self.callback(frame)
 
 
-def _factory(reply: dict[str, Any] | None, *, ready: bool) -> Any:
+def _factory(reply: dict[str, Any] | None, *, ready: bool, close_code: int | None = None) -> Any:
     def factory(_name: str, callback: Any, **_kwargs: Any) -> _FakeAgent:
-        return _FakeAgent(callback, reply=reply, ready=ready)
+        return _FakeAgent(callback, reply=reply, ready=ready, close_code=close_code)
 
     return factory
 
 
-async def _run(reply: dict[str, Any] | None, *, ready: bool = True) -> int:
-    factory = _factory(reply, ready=ready)
+async def _run(
+    reply: dict[str, Any] | None, *, ready: bool = True, close_code: int | None = None
+) -> int:
+    factory = _factory(reply, ready=ready, close_code=close_code)
 
     return await command.publish_operation_record(
         uri="ws://hub",
@@ -300,6 +309,18 @@ async def test_hub_errors_silence_and_old_hubs_have_their_own_exit_codes(
     assert await _run(None) == command.EXIT_NO_VERDICT
     assert "no verdict" in capsys.readouterr().out
     assert await _run(None, ready=False) == command.EXIT_NO_VERDICT
+
+
+async def test_a_hub_that_closes_after_its_welcome_gets_no_record(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A sender the hub refuses after the welcome sends nothing and is told why."""
+    record = {"type": MessageType.OPERATION_RECORD_RESULT, "status": "accepted"}
+    assert await _run(record, close_code=4009) == command.EXIT_NO_VERDICT
+    assert capsys.readouterr().out == (
+        "[P/worker] name already online from another session. Reconnect with a unique"
+        " --name (code 4009) (hub said: name in use).\n"
+    )
 
 
 def _intent_document(**changes: Any) -> dict[str, Any]:

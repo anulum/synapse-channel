@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import time
 from pathlib import Path
@@ -49,18 +48,16 @@ def _policy() -> AclPolicy:
 
 async def _record(handle: AgentHandle, **fields: Any) -> dict[str, Any]:
     """Send one operation record and return the result frame that answers it."""
-    seen = len(handle.recorder.messages)
+    earlier = {id(frame) for frame in handle.recorder.messages}
     await handle.agent.send_message(MessageType.OPERATION_RECORD, **fields)
-    loop = asyncio.get_running_loop()
     # The answer usually comes at once; the budget only covers a loaded host, where a
     # large declaration under coverage measured more than three seconds.
-    deadline = loop.time() + 15.0
-    while loop.time() < deadline:
-        for frame in handle.recorder.messages[seen:]:
-            if frame.get("type") == MessageType.OPERATION_RECORD_RESULT:
-                return frame
-        await asyncio.sleep(0.01)
-    raise TimeoutError("hub returned no operation_record_result")
+    return await handle.recorder.wait_for(
+        lambda frame: (
+            frame.get("type") == MessageType.OPERATION_RECORD_RESULT and id(frame) not in earlier
+        ),
+        timeout=15.0,
+    )
 
 
 async def _claim(handle: AgentHandle, task_id: str) -> int:
