@@ -31,6 +31,8 @@ execution evidence when carrying a release claim forward.
   not a mode bit. An oversized Git answer is recorded in the repository
   config because CreateProcess rejects that argument. The preserved config
   prefix is LF, and a console-script wrapper is a name Windows can resolve.
+- A capability-card history file on Windows is refused when its DACL grants
+  another principal. The mode bits cannot express that floor.
 
 ## [0.99.51] - 2026-11-11
 

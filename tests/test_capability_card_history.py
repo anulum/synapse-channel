@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import subprocess
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -219,8 +220,17 @@ def test_startup_rejects_unsafe_or_ambiguous_state_files(tmp_path: Path) -> None
 
     if os.name == "posix":
         target.chmod(0o644)
-        with pytest.raises(CapabilityCardTrustError, match="chmod 600"):
-            _history(target)
+    else:
+        # chmod does not change the NT DACL. Everyone read is the unsafe floor.
+        completed = subprocess.run(
+            ["icacls", os.fspath(target), "/grant", "*S-1-1-0:(R)"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+    with pytest.raises(CapabilityCardTrustError, match="chmod 600"):
+        _history(target)
 
 
 def test_startup_rejects_schema_row_and_capacity_corruption(tmp_path: Path) -> None:
