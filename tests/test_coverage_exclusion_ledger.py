@@ -258,9 +258,9 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     # Three sandboxed cases need bubblewrap: an altered procfs, a scan as uid 0,
     # and a hidden procfs mount.
     "tests/test_host_sessions_proc.py": (3, "optional-dep-guard"),
-    # Two sandboxed procfs cases need bubblewrap; four guards keep the procfs
-    # cases on Linux and the Windows process queries on Windows.
-    "tests/test_pid_monitor_accounting.py": (6, "optional-dep-guard + platform-guard"),
+    # Two sandboxed procfs cases need bubblewrap on a host that is not Windows;
+    # two guards keep the Windows bodies and process queries on Windows.
+    "tests/test_pid_monitor_accounting.py": (4, "optional-dep-guard + platform-guard"),
     # The live client name of the native readback is set with Linux prctl.
     "tests/test_agent_pane_state.py": (1, "platform-guard"),
     # The demonstration fleet is stopped by a POSIX signal in four tests.

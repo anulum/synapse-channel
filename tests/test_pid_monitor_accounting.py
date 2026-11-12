@@ -35,7 +35,12 @@ _WINDOWS_SLEEPER = (
     "    raise SystemExit('priority')\n"
     "time.sleep(60)\n"
 )
-_LINUX_SLEEPER = "import os, time\nos.nice(5)\ntime.sleep(60)\n"
+_LINUX_SLEEPER = (
+    "import os, signal, time\n"
+    "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+    "os.nice(5)\n"
+    "time.sleep(60)\n"
+)
 
 
 def _monitor(pid: int) -> tuple[int, dict[str, object], float]:
@@ -157,6 +162,7 @@ def test_pid_monitor_binds_the_working_interpreter_and_stops_within_a_bound() ->
         except subprocess.TimeoutExpired:
             child.kill()
             child.wait(timeout=5)
+    _stop(child.pid)
     code, document, elapsed = _monitor(child.pid)
     assert code == 0 and elapsed < 5
     rows = document.get("rows")
@@ -374,11 +380,12 @@ def _account_in_namespace(binds: list[tuple[str, str]]) -> dict[str, object]:
     return document
 
 
-@pytest.mark.skipif(shutil.which("bwrap") is None, reason="bubblewrap is not installed")
+@pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bwrap") is None,
+    reason="procfs field gaps need bubblewrap on a non-Windows host",
+)
 def test_linux_accounting_reports_gaps_in_proc_fields(tmp_path: Path) -> None:
     """Unreadable, short, or non-numeric proc fields stay explicit gaps."""
-    if sys.platform == "win32":
-        pytest.skip("procfs field gaps are the Linux lane")
     short = tmp_path / "short-stat"
     short.write_text("1 (x) R 1\n", encoding="utf-8")
     corrupt = tmp_path / "corrupt-stat"
@@ -429,11 +436,12 @@ def test_windows_readers_refuse_any_other_host() -> None:
     assert _owner_sid(None, 0) is None  # type: ignore[arg-type]  # refused before use
 
 
-@pytest.mark.skipif(shutil.which("bwrap") is None, reason="bubblewrap is not installed")
+@pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bwrap") is None,
+    reason="hiding procfs needs bubblewrap on a non-Windows host",
+)
 def test_accounting_without_procfs_is_unavailable(tmp_path: Path) -> None:
     """A host with no procfs returns the same gap a Mac would, without inventing one."""
-    if sys.platform == "win32":
-        pytest.skip("procfs absence is measured by hiding the directory")
     empty = tmp_path / "noproc"
     empty.mkdir()
     document = _account_in_namespace([(str(empty), "/proc")])
