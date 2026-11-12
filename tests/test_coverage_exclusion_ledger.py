@@ -282,6 +282,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_worker_session.py": (2, "platform-guard"),
     # A descriptor that outlives a rename over its path exists only on POSIX.
     "tests/test_worker_outcome_publication.py": (1, "platform-guard"),
+    # Windows owner-only DACL, and a sharing violation after the descriptor is closed.
+    "tests/test_worker_outcomes_native.py": (2, "platform-guard"),
     # uid injection and fchmod failure exist only where those POSIX calls exist.
     "tests/test_kimi_hook_config_file.py": (2, "platform-guard"),
 }

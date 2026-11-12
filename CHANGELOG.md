@@ -66,6 +66,11 @@ execution evidence when carrying a release claim forward.
 - A missing ``tpm2-pytss`` install is named when the TPM 2.0 at-rest
   backend is requested. An older cryptography without the decrepit
   ciphers skips that compatibility shim and still loads the binding.
+- A Windows worker-outcome report is written in binary mode, so a later
+  update still matches the bytes just published. Its DACL stays
+  owner-only; granting Everyone read makes inquiry refuse. A replace
+  that cannot rename over an open handle leaves those bytes and no
+  temporary.
 
 ## [0.99.51] - 2026-11-11
 

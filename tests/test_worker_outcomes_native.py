@@ -474,3 +474,76 @@ def test_public_api_keeps_integer_result_with_scoped_observation(tmp_path: Path)
     assert isinstance(result, WorkerExit) and result == 7
     assert result.outcome.state.value == "confirmed_failed"
     assert result.outcome.external_effect.value == "unknown"
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="the NT DACL is the Windows owner-only report floor",
+)
+def test_windows_report_dacl_is_owner_only_until_everyone_can_read(tmp_path: Path) -> None:
+    """A real launch keeps the report owner-only; Everyone read makes inquiry refuse."""
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+    env = private_environment(tmp_path)
+    report = tmp_path / "private" / "outcome.json"
+    launch = subprocess.run(
+        launch_arguments(report, "pass"),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    assert launch.returncode == 0, launch.stderr + launch.stdout
+    assert_owner_only_file_path(report, purpose="worker outcome")
+    granted = subprocess.run(
+        ["icacls", str(report), "/grant", "*S-1-1-0:(R)"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert granted.returncode == 0, granted.stderr
+    refused = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "synapse_channel.cli",
+            "worker-session",
+            "--read-outcome",
+            str(report),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    assert refused.returncode == 2
+    assert refused.stdout == "worker-session: outcome report unavailable (SecurePathError)\n"
+    assert not refused.stderr
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Windows closes the report descriptor, then a sharing violation fails the replace",
+)
+def test_windows_replace_leaves_published_bytes_when_another_handle_holds_the_report(
+    tmp_path: Path,
+) -> None:
+    """An open handle blocks the rename; the update raises and leaves no temporary."""
+    from synapse_channel.execution_outcome import OutcomeState
+    from synapse_channel.worker_outcome import WorkerObservation
+
+    report = tmp_path / "private" / "outcome.json"
+    observation = WorkerObservation(report)
+    published = report.read_bytes()
+    held = os.open(report, os.O_RDONLY)
+    try:
+        with pytest.raises(PermissionError) as caught:
+            observation.observe(OutcomeState.STARTED, "provider_started")
+        # This host's rename over an open handle is ERROR_ACCESS_DENIED (5).
+        assert getattr(caught.value, "winerror", None) == 5
+    finally:
+        os.close(held)
+    assert report.read_bytes() == published
+    assert [path.name for path in report.parent.iterdir()] == ["outcome.json"]

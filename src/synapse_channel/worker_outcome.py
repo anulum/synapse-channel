@@ -174,7 +174,11 @@ class WorkerObservation:
     def _create(self, data: bytes) -> int | None:
         """Write the first record into a new exclusive file; keep its descriptor on POSIX."""
         assert self.path is not None
-        descriptor = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+        descriptor = os.open(
+            self.path,
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+            0o600,
+        )
         try:
             assert_owner_only_file_path(self.path, purpose="worker outcome")
             _write_durably(descriptor, data)
