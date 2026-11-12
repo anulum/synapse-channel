@@ -454,6 +454,14 @@ Check source and field statuses before interpreting missing values.
       show_root_heading: true
       show_source: false
 
+### Process accounting for the local command
+
+::: synapse_channel.host_sessions_accounting
+    options:
+      members: [account_process, discover_windows_processes]
+      show_root_heading: true
+      show_source: false
+
 ### tmux pane metadata
 
 ::: synapse_channel.host_sessions_tmux

@@ -18,6 +18,18 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- A local `synapse pid-monitor` run counts each observed process: birth,
+  owner, executable path, CPU seconds, memory, swap, GPU memory when
+  `nvidia-smi` lists the process, priority and child PIDs, each with a status.
+  On Windows the command reads explicit `--pid` values and binds a
+  virtual-environment launcher to its one interpreter child, so the working
+  set is the interpreter's. `memory_guarantee` is always `none`. One
+  `nvidia-smi` query serves every row of an observation. The dashboard's
+  `/host-sessions.json` feed carries no accounting: its observer grants cover
+  directory and context pathnames only.
+
 ### Fixed
 
 - A Windows `synapse.exe` is still the synapse command, and a freshly

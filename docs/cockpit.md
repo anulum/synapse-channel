@@ -570,7 +570,9 @@ grant disclosure; configure the owner-only host-observation policy described in
 [the client guide](https://github.com/anulum/synapse-channel/blob/main/clients/cockpit/README.md#local-host-session-observation).
 PID/start-time and tmux assertions do not prove provider responsiveness or
 authorise a process action. This view does not report per-process CPU, RAM,
-swap or GPU usage, and adds no stop, restart or remote-compute control.
+swap or GPU usage, and adds no stop, restart or remote-compute control. Those
+counters appear only in a local `synapse pid-monitor` run, for the user's own
+processes.
 
 - **metrics** reports event-log counts and bounded trailing windows. It is not
   the hub process-metrics endpoint.

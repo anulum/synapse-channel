@@ -95,6 +95,8 @@ def test_real_http_explicit_grants_and_live_revocation(tmp_path: Path) -> None:
             assert document["rows"][0]["cwd"] is None
             assert document["rows"][0]["cwd_status"] == "not_requested"
             assert document["rows"][0]["context_status"] == "not_requested"
+            # No grant covers the executable path, the owner or the counters.
+            assert document["rows"][0]["accounting"] is None
         else:
             assert document["process_status"] == "unavailable"
             assert document["rows"] == []
@@ -107,6 +109,7 @@ def test_real_http_explicit_grants_and_live_revocation(tmp_path: Path) -> None:
             disclosed = document["rows"][0]
             assert disclosed["cwd"] == os.getcwd() and disclosed["cwd_status"] == "observed"
             assert disclosed["context_id"] is None and disclosed["context_status"] == "unsupported"
+            assert disclosed["accounting"] is None
         else:
             assert document["process_status"] == "unavailable"
             assert document["rows"] == []

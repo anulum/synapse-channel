@@ -38,6 +38,7 @@ def test_host_monitor_reference_renders_source_docstrings(tmp_path: Path) -> Non
             "process_metadata",
             "kernel_clock",
         ),
+        "host_sessions_accounting": ("account_process", "discover_windows_processes"),
         "host_sessions_tmux": ("PaneMetadata", "observe_tmux"),
         "dashboard_host_sessions": ("load_host_grants", "host_session_response"),
         "cli_pid_monitor": ("render_host_observation", "format_runtime"),

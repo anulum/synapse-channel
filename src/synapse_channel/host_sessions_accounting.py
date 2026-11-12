@@ -126,24 +126,53 @@ def _unavailable(pid: int) -> dict[str, object]:
 
 _NVIDIA = shutil.which("nvidia-smi")
 _CHILDREN: tuple[float, dict[int, list[int]]] | None = None
+_GPU: tuple[float, dict[str, str] | None] | None = None
 
 
-def _gpu_for(pid: int) -> tuple[str | None, str]:
+def _read_gpu_table() -> dict[str, str] | None:
+    """Run ``nvidia-smi`` once and map each listed PID to its used GPU memory."""
     if _NVIDIA is None:
-        return None, "unavailable"
+        return None
     try:
         completed = subprocess.run(
             _GPU_ARGV, capture_output=True, text=True, timeout=1, check=False
         )
     except (OSError, subprocess.TimeoutExpired):
-        return None, "unavailable"
+        return None
     if completed.returncode != 0:
-        return None, "unavailable"
+        return None
+    table: dict[str, str] = {}
     for line in completed.stdout.splitlines():
         pid_text, _separator, memory = line.partition(",")
-        if pid_text.strip() == str(pid) and memory.strip():
-            return memory.strip(), "observed"
-    return None, "unavailable"
+        if pid_text.strip() and memory.strip():
+            table.setdefault(pid_text.strip(), memory.strip())
+    return table
+
+
+def _gpu_table() -> dict[str, str] | None:
+    """Return the GPU table, read at most once in half a second.
+
+    One observation counts many rows inside one short budget. A query per row
+    spent that budget on process starts and left most rows uncounted. A failed
+    query is kept for the same half second, so it is not repeated per row.
+    """
+    global _GPU
+    now = time.monotonic()
+    if _GPU is not None and now < _GPU[0]:
+        return _GPU[1]
+    table = _read_gpu_table()
+    _GPU = (now + 0.5, table)
+    return table
+
+
+def _gpu_for(pid: int) -> tuple[str | None, str]:
+    table = _gpu_table()
+    if table is None:
+        return None, "unavailable"
+    memory = table.get(str(pid))
+    if memory is None:
+        return None, "unavailable"
+    return memory, "observed"
 
 
 def _account_linux(pid: int) -> dict[str, object]:

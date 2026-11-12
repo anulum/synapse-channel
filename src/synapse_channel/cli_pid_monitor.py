@@ -124,7 +124,10 @@ def render_host_observation(document: dict[str, object]) -> str:
 def _cmd_pid_monitor(args: argparse.Namespace) -> int:
     try:
         monitor = HostSessionMonitor(
-            pids=tuple(args.pid), tmux_socket=args.tmux_socket, context_root=args.context_root
+            pids=tuple(args.pid),
+            tmux_socket=args.tmux_socket,
+            context_root=args.context_root,
+            accounting=True,
         )
         if args.dashboard_port is not None and (
             args.pid or args.tmux_socket or args.paths or args.context or args.context_root

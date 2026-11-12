@@ -208,12 +208,20 @@ class HostSessionMonitor:
         process and tmux scans, in seconds. Exhausting it marks the process
         source partial and withholds rows not yet assembled. Defaults to 0.25;
         at most 5.0.
+    accounting : bool, optional
+        Attach per-process accounting to every row: birth, owner, executable
+        path, CPU, memory, swap, GPU memory, priority and child PIDs. Off by
+        default. The local ``pid-monitor`` command turns it on for the user's
+        own processes. The dashboard monitor leaves it off, because its
+        observers hold grants for directory and context pathnames only.
 
     Raises
     ------
     ValueError
         If explicit scope exceeds 256 PIDs or contains a non-positive integer,
         or the budget is not a finite number within ``[0, 5.0]``.
+    TypeError
+        If ``accounting`` is not a boolean.
     """
 
     def __init__(
@@ -224,7 +232,10 @@ class HostSessionMonitor:
         context_root: Path | None = None,
         coordination: CoordinationReader | None = None,
         budget_seconds: float = 0.25,
+        accounting: bool = False,
     ) -> None:
+        if type(accounting) is not bool:
+            raise TypeError("accounting must be a boolean")
         if len(pids) > 256 or any(type(pid) is not int or pid <= 0 for pid in pids):
             raise ValueError("monitor accepts at most 256 positive PIDs")
         if (
@@ -237,6 +248,7 @@ class HostSessionMonitor:
         self.tmux_socket = tmux_socket
         self.context_root = context_root.resolve() if context_root is not None else None
         self.budget_seconds = float(budget_seconds)
+        self.accounting = accounting
         self.instance = uuid.uuid4().hex
         self.coordination = coordination
         self._lock = threading.Lock()
@@ -409,7 +421,7 @@ class HostSessionMonitor:
                     claims=tuple(
                         task for owner, task in claims if row.identity and owner == row.identity
                     ),
-                    accounting=_accounting_within(row.pid, account_deadline),
+                    accounting=self._counted(row.pid, account_deadline),
                 )
             )
         rows = described
@@ -426,6 +438,12 @@ class HostSessionMonitor:
             coordination_observed_at,
             tuple(sorted(rows, key=lambda row: row.pid)),
         )
+
+    def _counted(self, pid: int, deadline: float) -> dict[str, object] | None:
+        """Count one row for a caller that asked; any other caller gets none."""
+        if not self.accounting:
+            return None
+        return _accounting_within(pid, deadline)
 
     def _row_metadata(
         self, process: ProcessIdentity, *, paths: bool, context: bool

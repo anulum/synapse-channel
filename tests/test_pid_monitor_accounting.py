@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from _platform_caps import requires_proc
+
 _SRC = str(Path(__file__).resolve().parents[1] / "src")
 _WINDOWS_SLEEPER = (
     "import ctypes, time\n"
@@ -140,7 +142,7 @@ def test_pid_monitor_binds_the_working_interpreter_and_stops_within_a_bound() ->
             assert accounting["bound_pid"] == child.pid
             assert accounting["swap_status"] == "observed"
             assert isinstance(accounting["swap_kib"], int)
-            assert accounting["priority"] == "5"
+            assert accounting["priority"] == str(min(19, os.nice(0) + 5))
             assert accounting["memory_sampling"] == "proc-status"
         text = _monitor_text(child.pid)
         assert text.returncode == 0
@@ -210,3 +212,122 @@ def test_accounting_refuses_a_bad_pid_and_states_discovery_bounds() -> None:
     own = account_process(os.getpid())
     assert own["binding"] == "requested-process"
     assert own["memory_guarantee"] == "none"
+
+
+_FAKE_NVIDIA_SMI = """#!/bin/sh
+echo run >> "$FAKE_GPU_RUNS"
+echo "$FAKE_GPU_PID, 123 MiB"
+"""
+
+
+def _monitor_with_gpu_tool(
+    tmp_path: Path, script: str | None, pids: list[int]
+) -> tuple[dict[str, object], Path]:
+    """Run the public monitor with ``script`` as the only ``nvidia-smi`` on PATH."""
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    if script is not None:
+        tool = tools / "nvidia-smi"
+        tool.write_text(script, encoding="utf-8")
+        tool.chmod(0o755)
+    runs = tmp_path / "runs"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = _SRC
+    env["PATH"] = str(tools)
+    env["FAKE_GPU_RUNS"] = str(runs)
+    env["FAKE_GPU_PID"] = str(pids[0])
+    argv = [sys.executable, "-m", "synapse_channel.cli", "pid-monitor", "--json"]
+    argv += ["--samples", "1"]
+    for pid in pids:
+        argv += ["--pid", str(pid)]
+    completed = subprocess.run(
+        argv, capture_output=True, text=True, check=False, timeout=20, env=env
+    )
+    assert completed.returncode == 0, completed.stderr
+    document = json.loads(completed.stdout)
+    assert isinstance(document, dict)
+    return document, runs
+
+
+@requires_proc
+def test_one_gpu_query_counts_every_requested_process(tmp_path: Path) -> None:
+    """The public monitor asks the GPU tool once and still counts every row."""
+    children = [
+        subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) for _ in range(6)
+    ]
+    try:
+        time.sleep(0.5)
+        pids = [child.pid for child in children]
+        document, runs = _monitor_with_gpu_tool(tmp_path, _FAKE_NVIDIA_SMI, pids)
+        for pid in pids:
+            accounting = _row(document, pid)["accounting"]
+            assert isinstance(accounting, dict)
+            assert accounting["status"] == "observed"
+            assert accounting["ram_status"] == "observed"
+        first = _row(document, pids[0])["accounting"]
+        assert isinstance(first, dict)
+        assert (first["gpu"], first["gpu_status"]) == ("123 MiB", "observed")
+        other = _row(document, pids[1])["accounting"]
+        assert isinstance(other, dict)
+        assert (other["gpu"], other["gpu_status"]) == (None, "unavailable")
+        assert runs.read_text(encoding="utf-8").splitlines() == ["run"]
+    finally:
+        for child in children:
+            child.kill()
+        for child in children:
+            child.wait(timeout=5)
+
+
+@requires_proc
+@pytest.mark.parametrize(
+    ("script", "expected_runs"),
+    [
+        (None, 0),
+        ('#!/bin/sh\necho run >> "$FAKE_GPU_RUNS"\nexit 3\n', 1),
+        ('#!/bin/sh\necho run >> "$FAKE_GPU_RUNS"\nexec sleep 30\n', 1),
+    ],
+    ids=["tool-absent", "tool-fails", "tool-hangs"],
+)
+def test_a_broken_gpu_tool_leaves_the_other_counters(
+    tmp_path: Path, script: str | None, expected_runs: int
+) -> None:
+    """No GPU tool, a failing one or a hanging one costs the GPU value only, once."""
+    children = [
+        subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) for _ in range(3)
+    ]
+    try:
+        time.sleep(0.5)
+        pids = [child.pid for child in children]
+        started = time.monotonic()
+        document, runs = _monitor_with_gpu_tool(tmp_path, script, pids)
+        assert time.monotonic() - started < 10
+        first = _row(document, pids[0])["accounting"]
+        assert isinstance(first, dict)
+        assert first["status"] == "observed" and first["ram_status"] == "observed"
+        assert (first["gpu"], first["gpu_status"]) == (None, "unavailable")
+        seen = runs.read_text(encoding="utf-8").splitlines() if runs.exists() else []
+        assert len(seen) == expected_runs
+    finally:
+        for child in children:
+            child.kill()
+        for child in children:
+            child.wait(timeout=5)
+
+
+def test_a_monitor_counts_processes_only_when_asked() -> None:
+    """Accounting is off unless the caller turns it on, and the flag is a boolean."""
+    from synapse_channel.host_sessions import HostSessionMonitor
+
+    with pytest.raises(TypeError):
+        HostSessionMonitor(accounting=1)  # type: ignore[arg-type]  # refused on purpose
+    missing = "/nonexistent/synapse-monitor-test.sock"
+    quiet = HostSessionMonitor(pids=(os.getpid(),), tmux_socket=missing).snapshot()
+    counted = HostSessionMonitor(
+        pids=(os.getpid(),), tmux_socket=missing, accounting=True
+    ).snapshot()
+    assert all(row.accounting is None for row in quiet.rows)
+    for row in counted.rows:
+        assert isinstance(row.accounting, dict)
+        assert row.accounting["requested_pid"] == row.pid
+        assert row.accounting["memory_guarantee"] == "none"
+    assert len(quiet.rows) == len(counted.rows)

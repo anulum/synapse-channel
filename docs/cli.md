@@ -1717,11 +1717,23 @@ observation; `--context` grants inspection of open Codex context pathnames.
 `--context`. No transcript contents, process command lines, or process
 environments are read.
 
+A local run also counts each row's process under `accounting`: birth, owner,
+executable path, CPU seconds, memory, swap, GPU memory when `nvidia-smi` lists
+the process, priority and child PIDs. Every value has a status that says
+whether it was observed. `memory_guarantee` is always `none`: a resident size
+or a working set is a reading, not a limit. One `nvidia-smi` query serves every
+row of an observation. A row that the accounting budget does not reach says
+`unavailable`. On Windows the command reads explicit `--pid` values only, has
+no swap reading, and binds a virtual-environment launcher to its one
+interpreter child, so the working set is the interpreter's.
+
 Alternatively, `--dashboard-port PORT --token-file FILE` reads the shared
 loopback dashboard observation. The token file must be owner-only; dashboard
 observer grants determine disclosure. Do not combine this mode with local
 `--pid`, `--tmux-socket`, `--paths`, `--context`, or `--context-root`
-selectors. This command provides observation only, not process termination.
+selectors. The dashboard observation carries no accounting, because observer
+grants cover directory and context pathnames only. This command provides
+observation only, not process termination.
 
 `synapse listen` streams chat (and optional presence) until it stops. An intentional
 stop — Ctrl+C, or a finite message cap in tests/tools — exits `0`. If the hub
