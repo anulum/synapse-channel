@@ -61,11 +61,16 @@ TASKS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("HARBOUR-104", "Paginate the audit list", ()),
     ("HARBOUR-105", "Fix the flaky session test", ()),
     ("LIGHT-201", "Document the upload limits", ()),
-    ("LIGHT-202", "Prepare the release notes", ("HARBOUR-101", "HARBOUR-104")),
+    ("LIGHT-202", "Prepare the release notes", ("HARBOUR-101", "HARBOUR-104", "HARBOUR-110")),
     ("LIGHT-203", "Publish the changelog", ()),
     ("LIGHT-204", "Update the quick start", ()),
 )
-"""The shared plan: task id, title and the ids it depends on."""
+"""The shared plan: task id, title and the ids it depends on.
+
+One prerequisite, ``HARBOUR-110``, is a task nobody posts: the plan's one
+mistake, which the cockpit tells apart from a prerequisite that is merely
+unfinished.
+"""
 
 BOARD_STATUSES = (
     ("HARBOUR-101", "in_progress"),

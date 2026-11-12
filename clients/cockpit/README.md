@@ -233,8 +233,11 @@ cockpit's first readings find the whole plan; a line on the fleet's standard
 input starts the second act, the last claim, the messages and a finding, which
 the open page observes and the activity spine draws. It requires the roster, claims, board, risk
 rail and signal log to show that fleet over a live stream before it takes the
-picture, and the risk rail to hold one row for each of the plan's four
-unfinished prerequisites, worded as the hub reports them. Its hub and dashboard listen on ports 18776 and 18775 unless
+picture. The fleet's plan holds four unfinished prerequisites and one name
+nobody posted. The journey requires the risk rail to show each unfinished
+prerequisite once, under its pending gates, and the hub's anomalies to keep
+only the name the hub's log does not know and to say how many rows the gates
+show. Its hub and dashboard listen on ports 18776 and 18775 unless
 `SYNAPSE_COCKPIT_E2E_PICTURE_HUB_PORT` and
 `SYNAPSE_COCKPIT_E2E_PICTURE_DASHBOARD_PORT` name others. To take the picture
 again after a visible change, build the client and run, from

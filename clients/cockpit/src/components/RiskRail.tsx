@@ -12,7 +12,7 @@ import { memo } from "react";
 import type { AnomalyFlag } from "../lib/anomalies";
 import type { PendingApprovalView } from "../lib/approvals";
 import type { DeadLetterView } from "../lib/deadLetters";
-import type { HealthAnomaliesState } from "../lib/healthAnomalies";
+import { splitDangling, type HealthAnomaliesState } from "../lib/healthAnomalies";
 import type { WaitsState } from "../lib/waits";
 import { orderSignals } from "../lib/risk";
 import { identityMatchesSelection, subjectMatchesSelection } from "../lib/selection";
@@ -73,6 +73,10 @@ function RiskRailView({
   const safeWork = risk?.safe_next_work ?? [];
   const safeShown = safeWork.slice(0, SAFE_WORK_SHOWN);
   const safeOverflow = safeWork.length - safeShown.length;
+  // An unfinished prerequisite is shown once: under the pending gates when a
+  // gate names it, among the hub's anomalies otherwise.
+  const dangling = splitDangling(anomalyReport?.data?.dangling ?? [], waits?.data?.waits ?? null);
+  const listedAnomalies = (anomalyReport?.data?.anomalyCount ?? 0) - dangling.underGates;
 
   return (
     <section className="panel" aria-label="Risk rail">
@@ -146,15 +150,23 @@ function RiskRailView({
             </ul>
           </div>
         )}
-        {anomalyReport?.data != null && anomalyReport.data.anomalyCount > 0 && (
+        {anomalyReport?.data != null && listedAnomalies > 0 && (
           <div className="risk-heuristics">
             <span className="risk-safe__head" title="The hub's own causal-graph anomaly report.">
-              hub health anomalies · {anomalyReport.data.anomalyCount}
+              hub health anomalies · {listedAnomalies}
             </span>
+            {dangling.underGates > 0 && (
+              <span
+                className="risk-safe__note"
+                title="Unfinished prerequisites the hub's report also counts; each is shown once, under pending gates."
+              >
+                {dangling.underGates} under pending gates
+              </span>
+            )}
             <ul className="risk-list">
               {[
                 ...anomalyReport.data.orphaned.map((item) => ({ ...item, category: "orphaned" })),
-                ...anomalyReport.data.dangling.map((item) => ({ ...item, category: "dangling" })),
+                ...dangling.listed.map((item) => ({ ...item, category: "dangling" })),
                 ...anomalyReport.data.stale.map((item) => ({ ...item, category: "stale" })),
               ].map((item) => (
                 <li

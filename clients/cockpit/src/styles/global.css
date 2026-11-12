@@ -5640,3 +5640,11 @@ tr:focus-within .ident .ident__head,
     min-height: 44px;
   }
 }
+
+/* A quiet note beside a rail section's heading: what the section's number
+   leaves out and where it is shown instead. */
+.risk-safe__note {
+  display: block;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}

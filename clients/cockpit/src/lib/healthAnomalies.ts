@@ -14,6 +14,7 @@
 // score.
 
 import { createEndpointFeed, type EndpointFeed, type FeedState } from "./feed";
+import type { WaitRow } from "./waits";
 
 /** One flagged item; the fields present depend on the anomaly class. */
 export interface AnomalyItem {
@@ -21,6 +22,14 @@ export interface AnomalyItem {
   readonly owner: string;
   readonly detail: string;
   readonly seq: number | null;
+  /** The prerequisites a dangling row names; empty for the other classes. */
+  readonly dependsOn: readonly string[];
+  /**
+   * For a dangling row, the hub's word on whether its log holds the
+   * prerequisite task at all; null when the hub does not say and for the
+   * other classes.
+   */
+  readonly recorded: boolean | null;
 }
 
 /** Count-only local report; deliberately contains no work or participant content. */
@@ -80,22 +89,36 @@ function parseFleetHealth(value: unknown): LocalFleetHealth | null {
   };
 }
 
+/**
+ * The prerequisites one dangling row names. The server reports one per row (a
+ * string); a list is tolerated in case the shape ever widens.
+ */
+function prerequisiteNames(record: Record<string, unknown>): string[] {
+  const raw = record["depends_on"];
+  if (typeof raw === "string") return [raw];
+  return Array.isArray(raw) ? raw.filter((dep): dep is string => typeof dep === "string") : [];
+}
+
 function asItems(
   value: unknown,
   detailOf: (record: Record<string, unknown>) => string,
-  seqField: "seq" | "declared_seq" = "seq",
+  dangling = false,
 ): AnomalyItem[] {
   if (!Array.isArray(value)) return [];
   const items: AnomalyItem[] = [];
   for (const entry of value) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
     const record = entry as Record<string, unknown>;
-    const seq = record[seqField];
+    // A dangling row is anchored at the plan event that declared the dependency.
+    const seq = record[dangling ? "declared_seq" : "seq"];
+    const recorded = record["dependency_recorded"];
     items.push({
       taskId: asString(record["task_id"]),
       owner: asString(record["owner"]),
       detail: detailOf(record),
       seq: typeof seq === "number" && Number.isFinite(seq) ? seq : null,
+      dependsOn: dangling ? prerequisiteNames(record) : [],
+      recorded: dangling && typeof recorded === "boolean" ? recorded : null,
     });
   }
   return items;
@@ -114,18 +137,11 @@ export function parseHealthAnomalies(raw: unknown): HealthAnomalies | null {
   const dangling = asItems(
     payload["dangling"],
     (record) => {
-      // The server reports one unmet prerequisite per row (a string); a list
-      // is tolerated in case the shape ever widens. The hub's fact is that the
-      // prerequisite never completed in its log, and `dependency_recorded`
-      // says whether the log holds that task at all. The wording follows the
-      // hub and never asserts an absence the hub did not report.
-      const raw = record["depends_on"];
-      const deps =
-        typeof raw === "string"
-          ? [raw]
-          : Array.isArray(raw)
-            ? raw.filter((dep): dep is string => typeof dep === "string")
-            : [];
+      // The hub's fact is that the prerequisite never completed in its log,
+      // and `dependency_recorded` says whether the log holds that task at all.
+      // The wording follows the hub and never asserts an absence the hub did
+      // not report.
+      const deps = prerequisiteNames(record);
       if (deps.length === 0) return "depends on a task not recorded as finished";
       const names = deps.join(", ");
       const recorded = record["dependency_recorded"];
@@ -133,8 +149,7 @@ export function parseHealthAnomalies(raw: unknown): HealthAnomalies | null {
       if (recorded === false) return `depends on ${names}, not in the log`;
       return `depends on ${names}, not recorded as finished`;
     },
-    // A dangling row is anchored at the plan event that declared the dependency.
-    "declared_seq",
+    true,
   );
   const stale = asItems(payload["stale"], (record) => {
     const age = record["age_seconds"];
@@ -154,6 +169,38 @@ export function parseHealthAnomalies(raw: unknown): HealthAnomalies | null {
         : orphaned.length + dangling.length + stale.length,
     fleetHealth: parseFleetHealth(payload["fleet_health"]),
   };
+}
+
+/** The dangling rows the anomaly section lists, and how many the gates show instead. */
+export interface DanglingSplit {
+  readonly listed: readonly AnomalyItem[];
+  readonly underGates: number;
+}
+
+/**
+ * Show an unfinished prerequisite once. A dangling row goes under the pending
+ * gates only when the hub says its log holds the prerequisite and the gate of
+ * the same task names every prerequisite of the row. Everything else stays an
+ * anomaly: a name the log does not know, a row from a hub that does not say, a
+ * finished task closed over an open prerequisite (it has no gate), and every
+ * row while the gates are not served (`gates` null).
+ */
+export function splitDangling(
+  dangling: readonly AnomalyItem[],
+  gates: readonly WaitRow[] | null,
+): DanglingSplit {
+  // The hub lists one gate per task.
+  const named = new Map((gates ?? []).map((gate) => [gate.taskId, new Set(gate.onWhat)]));
+  const listed = dangling.filter((item) => {
+    const names = named.get(item.taskId);
+    return !(
+      item.recorded === true &&
+      item.dependsOn.length > 0 &&
+      names !== undefined &&
+      item.dependsOn.every((name) => names.has(name))
+    );
+  });
+  return { listed, underGates: dangling.length - listed.length };
 }
 
 /** The anomalies feed's state; `absent` = the dashboard serves no endpoint. */

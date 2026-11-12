@@ -71,9 +71,13 @@ describe("RiskRail", () => {
   it("names dead letters, hub anomalies, pending gates, approvals, and heuristics in their own sections", () => {
     const anomalies: HealthAnomalies = {
       present: true,
-      orphaned: [{ taskId: "t-orphan", owner: "a", detail: "claim is the last word", seq: 4 }],
-      dangling: [{ taskId: "t-dangling", owner: "", detail: "depends on t-ghost", seq: null }],
-      stale: [{ taskId: "t-stale", owner: "b", detail: "silent 3 days", seq: 9 }],
+      orphaned: [
+        { taskId: "t-orphan", owner: "a", detail: "claim is the last word", seq: 4, dependsOn: [], recorded: null },
+      ],
+      dangling: [
+        { taskId: "t-dangling", owner: "", detail: "depends on t-ghost", seq: null, dependsOn: ["t-ghost"], recorded: null },
+      ],
+      stale: [{ taskId: "t-stale", owner: "b", detail: "silent 3 days", seq: 9, dependsOn: [], recorded: null }],
       anomalyCount: 3,
       fleetHealth: {
         policyVersion: 1,
@@ -143,8 +147,8 @@ describe("RiskRail", () => {
       present: true,
       orphaned: [],
       dangling: [
-        { taskId: "t-notes", owner: "", detail: "waits on unfinished t-upload", seq: 7 },
-        { taskId: "t-notes", owner: "", detail: "waits on unfinished t-audit", seq: 7 },
+        { taskId: "t-notes", owner: "", detail: "waits on unfinished t-upload", seq: 7, dependsOn: ["t-upload"], recorded: true },
+        { taskId: "t-notes", owner: "", detail: "waits on unfinished t-audit", seq: 7, dependsOn: ["t-audit"], recorded: true },
       ],
       stale: [],
       anomalyCount: 2,
@@ -159,6 +163,77 @@ describe("RiskRail", () => {
     expect(screen.getByText("waits on unfinished t-upload")).toBeTruthy();
     expect(screen.getByText("waits on unfinished t-audit")).toBeTruthy();
     expect(errors.filter((message) => message.includes("same key"))).toEqual([]);
+  });
+
+  it("shows an unfinished prerequisite once: under the gates, not among the anomalies", () => {
+    const anomalies: HealthAnomalies = {
+      present: true,
+      orphaned: [
+        { taskId: "t-orphan", owner: "a", detail: "claim is the last word", seq: 4, dependsOn: [], recorded: null },
+      ],
+      dangling: [
+        { taskId: "t-notes", owner: "", detail: "waits on unfinished t-upload", seq: 7, dependsOn: ["t-upload"], recorded: true },
+        { taskId: "t-notes", owner: "", detail: "depends on t-ghost, not in the log", seq: 7, dependsOn: ["t-ghost"], recorded: false },
+        { taskId: "t-shipped", owner: "", detail: "waits on unfinished t-audit", seq: 9, dependsOn: ["t-audit"], recorded: true },
+      ],
+      stale: [],
+      anomalyCount: 4,
+      fleetHealth: null,
+    };
+    const waits: WaitsReport = {
+      present: true,
+      waits: [
+        { taskId: "t-notes", title: "notes", who: "quantum/docs", onWhat: ["t-upload", "t-ghost"], since: 1, status: "open" },
+      ],
+      waitCount: 1,
+      logEndSeq: 10,
+      note: "",
+    };
+    render(<RiskRail risk={QUIET_RISK} anomalyReport={feedOf(anomalies)} waits={feedOf(waits)} />);
+
+    // The gate keeps the unfinished prerequisite; the anomaly section drops it and says so.
+    expect(screen.getByText("waits on t-upload, t-ghost")).toBeTruthy();
+    expect(screen.queryByText("waits on unfinished t-upload")).toBeNull();
+    expect(screen.getByText("hub health anomalies · 3")).toBeTruthy();
+    expect(screen.getByText("1 under pending gates")).toBeTruthy();
+    // A name the log does not know stays an anomaly, and so does a finished task
+    // that was closed over an open prerequisite: it has no gate.
+    expect(screen.getByText("depends on t-ghost, not in the log")).toBeTruthy();
+    expect(screen.getByText("waits on unfinished t-audit")).toBeTruthy();
+    expect(screen.getByText("claim is the last word")).toBeTruthy();
+  });
+
+  it("shows no anomaly section when every row is an unfinished prerequisite under the gates", () => {
+    const anomalies: HealthAnomalies = {
+      present: true,
+      orphaned: [],
+      dangling: [
+        { taskId: "t-notes", owner: "", detail: "waits on unfinished t-upload", seq: 7, dependsOn: ["t-upload"], recorded: true },
+      ],
+      stale: [],
+      anomalyCount: 1,
+      fleetHealth: null,
+    };
+    const waits: WaitsReport = {
+      present: true,
+      waits: [{ taskId: "t-notes", title: "notes", who: "", onWhat: ["t-upload"], since: 1, status: "open" }],
+      waitCount: 1,
+      logEndSeq: 10,
+      note: "",
+    };
+    const { rerender } = render(
+      <RiskRail risk={QUIET_RISK} anomalyReport={feedOf(anomalies)} waits={feedOf(waits)} />,
+    );
+
+    expect(screen.getByText("pending gates · 1")).toBeTruthy();
+    expect(screen.queryByText(/hub health anomalies/)).toBeNull();
+    expect(screen.queryByText(/under pending gates/)).toBeNull();
+
+    // Without the gates the row has nowhere else to be shown, so it stays an anomaly.
+    rerender(<RiskRail risk={QUIET_RISK} anomalyReport={feedOf(anomalies)} />);
+    expect(screen.getByText("hub health anomalies · 1")).toBeTruthy();
+    expect(screen.getByText("waits on unfinished t-upload")).toBeTruthy();
+    expect(screen.queryByText(/under pending gates/)).toBeNull();
   });
 
   it("states unrecorded approval fields as dashes and the unowned gate as unowned", () => {

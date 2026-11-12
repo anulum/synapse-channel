@@ -7,9 +7,14 @@
 // SYNAPSE_CHANNEL — sessions, waits, and health-anomalies parsing + feed tests
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createHealthAnomaliesStore, parseHealthAnomalies } from "../src/lib/healthAnomalies";
+import {
+  createHealthAnomaliesStore,
+  parseHealthAnomalies,
+  splitDangling,
+  type AnomalyItem,
+} from "../src/lib/healthAnomalies";
 import { createSessionsStore, parseSessions } from "../src/lib/sessions";
-import { createWaitsStore, parseWaits } from "../src/lib/waits";
+import { createWaitsStore, parseWaits, type WaitRow } from "../src/lib/waits";
 import { factsOf, toastsBetween } from "../src/lib/toasts";
 
 afterEach(() => {
@@ -65,6 +70,56 @@ describe("parseWaits", () => {
   });
 });
 
+describe("splitDangling", () => {
+  const row = (taskId: string, dependsOn: string[], recorded: boolean | null): AnomalyItem => ({
+    taskId,
+    owner: "",
+    detail: `${taskId} on ${dependsOn.join(", ")}`,
+    seq: 1,
+    dependsOn,
+    recorded,
+  });
+  const gate = (taskId: string, onWhat: string[]): WaitRow => ({
+    taskId,
+    title: "",
+    who: "",
+    onWhat,
+    since: null,
+    status: "open",
+  });
+
+  it("moves a row under the gates only when the log holds the prerequisite and a gate names it", () => {
+    const unfinished = row("notes", ["upload"], true);
+    const second = row("notes", ["audit"], true);
+    const typo = row("notes", ["ghost"], false);
+    const finished = row("shipped", ["upload"], true);
+    const otherName = row("guide", ["upload"], true);
+    const older = row("notes", ["upload"], null);
+    const nameless = row("notes", [], true);
+    const gates = [gate("notes", ["upload", "audit", "ghost"]), gate("guide", ["audit"])];
+
+    const split = splitDangling(
+      [unfinished, second, typo, finished, otherName, older, nameless],
+      gates,
+    );
+
+    // Under the gates: the two unfinished prerequisites the gate of the same task names.
+    expect(split.underGates).toBe(2);
+    // Still listed: a name the log does not know, although the gate names it too;
+    // a finished task, which has no gate; a task whose gate names something else;
+    // a row from a hub that does not say; a row without a name.
+    expect(split.listed).toEqual([typo, finished, otherName, older, nameless]);
+  });
+
+  it("moves nothing while the gates are not served", () => {
+    const rows = [row("notes", ["upload"], true), row("notes", ["ghost"], false)];
+
+    expect(splitDangling(rows, null)).toEqual({ listed: rows, underGates: 0 });
+    expect(splitDangling(rows, [])).toEqual({ listed: rows, underGates: 0 });
+    expect(splitDangling([], [gate("notes", ["upload"])])).toEqual({ listed: [], underGates: 0 });
+  });
+});
+
 describe("parseHealthAnomalies", () => {
   it("shapes the three anomaly classes with spoken details", () => {
     const report = parseHealthAnomalies({
@@ -105,6 +160,18 @@ describe("parseHealthAnomalies", () => {
     // A dangling row points at the plan event that declared the dependency.
     expect(report?.dangling.map((item) => item.seq)).toEqual([null, null, 12, 13, 1.5]);
     expect(report?.orphaned[0]?.seq).toBe(5);
+    // A dangling row keeps the names and the hub's word on them; the rail needs
+    // both to show an unfinished prerequisite once.
+    expect(report?.dangling.map((item) => item.dependsOn)).toEqual([
+      ["ghost"],
+      [],
+      ["solo-dep"],
+      ["typo-dep"],
+      ["old-hub-dep"],
+    ]);
+    expect(report?.dangling.map((item) => item.recorded)).toEqual([null, null, true, false, null]);
+    expect(report?.orphaned[0]).toMatchObject({ dependsOn: [], recorded: null });
+    expect(report?.stale[0]).toMatchObject({ dependsOn: [], recorded: null });
     expect(report?.stale[0]?.detail).toBe("unreleased and silent · 2 min");
     expect(report?.stale[1]?.detail).toBe("unreleased and silent");
     expect(report?.anomalyCount).toBe(5); // server-stated count wins over row arithmetic

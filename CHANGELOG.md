@@ -151,6 +151,15 @@ execution evidence when carrying a release claim forward.
   keeps its pointer to the plan event that declared it, and a task with two
   unfinished prerequisites gives two rows that no longer share one key. The
   README picture is taken again.
+- The cockpit's risk rail showed an unfinished prerequisite twice: once under
+  "pending gates", from the plan, and once under "hub health anomalies", from
+  the hub's health report. It is now shown once. A dangling row leaves the
+  anomaly section when the hub says its log holds the prerequisite and the gate
+  of the same task names it. What stays an anomaly: a name the log does not
+  know, a row from a hub that does not say, a finished task that was closed
+  over an open prerequisite, and every row while the gates are not served. The
+  section's number is the number of rows it lists, and it says how many rows
+  the gates show. The hub's report and its count are unchanged.
 - A Windows `synapse.exe` is still the synapse command, and a freshly
   installed Claude plugin is owned when its relative paths use the
   platform separator. Native tests state the platform contract for inbox
