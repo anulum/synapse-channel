@@ -16,13 +16,13 @@ predecessor's claim, which stays the predecessor's.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 from hub_e2e_helpers import AgentHandle, Recorder, close_agents, connect_agent, running_hub
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.role_grants import RoleGrants
@@ -43,52 +43,27 @@ async def _connect_declaring_role(name: str, uri: str) -> AgentHandle:
         name, recorder, uri=uri, heartbeat_interval=60.0, verbose=False, roles=(ROLE,)
     )
     handle = AgentHandle(agent=agent, recorder=recorder, task=asyncio.create_task(agent.connect()))
-    if not await agent.wait_until_ready(3.0):
-        await handle.close()
-        raise TimeoutError(f"{name} did not receive the hub welcome")
+    assert await agent.wait_until_ready(3.0), f"{name} did not receive the hub welcome"
     return handle
 
 
+async def _next_frame(
+    handle: AgentHandle, msg_types: tuple[str, ...], request: Callable[[], Awaitable[None]]
+) -> dict[str, Any]:
+    """Run ``request`` and return the first frame of ``msg_types`` that arrives after it."""
+    earlier = {id(frame) for frame in handle.recorder.messages}
+    await request()
+    return await handle.recorder.wait_for(
+        lambda frame: frame.get("type") in msg_types and id(frame) not in earlier
+    )
+
+
 async def _bound_roles(handle: AgentHandle) -> dict[str, Any]:
-    """Return the role bindings of a WHO snapshot requested after this call."""
-    seen = len(handle.recorder.messages)
-    await handle.agent.request_who()
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + 3.0
-    while loop.time() < deadline:
-        for frame in handle.recorder.messages[seen:]:
-            if frame.get("type") == MessageType.WHO_SNAPSHOT:
-                roles = frame["agent_roles"]
-                assert isinstance(roles, dict)
-                return roles
-        await asyncio.sleep(0.01)
-    raise TimeoutError("the hub sent no WHO snapshot")
-
-
-async def _hand_over(handle: AgentHandle, **fields: Any) -> dict[str, Any]:
-    """Send one mailbox handover and return the result frame that answers it."""
-    seen = len(handle.recorder.messages)
-    await handle.agent.send_message(MessageType.MAILBOX_HANDOVER, **fields)
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + 3.0
-    while loop.time() < deadline:
-        for frame in handle.recorder.messages[seen:]:
-            if frame.get("type") == MessageType.MAILBOX_HANDOVER_RESULT:
-                return frame
-        await asyncio.sleep(0.01)
-    raise TimeoutError("hub returned no mailbox_handover_result")
-
-
-async def _journalled_to_old(store: EventStore) -> None:
-    """Wait until the directed chat to ``OLD`` is in the journal."""
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + 3.0
-    while loop.time() < deadline:
-        for event in store.read_since(0, kinds=(EventKind.CHAT,)):
-            if event.payload.get("target") == OLD and event.payload.get("payload") == MAIL:
-                return
-        await asyncio.sleep(0.01)
-    raise TimeoutError("the chat to the departed seat was not journalled")
+    """Return the role bindings of a WHO snapshot requested now."""
+    snapshot = await _next_frame(handle, (MessageType.WHO_SNAPSHOT,), handle.agent.request_who)
+    roles = snapshot["agent_roles"]
+    assert isinstance(roles, dict)
+    return roles
 
 
 async def test_a_successor_gets_the_predecessors_mail_and_none_of_its_authority(
@@ -121,24 +96,37 @@ async def test_a_successor_gets_the_predecessors_mail_and_none_of_its_authority(
             boss = await connect_agent(BOSS, uri)
             new = await _connect_declaring_role(NEW, uri)
             try:
-                await peer.agent.send_message(MessageType.CHAT, target=OLD, payload=MAIL)
-                await _journalled_to_old(store)
-                handed = await _hand_over(boss, **{"from": OLD, "to": NEW, "reason": "seat ended"})
+                receipt = await _next_frame(
+                    peer,
+                    (MessageType.DELIVERY_RECEIPT,),
+                    lambda: peer.agent.send_message(
+                        MessageType.CHAT,
+                        target=OLD,
+                        payload=MAIL,
+                        client_msg_id="succession-1",
+                        receipt_requested=True,
+                    ),
+                )
+                assert receipt["delivered"] is False
+
+                handover: dict[str, Any] = {"from": OLD, "to": NEW, "reason": "seat ended"}
+                handed = await _next_frame(
+                    boss,
+                    (MessageType.MAILBOX_HANDOVER_RESULT,),
+                    lambda: boss.agent.send_message(MessageType.MAILBOX_HANDOVER, **handover),
+                )
                 assert (handed["status"], handed["forwarded"]) == ("applied", 1)
                 mail = await new.recorder.wait_for(
                     lambda frame: frame.get("handover_from") == OLD and frame.get("payload") == MAIL
                 )
                 assert mail["original_sender"] == PEER
 
-                roles = await _bound_roles(new)
-                assert NEW not in roles
+                assert NEW not in await _bound_roles(new)
 
-                await new.agent.release(TASK)
-                answer = await new.recorder.wait_for(
-                    lambda frame: (
-                        frame.get("type")
-                        in (MessageType.RELEASE_DENIED, MessageType.RELEASE_GRANTED)
-                    )
+                answer = await _next_frame(
+                    new,
+                    (MessageType.RELEASE_DENIED, MessageType.RELEASE_GRANTED),
+                    lambda: new.agent.release(TASK),
                 )
                 assert answer["type"] == MessageType.RELEASE_DENIED
                 assert answer["payload"] == f"Task '{TASK}' is owned by {OLD}, not {NEW}."
