@@ -322,3 +322,55 @@ def test_public_claude_lifecycle_validates_and_removes_an_isolated_plugin(
     assert cli.main(["integrations", "uninstall", "claude-code", *common]) == 0
     assert json.loads(capsys.readouterr().out)["state"] == "absent"
     assert unrelated.read_text(encoding="utf-8") == "preserve"
+
+
+def test_installed_host_binaries_are_read_on_an_isolated_profile(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Read the Claude and OpenCode binaries that are actually installed."""
+    for host, binary_name in (("claude-code", "claude"), ("opencode", "opencode")):
+        binary = shutil.which(binary_name)
+        if binary is None:
+            continue
+        profile = tmp_path / host
+        assert (
+            cli.main(
+                [
+                    "integrations",
+                    "inspect",
+                    host,
+                    "--profile-root",
+                    str(profile),
+                    "--host-bin",
+                    binary,
+                ]
+            )
+            == 0
+        )
+        row = json.loads(capsys.readouterr().out)
+        assert row["host"] == host
+        observed = str(row["observed_version"])
+        verified = row["verified_version"]
+        expected = isinstance(verified, str) and (
+            verified in observed.split() or observed == verified
+        )
+        assert row["version_accepted"] is expected
+        if expected:
+            continue
+        assert (
+            cli.main(
+                [
+                    "integrations",
+                    "diagnose",
+                    host,
+                    "--profile-root",
+                    str(profile / "diagnose"),
+                    "--host-bin",
+                    binary,
+                ]
+            )
+            == 2
+        )
+        diagnosed = json.loads(capsys.readouterr().out)
+        assert diagnosed["state"] == "unverified_version"
+        assert diagnosed["observed_version"] == row["observed_version"]

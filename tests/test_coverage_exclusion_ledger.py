@@ -236,6 +236,10 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     # diff-tree patch tried (text, mode, rename, binary). Not an exclusion.
     "tests/test_hub_sqlcipher_e2e.py": (1, "optional-dep-guard"),
     "tests/test_identity_keys_secret_floor.py": (1, "platform-guard"),
+    # Linux Claude is 2.1.322 and OpenCode is 1.19.5. MSI Claude is 2.1.321
+    # and OpenCode is 1.19.5. Neither host has Pi 0.87.1. The exact-version
+    # lifecycle and the Pi RPC body stay on these skips. Installed binaries
+    # are read by the isolated-profile test.
     "tests/test_integration_catalog.py": (3, "optional-dep-guard"),
     "tests/test_multihub_mcp_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_opencode_compatibility_smoke.py": (2, "operator-smoke"),
