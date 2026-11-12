@@ -46,3 +46,11 @@ async def test_on_message_skips_already_resolved_waiter() -> None:
     bridge._waiters.append((lambda data: True, done))
     await bridge.on_message({"type": "anything"})
     assert bridge._waiters
+
+
+async def test_a_claim_that_gets_no_reply_reports_no_response() -> None:
+    """A task-only claim with no hub reply ends unknown and drops its waiter."""
+    bridge = SynapseHubBridge(name="seat", request_timeout=0.05)
+    result = await bridge.claim("SILENT", task_only=True)
+    assert result == "claim 'SILENT': no response from the hub"
+    assert bridge._waiters == []

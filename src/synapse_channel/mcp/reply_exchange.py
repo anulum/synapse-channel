@@ -86,7 +86,7 @@ class McpReplyExchange:
         self._waiters.append(waiter)
         try:
             return await asyncio.wait_for(exchange(), timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
         finally:
             with contextlib.suppress(ValueError):
