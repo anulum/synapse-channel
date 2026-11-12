@@ -9,21 +9,14 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from synapse_channel.git import compare_and_swap as module
-from synapse_channel.git.compare_and_swap import (
-    NO_GIT,
-    compare_and_swap,
-    git_executable,
-    read_ref,
-)
-from synapse_channel.git.git_runtime import GitError
+from synapse_channel.git.compare_and_swap import compare_and_swap, read_ref
+from synapse_channel.git.git_runtime import git_executable
 
 MAIN = "refs/heads/main"
 
@@ -127,26 +120,3 @@ def test_a_ref_rewound_to_an_ancestor_is_refused_where_a_fast_forward_would_pass
 def test_a_missing_ref_reads_as_none(history: dict[str, Any]) -> None:
     assert read_ref(history["repository"], "refs/heads/absent", git=history["git"]) is None
     assert read_ref(history["repository"], MAIN, git=history["git"]) == history["b"]
-
-
-def test_a_host_without_git_is_refused_with_words(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(shutil, "which", lambda _name: None)
-    with pytest.raises(GitError) as refused:
-        git_executable()
-    assert str(refused.value) == NO_GIT
-
-
-def test_a_git_call_past_its_deadline_is_refused(
-    history: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    deadlines: list[object] = []
-
-    def too_slow(*_args: Any, **kwargs: Any) -> Any:
-        deadlines.append(kwargs.get("timeout"))
-        raise subprocess.TimeoutExpired(cmd="git", timeout=module.GIT_DEADLINE_SECONDS)
-
-    monkeypatch.setattr(subprocess, "run", too_slow)
-    with pytest.raises(GitError) as refused:
-        read_ref(history["repository"], MAIN, git=history["git"])
-    assert str(refused.value) == "git rev-parse did not finish within 30 seconds"
-    assert deadlines == [30.0]

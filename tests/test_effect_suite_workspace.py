@@ -33,8 +33,7 @@ from synapse_channel.effect_suite.workspace import (
     prepare_repository,
     suite_hub,
 )
-from synapse_channel.git.compare_and_swap import git_executable, run_git
-from synapse_channel.git.git_runtime import GitError
+from synapse_channel.git.git_runtime import GitError, git_executable, run_git
 
 
 @pytest.fixture

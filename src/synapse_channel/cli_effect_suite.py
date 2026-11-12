@@ -38,8 +38,7 @@ from synapse_channel.effect_suite.record import (
     verification_refusal,
 )
 from synapse_channel.effect_suite.runner import run_suite
-from synapse_channel.git.compare_and_swap import git_executable
-from synapse_channel.git.git_runtime import GitError
+from synapse_channel.git.git_runtime import GitError, git_executable
 
 EXIT_PASSED = 0
 EXIT_FAILED = 1

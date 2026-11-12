@@ -12,24 +12,17 @@ exactly ``expected``. A plain fast-forward would also succeed from any ancestor
 of the expected commit and so would not check the declared pre-state. After the
 command, the ref is read back: the exit code alone is not the result.
 
-Every call runs ``git`` with a fixed argument vector, never through a shell,
-and with a deadline. A host without ``git`` is refused with words.
+Every call goes through the bounded runner of
+:mod:`synapse_channel.git.git_runtime`: a fixed argument vector, no shell, a
+deadline.
 """
 
 from __future__ import annotations
 
-import shutil
-import subprocess  # nosec B404 # fixed git argument vectors only, never a shell
 from dataclasses import dataclass
 from pathlib import Path
 
-from synapse_channel.git.git_runtime import GitError
-
-GIT_DEADLINE_SECONDS = 30.0
-"""Seconds one ``git`` call may take before it is stopped and refused."""
-
-NO_GIT = "this needs a git executable on PATH, and none was found"
-"""The refusal on a host without ``git``."""
+from synapse_channel.git.git_runtime import run_git
 
 
 @dataclass(frozen=True)
@@ -49,44 +42,6 @@ class SwapResult:
     applied: bool
     head: str | None
     detail: str
-
-
-def git_executable() -> str:
-    """Return the path of ``git``.
-
-    Raises
-    ------
-    GitError
-        When no ``git`` executable is on ``PATH``.
-    """
-    found = shutil.which("git")
-    if found is None:
-        raise GitError(NO_GIT)
-    return found
-
-
-def run_git(git: str, repository: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
-    """Run one fixed ``git -C <repository> <args>`` with the deadline and return its result.
-
-    Raises
-    ------
-    GitError
-        When the call does not finish within :data:`GIT_DEADLINE_SECONDS`.
-    """
-    try:
-        return subprocess.run(  # nosec B603 # fixed git argument vector, no shell, bounded
-            [git, "-C", str(repository), *args],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="surrogateescape",
-            timeout=GIT_DEADLINE_SECONDS,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise GitError(
-            f"git {args[0]} did not finish within {GIT_DEADLINE_SECONDS:g} seconds"
-        ) from exc
 
 
 def read_ref(repository: Path, ref: str, *, git: str) -> str | None:
@@ -110,7 +65,7 @@ def compare_and_swap(
     new, expected : str
         Full commit names: the candidate and the declared pre-state.
     git : str
-        The ``git`` executable (see :func:`git_executable`).
+        The ``git`` executable (see :func:`synapse_channel.git.git_runtime.git_executable`).
 
     Returns
     -------

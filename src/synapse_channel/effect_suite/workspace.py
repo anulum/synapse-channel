@@ -29,8 +29,7 @@ from pathlib import Path
 from synapse_channel.core.acl import CLAIM, MESSAGE, OPERATION_EVIDENCE, AclPolicy, AclRule
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
-from synapse_channel.git.compare_and_swap import run_git
-from synapse_channel.git.git_runtime import GitError
+from synapse_channel.git.git_runtime import GitError, run_git
 
 BRANCH = "main"
 REF = "refs/heads/main"

@@ -20,6 +20,20 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- An attempt's marker, the first part of the seal: `core/attempt_markers.py`
+  states the exact bytes of an attempt's `applied` and `sealed` marker blobs
+  (five ASCII lines, so anyone can compute their ids in a SHA-1 or a SHA-256
+  repository), checks every identifier before any bytes are formed, names the
+  marker ref `refs/synapse/attempts/<attempt id>`, and gives the closed answers
+  for what a change did and what an observer reads. `git/attempt_marker_changes.py`
+  makes the two changes: the effect moves a branch from exactly its base to the
+  candidate and creates the `applied` marker in one atomic change, and the seal
+  creates the `sealed` marker first, so that the effect can never land. Each
+  works as a ref transaction in the repository or as an atomic push with
+  leases to a remote, and is read back before its result is named. No command
+  uses them yet. The bounded Git runner with its deadline moved into
+  `git/git_runtime.py` and now takes standard input; the shared runner is
+  unchanged.
 - `synapse effect-suite run` runs version 0.1 of the effect-safety suite, cases
   1 to 4 in twenty-one variants, against this package's own stack. Each
   variant gets a throwaway Git repository and hub; the executor publishes only

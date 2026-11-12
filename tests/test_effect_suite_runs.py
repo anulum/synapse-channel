@@ -46,7 +46,7 @@ from synapse_channel.effect_suite.runner import (
 )
 from synapse_channel.effect_suite.variants import DRIVERS, Stage
 from synapse_channel.effect_suite.workspace import git_out
-from synapse_channel.git.compare_and_swap import git_executable
+from synapse_channel.git.git_runtime import git_executable
 
 APPLICABLE = [variant for variant in VARIANTS if variant.expected is not None]
 REPLAYED = {"4e", "4h"}
