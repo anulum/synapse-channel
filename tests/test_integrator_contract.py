@@ -263,18 +263,19 @@ async def test_the_adapter_stops_when_the_claim_is_never_granted(tmp_path: Path)
             await adapter.run_adapter(f"ws://127.0.0.1:{port}", tmp_path)
 
 
-async def test_the_demo_hub_yields_when_nothing_accepts_the_port(
+async def test_the_demo_hub_fails_when_it_never_becomes_ready(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A hub that does not bind does not hand out an address."""
     adapter = _load("integrator_adapter")
 
-    async def _never_accept(self: object, host: str, port: int, **_kwargs: object) -> None:
+    async def _never_bind(self: object, host: str, port: int, **_kwargs: object) -> None:
         del self, host, port
         await asyncio.Event().wait()
 
-    monkeypatch.setattr(adapter.SynapseHub, "serve", _never_accept)
-    async with adapter.demo_hub(tmp_path) as uri:
-        assert uri.startswith("ws://127.0.0.1:")
+    monkeypatch.setattr(adapter.SynapseHub, "serve", _never_bind)
+    with pytest.raises(TimeoutError):
+        await adapter.demo_hub(tmp_path).__aenter__()
 
 
 async def test_the_example_main_stops_when_the_hub_refuses_evidence(

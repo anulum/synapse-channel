@@ -30,13 +30,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
-import socket
 import sys
 import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.acl import CLAIM, MESSAGE, OPERATION_EVIDENCE, AclPolicy, AclRule
@@ -70,10 +69,11 @@ class AdapterRun:
 class _Session:
     """One connected identity that collects the frames it is sent."""
 
+    _task: asyncio.Task[None]
+
     def __init__(self, name: str, uri: str) -> None:
         self.frames: list[dict[str, Any]] = []
         self.agent = SynapseAgent(name, self._collect, uri=uri, verbose=False)
-        self._task: asyncio.Task[None] | None = None
 
     async def _collect(self, frame: dict[str, Any]) -> None:
         self.frames.append(frame)
@@ -94,10 +94,9 @@ class _Session:
     async def __aexit__(self, *_exc: object) -> None:
         """Cancel the connect task started when the session was entered."""
         self.agent.running = False
-        task = cast(asyncio.Task[None], self._task)
-        task.cancel()
+        self._task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await task
+            await self._task
 
     async def wait(self, kind: str, **match: object) -> dict[str, Any]:
         """Return the first frame of ``kind`` whose fields equal ``match``."""
@@ -186,21 +185,17 @@ def demo_policy() -> AclPolicy:
 
 @contextlib.asynccontextmanager
 async def demo_hub(directory: Path) -> AsyncIterator[str]:
-    """Serve an in-process hub with a journal and the demo policy; yield its URI."""
+    """Serve an in-process hub on a kernel-assigned port and yield its URI.
+
+    The hub's own readiness is the signal that the port accepts connections.
+    A hub that never becomes ready raises ``TimeoutError`` instead of handing
+    out an address.
+    """
     store = EventStore(directory / "hub.db")
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = int(probe.getsockname()[1])
     hub = SynapseHub(journal=store, acl_policy=demo_policy())
-    serving = asyncio.create_task(hub.serve("127.0.0.1", port))
+    serving = asyncio.create_task(hub.serve("127.0.0.1", 0))
     try:
-        for _ in range(300):
-            with contextlib.suppress(OSError):
-                _reader, writer = await asyncio.open_connection("127.0.0.1", port)
-                writer.close()
-                await writer.wait_closed()
-                break
-            await asyncio.sleep(0.01)
+        _host, port = await hub.wait_until_serving()
         yield f"ws://127.0.0.1:{port}"
     finally:
         serving.cancel()
