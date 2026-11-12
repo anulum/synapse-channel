@@ -998,3 +998,53 @@ assert config.read_text() == original
         env=env,
     )
     assert race.returncode == 0, race.stdout + race.stderr
+
+
+def test_token_without_posix_or_windows_identity_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host with neither a uid nor Windows still refuses the token."""
+    host = _contract_peer(tmp_path)
+    token = tmp_path / "token"
+    token.write_text("secret-value\n", encoding="utf-8")
+    monkeypatch.delattr(os, "getuid", raising=False)
+    monkeypatch.setattr(os, "name", "java")
+    with pytest.raises(CodexPackageError, match="token file must be owner-only"):
+        apply_codex_package(
+            "install",
+            profile=tmp_path / "profile",
+            host=host,
+            synapse_bin=_tool(),
+            identity="ADAPTER/test",
+            uri="ws://127.0.0.1:9",
+            token_file=token,
+        )
+    assert not (tmp_path / "profile").exists()
+
+
+def test_windows_token_shared_with_everyone_is_refused(tmp_path: Path) -> None:
+    """A Windows token Everyone can read is not owner-only."""
+    if os.name != "nt":
+        pytest.skip("Windows token ACLs are measured on Windows")
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
+    host = _contract_peer(tmp_path)
+    token = tmp_path / "token"
+    token.write_text("secret-value\n", encoding="utf-8")
+    apply_owner_only_file(token)
+    subprocess.run(
+        ["icacls", os.fspath(token), "/grant", "*S-1-1-0:(R)"],
+        check=True,
+        capture_output=True,
+    )
+    with pytest.raises(CodexPackageError, match="token file must be owner-only"):
+        apply_codex_package(
+            "install",
+            profile=tmp_path / "profile",
+            host=host,
+            synapse_bin=_tool(),
+            identity="ADAPTER/test",
+            uri="ws://127.0.0.1:9",
+            token_file=token,
+        )
+    assert not (tmp_path / "profile").exists()
