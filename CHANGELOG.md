@@ -18,6 +18,18 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- A local `synapse pid-monitor` run counts each observed process: birth,
+  owner, executable path, CPU seconds, memory, swap, GPU memory when
+  `nvidia-smi` lists the process, priority and child PIDs, each with a status.
+  On Windows the command reads explicit `--pid` values and binds a
+  virtual-environment launcher to its one interpreter child, so the working
+  set is the interpreter's. `memory_guarantee` is always `none`. One
+  `nvidia-smi` query serves every row of an observation. The dashboard's
+  `/host-sessions.json` feed carries no accounting: its observer grants cover
+  directory and context pathnames only.
+
 ### Changed
 
 - **The federation interface offers record keeping as a feature, not its parts.**
@@ -34,19 +46,11 @@ execution evidence when carrying a release claim forward.
   older Core releases. The surface holds 110 names; the defining modules are
   unchanged.
 
-### Added
-
-- A local `synapse pid-monitor` run counts each observed process: birth,
-  owner, executable path, CPU seconds, memory, swap, GPU memory when
-  `nvidia-smi` lists the process, priority and child PIDs, each with a status.
-  On Windows the command reads explicit `--pid` values and binds a
-  virtual-environment launcher to its one interpreter child, so the working
-  set is the interpreter's. `memory_guarantee` is always `none`. One
-  `nvidia-smi` query serves every row of an observation. The dashboard's
-  `/host-sessions.json` feed carries no accounting: its observer grants cover
-  directory and context pathnames only.
-
-### Changed
+- The retained-log observations page gains a "Related records" section. It
+  points to the signed receipts a hub with an AEF signing key writes and to
+  the approval and verdict notes, and says that an operator may refer to them
+  when it describes its own logging and human-oversight arrangements. They are
+  evidence and no legal verdict. No command, name or wire format changes.
 
 - The integrator contract page no longer says that a claim is authority. Step
   3 now separates coordination (the claim and its epoch) from what permits an

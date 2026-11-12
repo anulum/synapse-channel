@@ -115,6 +115,19 @@ The primary texts are the Commission's consolidated AI Act Service Desk pages:
 [Article 26](https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-26).
 The framework label supplies evidence interpretation aids and no legal verdict.
 
+## Related records
+
+A hub started with an AEF signing key also writes a signed receipt for each
+mapped coordination decision, which a third party can verify offline
+([Verifying AEF evidence offline](aef-verification.md)). Approval requests and
+decisions, and the reviewers' verdicts an approval depends on, are append-only
+notes on the hub's progress ledger, which a hub with a journal keeps in its
+event store ([Verdicts and corrections](verdicts.md)). An operator may refer to
+these records when it describes its own logging and human-oversight
+arrangements. Like the observations on this page, they are evidence and no
+legal verdict: they do not classify a system and do not make it compliant with
+any law.
+
 ## Python API and compatibility
 
 ```python
