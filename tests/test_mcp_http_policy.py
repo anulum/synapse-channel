@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from pathlib import Path
 
 import httpx2
@@ -189,6 +191,82 @@ async def test_an_optional_read_named_in_a_grant_is_not_served_yet(
                 await handle.close()
     finally:
         store.close()
+
+
+async def test_a_reduced_bearer_cannot_reuse_the_scope_the_session_began_with(
+    tmp_path: Path,
+) -> None:
+    """A session that began with a mutating bearer is judged by the bearer of each message."""
+    key = Ed25519PrivateKey.generate()
+    path = tmp_path / "grants.json"
+    write_policy(path, key)
+    payload = load_http_auth_config(path).model_dump(mode="json")
+    payload["subjects"]["alice"]["projects"]["ALPHA"]["tools"].append("synapse_claim")
+    path.write_text(json.dumps(payload))
+    first = access_token(key, scope="synapse:read synapse:mutate")
+    async with running_hub() as (hub, uri):
+        handle = await start_bridge(uri, name="ALPHA/alice")
+        try:
+            async with https_server(build_policy_app(path, handle.bridge), tmp_path) as (url, tls):
+                async with httpx2.AsyncClient(
+                    verify=tls,
+                    timeout=5,
+                    trust_env=False,
+                    headers={"Authorization": "Bearer " + first},
+                ) as client:
+                    async with streamable_http_client(url + "/mcp", http_client=client) as (
+                        read,
+                        write,
+                    ):
+                        async with ClientSession(read, write) as session:
+                            await session.initialize()
+                            assert not (await session.call_tool("synapse_board")).is_error
+                            client.headers["Authorization"] = "Bearer " + access_token(
+                                key, scope="synapse:read", jti="reduced-scope-current-request"
+                            )
+                            refused = await session.call_tool(
+                                "synapse_claim", {"task_id": "ALPHA/task"}
+                            )
+                            assert refused.is_error
+                            assert not hub.state.claims
+        finally:
+            await handle.close()
+
+
+async def test_a_renewed_bearer_keeps_the_session_after_the_first_one_expired(
+    tmp_path: Path,
+) -> None:
+    """A session outlives its first bearer when a later message carries a valid one."""
+    key = Ed25519PrivateKey.generate()
+    path = tmp_path / "grants.json"
+    write_policy(path, key)
+    expiry = int(time.time()) + 3
+    first = access_token(key, exp=expiry)
+    async with running_hub() as (_hub, uri):
+        handle = await start_bridge(uri, name="ALPHA/alice")
+        try:
+            async with https_server(build_policy_app(path, handle.bridge), tmp_path) as (url, tls):
+                async with httpx2.AsyncClient(
+                    verify=tls,
+                    timeout=5,
+                    trust_env=False,
+                    headers={"Authorization": "Bearer " + first},
+                ) as client:
+                    async with streamable_http_client(url + "/mcp", http_client=client) as (
+                        read,
+                        write,
+                    ):
+                        async with ClientSession(read, write) as session:
+                            await session.initialize()
+                            assert not (await session.call_tool("synapse_board")).is_error
+                            while time.time() <= expiry + 1:
+                                await asyncio.sleep(0.05)
+                            client.headers["Authorization"] = "Bearer " + access_token(
+                                key, jti="renewed-after-expiry"
+                            )
+                            assert not (await session.call_tool("synapse_board")).is_error
+        finally:
+            await handle.close()
 
 
 async def test_foreign_authenticated_subject_cannot_use_a_bound_seat(tmp_path: Path) -> None:
