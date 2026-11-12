@@ -529,3 +529,84 @@ time.sleep(0.001)
                 child.stdin.close()
                 reaper.join(timeout=5)
                 assert not reaper.is_alive()
+
+
+def test_kernel_clock_reports_the_host_or_its_absence() -> None:
+    """The public clock is the kernel clock, or an explicit absence."""
+    if hasattr(os, "sysconf"):
+        clock = kernel_clock()
+        assert isinstance(clock, KernelClock)
+        assert clock.ticks_per_second > 0
+        assert clock.boot_time > 0
+        return
+    with pytest.raises(OSError, match="kernel clock is unavailable"):
+        kernel_clock()
+
+
+def test_kernel_clock_refuses_a_non_positive_tick_rate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A kernel that reports no tick rate is not a usable clock."""
+    if not hasattr(os, "sysconf"):
+        with pytest.raises(OSError, match="kernel clock is unavailable"):
+            kernel_clock()
+        return
+    real = os.sysconf
+
+    def rate(name: str) -> int:
+        if name == "SC_CLK_TCK":
+            return 0
+        return int(real(name))
+
+    monkeypatch.setattr(os, "sysconf", rate)
+    with pytest.raises(ValueError, match="tick rate must be positive"):
+        kernel_clock()
+
+
+def test_root_discovery_does_not_scan_the_machine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unnamed scan as root is refused instead of listing every process."""
+    if not hasattr(os, "geteuid") or not Path("/proc/self/stat").is_file():
+        _rows, status = discover_processes(pids=(os.getpid(),))
+        assert status in {"complete", "partial", "unavailable"}
+        return
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    assert discover_processes() == ({}, "unavailable")
+
+
+def test_unreadable_process_scan_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A scan the kernel refuses is unavailable, not an empty success."""
+    if not hasattr(os, "geteuid") or not Path("/proc/self/stat").is_file():
+        _rows, status = discover_processes(pids=(os.getpid(),))
+        assert status in {"complete", "partial", "unavailable"}
+        return
+
+    def refused(path: str | os.PathLike[str]) -> object:
+        raise OSError(13, "Permission denied", os.fspath(path))
+
+    monkeypatch.setattr(os, "scandir", refused)
+    rows, status = discover_processes()
+    assert rows == {}
+    assert status == "unavailable"
+
+
+def test_observe_process_refuses_when_the_caller_identity_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The second identity read refuses when the caller uid no longer matches."""
+    if not hasattr(os, "geteuid"):
+        with pytest.raises(OSError):
+            observe_process(os.getpid())
+        return
+    real = os.geteuid
+    seen = 0
+
+    def changed() -> int:
+        nonlocal seen
+        seen += 1
+        if seen < 2:
+            return int(real())
+        return int(real()) + 1
+
+    monkeypatch.setattr(os, "geteuid", changed)
+    with pytest.raises(PermissionError, match="ownership changed"):
+        observe_process(os.getpid())
