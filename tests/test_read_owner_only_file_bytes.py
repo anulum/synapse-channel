@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -155,21 +156,23 @@ def test_read_owner_only_refuses_when_the_floor_is_unavailable(
         module.read_owner_only_file_bytes(path, purpose="key file")
 
 
-def test_read_owner_only_uses_the_windows_kind_check(
+def test_another_host_does_not_borrow_the_windows_reader(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A process that is not Windows does not open by being marked as Windows."""
     import synapse_channel.core.secure_path as module
 
     path = _write_secret(tmp_path / "k.bin", b"abcd")
+    if sys.platform == "win32":
+        assert (
+            module.read_owner_only_file_bytes(path, purpose="key file", expected_size=4) == b"abcd"
+        )
+        return
     monkeypatch.setattr(module, "_POSIX", False)
     monkeypatch.setattr(module, "_WINDOWS", True)
     monkeypatch.setattr(module, "assert_owner_only_file_path", lambda *args, **kwargs: None)
-    assert module.read_owner_only_file_bytes(path, purpose="key file", expected_size=4) == b"abcd"
-    directory = tmp_path / "dir"
-    directory.mkdir(mode=0o700)
-    # Linux can open a directory and then refuse it. Windows refuses the open.
-    with pytest.raises(SecurePathError, match="not a regular file|cannot open"):
-        module.read_owner_only_file_bytes(directory, purpose="key file", expected_size=0)
+    with pytest.raises(SecurePathError, match="cannot open"):
+        module.read_owner_only_file_bytes(path, purpose="key file", expected_size=4)
 
 
 def test_read_owner_only_refuses_when_the_read_overruns_the_stat_size(

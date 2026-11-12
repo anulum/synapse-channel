@@ -151,7 +151,9 @@ PROBE_EXCLUSIONS: dict[str, dict[int, tuple[str, str]]] = {
 
 #: Every conditional-skip line in ``tests/``, by file: (line count, justification class).
 SKIP_LEDGER: dict[str, tuple[int, str]] = {
-    "tests/_platform_caps.py": (9, "platform-guard"),
+    # Nine platform markers, and one helper that skips when this process may
+    # not create a symbolic link.
+    "tests/_platform_caps.py": (10, "platform-guard + filesystem-capability"),
     "tests/_portable_exec.py": (1, "platform-guard"),
     # Only Linux SO_PEERCRED journeys use this marker; signed TCP tests stay portable.
     "tests/protected_write_socket_examples.py": (1, "platform-guard"),
@@ -188,6 +190,10 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     # procfs reader and Windows takes the Win32 reader, so neither host reaches it.
     "tests/test_launch_record.py": (8, "platform-guard"),
     "tests/test_read_owner_only_file_bytes.py": (3, "platform-guard"),
+    # The Windows opener is one CreateFileW; its six cases run on Windows.
+    "tests/test_secure_path_reparse.py": (6, "platform-guard"),
+    # A final Windows link is created only on Windows.
+    "tests/test_result_verification.py": (1, "platform-guard"),
     "tests/test_analysis_sqlcipher_readers.py": (1, "optional-dep-guard"),
     # POSIX mode bits, geteuid, and the Windows NT DACL key floor.
     "tests/test_at_rest.py": (4, "platform-guard"),

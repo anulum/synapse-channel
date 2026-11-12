@@ -137,3 +137,22 @@ requires_packaged_python312 = pytest.mark.skipif(
     reason="native probe needs fixed packaged CPython3.12 at /usr/bin/python3.12",
 )
 """Skip native positives when their fixed interpreter is absent; ABI refusals still run."""
+
+
+def create_link_or_skip(link: Path, target: Path) -> None:
+    """Create ``link`` pointing at ``target``, or skip when this process cannot.
+
+    A missing privilege is a property of the process. A caller that must prove
+    the refusal catches ``pytest.skip.Exception`` and lets its own test pass.
+
+    Parameters
+    ----------
+    link :
+        Path of the link to create.
+    target :
+        Path the link names.
+    """
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"this process cannot create a symlink: {exc}")

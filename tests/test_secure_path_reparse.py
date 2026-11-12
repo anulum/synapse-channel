@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from _platform_caps import create_link_or_skip
 from synapse_channel.core.secure_path import (
     _windows_kernel,
     _windows_open_nofollow,
@@ -30,6 +31,8 @@ def test_a_non_windows_host_has_no_reparse_opener() -> None:
         again = _windows_kernel()
         assert again is kernel
         return
+    with pytest.raises(OSError, match="unavailable"):
+        _windows_kernel()
     with pytest.raises(OSError, match="unavailable"):
         _windows_open_nofollow(Path("leaf"), directory=False)
 
@@ -63,26 +66,18 @@ def test_a_directory_handle_is_rejected(tmp_path: Path) -> None:
         open_nofollow_leaf(directory, directory=True)
 
 
-@pytest.mark.skipif(os.name != "nt", reason="CreateFileW reparse refusal is measured on Windows")
-def _create_link_or_skip(link: Path, target: Path) -> None:
-    """Create ``link``, or skip when this process is not allowed to."""
-    try:
-        link.symlink_to(target)
-    except OSError as exc:
-        pytest.skip(f"this process cannot create a symlink: {exc}")
-
-
-def test_a_missing_symlink_privilege_skips_instead_of_passing(
+def test_a_refused_symlink_creation_is_reported_as_a_skip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A process that cannot create a link does not report the refusal as tested."""
+    """A process that cannot create a link reports that, and this test passes."""
 
     def refuse(self: Path, target: str | Path, target_is_directory: bool = False) -> None:
         del self, target, target_is_directory
         raise OSError("privilege")
 
     monkeypatch.setattr(Path, "symlink_to", refuse)
-    _create_link_or_skip(tmp_path / "link", tmp_path / "leaf")
+    with pytest.raises(pytest.skip.Exception, match="cannot create a symlink"):
+        create_link_or_skip(tmp_path / "link", tmp_path / "leaf")
 
 
 @pytest.mark.skipif(os.name != "nt", reason="CreateFileW reparse refusal is measured on Windows")
@@ -91,7 +86,7 @@ def test_a_reparse_point_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "leaf"
     path.write_bytes(b"data\n")
     link = tmp_path / "link"
-    _create_link_or_skip(link, path)
+    create_link_or_skip(link, path)
     with pytest.raises(OSError, match="symlink refused"):
         open_nofollow_leaf(link)
 

@@ -322,21 +322,21 @@ def _windows_open_nofollow(target: Path, *, directory: bool) -> int:
     Raises
     ------
     OSError
-        The leaf is missing, is a reparse point, or the kernel refuses it.
+        The leaf is missing, is a reparse point, the kernel refuses it, or this
+        process is not Windows.
     """
-    kernel = _windows_kernel()
-    # Any: Linux mypy's ctypes stub has no WinError, and msvcrt is Windows-only.
-    ctypes_any: Any = ctypes
-    msvcrt: Any = __import__("msvcrt")
+    if sys.platform != "win32":
+        raise OSError("secure nofollow open is unavailable on this platform")
+    import msvcrt
 
+    kernel = _windows_kernel()
     # FILE_FLAG_OPEN_REPARSE_POINT: the handle is the leaf, not its target.
+    # ``directory`` does not add backup semantics, so the kernel rejects a directory.
     flags = 0x00200000
-    if directory:
-        flags = 0x00200000
     handle = kernel.CreateFileW(str(target), 0x80000000, 0x00000007, None, 3, flags, None)
     invalid = ctypes.c_void_p(-1).value
     if not handle or handle == invalid:
-        raise ctypes_any.WinError(ctypes_any.get_last_error())
+        raise ctypes.WinError(ctypes.get_last_error())
 
     class _FileTime(ctypes.Structure):
         _fields_ = (("dwLowDateTime", ctypes.c_uint32), ("dwHighDateTime", ctypes.c_uint32))
@@ -357,9 +357,9 @@ def _windows_open_nofollow(target: Path, *, directory: bool) -> int:
 
     info = _ByHandle()
     if not kernel.GetFileInformationByHandle(handle, ctypes.byref(info)):
-        error = ctypes_any.get_last_error()
+        error = ctypes.get_last_error()
         kernel.CloseHandle(handle)
-        raise ctypes_any.WinError(error)
+        raise ctypes.WinError(error)
     if info.dwFileAttributes & 0x00000400:
         kernel.CloseHandle(handle)
         raise OSError(None, "symlink refused", str(target), 22)
@@ -378,11 +378,8 @@ def open_nofollow_leaf(path: str | Path, *, directory: bool = False) -> int:
     ``CreateFileW`` with ``FILE_FLAG_OPEN_REPARSE_POINT``. Attributes are read
     from that handle, a reparse point is refused, and the handle becomes a
     descriptor. Callers that need every parent component walked keep using
-    :mod:`synapse_channel.core.secret_files`.
-
-    A test may mark a non-Windows process as Windows. That process has no
-    Win32 kernel, so a symlink leaf is refused and then the portable open is
-    used.
+    :mod:`synapse_channel.core.secret_files`. A host that is neither POSIX nor
+    Windows raises.
 
     Returns
     -------
@@ -398,11 +395,6 @@ def open_nofollow_leaf(path: str | Path, *, directory: bool = False) -> int:
         )
         if directory:
             flags |= getattr(os, "O_DIRECTORY", 0)
-        return os.open(target, flags)
-    if _WINDOWS:
-        if target.is_symlink():
-            raise OSError(None, "symlink refused", str(target), 22)
-        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)
         return os.open(target, flags)
     raise OSError("secure nofollow open is unavailable on this platform")
 

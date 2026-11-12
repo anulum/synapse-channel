@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from _platform_caps import create_link_or_skip
 from synapse_channel.core.private_dir import PrivateDirError, ensure_private_dir
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.core.secure_path import (
@@ -240,16 +241,9 @@ def test_windows_path_kind_guards(tmp_path: Path) -> None:
         _windows_path_kind_guards(dir_path, purpose="g", directory=False)
 
     link = tmp_path / "link"
-    linked: Path | None
-    try:
-        link.symlink_to(file_path)
-    except OSError:
-        linked = None
-    else:
-        linked = link
-    if linked is not None and linked.is_symlink():
-        with pytest.raises(SecurePathError, match="symlink"):
-            _windows_path_kind_guards(linked, purpose="g", directory=False)
+    create_link_or_skip(link, file_path)
+    with pytest.raises(SecurePathError, match="symlink"):
+        _windows_path_kind_guards(link, purpose="g", directory=False)
     if hasattr(os, "mkfifo"):
         fifo = tmp_path / "fifo"
         os.mkfifo(fifo)
@@ -361,7 +355,6 @@ def test_dispatch_branches_when_forced_windows(
 ) -> None:
     """Force the Windows dispatch on a POSIX host so call wiring is covered."""
     import synapse_channel.core.private_dir as private_dir
-    import synapse_channel.core.secret_files as secret_files
     import synapse_channel.core.secure_path as module
 
     path = tmp_path / "token"
@@ -387,18 +380,6 @@ def test_dispatch_branches_when_forced_windows(
     module.apply_owner_only_dir(tmp_path)
     module.assert_owner_only_file_path(path, purpose="forced")
     module.assert_owner_only_dir_path(tmp_path, purpose="forced-dir")
-
-    # secret_files Windows branch
-    monkeypatch.setattr(secret_files, "_WINDOWS", True)
-    monkeypatch.setattr(secret_files, "_POSIX", False)
-    monkeypatch.setattr(secret_files, "owner_only_floor_available", lambda: True)
-    monkeypatch.setattr(
-        secret_files,
-        "assert_owner_only_file_path",
-        lambda p, purpose, require_single_link=False: None,
-    )
-    assert secret_files.read_secret_file(path, flag="--forced-token") == "win-secret"
-    assert secret_files.read_regular_file_bytes(path, label="public") == b"win-secret\n"
 
     # private_dir Windows branch
     monkeypatch.setattr(private_dir, "_WINDOWS", True)
@@ -636,33 +617,6 @@ def test_windows_open_and_single_link_and_private_dir_os_errors(
     with pytest.raises(SecurePathError, match="hard links"):
         module.assert_owner_only_file_path(path, purpose="p", require_single_link=True)
     monkeypatch.undo()
-
-    # Re-apply windows force after undo of Path.stat
-    monkeypatch.setattr(module, "_POSIX", False)
-    monkeypatch.setattr(module, "_WINDOWS", True)
-    monkeypatch.setattr(module, "owner_only_floor_available", lambda: True)
-
-    # open_nofollow_leaf Windows branch
-    fd = module.open_nofollow_leaf(path)
-    os.close(fd)
-    # directory branch: on real Windows, opening a directory as a file raises
-    # PermissionError; the POSIX host with forced _WINDOWS still exercises the
-    # flag wiring via a successful open.
-    d = tmp_path / "d"
-    d.mkdir()
-    if os.name == "nt":
-        with pytest.raises(OSError):
-            module.open_nofollow_leaf(d, directory=True)
-    else:
-        fd = module.open_nofollow_leaf(d, directory=True)
-        os.close(fd)
-
-    # symlink refuse on windows open
-    if os.name == "posix":
-        link = tmp_path / "sl"
-        link.symlink_to(path)
-        with pytest.raises(OSError, match="symlink refused"):
-            module.open_nofollow_leaf(link)
 
     # secret_files Windows: open failure, size limit, drift, re-assert failure, utf-8
     monkeypatch.setattr(secret_files, "_WINDOWS", True)
@@ -1060,6 +1014,9 @@ def _install_win32(monkeypatch: pytest.MonkeyPatch, scenario: str) -> None:
                 raise AttributeError(entry)
             return Call(entry)
 
+    probe = DLL("kernel32")
+    with pytest.raises(AttributeError):
+        probe.__getattr__("_private")
     monkeypatch.setattr(ctypes, "WinDLL", DLL, raising=False)
     monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
 
@@ -1125,6 +1082,8 @@ def test_current_user_key_reads_the_process_token_on_windows(
     def whoami_must_not_run(_argv: list[str], **_kwargs: object) -> object:
         raise AssertionError("whoami must not run when the process token opens")
 
+    with pytest.raises(AssertionError, match="whoami must not run"):
+        whoami_must_not_run([])
     monkeypatch.setattr(module.subprocess, "run", whoami_must_not_run)  # type: ignore[attr-defined]  # the module imports this name without re-exporting it
     identified = current_user_key()
     assert identified.kind == "windows_sid"
