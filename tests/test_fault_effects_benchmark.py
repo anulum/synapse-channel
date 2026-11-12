@@ -19,6 +19,8 @@ from typing import Any
 
 import pytest
 
+from synapse_channel.core.hub import DEFAULT_MAX_MSG_BYTES
+
 _PATH = Path(__file__).resolve().parents[1] / "benchmarks" / "fault_effects_benchmark.py"
 _SPEC = importlib.util.spec_from_file_location("fault_effects_benchmark", _PATH)
 assert _SPEC is not None and _SPEC.loader is not None
@@ -277,31 +279,29 @@ def test_the_public_run_refuses_a_lease_that_did_not_lapse(
         bench.run_core((task,), tmp_path / "held")
 
 
-async def test_the_environment_guards_refuse_what_never_answers(tmp_path: Path) -> None:
-    """Guards a healthy benchmark run cannot reach, witnessed on real sockets.
+def test_the_public_run_stops_when_the_hub_refuses_the_worker_name(tmp_path: Path) -> None:
+    """A worker name the hub reserves (the peer-hub ``@`` form) is never bound.
 
-    Each bounds a wait so that a broken environment fails the run instead of hanging
-    it, and none is reachable from the public run against its own healthy in-process
-    hub: ``_listening`` gives up when the hub it started never accepts a connection;
-    ``_Session.open`` refuses when the hub never welcomes the agent; ``_Session.close``
-    is safe for a session whose connection never started; ``_Session.wait`` stops
-    after its rounds when the hub never sends an expected answer. The nearest public
-    witness of the same mechanism is the refused claim above.
+    The hub welcomes each connection, then refuses the reserved name and closes it;
+    the session connects again until its attempts are spent and the run stops with the
+    hub's reason, before any effect.
     """
-    import socket
+    task = bench.Task("t", "agent@peer", "none")
+    with pytest.raises(
+        RuntimeError, match=r"^BENCH/agent@peer was refused its name: Name 'BENCH/agent@peer'"
+    ):
+        bench.run_core((task,), tmp_path / "reserved")
+    assert (tmp_path / "reserved" / "effects.jsonl").read_text(encoding="utf-8") == ""
 
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = int(probe.getsockname()[1])
-    never = bench._Session("BENCH/x", f"ws://127.0.0.1:{port}")
-    with pytest.raises(RuntimeError, match="could not connect"):
-        await never.open(timeout=0.2)
-    await never.close()
-    await bench._Session("BENCH/y", "ws://127.0.0.1:1").close()
-    with pytest.raises(RuntimeError, match="nothing listens"):
-        await bench._listening(port, rounds=2)
-    async with bench._hub(tmp_path) as uri:
-        session = await bench._Session("BENCH/z", uri).open()
-        with pytest.raises(TimeoutError, match="no never frame"):
-            await session.wait("never", rounds=1)
-        await session.close()
+
+def test_the_public_run_stops_when_the_hub_never_answers(tmp_path: Path) -> None:
+    """A claim over the hub's frame limit is dropped, never answered; the wait is bounded.
+
+    The hub closes the connection that sent the oversized frame, so no answer to the
+    claim ever arrives: the run stops with a timeout before any effect instead of
+    hanging. The same bound serves every wait for the hub's answer.
+    """
+    task = bench.Task("t" * DEFAULT_MAX_MSG_BYTES, "agent-0", "none")
+    with pytest.raises(TimeoutError, match="^no answer to the claim on tttt"):
+        bench.run_core((task,), tmp_path / "silent")
+    assert (tmp_path / "silent" / "effects.jsonl").read_text(encoding="utf-8") == ""

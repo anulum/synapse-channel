@@ -81,7 +81,6 @@ import os
 import platform
 import random
 import secrets
-import socket
 import subprocess  # nosec B404 - fixed git commands in a disposable repository
 import sys
 import tempfile
@@ -131,7 +130,10 @@ FAULTS = (
 """Fault classes measured; ``none`` is the control."""
 
 MAX_ATTEMPTS = 3
-"""How often an agent tries one operation before it gives up."""
+"""How often an agent tries one operation (or to bind its name) before it gives up."""
+
+RECONNECT_DELAY = 0.05
+"""Seconds a session waits before it connects again after the hub refused its name."""
 
 LEASE_WINDOW = 0.3
 """Seconds the benchmark hub keeps a disconnected holder's claims (its holder-offline window)."""
@@ -456,36 +458,73 @@ def _plain_delivery(task: Task, worker: str, target: FaultyTarget, record: TaskR
 
 
 class _Session:
-    """One connected agent identity that keeps the frames it is sent."""
+    """One agent identity, connecting from construction on, that keeps the frames it is sent.
+
+    The connection starts when the session is made (inside the running event loop), so
+    every session has a connection to close; each caller closes it in a ``finally``,
+    whether or not the hub ever bound its name. A process that restarts after a crash
+    connects while the hub may still hold its predecessor's connection; the hub then
+    refuses the name, and the session connects again, as a restarting process does.
+    """
 
     def __init__(self, name: str, uri: str) -> None:
         self.frames: list[dict[str, Any]] = []
         self.agent = SynapseAgent(
             name, self._collect, uri=uri, verbose=False, machine_identity=False
         )
-        self._task: asyncio.Task[None] | None = None
+        self._task = asyncio.create_task(self.agent.connect())
 
     async def _collect(self, frame: dict[str, Any]) -> None:
         self.frames.append(frame)
 
-    async def open(self, timeout: float = 5.0) -> _Session:
-        """Connect and wait for the hub's welcome."""
-        self._task = asyncio.create_task(self.agent.connect())
-        if not await self.agent.wait_until_ready(timeout=timeout):
-            raise RuntimeError(f"{self.agent.name} could not connect")
-        return self
+    async def open(self) -> None:
+        """Wait until the hub binds the session's name; connect again while it refuses it.
+
+        The hub welcomes every connection first and announces the name as joined only
+        once it binds it. It refuses a name another connection still holds (a crashed
+        predecessor it has not dropped yet) or one it reserves (the peer-hub ``@`` form)
+        and closes that connection. The session then connects again after
+        :data:`RECONNECT_DELAY`, at most :data:`MAX_ATTEMPTS` times in all, and refuses
+        with the hub's reason when the name stays taken. Each wait is bounded (``_first``).
+        """
+        name = self.agent.name
+
+        def settled(frame: dict[str, Any]) -> bool:
+            joined = (
+                frame.get("type") == MessageType.PRESENCE_UPDATE
+                and frame.get("event") == "joined"
+                and frame.get("agent") == name
+            )
+            return joined or frame.get("type") == MessageType.NAME_CONFLICT
+
+        since, attempt = 0, 1
+        while True:
+            frame = await self._first(settled, since=since, rounds=500, what=f"binding of {name}")
+            if frame.get("type") != MessageType.NAME_CONFLICT:
+                return
+            await asyncio.gather(self._task, return_exceptions=True)  # the refused attempt
+            if attempt == MAX_ATTEMPTS:
+                raise RuntimeError(f"{name} was refused its name: {frame.get('payload')}")
+            await asyncio.sleep(RECONNECT_DELAY)
+            since, attempt = len(self.frames), attempt + 1
+            self._task = asyncio.create_task(self.agent.connect())
 
     async def close(self) -> None:
-        """Disconnect, as a crashed or finished agent does."""
+        """Disconnect, as a crashed or finished agent does; closing twice is harmless."""
         self.agent.running = False
-        if self._task is not None:
-            self._task.cancel()
-            await asyncio.gather(self._task, return_exceptions=True)
+        self._task.cancel()
+        await asyncio.gather(self._task, return_exceptions=True)
 
     async def _first(
         self, wanted: Callable[[dict[str, Any]], bool], *, since: int, rounds: int, what: str
     ) -> dict[str, Any]:
-        """Return the first frame from index ``since`` that ``wanted`` accepts."""
+        """Return the first frame from index ``since`` that ``wanted`` accepts.
+
+        Every wait for the hub's answer passes here and is bounded: after ``rounds``
+        polls without the answer (a hub that dropped the request, such as a frame over
+        its size limit, or one too slow to answer in time) the run stops with
+        :class:`TimeoutError` instead of hanging.
+        """
         for _ in range(rounds):
             for frame in self.frames[since:]:
                 if wanted(frame):
@@ -618,7 +657,8 @@ async def _hub(directory: Path) -> AsyncIterator[str]:
     The hub releases a disconnected holder's claims after :data:`LEASE_WINDOW` seconds,
     at the next claim attempt, as it does after its configured window in production. It
     owns the agents' namespace and lets :data:`OPERATOR` release tasks in it through the
-    governed operator relay.
+    governed operator relay. It binds a port the kernel assigns, and the benchmark waits
+    on the hub's own readiness, which reports a failed bind instead of waiting it out.
     """
     store = EventStore(directory / "hub.db")
     policy = AclPolicy(
@@ -628,9 +668,6 @@ async def _hub(directory: Path) -> AsyncIterator[str]:
             AclRule(OPERATION_EVIDENCE, "claim", "*", "", "agents report their operations"),
         ]
     )
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = int(probe.getsockname()[1])
     hub = SynapseHub(
         hub_id=HUB_ID,
         journal=store,
@@ -639,9 +676,9 @@ async def _hub(directory: Path) -> AsyncIterator[str]:
         multihub_serving_policy=_operator_policy(),
         namespace_ownership=NamespaceOwnership(owners={NAMESPACE: HUB_ID}, local_hub_id=HUB_ID),
     )
-    serving = asyncio.create_task(hub.serve("127.0.0.1", port))
+    serving = asyncio.create_task(hub.serve("127.0.0.1", 0))
     try:
-        await _listening(port)
+        _host, port = await hub.wait_until_serving()
         yield f"ws://127.0.0.1:{port}"
     finally:
         serving.cancel()
@@ -694,18 +731,6 @@ def _operator_policy() -> MultiHubServingPolicy:
     )
 
 
-async def _listening(port: int, rounds: int = 300) -> None:
-    """Wait until something accepts connections on ``port``; refuse a hub that never does."""
-    for _ in range(rounds):
-        with contextlib.suppress(OSError):
-            _reader, writer = await asyncio.open_connection("127.0.0.1", port)
-            writer.close()
-            await writer.wait_closed()
-            return
-        await asyncio.sleep(0.01)
-    raise RuntimeError(f"nothing listens on port {port}")
-
-
 async def _core_task(task: Task, uri: str, target: FaultyTarget) -> TaskRecord:
     """Run one task the Core way, then its second delivery when the request is duplicated."""
     record = TaskRecord(task.task_id, task.fault)
@@ -738,8 +763,9 @@ async def _core_delivery(
     not declared (so there is nothing to verify).
     """
     name = f"BENCH/{task.agent}"
-    session = await _Session(name, uri).open()
+    session = _Session(name, uri)
     try:
+        await session.open()
         claimed = await session.claim(task)
         status, reason = await session.declare(task, claimed)
         if status != "accepted":
@@ -753,7 +779,8 @@ async def _core_delivery(
             await session.close()  # cut off, past the hub's lease window
             await asyncio.sleep(CUT_OFF)
             async with _rival_holds(task, uri, target):
-                session = await _Session(name, uri).open()
+                session = _Session(name, uri)
+                await session.open()
         elif task.fault == "withdrawn_authority":
             fault_at = time.perf_counter()
             await _operator_withdraws(task, uri, target)
@@ -774,7 +801,8 @@ async def _core_delivery(
                 if isinstance(fault, AgentCrashed):
                     # The process died: a new one connects as the same identity.
                     await session.close()
-                    session = await _Session(name, uri).open()
+                    session = _Session(name, uri)
+                    await session.open()
                 # Inquire, never retry blindly: the observer says whether the effect exists.
                 try:
                     if target.inquire(task) > 0:
@@ -817,8 +845,9 @@ async def _verify_independently(
         operation_id=task.operation_id,
         communication=communication,
     )
-    session = await _Session(f"BENCH/{VERIFIER}", uri).open()
+    session = _Session(f"BENCH/{VERIFIER}", uri)
     try:
+        await session.open()
         status = await session.record_verification(task, verification)
     finally:
         await session.close()
@@ -850,8 +879,9 @@ async def _operator_withdraws(task: Task, uri: str, target: FaultyTarget) -> Non
 @contextlib.asynccontextmanager
 async def _rival_holds(task: Task, uri: str, target: FaultyTarget) -> AsyncIterator[None]:
     """Let another worker take the lapsed task and hold it while the cut-off agent returns."""
-    rival = await _Session(f"BENCH/{RIVAL}", uri).open()
+    rival = _Session(f"BENCH/{RIVAL}", uri)
     try:
+        await rival.open()
         epoch = await rival.claim(task)  # the hub releases the lapsed claim first
         target.ledger.authority.assign(task.task_id, RIVAL)
         yield
@@ -862,8 +892,9 @@ async def _rival_holds(task: Task, uri: str, target: FaultyTarget) -> AsyncItera
 
 async def _core_redelivery(task: Task, uri: str, target: FaultyTarget, record: TaskRecord) -> None:
     """Deliver the same request to another worker; it acts only if its declaration is accepted."""
-    session = await _Session(f"BENCH/{OTHER_WORKER}", uri).open()
+    session = _Session(f"BENCH/{OTHER_WORKER}", uri)
     try:
+        await session.open()
         epoch = await session.claim(task)
         record.attempts += 1
         status, reason = await session.declare(task, epoch)
