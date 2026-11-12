@@ -38,6 +38,8 @@ execution evidence when carrying a release claim forward.
   terminated process stays openable until the parent closes its handle.
 - A Windows process id that cannot be opened is a launch record with no
   start identity. The record names that refusal.
+- The advisory file lock refuses a second taker on the host that runs the
+  test. Windows takes that lock with a byte-range lock.
 
 ## [0.99.51] - 2026-11-11
 
