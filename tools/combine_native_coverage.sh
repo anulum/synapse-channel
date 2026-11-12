@@ -8,8 +8,9 @@
 # SYNAPSE CHANNEL — combine native subprocess observations assigned to this shard
 set -euo pipefail
 
-test -s .coverage
-test ! -L .coverage
+data_file=${COVERAGE_FILE:-.coverage}
+test -s "$data_file"
+test ! -L "$data_file"
 test -d native-kernel-coverage
 test ! -L native-kernel-coverage
 tool_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)

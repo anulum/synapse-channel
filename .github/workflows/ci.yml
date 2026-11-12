@@ -251,7 +251,9 @@ jobs:
           echo "OPENCODE_BIN=$bin_dir/opencode" >> "$GITHUB_ENV"
       - name: Prepare isolated kernel coverage output
         if: matrix.python-version == '3.12'
-        run: mkdir -p native-kernel-coverage
+        run: |
+          mkdir -p native-kernel-coverage "$RUNNER_TEMP/coverage-data"
+          echo "COVERAGE_FILE=$RUNNER_TEMP/coverage-data/.coverage" >> "$GITHUB_ENV"
       - name: Run a complete indexed coverage shard
         if: matrix.python-version == '3.12'
         env:
@@ -296,7 +298,7 @@ jobs:
           if [ "$SHARD_INDEX" = 0 ]; then args+=(--native-manifest shard-native.json); fi
           if [ "$PYTHON_PROFILE" = 3.12 ]; then
             bash tools/combine_native_coverage.sh
-            args+=(--coverage-file .coverage)
+            args+=(--coverage-file "$COVERAGE_FILE")
           fi
           python tools/ci_shard_artifacts.py pack "${args[@]}"
           if [ "$PYTHON_PROFILE" = 3.12 ]; then

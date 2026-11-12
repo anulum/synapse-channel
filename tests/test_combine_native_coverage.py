@@ -22,18 +22,20 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[1] / "tools/combine_native_coverage.sh"
 
 
-def _run(root: Path, command: list[str]) -> subprocess.CompletedProcess[str]:
+def _run(
+    root: Path, command: list[str], *, data_file: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     """Use the current interpreter's coverage tool with an isolated configuration."""
     env = dict(
         os.environ,
         PATH=str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"],
         COVERAGE_RCFILE=str(root / "coverage.ini"),
-        COVERAGE_FILE=str(root / ".coverage"),
+        COVERAGE_FILE=str(root / ".coverage" if data_file is None else data_file),
     )
     return subprocess.run(command, cwd=root, env=env, capture_output=True, text=True, timeout=15)
 
 
-def _project(root: Path, native_count: int = 0) -> list[Path]:
+def _project(root: Path, native_count: int = 0, *, data_file: Path | None = None) -> list[Path]:
     """Create two independently measured subprocess surfaces for the real combiner."""
     (root / "coverage.ini").write_text("[run]\nbranch = true\n")
     (root / "main.py").write_text("print('main observation')\n")
@@ -53,7 +55,7 @@ def _project(root: Path, native_count: int = 0) -> list[Path]:
     ]
     for directory in directories:
         directory.mkdir()
-    result = _run(root, [sys.executable, "-m", "coverage", "run", "main.py"])
+    result = _run(root, [sys.executable, "-m", "coverage", "run", "main.py"], data_file=data_file)
     assert result.returncode == 0, result.stderr
     return directories
 
@@ -84,6 +86,47 @@ def test_combiner_preserves_main_and_all_actual_native_observations(
     assert data.lines(str(tmp_path / "main.py")) == [1]
     assert data.lines(str(tmp_path / "native.py")) == ([1] if native_count else None)
     assert all(not list(directory.iterdir()) for directory in directories)
+
+
+def test_combiner_follows_a_data_file_outside_the_working_directory(tmp_path: Path) -> None:
+    """CI keeps the shard database outside the checkout; it is read and extended in place."""
+    root = tmp_path / "checkout"
+    root.mkdir()
+    data_file = tmp_path / "runner-temp" / "coverage-data" / ".coverage"
+    data_file.parent.mkdir(parents=True)
+    directories = _project(root, 1, data_file=data_file)
+    trace = directories[0] / ".coverage.observed"
+    result = _run(
+        root,
+        [sys.executable, "-m", "coverage", "run", f"--data-file={trace}", "native.py"],
+        data_file=data_file,
+    )
+    assert result.returncode == 0, result.stderr
+    result = _run(root, ["bash", str(SCRIPT)], data_file=data_file)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (root / ".coverage").exists()
+    data = coverage.CoverageData(basename=str(data_file))
+    data.read()
+    assert data.lines(str(root / "main.py")) == [1]
+    assert data.lines(str(root / "native.py")) == [1]
+
+
+def test_combiner_refuses_a_linked_data_file_outside_the_working_directory(
+    tmp_path: Path,
+) -> None:
+    """The outside data file is held to the same no-link rule as the default one."""
+    root = tmp_path / "checkout"
+    root.mkdir()
+    real = tmp_path / "real" / ".coverage"
+    real.parent.mkdir()
+    _project(root, data_file=real)
+    link = tmp_path / "linked" / ".coverage"
+    link.parent.mkdir()
+    link.symlink_to(real)
+    before = real.read_bytes()
+    result = _run(root, ["bash", str(SCRIPT)], data_file=link)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert real.read_bytes() == before
 
 
 @pytest.mark.parametrize("missing", ["main", "native_directory", "corrupt_native"])

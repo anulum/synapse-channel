@@ -668,6 +668,39 @@ def test_ci_failed_job_rerun_reuses_this_run_and_states_the_matrix_result() -> N
             assert "Coverage is not qualified" in completed.stdout
 
 
+def test_ci_keeps_the_shard_coverage_database_outside_the_checkout(tmp_path: Path) -> None:
+    """The real prepare step exports a runner-temp data file, and the pack step reads it."""
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    steps = workflow["jobs"]["test"]["steps"]
+    prepare = next(
+        step for step in steps if step.get("name") == "Prepare isolated kernel coverage output"
+    )
+    runner_temp, github_env = tmp_path / "runner-temp", tmp_path / "github-env"
+    runner_temp.mkdir()
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    completed = subprocess.run(
+        ["bash", "-c", prepare["run"]],
+        cwd=checkout,
+        env=dict(os.environ, RUNNER_TEMP=str(runner_temp), GITHUB_ENV=str(github_env)),
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert (checkout / "native-kernel-coverage").is_dir()
+    assert (runner_temp / "coverage-data").is_dir()
+    assert github_env.read_text() == f"COVERAGE_FILE={runner_temp}/coverage-data/.coverage\n"
+    pack = next(
+        step["run"] for step in steps if "ci_shard_artifacts.py pack" in step.get("run", "")
+    )
+    assert 'args+=(--coverage-file "$COVERAGE_FILE")' in pack
+    assert all("--coverage-file .coverage" not in step.get("run", "") for step in steps)
+
+
 def test_application_report_retains_probe_data_without_expanding_the_package_gate(
     tmp_path: Path,
 ) -> None:
