@@ -73,7 +73,8 @@ def test_an_unreachable_target_gives_up_and_loses_the_effect(tmp_path: Path) -> 
     assert record.recovery is None and not record.verified
     measures = bench.ModeResult("baseline", (record,)).measures()
     assert measures["lost_effects"] == measures["gave_up"] == 1
-    assert measures["cpu_seconds_per_completed_task"] is None
+    assert measures["cpu_seconds_per_completed_task"] is None  # the mode was not measured
+    assert measures["task_cpu_seconds_per_completed_task"] is None
     assert measures["mean_completed_latency_seconds"] is None
     assert measures["mean_attempt_latency_seconds"] == record.latency
 
@@ -82,17 +83,21 @@ def test_time_measures_count_completed_tasks_and_cost_counts_all_work() -> None:
     done = bench.TaskRecord("a", "none", latency=2.0, effects=1, file_ok=True, cpu_seconds=1.0)
     duplicate = bench.TaskRecord("b", "lost_after", latency=10.0, effects=2, file_ok=True)
     duplicate.cpu_seconds, duplicate.recovery = 3.0, 4.0
-    measures = bench.ModeResult("baseline", (done, duplicate)).measures()
+    measures = bench.ModeResult("baseline", (done, duplicate), cpu_seconds=10.0).measures()
     assert measures["mean_completed_latency_seconds"] == 2.0
     assert measures["mean_attempt_latency_seconds"] == 6.0
-    assert measures["cpu_seconds_per_completed_task"] == 4.0  # all work / one completed task
+    assert measures["task_cpu_seconds_per_completed_task"] == 4.0  # task work / one completed
+    assert measures["cpu_seconds_per_completed_task"] == 10.0  # the whole mode / one completed
+    assert (measures["cpu_seconds"], measures["shared_cpu_seconds"]) == (10.0, 6.0)
     assert measures["mean_recovery_seconds"] == 4.0
     by_fault = measures["by_fault"]
     assert by_fault["none"]["mean_completed_latency_seconds"] == 2.0
     assert by_fault["lost_after"]["mean_completed_latency_seconds"] is None
-    assert by_fault["lost_after"]["cpu_seconds_per_completed_task"] is None
+    assert by_fault["lost_after"]["task_cpu_seconds_per_completed_task"] is None
     unreported = bench.TaskRecord("c", "none", latency=1.0, effects=1, file_ok=True)
-    assert bench.ModeResult("x", (unreported,)).measures()["cpu_seconds_per_completed_task"] is None
+    partial = bench.ModeResult("x", (unreported,), cpu_seconds=2.0).measures()
+    assert partial["task_cpu_seconds_per_completed_task"] is None
+    assert (partial["cpu_seconds_per_completed_task"], partial["shared_cpu_seconds"]) == (2.0, None)
     assert bench.ModeResult("baseline").measures()["mean_attempt_latency_seconds"] is None
 
 
@@ -130,6 +135,8 @@ def test_a_run_is_repeatable_and_the_command_writes_its_document(
     assert [first["modes"][0][k] for k in hub] == [0, 0]  # the baseline has no hub
     assert [first["modes"][1][k] for k in hub] == [18, 0]
     assert first["modes"][0]["cpu_seconds_per_completed_task"] > 0  # Git children counted
+    for mode in first["modes"]:  # setup, observation and teardown are measured, not dropped
+        assert mode["cpu_seconds"] > 0 and mode["shared_cpu_seconds"] > 0
     versions = first["versions"]
     head = subprocess.run(
         ["git", "-C", str(_PATH.parent), "rev-parse", "HEAD"],
@@ -253,11 +260,33 @@ def test_core_shows_the_duplicate_a_hub_would_let_through(
     assert not record.verified_on_hub
 
 
-async def test_the_session_and_hub_helpers_refuse_what_never_answers(tmp_path: Path) -> None:
-    """Environment guards: a hub that never listens, a session that cannot connect.
+def test_the_public_run_refuses_a_lease_that_did_not_lapse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the hub keeps a cut-off holder's claim past the cut-off, the run stops.
 
-    They are reachable from the public run only when the in-process hub cannot start,
-    so they are exercised here directly against real sockets.
+    The ``lease_expiry`` fault relies on the hub's holder-offline window
+    (:data:`bench.LEASE_WINDOW`) being shorter than the agent's cut-off
+    (:data:`bench.CUT_OFF`). Configured the other way, the rival's real claim is
+    denied and the public run fails with that refusal instead of measuring an
+    expiry that never happened.
+    """
+    monkeypatch.setattr(bench, "LEASE_WINDOW", 60.0)
+    task = bench.Task("t", "agent-0", "lease_expiry")
+    with pytest.raises(RuntimeError, match=f"BENCH/{bench.RIVAL} was refused t"):
+        bench.run_core((task,), tmp_path / "held")
+
+
+async def test_the_environment_guards_refuse_what_never_answers(tmp_path: Path) -> None:
+    """Guards a healthy benchmark run cannot reach, witnessed on real sockets.
+
+    Each bounds a wait so that a broken environment fails the run instead of hanging
+    it, and none is reachable from the public run against its own healthy in-process
+    hub: ``_listening`` gives up when the hub it started never accepts a connection;
+    ``_Session.open`` refuses when the hub never welcomes the agent; ``_Session.close``
+    is safe for a session whose connection never started; ``_Session.wait`` stops
+    after its rounds when the hub never sends an expected answer. The nearest public
+    witness of the same mechanism is the refused claim above.
     """
     import socket
 
@@ -275,10 +304,4 @@ async def test_the_session_and_hub_helpers_refuse_what_never_answers(tmp_path: P
         session = await bench._Session("BENCH/z", uri).open()
         with pytest.raises(TimeoutError, match="no never frame"):
             await session.wait("never", rounds=1)
-        task = bench.Task("t", "agent-z", "none")
-        await session.claim(task)
-        other = await bench._Session("BENCH/w", uri).open()
-        with pytest.raises(RuntimeError, match="BENCH/w was refused t"):
-            await other.claim(task)
-        await other.close()
         await session.close()

@@ -54,9 +54,13 @@ effects, verified task success (the intended effect exactly once, by the worker 
 task belonged to, with the file's digest), tasks the hub's journal shows as verified and
 tasks where that journal disagrees with the observers, human interventions, latency per completed
 task (``None`` when none completed) beside the latency of all attempts, recovery time
-(fault to completion or correct abandonment), and CPU seconds per completed task
-counted for this process and the child processes it waited for (Git), where the
-platform reports child CPU. Two runs with the same seed give identical counts. The
+(fault to completion or correct abandonment), and CPU. The CPU of a whole mode is
+measured from before its repository (and, in Core, its hub and certificates) is set up
+until the observers have read back and the hub has stopped, for this process and the
+child processes it waited for (Git), where the platform reports child CPU; it is
+reported per completed task, beside the part attributable to the tasks (also per
+fault class) and the shared remainder (setup, observation, teardown), which no fault
+class is charged with. Two runs with the same seed give identical counts. The
 result names the Python, the Core version, path and source commit actually loaded, and
 the SHA-256 of this file.
 
@@ -942,26 +946,50 @@ def _judge(
 
 @dataclass(frozen=True)
 class ModeResult:
-    """The measures of one mode."""
+    """The measures of one mode.
+
+    ``cpu_seconds`` is the whole mode's CPU, children included, from before its setup
+    until after its observation and teardown; ``None`` when it was not measured or the
+    platform does not report child CPU.
+    """
 
     mode: str
     records: tuple[TaskRecord, ...] = field(default_factory=tuple)
+    cpu_seconds: float | None = None
 
     def measures(self) -> dict[str, object]:
-        """Return the counts and times of this mode, overall and per fault class."""
+        """Return the counts, times and costs of this mode, overall and per fault class."""
         by_fault = {
             fault: _measures([r for r in self.records if r.fault == fault]) for fault in FAULTS
         }
-        return {"mode": self.mode, **_measures(list(self.records)), "by_fault": by_fault}
+        overall = _measures(list(self.records))
+        tasks_cpu = [r.cpu_seconds for r in self.records]
+        whole = self.cpu_seconds
+        completed = overall["verified_success"]
+        return {
+            "mode": self.mode,
+            **overall,
+            "cpu_seconds": whole,
+            "cpu_seconds_per_completed_task": (
+                whole / completed if whole is not None and completed else None
+            ),
+            "shared_cpu_seconds": (
+                whole - sum(c for c in tasks_cpu if c is not None)
+                if whole is not None and None not in tasks_cpu
+                else None
+            ),
+            "by_fault": by_fault,
+        }
 
 
 def _measures(records: list[TaskRecord]) -> dict[str, Any]:
     """Return the counts, the time populations and the cost of a set of task records.
 
     ``mean_completed_latency_seconds`` covers verified tasks only and is ``None`` when
-    none completed; ``mean_attempt_latency_seconds`` covers every task. CPU is the work
-    of all tasks (completed or not) divided by the completed ones, ``None`` when none
-    completed or when the platform does not report child-process CPU.
+    none completed; ``mean_attempt_latency_seconds`` covers every task. Task CPU is the
+    work attributable to the tasks (completed or not) divided by the completed ones,
+    ``None`` when none completed or when the platform does not report child-process CPU;
+    the mode's shared setup, observation and teardown are not in it.
     """
     completed = [r for r in records if r.verified]
     cpu = [r.cpu_seconds for r in records]
@@ -971,7 +999,7 @@ def _measures(records: list[TaskRecord]) -> dict[str, Any]:
         "mean_completed_latency_seconds": _mean([r.latency for r in completed]),
         "mean_attempt_latency_seconds": _mean([r.latency for r in records]),
         "mean_recovery_seconds": _mean([r.recovery for r in records if r.recovery is not None]),
-        "cpu_seconds_per_completed_task": (
+        "task_cpu_seconds_per_completed_task": (
             sum(c for c in cpu if c is not None) / len(completed)
             if completed and cpu_known
             else None
@@ -1069,10 +1097,14 @@ def run(seed: int, *, workdir: Path | None = None) -> dict[str, Any]:
     tasks = schedule(seed)
     with tempfile.TemporaryDirectory() as scratch:
         base = workdir if workdir is not None else Path(scratch)
+        started = _cpu_now()
         baseline = run_baseline(tasks, base / "baseline")
+        baseline_cpu = _cpu_since(started)
+        started = _cpu_now()
         core_dir = base / "core"
         core_dir.mkdir(parents=True)
         core = run_core(tasks, core_dir)
+        core_cpu = _cpu_since(started)
     return {
         "benchmark": "fault_effects",
         "seed": seed,
@@ -1080,8 +1112,8 @@ def run(seed: int, *, workdir: Path | None = None) -> dict[str, Any]:
         "host": {"machine": platform.machine(), "system": platform.system()},
         "schedule": [task.__dict__ for task in tasks],
         "modes": [
-            ModeResult("baseline", tuple(baseline)).measures(),
-            ModeResult("core", tuple(core)).measures(),
+            ModeResult("baseline", tuple(baseline), baseline_cpu).measures(),
+            ModeResult("core", tuple(core), core_cpu).measures(),
         ],
         "records": {
             mode: [record.__dict__ | {"verified": record.verified} for record in records]

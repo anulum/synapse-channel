@@ -206,9 +206,13 @@ The output gives, per mode and per fault class: unauthorised, duplicate and
 lost effects, verified task success, tasks the hub's journal records as
 verified and tasks where that journal disagrees with the observers, human
 interventions, latency per completed
-task beside the latency of all attempts, recovery time, and CPU seconds per
-completed task counted for the process and the Git child processes it waited
-for (where the platform reports child CPU). It names the Python, the Core
+task beside the latency of all attempts, recovery time, and CPU per completed
+task. The CPU of a whole mode runs from before its repository (and, in Core, its
+hub and certificates) is set up until the observers have read back and the hub
+has stopped, counted for the process and the Git child processes it waited for
+(where the platform reports child CPU); the part attributable to the tasks is
+also given per fault class, and the shared remainder (setup, observation,
+teardown) is reported on its own, not charged to any fault. It names the Python, the Core
 version, path and source commit actually loaded, and the benchmark file's
 digest. Two runs with the same seed give the same counts.
 
