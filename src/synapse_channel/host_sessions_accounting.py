@@ -17,7 +17,7 @@ from __future__ import annotations
 import ctypes
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 # one fixed nvidia-smi argv, never a shell
 import sys
 import time
 from ctypes import wintypes
@@ -134,7 +134,7 @@ def _read_gpu_table() -> dict[str, str] | None:
     if _NVIDIA is None:
         return None
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # nosec B603 # fixed _GPU_ARGV, no shell, bounded
             _GPU_ARGV, capture_output=True, text=True, timeout=1, check=False
         )
     except (OSError, subprocess.TimeoutExpired):

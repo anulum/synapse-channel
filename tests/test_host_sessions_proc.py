@@ -532,15 +532,20 @@ time.sleep(0.001)
 
 
 def test_kernel_clock_reports_the_host_or_its_absence() -> None:
-    """The public clock is the kernel clock, or an explicit absence."""
-    if hasattr(os, "sysconf"):
+    """The public clock is the kernel clock, or an explicit absence.
+
+    A host without Linux procfs refuses with ``OSError``: macOS has ``sysconf``
+    but no ``/proc/stat``, and Windows has neither and says so in words.
+    """
+    if PROC_AVAILABLE:
         clock = kernel_clock()
         assert isinstance(clock, KernelClock)
         assert clock.ticks_per_second > 0
         assert clock.boot_time > 0
         return
-    with pytest.raises(OSError, match="kernel clock is unavailable"):
+    with pytest.raises(OSError) as refused:
         kernel_clock()
+    assert hasattr(os, "sysconf") or "kernel clock is unavailable" in str(refused.value)
 
 
 def test_kernel_clock_refuses_a_non_positive_tick_rate(
@@ -687,7 +692,7 @@ def test_observe_process_refuses_when_the_caller_identity_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The second identity read refuses when the caller uid no longer matches."""
-    if not hasattr(os, "geteuid"):
+    if not PROC_AVAILABLE:
         with pytest.raises(OSError):
             observe_process(os.getpid())
         return

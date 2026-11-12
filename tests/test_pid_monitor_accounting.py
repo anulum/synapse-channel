@@ -20,9 +20,13 @@ from pathlib import Path
 
 import pytest
 
-from _platform_caps import requires_proc
+from _platform_caps import PROC_AVAILABLE, requires_proc
 
 _SRC = str(Path(__file__).resolve().parents[1] / "src")
+_ACCOUNTING_HOST = pytest.mark.skipif(
+    sys.platform != "win32" and not PROC_AVAILABLE,
+    reason="process accounting reads Linux procfs or the Win32 API; macOS has neither",
+)
 _WINDOWS_SLEEPER = (
     "import ctypes, time\n"
     "from ctypes import wintypes\n"
@@ -111,6 +115,7 @@ def _stop(pid: int) -> None:
         return
 
 
+@_ACCOUNTING_HOST
 def test_pid_monitor_binds_the_working_interpreter_and_stops_within_a_bound() -> None:
     """The public monitor reports the process that does the work, then returns."""
     program = _WINDOWS_SLEEPER if sys.platform == "win32" else _LINUX_SLEEPER
@@ -170,6 +175,7 @@ def test_pid_monitor_binds_the_working_interpreter_and_stops_within_a_bound() ->
     assert all(row.get("pid") != child.pid for row in rows)
 
 
+@_ACCOUNTING_HOST
 def test_accounting_refuses_a_bad_pid_and_states_discovery_bounds() -> None:
     """Bad PIDs raise, a dead PID stays unavailable, and discovery states its bound."""
     from synapse_channel.host_sessions_accounting import account_process, discover_windows_processes
@@ -180,14 +186,16 @@ def test_accounting_refuses_a_bad_pid_and_states_discovery_bounds() -> None:
         account_process(0)
     gone = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
     gone_pid = gone.pid
-    time.sleep(0.3)
-    parent = account_process(os.getpid())
-    tree = parent["tree_pids"]
-    assert isinstance(tree, list)
-    assert tree.count(gone_pid) == 1
-    assert account_process(os.getpid())["tree_pids"] == tree
-    gone.kill()
-    gone.wait(timeout=5)
+    try:
+        time.sleep(0.3)
+        parent = account_process(os.getpid())
+        tree = parent["tree_pids"]
+        assert isinstance(tree, list)
+        assert tree.count(gone_pid) == 1
+        assert account_process(os.getpid())["tree_pids"] == tree
+    finally:
+        gone.kill()
+        gone.wait(timeout=5)
     missing = account_process(gone_pid)
     assert missing["status"] == "unavailable"
     assert missing["memory_guarantee"] == "none"
