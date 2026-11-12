@@ -265,6 +265,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_shell_integration_pid_bounds.py": (1, "platform-guard"),
     "tests/test_terminal_label_tmux.py": (1, "platform-guard"),
     "tests/test_wake_adapter_codex_queue.py": (1, "platform-guard"),
+    "tests/test_wake_adapter_codex_queue_windows.py": (1, "platform-guard"),
     "tests/test_wake_adapter_pane_bridge.py": (1, "platform-guard"),
     # Pane sessions are read from Linux procfs and need tmux.
     "tests/test_tmux_reap.py": (1, "platform-guard"),

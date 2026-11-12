@@ -40,6 +40,8 @@ execution evidence when carrying a release claim forward.
   start identity. The record names that refusal.
 - The advisory file lock refuses a second taker on the host that runs the
   test. Windows takes that lock with a byte-range lock.
+- A Windows queue wake starts a ``.cmd`` in a job before the command runs.
+  The shebang stand-in is not a program CreateProcess can start.
 
 ## [0.99.51] - 2026-11-11
 
