@@ -9,9 +9,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib.util
 import json
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -279,19 +281,85 @@ def test_the_public_run_refuses_a_lease_that_did_not_lapse(
         bench.run_core((task,), tmp_path / "held")
 
 
-def test_the_public_run_stops_when_the_hub_refuses_the_worker_name(tmp_path: Path) -> None:
+def _hub_lines(caplog: pytest.LogCaptureFixture, start: str) -> int:
+    """Count the hub's own log lines that begin with ``start``."""
+    return sum(record.getMessage().startswith(start) for record in caplog.records)
+
+
+def test_the_public_run_stops_when_the_hub_refuses_the_worker_name(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """A worker name the hub reserves (the peer-hub ``@`` form) is never bound.
 
-    The hub welcomes each connection, then refuses the reserved name and closes it;
-    the session connects again until its attempts are spent and the run stops with the
-    hub's reason, before any effect.
+    The hub welcomes the connection, lists nobody under that name, refuses it and
+    closes. No predecessor holds the name, so waiting cannot help: the session stops
+    at the first refusal with the hub's reason, before any effect.
     """
+    caplog.set_level(logging.INFO, logger="synapse.hub")
     task = bench.Task("t", "agent@peer", "none")
     with pytest.raises(
         RuntimeError, match=r"^BENCH/agent@peer was refused its name: Name 'BENCH/agent@peer'"
     ):
         bench.run_core((task,), tmp_path / "reserved")
     assert (tmp_path / "reserved" / "effects.jsonl").read_text(encoding="utf-8") == ""
+    assert _hub_lines(caplog, "reserved identity refused sender=BENCH/agent@peer ") == 1
+
+
+def test_a_restarted_worker_waits_while_the_hub_still_holds_its_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A restarted worker binds its name once the hub drops the dead process's connection.
+
+    The dead process's connection is kept open here until the hub has refused the
+    replacement five times. The hub's welcome lists the name as held, so the
+    replacement connects again each time; it binds the name after the hub drops the
+    predecessor, and the task ends with one effect and an accepted outcome record.
+    """
+    caplog.set_level(logging.INFO, logger="synapse.hub")
+    refused = "name conflict sender=BENCH/agent-0 "
+    held_for = 5
+    close = bench._Session.close
+    outliving: list[asyncio.Task[None]] = []
+
+    async def outlive_the_crash(session: Any) -> None:
+        while _hub_lines(caplog, refused) < held_for:
+            await asyncio.sleep(0)
+        await close(session)
+
+    async def close_late_once(session: Any) -> None:
+        if outliving:
+            await close(session)
+        else:
+            outliving.append(asyncio.create_task(outlive_the_crash(session)))
+
+    monkeypatch.setattr(bench._Session, "close", close_late_once)
+    task = bench.Task("t", "agent-0", "restart")
+    (record,) = bench.run_core((task,), tmp_path / "held")
+    assert (record.verified, record.effects, record.attempts) == (True, 1, 1)
+    assert (record.outcome, record.gave_up) == ("accepted", False)
+    assert _hub_lines(caplog, refused) >= held_for
+    assert outliving[0].done() and outliving[0].exception() is None
+
+
+def test_the_public_run_stops_when_another_session_keeps_the_worker_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A name another live session keeps is given up after the bounded number of connections.
+
+    The cut-off agent carries the rival's name here, so the rival's session holds that
+    name when the agent returns. The hub's welcome lists the name as held each time;
+    the agent connects :data:`bench.NAME_ROUNDS` times and the run stops with the hub's
+    reason.
+    """
+    caplog.set_level(logging.INFO, logger="synapse.hub")
+    monkeypatch.setattr(bench, "NAME_ROUNDS", 4)
+    task = bench.Task("t", bench.RIVAL, "lease_expiry")
+    name = f"BENCH/{bench.RIVAL}"
+    with pytest.raises(
+        RuntimeError, match=rf"^{name} was refused its name: Name '{name}' is already online"
+    ):
+        bench.run_core((task,), tmp_path / "kept")
+    assert _hub_lines(caplog, f"name conflict sender=BENCH/{bench.RIVAL} ") == 4
 
 
 def test_the_public_run_stops_when_the_hub_never_answers(tmp_path: Path) -> None:

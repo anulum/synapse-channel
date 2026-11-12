@@ -130,7 +130,10 @@ FAULTS = (
 """Fault classes measured; ``none`` is the control."""
 
 MAX_ATTEMPTS = 3
-"""How often an agent tries one operation (or to bind its name) before it gives up."""
+"""How often an agent tries one operation before it gives up."""
+
+NAME_ROUNDS = 100
+"""How often a session connects while the hub still holds its name for a predecessor."""
 
 RECONNECT_DELAY = 0.05
 """Seconds a session waits before it connects again after the hub refused its name."""
@@ -464,7 +467,8 @@ class _Session:
     every session has a connection to close; each caller closes it in a ``finally``,
     whether or not the hub ever bound its name. A process that restarts after a crash
     connects while the hub may still hold its predecessor's connection; the hub then
-    refuses the name, and the session connects again, as a restarting process does.
+    refuses the name, and the session connects again until the hub has dropped the
+    predecessor, as a restarting process does.
     """
 
     def __init__(self, name: str, uri: str) -> None:
@@ -480,12 +484,15 @@ class _Session:
     async def open(self) -> None:
         """Wait until the hub binds the session's name; connect again while it refuses it.
 
-        The hub welcomes every connection first and announces the name as joined only
-        once it binds it. It refuses a name another connection still holds (a crashed
-        predecessor it has not dropped yet) or one it reserves (the peer-hub ``@`` form)
-        and closes that connection. The session then connects again after
-        :data:`RECONNECT_DELAY`, at most :data:`MAX_ATTEMPTS` times in all, and refuses
-        with the hub's reason when the name stays taken. Each wait is bounded (``_first``).
+        The hub welcomes every connection first, with the names it holds, and announces
+        the name as joined only once it binds it. It refuses a name another connection
+        still holds (a crashed predecessor it has not dropped yet) and closes the new
+        connection. How long the hub needs to drop the predecessor depends on the host's
+        load, so the session does not count on a time: while the welcome lists its name
+        as held it connects again after :data:`RECONNECT_DELAY`, :data:`NAME_ROUNDS`
+        times in all, and then refuses with the hub's reason. A name the hub refuses
+        although nobody holds it (one it reserves, such as the peer-hub ``@`` form) is
+        refused at once: no wait changes that answer. Each wait is bounded (``_first``).
         """
         name = self.agent.name
 
@@ -497,17 +504,25 @@ class _Session:
             )
             return joined or frame.get("type") == MessageType.NAME_CONFLICT
 
-        since, attempt = 0, 1
+        since, connection = 0, 1
         while True:
             frame = await self._first(settled, since=since, rounds=500, what=f"binding of {name}")
             if frame.get("type") != MessageType.NAME_CONFLICT:
                 return
             await asyncio.gather(self._task, return_exceptions=True)  # the refused attempt
-            if attempt == MAX_ATTEMPTS:
+            if connection == NAME_ROUNDS or not self._name_was_held(since):
                 raise RuntimeError(f"{name} was refused its name: {frame.get('payload')}")
             await asyncio.sleep(RECONNECT_DELAY)
-            since, attempt = len(self.frames), attempt + 1
+            since, connection = len(self.frames), connection + 1
             self._task = asyncio.create_task(self.agent.connect())
+
+    def _name_was_held(self, since: int) -> bool:
+        """Whether the hub's welcome, from frame index ``since`` on, lists this session's name."""
+        return any(
+            frame.get("type") == MessageType.WELCOME
+            and self.agent.name in frame.get("online_agents", ())
+            for frame in self.frames[since:]
+        )
 
     async def close(self) -> None:
         """Disconnect, as a crashed or finished agent does; closing twice is harmless."""
