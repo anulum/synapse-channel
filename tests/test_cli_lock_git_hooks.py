@@ -32,6 +32,13 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 
+_PUBLISH_PID = (
+    "pid_file = sys.argv[1]; "
+    "Path(pid_file + '.part').write_text(str(os.getpid())); "
+    "os.replace(pid_file + '.part', pid_file)"
+)
+"""Child code that publishes its PID file whole: a reader never sees it empty."""
+
 _SYNAPSE_BIN = Path(sysconfig.get_path("scripts")) / (
     "synapse.exe" if os.name == "nt" else "synapse"
 )
@@ -171,8 +178,7 @@ async def test_runner_shutdown_during_process_cleanup_does_not_hang(
     pid_path = tmp_path / "shutdown-child.pid"
     child = (
         "import os,signal,sys,time; from pathlib import Path; "
-        "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
-        "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)"
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN); " + _PUBLISH_PID + "; time.sleep(60)"
     )
     script = (
         "import asyncio,sys\nfrom pathlib import Path\n"
@@ -342,8 +348,7 @@ async def test_runner_shutdown_retries_cancelled_release_cleanup(
     stopped = tmp_path / "server.stopped"
     finished = tmp_path / "command.finished"
     child = (
-        "import os,sys,time\nfrom pathlib import Path\n"
-        "Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+        "import os,sys,time\nfrom pathlib import Path\n" + _PUBLISH_PID + "\n"
         "while not Path(sys.argv[2]).exists():\n    time.sleep(0.01)\n"
         "Path(sys.argv[3]).write_text('finished')\n"
     )
@@ -422,7 +427,8 @@ async def test_cancelled_command_is_reaped_before_mutex_release(
     child = (
         "import os,sys,time,signal; from pathlib import Path; "
         + ("signal.signal(signal.SIGTERM,signal.SIG_IGN); " if ignore_termination else "")
-        + "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)"
+        + _PUBLISH_PID
+        + "; time.sleep(60)"
     )
     async with running_hub() as (hub, uri):
         task = asyncio.create_task(
@@ -567,14 +573,14 @@ async def test_cancellation_stops_descendant_after_group_leader_exits(
     descendant_path = tmp_path / "descendant.pid"
     descendant = (
         "import os,signal,sys,time; from pathlib import Path; "
-        "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
-        "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)"
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN); " + _PUBLISH_PID + "; time.sleep(60)"
     )
     leader = (
         "import os,subprocess,sys,time; from pathlib import Path\n"
         f"subprocess.Popen([sys.executable,'-c',{descendant!r},sys.argv[2]])\n"
         "while not Path(sys.argv[2]).exists():\n    time.sleep(0.01)\n"
-        "Path(sys.argv[1]).write_text(str(os.getpid()))\ntime.sleep(60)\n"
+        + _PUBLISH_PID
+        + "\ntime.sleep(60)\n"
     )
     async with running_hub() as (hub, uri):
         task = asyncio.create_task(
