@@ -1940,8 +1940,8 @@ an installed protected runtime or revocation fencing.
 | Classes | 1350 |
 | Wire message types | 118 |
 | CLI subcommands | 303 |
-| Test functions | 13569 |
-| Benchmark harnesses | 16 |
+| Test functions | 13579 |
+| Benchmark harnesses | 17 |
 | Documentation pages | 98 |
 | GitHub Actions workflows | 29 |
 | Optional-dependency groups | 14 |

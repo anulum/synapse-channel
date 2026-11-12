@@ -187,6 +187,44 @@ python benchmarks/a2a_bridge_benchmark.py
 | Push delivery evidence | 250 terminal successes |
 | Subscriber fanout | 32 terminal events |
 
+## `fault_effects_benchmark.py`
+
+Measures what happens to the outside world when scripted agents meet faults.
+Each task's effect is one file change committed in the worker's own Git worktree
+together with one append to an external effect ledger (non-idempotent, like a
+payment); observers that are not the agents count the appends and read the file
+back by digest. A task prepares its change, the scheduled fault strikes, and
+only then is the effect made. A seed fixes the tasks and the fault each one
+meets: a lost connection before or after the effect, a restart after it, the
+same request delivered twice, authority taken back by an operator, a lease that
+lapses while the agent is cut off (the task passes to another worker), and an
+unknown outcome (the answer is lost and the observer cannot answer either). A
+register kept by the harness, not by the agents, says which worker each task
+belongs to at every moment.
+
+The output gives, per mode and per fault class: unauthorised, duplicate and
+lost effects, verified task success, human interventions, latency per completed
+task beside the latency of all attempts, recovery time, and CPU seconds per
+completed task counted for the process and the Git child processes it waited
+for (where the platform reports child CPU). It names the Python, the Core
+version, path and source commit actually loaded, and the benchmark file's
+digest. Two runs with the same seed give the same counts.
+
+Two modes run so far: the plain baseline (isolated worktrees, retry on error)
+and Core (a real in-process hub: claim the task's file, declare the operation
+before any effect, check the claim by an epoch-bound renewal before each
+attempt, ask the observer after a fault instead of retrying, and record an
+unknown outcome for an operator; the operator takes a task back through the
+hub's governed operator relay). Outcome and independent verification records
+for normally completed tasks, and the Core-with-Fleet mode, follow. No result
+is published yet.
+
+### Run
+
+```bash
+python benchmarks/fault_effects_benchmark.py --seed 7 [--results FILE]
+```
+
 ## `coding_fleet_benchmark.py`
 
 Measures a deterministic five-agent coding fleet over the real in-memory claim,
