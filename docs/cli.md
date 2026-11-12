@@ -792,12 +792,13 @@ Legacy hubs without exact reply binding cannot provide this
 guarantee and may return an unknown result. A reconnect failure leaves the claim
 visible until its TTL. Readiness and release timeouts must be finite, positive,
 and at most 300 seconds; an invalid timeout returns `2` before acquisition.
-On cancellation, the command is terminated and reaped before release, with a
-grace period of up to five seconds before forced termination. Shutdown that also
-cancels cleanup work forces termination immediately. On POSIX this also terminates
-descendants remaining in its process group; on Windows it terminates the direct
-child. Processes that deliberately leave the group require their own lifecycle
-control.
+On cancellation, the command is terminated and reaped before release. On POSIX
+the command is signalled and given a grace period of up to five seconds before
+forced termination, and descendants remaining in its process group are terminated
+as well. On Windows the direct child is terminated in one step, because that
+termination cannot be ignored, and then reaped. Shutdown that also cancels
+cleanup work forces termination immediately. Processes that deliberately leave
+the group require their own lifecycle control.
 
 Receipt files must contain a JSON object with matching task and owner fields
 when supplied. Receipt freshness must be a finite number; JSON booleans,

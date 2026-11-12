@@ -14,6 +14,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -30,12 +31,56 @@ _IGNORE_TERMINATION = (
     "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()), encoding='utf-8')\n"
     "time.sleep(30)\n"
 )
+_NOTE_SIGNAL_AND_SLEEP = (
+    "import os, pathlib, signal, sys, time\n"
+    "def _noted(signum, frame):\n"
+    "    pathlib.Path(sys.argv[2]).write_text('signalled', encoding='utf-8')\n"
+    "signal.signal(signal.SIGTERM, _noted)\n"
+    "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()), encoding='utf-8')\n"
+    "time.sleep(30)\n"
+)
 
 
 def _assert_reaped(pid: int) -> None:
-    """The recorded child is no longer a live process."""
-    with pytest.raises(ProcessLookupError):
+    """The recorded child is no longer a live process.
+
+    ``os.kill(pid, 0)`` is the POSIX existence probe. Windows rejects signal 0
+    whether or not the process exists, so the probe there reads the exit status.
+    """
+    if sys.platform != "win32":
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+        return
+    ctypes: Any = __import__("ctypes")
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    kernel.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+    kernel.GetExitCodeProcess.restype = ctypes.c_int
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel.CloseHandle.restype = ctypes.c_int
+    handle = kernel.OpenProcess(0x1000, False, pid)
+    assert handle
+    status = ctypes.c_uint32()
+    assert kernel.GetExitCodeProcess(handle, ctypes.byref(status))
+    kernel.CloseHandle(handle)
+    assert status.value != 259
+
+
+def _still_alive(pid: int) -> bool:
+    """Return whether a POSIX process id still names a process."""
+    try:
         os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _reap_task() -> asyncio.Task[None]:
+    """Return the reap the locked command started for this cancellation."""
+    matches = [task for task in asyncio.all_tasks() if task.get_name() == "locked-command-reap"]
+    assert matches, "the locked command had not started reaping"
+    return matches[0]
 
 
 async def _wait_until_started(pid_file: Path) -> None:
@@ -71,42 +116,9 @@ async def test_a_directory_command_is_refused(
     assert "lock: cannot execute" in capsys.readouterr().err
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals the process group, then waits")
 async def test_a_command_that_ignores_termination_is_killed(tmp_path: Path) -> None:
     """Cancellation waits out the grace period, then force-kills the command."""
-    pid_file = tmp_path / "pid"
-    command = [sys.executable, "-c", _IGNORE_TERMINATION, str(pid_file)]
-    locked = asyncio.create_task(run_locked_subprocess(command))
-    await _wait_until_started(pid_file)
-    started = time.monotonic()
-    locked.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await locked
-    elapsed = time.monotonic() - started
-    assert elapsed >= 4.5
-    assert elapsed < 15
-    _assert_reaped(int(pid_file.read_text(encoding="utf-8")))
-
-
-async def test_windows_termination_reaps_the_command(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The Windows branch terminates the direct child and reaps it."""
-    monkeypatch.setattr(os, "name", "nt")
-    pid_file = tmp_path / "pid"
-    command = [sys.executable, "-c", _RECORD_AND_SLEEP, str(pid_file)]
-    locked = asyncio.create_task(run_locked_subprocess(command))
-    await _wait_until_started(pid_file)
-    locked.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await locked
-    _assert_reaped(int(pid_file.read_text(encoding="utf-8")))
-
-
-async def test_windows_kill_reaps_a_command_that_ignores_termination(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A Windows child that survives termination is force-killed after the grace period."""
-    monkeypatch.setattr(os, "name", "nt")
     pid_file = tmp_path / "pid"
     command = [sys.executable, "-c", _IGNORE_TERMINATION, str(pid_file)]
     locked = asyncio.create_task(run_locked_subprocess(command))
@@ -119,34 +131,35 @@ async def test_windows_kill_reaps_a_command_that_ignores_termination(
     _assert_reaped(int(pid_file.read_text(encoding="utf-8")))
 
 
-async def test_an_interrupt_during_the_reap_still_reaps_the_command(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """An interrupt delivered to the reap wait is ignored until the command is dead."""
-    original = asyncio.subprocess.Process.wait
-    seen = {"calls": 0}
-
-    async def wait(self: asyncio.subprocess.Process) -> int:
-        """Cancel the cleanup once, on the reap that follows the grace wait."""
-        seen["calls"] += 1
-        if seen["calls"] == 3:
-            current = asyncio.current_task()
-            assert current is not None
-            current.cancel()
-        return await original(self)
-
-    monkeypatch.setattr(asyncio.subprocess.Process, "wait", wait)
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows terminates the direct child once")
+async def test_windows_termination_reaps_the_command(tmp_path: Path) -> None:
+    """Cancellation on Windows terminates the direct child and reaps it."""
     pid_file = tmp_path / "pid"
-    command = [sys.executable, "-c", _IGNORE_TERMINATION, str(pid_file)]
+    command = [sys.executable, "-c", _RECORD_AND_SLEEP, str(pid_file)]
     locked = asyncio.create_task(run_locked_subprocess(command))
     await _wait_until_started(pid_file)
     locked.cancel()
-    await asyncio.sleep(0)
-    cleanup = asyncio.all_tasks() - {locked, asyncio.current_task()}
-    assert len(cleanup) == 1
-    await asyncio.sleep(0.05)
-    cleanup.pop().cancel()
     with pytest.raises(asyncio.CancelledError):
         await locked
-    assert seen["calls"] >= 3
     _assert_reaped(int(pid_file.read_text(encoding="utf-8")))
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX waits out the grace period")
+async def test_an_interrupt_during_the_reap_still_reaps_the_command(tmp_path: Path) -> None:
+    """An interrupt while the command is signalled, and still alive, still reaps it."""
+    pid_file = tmp_path / "pid"
+    signalled = tmp_path / "signalled"
+    command = [sys.executable, "-c", _NOTE_SIGNAL_AND_SLEEP, str(pid_file), str(signalled)]
+    locked = asyncio.create_task(run_locked_subprocess(command))
+    await _wait_until_started(pid_file)
+    pid = int(pid_file.read_text(encoding="utf-8"))
+    locked.cancel()
+    deadline = time.monotonic() + 8
+    while not (signalled.is_file() and _still_alive(pid)):
+        assert time.monotonic() < deadline, "the command was not signalled while it was still alive"
+        await asyncio.sleep(0.01)
+    _reap_task().cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await locked
+    _assert_reaped(pid)
+    assert _still_alive(pid) is False

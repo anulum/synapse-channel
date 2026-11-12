@@ -16,14 +16,64 @@ import signal
 import sys
 
 
+async def _reap_direct_child(proc: asyncio.subprocess.Process) -> None:
+    """Wait until the direct child has a status."""
+    while proc.returncode is None:
+        await proc.wait()
+
+
+async def _wait_for_exit(proc: asyncio.subprocess.Process, timeout: float) -> None:
+    """Wait until the child exits or the grace period ends.
+
+    An interrupt while the child has been signalled and has not yet exited
+    does not abandon the wait.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while proc.returncode is None:
+        remaining = deadline - loop.time()
+        try:
+            await asyncio.wait_for(proc.wait(), max(0.0, remaining))
+        except TimeoutError:
+            return
+        except asyncio.CancelledError:
+            continue
+
+
+async def _terminate_locked_command(proc: asyncio.subprocess.Process) -> None:
+    """Stop a cancelled command and wait until it has been reaped.
+
+    Windows terminates the direct child once. That termination cannot be
+    ignored, so there is no second kill after a grace period. POSIX signals
+    the process group, waits five seconds, then forces any survivor to exit.
+    """
+    if os.name == "nt":
+        with contextlib.suppress(ProcessLookupError):
+            proc.terminate()
+        await _reap_direct_child(proc)
+        return
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(proc.pid, signal.SIGTERM)
+    try:
+        await _wait_for_exit(proc, 5.0)
+    finally:
+        # The group can outlive its leader when a descendant ignores TERM.
+        # Stop those descendants before the lock releases its task claim.
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        await _reap_direct_child(proc)
+
+
 async def run_locked_subprocess(command: list[str]) -> int:
     """Run a command and reap it before cancellation permits lease cleanup.
 
     On POSIX the command owns a new session so cancellation also terminates
-    children in that process group. Windows terminates the direct child. After
-    five seconds without exit, force termination before propagating cancellation.
-    An OS launch failure prints the executable and reason to stderr, then returns
-    127 for a missing executable or interpreter, or 126 for another refusal.
+    children in that process group. After five seconds without exit, POSIX
+    forces that group to terminate. Windows terminates the direct child in one
+    step, because that termination cannot be ignored, and then waits until the
+    child has been reaped. An OS launch failure prints the executable and reason
+    to stderr, then returns 127 for a missing executable or interpreter, or 126
+    for another refusal.
 
     Parameters
     ----------
@@ -47,40 +97,10 @@ async def run_locked_subprocess(command: list[str]) -> int:
         print(f"lock: cannot execute {command[0]!r}: {exc.strerror}", file=sys.stderr)
         return 127 if isinstance(exc, FileNotFoundError) else 126
 
-    async def terminate() -> None:
-        """Complete bounded termination independently of the caller's cancellation."""
-        with contextlib.suppress(ProcessLookupError):
-            if os.name == "nt":
-                proc.terminate()
-            else:
-                os.killpg(proc.pid, signal.SIGTERM)
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=5.0)
-        except TimeoutError:
-            with contextlib.suppress(ProcessLookupError):
-                if os.name == "nt":
-                    proc.kill()
-                else:
-                    os.killpg(proc.pid, signal.SIGKILL)
-            await proc.wait()
-        finally:
-            # The group can outlive its leader when a descendant ignores TERM.
-            # Stop those descendants before the lock releases its task claim.
-            with contextlib.suppress(ProcessLookupError):
-                if os.name == "nt":
-                    proc.kill()
-                else:
-                    os.killpg(proc.pid, signal.SIGKILL)
-            while proc.returncode is None:
-                try:
-                    await proc.wait()
-                except asyncio.CancelledError:
-                    continue
-
     try:
         return await proc.wait()
     except asyncio.CancelledError:
-        cleanup = asyncio.create_task(terminate())
+        cleanup = asyncio.create_task(_terminate_locked_command(proc), name="locked-command-reap")
         while not cleanup.done():
             try:
                 await asyncio.shield(cleanup)
@@ -89,8 +109,7 @@ async def run_locked_subprocess(command: list[str]) -> int:
                 # original bounded termination and process reaping finish.
                 continue
         if cleanup.cancelled():
-            if proc.returncode is None:
-                await terminate()
+            await _terminate_locked_command(proc)
         else:
             cleanup.result()
         raise
