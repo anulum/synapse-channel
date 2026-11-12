@@ -206,6 +206,16 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     # settle failure. Real synapse lock teardown on Linux and on MSI
     # returns without raising: transport errors are absorbed, and
     # cancellation is not an Exception.
+    # Not a skip. owner_registration.py line 51 returns false when the
+    # welcome wait times out. register_owner joins that same budget and
+    # cancels the profile first, so the false return never runs. Line 138
+    # waits for a listener that is still up after a false profile. A socket
+    # failure finishes the listener in the same turn, and the join takes
+    # that branch. Measured on Linux; neither line is Windows-specific.
+    # Not a skip. leasing.py line 289 records a renewal when the candidate
+    # hub carries a journal. The live lock mutator builds that candidate
+    # with no journal and records the grant afterwards. Measured on Linux;
+    # the line is not Windows-specific.
     "tests/test_cli_sqlcipher.py": (2, "optional-dep-guard"),
     "tests/test_cli_sqlcipher_refusals.py": (1, "optional-dep-guard"),
     # POSIX directory permissions that bind a non-root owner.

@@ -9,16 +9,22 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+import json
+import sys
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import pytest
+from websockets.asyncio.server import ServerConnection, serve
 
 from claim_outcome_helpers import ClaimProxy, claim_proxy
 from cli_e2e_helpers import git_repo, git_run
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from synapse_channel.cli_locking import _lock
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
+from synapse_channel.core.protocol import MessageType
 from synapse_channel.git import githook
 from synapse_channel.git.gitclaim import GitError, _default_git_runner, run_git_claim
 from synapse_channel.git.githook import (
@@ -184,6 +190,69 @@ async def test_run_git_release_skips_non_matching_claims(
         assert rc == 0
         await _wait_until(lambda: "T5" not in hub.state.claims)
         assert set(hub.state.claims) == {"T1", "T2", "T3", "T4"}
+
+
+async def _welcome_then_close(connection: ServerConnection) -> None:
+    """Accept registration, send the renewal welcome, and drop the socket."""
+    await connection.recv()
+    await connection.send(
+        json.dumps(
+            {
+                "type": MessageType.WELCOME,
+                "sender": "hub",
+                "hub_id": "closing-hub",
+                "target": "self",
+                "payload": "Welcome to Synapse",
+                "lock_renewal_session": "a" * 32,
+                "protocol_version": 1,
+            }
+        )
+    )
+    await connection.close()
+
+
+@asynccontextmanager
+async def _hub_that_closes_after_welcome() -> AsyncIterator[str]:
+    """Serve a peer that dies after welcome, and yield its URI."""
+    async with serve(_welcome_then_close, "127.0.0.1", 0) as server:
+        sockets = server.sockets
+        assert sockets is not None
+        yield f"ws://127.0.0.1:{sockets[0].getsockname()[1]}"
+
+
+async def test_real_repository_names_a_hub_that_closes_after_welcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A real commit and a real lock both stop when the hub drops the welcome."""
+    repo = git_repo(tmp_path / "repo")
+    monkeypatch.chdir(repo)
+    async with _hub_that_closes_after_welcome() as uri:
+        rc = await run_git_release(uri=uri, name="me", trigger="commit", ready_timeout=1.0)
+        release = capsys.readouterr()
+        assert rc == 0
+        assert release.err == ""
+        assert f"[me] Could not reach hub at {uri}." in release.out
+        marker = tmp_path / "child-ran"
+        code = await _lock(
+            uri=uri,
+            name="me",
+            task_id="mutex",
+            command=[
+                sys.executable,
+                "-c",
+                f"import pathlib; pathlib.Path({str(marker)!r}).write_text('ran')",
+            ],
+            paths=[],
+            wait_timeout=0,
+            ready_timeout=1.0,
+            release_timeout=1.0,
+        )
+        locked = capsys.readouterr()
+    assert code == 1
+    assert "Could not reach hub" in locked.out
+    assert not marker.exists()
 
 
 async def test_unknown_repository_identity_returns_before_the_hub(
