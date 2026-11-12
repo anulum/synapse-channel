@@ -201,3 +201,11 @@ def test_local_operator_status_refuses_unavailable_or_foreign_state(
         WakeControl(path, "alice", "ALPHA").status()
     if damage == "missing":
         assert not ledger.path.exists()
+
+
+def test_an_unreadable_grant_file_is_the_same_refusal_as_missing_state(tmp_path: Path) -> None:
+    """The opener promises one error class; a grant file that cannot be read keeps it."""
+    path, _ledger, _attempt = operator_ledger(tmp_path)
+    path.write_text("{not a policy")
+    with pytest.raises(WakeLedgerError, match="wake control state unavailable"):
+        WakeControl(path, "alice", "ALPHA").status()

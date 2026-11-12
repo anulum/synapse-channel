@@ -23,27 +23,36 @@ from uuid import UUID
 
 from synapse_channel.advisory_lock import locked
 
+
+class NativeSessionError(ValueError):
+    """Refuse a native session whose identifier, prefix or storage is not usable."""
+
+
 _PREFIX = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}/[A-Za-z0-9][A-Za-z0-9_.-]{0,79}")
 
 
 def _native_uuid(vendor: str) -> str:
     """Read the supported producer's canonical UUID without echoing bad input."""
     if vendor != "grok":
-        raise ValueError("synapse mcp: unsupported native client")
+        raise NativeSessionError("synapse mcp: unsupported native client")
     raw = os.environ.get("GROK_SESSION_ID", "")
     try:
         identifier = UUID(raw)
     except ValueError as exc:
-        raise ValueError("synapse mcp: Grok must supply a canonical GROK_SESSION_ID") from exc
+        raise NativeSessionError(
+            "synapse mcp: Grok must supply a canonical GROK_SESSION_ID"
+        ) from exc
     if str(identifier) != raw or identifier.int == 0:
-        raise ValueError("synapse mcp: Grok must supply a canonical GROK_SESSION_ID")
+        raise NativeSessionError("synapse mcp: Grok must supply a canonical GROK_SESSION_ID")
     return raw
 
 
 def _session_name(prefix: str, identifier: str) -> str:
     """Append the complete UUID to a bounded explicit project/client prefix."""
     if _PREFIX.fullmatch(prefix) is None:
-        raise ValueError("synapse mcp: native client requires a bounded project/client prefix")
+        raise NativeSessionError(
+            "synapse mcp: native client requires a bounded project/client prefix"
+        )
     return f"{prefix}-{identifier}"
 
 
@@ -68,7 +77,7 @@ def native_stdio_session(
     aliases = tuple(_session_name(role, identifier) for role in roles)
     home = Path(os.environ.get("SYN_HOME", str(Path.home() / "synapse"))).expanduser()
     if not home.is_absolute():
-        raise ValueError("synapse mcp: native sessions require an absolute SYN_HOME")
+        raise NativeSessionError("synapse mcp: native sessions require an absolute SYN_HOME")
     with ExitStack() as stack:
         for identity in sorted(set((primary, *aliases))):
             path = (

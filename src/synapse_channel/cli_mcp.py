@@ -26,7 +26,7 @@ from collections.abc import Callable, Sequence
 from synapse_channel.cli_mcp_http import add_http_arguments, run_http
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
-from synapse_channel.mcp.native_session import native_stdio_session
+from synapse_channel.mcp.native_session import NativeSessionError, native_stdio_session
 from synapse_channel.mcp.onboarding import McpIdentityResolution, resolve_mcp_identity
 from synapse_channel.mcp.server import DEFAULT_REQUEST_TIMEOUT, serve_stdio
 
@@ -43,27 +43,33 @@ def _run_stdio(args: argparse.Namespace, identity: McpIdentityResolution) -> int
     token = (
         read_secret_file(token_file, flag="--token-file") if token_file is not None else args.token
     )
-    with native_stdio_session(
-        identity.name,
-        tuple(getattr(args, "role", None) or ()),
-        getattr(args, "native_client", None),
-    ) as (name, roles):
-        print(
-            f"[{name}] MCP bridge identity resolved from {identity.source}",
-            file=sys.stderr,
-        )
-        return asyncio.run(
-            serve_stdio(
-                uri=args.uri,
-                name=name,
-                token=token,
-                request_timeout=args.request_timeout,
-                ready_timeout=args.ready_timeout,
-                roles=roles,
-                inbox_feed=getattr(args, "inbox_feed", None),
-                inbox_cursor=getattr(args, "inbox_cursor", None),
+    running = identity.name
+    try:
+        with native_stdio_session(
+            identity.name,
+            tuple(getattr(args, "role", None) or ()),
+            getattr(args, "native_client", None),
+        ) as (name, roles):
+            running = name
+            print(
+                f"[{name}] MCP bridge identity resolved from {identity.source}",
+                file=sys.stderr,
             )
-        )
+            return asyncio.run(
+                serve_stdio(
+                    uri=args.uri,
+                    name=name,
+                    token=token,
+                    request_timeout=args.request_timeout,
+                    ready_timeout=args.ready_timeout,
+                    roles=roles,
+                    inbox_feed=getattr(args, "inbox_feed", None),
+                    inbox_cursor=getattr(args, "inbox_cursor", None),
+                )
+            )
+    except KeyboardInterrupt:
+        print(f"\n[{running}] MCP server stopped.")
+        return 0
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:
@@ -108,12 +114,9 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
     except (RuntimeError, SecretFileError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    except ValueError as exc:
+    except NativeSessionError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    except KeyboardInterrupt:
-        print(f"\n[{identity.name}] MCP server stopped.")
-        return 0
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

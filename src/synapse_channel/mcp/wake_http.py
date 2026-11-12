@@ -5,7 +5,13 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — isolated signed notification HTTP attempt
-"""Send one signed pointer through a pinned transport without exposing credentials."""
+"""Send one signed pointer through a pinned transport without exposing credentials.
+
+The process reads one request line from its standard input and then watches the
+same pipe: when the pipe reaches its end, the process exits at once. The caller
+must therefore keep the pipe open until it has read the status line. A caller
+that writes the request and closes the pipe ends the attempt.
+"""
 
 from __future__ import annotations
 

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 from synapse_channel.core.secure_path import assert_owner_only_file_path
-from synapse_channel.mcp.http_config import load_http_auth_config
+from synapse_channel.mcp.http_config import HttpConfigError, load_http_auth_config
 from synapse_channel.mcp.wake_admission import WakeAdmission
 from synapse_channel.mcp.wake_database import MAX_WAKE_DATABASE_BYTES
 from synapse_channel.mcp.wake_ledger import WakeLedger
@@ -79,7 +79,10 @@ class WakeControl:
             If the profile is not authorised or existing state is unavailable,
             foreign, larger than four MiB, or cannot prove owner-only custody.
         """
-        config = load_http_auth_config(self.auth_file)
+        try:
+            config = load_http_auth_config(self.auth_file)
+        except HttpConfigError:
+            raise WakeLedgerError("wake control state unavailable") from None
         admission = WakeAdmission(self.auth_file, self.subject, self.project, config)
         initial_key = wake_scope_key(
             self.subject, self.project, admission.grant.seat, admission.binding

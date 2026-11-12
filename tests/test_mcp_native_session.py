@@ -21,11 +21,26 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import TextContent
 
+import synapse_channel.cli_mcp as cli_mcp
 from cli_e2e_helpers import isolated_hub
-from synapse_channel.mcp.native_session import native_stdio_session
+from synapse_channel.mcp.native_session import NativeSessionError, native_stdio_session
 from synapse_channel.relay import append_jsonl, encode_lite
+from test_cli_mcp import _mcp_ns
 
 SESSION = "01a14c68-36c8-7100-9755-b2f7e673ad78"
+CLOSED_HUB = "ws://127.0.0.1:1"
+"""An address nothing listens on, so a command that is not refused reaches no hub."""
+
+
+def _child_environment(**changes: str) -> dict[str, str]:
+    """Return this process's environment without the settings a seat's shell may carry."""
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in ("SYN_INBOX_SOURCE", "SYNAPSE_URI", "SYN_IDENTITY", "SYN_PROJECT")
+    }
+    environment.update(changes)
+    return environment
 
 
 @pytest.fixture
@@ -63,7 +78,7 @@ def test_invalid_native_identifier_is_never_echoed(
     monkeypatch.setenv("GROK_SESSION_ID", identifier)
     with pytest.raises(ValueError, match="canonical GROK_SESSION_ID") as failure:
         native_stdio_session("PROJ/grok", (), "grok").__enter__()
-    assert "secret-not-a-uuid" not in str(failure.value)
+    assert str(failure.value) == "synapse mcp: Grok must supply a canonical GROK_SESSION_ID"
     assert not native_home.exists()
 
 
@@ -104,11 +119,14 @@ def test_real_cli_duplicate_is_refused_before_connection(native_home: Path) -> N
                 "-m",
                 "synapse_channel.cli",
                 "mcp",
+                "--uri",
+                CLOSED_HUB,
                 "--name",
                 "PROJ/grok",
                 "--native-client",
                 "grok",
             ],
+            env=_child_environment(),
             capture_output=True,
             text=True,
             timeout=10,
@@ -178,9 +196,9 @@ def test_cli_native_admission_without_network(
     native_home: Path, arguments: list[str], fragment: str
 ) -> None:
     """Real CLI admission refuses invalid native configuration before serving."""
-    environment = dict(os.environ, GROK_SESSION_ID="credential-shaped-invalid-input")
+    environment = _child_environment(GROK_SESSION_ID="credential-shaped-invalid-input")
     result = subprocess.run(
-        [sys.executable, "-m", "synapse_channel.cli", "mcp", *arguments],
+        [sys.executable, "-m", "synapse_channel.cli", "mcp", "--uri", CLOSED_HUB, *arguments],
         env=environment,
         capture_output=True,
         text=True,
@@ -233,7 +251,7 @@ async def test_real_stdio_native_inbox_survives_restart(native_home: Path, tmp_p
                     "--inbox-feed",
                     str(feed),
                 ],
-                env=dict(os.environ, GROK_SESSION_ID=identifier),
+                env=_child_environment(GROK_SESSION_ID=identifier),
             )
             async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:
@@ -248,3 +266,38 @@ async def test_real_stdio_native_inbox_survives_restart(native_home: Path, tmp_p
                     assert [
                         row["payload"] for row in json.loads(inbox.content[0].text)["messages"]
                     ] == expected
+
+
+def test_an_interrupt_names_the_session_the_bridge_ran_under(
+    native_home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The stop message carries the derived name, not the prefix it was derived from."""
+
+    async def interrupted(**_: object) -> int:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli_mcp, "serve_stdio", interrupted)
+    arguments = _mcp_ns(name="PROJ/grok", uri=CLOSED_HUB, native_client="grok")
+    assert cli_mcp._cmd_mcp(arguments) == 0
+    assert f"[PROJ/grok-{SESSION}] MCP server stopped." in capsys.readouterr().out
+
+
+def test_a_refusal_of_the_native_session_is_its_own_error(native_home: Path) -> None:
+    """Only the native checks end the command with their text; they raise their own class."""
+    with pytest.raises(NativeSessionError, match="unsupported native client"):
+        native_stdio_session("PROJ/client", (), "unknown").__enter__()
+    assert not native_home.exists()
+
+
+def test_another_value_error_of_the_serving_lifetime_is_not_swallowed(
+    native_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A value error that is not a native refusal is not turned into a refusal message."""
+
+    async def broken(**_: object) -> int:
+        raise ValueError("a defect elsewhere")
+
+    monkeypatch.setattr(cli_mcp, "serve_stdio", broken)
+    arguments = _mcp_ns(name="PROJ/grok", uri=CLOSED_HUB, native_client="grok")
+    with pytest.raises(ValueError, match="a defect elsewhere"):
+        cli_mcp._cmd_mcp(arguments)
