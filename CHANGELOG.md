@@ -46,6 +46,16 @@ execution evidence when carrying a release claim forward.
   remote HTTP profile accepts both names as optional read grants; the HTTP
   server does not serve them yet.
 
+- `synapse mcp --native-client grok` gives each native client session its own
+  routing names: the client's canonical session UUID is appended to the
+  explicit `--name` prefix and to every `--role` prefix, so a resumed session
+  keeps its names and inbox cursor and two sessions never share one. A missing
+  or malformed identifier is refused before any hub connection; a second
+  local bridge for the same session is refused by an OS lock that process exit
+  releases. The option needs an explicit `--name` and the stdio transport. It
+  is tested against the environment-variable contract with real processes; a
+  run with the client itself is not part of this release's evidence.
+
 - Storage for a notification outbox, built and not yet started by any command:
   a private bounded SQLite ledger per provisioned subject, seat and hub, a
   root catalogue with a byte and generation budget under one process lock, an

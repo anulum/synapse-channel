@@ -31,7 +31,7 @@ everything, since they need the whole command table.
 | `synapse worker` | Run a model worker that answers on the channel. |
 | `synapse worker-session` | Run a provider command with `SYN_PROJECT`/`SYN_IDENTITY` and `SYN_OPERATION_ID` (the operation id of its outcome report) set and a waiter armed around it; record a command-file candidate and the separately observed process image. `--outcome-file PATH` creates a new private process report; `--read-outcome PATH` reads it without launching work. See [execution outcomes](execution-outcomes.md). |
 | `synapse team` | Launch a hub plus one or two local workers in one shot. |
-| `synapse mcp` | Serve identity-safe coordination tools over stdio, including bounded local-feed inbox and live status; an omitted `--name` resolves from an agreeing environment or `<git-project>/mcp` (see [MCP server](mcp.md)). |
+| `synapse mcp` | Serve identity-safe coordination tools over stdio, including bounded local-feed inbox and live status; opt-in `--native-client grok` binds explicit name and role prefixes to the client's native session UUID; an omitted `--name` resolves from an agreeing environment or `<git-project>/mcp` (see [MCP server](mcp.md)). |
 | `synapse mcp-tools` / `synapse mcp-call` | List and call allowlisted tools on an external MCP server (outbound). Stable taxonomy codes distinguish invalid config (exit `2`), deny-by-default access refusal (exit `3`), and tool failure (exit `1`). |
 | `synapse sandbox` | Validate a capability manifest and pre-flight or run a `.wasm` tool against it (`validate`/`test`/`run`). |
 | `synapse adapters` | Detect coding tools, wire claim-aware adapters, and inspect mutation posture (`list`/`install`/`uninstall`/`mutation-status`). |

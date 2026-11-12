@@ -169,6 +169,47 @@ an owner-only `--token-file` path rather than embedding a raw secret. See the
 [OpenCode bridge](opencode.md) for project/global paths, the participant and API
 connectors, remote attach behaviour, native hook limits, and ACP IDE setup.
 
+### Grok Build CLI
+
+Install Synapse with the optional MCP dependencies in the environment that
+provides the executable, then register the stdio bridge:
+
+```bash
+python -m pip install 'synapse-channel[mcp]'
+grok mcp add synapse -- synapse mcp --name my-repo/grok-main
+```
+
+Use a different exact identity for each bridge that is active at the same time.
+For a token-gated hub, append `--token-file /owner-only/path/to/token` to the
+server arguments and keep the secret out of the client's configuration values.
+
+For a name per native session, use this server command instead:
+
+```bash
+grok mcp add synapse -- synapse mcp --name my-repo/grok --native-client grok
+```
+
+The client supplies `GROK_SESSION_ID` to the MCP child. Synapse appends the
+full canonical UUID to the explicit `--name` prefix and to every `--role`
+prefix. Resuming the same session keeps its names and its identity-specific
+inbox cursor; different sessions get different names. A prefix is two
+slash-separated ASCII components of at most 80 characters each: letters,
+digits, underscores, periods or hyphens. A missing or malformed identifier is
+refused before any hub connection, and there is no fallback to a shared name.
+The UUID is a routing identifier; it does not replace hub authentication and
+grants no access.
+
+Processes that share one owner-local `SYN_HOME` hold non-blocking OS locks for
+all derived names until they exit. A duplicate local session or an overlapping
+role is refused; process exit releases the locks. Native mode needs an absolute
+storage path and the stdio transport, and it requests no takeover. On a
+token-gated hub the derived identities and roles must be authorised by the
+hub's existing policy.
+
+This release tests the option against the environment-variable contract with
+real processes and a real hub. A run with the client itself is not part of
+this release's evidence.
+
 ### Cursor
 
 Cursor reads project servers from `.cursor/mcp.json` and global servers from

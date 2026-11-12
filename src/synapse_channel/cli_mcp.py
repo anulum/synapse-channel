@@ -26,11 +26,44 @@ from collections.abc import Callable, Sequence
 from synapse_channel.cli_mcp_http import add_http_arguments, run_http
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
-from synapse_channel.mcp.onboarding import resolve_mcp_identity
+from synapse_channel.mcp.native_session import native_stdio_session
+from synapse_channel.mcp.onboarding import McpIdentityResolution, resolve_mcp_identity
 from synapse_channel.mcp.server import DEFAULT_REQUEST_TIMEOUT, serve_stdio
 
 CliDispatcher = Callable[[list[str] | None], int]
 """Top-level CLI dispatcher used by the dedicated registry entry point."""
+
+
+def _run_stdio(args: argparse.Namespace, identity: McpIdentityResolution) -> int:
+    """Load the credential, bind native names and own the complete stdio lifetime."""
+    token_file = getattr(args, "token_file", None)
+    if args.token is not None and token_file is not None:
+        print("synapse mcp: use either --token or --token-file", file=sys.stderr)
+        return 2
+    token = (
+        read_secret_file(token_file, flag="--token-file") if token_file is not None else args.token
+    )
+    with native_stdio_session(
+        identity.name,
+        tuple(getattr(args, "role", None) or ()),
+        getattr(args, "native_client", None),
+    ) as (name, roles):
+        print(
+            f"[{name}] MCP bridge identity resolved from {identity.source}",
+            file=sys.stderr,
+        )
+        return asyncio.run(
+            serve_stdio(
+                uri=args.uri,
+                name=name,
+                token=token,
+                request_timeout=args.request_timeout,
+                ready_timeout=args.ready_timeout,
+                roles=roles,
+                inbox_feed=getattr(args, "inbox_feed", None),
+                inbox_cursor=getattr(args, "inbox_cursor", None),
+            )
+        )
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:
@@ -41,6 +74,9 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
     ``mcp`` extra; a missing extra is reported with the install hint and exit ``1``.
     """
     if getattr(args, "transport", "stdio") == "streamable-http":
+        if getattr(args, "native_client", None):
+            print("synapse mcp: --native-client requires stdio transport", file=sys.stderr)
+            return 2
         return run_http(args)
     if any(
         getattr(args, option, None)
@@ -59,41 +95,22 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
         )
         return 2
     try:
+        if getattr(args, "native_client", None) and not getattr(args, "name", None):
+            raise ValueError("synapse mcp: --native-client requires an explicit --name prefix")
         identity = resolve_mcp_identity(getattr(args, "name", None))
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     if identity.note:
         print(f"[{identity.name}] note: {identity.note}", file=sys.stderr)
-    print(
-        f"[{identity.name}] MCP bridge identity resolved from {identity.source}",
-        file=sys.stderr,
-    )
     try:
-        token_file = getattr(args, "token_file", None)
-        if args.token is not None and token_file is not None:
-            print("synapse mcp: use either --token or --token-file", file=sys.stderr)
-            return 2
-        token = (
-            read_secret_file(token_file, flag="--token-file")
-            if token_file is not None
-            else args.token
-        )
-        return asyncio.run(
-            serve_stdio(
-                uri=args.uri,
-                name=identity.name,
-                token=token,
-                request_timeout=args.request_timeout,
-                ready_timeout=args.ready_timeout,
-                roles=tuple(getattr(args, "role", None) or ()),
-                inbox_feed=getattr(args, "inbox_feed", None),
-                inbox_cursor=getattr(args, "inbox_cursor", None),
-            )
-        )
+        return _run_stdio(args, identity)
     except (RuntimeError, SecretFileError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     except KeyboardInterrupt:
         print(f"\n[{identity.name}] MCP server stopped.")
         return 0
@@ -112,6 +129,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Exact hub identity. Without it, use an agreeing SYN_PROJECT/SYN_IDENTITY; "
             "otherwise resolve <git-project>/mcp."
+        ),
+    )
+    mcp.add_argument(
+        "--native-client",
+        choices=("grok",),
+        default=None,
+        help=(
+            "Bind explicit --name and --role prefixes to the native session UUID; "
+            "requires Grok's GROK_SESSION_ID and refuses a duplicate local bridge."
         ),
     )
     mcp.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
