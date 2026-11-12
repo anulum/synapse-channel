@@ -41,6 +41,12 @@ def test_snapshot_reports_native_process_availability(tmp_path: Path) -> None:
         assert len(observation.rows) == 1
         assert observation.rows[0].pid == os.getpid()
         assert observation.rows[0].started_at_status == "observed"
+    elif sys.platform == "win32":
+        assert observation.process_status == "complete"
+        row = observation.rows[0]
+        assert row.pid == os.getpid()
+        assert row.started_at is None and row.started_at_status == "unavailable"
+        assert row.cwd_status == "not_requested"
     else:
         assert observation.process_status == "unavailable"
         assert observation.rows == ()
@@ -429,8 +435,12 @@ def test_process_change_during_tmux_query_withholds_discovered_process(
 def test_exact_tmux_join_and_conflicting_assertion(tmp_path: Path) -> None:
     socket = str(tmp_path / "tmux.sock")
     argv = ["tmux", "-S", socket]
+    # bash execs a simple -c command, so the pane pid becomes sleep. The login
+    # shell does not, and the assertion would then watch the shell forever.
+    config = tmp_path / "tmux.conf"
+    config.write_text("set -g default-shell /bin/bash\n", encoding="utf-8")
     subprocess.run(
-        argv
+        ["tmux", "-S", socket, "-f", str(config)]
         + [
             "new-session",
             "-d",
@@ -509,6 +519,59 @@ def test_exact_tmux_join_and_conflicting_assertion(tmp_path: Path) -> None:
         assert recovered.rows[0].identity == row.identity
     finally:
         subprocess.run(argv + ["kill-server"], check=False, timeout=5)
+
+
+@requires_proc
+@pytest.mark.skipif(shutil.which("bwrap") is None, reason="bubblewrap is not installed")
+def test_unscoped_discovery_stops_after_256_provider_rows(tmp_path: Path) -> None:
+    """A namespace small enough to scan still withholds the 257th provider row."""
+    from _sandbox_coverage import coverage_data_bind
+
+    sleeper = _codex_sleeper(tmp_path / "codex")
+    program = (
+        "import subprocess, sys\n"
+        "from synapse_channel.host_sessions import HostSessionMonitor\n"
+        "children = [subprocess.Popen([sys.argv[1], '30']) for _ in range(257)]\n"
+        "try:\n"
+        "    observation = HostSessionMonitor(\n"
+        "        tmux_socket='/no-tmux', budget_seconds=5\n"
+        "    ).snapshot()\n"
+        "    print(len(observation.rows), observation.process_status)\n"
+        "finally:\n"
+        "    for child in children:\n"
+        "        child.kill()\n"
+        "    for child in children:\n"
+        "        child.wait(timeout=5)\n"
+    )
+    result = subprocess.run(
+        [
+            "bwrap",
+            "--unshare-pid",
+            "--die-with-parent",
+            "--ro-bind",
+            "/",
+            "/",
+            "--proc",
+            "/proc",
+            "--dev",
+            "/dev",
+            *coverage_data_bind(),
+            "--",
+            sys.executable,
+            "-c",
+            program,
+            str(sleeper),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+    )
+    assert result.returncode == 0, result.stderr
+    count_text, status = result.stdout.split()
+    assert count_text == "256"
+    assert status == "partial"
 
 
 @requires_proc

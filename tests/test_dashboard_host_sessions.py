@@ -97,6 +97,13 @@ def test_real_http_explicit_grants_and_live_revocation(tmp_path: Path) -> None:
             assert document["rows"][0]["context_status"] == "not_requested"
             # No grant covers the executable path, the owner or the counters.
             assert document["rows"][0]["accounting"] is None
+        elif sys.platform == "win32":
+            assert document["process_status"] == "complete"
+            assert document["rows"][0]["pid"] == os.getpid()
+            assert document["rows"][0]["cwd_status"] == "not_requested"
+            assert document["rows"][0]["context_status"] == "not_requested"
+            assert document["rows"][0]["accounting"] is None
+            assert document["rows"][0]["started_at_status"] == "unavailable"
         else:
             assert document["process_status"] == "unavailable"
             assert document["rows"] == []
@@ -108,6 +115,11 @@ def test_real_http_explicit_grants_and_live_revocation(tmp_path: Path) -> None:
         if PROC_AVAILABLE:
             disclosed = document["rows"][0]
             assert disclosed["cwd"] == os.getcwd() and disclosed["cwd_status"] == "observed"
+            assert disclosed["context_id"] is None and disclosed["context_status"] == "unsupported"
+            assert disclosed["accounting"] is None
+        elif sys.platform == "win32":
+            disclosed = document["rows"][0]
+            assert disclosed["cwd"] is None and disclosed["cwd_status"] == "unsupported"
             assert disclosed["context_id"] is None and disclosed["context_status"] == "unsupported"
             assert disclosed["accounting"] is None
         else:

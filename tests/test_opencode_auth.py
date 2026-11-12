@@ -7,10 +7,12 @@
 
 import base64
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from synapse_channel.core.secure_path import apply_owner_only_file
 from synapse_channel.participants.opencode_auth import (
     OpenCodeAuthError,
     basic_authorization,
@@ -62,10 +64,21 @@ def test_password_file_keeps_crlf_and_a_ctrl_z_byte(tmp_path: Path) -> None:
 def test_password_file_is_owner_only_bounded_and_newline_tolerant(tmp_path: Path) -> None:
     path = tmp_path / "password"
     path.write_text("correct horse\n")
-    os.chmod(path, 0o600)
-    assert load_password_file(path) == "correct horse"
-    os.chmod(path, 0o640)
-    with pytest.raises(OpenCodeAuthError, match="group or others"):
+    if os.name == "nt":
+        apply_owner_only_file(path)
+        assert load_password_file(path) == "correct horse"
+        subprocess.run(
+            ["icacls", os.fspath(path), "/grant", "*S-1-1-0:(R)"],
+            check=True,
+            capture_output=True,
+        )
+        refused = "user-owned regular file"
+    else:
+        os.chmod(path, 0o600)
+        assert load_password_file(path) == "correct horse"
+        os.chmod(path, 0o640)
+        refused = "group or others"
+    with pytest.raises(OpenCodeAuthError, match=refused):
         load_password_file(path)
 
 

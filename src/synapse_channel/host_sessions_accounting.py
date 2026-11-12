@@ -176,6 +176,7 @@ def _gpu_for(pid: int) -> tuple[str | None, str]:
 
 
 def _account_linux(pid: int) -> dict[str, object]:
+    """Read one Linux process. A missing or unparsable proc file is a gap dict."""
     root = Path("/proc") / str(pid)
     try:
         stat_text = (root / "stat").read_text(encoding="utf-8", errors="replace")
@@ -183,10 +184,18 @@ def _account_linux(pid: int) -> dict[str, object]:
         source = os.readlink(root / "exe")
     except OSError:
         return _unavailable(pid)
+    try:
+        return _linux_document(pid, stat_text, status, source)
+    except (OSError, ValueError, IndexError):
+        return _unavailable(pid)
+
+
+def _linux_document(pid: int, stat_text: str, status: str, source: str) -> dict[str, object]:
+    """Build the observed document. Callers turn a parse error into a gap."""
     fields = stat_text[stat_text.rindex(")") + 2 :].split()
     if len(fields) < 20:
         return _unavailable(pid)
-    ticks = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+    ticks = os.sysconf("SC_CLK_TCK")
     cpu = (int(fields[11]) + int(fields[12])) / ticks
     values = _status_map(status)
     uid = values.get("Uid", "").split()
@@ -231,6 +240,7 @@ def _account_linux(pid: int) -> dict[str, object]:
 
 
 def _linux_birth(start_ticks: int) -> str | None:
+    """Return the wall-clock start, or None when the kernel clock cannot be read."""
     try:
         from synapse_channel.host_sessions_proc import kernel_clock
 
@@ -240,6 +250,7 @@ def _linux_birth(start_ticks: int) -> str | None:
 
 
 def _status_map(text: str) -> dict[str, str]:
+    """Return proc status fields. A line without a colon is not a field."""
     found: dict[str, str] = {}
     for line in text.splitlines():
         key, separator, value = line.partition(":")
@@ -249,6 +260,7 @@ def _status_map(text: str) -> dict[str, str]:
 
 
 def _kib(value: str) -> int | None:
+    """Return the leading decimal from a procfs ``N kB`` field, or None."""
     number, _separator, _unit = value.partition(" ")
     if number.isdecimal():
         return int(number)
@@ -261,10 +273,7 @@ def _linux_children() -> dict[int, list[int]]:
     if _CHILDREN is not None and now < _CHILDREN[0]:
         return _CHILDREN[1]
     children: dict[int, list[int]] = {}
-    try:
-        entries = os.scandir("/proc")
-    except OSError:
-        return {}
+    entries = os.scandir("/proc")
     try:
         for index, entry in enumerate(entries):
             if index >= 4096 or not entry.name.isdecimal():
@@ -288,13 +297,13 @@ def _linux_tree(pid: int) -> list[int]:
     while pending and len(ordered) < 64:
         current = pending.pop(0)
         for child in children.get(current, []):
-            if child not in ordered:
-                ordered.append(child)
-                pending.append(child)
+            ordered.append(child)
+            pending.append(child)
     return ordered
 
 
 def _account_windows(pid: int) -> dict[str, object]:
+    """Read one Windows process. Any other host gets an explicit gap."""
     if sys.platform != "win32":
         return _unavailable(pid)
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -382,13 +391,13 @@ def _windows_tree(pid: int, found: dict[int, tuple[int, str]]) -> list[int]:
     while pending and len(ordered) < 64:
         current = pending.pop(0)
         for child in children.get(current, []):
-            if child not in ordered:
-                ordered.append(child)
-                pending.append(child)
+            ordered.append(child)
+            pending.append(child)
     return ordered
 
 
 def _windows_snapshot() -> dict[int, tuple[int, str]]:
+    """Read the Windows process table. Any other host has no table."""
     if sys.platform != "win32":
         return {}
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -415,8 +424,6 @@ def _windows_snapshot() -> dict[int, tuple[int, str]]:
         )
 
     snapshot = kernel.CreateToolhelp32Snapshot(0x2, 0)
-    if not snapshot:
-        return {}
     found: dict[int, tuple[int, str]] = {}
     try:
         entry = _Entry()
@@ -445,7 +452,15 @@ def _close(kernel: Any, handle: wintypes.HANDLE) -> None:
     kernel.CloseHandle(handle)
 
 
+def _birth_ticks(birth: str | None) -> int | None:
+    """Convert a creation time to clock ticks. A missing time has no birth."""
+    if birth is None:
+        return None
+    return int(float(birth) * 10_000_000)
+
+
 def _windows_birth(pid: int) -> int | None:
+    """Return a Windows creation time. Any other host has none."""
     if sys.platform != "win32":
         return None
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -456,9 +471,7 @@ def _windows_birth(pid: int) -> int | None:
         birth, _cpu = _windows_times(kernel, handle)
     finally:
         _close(kernel, handle)
-    if birth is None:
-        return None
-    return int(float(birth) * 10_000_000)
+    return _birth_ticks(birth)
 
 
 def _windows_times(kernel: Any, handle: wintypes.HANDLE) -> tuple[str | None, float | None]:
@@ -486,6 +499,7 @@ def _windows_times(kernel: Any, handle: wintypes.HANDLE) -> tuple[str | None, fl
 
 
 def _working_set_kib(handle: wintypes.HANDLE) -> int | None:
+    """Return the Windows working set in KiB. Any other host has none."""
     if sys.platform != "win32":
         return None
     psapi = ctypes.WinDLL("psapi", use_last_error=True)
@@ -533,6 +547,7 @@ def _image_path(kernel: Any, handle: wintypes.HANDLE) -> str | None:
 
 
 def _image_of(pid: int) -> str:
+    """Return a Windows executable path. Any other host has none."""
     if sys.platform != "win32":
         return ""
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -554,6 +569,62 @@ def _priority_name(kernel: Any, handle: wintypes.HANDLE) -> str | None:
     return _PRIORITY.get(value, str(value))
 
 
+def _sid_string(advapi: Any, kernel: Any, sid: int | None) -> str | None:
+    """Render one SID. A missing or rejected SID is an absent owner."""
+    advapi.ConvertSidToStringSidW.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    advapi.ConvertSidToStringSidW.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel.LocalFree.restype = ctypes.c_void_p
+    text = ctypes.c_void_p()
+    if not sid or not advapi.ConvertSidToStringSidW(sid, ctypes.byref(text)):
+        return None
+    try:
+        return ctypes.wstring_at(text) if text.value else None
+    finally:
+        if text.value:
+            kernel.LocalFree(text)
+
+
+def _sid_from_sized_token(
+    advapi: Any, kernel: Any, token: wintypes.HANDLE, size: int
+) -> str | None:
+    """Read TokenUser into the buffer size the API requested."""
+    advapi.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi.GetTokenInformation.restype = wintypes.BOOL
+    buffer = ctypes.create_string_buffer(size)
+    needed = wintypes.DWORD()
+    if not advapi.GetTokenInformation(token, 1, buffer, size, ctypes.byref(needed)):
+        return None
+    sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
+    return _sid_string(advapi, kernel, sid)
+
+
+def _token_user_sid(advapi: Any, kernel: Any, token: wintypes.HANDLE) -> str | None:
+    """Read a token's user SID. An unusable token has no owner."""
+    advapi.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi.GetTokenInformation.restype = wintypes.BOOL
+    needed = wintypes.DWORD()
+    advapi.GetTokenInformation(token, 1, None, 0, ctypes.byref(needed))
+    if not needed.value:
+        return None
+    return _sid_from_sized_token(advapi, kernel, token, int(needed.value))
+
+
 def _owner_sid(kernel: Any, handle: wintypes.HANDLE) -> str | None:
     """Read the process token SID. Token APIs live in advapi32, not kernel32."""
     if sys.platform != "win32":
@@ -565,40 +636,10 @@ def _owner_sid(kernel: Any, handle: wintypes.HANDLE) -> str | None:
         ctypes.POINTER(wintypes.HANDLE),
     ]
     advapi.OpenProcessToken.restype = wintypes.BOOL
-    advapi.GetTokenInformation.argtypes = [
-        wintypes.HANDLE,
-        wintypes.DWORD,
-        ctypes.c_void_p,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD),
-    ]
-    advapi.GetTokenInformation.restype = wintypes.BOOL
-    advapi.ConvertSidToStringSidW.argtypes = [
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_void_p),
-    ]
-    advapi.ConvertSidToStringSidW.restype = wintypes.BOOL
-    kernel.LocalFree.argtypes = [ctypes.c_void_p]
-    kernel.LocalFree.restype = ctypes.c_void_p
     token = wintypes.HANDLE()
     if not advapi.OpenProcessToken(handle, 0x8, ctypes.byref(token)):
         return None
     try:
-        needed = wintypes.DWORD()
-        advapi.GetTokenInformation(token, 1, None, 0, ctypes.byref(needed))
-        if not needed.value:
-            return None
-        buffer = ctypes.create_string_buffer(needed.value)
-        if not advapi.GetTokenInformation(token, 1, buffer, needed.value, ctypes.byref(needed)):
-            return None
-        sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
-        text = ctypes.c_void_p()
-        if not sid or not advapi.ConvertSidToStringSidW(sid, ctypes.byref(text)):
-            return None
-        try:
-            return ctypes.wstring_at(text) if text.value else None
-        finally:
-            if text.value:
-                kernel.LocalFree(text)
+        return _token_user_sid(advapi, kernel, token)
     finally:
         _close(kernel, token)

@@ -172,11 +172,8 @@ class HostObservation:
 
 
 def _accounting(pid: int) -> dict[str, object]:
-    """Read counters for one row; a missing process stays an explicit gap."""
-    try:
-        return account_process(pid)
-    except (OSError, ValueError):
-        return {"status": "unavailable", "requested_pid": pid, "memory_guarantee": "none"}
+    """Read counters for one row. A missing process is an explicit gap dict."""
+    return account_process(pid)
 
 
 def _accounting_within(pid: int, deadline: float) -> dict[str, object]:
@@ -292,6 +289,18 @@ class HostSessionMonitor:
         finally:
             self._lock.release()
 
+    def _boot_reference(self, process_status: str) -> tuple[str, str]:
+        """Read the kernel boot id. Windows keeps the scan status without one."""
+        try:
+            boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        except OSError:
+            # Linux still has a process scan, but the boot id is what makes the
+            # host reference stable. Windows has no boot id; its scan status stands.
+            boot = self.instance
+            if sys.platform != "win32":
+                process_status = "unavailable"
+        return boot, process_status
+
     def _collect(self, *, paths: bool, context: bool) -> HostObservation:
         online: tuple[str, ...] = ()
         claims: tuple[tuple[str, str], ...] = ()
@@ -313,11 +322,7 @@ class HostSessionMonitor:
                 conflicting_roots.add(pane_metadata.pid)
                 tmux_status = "partial"
             roots[pane_metadata.pid] = pane_metadata
-        try:
-            boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
-        except OSError:
-            boot = self.instance
-            process_status = "unavailable"
+        boot, process_status = self._boot_reference(process_status)
         host_ref = hashlib.sha256(boot.encode()).hexdigest()[:24]
         clock: KernelClock | None
         try:

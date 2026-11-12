@@ -147,9 +147,11 @@ def test_self_identity_and_opt_in_cwd() -> None:
 
 def test_discovery_reports_native_process_availability() -> None:
     rows, status = discover_processes(pids=(os.getpid(),))
-    expected = ("complete", (os.getpid(),)) if PROC_AVAILABLE else ("unavailable", ())
-    assert (status, tuple(rows)) == expected
-    assert all(row.start_ticks > 0 for row in rows.values())
+    if PROC_AVAILABLE or sys.platform == "win32":
+        assert (status, tuple(rows)) == ("complete", (os.getpid(),))
+        assert all(row.start_ticks > 0 for row in rows.values())
+        return
+    assert (status, tuple(rows)) == ("unavailable", ())
 
 
 @pytest.mark.parametrize("pid", [0, -1, True])

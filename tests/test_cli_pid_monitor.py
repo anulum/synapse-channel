@@ -126,14 +126,15 @@ def test_packaged_json_and_text(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     document = json.loads(result.stdout)
     rows = [(row["pid"], row["cwd"]) for row in document["rows"]]
-    expected = ("complete", [(os.getpid(), None)]) if PROC_AVAILABLE else ("unavailable", [])
+    native = PROC_AVAILABLE or sys.platform == "win32"
+    expected = ("complete", [(os.getpid(), None)]) if native else ("unavailable", [])
     assert (document["process_status"], rows) == expected
     result = subprocess.run(argv + ["--paths"], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0 and "OS STATE" in result.stdout
     runtime = re.search(r"^  runtime: (\d+d )?\d\d:\d\d:\d\d \(observed\)$", result.stdout, re.M)
     shown = (os.getcwd() in result.stdout, runtime is not None)
     assert shown == ((True, True) if PROC_AVAILABLE else (False, False))
-    assert ("process scan: unavailable" in result.stdout) is not PROC_AVAILABLE
+    assert ("process scan: unavailable" in result.stdout) is not native
 
 
 @pytest.mark.parametrize(
