@@ -224,3 +224,113 @@ def test_rekey_sqlcipher_refuses_identical_keys(tmp_path: Path) -> None:
     EventStore(db, key_file=key).close()
     with pytest.raises(ValueError, match="must differ"):
         rekey_sqlcipher_store(db, old_key_file=key, new_key_file=key)
+
+
+def test_rekey_refuses_a_missing_store(tmp_path: Path) -> None:
+    missing = tmp_path / "absent.db"
+    with pytest.raises(FileNotFoundError, match="not found"):
+        rekey_sqlcipher_store(missing, old_key=os.urandom(KEY_BYTES), new_key=os.urandom(KEY_BYTES))
+
+
+def test_rekey_reraises_a_rejected_new_key(tmp_path: Path) -> None:
+    key = os.urandom(KEY_BYTES)
+    db = tmp_path / "hub.db"
+    EventStore(db, key=key).close()
+    with pytest.raises(ValueError, match="^SQLCipher key must be") as raised:
+        rekey_sqlcipher_store(db, old_key=key, new_key=b"short")
+    assert type(raised.value) is ValueError
+
+
+def test_rekey_wraps_an_unexpected_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import synapse_channel.core.persistence_sqlcipher as module
+
+    key = os.urandom(KEY_BYTES)
+    db = tmp_path / "hub.db"
+    EventStore(db, key=key).close()
+    real_connect = module.connect_sqlcipher
+
+    class Refusing:
+        def __init__(self, inner: object) -> None:
+            self._inner = inner
+
+        def execute(self, sql: str, *args: object, **kwargs: object) -> object:
+            if str(sql).startswith("PRAGMA rekey"):
+                raise RuntimeError("rekey boom")
+            return self._inner.execute(sql, *args, **kwargs)  # type: ignore[attr-defined]
+
+        def commit(self) -> None:
+            self._inner.commit()  # type: ignore[attr-defined]
+
+        def close(self) -> None:
+            self._inner.close()  # type: ignore[attr-defined]
+
+    def connect(path: Path, material: bytes) -> Refusing:
+        return Refusing(real_connect(path, material))
+
+    monkeypatch.setattr(module, "connect_sqlcipher", connect)
+    with pytest.raises(SqlCipherKeyError, match="rekey failed"):
+        rekey_sqlcipher_store(db, old_key=key, new_key=os.urandom(KEY_BYTES))
+
+
+def test_rekey_refuses_when_the_old_key_still_opens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import synapse_channel.core.persistence_sqlcipher as module
+
+    key = os.urandom(KEY_BYTES)
+    db = tmp_path / "hub.db"
+    EventStore(db, key=key).close()
+    real_connect = module.connect_sqlcipher
+    opened = 0
+
+    def connect(path: Path, material: bytes) -> object:
+        nonlocal opened
+        opened += 1
+        if opened == 3:
+
+            class Leftover:
+                def close(self) -> None:
+                    return None
+
+            return Leftover()
+        return real_connect(path, material)
+
+    monkeypatch.setattr(module, "connect_sqlcipher", connect)
+    with pytest.raises(SqlCipherKeyError, match="old key usable"):
+        rekey_sqlcipher_store(db, old_key=key, new_key=os.urandom(KEY_BYTES))
+
+
+def test_migrate_refuses_a_missing_source(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="not found"):
+        migrate_plaintext_to_sqlcipher(
+            tmp_path / "absent.db",
+            tmp_path / "enc.db",
+            key=os.urandom(KEY_BYTES),
+        )
+
+
+def test_migrate_accepts_a_raw_key(tmp_path: Path) -> None:
+    plain = tmp_path / "plain.db"
+    enc = tmp_path / "enc.db"
+    EventStore(plain).close()
+    key = os.urandom(KEY_BYTES)
+    assert migrate_plaintext_to_sqlcipher(plain, enc, key=key) == {"rows": 0}
+    migrated = EventStore(enc, key=key)
+    assert migrated.read_all() == []
+    migrated.close()
+
+
+def test_owner_restriction_ignores_a_chmod_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import synapse_channel.core.persistence_sqlcipher as module
+
+    plain = tmp_path / "plain.db"
+    enc = tmp_path / "enc.db"
+    EventStore(plain).close()
+
+    def refuse(_path: Path, _mode: int) -> None:
+        raise OSError("chmod refused")
+
+    monkeypatch.setattr(module.os, "chmod", refuse)  # type: ignore[attr-defined]
+    assert migrate_plaintext_to_sqlcipher(plain, enc, key=os.urandom(KEY_BYTES)) == {"rows": 0}

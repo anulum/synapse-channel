@@ -49,6 +49,9 @@ execution evidence when carrying a release claim forward.
   failing does not skip the ACL.
 - A Windows spool lock that fails for a reason other than a held region
   is raised. It is not reported as a busy flush.
+- SQLCipher rekey refuses a missing store, a rejected new key, an
+  unexpected rekey failure, and an old key that still opens. Migration
+  accepts a raw key and still finishes when owner-only mode cannot be set.
 
 ## [0.99.51] - 2026-11-11
 
