@@ -559,25 +559,111 @@ def test_kernel_clock_refuses_a_non_positive_tick_rate(
         return int(real(name))
 
     monkeypatch.setattr(os, "sysconf", rate)
+    assert os.sysconf("SC_PAGE_SIZE") > 0
     with pytest.raises(ValueError, match="tick rate must be positive"):
         kernel_clock()
 
 
-def test_root_discovery_does_not_scan_the_machine(monkeypatch: pytest.MonkeyPatch) -> None:
+def _child_env() -> dict[str, str]:
+    """Return an environment whose path can import this tree and the package."""
+    root = Path(__file__).resolve().parents[1]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(root / "src"), str(root / "tests"), env.get("PYTHONPATH", "")]
+    )
+    return env
+
+
+def _assert_named_pid_without_proc() -> None:
+    """State the one result a host without procfs returns for this process.
+
+    Windows reports this process as running and complete. Every other host
+    returns an empty map and ``unavailable`` and does not invent a scan.
+    """
+    rows, status = discover_processes(pids=(os.getpid(),))
+    if sys.platform == "win32":
+        assert status == "complete"
+        assert set(rows) == {os.getpid()}
+        identity = rows[os.getpid()]
+        assert identity.pid == os.getpid()
+        assert identity.state == "running"
+        assert isinstance(identity.parent_pid, int)
+        assert isinstance(identity.start_ticks, int) and identity.start_ticks > 0
+        assert isinstance(identity.command_name, str) and identity.command_name
+        return
+    assert (rows, status) == ({}, "unavailable")
+
+
+def _hidden_proc_names_the_gap(directory: Path) -> None:
+    """Run the no-proc assertion where ``/proc`` is an empty mount."""
+    empty = directory / "noproc"
+    empty.mkdir()
+    result = subprocess.run(
+        [
+            "bwrap",
+            "--die-with-parent",
+            "--ro-bind",
+            "/",
+            "/",
+            "--ro-bind",
+            str(empty),
+            "/proc",
+            *coverage_data_bind(),
+            "--",
+            sys.executable,
+            "-c",
+            "import test_host_sessions_proc as proc\n"
+            "proc._assert_named_pid_without_proc()\n"
+            "proc.test_discovery_reports_native_process_availability()\n",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env=_child_env(),
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_root_discovery_does_not_scan_the_machine() -> None:
     """An unnamed scan as root is refused instead of listing every process."""
     if not hasattr(os, "geteuid") or not Path("/proc/self/stat").is_file():
-        _rows, status = discover_processes(pids=(os.getpid(),))
-        assert status in {"complete", "partial", "unavailable"}
+        _assert_named_pid_without_proc()
         return
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
-    assert discover_processes() == ({}, "unavailable")
+    result = subprocess.run(
+        [
+            "bwrap",
+            "--die-with-parent",
+            "--unshare-user",
+            "--uid",
+            "0",
+            "--gid",
+            "0",
+            "--ro-bind",
+            "/",
+            "/",
+            *coverage_data_bind(),
+            "--",
+            sys.executable,
+            "-c",
+            "from synapse_channel.host_sessions_proc import discover_processes\n"
+            "assert discover_processes() == ({}, 'unavailable')\n",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env=_child_env(),
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
-def test_unreadable_process_scan_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unreadable_process_scan_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """A scan the kernel refuses is unavailable, not an empty success."""
     if not hasattr(os, "geteuid") or not Path("/proc/self/stat").is_file():
-        _rows, status = discover_processes(pids=(os.getpid(),))
-        assert status in {"complete", "partial", "unavailable"}
+        _assert_named_pid_without_proc()
         return
 
     def refused(path: str | os.PathLike[str]) -> object:
@@ -587,6 +673,7 @@ def test_unreadable_process_scan_is_unavailable(monkeypatch: pytest.MonkeyPatch)
     rows, status = discover_processes()
     assert rows == {}
     assert status == "unavailable"
+    _hidden_proc_names_the_gap(tmp_path)
 
 
 def test_observe_process_refuses_when_the_caller_identity_changes(
