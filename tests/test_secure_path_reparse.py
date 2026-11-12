@@ -31,9 +31,9 @@ def test_a_non_windows_host_has_no_reparse_opener() -> None:
         again = _windows_kernel()
         assert again is kernel
         return
-    with pytest.raises(OSError, match="unavailable"):
+    with pytest.raises(OSError, match="the Win32 kernel is unavailable"):
         _windows_kernel()
-    with pytest.raises(OSError, match="unavailable"):
+    with pytest.raises(OSError, match="secure nofollow open is unavailable"):
         _windows_open_nofollow(Path("leaf"), directory=False)
 
 

@@ -43,8 +43,11 @@ async def _wait_for_exit(proc: asyncio.subprocess.Process, timeout: float) -> No
 async def _terminate_locked_command(proc: asyncio.subprocess.Process) -> None:
     """Stop a cancelled command and wait until it has been reaped.
 
-    A command that already has a status is left alone: it has been reaped, and
-    on POSIX its process-group id may by now name another group. Windows
+    A command that already has a status is left alone: it has been reaped
+    before anything was signalled here, so nothing is known about its group,
+    and on POSIX that group id may by now name another group. The forced kill
+    at the end is different: it follows this helper's own signal by an instant
+    and is for descendants that ignored it and still hold the group. Windows
     terminates the direct child once. That termination cannot be ignored, so
     there is no second kill after a grace period. POSIX signals the process
     group, waits five seconds, then forces any survivor to exit.

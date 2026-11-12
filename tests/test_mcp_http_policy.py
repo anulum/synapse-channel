@@ -221,6 +221,11 @@ async def test_a_reduced_bearer_cannot_reuse_the_scope_the_session_began_with(
                         async with ClientSession(read, write) as session:
                             await session.initialize()
                             assert not (await session.call_tool("synapse_board")).is_error
+                            granted = await session.call_tool(
+                                "synapse_claim", {"task_id": "ALPHA/first"}
+                            )
+                            assert not granted.is_error
+                            assert hub.state.claims["ALPHA/first"].owner == "ALPHA/alice"
                             client.headers["Authorization"] = "Bearer " + access_token(
                                 key, scope="synapse:read", jti="reduced-scope-current-request"
                             )
@@ -228,7 +233,7 @@ async def test_a_reduced_bearer_cannot_reuse_the_scope_the_session_began_with(
                                 "synapse_claim", {"task_id": "ALPHA/task"}
                             )
                             assert refused.is_error
-                            assert not hub.state.claims
+                            assert set(hub.state.claims) == {"ALPHA/first"}
         finally:
             await handle.close()
 
@@ -240,18 +245,15 @@ async def test_a_renewed_bearer_keeps_the_session_after_the_first_one_expired(
     key = Ed25519PrivateKey.generate()
     path = tmp_path / "grants.json"
     write_policy(path, key)
-    expiry = int(time.time()) + 3
-    first = access_token(key, exp=expiry)
     async with running_hub() as (_hub, uri):
         handle = await start_bridge(uri, name="ALPHA/alice")
         try:
             async with https_server(build_policy_app(path, handle.bridge), tmp_path) as (url, tls):
-                async with httpx2.AsyncClient(
-                    verify=tls,
-                    timeout=5,
-                    trust_env=False,
-                    headers={"Authorization": "Bearer " + first},
-                ) as client:
+                async with httpx2.AsyncClient(verify=tls, timeout=5, trust_env=False) as client:
+                    # The short-lived bearer is issued here, when the hub, the bridge
+                    # and the server already run, so their start does not use it up.
+                    expiry = int(time.time()) + 4
+                    client.headers["Authorization"] = "Bearer " + access_token(key, exp=expiry)
                     async with streamable_http_client(url + "/mcp", http_client=client) as (
                         read,
                         write,

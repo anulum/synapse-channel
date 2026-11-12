@@ -274,7 +274,7 @@ def _windows_kernel() -> Any:
     """Return the process kernel32, loading it once on Windows."""
     global _win_kernel
     if sys.platform != "win32":
-        raise OSError("secure nofollow open is unavailable on this platform")
+        raise OSError("the Win32 kernel is unavailable on this platform")
     loaded = _win_kernel
     if loaded is not None:
         return loaded
