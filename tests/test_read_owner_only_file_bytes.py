@@ -79,6 +79,78 @@ def test_read_owner_only_max_bytes_cap(tmp_path: Path) -> None:
         read_owner_only_file_bytes(path, purpose="blob", max_bytes=16)
 
 
+def test_read_owner_only_reads_past_one_chunk(tmp_path: Path) -> None:
+    payload = b"q" * (65_536 + 1)
+    path = _write_secret(tmp_path / "wide.bin", payload)
+    assert read_owner_only_file_bytes(path, purpose="blob") == payload
+
+
+def test_read_owner_only_reads_an_empty_file(tmp_path: Path) -> None:
+    path = _write_secret(tmp_path / "empty.bin", b"")
+    assert read_owner_only_file_bytes(path, purpose="blob") == b""
+
+
+def test_read_owner_only_refuses_when_the_floor_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import synapse_channel.core.secure_path as module
+
+    path = _write_secret(tmp_path / "k.bin", b"abcd")
+    monkeypatch.setattr(module, "owner_only_floor_available", lambda: False)
+    with pytest.raises(SecurePathError, match="unavailable"):
+        module.read_owner_only_file_bytes(path, purpose="key file")
+
+
+def test_read_owner_only_uses_the_windows_kind_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import synapse_channel.core.secure_path as module
+
+    path = _write_secret(tmp_path / "k.bin", b"abcd")
+    monkeypatch.setattr(module, "_POSIX", False)
+    monkeypatch.setattr(module, "_WINDOWS", True)
+    monkeypatch.setattr(module, "assert_owner_only_file_path", lambda *args, **kwargs: None)
+    assert module.read_owner_only_file_bytes(path, purpose="key file", expected_size=4) == b"abcd"
+    directory = tmp_path / "dir"
+    directory.mkdir(mode=0o700)
+    # Linux can open a directory and then refuse it. Windows refuses the open.
+    with pytest.raises(SecurePathError, match="not a regular file|cannot open"):
+        module.read_owner_only_file_bytes(directory, purpose="key file", expected_size=0)
+
+
+def test_read_owner_only_refuses_when_the_read_overruns_the_stat_size(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file that yields more bytes than fstat reported is still capped."""
+    import synapse_channel.core.secure_path as module
+
+    path = _write_secret(tmp_path / "grew.bin", b"abcdefghij")
+    real_fstat = module.os.fstat  # type: ignore[attr-defined]
+
+    def smaller(fd: int) -> object:
+        info = real_fstat(fd)
+        return info.__class__(list(info)[:6] + [4] + list(info)[7:])
+
+    monkeypatch.setattr(module.os, "fstat", smaller)  # type: ignore[attr-defined]
+    with pytest.raises(SecurePathError, match="exceeds the 6-byte"):
+        module.read_owner_only_file_bytes(path, purpose="blob", max_bytes=6)
+
+
+def test_read_owner_only_refuses_a_short_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import synapse_channel.core.secure_path as module
+
+    path = _write_secret(tmp_path / "k.bin", b"abcd")
+
+    def short(_fd: int, _size: int) -> bytes:
+        return b"ab"
+
+    monkeypatch.setattr(module.os, "read", short)  # type: ignore[attr-defined]
+    with pytest.raises(SecurePathError, match="found 2"):
+        module.read_owner_only_file_bytes(path, purpose="key file", expected_size=4)
+
+
 def test_load_key_file_uses_same_fd_helper(tmp_path: Path) -> None:
     key_path = tmp_path / "at-rest.key"
     generate_key_file(key_path)

@@ -42,6 +42,11 @@ execution evidence when carrying a release claim forward.
   test. Windows takes that lock with a byte-range lock.
 - A Windows queue wake starts a ``.cmd`` in a job before the command runs.
   The shebang stand-in is not a program CreateProcess can start.
+- Owner-only secret reads cover a short read, a file larger than one
+  chunk, an empty file, and the Windows kind check. A failed native SID
+  read falls back to ``whoami``. A failed token or security-descriptor
+  call is refused, including an allow ACE for Everyone. ``takeown``
+  failing does not skip the ACL.
 
 ## [0.99.51] - 2026-11-11
 

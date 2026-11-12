@@ -251,7 +251,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_relay_trim.py": (3, "platform-guard"),
     "tests/test_reliability_workflow_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_secret_files.py": (8, "platform-guard"),
-    "tests/test_secure_path.py": (5, "platform-guard"),
+    "tests/test_secure_path.py": (6, "platform-guard"),
     # The stand-in git that keeps its pipes open is a POSIX shell script.
     "tests/test_semantic_diff.py": (1, "platform-guard"),
     "tests/test_service_status.py": (1, "platform-guard"),

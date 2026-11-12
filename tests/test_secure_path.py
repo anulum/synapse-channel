@@ -9,8 +9,11 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import stat
+import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -205,6 +208,18 @@ def test_evaluate_windows_owner_only_policy_refuses_everyone_and_null_dacl() -> 
             dacl_present=True,
             aces=(WindowsAce(ace_type=0, mask=0x00120089, sid="S-1-1-0"),),
         )
+    # An allow ACE with no interesting bits is not a grant, so the next ACE is read.
+    evaluate_windows_owner_only_policy(
+        path=path,
+        purpose="policy",
+        owner_sid=current,
+        current_sid=current,
+        dacl_present=True,
+        aces=(
+            WindowsAce(ace_type=0, mask=0, sid="S-1-1-0"),
+            WindowsAce(ace_type=0, mask=0x001F01FF, sid=current),
+        ),
+    )
 
 
 def test_windows_path_kind_guards(tmp_path: Path) -> None:
@@ -224,11 +239,22 @@ def test_windows_path_kind_guards(tmp_path: Path) -> None:
     with pytest.raises(SecurePathError, match="not a regular file"):
         _windows_path_kind_guards(dir_path, purpose="g", directory=False)
 
-    if os.name == "posix":
-        link = tmp_path / "link"
+    link = tmp_path / "link"
+    linked: Path | None
+    try:
         link.symlink_to(file_path)
+    except OSError:
+        linked = None
+    else:
+        linked = link
+    if linked is not None and linked.is_symlink():
         with pytest.raises(SecurePathError, match="symlink"):
-            _windows_path_kind_guards(link, purpose="g", directory=False)
+            _windows_path_kind_guards(linked, purpose="g", directory=False)
+    if hasattr(os, "mkfifo"):
+        fifo = tmp_path / "fifo"
+        os.mkfifo(fifo)
+        with pytest.raises(SecurePathError, match="not a regular file"):
+            _windows_path_kind_guards(fifo, purpose="g", directory=False)
 
 
 def test_windows_apply_owner_only_invokes_icacls(
@@ -260,7 +286,16 @@ def test_windows_apply_owner_only_invokes_icacls(
     assert "/inheritance:r" in calls[1]
     assert any(a.startswith("*S-1-5-21-9:") for a in calls[2])
 
+    def takeown_already_owned(argv: list[str], **_kwargs: object) -> Result:
+        if argv and argv[0] == "takeown":
+            return Result(1, "already owned")
+        return Result(0)
+
+    monkeypatch.setattr(subprocess_mod, "run", takeown_already_owned)
+    module._windows_apply_owner_only(path, directory=False)
+
     # Directory rights use object-inherit flags.
+    monkeypatch.setattr(subprocess_mod, "run", fake_run)
     calls.clear()
     module._windows_apply_owner_only(path, directory=True)
     assert "(OI)(CI)(F)" in calls[2][3]
@@ -815,3 +850,331 @@ def test_windows_open_and_single_link_and_private_dir_os_errors(
     monkeypatch.setattr(secret_files, "os", OsPosixNoNofollow())
     with pytest.raises(SecretFileError, match="unavailable"):
         secret_files.read_regular_file_bytes(path, label="public")
+
+
+def test_windows_floor_is_available_when_the_host_is_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import synapse_channel.core.secure_path as module
+
+    monkeypatch.setattr(module, "_POSIX", False)
+    monkeypatch.setattr(module, "_WINDOWS", True)
+    assert module.owner_only_floor_available() is True
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="whoami /user is the Windows SID command")
+def test_whoami_and_the_process_token_name_the_same_user() -> None:
+    import synapse_channel.core.secure_path as module
+
+    whoami_sid = module._windows_current_user_sid_whoami()
+    native_sid = module._windows_current_user_sid_native()
+    assert whoami_sid.startswith("S-1-")
+    assert native_sid == whoami_sid
+
+
+def test_windows_sid_falls_back_when_the_native_read_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import synapse_channel.core.secure_path as module
+
+    def refuse() -> str:
+        raise SecurePathError("native token read is unavailable")
+
+    monkeypatch.setattr(module, "_windows_current_user_sid_native", refuse)
+    monkeypatch.setattr(module, "_windows_current_user_sid_whoami", lambda: "S-1-5-21-7")
+    assert module._windows_current_user_sid() == "S-1-5-21-7"
+
+
+def test_whoami_sid_parser_refuses_bad_answers(monkeypatch: pytest.MonkeyPatch) -> None:
+    import synapse_channel.core.secure_path as module
+
+    class Answer:
+        def __init__(self, code: int, out: str = "", err: str = "") -> None:
+            self.returncode = code
+            self.stdout = out
+            self.stderr = err
+
+    def run(argv: list[str], **_kwargs: object) -> Answer:
+        return answers.pop(0)
+
+    answers = [
+        Answer(0, '"HOST\\user","S-1-5-21-9"\n'),
+        Answer(1, err="denied"),
+        Answer(0, ""),
+        Answer(0, '"HOST\\user"\n'),
+    ]
+    monkeypatch.setattr(module.subprocess, "run", run)  # type: ignore[attr-defined]
+    assert module._windows_current_user_sid_whoami() == "S-1-5-21-9"
+    with pytest.raises(SecurePathError, match="cannot resolve Windows user SID"):
+        module._windows_current_user_sid_whoami()
+    with pytest.raises(SecurePathError, match="no user SID"):
+        module._windows_current_user_sid_whoami()
+    with pytest.raises(SecurePathError, match="had no SID"):
+        module._windows_current_user_sid_whoami()
+
+    def missing(argv: list[str], **_kwargs: object) -> Answer:
+        raise FileNotFoundError("whoami")
+
+    monkeypatch.setattr(module.subprocess, "run", missing)  # type: ignore[attr-defined]
+    with pytest.raises(SecurePathError, match="whoami is required"):
+        module._windows_current_user_sid_whoami()
+
+
+class _Win32State:
+    """Shared stand-in for one ``WinDLL`` scenario. The security policy stays real."""
+
+    def __init__(self, scenario: str) -> None:
+        self.scenario = scenario
+        self.token_reads = 0
+        self.converts = 0
+        self.acl: ctypes.Array[ctypes.c_char] | None = None
+
+
+def _write_token_user(buffer: object) -> None:
+    """Plant a TOKEN_USER whose SID pointer the string converter ignores."""
+    import ctypes
+    from ctypes import wintypes
+
+    class SidAndAttributes(ctypes.Structure):
+        _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", wintypes.DWORD)]
+
+    class TokenUser(ctypes.Structure):
+        _fields_ = [("User", SidAndAttributes)]
+
+    user = TokenUser()
+    user.User.Sid = 0x11
+    user.User.Attributes = 0
+    ctypes.memmove(buffer, ctypes.addressof(user), ctypes.sizeof(user))  # type: ignore[arg-type]
+
+
+def _plant_acl(ace_type: int) -> ctypes.Array[ctypes.c_char]:
+    """Build an ACL the reader can walk with ``from_address``."""
+    import ctypes
+    from ctypes import wintypes
+
+    class Acl(ctypes.Structure):
+        _fields_ = [
+            ("AclRevision", wintypes.BYTE),
+            ("Sbz1", wintypes.BYTE),
+            ("AclSize", wintypes.WORD),
+            ("AceCount", wintypes.WORD),
+            ("Sbz2", wintypes.WORD),
+        ]
+
+    class AceHeader(ctypes.Structure):
+        _fields_ = [
+            ("AceType", wintypes.BYTE),
+            ("AceFlags", wintypes.BYTE),
+            ("AceSize", wintypes.WORD),
+        ]
+
+    raw = ctypes.create_string_buffer(64)
+    acl = Acl.from_buffer(raw)
+    acl.AclRevision = 2
+    acl.AceCount = 1
+    acl.AclSize = 64
+    header_at = ctypes.sizeof(Acl)
+    header = AceHeader.from_buffer(raw, header_at)
+    header.AceType = ace_type
+    header.AceFlags = 0
+    header.AceSize = 24
+    mask = ctypes.c_uint32.from_buffer(raw, header_at + ctypes.sizeof(AceHeader))
+    mask.value = 0x001F01FF
+    return raw
+
+
+def _dispatch_win32(state: _Win32State, name: str, args: tuple[object, ...]) -> int:
+    """Return the Win32 codes that drive one reader branch. Policy is not stubbed."""
+    import ctypes
+
+    if name == "GetCurrentProcess":
+        return 1
+    if name == "OpenProcessToken":
+        return 0 if state.scenario == "open_fail" else 1
+    if name == "GetTokenInformation":
+        state.token_reads += 1
+        size_ptr = args[4]
+        buffer = args[2]
+        if state.scenario == "size_zero":
+            return 1
+        if buffer is None:
+            size_ptr._obj.value = 32  # type: ignore[attr-defined]
+            return 0
+        if state.scenario == "read_fail":
+            return 0
+        _write_token_user(buffer)
+        return 1
+    if name == "ConvertSidToStringSidW":
+        state.converts += 1
+        out = args[1]
+        if state.scenario == "convert_fail" or (
+            state.scenario == "owner_convert_fail" and state.converts == 1
+        ):
+            return 0
+        if state.scenario == "ace_convert_fail" and state.converts >= 2:
+            return 0
+        # A non-allow ACE is left unread. Parsing it as allow would hand
+        # Everyone to the real policy. The token SID stays the owner.
+        first = args[0]
+        everyone = state.scenario in {"deny_ace", "everyone_allow"}
+        if everyone and state.converts >= 2 and isinstance(first, ctypes.c_void_p):
+            out._obj.value = "S-1-1-0"  # type: ignore[attr-defined]
+            return 1
+        sid = None if state.scenario == "empty_sid" else "S-1-5-21-9"
+        out._obj.value = sid  # type: ignore[attr-defined]
+        return 1
+    if name == "GetNamedSecurityInfoW":
+        if state.scenario == "security_status":
+            return 5
+        args[3]._obj.value = 1  # type: ignore[attr-defined]
+        args[7]._obj.value = 1  # type: ignore[attr-defined]
+        if state.scenario == "null_dacl":
+            args[5]._obj.value = 0  # type: ignore[attr-defined]
+            return 0
+        ace_type = 1 if state.scenario == "deny_ace" else 0
+        state.acl = _plant_acl(ace_type)
+        args[5]._obj.value = ctypes.addressof(state.acl)  # type: ignore[attr-defined]
+        return 0
+    return 0
+
+
+def _install_win32(monkeypatch: pytest.MonkeyPatch, scenario: str) -> None:
+    """Point ``ctypes.WinDLL`` at one scripted advapi32/kernel32 pair."""
+    import ctypes
+
+    state = _Win32State(scenario)
+
+    class Call:
+        def __init__(self, entry: str) -> None:
+            self.entry = entry
+
+        def __call__(self, *call_args: object) -> int:
+            return _dispatch_win32(state, self.entry, call_args)
+
+    class DLL:
+        def __init__(self, _library: str, use_last_error: bool = False) -> None:
+            return None
+
+        def __getattr__(self, entry: str) -> Call:
+            if entry.startswith("_"):
+                raise AttributeError(entry)
+            return Call(entry)
+
+    monkeypatch.setattr(ctypes, "WinDLL", DLL, raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+
+
+def _force_windows_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    import synapse_channel.core.secure_path as module
+
+    monkeypatch.setattr(module, "_POSIX", False)
+    monkeypatch.setattr(module, "_WINDOWS", True)
+
+
+def _whoami_sid(sid: str) -> Callable[..., object]:
+    class Answer:
+        def __init__(self) -> None:
+            self.returncode = 0
+            self.stdout = f'"HOST\\user","{sid}"\n'
+            self.stderr = ""
+
+    def run(_argv: list[str], **_kwargs: object) -> Answer:
+        return Answer()
+
+    return run
+
+
+@pytest.mark.parametrize(
+    ("scenario", "message"),
+    [
+        ("open_fail", "cannot open process token"),
+        ("size_zero", "cannot size token user"),
+        ("read_fail", "cannot read token user"),
+        ("convert_fail", "cannot convert user SID"),
+        ("empty_sid", "SID is empty"),
+    ],
+    ids=("open_fail", "size_zero", "read_fail", "convert_fail", "empty_sid"),
+)
+def test_native_sid_failure_falls_back_to_whoami(
+    scenario: str,
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import synapse_channel.core.secure_path as module
+
+    _force_windows_floor(monkeypatch)
+    _install_win32(monkeypatch, scenario)
+    with pytest.raises(SecurePathError, match=message):
+        module._windows_current_user_sid_native()
+    _install_win32(monkeypatch, scenario)
+    whoami = _whoami_sid("S-1-5-21-8")
+    monkeypatch.setattr(module.subprocess, "run", whoami)  # type: ignore[attr-defined]
+    identified = current_user_key()
+    assert identified.kind == "windows_sid"
+    assert identified.value == "S-1-5-21-8"
+
+
+def test_current_user_key_reads_the_process_token_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import synapse_channel.core.secure_path as module
+
+    _force_windows_floor(monkeypatch)
+    _install_win32(monkeypatch, "token_ok")
+
+    def whoami_must_not_run(_argv: list[str], **_kwargs: object) -> object:
+        raise AssertionError("whoami must not run when the process token opens")
+
+    monkeypatch.setattr(module.subprocess, "run", whoami_must_not_run)  # type: ignore[attr-defined]
+    identified = current_user_key()
+    assert identified.kind == "windows_sid"
+    assert identified.value == "S-1-5-21-9"
+
+
+@pytest.mark.parametrize(
+    ("scenario", "message"),
+    [
+        ("security_status", "cannot read security descriptor"),
+        ("owner_convert_fail", "cannot convert owner SID"),
+        ("ace_convert_fail", "cannot convert ACE SID"),
+        ("null_dacl", "NULL DACL"),
+    ],
+    ids=("security_status", "owner_convert_fail", "ace_convert_fail", "null_dacl"),
+)
+def test_windows_owner_proof_reports_each_descriptor_failure(
+    scenario: str,
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secret = tmp_path / "secret"
+    secret.write_bytes(b"sekret")
+    _force_windows_floor(monkeypatch)
+    _install_win32(monkeypatch, scenario)
+    with pytest.raises(SecurePathError, match=message):
+        assert_owner_only_file_path(secret, purpose="secret")
+
+
+@pytest.mark.parametrize("scenario", ["token_ok", "deny_ace"])
+def test_windows_owner_proof_accepts_owner_only_aces(
+    scenario: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secret = tmp_path / "secret"
+    secret.write_bytes(b"sekret")
+    _force_windows_floor(monkeypatch)
+    _install_win32(monkeypatch, scenario)
+    assert_owner_only_file_path(secret, purpose="secret")
+
+
+def test_windows_owner_proof_refuses_an_everyone_allow_ace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secret = tmp_path / "secret"
+    secret.write_bytes(b"sekret")
+    _force_windows_floor(monkeypatch)
+    _install_win32(monkeypatch, "everyone_allow")
+    with pytest.raises(SecurePathError, match="other principals"):
+        assert_owner_only_file_path(secret, purpose="secret")
