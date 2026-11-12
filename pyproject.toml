@@ -278,6 +278,16 @@ branch = true
 patch = ["subprocess"]
 omit = ["*/site-packages/synapse_channel/*"]
 
+[tool.coverage.paths]
+# Hosted Windows coverage joins the complete gate (owner decision 2026-11-12): a shard's
+# data names the package under its own checkout, POSIX or Windows, and combining maps
+# every such path onto this repository's source.
+source = [
+  "src/synapse_channel",
+  "*/src/synapse_channel",
+  "*\\src\\synapse_channel",
+]
+
 [tool.coverage.report]
 # Child probe tooling is retained in raw data; this gate covers the whole application.
 include = ["src/synapse_channel/*"]

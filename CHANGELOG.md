@@ -142,6 +142,15 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- The complete coverage gate of CI counts the lines only Windows runs. A new
+  `test-windows` job runs the test files that exercise them on hosted Windows,
+  as one complete shard with coverage, and `test-complete` combines that part
+  with the Linux shards through path aliases in `pyproject.toml`. The threshold
+  stays 99.36%; a missing, failed, foreign or altered Windows part fails the
+  gate. `tools/ci_shard_artifacts.py` gains `pack --platform` and
+  `verify --platform-coverage NAME=DIRECTORY`, and closes the coverage data it
+  combines instead of leaving the connections to garbage collection.
+
 - The identity and access page says that a mailbox handover moves mail and
   no authority: the successor does not answer to the predecessor's roles and
   cannot release its claims. A test on a real hub shows both.

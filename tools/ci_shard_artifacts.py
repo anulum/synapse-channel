@@ -6,7 +6,13 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — complete indexed CI artifact and coverage union gate
-"""Publish only completed shards, verify every index, and gate the complete coverage union."""
+"""Publish only completed shards, verify every index, and gate the complete coverage union.
+
+The union is the coverage interpreter's indexed shards together with each named platform
+part: one complete shard measured on another operating system (hosted Windows), whose
+lines no Linux run can reach. A named platform part that is missing, failed, foreign or
+altered refuses the gate; the threshold is the same with or without it.
+"""
 
 from __future__ import annotations
 
@@ -128,7 +134,24 @@ def _native(main: dict[str, Any], native: dict[str, Any] | None) -> None:
         raise ValueError("native metadata-refusal profile did not execute completely")
 
 
-def pack(manifest: Path, native_manifest: Path | None, coverage: Path | None, output: Path) -> None:
+def _platform_shard(main: dict[str, Any], native: object, coverage: object, platform: str) -> None:
+    """Require one whole shard measured on ``platform`` with its own coverage and no follow-up."""
+    if (
+        native is not None
+        or coverage is None
+        or main.get("platform") != platform
+        or (main["index"], main["count"]) != (0, 1)
+    ):
+        raise ValueError(f"a {platform} coverage part is one complete shard with its own coverage")
+
+
+def pack(
+    manifest: Path,
+    native_manifest: Path | None,
+    coverage: Path | None,
+    output: Path,
+    platform: str | None = None,
+) -> None:
     """Write an indexed artifact only after all of its mandatory commands succeeded.
 
     Parameters
@@ -141,11 +164,18 @@ def pack(manifest: Path, native_manifest: Path | None, coverage: Path | None, ou
         Actual accumulated coverage data for the coverage interpreter.
     output : Path
         New artifact directory; existing output is refused.
+    platform : str or None, optional
+        For a platform coverage part, the ``sys.platform`` the receipt was made on.
+        Such a part is the single shard of its run, carries coverage data and has
+        no native follow-up; the record names its platform.
     """
     main = _read(manifest)
     native = _read(native_manifest) if native_manifest else None
     _completed(main)
-    _native(main, native)
+    if platform is None:
+        _native(main, native)
+    else:
+        _platform_shard(main, native, coverage, platform)
     digest = None
     if coverage is not None:
         if not coverage.is_file() or coverage.is_symlink() or coverage.stat().st_size == 0:
@@ -155,6 +185,8 @@ def pack(manifest: Path, native_manifest: Path | None, coverage: Path | None, ou
     if coverage is not None:
         shutil.copyfile(coverage, output / "coverage.data")
     record = {"schema": 1, "main": main, "native": native, "coverage_sha256": digest}
+    if platform is not None:
+        record["platform"] = platform
     (output / "artifact.json").write_text(json.dumps(record, sort_keys=True) + "\n")
 
 
@@ -180,20 +212,33 @@ def _profile(
 
 
 def _coverage(paths: list[Path], config: Path, output: Path, fail_under: float) -> None:
-    """Combine actual data files and apply the unchanged whole-package coverage threshold."""
+    """Combine actual data files and apply the unchanged whole-package coverage threshold.
+
+    The configuration's ``[paths]`` aliases map a platform part's checkout onto this
+    repository's source while the parts are combined. The combined data is reported
+    as it is; mapping it again for each report would only copy it.
+    """
     output.mkdir(parents=True, exist_ok=False)
-    measured = Coverage(
-        data_file=str(output / "combined.coverage"), data_suffix=False, config_file=str(config)
-    )
-    measured.combine(data_paths=[str(path) for path in paths], strict=True, keep=True)
-    measured.save()
-    total = measured.report()
-    # Match coverage CLI precision and its special requirement for an exact 100%.
-    precision = cast("int", measured.get_option("report:precision"))
-    if (fail_under == 100 and total < 100) or round(total, precision) < fail_under:
-        raise ValueError(f"complete coverage {total:.2f}% is below {fail_under:g}%")
-    measured.json_report(outfile=str(output / "coverage.json"))
-    measured.xml_report(outfile=str(output / "coverage.xml"))
+    data_file = str(output / "combined.coverage")
+    combined = Coverage(data_file=data_file, data_suffix=False, config_file=str(config))
+    try:
+        combined.combine(data_paths=[str(path) for path in paths], strict=True, keep=True)
+        combined.save()
+    finally:
+        combined.get_data().close(force=True)
+    measured = Coverage(data_file=data_file, data_suffix=False, config_file=str(config))
+    measured.set_option("paths", {})
+    try:
+        measured.load()
+        total = measured.report()
+        # Match coverage CLI precision and its special requirement for an exact 100%.
+        precision = cast("int", measured.get_option("report:precision"))
+        if (fail_under == 100 and total < 100) or round(total, precision) < fail_under:
+            raise ValueError(f"complete coverage {total:.2f}% is below {fail_under:g}%")
+        measured.json_report(outfile=str(output / "coverage.json"))
+        measured.xml_report(outfile=str(output / "coverage.xml"))
+    finally:
+        measured.get_data().close(force=True)
 
 
 def _bound_artifact(record: dict[str, Any], expected: dict[str, str], pythons: list[str]) -> None:
@@ -265,6 +310,36 @@ def _expected_run(
     return expected
 
 
+def _coverage_data(directory: Path, record: dict[str, Any], label: str) -> Path:
+    """Return a part's coverage data after checking it against the digest it was packed with."""
+    path = directory / "coverage.data"
+    if (
+        not path.is_file()
+        or path.is_symlink()
+        or hashlib.sha256(path.read_bytes()).hexdigest() != record.get("coverage_sha256")
+    ):
+        raise ValueError(f"missing or altered {label}coverage data")
+    return path
+
+
+def _platform_part(
+    name: str, directory: Path, expected: dict[str, str], coverage_python: str
+) -> tuple[Path, dict[str, Any]]:
+    """Validate one named platform part against this hosted invocation and return its data."""
+    record = _read(directory / "artifact.json")
+    main = record.get("main")
+    if record.get("schema") != 1 or record.get("platform") != name or not isinstance(main, dict):
+        raise ValueError(f"invalid {name} coverage artifact")
+    _coordinates(main)
+    _completed(main)
+    _platform_shard(main, record.get("native"), record.get("coverage_sha256"), name)
+    if main.get("python") != coverage_python or any(
+        main.get(key) != value for key, value in expected.items()
+    ):
+        raise ValueError(f"{name} coverage artifact does not match this run")
+    return _coverage_data(directory, record, name + " "), record
+
+
 def _earlier_attempt(record: dict[str, Any], attempt: str, allow_earlier: bool) -> None:
     """Accept a same-run producer that is not newer than the aggregate."""
     if not allow_earlier:
@@ -287,6 +362,7 @@ def verify(
     timings: Path | None = None,
     *,
     allow_earlier_attempts: bool = False,
+    platforms: dict[str, Path] | None = None,
 ) -> None:
     """Refuse incomplete, failed or foreign artifacts before measuring their full union.
 
@@ -315,6 +391,10 @@ def verify(
         Accept successful shards from this same run whose attempt is not newer
         than the aggregate. Source, run, configuration and complete execution
         evidence must still match. The default requires the exact attempt.
+    platforms : dict of str to Path, optional
+        Platform coverage parts by ``sys.platform`` name, each a downloaded
+        artifact directory outside ``root``. Every named part must be one complete
+        shard of this run on the coverage interpreter; its data joins the union.
     """
     paths = sorted(root.glob("*/artifact.json"))
     if len(paths) != len(pythons) * count or len(set(pythons)) != len(pythons):
@@ -331,24 +411,31 @@ def verify(
         for directory, record in _profile(records, python, count):
             _completed(record["main"])
             if python == coverage_python:
-                path = directory / "coverage.data"
-                if (
-                    not path.is_file()
-                    or path.is_symlink()
-                    or hashlib.sha256(path.read_bytes()).hexdigest()
-                    != record.get("coverage_sha256")
-                ):
-                    raise ValueError("missing or altered coverage data")
-                coverage_paths.append(path)
+                coverage_paths.append(_coverage_data(directory, record, ""))
             elif record.get("coverage_sha256") is not None:
                 raise ValueError("unexpected coverage interpreter")
     if coverage_python not in pythons or not 0 <= fail_under <= 100:
         raise ValueError("invalid coverage profile")
+    for name, directory in sorted((platforms or {}).items()):
+        path, part = _platform_part(name, directory, expected, coverage_python)
+        _earlier_attempt(part, attempt, allow_earlier_attempts)
+        coverage_paths.append(path)
     profiles = _timing_history(records)
     _coverage(coverage_paths, config, output, fail_under)
     (output / "timings.json").write_text(
         json.dumps({"schema": 1, "profiles": profiles}, sort_keys=True) + "\n"
     )
+
+
+def _named_parts(values: list[str] | None) -> dict[str, Path]:
+    """Parse repeated ``NAME=DIRECTORY`` platform parts, each name once."""
+    parts: dict[str, Path] = {}
+    for value in values or []:
+        name, separator, directory = value.partition("=")
+        if not separator or not name or not directory or name in parts:
+            raise ValueError("platform coverage is NAME=DIRECTORY, each name once")
+        parts[name] = Path(directory)
+    return parts
 
 
 def main() -> int:
@@ -360,6 +447,7 @@ def main() -> int:
     publish.add_argument("--native-manifest", type=Path)
     publish.add_argument("--coverage-file", type=Path)
     publish.add_argument("--output", type=Path, required=True)
+    publish.add_argument("--platform")
     check = commands.add_parser("verify")
     for name in ("root", "coverage-config", "output"):
         check.add_argument("--" + name, type=Path, required=True)
@@ -371,10 +459,13 @@ def main() -> int:
     check.add_argument("--fail-under", type=float, default=99.36)
     check.add_argument("--timings", type=Path)
     check.add_argument("--allow-earlier-attempts", action="store_true")
+    check.add_argument("--platform-coverage", action="append")
     args = parser.parse_args()
     try:
         if args.command == "pack":
-            pack(args.manifest, args.native_manifest, args.coverage_file, args.output)
+            pack(
+                args.manifest, args.native_manifest, args.coverage_file, args.output, args.platform
+            )
         else:
             verify(
                 args.root,
@@ -389,6 +480,7 @@ def main() -> int:
                 args.fail_under,
                 args.timings,
                 allow_earlier_attempts=args.allow_earlier_attempts,
+                platforms=_named_parts(args.platform_coverage),
             )
     except (OSError, ValueError, KeyError, TypeError, CoverageException) as error:
         print(f"CI shard refused: {error}", file=sys.stderr)

@@ -111,12 +111,21 @@ Only successful shards publish authoritative indexed artifacts. `test-complete`
 requires every shard, verifies identical interpreter inventories and an exact
 union without omissions or duplicates, combines actual Python 3.12 branch and
 subprocess coverage, then applies the whole-package 99.36% threshold.
+The union also counts one Windows part: `test-windows` runs, on hosted Windows,
+the test files that exercise Windows-only lines (Win32 openers, process
+accounting, the native queue), as one complete `tools.pytest_shard` receipt with
+Python 3.12 coverage, and packs it with `pack --platform win32`. `test-complete`
+names it with `--platform-coverage win32=DIRECTORY`; the `[tool.coverage.paths]`
+aliases in `pyproject.toml` map its Windows checkout onto `src/synapse_channel`.
+A named part that is missing, failed, foreign, from a newer attempt or altered
+fails the gate; the threshold is the same with or without it. A test file joins
+that list only when it passes on hosted Windows.
 A shard has no individual coverage floor because it measures only its partition.
 Missing, failed, skipped, duplicate, foreign or altered artifacts fail the gate.
 A failed-job rerun keeps this run's successful shard artifacts and its original
 timing snapshot. The aggregate accepts those earlier attempts from the same run
 and still refuses a newer attempt, a different run, or an incomplete shard.
-The required `ci` job includes both the matrix and the complete-union gate.
+The required `ci` job includes the matrix, the Windows part and the complete-union gate.
 
 Focused runner/artifact checks live in `tests/test_ci_shard_artifacts.py` and
 `tests/test_pytest_shard_schedule.py` and use real pytest and coverage subprocesses.

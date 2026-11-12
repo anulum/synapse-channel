@@ -313,19 +313,145 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
+  test-windows:
+    # Lines only Windows runs (Win32 openers, process accounting, the native queue)
+    # are measured here and join the complete coverage gate in test-complete (owner
+    # decision 2026-11-12); the threshold there is unchanged. The part is the set of
+    # test files that exercise them and pass on hosted Windows: the full suite does
+    # not finish on that runner (see cross-os.yml).
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            .github/requirements/requirements-dev.txt
+            .github/requirements/requirements-legacy-release.txt
+            .github/requirements/requirements-release-admission.txt
+      - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
+      - run: python -m pip install -e . --no-deps
+      - name: Prepare the published no-receipt hub fixture
+        run: >-
+          python -m pip download --require-hashes --no-deps --only-binary=:all:
+          -r .github/requirements/requirements-legacy-release.txt
+          --dest .pytest_cache/legacy-release
+      - name: Prepare the published exact-confirmation admission fixture
+        run: >-
+          python -m pip download --require-hashes --no-deps --only-binary=:all:
+          -r .github/requirements/requirements-release-admission.txt
+          --dest .pytest_cache/legacy-release
+      - name: Run the Windows coverage part
+        env:
+          PYTHONUNBUFFERED: "1"
+          COVERAGE_FILE: ${{ runner.temp }}/windows.coverage
+        run: >-
+          python -m pytest -q -p no:cacheprovider -p tools.pytest_shard
+          --shard-index=0 --shard-count=1 --shard-output=shard-windows.json
+          --cov=synapse_channel --cov-report= --cov-fail-under=0
+          tests/test_advertise_persistent.py
+          tests/test_advisory_lock.py
+          tests/test_aef_emission.py
+          tests/test_aef_replay_store.py
+          tests/test_agent_pane_state.py
+          tests/test_archive_report.py
+          tests/test_at_rest.py
+          tests/test_at_rest_attestation.py
+          tests/test_at_rest_cloud_hsm.py
+          tests/test_at_rest_escrow.py
+          tests/test_auto_action_store.py
+          tests/test_capability_card_history.py
+          tests/test_capability_card_trust.py
+          tests/test_cli.py
+          tests/test_cli_capability_cards.py
+          tests/test_cli_deliberate.py
+          tests/test_cli_doctor_token_set.py
+          tests/test_cli_encrypt_key.py
+          tests/test_cli_fleet_scorecard.py
+          tests/test_cli_kimi_claim_hook.py
+          tests/test_cli_lock_process.py
+          tests/test_cli_lock_process_cancellation.py
+          tests/test_cli_native_hook.py
+          tests/test_cli_token_set.py
+          tests/test_codex_mcp_package.py
+          tests/test_core_errors.py
+          tests/test_dashboard_host_sessions.py
+          tests/test_durable_dir.py
+          tests/test_host_sessions.py
+          tests/test_host_sessions_tree.py
+          tests/test_identity_keys.py
+          tests/test_identity_keys_secret_floor.py
+          tests/test_integrator_contract.py
+          tests/test_kimi_hook_config_file.py
+          tests/test_launch_record.py
+          tests/test_leasing_drafts.py
+          tests/test_mailbox_cursor.py
+          tests/test_mcp_inbox.py
+          tests/test_mcp_wake_ledger.py
+          tests/test_mcp_wake_root_archive.py
+          tests/test_mcp_wake_root_initialization.py
+          tests/test_mcp_wake_storage_control.py
+          tests/test_native_hook_spool.py
+          tests/test_opencode_adapter_files.py
+          tests/test_opencode_api_endpoint_port.py
+          tests/test_opencode_auth.py
+          tests/test_opencode_windows_native.py
+          tests/test_operation_record_types.py
+          tests/test_ordinary_claim_scope.py
+          tests/test_path_identity.py
+          tests/test_path_identity_inode_reuse.py
+          tests/test_pid_monitor_accounting.py
+          tests/test_private_dir.py
+          tests/test_read_owner_only_file_bytes.py
+          tests/test_result_verification.py
+          tests/test_secret_files.py
+          tests/test_secure_path.py
+          tests/test_secure_path_reparse.py
+          tests/test_secure_read_bounds.py
+          tests/test_shared_host_regression.py
+          tests/test_token_audit.py
+          tests/test_token_sessions.py
+          tests/test_token_set.py
+          tests/test_token_set_hub_status.py
+          tests/test_wake_adapter_codex_queue.py
+          tests/test_wake_adapter_codex_queue_windows.py
+          tests/test_wake_relay.py
+          tests/test_worker_outcome_publication.py
+          tests/test_worker_outcomes_native.py
+      - name: Bind the successful Windows part into its artifact
+        run: >-
+          python tools/ci_shard_artifacts.py pack --platform win32
+          --manifest shard-windows.json --coverage-file "${{ runner.temp }}/windows.coverage"
+          --output ci-windows-artifact
+      - name: Publish the Windows part only after its tests and pack succeed
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pytest-windows-${{ github.sha }}
+          path: ci-windows-artifact/
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
+
   test-complete:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, test-windows]
     if: always()
     steps:
-      - name: Require every matrix shard to succeed
+      - name: Require every matrix shard and the Windows part to succeed
         env:
           SHARD_RESULT: ${{ needs.test.result }}
+          WINDOWS_RESULT: ${{ needs.test-windows.result }}
         run: |
-          if [ "$SHARD_RESULT" = success ]; then
+          if [ "$SHARD_RESULT" = success ] && [ "$WINDOWS_RESULT" = success ]; then
             exit 0
           fi
-          echo "::error::The test matrix result is ${SHARD_RESULT:-empty}. Coverage is not qualified. Re-run the failed test jobs; this run keeps successful shard artifacts and the original timing snapshot."
+          echo "::error::The test matrix result is ${SHARD_RESULT:-empty} and the Windows coverage part is ${WINDOWS_RESULT:-empty}. Coverage is not qualified. Re-run the failed test jobs; this run keeps successful shard artifacts and the original timing snapshot."
           exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -338,6 +464,11 @@ jobs:
           pattern: pytest-shard-${{ github.sha }}-*
           path: ci-shards
           merge-multiple: false
+      - name: Restore the Windows coverage part
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: pytest-windows-${{ github.sha }}
+          path: ci-windows
       - name: Restore the common immutable scheduling input
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -355,6 +486,7 @@ jobs:
           --python 3.11 3.12 3.13 --count 4
           --timings timing-input/timings.json --coverage-python 3.12
           --coverage-config pyproject.toml --fail-under 99.36 --output ci-coverage
+          --platform-coverage win32=ci-windows
       - name: Retain observed timings only after complete successful qualification
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -560,7 +692,7 @@ jobs:
   # each individual job as a required context.
   ci:
     name: ci
-    needs: [test-timings, lint, typecheck, test, test-complete, reuse, audit, git-hooks, pi-integration, marketplace-action, python-lock-audit, node-lock-audit]
+    needs: [test-timings, lint, typecheck, test, test-windows, test-complete, reuse, audit, git-hooks, pi-integration, marketplace-action, python-lock-audit, node-lock-audit]
     if: always()
     runs-on: ubuntu-latest
     steps:

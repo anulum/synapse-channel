@@ -270,11 +270,10 @@ def _damage(root: Path, kind: str) -> None:
         record["main"]["inventory"] *= 2
     elif kind == "coverage-missing":
         (directory / "coverage.data").unlink()
-    elif kind == "coverage-altered":
+    else:
+        assert kind == "coverage-altered", kind
         with (directory / "coverage.data").open("ab") as output:
             output.write(b"altered after publication")
-    else:
-        raise AssertionError(kind)
     if kind not in {"missing", "extra", "duplicate-index"}:
         path.write_text(json.dumps(record))
 
@@ -653,10 +652,16 @@ def test_ci_failed_job_rerun_reuses_this_run_and_states_the_matrix_result() -> N
     )
     assert "--allow-earlier-attempts" in command
     gate = workflow["jobs"]["test-complete"]["steps"][0]["run"]
-    for result, code in (("success", 0), ("cancelled", 1), ("failure", 1), ("", 1)):
+    for shards, windows, code in (
+        ("success", "success", 0),
+        ("success", "failure", 1),
+        ("cancelled", "success", 1),
+        ("failure", "success", 1),
+        ("", "", 1),
+    ):
         completed = subprocess.run(
             ["bash", "-c", gate],
-            env=dict(os.environ, SHARD_RESULT=result),
+            env=dict(os.environ, SHARD_RESULT=shards, WINDOWS_RESULT=windows),
             capture_output=True,
             text=True,
             timeout=5,
@@ -664,8 +669,12 @@ def test_ci_failed_job_rerun_reuses_this_run_and_states_the_matrix_result() -> N
         )
         assert completed.returncode == code
         if code != 0:
-            assert (result or "empty") in completed.stdout
-            assert "Coverage is not qualified" in completed.stdout
+            assert completed.stdout == (
+                f"::error::The test matrix result is {shards or 'empty'} and the Windows"
+                f" coverage part is {windows or 'empty'}. Coverage is not qualified. Re-run the"
+                " failed test jobs; this run keeps successful shard artifacts and the original"
+                " timing snapshot.\n"
+            )
 
 
 def test_ci_keeps_the_shard_coverage_database_outside_the_checkout(tmp_path: Path) -> None:
@@ -742,3 +751,378 @@ def test_application_report_retains_probe_data_without_expanding_the_package_gat
     data = CoverageData(basename=str(tmp_path / ".coverage"))
     data.read()
     assert str(tmp_path / "diagnostic.py") in data.measured_files()
+
+
+PLATFORM = sys.platform
+ONE_SHARD = f"a {PLATFORM} coverage part is one complete shard with its own coverage"
+
+
+def _with_platform_paths(root: Path) -> None:
+    """Map a second checkout's ``app.py`` onto this project, as the package config does."""
+    config = root / "pyproject.toml"
+    config.write_text(
+        config.read_text()
+        + f'[tool.coverage.paths]\nsource = ["{root.as_posix()}", "*/platform-checkout"]\n'
+    )
+
+
+def _platform_part(root: Path, *, name: str = PLATFORM, native: bool = False) -> Path:
+    """Measure the branch the shards miss in another checkout and pack it as a platform part."""
+    other = root.parent / "platform-checkout"
+    other.mkdir()
+    for item in ("pyproject.toml", "app.py"):
+        shutil.copyfile(root / item, other / item)
+    (other / "test_platform.py").write_text(
+        "from app import value\n\ndef test_true():\n    assert value(True) == 1\n"
+    )
+    measured = _run(
+        other,
+        [
+            "-m",
+            "pytest",
+            "test_platform.py",
+            "-q",
+            "-p",
+            "tools.pytest_shard",
+            "-p",
+            "pytest_cov.plugin",
+            "--shard-index=0",
+            "--shard-count=1",
+            "--shard-output=platform.json",
+            "--cov=app",
+            "--cov-config=pyproject.toml",
+            "--cov-report=",
+            "--cov-fail-under=0",
+            "-o",
+            "cache_dir=" + str(other / "cache"),
+        ],
+        coverage_file=other / "platform-data",
+    )
+    assert measured.returncode == 0, measured.stdout + measured.stderr
+    options = ["--native-manifest", "platform.json"] if native else []
+    packed = _run(
+        other,
+        [
+            str(TOOL),
+            "pack",
+            "--platform",
+            name,
+            "--manifest",
+            "platform.json",
+            "--coverage-file",
+            "platform-data",
+            "--output",
+            str(root / "platform-part"),
+            *options,
+        ],
+    )
+    assert packed.returncode == 0, packed.stdout + packed.stderr
+    return root / "platform-part"
+
+
+def _verify_parts(root: Path, *parts: str) -> subprocess.CompletedProcess[str]:
+    """Run the public gate with named platform parts at the fixture's threshold."""
+    arguments = [
+        str(TOOL),
+        "verify",
+        "--root",
+        "artifacts",
+        "--source",
+        SOURCE,
+        "--run-id",
+        "actual-runner-fixture",
+        "--attempt",
+        "1",
+        "--python",
+        PYTHON,
+        "--count",
+        "2",
+        "--coverage-python",
+        PYTHON,
+        "--coverage-config",
+        "pyproject.toml",
+        "--fail-under",
+        "100",
+        "--output",
+        "reports",
+    ]
+    for part in parts:
+        arguments += ["--platform-coverage", part]
+    return _run(root, arguments)
+
+
+@pytest.fixture(scope="module")
+def platform_artifacts(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Linux-style shards that miss one branch, and a platform part that measures it."""
+    root = tmp_path_factory.mktemp("platform-fixture") / "project"
+    _prepare(root, both_branches=False)
+    _with_platform_paths(root)
+    for index in range(2):
+        assert _pytest(root, index).returncode == 0
+        if index == 0:
+            assert _pytest(root, 0, native=True).returncode == 0
+        packed = _run(
+            root,
+            [
+                str(TOOL),
+                "pack",
+                "--manifest",
+                f"main-{index}.json",
+                "--coverage-file",
+                f"data-{index}",
+                "--output",
+                f"artifacts/{index}",
+                *(["--native-manifest", "native.json"] if index == 0 else []),
+            ],
+        )
+        assert packed.returncode == 0, packed.stdout + packed.stderr
+    _platform_part(root)
+    return root
+
+
+def test_a_platform_part_joins_the_union_and_completes_the_gate(
+    platform_artifacts: Path, tmp_path: Path
+) -> None:
+    """The branch only the other checkout runs counts once its part is named."""
+    root = tmp_path / "project"
+    shutil.copytree(platform_artifacts, root)
+    without = _verify_parts(root)
+    assert without.returncode == 1 and "is below 100%" in without.stderr
+    shutil.rmtree(root / "reports")
+    joined = _verify_parts(root, f"{PLATFORM}=platform-part")
+    assert joined.returncode == 0, joined.stdout + joined.stderr
+    report = json.loads((root / "reports/coverage.json").read_text())
+    assert report["totals"]["percent_covered"] == 100
+    assert [Path(name).name for name in report["files"]] == ["app.py"]
+
+
+def test_the_public_verify_api_counts_a_named_platform_part(
+    platform_artifacts: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The in-process gate adds the part's data and reaches the full union."""
+    from tools.ci_shard_artifacts import verify
+
+    root = tmp_path / "project"
+    shutil.copytree(platform_artifacts, root)
+    monkeypatch.chdir(root)
+    verify(
+        Path("artifacts"),
+        SOURCE,
+        "actual-runner-fixture",
+        "1",
+        [PYTHON],
+        2,
+        PYTHON,
+        Path("pyproject.toml"),
+        Path("reports"),
+        100,
+        platforms={PLATFORM: Path("platform-part")},
+    )
+    report = json.loads((root / "reports/coverage.json").read_text())
+    assert report["totals"]["percent_covered"] == 100
+
+
+def _damage_part(root: Path, kind: str) -> None:
+    """Corrupt a copied platform part to exercise one refusal of the gate."""
+    directory = root / "platform-part"
+    path = directory / "artifact.json"
+    record = json.loads(path.read_text())
+    main = record["main"]
+    if kind == "missing":
+        shutil.rmtree(directory)
+        return
+    if kind == "schema":
+        record["schema"] = 2
+    elif kind == "run":
+        main["run_id"] = "another-run"
+    elif kind == "python":
+        main["python"] = "2.7"
+    elif kind == "failed":
+        main["success"] = False
+    elif kind == "native":
+        record["native"] = dict(main)
+    elif kind == "receipt-platform":
+        main["platform"] = "another-system"
+    elif kind == "count":
+        main["count"] = 2
+    elif kind == "no-coverage":
+        record["coverage_sha256"] = None
+    elif kind == "altered":
+        with (directory / "coverage.data").open("ab") as output:
+            output.write(b"altered after publication")
+    else:
+        assert kind == "newer", kind
+        main["attempt"] = "2"
+    path.write_text(json.dumps(record))
+
+
+@pytest.mark.parametrize(
+    ("kind", "part", "diagnostic"),
+    [
+        ("missing", PLATFORM, "missing ordinary artifact: platform-part/artifact.json"),
+        ("schema", PLATFORM, f"invalid {PLATFORM} coverage artifact"),
+        (None, "another-system", "invalid another-system coverage artifact"),
+        ("run", PLATFORM, f"{PLATFORM} coverage artifact does not match this run"),
+        ("python", PLATFORM, f"{PLATFORM} coverage artifact does not match this run"),
+        ("failed", PLATFORM, "incomplete or misidentified pytest shard"),
+        ("native", PLATFORM, ONE_SHARD),
+        ("receipt-platform", PLATFORM, ONE_SHARD),
+        ("count", PLATFORM, ONE_SHARD),
+        ("no-coverage", PLATFORM, ONE_SHARD),
+        ("altered", PLATFORM, f"missing or altered {PLATFORM} coverage data"),
+        ("newer", PLATFORM, f"{PLATFORM} coverage artifact does not match this run"),
+    ],
+)
+def test_a_named_platform_part_that_is_missing_foreign_or_altered_refuses_the_gate(
+    platform_artifacts: Path, tmp_path: Path, kind: str | None, part: str, diagnostic: str
+) -> None:
+    """A part the gate was told to count either counts whole or refuses the gate."""
+    root = tmp_path / "project"
+    shutil.copytree(platform_artifacts, root)
+    if kind is not None:
+        _damage_part(root, kind)
+    result = _verify_parts(root, f"{part}=platform-part")
+    assert result.returncode == 1
+    assert result.stderr == f"CI shard refused: {diagnostic}\n"
+    assert not (root / "reports").exists()
+
+
+def test_an_earlier_platform_part_counts_in_a_later_attempt_and_a_newer_one_refuses(
+    platform_artifacts: Path, tmp_path: Path
+) -> None:
+    """A rerun aggregate keeps a successful platform part from an earlier attempt only."""
+    root = tmp_path / "project"
+    shutil.copytree(platform_artifacts, root)
+
+    def gate(attempt: str) -> subprocess.CompletedProcess[str]:
+        arguments = [
+            str(TOOL),
+            "verify",
+            "--root",
+            "artifacts",
+            "--source",
+            SOURCE,
+            "--run-id",
+            "actual-runner-fixture",
+            "--attempt",
+            attempt,
+            "--python",
+            PYTHON,
+            "--count",
+            "2",
+            "--coverage-python",
+            PYTHON,
+            "--coverage-config",
+            "pyproject.toml",
+            "--fail-under",
+            "100",
+            "--output",
+            "reports",
+            "--allow-earlier-attempts",
+            "--platform-coverage",
+            f"{PLATFORM}=platform-part",
+        ]
+        return _run(root, arguments)
+
+    accepted = gate("2")
+    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+    shutil.rmtree(root / "reports")
+    _damage_part(root, "newer")
+    path = root / "platform-part/artifact.json"
+    record = json.loads(path.read_text())
+    record["main"]["attempt"] = "3"
+    path.write_text(json.dumps(record))
+    newer = gate("2")
+    assert newer.returncode == 1
+    assert newer.stderr == "CI shard refused: shard attempt is newer than the aggregate\n"
+    assert not (root / "reports").exists()
+
+
+@pytest.mark.parametrize(
+    ("change", "diagnostic"),
+    [
+        ("native", ONE_SHARD),
+        ("name", "a another-system coverage part is one complete shard with its own coverage"),
+        ("no-coverage", ONE_SHARD),
+    ],
+)
+def test_pack_refuses_a_platform_part_that_is_not_one_measured_shard(
+    tmp_path: Path, change: str, diagnostic: str
+) -> None:
+    """Only a single complete shard with its own data can become a platform part."""
+    root = tmp_path / "project"
+    _prepare(root)
+    measured = _pytest(root, 0, native=True)
+    assert measured.returncode == 0, measured.stdout + measured.stderr
+    arguments = [str(TOOL), "pack", "--manifest", "native.json", "--output", "part"]
+    arguments += ["--platform", "another-system" if change == "name" else PLATFORM]
+    if change != "no-coverage":
+        arguments += ["--coverage-file", "data-0"]
+    if change == "native":
+        arguments += ["--native-manifest", "native.json"]
+    result = _run(root, arguments)
+    assert result.returncode == 1
+    assert result.stderr == f"CI shard refused: {diagnostic}\n"
+    assert not (root / "part").exists()
+
+
+@pytest.mark.parametrize("value", ["no-separator", "=directory", "name=", "twice=a"])
+def test_platform_coverage_is_named_once_with_its_directory(
+    platform_artifacts: Path, tmp_path: Path, value: str
+) -> None:
+    """A malformed or repeated part name is refused before anything is measured."""
+    root = tmp_path / "project"
+    shutil.copytree(platform_artifacts, root)
+    parts = [value, "twice=b"] if value == "twice=a" else [value]
+    result = _verify_parts(root, *parts)
+    assert result.returncode == 1
+    assert result.stderr == (
+        "CI shard refused: platform coverage is NAME=DIRECTORY, each name once\n"
+    )
+    assert not (root / "reports").exists()
+
+
+def test_ci_joins_the_hosted_windows_part_to_the_unchanged_complete_gate() -> None:
+    """The Windows job packs a win32 part, and test-complete counts it at 99.36 percent."""
+    import tomllib
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    windows = workflow["jobs"]["test-windows"]
+    assert windows["runs-on"] == "windows-latest"
+    run = " ".join(step.get("run", "") for step in windows["steps"])
+    assert "-p tools.pytest_shard --shard-index=0 --shard-count=1" in run
+    assert "--cov=synapse_channel" in run
+    assert "ci_shard_artifacts.py pack --platform win32" in run
+    upload = next(
+        step
+        for step in windows["steps"]
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+    )
+    assert upload["with"]["name"] == "pytest-windows-${{ github.sha }}"
+    complete = workflow["jobs"]["test-complete"]
+    assert complete["needs"] == ["test", "test-windows"]
+    assert "test-windows" in workflow["jobs"]["ci"]["needs"]
+    download = next(
+        step
+        for step in complete["steps"]
+        if step.get("with", {}).get("name") == "pytest-windows-${{ github.sha }}"
+    )
+    assert download["with"]["path"] == "ci-windows"
+    command = next(
+        step["run"]
+        for step in complete["steps"]
+        if "ci_shard_artifacts.py verify" in step.get("run", "")
+    )
+    assert "--fail-under 99.36" in command
+    assert "--platform-coverage win32=ci-windows" in command
+    listed = [token for token in run.split() if token.startswith("tests/")]
+    assert listed and listed == sorted(set(listed))
+    assert all((ROOT / token).is_file() for token in listed)
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    assert config["tool"]["coverage"]["report"]["fail_under"] == 99.36
+    assert config["tool"]["coverage"]["paths"]["source"] == [
+        "src/synapse_channel",
+        "*/src/synapse_channel",
+        "*\\src\\synapse_channel",
+    ]
