@@ -134,6 +134,23 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- `synapse causality health` and the dashboard's `/health-anomalies.json`
+  listed a dangling dependency once for every plan event of its task, so a task
+  posted and then updated appeared twice for the same dependency, the anomaly
+  count and the `dangling` gauge counted events, the command's watch mode read
+  every update of a waiting task as a new anomaly, and a dependency a later
+  plan event had dropped stayed flagged. A task's declared dependencies are now
+  those its latest plan event names; each unmet one is one row, at the sequence
+  of the first plan event that named it. Each row gains `dependency_recorded`,
+  which says whether the log holds the dependency task at all, and the Markdown
+  line says so when it does not.
+- The cockpit's risk rail said "depends on absent" of a prerequisite that was
+  on the board and in progress. It now words what the hub reports: "waits on
+  unfinished" for a task the log holds, "not in the log" for one it does not,
+  and "not recorded as finished" when an older hub does not say. A dangling row
+  keeps its pointer to the plan event that declared it, and a task with two
+  unfinished prerequisites gives two rows that no longer share one key. The
+  README picture is taken again.
 - A Windows `synapse.exe` is still the synapse command, and a freshly
   installed Claude plugin is owned when its relative paths use the
   platform separator. Native tests state the platform contract for inbox

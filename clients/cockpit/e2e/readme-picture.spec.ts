@@ -19,7 +19,7 @@ if (!bearer) throw new Error("SYNAPSE_COCKPIT_E2E_TOKEN is required");
 const WIDTH = 1280;
 const HEIGHT = 900;
 test("the README picture shows a working fleet in the built cockpit", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(240_000);
   let harness: Started | undefined;
   let fleet: Fleet | undefined;
   try {
@@ -60,6 +60,15 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
     }
     await expect(region("Risk rail")).toContainText("amber", { ignoreCase: true });
     await expect(region("Risk rail")).toContainText("HARBOUR-103");
+    // The fleet's plan holds four unfinished prerequisites. The hub's report is
+    // read every two minutes, so the first reading may predate the fleet. Each
+    // prerequisite is one row, worded as the hub reports it: the task is in
+    // the log and unfinished, not absent.
+    const rail = region("Risk rail");
+    await expect(rail).toContainText("hub health anomalies · 4", { timeout: 130_000 });
+    await expect(rail.getByText("waits on unfinished HARBOUR-101", { exact: true })).toHaveCount(3);
+    await expect(rail.getByText("waits on unfinished HARBOUR-104", { exact: true })).toHaveCount(1);
+    await expect(rail).not.toContainText("absent");
     await expect(region("Reliability evidence")).not.toContainText("Waiting for the hub.");
     // Arrival notices are transient and cover the panel beneath them; the picture is the settled view.
     await expect(page.locator(".toasts")).toHaveCount(0, { timeout: 30_000 });

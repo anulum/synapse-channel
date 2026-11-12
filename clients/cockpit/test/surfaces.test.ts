@@ -73,7 +73,9 @@ describe("parseHealthAnomalies", () => {
       dangling: [
         { task_id: "d1", depends_on: ["ghost", 4] },
         { task_id: "d2" },
-        { task_id: "d3", depends_on: "solo-dep" },
+        { task_id: "d3", depends_on: "solo-dep", declared_seq: 12, dependency_recorded: true },
+        { task_id: "d4", depends_on: "typo-dep", declared_seq: 13, dependency_recorded: false },
+        { task_id: "d5", depends_on: "old-hub-dep", declared_seq: 1.5, dependency_recorded: "yes" },
       ],
       stale: [{ task_id: "s1", owner: "b", age_seconds: 120 }, { task_id: "s2" }],
       anomaly_count: 5,
@@ -93,9 +95,16 @@ describe("parseHealthAnomalies", () => {
       },
     });
     expect(report?.orphaned[0]?.detail).toBe("claim is the task's last word · 10 min");
-    expect(report?.dangling[0]?.detail).toBe("depends on absent ghost");
-    expect(report?.dangling[1]?.detail).toBe("depends on an absent task");
-    expect(report?.dangling[2]?.detail).toBe("depends on absent solo-dep");
+    // The hub says whether its log holds the prerequisite at all; the cockpit
+    // words exactly that, and never asserts an absence the hub did not report.
+    expect(report?.dangling[0]?.detail).toBe("depends on ghost, not recorded as finished");
+    expect(report?.dangling[1]?.detail).toBe("depends on a task not recorded as finished");
+    expect(report?.dangling[2]?.detail).toBe("waits on unfinished solo-dep");
+    expect(report?.dangling[3]?.detail).toBe("depends on typo-dep, not in the log");
+    expect(report?.dangling[4]?.detail).toBe("depends on old-hub-dep, not recorded as finished");
+    // A dangling row points at the plan event that declared the dependency.
+    expect(report?.dangling.map((item) => item.seq)).toEqual([null, null, 12, 13, 1.5]);
+    expect(report?.orphaned[0]?.seq).toBe(5);
     expect(report?.stale[0]?.detail).toBe("unreleased and silent · 2 min");
     expect(report?.stale[1]?.detail).toBe("unreleased and silent");
     expect(report?.anomalyCount).toBe(5); // server-stated count wins over row arithmetic

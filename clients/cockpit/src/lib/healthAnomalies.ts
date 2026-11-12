@@ -80,13 +80,17 @@ function parseFleetHealth(value: unknown): LocalFleetHealth | null {
   };
 }
 
-function asItems(value: unknown, detailOf: (record: Record<string, unknown>) => string): AnomalyItem[] {
+function asItems(
+  value: unknown,
+  detailOf: (record: Record<string, unknown>) => string,
+  seqField: "seq" | "declared_seq" = "seq",
+): AnomalyItem[] {
   if (!Array.isArray(value)) return [];
   const items: AnomalyItem[] = [];
   for (const entry of value) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
     const record = entry as Record<string, unknown>;
-    const seq = record["seq"];
+    const seq = record[seqField];
     items.push({
       taskId: asString(record["task_id"]),
       owner: asString(record["owner"]),
@@ -107,18 +111,31 @@ export function parseHealthAnomalies(raw: unknown): HealthAnomalies | null {
       ? `claim is the task's last word · ${Math.round(age / 60)} min`
       : "claim is the task's last word";
   });
-  const dangling = asItems(payload["dangling"], (record) => {
-    // The server reports one absent prerequisite per row (a string); a list
-    // is tolerated in case the shape ever widens.
-    const raw = record["depends_on"];
-    const deps =
-      typeof raw === "string"
-        ? [raw]
-        : Array.isArray(raw)
-          ? raw.filter((dep): dep is string => typeof dep === "string")
-          : [];
-    return deps.length > 0 ? `depends on absent ${deps.join(", ")}` : "depends on an absent task";
-  });
+  const dangling = asItems(
+    payload["dangling"],
+    (record) => {
+      // The server reports one unmet prerequisite per row (a string); a list
+      // is tolerated in case the shape ever widens. The hub's fact is that the
+      // prerequisite never completed in its log, and `dependency_recorded`
+      // says whether the log holds that task at all. The wording follows the
+      // hub and never asserts an absence the hub did not report.
+      const raw = record["depends_on"];
+      const deps =
+        typeof raw === "string"
+          ? [raw]
+          : Array.isArray(raw)
+            ? raw.filter((dep): dep is string => typeof dep === "string")
+            : [];
+      if (deps.length === 0) return "depends on a task not recorded as finished";
+      const names = deps.join(", ");
+      const recorded = record["dependency_recorded"];
+      if (recorded === true) return `waits on unfinished ${names}`;
+      if (recorded === false) return `depends on ${names}, not in the log`;
+      return `depends on ${names}, not recorded as finished`;
+    },
+    // A dangling row is anchored at the plan event that declared the dependency.
+    "declared_seq",
+  );
   const stale = asItems(payload["stale"], (record) => {
     const age = record["age_seconds"];
     return typeof age === "number" && Number.isFinite(age)

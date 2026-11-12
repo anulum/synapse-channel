@@ -145,6 +145,87 @@ class TestDanglingDependencies:
 
         assert [(item.task_id, item.depends_on) for item in report.dangling] == [("A", "B")]
 
+    def test_a_task_posted_and_updated_lists_its_dependency_once(self) -> None:
+        """Every plan event is a whole snapshot; an update is not a second declaration."""
+        events = (
+            _ledger(1, 1.0, "A", deps=("B", "C")),
+            _claim(2, 2.0, "B", "alice"),
+            _ledger(3, 3.0, "A", deps=("B", "C")),
+            _ledger(4, 4.0, "A", deps=("B", "C")),
+        )
+
+        report = assess_causal_health(events)
+
+        assert [(item.task_id, item.depends_on, item.declared_seq) for item in report.dangling] == [
+            ("A", "B", 1),
+            ("A", "C", 1),
+        ]
+        assert report.anomaly_count == 3  # the two dependencies and B's orphaned claim
+
+    def test_a_dependency_named_later_is_dated_at_the_event_that_named_it(self) -> None:
+        events = (
+            _ledger(1, 1.0, "A", deps=("B",)),
+            _ledger(2, 2.0, "A", deps=("B", "C")),
+            _ledger(3, 3.0, "A", deps=("B", "C")),
+        )
+
+        report = assess_causal_health(events)
+
+        assert [(item.depends_on, item.declared_seq) for item in report.dangling] == [
+            ("B", 1),
+            ("C", 2),
+        ]
+
+    def test_a_dependency_the_latest_plan_event_dropped_is_not_flagged(self) -> None:
+        events = (
+            _ledger(1, 1.0, "A", deps=("B", "C")),
+            _ledger(2, 2.0, "A", deps=("C",)),
+        )
+
+        report = assess_causal_health(events)
+
+        assert [(item.depends_on, item.declared_seq) for item in report.dangling] == [("C", 1)]
+
+    def test_a_row_says_whether_the_log_holds_the_dependency_at_all(self) -> None:
+        events = (
+            _ledger(1, 1.0, "B"),
+            _ledger(2, 2.0, "A", deps=("B", "GHOST")),
+        )
+
+        report = assess_causal_health(events)
+
+        assert [(item.depends_on, item.dependency_recorded) for item in report.dangling] == [
+            ("B", True),
+            ("GHOST", False),
+        ]
+        text = render_health_markdown(report)
+        assert "- seq=2 task=A depends on B, which never completed\n" in text
+        assert (
+            "- seq=2 task=A depends on GHOST, which never completed and has no recorded event"
+            in text
+        )
+        assert health_to_json(report)["dangling"] == [
+            {"task_id": "A", "depends_on": "B", "declared_seq": 2, "dependency_recorded": True},
+            {
+                "task_id": "A",
+                "depends_on": "GHOST",
+                "declared_seq": 2,
+                "dependency_recorded": False,
+            },
+        ]
+
+    def test_an_update_of_a_waiting_task_is_not_a_new_fact(self) -> None:
+        """A watcher compares fact sets; an update must not read as a cleared and a new anomaly."""
+        declared = (_ledger(1, 1.0, "A", deps=("B",)),)
+        updated = (*declared, _ledger(2, 2.0, "A", deps=("B",)))
+
+        assert health_facts(assess_causal_health(updated)) == health_facts(
+            assess_causal_health(declared)
+        )
+        assert health_facts(assess_causal_health(updated)) == frozenset(
+            {"dangling dependency seq=1 task=A depends_on=B"}
+        )
+
 
 class TestStaleClaims:
     def test_unreleased_claim_silent_past_the_threshold_is_stale(self) -> None:
@@ -248,7 +329,12 @@ class TestReportShape:
         assert payload["note"] == "recorded-event signals, not verdicts"
         dangling = payload["dangling"]
         assert isinstance(dangling, list)
-        assert dangling[0] == {"task_id": "A", "depends_on": "GHOST", "declared_seq": 1}
+        assert dangling[0] == {
+            "task_id": "A",
+            "depends_on": "GHOST",
+            "declared_seq": 1,
+            "dependency_recorded": False,
+        }
         orphaned = payload["orphaned"]
         assert isinstance(orphaned, list)
         assert {item["task_id"] for item in orphaned} == {"A", "X"}
@@ -351,7 +437,11 @@ class TestHealthFacts:
     def test_each_anomaly_kind_renders_one_identity_fact(self) -> None:
         report = self._report(
             orphaned=(OrphanedClaim(task_id="A", owner="alice", seq=4, ts=2.0, age_seconds=50.0),),
-            dangling=(DanglingDependency(task_id="B", depends_on="Z", declared_seq=7),),
+            dangling=(
+                DanglingDependency(
+                    task_id="B", depends_on="Z", declared_seq=7, dependency_recorded=True
+                ),
+            ),
             stale=(StaleClaim(task_id="C", owner="", last_seq=9, last_ts=3.0, age_seconds=97.0),),
         )
 

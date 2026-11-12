@@ -158,7 +158,7 @@ function RiskRailView({
                 ...anomalyReport.data.stale.map((item) => ({ ...item, category: "stale" })),
               ].map((item) => (
                 <li
-                  key={`${item.category}:${item.taskId}`}
+                  key={`${item.category}:${item.taskId}:${item.detail}`}
                   className={`risk-row risk-row--amber${subjectMatchesSelection(item.taskId, selection) ? " context-match" : ""}`}
                 >
                   <span className="risk-row__glyph" aria-hidden="true">

@@ -8,7 +8,7 @@
 // SYNAPSE_CHANNEL — risk rail behaviour tests
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RiskRail } from "../../src/components/RiskRail";
 import type { HealthAnomalies } from "../../src/lib/healthAnomalies";
@@ -132,6 +132,33 @@ describe("RiskRail", () => {
     expect(screen.getByText("repetition heuristics · observed window")).toBeTruthy();
     expect(screen.getByText("churn")).toBeTruthy();
     expect(screen.getByText("lease")).toBeTruthy();
+  });
+
+  it("gives a task with two unfinished prerequisites two rows that React can tell apart", () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...parts: unknown[]) => {
+      errors.push(parts.map(String).join(" "));
+    });
+    const anomalies: HealthAnomalies = {
+      present: true,
+      orphaned: [],
+      dangling: [
+        { taskId: "t-notes", owner: "", detail: "waits on unfinished t-upload", seq: 7 },
+        { taskId: "t-notes", owner: "", detail: "waits on unfinished t-audit", seq: 7 },
+      ],
+      stale: [],
+      anomalyCount: 2,
+      fleetHealth: null,
+    };
+    try {
+      render(<RiskRail risk={QUIET_RISK} anomalyReport={feedOf(anomalies)} />);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(screen.getByText("waits on unfinished t-upload")).toBeTruthy();
+    expect(screen.getByText("waits on unfinished t-audit")).toBeTruthy();
+    expect(errors.filter((message) => message.includes("same key"))).toEqual([]);
   });
 
   it("states unrecorded approval fields as dashes and the unowned gate as unowned", () => {

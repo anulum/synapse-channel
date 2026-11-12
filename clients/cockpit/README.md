@@ -229,7 +229,8 @@ its own hub and dashboard, then starts the demonstration fleet in
 `e2e/demo_fleet.py`: invented participants that join through the public client,
 post a plan, hold claims and talk. It requires the roster, claims, board, risk
 rail and signal log to show that fleet over a live stream before it takes the
-picture. Its hub and dashboard listen on ports 18776 and 18775 unless
+picture, and the risk rail to hold one row for each of the plan's four
+unfinished prerequisites, worded as the hub reports them. Its hub and dashboard listen on ports 18776 and 18775 unless
 `SYNAPSE_COCKPIT_E2E_PICTURE_HUB_PORT` and
 `SYNAPSE_COCKPIT_E2E_PICTURE_DASHBOARD_PORT` name others. To take the picture
 again after a visible change, build the client and run, from

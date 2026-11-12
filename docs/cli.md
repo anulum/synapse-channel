@@ -2211,7 +2211,15 @@ default 3600). Ages are measured against the log's own final timestamp — never
 the wall clock — so the assessment is deterministic and replayable. Exit `1`
 signals at least one anomaly, mirroring `contention`; every signal is an
 operator hint derived from recorded events, not a verdict — an orphaned claim
-may simply be an agent mid-work. Replayed against the real workstation hub log
+may simply be an agent mid-work. A task's declared dependencies are those its
+latest plan event names: every plan event is a whole snapshot, so an update
+that repeats a dependency is not a second declaration, and a dependency a later
+plan event dropped is no longer flagged. Each unmet dependency is one row, at
+the sequence of the task's first plan event that named it. The JSON row carries
+`dependency_recorded`: `true` when the log holds the dependency task and it is
+unfinished, `false` when the log holds no event of it, which a mistyped name
+and a task outside the assessed window both produce; the Markdown line then
+ends "and has no recorded event". Replayed against the real workstation hub log
 (341 tasks), where it flagged 22 anomalies including a claim the session
 itself was holding:
 

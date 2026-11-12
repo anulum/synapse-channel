@@ -18,6 +18,12 @@ completion predicate the dependency-edge derivation uses, so the two never
 disagree), and a **claim never released** whose task has been silent longer
 than a threshold (a lease that outlived its owner).
 
+A task's declared dependencies are those its latest plan event names: every
+plan event is a whole snapshot, so an update that repeats a dependency is not a
+second declaration, and a dependency a later plan event dropped is no longer
+declared. Each unmet dependency is one row, dated at the task's first plan
+event that named it, and says whether the log holds the dependency task at all.
+
 Honest scope: every signal is derived from *recorded* events only, and ages
 are measured against the log's own final timestamp — never the wall clock — so
 the assessment is deterministic over a given log and a report can be replayed
@@ -30,7 +36,7 @@ over the durable log and contacts no live hub.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -90,12 +96,19 @@ class DanglingDependency:
     depends_on : str
         The dependency task that never completed.
     declared_seq : int
-        Event sequence of the ledger declaration.
+        Event sequence of the dependent's first plan event that named the
+        dependency. Later plan events that repeat it do not move it.
+    dependency_recorded : bool
+        Whether the assessed log holds any coordination event of the dependency
+        task. ``False`` means the log does not know the task at all, which a
+        mistyped name and a task outside the assessed window both produce;
+        ``True`` means it is known and unfinished.
     """
 
     task_id: str
     depends_on: str
     declared_seq: int
+    dependency_recorded: bool
 
 
 @dataclass(frozen=True)
@@ -203,18 +216,7 @@ def assess_causal_health(
                     age_seconds=log_end_ts - last.ts,
                 )
             )
-        for node in nodes:
-            if node.kind != EventKind.LEDGER_TASK:
-                continue
-            for dependency in node.depends_on:
-                if dependency not in completed:
-                    dangling.append(
-                        DanglingDependency(
-                            task_id=task_id,
-                            depends_on=dependency,
-                            declared_seq=node.seq,
-                        )
-                    )
+        dangling.extend(_dangling_of(task_id, nodes, completed, by_task))
         if _is_stale(task_id, nodes, completed, log_end_ts, stale_after):
             owner = next((node.owner for node in reversed(nodes) if node.owner), "")
             stale.append(
@@ -234,6 +236,50 @@ def assess_causal_health(
         log_end_ts=log_end_ts,
         stale_after=stale_after,
     )
+
+
+def _dangling_of(
+    task_id: str,
+    nodes: Sequence[CausalNode],
+    completed: set[str],
+    recorded: Mapping[str, object],
+) -> list[DanglingDependency]:
+    """Return one row for each unmet dependency the task's latest plan event names.
+
+    Parameters
+    ----------
+    task_id : str
+        The dependent task.
+    nodes : Sequence[CausalNode]
+        The task's recorded events in log order.
+    completed : set[str]
+        Tasks the log records as completed.
+    recorded : Mapping[str, object]
+        Keyed by every task the log holds an event of.
+
+    Returns
+    -------
+    list[DanglingDependency]
+        In the order the latest plan event names them; a dependency named
+        twice by that event is listed once.
+    """
+    plan = [node for node in nodes if node.kind == EventKind.LEDGER_TASK]
+    if not plan:
+        return []
+    first_named: dict[str, int] = {}
+    for node in plan:
+        for dependency in node.depends_on:
+            first_named.setdefault(dependency, node.seq)
+    return [
+        DanglingDependency(
+            task_id=task_id,
+            depends_on=dependency,
+            declared_seq=first_named[dependency],
+            dependency_recorded=dependency in recorded,
+        )
+        for dependency in dict.fromkeys(plan[-1].depends_on)
+        if dependency not in completed
+    ]
 
 
 def run_causal_health(
@@ -346,6 +392,7 @@ def health_to_json(report: CausalHealthReport) -> dict[str, object]:
                 "task_id": item.task_id,
                 "depends_on": item.depends_on,
                 "declared_seq": item.declared_seq,
+                "dependency_recorded": item.dependency_recorded,
             }
             for item in report.dangling
         ],
@@ -390,6 +437,7 @@ def render_health_markdown(report: CausalHealthReport) -> str:
         lines.extend(
             f"- seq={item.declared_seq} task={item.task_id} depends on "
             f"{item.depends_on}, which never completed"
+            f"{'' if item.dependency_recorded else ' and has no recorded event'}"
             for item in report.dangling
         )
     else:
