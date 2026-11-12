@@ -231,6 +231,9 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_host_sessions.py": (1, "optional-dep-guard"),
     "tests/test_host_sessions_proc.py": (1, "optional-dep-guard"),
     "tests/test_host_sessions_tmux.py": (1, "optional-dep-guard"),
+    # core/review_feedback.py line 218 raises when Git patch-id is empty or
+    # not a SHA. Git on Linux and Git 2.56 on MSI identify every non-empty
+    # diff-tree patch tried (text, mode, rename, binary). Not an exclusion.
     "tests/test_hub_sqlcipher_e2e.py": (1, "optional-dep-guard"),
     "tests/test_identity_keys_secret_floor.py": (1, "platform-guard"),
     "tests/test_integration_catalog.py": (3, "optional-dep-guard"),

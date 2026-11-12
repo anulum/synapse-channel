@@ -812,3 +812,40 @@ async def test_delivery_without_a_hub_receipt_is_not_delivered() -> None:
 
     assert delivered is False
     assert MessageType.CHAT in received
+
+
+async def test_delivery_receipt_reports_the_hub_result() -> None:
+    """A real delivery receipt decides the route; absence is the other test."""
+
+    async def receipt_hub(websocket: ServerConnection) -> None:
+        await websocket.send(json.dumps({"type": "welcome", "sender": "Hub", "target": "self"}))
+        async for message in websocket:
+            frame = json.loads(message)
+            if frame.get("type") == MessageType.WHO_REQUEST:
+                await websocket.send(json.dumps({"type": MessageType.WHO_SNAPSHOT}))
+            if frame.get("type") == MessageType.CHAT:
+                await websocket.send(
+                    json.dumps(
+                        {
+                            "type": MessageType.DELIVERY_RECEIPT,
+                            "client_msg_id": frame.get("client_msg_id"),
+                            "delivered": True,
+                        }
+                    )
+                )
+
+    port = _free_port()
+    server = await serve(receipt_hub, "localhost", port)
+    try:
+        delivered = await cli_review_feedback._deliver(
+            uri=f"ws://localhost:{port}",
+            name="review-router",
+            target=AUTHOR,
+            payload="finding",
+            msg_id="m-1",
+            token=None,
+        )
+    finally:
+        server.close()
+        await server.wait_closed()
+    assert delivered is True
