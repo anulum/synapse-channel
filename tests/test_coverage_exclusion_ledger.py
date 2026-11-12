@@ -184,6 +184,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_native_hook_spool.py": (1, "platform-guard"),
     "tests/test_worker_session_waiter_cleanup.py": (1, "platform-guard"),
     # Includes the real Linux executable-format fallback/process-image regression.
+    # launch_record.py line 261 is the other-platform return. Linux takes the
+    # procfs reader and Windows takes the Win32 reader, so neither host reaches it.
     "tests/test_launch_record.py": (8, "platform-guard"),
     "tests/test_read_owner_only_file_bytes.py": (3, "platform-guard"),
     "tests/test_analysis_sqlcipher_readers.py": (1, "optional-dep-guard"),
