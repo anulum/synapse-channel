@@ -303,6 +303,32 @@ def test_module_launches_and_an_unresolvable_installation(
     assert "a different synapse executable" in unresolved["mcp-host-sources"].detail
 
 
+def test_a_suffixed_synapse_executable_is_another_installation(tmp_path: Path) -> None:
+    directory = tmp_path / "dist"
+    directory.mkdir()
+    executable = directory / "synapse.exe"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o755)
+    item = classify_definition(
+        McpServerDefinition(
+            host="codex",
+            scope="profile",
+            source=tmp_path / "config.toml",
+            name="synapse",
+            command=str(executable),
+            args=("mcp",),
+            url=None,
+        ),
+        synapse_binary=None,
+        python_executable=Path(sys.executable),
+        which=shutil.which,
+    )
+    assert (item.status, item.reason) == (
+        "other-install",
+        f"a different synapse executable at {executable.resolve()}",
+    )
+
+
 def test_the_project_defaults_to_the_git_top_level(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     nested = repo / "a" / "b"
