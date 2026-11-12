@@ -58,6 +58,9 @@ execution evidence when carrying a release claim forward.
   key file with an Everyone ACE is refused.
 - An at-rest message counter that does not implement the protocol does
   not count. The in-memory and persistent counters do.
+- Escrow recovery refuses a short share list and a repeated index before
+  the field inverse or the distinct-index check can run. Those two raises
+  have no input on either platform.
 
 ## [0.99.51] - 2026-11-11
 
