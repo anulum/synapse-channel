@@ -335,6 +335,14 @@ jobs:
             .github/requirements/requirements-dev.txt
             .github/requirements/requirements-legacy-release.txt
             .github/requirements/requirements-release-admission.txt
+      # The Windows process-accounting tests bind the interpreter a virtual
+      # environment's launcher starts, as on a native Windows host; every later
+      # step's python is that environment's.
+      - name: Create the virtual environment the Windows tests run in
+        shell: pwsh
+        run: |
+          python -m venv "$env:RUNNER_TEMP\windows-venv"
+          "$env:RUNNER_TEMP\windows-venv\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
       - run: python -m pip install -e . --no-deps
       - name: Prepare the published no-receipt hub fixture

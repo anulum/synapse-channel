@@ -1090,6 +1090,10 @@ def test_ci_joins_the_hosted_windows_part_to_the_unchanged_complete_gate() -> No
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     windows = workflow["jobs"]["test-windows"]
     assert windows["runs-on"] == "windows-latest"
+    names = [step.get("name", step.get("run", "")) for step in windows["steps"]]
+    venv = names.index("Create the virtual environment the Windows tests run in")
+    assert venv < names.index("python -m pip install -e . --no-deps")
+    assert "GITHUB_PATH" in windows["steps"][venv]["run"]
     run = " ".join(step.get("run", "") for step in windows["steps"])
     assert "-p tools.pytest_shard --shard-index=0 --shard-count=1" in run
     assert "--cov=synapse_channel" in run
