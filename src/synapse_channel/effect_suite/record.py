@@ -22,6 +22,7 @@ when they run, so the command line still starts on a core-only install.
 from __future__ import annotations
 
 import base64
+import importlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,7 +62,7 @@ def require_cryptography() -> None:
         With :data:`NEEDS_CRYPTOGRAPHY` when the package cannot be imported.
     """
     try:
-        import cryptography  # noqa: F401 - the import is the availability check
+        importlib.import_module("cryptography")
     except ImportError as exc:
         raise EffectSuiteKeyError(NEEDS_CRYPTOGRAPHY) from exc
 
