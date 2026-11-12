@@ -51,6 +51,14 @@ def test_remote_cleartext_requires_explicit_operator_override() -> None:
     )
 
 
+def test_password_file_keeps_crlf_and_a_ctrl_z_byte(tmp_path: Path) -> None:
+    """A CRLF pair and a Ctrl-Z byte stay in the password as stored."""
+    path = tmp_path / "password"
+    path.write_bytes(b"se\r\ncret\x1atail")
+    os.chmod(path, 0o600)
+    assert load_password_file(path) == "se\r\ncret\x1atail"
+
+
 def test_password_file_is_owner_only_bounded_and_newline_tolerant(tmp_path: Path) -> None:
     path = tmp_path / "password"
     path.write_text("correct horse\n")

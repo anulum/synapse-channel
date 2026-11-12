@@ -31,6 +31,13 @@ def _write_private(path: Path, value: str | bytes) -> None:
     os.chmod(path, 0o600)
 
 
+def test_snapshot_keeps_crlf_and_a_ctrl_z_byte(tmp_path: Path) -> None:
+    """A CRLF pair and a Ctrl-Z byte stay in the snapshot as stored."""
+    path = tmp_path / "config.json"
+    _write_private(path, b"a\r\nb\x1ac")
+    assert read_text_snapshot(path).text == "a\r\nb\x1ac"
+
+
 def test_new_file_round_trip_is_atomic_and_private(tmp_path: Path) -> None:
     path = tmp_path / "nested" / "config.json"
     snapshot = read_text_snapshot(path)

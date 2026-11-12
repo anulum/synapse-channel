@@ -123,6 +123,28 @@ def test_a_worker_that_exits_zero_with_wrong_content_is_not_verified(tmp_path: P
     assert verdict["observation"] == "content_differs"
 
 
+def test_file_change_digest_is_the_raw_bytes(tmp_path: Path) -> None:
+    """The digest is the stored bytes, including CRLF and a Ctrl-Z byte."""
+    raw = b"a\r\nb\x1ac"
+    path = tmp_path / "out.txt"
+    path.write_bytes(raw)
+    digest = hashlib.sha256(raw).hexdigest()
+    verdict = verify_file_change(path, digest, operation_id="op")
+    if getattr(os, "O_NOFOLLOW", None) is None:
+        assert (verdict.effect, verdict.result, verdict.observation) == (
+            "unknown",
+            "not_checked",
+            "file_not_a_readable_regular_file",
+        )
+        return
+    assert (verdict.effect, verdict.result, verdict.observation) == (
+        "observed",
+        "verified",
+        "content_matches",
+    )
+    assert verdict.evidence["observed_sha256"] == digest
+
+
 def test_file_change_states(tmp_path: Path) -> None:
     path = tmp_path / "out.txt"
     absent = verify_file_change(path, GOOD_SHA, operation_id="op")

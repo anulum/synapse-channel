@@ -106,7 +106,9 @@ def _digest(path: Path) -> str:
     """Return the SHA-256 of a regular file, read without following a final link."""
     if _NOFOLLOW is None:
         raise PermissionError("this platform cannot open a file without following a final link")
-    descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW)
+    # O_BINARY: on Windows a descriptor opened without it translates CRLF and
+    # stops at Ctrl-Z, so the digest would not be the file's bytes.
+    descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW | getattr(os, "O_BINARY", 0))
     if not stat.S_ISREG(os.fstat(descriptor).st_mode):
         os.close(descriptor)
         raise IsADirectoryError(str(path))

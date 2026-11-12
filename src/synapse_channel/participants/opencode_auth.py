@@ -58,11 +58,33 @@ def load_password_file(path: str | Path) -> str:
     """Read one owner-only regular UTF-8 password file without following a symlink."""
     resolved = Path(path).expanduser()
     before = resolved.lstat()
-    if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid():
+    if not stat.S_ISREG(before.st_mode):
         raise OpenCodeAuthError("OpenCode password file must be a user-owned regular file.")
-    if stat.S_IMODE(before.st_mode) & 0o077:
-        raise OpenCodeAuthError("OpenCode password file must not be accessible by group or others.")
-    descriptor = os.open(resolved, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    if hasattr(os, "getuid"):
+        if before.st_uid != os.getuid():
+            raise OpenCodeAuthError("OpenCode password file must be a user-owned regular file.")
+        if stat.S_IMODE(before.st_mode) & 0o077:
+            raise OpenCodeAuthError(
+                "OpenCode password file must not be accessible by group or others."
+            )
+    elif os.name == "nt":
+        from synapse_channel.core.secure_path import SecurePathError, assert_owner_only_file_path
+
+        try:
+            assert_owner_only_file_path(resolved, purpose="OpenCode password file")
+        except SecurePathError as exc:
+            raise OpenCodeAuthError(
+                "OpenCode password file must be a user-owned regular file."
+            ) from exc
+        before = resolved.lstat()
+    else:
+        raise OpenCodeAuthError("OpenCode password file must be a user-owned regular file.")
+    # O_BINARY: on Windows a descriptor opened without it translates CRLF and
+    # stops at Ctrl-Z, so the password would not be the file's bytes.
+    descriptor = os.open(
+        resolved,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0),
+    )
     try:
         after = os.fstat(descriptor)
         if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):

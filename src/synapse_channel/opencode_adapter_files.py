@@ -148,7 +148,12 @@ def _read_validated(path: Path, limit: int) -> tuple[os.stat_result, bytes]:
     Opens ``path`` with ``O_NOFOLLOW``, validates the opened file, and reads its
     bounded content, returning the post-open ``fstat`` and the raw bytes.
     """
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    # O_BINARY: on Windows a descriptor opened without it translates CRLF and
+    # stops at Ctrl-Z, so the edit limit and the snapshot would not see the file.
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0),
+    )
     try:
         info = os.fstat(descriptor)
         _validate_file(path, info)
@@ -178,7 +183,8 @@ def read_text_snapshot(path: Path, *, limit: int = DEFAULT_FILE_LIMIT) -> FileSn
         return FileSnapshot("", False, None, None, 0o600)
     _validate_file(path, before)
     after, data = _read_validated(path, limit)
-    # Windows updates the metadata timestamp on open, so ctime is not a race signal.
+    # Windows updates the metadata timestamp on open, so ctime is not a race
+    # signal here. Device, inode, size and content mtime still are.
     if (
         before.st_dev != after.st_dev
         or before.st_ino != after.st_ino

@@ -78,6 +78,12 @@ execution evidence when carrying a release claim forward.
   uncertain through a real batch stand-in. A deadline ends a descendant
   whether or not its parent is still alive. Acceptance leaves that
   descendant until the caller ends it.
+- Portable OpenCode and result readers open with `O_BINARY`. On Windows a
+  descriptor without it rewrites CRLF and stops at a Ctrl-Z byte, so a
+  snapshot, a password and a content digest would not be the stored bytes.
+  The password file uses the Windows owner check when `os.getuid` is absent.
+  The adapter open no longer treats the metadata timestamp Windows updates
+  on open as a concurrent change.
 
 ## [0.99.51] - 2026-11-11
 
