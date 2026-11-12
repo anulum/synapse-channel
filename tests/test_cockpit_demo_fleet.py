@@ -120,7 +120,114 @@ async def test_the_script_seeds_a_real_hub_and_leaves_on_a_signal(long_names: bo
         assert errors == b""
 
 
-@pytest.mark.parametrize("arguments", [[], ["--long-names"], ["ws://one", "ws://two"]])
+def _assert_standing(hub: Any) -> None:
+    """After the first act alone: the plan stands; the late task is neither claimed nor begun."""
+    late = fleet.LATE_TASK
+    assert set(hub.blackboard.tasks) == {task_id for task_id, _title, _needs in fleet.TASKS}
+    assert hub.blackboard.tasks[late].status == "open"
+    assert set(hub.state.claims) == {
+        task_id for _owner, task_id, _paths in fleet.CLAIMS if task_id != late
+    }
+
+
+def _line(act: int, claims: list[str]) -> dict[str, object]:
+    """Return the line the script prints after one act."""
+    return {
+        "ready": True,
+        "act": act,
+        "participants": list(fleet.PARTICIPANTS),
+        "tasks": [task_id for task_id, _title, _needs in fleet.TASKS],
+        "claims": claims,
+    }
+
+
+async def _two_act_child(uri: str, stdin: int) -> asyncio.subprocess.Process:
+    """Start the script in two acts with the given standard input."""
+    return await asyncio.create_subprocess_exec(
+        sys.executable,
+        str(SCRIPT),
+        "--two-acts",
+        uri,
+        stdin=stdin,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=_child_environment(),
+    )
+
+
+async def _leave(child: asyncio.subprocess.Process) -> tuple[bytes, bytes]:
+    """Stop the child with a signal and return what else it printed.
+
+    The child's standard input stays open until it has exited, so that the end
+    of input cannot reach it before the signal does.
+    """
+    assert child.stdout is not None and child.stderr is not None
+    try:
+        child.send_signal(signal.SIGTERM)
+        await asyncio.wait_for(child.wait(), timeout=30)
+        return await child.stdout.read(), await child.stderr.read()
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            child.kill()
+        await child.wait()
+
+
+ALL_CLAIMS = [task_id for _owner, task_id, _paths in fleet.CLAIMS]
+EARLY_CLAIMS = [task_id for task_id in ALL_CLAIMS if task_id != fleet.LATE_TASK]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the stop is a POSIX signal")
+async def test_two_acts_wait_for_a_line_between_them() -> None:
+    """The first act leaves a standing state; a line on standard input starts the second."""
+    async with running_hub() as (hub, uri):
+        child = await _two_act_child(uri, asyncio.subprocess.PIPE)
+        assert child.stdout is not None and child.stdin is not None
+        first = json.loads(await asyncio.wait_for(child.stdout.readline(), timeout=60))
+        assert first == _line(1, EARLY_CLAIMS)
+        _assert_standing(hub)
+
+        child.stdin.write(b"second act\n")
+        await child.stdin.drain()
+        second = json.loads(await asyncio.wait_for(child.stdout.readline(), timeout=60))
+        assert second == _line(2, ALL_CLAIMS)
+        _assert_seeded(hub)
+
+        rest, errors = await _leave(child)
+        assert (child.returncode, rest, errors) == (0, b"", b"")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the stop is a POSIX signal")
+async def test_a_stop_during_the_pause_ends_the_fleet_without_a_second_act() -> None:
+    """Stopped while it waits for the line, the fleet leaves; the hub keeps the standing state."""
+    async with running_hub() as (hub, uri):
+        child = await _two_act_child(uri, asyncio.subprocess.PIPE)
+        assert child.stdout is not None
+        first = json.loads(await asyncio.wait_for(child.stdout.readline(), timeout=60))
+        assert first == _line(1, EARLY_CLAIMS)
+
+        rest, errors = await _leave(child)
+        assert (child.returncode, rest, errors) == (0, b"", b"")
+        _assert_standing(hub)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the stop is a POSIX signal")
+async def test_an_input_that_has_ended_starts_the_second_act_at_once() -> None:
+    """With no one to send a line the two acts follow each other, each with its own line."""
+    async with running_hub() as (hub, uri):
+        child = await _two_act_child(uri, asyncio.subprocess.DEVNULL)
+        assert child.stdout is not None
+        first = json.loads(await asyncio.wait_for(child.stdout.readline(), timeout=60))
+        second = json.loads(await asyncio.wait_for(child.stdout.readline(), timeout=60))
+        assert (first, second) == (_line(1, EARLY_CLAIMS), _line(2, ALL_CLAIMS))
+        _assert_seeded(hub)
+
+        rest, errors = await _leave(child)
+        assert (child.returncode, rest, errors) == (0, b"", b"")
+
+
+@pytest.mark.parametrize(
+    "arguments", [[], ["--long-names"], ["--two-acts"], ["ws://one", "ws://two"]]
+)
 def test_the_script_refuses_anything_but_one_hub_address(arguments: list[str]) -> None:
     """Without exactly one hub address the script states its usage and exits with two."""
     completed = subprocess.run(
@@ -135,7 +242,10 @@ def test_the_script_refuses_anything_but_one_hub_address(arguments: list[str]) -
 
     assert completed.returncode == 2
     assert completed.stdout == ""
-    assert completed.stderr.strip() == "usage: python demo_fleet.py HUB_URI [--long-names]"
+    assert (
+        completed.stderr.strip()
+        == "usage: python demo_fleet.py HUB_URI [--long-names] [--two-acts]"
+    )
 
 
 async def test_the_fleet_leaves_by_itself_when_its_hold_runs_out(

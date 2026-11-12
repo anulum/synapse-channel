@@ -20,36 +20,67 @@ const python = process.env["SYNAPSE_COCKPIT_E2E_PYTHON"] ??
 
 export interface Started {
   readonly child: ChildProcessWithoutNullStreams;
+  /** The first complete line the process printed. */
   readonly line: string;
+  /** Resolve with the next complete line the process prints. */
+  readonly nextLine: () => Promise<string>;
   readonly exited: Promise<void>;
 }
 
-/** Start one helper process and resolve with its first complete output line. */
-export async function start(script: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<Started> {
+/**
+ * Start one helper process and resolve with its first complete output line.
+ * Its standard input is closed at once unless `keepInput` is set.
+ */
+export async function start(
+  script: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+  keepInput = false,
+): Promise<Started> {
   const child = spawn(python, ["-u", script, ...args], { env, stdio: ["pipe", "pipe", "pipe"] });
-  child.stdin.end();
+  if (!keepInput) child.stdin.end();
   const exited = new Promise<void>(done => {
     child.once("exit", () => done());
     child.once("error", () => done());
   });
-  const line = await new Promise<string>((ready, reject) => {
-    let output = "";
-    let errors = "";
-    const deadline = setTimeout(() => reject(new Error(`${script} startup deadline: ${errors}`)), 30_000);
-    child.stderr.on("data", chunk => { errors += String(chunk); });
-    child.once("error", error => { clearTimeout(deadline); reject(error); });
-    child.once("exit", code => {
-      clearTimeout(deadline);
-      reject(new Error(`${script} exited ${code}: ${errors}`));
-    });
-    child.stdout.on("data", chunk => {
-      output += String(chunk);
-      if (!output.includes("\n")) return;
-      clearTimeout(deadline);
-      ready(output.split("\n")[0]!);
+  const lines: string[] = [];
+  const waiting: { take: (line: string) => void; fail: (error: Error) => void }[] = [];
+  let partial = "";
+  let errors = "";
+  let ended: Error | undefined;
+  const end = (error: Error): void => {
+    ended = error;
+    for (const waiter of waiting.splice(0)) waiter.fail(error);
+  };
+  child.stderr.on("data", chunk => { errors += String(chunk); });
+  child.once("error", error => end(error));
+  child.once("exit", code => end(new Error(`${script} exited ${code}: ${errors}`)));
+  child.stdout.on("data", chunk => {
+    const parts = (partial + String(chunk)).split("\n");
+    partial = parts.pop()!;
+    for (const part of parts) {
+      const waiter = waiting.shift();
+      if (waiter) waiter.take(part);
+      else lines.push(part);
+    }
+  });
+  const nextLine = (): Promise<string> => new Promise<string>((take, fail) => {
+    const ready = lines.shift();
+    if (ready !== undefined) {
+      take(ready);
+      return;
+    }
+    if (ended) {
+      fail(ended);
+      return;
+    }
+    const deadline = setTimeout(() => fail(new Error(`${script} line deadline: ${errors}`)), 30_000);
+    waiting.push({
+      take: line => { clearTimeout(deadline); take(line); },
+      fail: error => { clearTimeout(deadline); fail(error); },
     });
   });
-  return { child, line, exited };
+  return { child, line: await nextLine(), nextLine, exited };
 }
 
 export async function stop(started: Started | undefined): Promise<void> {
@@ -74,11 +105,20 @@ export async function startHarness(): Promise<{ readonly harness: Started; reado
   return { harness, url };
 }
 
-export interface Fleet {
-  readonly started: Started;
+export interface Seeded {
   readonly participants: readonly string[];
   readonly tasks: readonly string[];
+  /** The claims held when the line was printed. */
   readonly claims: readonly string[];
+}
+
+export interface Fleet extends Seeded {
+  readonly started: Started;
+  /**
+   * Begin the fleet's second act and resolve with what it then holds. Only a
+   * fleet started with `--two-acts` pauses for it.
+   */
+  readonly secondAct: () => Promise<Seeded>;
 }
 
 function names(value: unknown, key: string): string[] {
@@ -89,17 +129,39 @@ function names(value: unknown, key: string): string[] {
   return list as string[];
 }
 
-/** Start the demonstration fleet against the private hub and read what it seeded. */
+function seeded(line: string, act?: number): Seeded {
+  const value: unknown = JSON.parse(line);
+  if (act !== undefined && (value as Record<string, unknown>)["act"] !== act) {
+    throw new Error(`the demonstration fleet did not report act ${act}: ${line}`);
+  }
+  return {
+    participants: names(value, "participants"),
+    tasks: names(value, "tasks"),
+    claims: names(value, "claims"),
+  };
+}
+
+/**
+ * Start the demonstration fleet against the private hub and read what it
+ * seeded. With `--two-acts` it resolves after the first act, the standing
+ * state a cockpit finds, and `secondAct` lets the fleet go on.
+ */
 export async function startFleet(options: readonly string[] = []): Promise<Fleet> {
-  const started = await start("e2e/demo_fleet.py", [...options, `ws://127.0.0.1:${hubPort}`], { ...process.env });
+  const twoActs = options.includes("--two-acts");
+  const started = await start(
+    "e2e/demo_fleet.py",
+    [...options, `ws://127.0.0.1:${hubPort}`],
+    { ...process.env },
+    twoActs,
+  );
   try {
-    const seeded: unknown = JSON.parse(started.line);
-    return {
-      started,
-      participants: names(seeded, "participants"),
-      tasks: names(seeded, "tasks"),
-      claims: names(seeded, "claims"),
+    const first = seeded(started.line, twoActs ? 1 : undefined);
+    const secondAct = async (): Promise<Seeded> => {
+      if (!twoActs) throw new Error("the fleet was not started in two acts");
+      started.child.stdin.write("second act\n");
+      return seeded(await started.nextLine(), 2);
     };
+    return { started, ...first, secondAct };
   } catch (error) {
     await stop(started);
     throw error;

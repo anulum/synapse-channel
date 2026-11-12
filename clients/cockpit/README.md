@@ -224,10 +224,14 @@ For example, after building that directory, run
 `SYNAPSE_COCKPIT_E2E_DIST=/path/to/build npx playwright test e2e/layout.spec.ts`.
 
 The cockpit picture in the repository README is taken by
-`e2e/readme-picture.spec.ts`. The journey opens the production build against
-its own hub and dashboard, then starts the demonstration fleet in
-`e2e/demo_fleet.py`: invented participants that join through the public client,
-post a plan, hold claims and talk. It requires the roster, claims, board, risk
+`e2e/readme-picture.spec.ts`. The journey runs its own hub and dashboard and
+the demonstration fleet in `e2e/demo_fleet.py`: invented participants that join
+through the public client, post a plan, hold claims and talk. The fleet plays
+two acts (`--two-acts`). The first leaves the standing state, the plan and all
+but one claim; the journey then opens the production build on it, so the
+cockpit's first readings find the whole plan; a line on the fleet's standard
+input starts the second act, the last claim, the messages and a finding, which
+the open page observes and the activity spine draws. It requires the roster, claims, board, risk
 rail and signal log to show that fleet over a live stream before it takes the
 picture, and the risk rail to hold one row for each of the plan's four
 unfinished prerequisites, worded as the hub reports them. Its hub and dashboard listen on ports 18776 and 18775 unless

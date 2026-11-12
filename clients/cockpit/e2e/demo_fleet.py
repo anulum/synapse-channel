@@ -19,7 +19,14 @@ With ``--long-names`` the same fleet joins under long names that differ only at
 their ends, as the names of a large installation do; a journey uses it to check
 that a narrow column still shows which seat and which task a row is about.
 
-Usage: ``python demo_fleet.py HUB_URI [--long-names]``
+The fleet plays two acts. The first leaves the standing state a cockpit finds:
+everyone joined, the plan posted and all but one claim held. The second is what
+an operator watches: the last claim is taken and its task begun, the messages
+are exchanged, the finding is recorded. With ``--two-acts`` the script prints a
+line after each act and pauses between them until a line arrives on its
+standard input or the input ends, so that a cockpit can be opened in between.
+
+Usage: ``python demo_fleet.py HUB_URI [--long-names] [--two-acts]``
 """
 
 from __future__ import annotations
@@ -29,6 +36,7 @@ import contextlib
 import json
 import signal
 import sys
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -92,6 +100,9 @@ LONG_PROJECTS = {
     "lighthouse": "lighthouse-navigation-services-group",
 }
 """The long form of each invented project."""
+
+LATE_TASK = "LIGHT-204"
+"""The task that is claimed and begun in the second act."""
 
 JOIN_SECONDS = 10.0
 """How long each participant may take to join the hub."""
@@ -183,10 +194,18 @@ def _confirms(kind: str, task_id: str) -> Callable[[Message], bool]:
     return matches
 
 
-async def _seed(
+async def _take(agent: SynapseAgent, inbox: Inbox, task_id: str, paths: tuple[str, ...]) -> None:
+    """Claim one task with its paths and report it as being worked on."""
+    await agent.claim(task_id, paths=list(paths))
+    await inbox.wait_for(_confirms("claim_granted", task_id))
+    await agent.update_task(task_id, status="working")
+    await inbox.wait_for(_confirms("task_updated", task_id))
+
+
+async def _first_act(
     agents: dict[str, SynapseAgent], inbox: Inbox, rename: Callable[[str], str]
 ) -> None:
-    """Post the plan, set its statuses, take the claims, talk and record the finding."""
+    """Post the plan, set its statuses and take its claims, all but the late task's."""
     planner = agents["harbour/planner"]
     for task_id, title, depends_on in TASKS:
         project = "harbour" if task_id.startswith("HARBOUR") else "lighthouse"
@@ -198,13 +217,25 @@ async def _seed(
         )
         await inbox.wait_for(_confirms("ledger_task_posted", rename(task_id)))
     for task_id, status in BOARD_STATUSES:
-        await planner.update_ledger_task(rename(task_id), status=status)
-        await inbox.wait_for(_confirms("ledger_task_updated", rename(task_id)))
+        if task_id != LATE_TASK:
+            await planner.update_ledger_task(rename(task_id), status=status)
+            await inbox.wait_for(_confirms("ledger_task_updated", rename(task_id)))
     for owner, task_id, paths in CLAIMS:
-        await agents[owner].claim(rename(task_id), paths=list(paths))
-        await inbox.wait_for(_confirms("claim_granted", rename(task_id)))
-        await agents[owner].update_task(rename(task_id), status="working")
-        await inbox.wait_for(_confirms("task_updated", rename(task_id)))
+        if task_id != LATE_TASK:
+            await _take(agents[owner], inbox, rename(task_id), paths)
+
+
+async def _second_act(
+    agents: dict[str, SynapseAgent], inbox: Inbox, rename: Callable[[str], str]
+) -> None:
+    """Take and begin the late task, exchange the messages and record the finding."""
+    for owner, task_id, paths in CLAIMS:
+        if task_id == LATE_TASK:
+            await _take(agents[owner], inbox, rename(task_id), paths)
+    for task_id, status in BOARD_STATUSES:
+        if task_id == LATE_TASK:
+            await agents["harbour/planner"].update_ledger_task(rename(task_id), status=status)
+            await inbox.wait_for(_confirms("ledger_task_updated", rename(task_id)))
     for sender, target, text in MESSAGES:
         for task_id, _title, _needs in TASKS:
             text = text.replace(task_id, rename(task_id))
@@ -215,14 +246,48 @@ async def _seed(
     await inbox.wait_for(lambda message: message.get("type") == "finding_recorded")
 
 
+def _report(rename: Callable[[str], str], *, late_claim: bool, act: int | None) -> None:
+    """Print one line naming the participants, the tasks and the claims held so far."""
+    line: dict[str, object] = {"ready": True}
+    if act is not None:
+        line["act"] = act
+    line["participants"] = [rename(name) for name in PARTICIPANTS]
+    line["tasks"] = [rename(task_id) for task_id, _title, _needs in TASKS]
+    line["claims"] = [
+        rename(task_id) for _owner, task_id, _paths in CLAIMS if late_claim or task_id != LATE_TASK
+    ]
+    print(json.dumps(line), flush=True)
+
+
+def _await_input(loop: asyncio.AbstractEventLoop, begin: asyncio.Event) -> None:
+    """Set ``begin`` when a line arrives on standard input or the input ends.
+
+    Runs in a daemon thread, so a read that never returns does not keep the
+    process alive after the fleet has left.
+    """
+    sys.stdin.readline()
+    with contextlib.suppress(RuntimeError):
+        loop.call_soon_threadsafe(begin.set)
+
+
+async def _either(first: asyncio.Event, second: asyncio.Event, seconds: float) -> None:
+    """Return when either event is set or the time is over."""
+    waits = [asyncio.ensure_future(first.wait()), asyncio.ensure_future(second.wait())]
+    await asyncio.wait(waits, timeout=max(0.0, seconds), return_when=asyncio.FIRST_COMPLETED)
+    for wait in waits:
+        wait.cancel()
+    await asyncio.gather(*waits, return_exceptions=True)
+
+
 async def run_fleet(
     uri: str,
     *,
     rename: Callable[[str], str] = str,
+    two_acts: bool = False,
     join_seconds: float = JOIN_SECONDS,
     hold_seconds: float = HOLD_SECONDS,
 ) -> int:
-    """Connect the fleet, seed it, report readiness and hold until stopped.
+    """Connect the fleet, play its two acts, report and hold until stopped.
 
     Parameters
     ----------
@@ -231,10 +296,16 @@ async def run_fleet(
     rename : Callable[[str], str], optional
         Maps each name of the picture's fleet to the name used on the hub; the
         default keeps the names, :func:`long_name` gives the long ones.
+    two_acts : bool, optional
+        Pause after the first act, print a line for it, and begin the second
+        act when a line arrives on standard input or the input ends. A stop or
+        the hold's end during the pause ends the fleet without a second act.
+        By default the acts follow each other and one line is printed.
     join_seconds : float, optional
         Seconds each participant may take to join.
     hold_seconds : float, optional
-        Seconds the fleet stays connected when no signal stops it.
+        Seconds the fleet stays connected after its first act when no signal
+        stops it.
 
     Returns
     -------
@@ -253,6 +324,7 @@ async def run_fleet(
     }
     connections = [asyncio.create_task(agent.connect()) for agent in agents.values()]
     stop = asyncio.Event()
+    begin = asyncio.Event()
     loop = asyncio.get_running_loop()
     handled: list[signal.Signals] = []
     for signum in (signal.SIGINT, signal.SIGTERM):
@@ -263,16 +335,19 @@ async def run_fleet(
         for name, agent in agents.items():
             if not await agent.wait_until_ready(join_seconds):
                 raise TimeoutError(f"{rename(name)} did not join the hub")
-        await _seed(agents, inbox, rename)
-        ready = {
-            "ready": True,
-            "participants": [rename(name) for name in PARTICIPANTS],
-            "tasks": [rename(task_id) for task_id, _title, _needs in TASKS],
-            "claims": [rename(task_id) for _owner, task_id, _paths in CLAIMS],
-        }
-        print(json.dumps(ready), flush=True)
+        await _first_act(agents, inbox, rename)
+        leave_at = loop.time() + hold_seconds
+        if two_acts:
+            _report(rename, late_claim=False, act=1)
+            threading.Thread(target=_await_input, args=(loop, begin), daemon=True).start()
+            await _either(begin, stop, leave_at - loop.time())
+        else:
+            begin.set()
+        if begin.is_set() and not stop.is_set():
+            await _second_act(agents, inbox, rename)
+            _report(rename, late_claim=True, act=2 if two_acts else None)
         with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(stop.wait(), timeout=hold_seconds)
+            await asyncio.wait_for(stop.wait(), timeout=max(0.0, leave_at - loop.time()))
     finally:
         for signum in handled:
             loop.remove_signal_handler(signum)
@@ -291,12 +366,15 @@ def main() -> int:
         Zero after the fleet has disconnected; two unless exactly one hub
         address is given.
     """
-    addresses = [argument for argument in sys.argv[1:] if argument != "--long-names"]
+    options = ("--long-names", "--two-acts")
+    addresses = [argument for argument in sys.argv[1:] if argument not in options]
     if len(addresses) != 1:
-        print("usage: python demo_fleet.py HUB_URI [--long-names]", file=sys.stderr)
+        print("usage: python demo_fleet.py HUB_URI [--long-names] [--two-acts]", file=sys.stderr)
         return 2
     rename = long_name if "--long-names" in sys.argv[1:] else str
-    return asyncio.run(run_fleet(addresses[0], rename=rename))
+    return asyncio.run(
+        run_fleet(addresses[0], rename=rename, two_acts="--two-acts" in sys.argv[1:])
+    )
 
 
 if __name__ == "__main__":

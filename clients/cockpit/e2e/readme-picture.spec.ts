@@ -19,7 +19,7 @@ if (!bearer) throw new Error("SYNAPSE_COCKPIT_E2E_TOKEN is required");
 const WIDTH = 1280;
 const HEIGHT = 900;
 test("the README picture shows a working fleet in the built cockpit", async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(90_000);
   let harness: Started | undefined;
   let fleet: Fleet | undefined;
   try {
@@ -27,8 +27,11 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
     harness = started.harness;
     const url = started.url;
 
-    // The operator has the cockpit open before the fleet starts: the activity
-    // spine draws only the changes this page itself observed.
+    // The fleet's first act leaves the standing state a cockpit finds: the plan
+    // and two of its claims. The operator opens the cockpit on it; the second
+    // act then happens before the open page, which is what the activity spine
+    // draws.
+    fleet = await startFleet(["--two-acts"]);
     await page.emulateMedia({ colorScheme: "dark" });
     await page.setViewportSize({ width: WIDTH, height: HEIGHT });
     await page.goto(url);
@@ -41,9 +44,11 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
     await expect(page.locator("html")).not.toHaveAttribute("data-theme");
     await expect(page.locator("html")).not.toHaveAttribute("data-density");
     await expect(banner.getByRole("combobox", { name: "Interface language" })).toHaveValue("en");
-
-    fleet = await startFleet();
-    const { participants, tasks, claims } = fleet;
+    for (const claim of fleet.claims) {
+      await expect(page.getByRole("region", { name: "File-scope claims", exact: true })).toContainText(claim);
+    }
+    const { participants, tasks, claims } = await fleet.secondAct();
+    expect(claims.length).toBe(fleet.claims.length + 1);
 
     const region = (name: string) => page.getByRole("region", { name, exact: true });
     for (const name of ["Fleet roster", "File-scope claims", "Task board", "Risk rail", "Findings stream", "Signal log"]) {
@@ -60,12 +65,12 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
     }
     await expect(region("Risk rail")).toContainText("amber", { ignoreCase: true });
     await expect(region("Risk rail")).toContainText("HARBOUR-103");
-    // The fleet's plan holds four unfinished prerequisites. The hub's report is
-    // read every two minutes, so the first reading may predate the fleet. Each
-    // prerequisite is one row, worded as the hub reports it: the task is in
-    // the log and unfinished, not absent.
+    // The fleet's plan holds four unfinished prerequisites, all posted in its
+    // first act, so the cockpit's first reading of the hub's report finds
+    // them. Each prerequisite is one row, worded as the hub reports it: the
+    // task is in the log and unfinished, not absent.
     const rail = region("Risk rail");
-    await expect(rail).toContainText("hub health anomalies · 4", { timeout: 130_000 });
+    await expect(rail).toContainText("hub health anomalies · 4", { timeout: 20_000 });
     await expect(rail.getByText("waits on unfinished HARBOUR-101", { exact: true })).toHaveCount(3);
     await expect(rail.getByText("waits on unfinished HARBOUR-104", { exact: true })).toHaveCount(1);
     await expect(rail).not.toContainText("absent");
