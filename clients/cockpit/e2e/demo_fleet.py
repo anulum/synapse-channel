@@ -83,6 +83,9 @@ MESSAGES = (
 FINDING = "Upload limits are enforced by the API, not by the web client."
 """The one finding the reviewer records."""
 
+JOIN_SECONDS = 10.0
+"""How long each participant may take to join the hub."""
+
 HOLD_SECONDS = 180.0
 """How long the fleet stays connected when nothing stops it."""
 
@@ -167,8 +170,30 @@ async def _seed(agents: dict[str, SynapseAgent], inbox: Inbox) -> None:
     await inbox.wait_for(lambda message: message.get("type") == "finding_recorded")
 
 
-async def _run(uri: str) -> int:
-    """Connect the fleet, seed it, report readiness and hold until stopped."""
+async def run_fleet(
+    uri: str, *, join_seconds: float = JOIN_SECONDS, hold_seconds: float = HOLD_SECONDS
+) -> int:
+    """Connect the fleet, seed it, report readiness and hold until stopped.
+
+    Parameters
+    ----------
+    uri : str
+        WebSocket address of the running hub.
+    join_seconds : float, optional
+        Seconds each participant may take to join.
+    hold_seconds : float, optional
+        Seconds the fleet stays connected when no signal stops it.
+
+    Returns
+    -------
+    int
+        Zero after every participant has disconnected.
+
+    Raises
+    ------
+    TimeoutError
+        If a participant does not join, or the hub does not confirm a step.
+    """
     inbox = Inbox()
     agents = {
         name: SynapseAgent(name, inbox, uri=uri, heartbeat_interval=20.0, verbose=False)
@@ -177,12 +202,14 @@ async def _run(uri: str) -> int:
     connections = [asyncio.create_task(agent.connect()) for agent in agents.values()]
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
+    handled: list[signal.Signals] = []
     for signum in (signal.SIGINT, signal.SIGTERM):
         with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(signum, stop.set)
+            handled.append(signum)
     try:
         for name, agent in agents.items():
-            if not await agent.wait_until_ready(10.0):
+            if not await agent.wait_until_ready(join_seconds):
                 raise TimeoutError(f"{name} did not join the hub")
         await _seed(agents, inbox)
         ready = {
@@ -193,8 +220,10 @@ async def _run(uri: str) -> int:
         }
         print(json.dumps(ready), flush=True)
         with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(stop.wait(), timeout=HOLD_SECONDS)
+            await asyncio.wait_for(stop.wait(), timeout=hold_seconds)
     finally:
+        for signum in handled:
+            loop.remove_signal_handler(signum)
         for connection in connections:
             connection.cancel()
         await asyncio.gather(*connections, return_exceptions=True)
@@ -212,7 +241,7 @@ def main() -> int:
     if len(sys.argv) != 2:
         print("usage: python demo_fleet.py HUB_URI", file=sys.stderr)
         return 2
-    return asyncio.run(_run(sys.argv[1]))
+    return asyncio.run(run_fleet(sys.argv[1]))
 
 
 if __name__ == "__main__":
