@@ -23,8 +23,10 @@
   claim by an epoch-bound renewal before each attempt, and after a fault asks the
   effect's observer whether the effect happened instead of retrying blindly. An
   outcome the observer cannot establish is recorded on the hub as unknown and routed to
-  an operator. Outcome and independent verification records for tasks that complete
-  normally are not part of this mode yet.
+  an operator. The worker records every declared operation's outcome on the hub (done,
+  not started, failed or unknown); afterwards an independent verifier, another hub
+  identity, reads the task's file with Core's file-change verifier and records what it
+  found.
 * **Faults**: ``lost_before`` (the connection drops before the effect is made),
   ``lost_after`` (the effect is made, the answer is lost), ``restart`` (the agent dies
   after the effect, before it records completion, and starts again),
@@ -49,7 +51,8 @@ held the task then.
 
 Measures per mode, overall and per fault class: unauthorised, duplicate and lost
 effects, verified task success (the intended effect exactly once, by the worker the
-task belonged to, with the file's digest), human interventions, latency per completed
+task belonged to, with the file's digest), tasks the hub's journal shows as verified and
+tasks where that journal disagrees with the observers, human interventions, latency per completed
 task (``None`` when none completed) beside the latency of all attempts, recovery time
 (fault to completion or correct abandonment), and CPU seconds per completed task
 counted for this process and the child processes it waited for (Git), where the
@@ -96,17 +99,20 @@ from synapse_channel.core.acl import CLAIM, MESSAGE, OPERATION_EVIDENCE, AclPoli
 from synapse_channel.core.execution_outcome import ExecutionOutcome, OutcomeState
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.operator_relay_transport import relay_operator_action
 from synapse_channel.core.operator_relay_wire import RelayActionRequest
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.result_verification_record import ResultVerification
 from synapse_channel.core.tls import (
     MTLSPeerTrustBundle,
     MTLSTrustedPeer,
     certificate_sha256_pin_from_der,
 )
+from synapse_channel.result_verification import verify_file_change
 
 FAULTS = (
     "none",
@@ -134,6 +140,9 @@ RIVAL = "agent-rival"
 
 OTHER_WORKER = "agent-other"
 """The worker a ``duplicate_request`` task is delivered to the second time."""
+
+VERIFIER = "agent-verifier"
+"""The independent verifier: another hub identity than every worker."""
 
 HUB_ID = "bench-hub"
 """Identity of the benchmark hub, which owns the agents' namespace."""
@@ -304,6 +313,10 @@ class Repository:
         if self._git(tree, "status", "--porcelain"):
             self._git(tree, "commit", "-q", "-m", task_id)
 
+    def file_path(self, agent: str, task_id: str) -> Path:
+        """Return where the agent's worktree keeps the task's file, creating nothing."""
+        return self.root.parent / f"wt-{agent}" / "tasks" / f"{task_id}.txt"
+
     def digest(self, agent: str, task_id: str) -> str | None:
         """Return the committed file's SHA-256 on the agent's branch, or ``None``."""
         try:
@@ -315,7 +328,12 @@ class Repository:
 
 @dataclass
 class TaskRecord:
-    """What happened to one task, as the observers judged it."""
+    """What happened to one task, as the observers judged it.
+
+    ``outcome`` and ``verification`` are the hub's answers to the worker's outcome record
+    and to the independent verifier's record (``None`` when none was sent);
+    ``verified_on_hub`` is read from the hub's journal after the run.
+    """
 
     task_id: str
     fault: str
@@ -329,6 +347,9 @@ class TaskRecord:
     unauthorised: int = 0
     file_ok: bool = False
     cpu_seconds: float | None = None
+    outcome: str | None = None
+    verification: str | None = None
+    verified_on_hub: bool = False
 
     @property
     def verified(self) -> bool:
@@ -552,21 +573,30 @@ class _Session:
             },
         )
 
-    async def report_unknown(self, task: Task) -> str:
-        """Record that the outcome is unknown and needs an operator; return the hub's status."""
+    async def report_outcome(
+        self, task: Task, state: OutcomeState, effect: OutcomeState, observation: str
+    ) -> str:
+        """Record the worker's outcome of the task's operation; return the hub's status."""
         report = ExecutionOutcome(
-            task.operation_id,
-            "worker_process",
-            OutcomeState.UNKNOWN,
-            "the effect target dropped and its observer cannot answer",
-            external_effect=OutcomeState.UNKNOWN,
+            task.operation_id, "worker_process", state, observation, external_effect=effect
         ).to_json()
         status, _reason = await self._record(
-            f"outcome-{task.task_id}",
+            f"outcome-{task.task_id}-{self.agent.name}",
             record="outcome",
             task_id=task.task_id,
             operation_id=task.operation_id,
             report=report,
+        )
+        return status
+
+    async def record_verification(self, task: Task, verification: ResultVerification) -> str:
+        """Record an independent verification of the task's operation; return the hub's status."""
+        status, _reason = await self._record(
+            f"verification-{task.task_id}-{self.agent.name}",
+            record="verification",
+            task_id=task.task_id,
+            operation_id=task.operation_id,
+            verification=verification.to_json(),
         )
         return status
 
@@ -677,18 +707,32 @@ async def _core_task(task: Task, uri: str, target: FaultyTarget) -> TaskRecord:
     record = TaskRecord(task.task_id, task.fault)
     started, cpu = time.perf_counter(), _cpu_now()
     try:
-        await _core_delivery(task, uri, target, record)
+        outcome = await _core_delivery(task, uri, target, record)
         if task.fault == "duplicate_request":
             target.ledger.authority.assign(task.task_id, OTHER_WORKER)
             await _core_redelivery(task, uri, target, record)
+        if outcome is not None:
+            record.verification = await _verify_independently(
+                task, uri, target.repository, outcome.value
+            )
     finally:
         record.latency = time.perf_counter() - started
         record.cpu_seconds = _cpu_since(cpu)
     return record
 
 
-async def _core_delivery(task: Task, uri: str, target: FaultyTarget, record: TaskRecord) -> None:
-    """Claim, declare, check the claim before each attempt, act, and inquire after a fault."""
+_DONE = (OutcomeState.CONFIRMED_DONE, OutcomeState.CONFIRMED_DONE)
+"""Outcome and external effect a worker records once its effect is made."""
+
+
+async def _core_delivery(
+    task: Task, uri: str, target: FaultyTarget, record: TaskRecord
+) -> OutcomeState | None:
+    """Claim, declare, check the claim before each attempt, act, inquire, record the outcome.
+
+    Returns the outcome state the worker recorded, or ``None`` when the operation was
+    not declared (so there is nothing to verify).
+    """
     name = f"BENCH/{task.agent}"
     session = await _Session(name, uri).open()
     try:
@@ -697,7 +741,7 @@ async def _core_delivery(task: Task, uri: str, target: FaultyTarget, record: Tas
         if status != "accepted":
             record.gave_up, record.reason = True, f"declaration {status}: {reason}"
             await session.release(task, claimed)
-            return
+            return None
         # The change is prepared; the scheduled fault strikes before any effect.
         fault_at: float | None = None
         if task.fault == "lease_expiry":
@@ -710,6 +754,8 @@ async def _core_delivery(task: Task, uri: str, target: FaultyTarget, record: Tas
             fault_at = time.perf_counter()
             await _operator_withdraws(task, uri, target)
         epoch: int | None = claimed
+        state, effect = OutcomeState.CONFIRMED_FAILED, OutcomeState.NOT_STARTED
+        observation = "the effect stayed absent after every attempt"
         while record.attempts < MAX_ATTEMPTS:
             epoch = await session.renew(task, claimed)  # still ours at the effect boundary?
             if epoch is None:
@@ -717,6 +763,7 @@ async def _core_delivery(task: Task, uri: str, target: FaultyTarget, record: Tas
             record.attempts += 1
             try:
                 target.apply(task, task.agent)
+                (state, effect), observation = _DONE, "the effect was made"
                 break
             except (LostConnection, AgentCrashed) as fault:
                 fault_at = fault_at or time.perf_counter()
@@ -727,22 +774,51 @@ async def _core_delivery(task: Task, uri: str, target: FaultyTarget, record: Tas
                 # Inquire, never retry blindly: the observer says whether the effect exists.
                 try:
                     if target.inquire(task) > 0:
+                        (state, effect), observation = _DONE, "the observer confirmed the effect"
                         break
                 except ObserverUnavailable:
-                    status = await session.report_unknown(task)
+                    state, effect = OutcomeState.UNKNOWN, OutcomeState.UNKNOWN
+                    observation = "the effect target dropped and its observer cannot answer"
                     record.human = True
-                    record.reason = f"outcome unknown, recorded {status}; routed to an operator"
                     break
         else:
-            record.gave_up, record.reason = True, "the effect stayed absent after every attempt"
+            record.gave_up, record.reason = True, observation
         if epoch is None:
-            record.gave_up, record.reason = True, "the claim check was refused; no effect made"
+            state, effect = OutcomeState.NOT_STARTED, OutcomeState.NOT_STARTED
+            observation = "the claim check was refused; no effect made"
+            record.gave_up, record.reason = True, observation
+        record.outcome = await session.report_outcome(task, state, effect, observation)
+        if state is OutcomeState.UNKNOWN:
+            record.reason = f"outcome unknown, recorded {record.outcome}; routed to an operator"
         if fault_at is not None and (epoch is None or not record.gave_up):
             record.recovery = time.perf_counter() - fault_at
         if epoch is not None:
             await session.release(task, epoch)
+        return state
     finally:
         await session.close()
+
+
+async def _verify_independently(
+    task: Task, uri: str, repository: Repository, communication: str
+) -> str:
+    """Let a verifier that is not the worker read the task's file and record what it found.
+
+    Returns the verifier's result when the hub accepted the record, otherwise the hub's
+    refusal.
+    """
+    verification = verify_file_change(
+        repository.file_path(task.agent, task.task_id),
+        hashlib.sha256(task.content.encode()).hexdigest(),
+        operation_id=task.operation_id,
+        communication=communication,
+    )
+    session = await _Session(f"BENCH/{VERIFIER}", uri).open()
+    try:
+        status = await session.record_verification(task, verification)
+    finally:
+        await session.close()
+    return verification.result if status == "accepted" else f"refused: {status}"
 
 
 async def _operator_withdraws(task: Task, uri: str, target: FaultyTarget) -> None:
@@ -828,7 +904,25 @@ def run_core(
 
     records = asyncio.run(everything())
     _judge(tasks, records, repository, ledger)
+    _read_hub_verifications(workdir / "hub.db", tasks, records)
     return records
+
+
+def _read_hub_verifications(
+    journal: Path, tasks: tuple[Task, ...], records: list[TaskRecord]
+) -> None:
+    """Mark each task whose operation the hub's journal records as verified."""
+    store = EventStore(journal)
+    try:
+        verified = {
+            event.payload.get("operation_id")
+            for event in store.iter_events(kinds=(EventKind.OPERATION_VERIFIED,))
+            if event.payload.get("result") == "verified"
+        }
+    finally:
+        store.close()
+    for task, record in zip(tasks, records, strict=True):
+        record.verified_on_hub = task.operation_id in verified
 
 
 def _judge(
@@ -895,6 +989,10 @@ def _counts(records: list[TaskRecord]) -> dict[str, int]:
         "lost_effects": sum(1 for r in records if r.effects == 0),
         "gave_up": sum(1 for r in records if r.gave_up),
         "human_interventions": sum(1 for r in records if r.human),
+        "verified_on_hub": sum(1 for r in records if r.verified_on_hub),
+        "hub_disagrees_with_observers": sum(
+            1 for r in records if r.verification is not None and r.verified_on_hub != r.verified
+        ),
     }
 
 

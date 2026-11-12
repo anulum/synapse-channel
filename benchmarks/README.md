@@ -203,7 +203,9 @@ register kept by the harness, not by the agents, says which worker each task
 belongs to at every moment.
 
 The output gives, per mode and per fault class: unauthorised, duplicate and
-lost effects, verified task success, human interventions, latency per completed
+lost effects, verified task success, tasks the hub's journal records as
+verified and tasks where that journal disagrees with the observers, human
+interventions, latency per completed
 task beside the latency of all attempts, recovery time, and CPU seconds per
 completed task counted for the process and the Git child processes it waited
 for (where the platform reports child CPU). It names the Python, the Core
@@ -213,11 +215,12 @@ digest. Two runs with the same seed give the same counts.
 Two modes run so far: the plain baseline (isolated worktrees, retry on error)
 and Core (a real in-process hub: claim the task's file, declare the operation
 before any effect, check the claim by an epoch-bound renewal before each
-attempt, ask the observer after a fault instead of retrying, and record an
-unknown outcome for an operator; the operator takes a task back through the
-hub's governed operator relay). Outcome and independent verification records
-for normally completed tasks, and the Core-with-Fleet mode, follow. No result
-is published yet.
+attempt, ask the observer after a fault instead of retrying, record every
+declared operation's outcome on the hub — done, not started, failed or unknown,
+an unknown one going to an operator — and then let an independent verifier,
+another hub identity, read the task's file with Core's file-change verifier and
+record what it found; the operator takes a task back through the hub's governed
+operator relay). The Core-with-Fleet mode follows. No result is published yet.
 
 ### Run
 

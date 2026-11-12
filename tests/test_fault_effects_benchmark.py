@@ -32,6 +32,7 @@ class Down:
 
     def __init__(self, ledger: object, repository: object) -> None:
         self.ledger = ledger
+        self.repository = repository  # the verifier reads the task's file there
 
     def apply(self, task: object, worker: str) -> None:
         raise bench.LostConnection("down")
@@ -108,6 +109,8 @@ def test_a_run_is_repeatable_and_the_command_writes_its_document(
         "lost_effects",
         "gave_up",
         "human_interventions",
+        "verified_on_hub",
+        "hub_disagrees_with_observers",
     )
 
     def counts(mode: dict[str, Any]) -> list[object]:
@@ -123,6 +126,9 @@ def test_a_run_is_repeatable_and_the_command_writes_its_document(
     )
     assert [first["modes"][0][k] for k in summary] == [6, 6, 12, 0]
     assert [first["modes"][1][k] for k in summary] == [18, 0, 0, 3]
+    hub = ("verified_on_hub", "hub_disagrees_with_observers")
+    assert [first["modes"][0][k] for k in hub] == [0, 0]  # the baseline has no hub
+    assert [first["modes"][1][k] for k in hub] == [18, 0]
     assert first["modes"][0]["cpu_seconds_per_completed_task"] > 0  # Git children counted
     versions = first["versions"]
     head = subprocess.run(
@@ -189,6 +195,13 @@ def test_core_inquires_instead_of_retrying_and_leaves_no_duplicate(tmp_path: Pat
         for r in by_fault["lease_expiry"] + by_fault["withdrawn_authority"]
     )
     assert all(r.cpu_seconds is not None and r.cpu_seconds >= 0 for r in records)
+    # Every declared operation has the worker's outcome and an independent verification
+    # on the hub, and the hub's journal agrees with the observers task by task.
+    assert all(r.outcome == "accepted" for r in records)
+    assert all(
+        r.verification == ("not_verified" if r.fault in taken_back else "verified") for r in records
+    )
+    assert all(r.verified_on_hub == r.verified for r in records)
 
 
 def test_core_gives_up_on_an_unreachable_target_and_on_a_real_refused_declaration(
@@ -203,12 +216,21 @@ def test_core_gives_up_on_an_unreachable_target_and_on_a_real_refused_declaratio
         None,
     )
     assert down.reason == "the effect stayed absent after every attempt"
+    assert (down.outcome, down.verification, down.verified_on_hub) == (
+        "accepted",
+        "not_verified",
+        False,
+    )
     # The same task delivered twice to its own agent: the hub refuses the second
     # declaration of the operation, and the agent makes no second effect.
     first, again = bench.run_core((task, task), tmp_path / "again")
     assert first.verified and (first.effects, first.attempts) == (1, 1)
     assert (again.gave_up, again.attempts) == (True, 0)
     assert again.reason == "declaration refused: duplicate_operation"
+    assert (again.outcome, again.verification) == (
+        None,
+        None,
+    )  # nothing declared, nothing to verify
 
 
 def test_core_shows_the_duplicate_a_hub_would_let_through(
@@ -226,6 +248,9 @@ def test_core_shows_the_duplicate_a_hub_would_let_through(
         False,
         "",
     )
+    # The hub never saw that declaration, so it refuses the outcome and the verification.
+    assert record.outcome == "refused" and str(record.verification).startswith("refused: ")
+    assert not record.verified_on_hub
 
 
 async def test_the_session_and_hub_helpers_refuse_what_never_answers(tmp_path: Path) -> None:
