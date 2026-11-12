@@ -71,6 +71,9 @@ execution evidence when carrying a release claim forward.
   owner-only; granting Everyone read makes inquiry refuse. A replace
   that cannot rename over an open handle leaves those bytes and no
   temporary.
+- On Windows the OpenCode editor callback and its probe lock refuse
+  before reading a draft. An adapter file stays owner-only; granting
+  Everyone read makes the next read refuse.
 
 ## [0.99.51] - 2026-11-11
 

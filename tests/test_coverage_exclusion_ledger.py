@@ -284,6 +284,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_worker_outcome_publication.py": (1, "platform-guard"),
     # Windows owner-only DACL, and a sharing violation after the descriptor is closed.
     "tests/test_worker_outcomes_native.py": (2, "platform-guard"),
+    # The non-POSIX OpenCode editor floor is exercised on Windows.
+    "tests/test_opencode_windows_native.py": (1, "platform-guard"),
     # uid injection and fchmod failure exist only where those POSIX calls exist.
     "tests/test_kimi_hook_config_file.py": (2, "platform-guard"),
 }
