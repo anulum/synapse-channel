@@ -134,13 +134,13 @@ def test_type_checking_imports_are_the_runtime_lazy_exports(tmp_path: Path) -> N
 
     package_root = Path(synapse_channel.__file__).resolve().parent
     surface = package_root / "federation_api" / "__init__.py"
-    for module_name, imported, local in _type_checking_bindings(
-        surface.read_text(encoding="utf-8")
-    ):
+    surface_bindings = _type_checking_bindings(surface.read_text(encoding="utf-8"))
+    for module_name, imported, local in surface_bindings:
         assert local == imported
-        assert local in federation_api.__all__
         defining = importlib.import_module(module_name)
         assert getattr(federation_api, local) is getattr(defining, imported)
+    # Both ways: a lazy export without its type-only import would be untyped for a consumer.
+    assert sorted(local for _, _, local in surface_bindings) == sorted(federation_api.__all__)
 
     for path in sorted((package_root / "federation_api").glob("*.py")):
         if path.name == "__init__.py":
@@ -149,10 +149,12 @@ def test_type_checking_imports_are_the_runtime_lazy_exports(tmp_path: Path) -> N
 
     package_source = (package_root / "__init__.py").read_text(encoding="utf-8")
     exports = synapse_channel._EXPORTS
-    for module_name, imported, local in _type_checking_bindings(package_source):
+    root_bindings = _type_checking_bindings(package_source)
+    for module_name, imported, local in root_bindings:
         assert exports[local] == f"{module_name}:{imported}"
         defining = importlib.import_module(module_name)
         assert getattr(synapse_channel, local) is getattr(defining, imported)
+    assert sorted(local for _, _, local in root_bindings) == sorted(exports)
 
     consumer = tmp_path / "consumer_probe.py"
     consumer.write_text(
