@@ -812,13 +812,15 @@ def test_main_inbox_is_exact_identity_scoped(captured_cli: CapturedCalls) -> Non
         )
         == 0
     )
+    # HOME is joined with pathlib, so the spelling follows the platform.
+    home = Path("/home/u") / "synapse"
     assert captured_cli[0] == [
         "relay",
-        "/home/u/synapse/feed.ndjson",
+        str(home / "feed.ndjson"),
         "--for",
         "SYNAPSE-CHANNEL",
         "--cursor",
-        "/home/u/synapse/SYNAPSE-CHANNEL.cursor",
+        str(home / "SYNAPSE-CHANNEL.cursor"),
     ]
 
 
@@ -1213,19 +1215,20 @@ def test_main_inbox_drains_every_as_identity_under_its_own_cursor(
         == 0
     )
     assert len(captured_cli) == 3
+    home = Path("/home/u") / "synapse"
     assert captured_cli[0][:4] == [
         "relay",
-        "/home/u/synapse/feed.ndjson",
+        str(home / "feed.ndjson"),
         "--for",
         "SYNAPSE-CHANNEL",
     ]
     assert captured_cli[1] == [
         "relay",
-        "/home/u/synapse/feed.ndjson",
+        str(home / "feed.ndjson"),
         "--for",
         "SYNAPSE-CHANNEL/coordinator",
         "--cursor",
-        "/home/u/synapse/SYNAPSE-CHANNEL__coordinator.cursor",
+        str(home / "SYNAPSE-CHANNEL__coordinator.cursor"),
     ]
     assert captured_cli[2][2:4] == ["--project", "ACME"]
     out = capsys.readouterr().out

@@ -39,7 +39,8 @@ def test_render_hook_config_is_valid_toml_and_token_safe(tmp_path: Path) -> None
     assert hook["event"] == "PreToolUse"
     assert hook["matcher"] == "^(Write|Edit|Bash)$"
     assert "secret-token" not in rendered
-    assert str(token_file.resolve()) in rendered
+    # The TOML source escapes backslashes. The contract is the parsed command.
+    assert str(token_file.resolve()) in hook["command"]
 
 
 def test_render_marked_hook_block_wraps_config_with_markers() -> None:

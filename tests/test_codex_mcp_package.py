@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import tomllib
 
 from synapse_channel import cli
 from synapse_channel.codex_mcp_package import (
@@ -77,7 +78,7 @@ def test_real_unrelated_executable_is_not_accepted_as_the_host(
 
 
 def test_real_host_launch_failure_does_not_create_a_profile(tmp_path: Path) -> None:
-    host = tmp_path / "invalid-host"
+    host = tmp_path / ("invalid-host.exe" if os.name == "nt" else "invalid-host")
     host.write_text("invalid executable image", encoding="ascii")
     host.chmod(0o700)
     profile = tmp_path / "codex"
@@ -445,14 +446,23 @@ def _contract_peer(directory: Path) -> Path:
     source = Path(__file__).with_name("codex_contract_peer.py").read_text(encoding="utf-8")
     script = directory / "codex-contract-peer.py"
     script.write_text(f"#!{sys.executable}\n{source}", encoding="utf-8")
+    if os.name == "nt":
+        # CreateProcess runs a batch file; it does not run a shebang script.
+        launcher = directory / "codex-contract-peer.cmd"
+        launcher.write_text(
+            f'@echo off\r\n"{sys.executable}" "{script}" %*\r\n',
+            encoding="utf-8",
+        )
+        return launcher
     script.chmod(0o700)
     return script
 
 
 def _tool() -> Path:
     """Return a real executable the package can record as a command path."""
-    found = shutil.which("true")
-    if found is None:
+    # POSIX has `true`. Windows records the interpreter, which is a real executable.
+    found = shutil.which("true") or sys.executable
+    if not found:
         pytest.fail("a true executable is required to record a command path")
     return Path(found)
 
@@ -503,6 +513,9 @@ def test_cli_refuses_profiles_that_are_not_safe_files(
         ("bad-entry", "mcp_servers = { synapse = 'bad' }\n", "entry is invalid"),
     )
     for label, shape, expected in cases:
+        # chmod 0 does not make a Windows file unreadable.
+        if shape == "unreadable" and os.name == "nt":
+            continue
         profile = tmp_path / label
         if shape == "root":
             profile.write_text("preserve", encoding="utf-8")
@@ -635,7 +648,8 @@ def test_cli_installs_an_owned_entry_and_refuses_to_replace_it(
     config = (profile / "config.toml").read_text(encoding="utf-8")
     assert "secret-value" not in config
     assert "synapse-channel" in config
-    assert str(_tool()) in config
+    # The TOML source escapes backslashes. The contract is the parsed command.
+    assert tomllib.loads(config)["mcp_servers"]["synapse"]["command"] == str(_tool())
     before = (profile / "config.toml").read_bytes()
     assert _install(profile, host, token=token) == 2
     assert "already exists" in json.loads(capsys.readouterr().out)["reason"]
@@ -785,6 +799,9 @@ def test_cli_refuses_install_input_before_writing_an_entry(
         ),
     )
     for label, arguments, expected in cases:
+        # Unix mode bits and /etc/passwd do not describe a Windows token file.
+        if os.name == "nt" and label in {"open-token", "foreign-token"}:
+            continue
         profile = tmp_path / label
         assert _command(profile, host, "install", *arguments) == 2
         row = json.loads(capsys.readouterr().out)

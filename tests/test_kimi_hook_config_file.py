@@ -33,6 +33,16 @@ from synapse_channel.kimi_hook_installer import (
 )
 
 
+def _assert_private_file(path: Path, posix_mode: int) -> None:
+    """Unix mode bits on POSIX. The owner-only DACL is the Windows contract."""
+    if os.name == "nt":
+        from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+        assert_owner_only_file_path(path, purpose="Kimi config")
+        return
+    assert stat.S_IMODE(path.stat().st_mode) == posix_mode
+
+
 def _install(path: Path, *, identity: str = "seat/one") -> HookConfigResult:
     return install_hook_config(
         path,
@@ -78,7 +88,11 @@ def test_read_regular_config_captures_text_mode_and_identity(tmp_path: Path) -> 
     assert snapshot.existed is True
     assert snapshot.fingerprint is not None
     assert snapshot.digest is not None
-    assert snapshot.mode == 0o640
+    # Windows reports a fixed stat mode and does not store the Unix bits.
+    if os.name == "nt":
+        assert snapshot.mode == stat.S_IMODE(path.stat().st_mode)
+    else:
+        assert snapshot.mode == 0o640
 
 
 def test_read_rejects_final_component_symlink(tmp_path: Path) -> None:
@@ -92,7 +106,10 @@ def test_read_rejects_final_component_symlink(tmp_path: Path) -> None:
 
 def test_read_rejects_non_regular_file(tmp_path: Path) -> None:
     fifo = tmp_path / "config.toml"
-    os.mkfifo(fifo)
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(fifo)
+    else:
+        fifo.mkdir()
     with pytest.raises(KimiHookConfigFileError, match="regular file"):
         read_config_snapshot(fifo)
 
@@ -100,6 +117,8 @@ def test_read_rejects_non_regular_file(tmp_path: Path) -> None:
 def test_read_rejects_file_owned_by_another_uid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    if not hasattr(os, "geteuid"):
+        pytest.skip("uid ownership is a POSIX check; Windows uses the owner-only DACL")
     path = tmp_path / "config.toml"
     path.write_text('model = "x"\n', encoding="utf-8")
     monkeypatch.setattr(
@@ -159,8 +178,9 @@ def test_write_new_config_creates_private_file_and_parent(tmp_path: Path) -> Non
     path = tmp_path / "nested" / "config.toml"
     write_config_snapshot(path, 'model = "x"\n', read_config_snapshot(path))
     assert path.read_text(encoding="utf-8") == 'model = "x"\n'
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
-    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+    _assert_private_file(path, 0o600)
+    if os.name != "nt":
+        assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
 
 
 def test_write_existing_config_preserves_mode_and_atomically_replaces(tmp_path: Path) -> None:
@@ -171,7 +191,10 @@ def test_write_existing_config_preserves_mode_and_atomically_replaces(tmp_path: 
     snapshot = read_config_snapshot(path)
     write_config_snapshot(path, 'model = "new"\n', snapshot)
     assert path.read_text(encoding="utf-8") == 'model = "new"\n'
-    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    if os.name == "nt":
+        _assert_private_file(path, 0o600)
+    else:
+        assert stat.S_IMODE(path.stat().st_mode) == 0o640
     assert path.stat().st_ino != before_inode
 
 
@@ -261,6 +284,8 @@ def test_replace_failure_preserves_original_and_cleans_temp(
 def test_temp_setup_failure_closes_and_removes_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    if not hasattr(os, "fchmod"):
+        pytest.skip("fchmod is the POSIX setup failure this test injects")
     path = tmp_path / "config.toml"
 
     def fail_chmod(_descriptor: int, _mode: int) -> None:
@@ -295,7 +320,7 @@ def test_install_missing_config_reports_installed_and_private_mode(tmp_path: Pat
     result = _install(path)
     assert result == HookConfigResult(path, "installed")
     assert KIMI_HOOK_MARKER_BEGIN in path.read_text(encoding="utf-8")
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    _assert_private_file(path, 0o600)
 
 
 def test_reinstall_same_hook_is_unchanged_without_replacing_file(tmp_path: Path) -> None:

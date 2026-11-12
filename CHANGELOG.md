@@ -18,6 +18,14 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Fixed
+
+- A Windows `synapse.exe` is still the synapse command, and a freshly
+  installed Claude plugin is owned when its relative paths use the
+  platform separator. Native tests state the platform contract for inbox
+  paths, Unix mode bits, POSIX-only uid and fchmod injection, a missing
+  `mkfifo`, a read-only Git object, and a Codex host that Windows can run.
+
 ## [0.99.51] - 2026-11-11
 
 ### Added

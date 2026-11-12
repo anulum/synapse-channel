@@ -178,7 +178,13 @@ def read_text_snapshot(path: Path, *, limit: int = DEFAULT_FILE_LIMIT) -> FileSn
         return FileSnapshot("", False, None, None, 0o600)
     _validate_file(path, before)
     after, data = _read_validated(path, limit)
-    if _fingerprint(before) != _fingerprint(after):
+    # Windows updates the metadata timestamp on open, so ctime is not a race signal.
+    if (
+        before.st_dev != after.st_dev
+        or before.st_ino != after.st_ino
+        or before.st_size != after.st_size
+        or before.st_mtime_ns != after.st_mtime_ns
+    ):
         raise OpenCodeAdapterFileError(f"OpenCode adapter path changed while opening: {path}")
     try:
         text = data.decode("utf-8", errors="strict")

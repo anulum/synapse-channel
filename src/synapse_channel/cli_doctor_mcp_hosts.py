@@ -326,7 +326,13 @@ def classify_definition(
         )
     if synapse_binary is not None and resolved == synapse_binary.resolve():
         return ClassifiedDefinition(definition, "genuine", f"this installation's {resolved}")
-    if resolved.name == "synapse":
+    # Windows resolves synapse.exe and a test host may be synapse.cmd.
+    command_name = resolved.name
+    for suffix in (".exe", ".cmd", ".bat"):
+        if command_name.lower().endswith(suffix):
+            command_name = command_name[: -len(suffix)]
+            break
+    if command_name.casefold() == "synapse":
         return ClassifiedDefinition(
             definition, "other-install", f"a different synapse executable at {resolved}"
         )

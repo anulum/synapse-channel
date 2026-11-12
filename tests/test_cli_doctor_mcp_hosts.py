@@ -16,6 +16,7 @@ the real checks. Commands resolve against a controlled ``PATH`` of real files.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -42,6 +43,11 @@ THIS_SYNAPSE = resolve_synapse_binary(None)
 
 def _executable(directory: Path, name: str, body: str = "#!/bin/sh\nexit 0\n") -> Path:
     directory.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        # PATH lookup uses PATHEXT. An extensionless file does not resolve.
+        path = directory / f"{name}.cmd"
+        path.write_text("@echo off\r\nexit /b 0\r\n", encoding="utf-8")
+        return path
     path = directory / name
     path.write_text(body, encoding="utf-8")
     path.chmod(0o755)
@@ -194,7 +200,8 @@ def test_codex_profile_and_relocated_homes_are_read(
     claude_dir = tmp_path / "claude-dir"
     codex_home.mkdir()
     (codex_home / "config.toml").write_text(
-        f'[mcp_servers.synapse]\ncommand = "{sys.executable}"\n'
+        "[mcp_servers.synapse]\n"
+        f"command = {json.dumps(sys.executable)}\n"
         'args = ["-m", "synapse_channel", "mcp", "--name", "P/codex"]\n'
         '[mcp_servers.synapse-remote]\nurl = "https://hub.example/mcp"\n',
         encoding="utf-8",

@@ -130,7 +130,7 @@ def inspect_plugin(config_root: Path) -> PluginInspection:
             raise ValueError("invalid marker contents")
     except (OSError, ValueError, KeyError, TypeError):
         return PluginInspection("foreign", None, target)
-    actual_entries = {str(path.relative_to(target)) for path in target.rglob("*")}
+    actual_entries = {path.relative_to(target).as_posix() for path in target.rglob("*")}
     expected_entries = set(_FILES) | {_MARKER, ".claude-plugin", "hooks"}
     if actual_entries != expected_entries:
         return PluginInspection("modified", version, target)

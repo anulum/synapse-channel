@@ -87,6 +87,39 @@ def _entry(profile: Path) -> dict[str, Any] | None:
     return entry
 
 
+def _require_owner_only_token(token_file: Path | None) -> None:
+    """Refuse a missing token or one another user can read."""
+    if token_file is None:
+        return
+    if not token_file.is_file():
+        raise CodexPackageError("token file is unavailable")
+    if hasattr(os, "getuid"):
+        mode = token_file.stat()
+        if mode.st_uid != os.getuid() or mode.st_mode & 0o077:
+            raise CodexPackageError("token file must be owner-only")
+        return
+    if os.name != "nt":
+        raise CodexPackageError("token file must be owner-only")
+    from synapse_channel.core.secure_path import (
+        SecurePathError,
+        assert_owner_only_file_path,
+    )
+
+    try:
+        assert_owner_only_file_path(token_file, purpose="Codex token file")
+    except SecurePathError as exc:
+        raise CodexPackageError("token file must be owner-only") from exc
+
+
+def _is_executable(path: Path) -> bool:
+    """Return whether CreateProcess or a POSIX execute bit can run ``path``."""
+    if not path.is_file():
+        return False
+    if os.name == "nt":
+        return path.suffix.lower() in {".exe", ".cmd", ".bat", ".com"}
+    return os.access(path, os.X_OK)
+
+
 def _run(host: Path, profile: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Invoke the pinned host with an isolated explicit profile and no shell."""
     env = dict(os.environ)
@@ -106,7 +139,7 @@ def _run(host: Path, profile: Path, *args: str) -> subprocess.CompletedProcess[s
 
 def _version(host: Path, profile: Path) -> str:
     """Probe the actual executable and refuse an unverified host version."""
-    if not host.is_file() or not os.access(host, os.X_OK):
+    if not _is_executable(host):
         raise CodexPackageError("Codex executable is unavailable")
     result = _run(host, profile, "--version")
     match = re.fullmatch(r"codex-cli (\d+\.\d+\.\d+)", result.stdout.strip())
@@ -203,14 +236,9 @@ def apply_codex_package(
         or parsed_uri.fragment
     ):
         raise CodexPackageError("hub URI is invalid")
-    if synapse_bin is None or not synapse_bin.is_file() or not os.access(synapse_bin, os.X_OK):
+    if synapse_bin is None or not _is_executable(synapse_bin):
         raise CodexPackageError("Synapse executable is unavailable")
-    if token_file is not None:
-        if not token_file.is_file():
-            raise CodexPackageError("token file is unavailable")
-        mode = token_file.stat()
-        if mode.st_uid != os.getuid() or mode.st_mode & 0o077:
-            raise CodexPackageError("token file must be owner-only")
+    _require_owner_only_token(token_file)
     current.profile.mkdir(mode=0o700, parents=True, exist_ok=True)
     command = [str(synapse_bin), "mcp", "--name", identity, "--uri", uri]
     if token_file is not None:

@@ -682,6 +682,9 @@ def test_missing_parent_blob_refuses_migration_without_rewriting_ledger(repo: Re
     blob = repo.git("rev-parse", "HEAD:pkg/wide.py").strip()
     object_path = repo.root / ".git" / "objects" / blob[:2] / blob[2:]
     assert object_path.is_file()
+    # Git stores objects read-only. Windows refuses to unlink that attribute.
+    if os.name == "nt":
+        os.chmod(object_path, 0o666)
     object_path.unlink()
     code, out = repo.run("--update")
     assert code == 2
