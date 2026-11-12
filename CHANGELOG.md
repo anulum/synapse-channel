@@ -74,6 +74,10 @@ execution evidence when carrying a release claim forward.
 - On Windows the OpenCode editor callback and its probe lock refuse
   before reading a draft. An adapter file stays owner-only; granting
   Everyone read makes the next read refuse.
+- The Windows native queue accepts, refuses and leaves a command
+  uncertain through a real batch stand-in. A deadline ends a descendant
+  whether or not its parent is still alive. Acceptance leaves that
+  descendant until the caller ends it.
 
 ## [0.99.51] - 2026-11-11
 
