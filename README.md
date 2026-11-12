@@ -1937,10 +1937,10 @@ an installed protected runtime or revocation fencing.
 | Package version | 0.99.51 |
 | Public API exports | 70 |
 | Package modules | 940 |
-| Classes | 1350 |
+| Classes | 1351 |
 | Wire message types | 118 |
 | CLI subcommands | 303 |
-| Test functions | 13593 |
+| Test functions | 13595 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 98 |
 | GitHub Actions workflows | 29 |
