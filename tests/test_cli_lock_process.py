@@ -10,15 +10,15 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import os
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from synapse_channel.cli_lock_process import run_locked_subprocess
+from synapse_channel.cli_lock_process import _terminate_locked_command, run_locked_subprocess
 
 _RECORD_AND_SLEEP = (
     "import os, pathlib, sys, time\n"
@@ -40,6 +40,17 @@ _NOTE_SIGNAL_AND_SLEEP = (
     "time.sleep(30)\n"
 )
 
+_WAIT_FOR_A_FILE_THEN_ANSWER = (
+    "import pathlib, sys, time\n"
+    "while not pathlib.Path(sys.argv[1]).exists():\n"
+    "    time.sleep(0.01)\n"
+    "pathlib.Path(sys.argv[2]).write_text('answered', encoding='utf-8')\n"
+)
+_LEAVE_A_DESCENDANT_AND_END = (
+    "import subprocess, sys\n"
+    "subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2], sys.argv[3]])\n"
+)
+
 
 def _assert_reaped(pid: int) -> None:
     """The recorded child is no longer a live process.
@@ -51,7 +62,6 @@ def _assert_reaped(pid: int) -> None:
         with pytest.raises(ProcessLookupError):
             os.kill(pid, 0)
         return
-    ctypes: Any = __import__("ctypes")
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
     kernel.OpenProcess.restype = ctypes.c_void_p
@@ -129,6 +139,31 @@ async def test_a_command_that_ignores_termination_is_killed(tmp_path: Path) -> N
         await locked
     assert time.monotonic() - started >= 4.5
     _assert_reaped(int(pid_file.read_text(encoding="utf-8")))
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals the process group")
+async def test_a_command_that_already_ended_is_not_signalled(tmp_path: Path) -> None:
+    """A finished command's group is left alone, so a descendant it left behind still answers."""
+    release = tmp_path / "release"
+    answered = tmp_path / "answered"
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        _LEAVE_A_DESCENDANT_AND_END,
+        _WAIT_FOR_A_FILE_THEN_ANSWER,
+        str(release),
+        str(answered),
+        start_new_session=True,
+    )
+    try:
+        assert await proc.wait() == 0
+        await _terminate_locked_command(proc)
+    finally:
+        release.write_text("go", encoding="utf-8")
+    deadline = time.monotonic() + 20
+    while not answered.exists():
+        assert time.monotonic() < deadline, "the descendant did not answer after the helper"
+        await asyncio.sleep(0.01)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows terminates the direct child once")

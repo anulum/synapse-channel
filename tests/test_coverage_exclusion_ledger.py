@@ -208,6 +208,9 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_cli_e2e_mutation_status.py": (1, "platform-guard"),
     # Native supervisor suspension needs POSIX SIGSTOP/SIGCONT.
     "tests/test_cli_lock_stall.py": (1, "platform-guard"),
+    # POSIX signals a process group and waits out a grace period; Windows
+    # terminates the direct child once. Each side runs on its own host.
+    "tests/test_cli_lock_process.py": (4, "platform-guard"),
     # Not a skip. cli_lock_release.py lines 233-237 catch an unexpected
     # settle failure. Real synapse lock teardown on Linux and on MSI
     # returns without raising: transport errors are absorbed, and

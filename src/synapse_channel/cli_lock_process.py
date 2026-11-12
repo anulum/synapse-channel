@@ -43,10 +43,14 @@ async def _wait_for_exit(proc: asyncio.subprocess.Process, timeout: float) -> No
 async def _terminate_locked_command(proc: asyncio.subprocess.Process) -> None:
     """Stop a cancelled command and wait until it has been reaped.
 
-    Windows terminates the direct child once. That termination cannot be
-    ignored, so there is no second kill after a grace period. POSIX signals
-    the process group, waits five seconds, then forces any survivor to exit.
+    A command that already has a status is left alone: it has been reaped, and
+    on POSIX its process-group id may by now name another group. Windows
+    terminates the direct child once. That termination cannot be ignored, so
+    there is no second kill after a grace period. POSIX signals the process
+    group, waits five seconds, then forces any survivor to exit.
     """
+    if proc.returncode is not None:
+        return
     if os.name == "nt":
         with contextlib.suppress(ProcessLookupError):
             proc.terminate()
