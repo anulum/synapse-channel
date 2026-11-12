@@ -14,6 +14,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.protocol import SENDER_HUB, MessageType
 from synapse_channel.core.release_confirmation import ReleaseIntent
 from synapse_channel.mcp.reply_exchange import Matcher, Sender
@@ -21,8 +22,10 @@ from synapse_channel.mcp.reply_exchange import Matcher, Sender
 TimedReply = Callable[[Matcher, Sender, float], Awaitable[dict[str, Any] | None]]
 
 
-class PriorReleaseUnconfirmed(RuntimeError):
+class PriorReleaseUnconfirmedError(SynapseError, RuntimeError):
     """An earlier keyed release has no confirmed receipt while a newer lease is held."""
+
+    code = "mcp_prior_release_unconfirmed"
 
 
 async def confirm_prepared_release(
@@ -48,7 +51,7 @@ async def confirm_prepared_release(
 
     Raises
     ------
-    PriorReleaseUnconfirmed
+    PriorReleaseUnconfirmedError
         If the old outcome cannot be confirmed while this client owns a newer fence.
     """
     if not request.get("idem_key") or agent.lease_epochs.get(request["task_id"]) == request.get(
@@ -79,5 +82,7 @@ async def confirm_prepared_release(
         return f"released '{intent.task_id}' with receipt owner '{agent.name}'"
     current = agent.lease_epochs.get(intent.task_id)
     if current is not None and current != request.get("epoch"):
-        raise PriorReleaseUnconfirmed("prior release is unconfirmed; current lease fence retained")
+        raise PriorReleaseUnconfirmedError(
+            "prior release is unconfirmed; current lease fence retained"
+        )
     return None

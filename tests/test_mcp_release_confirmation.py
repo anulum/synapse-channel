@@ -25,7 +25,7 @@ from synapse_channel.core.release_confirmation import ReleaseIntent
 from synapse_channel.mcp.bridge import SynapseHubBridge
 from synapse_channel.mcp.http_agent import HttpHubAgent
 from synapse_channel.mcp.release_confirmation import (
-    PriorReleaseUnconfirmed,
+    PriorReleaseUnconfirmedError,
     confirm_prepared_release,
 )
 from synapse_channel.mcp.reply_exchange import Matcher, Sender
@@ -304,7 +304,7 @@ async def test_an_answer_that_is_not_this_releases_confirmed_receipt_keeps_the_n
         await send()
         return _confirmation(agent, intent, **changes)
 
-    with pytest.raises(PriorReleaseUnconfirmed, match="current lease fence retained"):
+    with pytest.raises(PriorReleaseUnconfirmedError, match="current lease fence retained"):
         await confirm_prepared_release(agent, request, answered)
     assert agent.lease_epochs["ALPHA/task"] == 5
 

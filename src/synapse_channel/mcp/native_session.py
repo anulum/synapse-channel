@@ -22,10 +22,13 @@ from pathlib import Path
 from uuid import UUID
 
 from synapse_channel.advisory_lock import locked
+from synapse_channel.core.errors import SynapseError
 
 
-class NativeSessionError(ValueError):
+class NativeSessionError(SynapseError, ValueError):
     """Refuse a native session whose identifier, prefix or storage is not usable."""
+
+    code = "mcp_native_session"
 
 
 _PREFIX = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}/[A-Za-z0-9][A-Za-z0-9_.-]{0,79}")

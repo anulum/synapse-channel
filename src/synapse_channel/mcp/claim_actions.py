@@ -29,7 +29,7 @@ from synapse_channel.git.ordinary_claim import (
 from synapse_channel.mcp.git_claim import McpGitClaimError, resolve_mcp_git_claim_scope
 from synapse_channel.mcp.outcome import McpMutation
 from synapse_channel.mcp.release_confirmation import (
-    PriorReleaseUnconfirmed,
+    PriorReleaseUnconfirmedError,
     confirm_prepared_release,
 )
 
@@ -287,7 +287,7 @@ class McpClaimActions:
         )
         try:
             confirmed = await confirm_prepared_release(self.agent, prepared, self.await_timed_reply)
-        except PriorReleaseUnconfirmed:
+        except PriorReleaseUnconfirmedError:
             return mutation.unknown(
                 f"release outcome unknown: '{task_id}'; an earlier release with this key is "
                 "unconfirmed and the current lease is kept"
