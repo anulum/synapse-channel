@@ -216,6 +216,18 @@ The ACL model and its evaluation are implemented in
     consume the successful-change rate budget. After repairing storage,
     submit a fresh governed request with the observed key id. Approval alone
     is not application; only `applied` proves the change took effect.
+- **Succession moves mail, not authority.** A mailbox handover
+  (`synapse mailbox handover NAME --to SUCCESSOR`) re-addresses the pending
+  directed mail of one name to another and moves nothing else. The successor
+  does not answer to the predecessor's roles: under `--require-role-claim` a
+  role binds only for a name that the role-grant store or a `role-claim` ACL
+  rule authorises, and a role grant names identities, not mailboxes. The
+  predecessor's claims stay its own until it releases or hands them off, or
+  until it has been offline for the hub's whole lease window and the next
+  claim attempt releases them; a release from the successor is refused. ACL
+  rules are scoped to a project namespace, so a successor in the same project
+  holds what that project is granted, by the rule and not by the handover.
+  `tests/test_hub_succession.py` shows the role and the claim on a real hub.
 
 The identity namespace is taken from the resolved sender (`project/agent`). The
 first credential format is now the zero-config machine key above (operator

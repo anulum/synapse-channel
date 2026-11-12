@@ -123,6 +123,9 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- The identity and access page says that a mailbox handover moves mail and
+  no authority: the successor does not answer to the predecessor's roles and
+  cannot release its claims. A test on a real hub shows both.
 - The Studio command centre shows its verdict, counters, coordination clock and
   panels before the shared-plan board. A panel lists its first eight rows and a
   board column its first six cards; the rest stay on the page inside a closed
