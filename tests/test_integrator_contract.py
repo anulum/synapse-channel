@@ -53,6 +53,10 @@ CONTRACT_COMMANDS: tuple[tuple[str, ...], ...] = (
         "--effect", "file", "--path", "out/report.txt", "--sha256", "a" * 64,
         "--intent", "intent.json",
     ),
+    (
+        "operation", "attempt", "--task", "T", "--name", "P/worker", "--operation-id", "op-1",
+        "--epoch", "1", "--intent-sha256", "a" * 64,
+    ),
     ("operation", "outcome", "--task", "T", "--name", "C/checker", "run-001.json"),
     ("operation", "verification", "--task", "T", "--name", "C/checker", "verification.json"),
     ("worker-session", "--identity", "P/worker", "--outcome-file", "run-001.json", "--", "x"),
@@ -104,6 +108,8 @@ CONTRACT_PARAMETERS: dict[str, frozenset[str]] = {
 CONTRACT_MESSAGES = {
     "OPERATION_RECORD": "operation_record",
     "OPERATION_RECORD_RESULT": "operation_record_result",
+    "OPERATION_ATTEMPT": "operation_attempt",
+    "OPERATION_ATTEMPT_RESULT": "operation_attempt_result",
     "CLAIM_GRANTED": "claim_granted",
     "RELEASE_GRANTED": "release_granted",
 }
@@ -193,6 +199,8 @@ def test_the_page_names_every_contract_command_and_schema() -> None:
         VERIFICATION_SCHEMA,
         INTENT_SCHEMA,
         "--intent",
+        "--intent-sha256",
+        "approved_fresh",
     ):
         assert text in page
 

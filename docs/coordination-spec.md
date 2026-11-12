@@ -1367,6 +1367,91 @@ The private refusal, same-key recovery, replay and restart journey is pinned by
 > failure, a genuine key change, and hub-at-capacity refusal; only `4016` is
 > unambiguous.
 
+## 10. Operation attempts
+
+An executor asks the hub to open an attempt of a declared operation before its
+effect. These invariants hold for every executor that asks; one that never asks
+is not stopped by them.
+
+### INV-OA-1 — one journalled answer per request, from a closed order
+
+**Normative.** A well-formed `operation_attempt` request on a journal-backed hub
+MUST receive exactly one answer: the first of `not_claim_holder`,
+`stale_epoch`, `unknown`, `not_approved`, `approval_stale`, `approval_expired`,
+`approver_unauthorised`, `operation_closed`, `attempt_exists`,
+`earlier_attempt_unreconciled` and `approved_fresh` that applies. The answer's
+`operation_attempt_answered` row and the stored answer MUST be committed in one
+FULL-durability transaction under the request's key, refusals included. A repeat
+with the same key MUST return the stored answer unchanged and journal nothing; a
+changed request under that key MUST be `idempotency_conflict`. A request without
+a key, or otherwise malformed, MUST be answered `invalid_request` and journal
+nothing.
+
+**Implementation.** `core/operation_attempts.py:decide`,
+`core/handlers/operation_attempts.py`, and the atomic path of INV-CR-1.
+
+**Pinned by.** `tests/test_operation_attempts.py`,
+`tests/test_hub_operation_attempts.py`.
+
+### INV-OA-2 — nothing an answer reads is written between the reading and the answer
+
+**Normative.** The hub MUST read the claim, the declared operation and its
+attempts, the approval notes and the verdict records, decide, and commit the
+answer while holding its single mutation lock. Claims, progress notes and
+operation records MUST be written under that same lock, so none of them can be
+journalled between a request's reading and its answer.
+
+**Implementation.** `core/handlers/operation_attempts.py` through
+`run_atomic_operation`; `core/handlers/operation_records.py` through
+`state_mutations.run_subject`; the lock order is stated in both modules.
+
+**Pinned by.** `tests/test_hub_operation_attempts.py`
+(`test_a_verification_never_lands_between_the_reading_and_the_answer`).
+
+### INV-OA-3 — one approval admits one attempt, and one attempt is open at a time
+
+**Normative.** `approved_fresh` MUST open the attempt and record the consumed
+approval's journal sequence in the same transaction. A later request on that
+approval MUST be `attempt_exists`, also after the attempt has ended, and so MUST
+every request while an attempt of the operation is open, under any approval.
+
+**Implementation.** `core/operation_attempt_ledger.py:AttemptLedger.view`.
+
+**Pinned by.** `tests/test_operation_attempt_ledger.py`,
+`tests/test_hub_operation_attempts.py`.
+
+### INV-OA-4 — the approval is judged when it is used
+
+**Normative.** At each request the hub MUST evaluate the verdict gate on the
+approval as it stands now, compare the intent's deadline with its own wall
+clock, and refuse an approver that is the intent's actor or of another project.
+A switched-off gate, an approval that came through a bypassed gate, and a wall
+clock earlier than the declaration MUST give `unknown`. No other loss of the
+hub's clock is detected; the host keeps its clock synchronised (INV-CK-3).
+
+**Implementation.** `core/operation_attempt_facts.py:current_approval`,
+`core/operation_attempts.py:decide`.
+
+**Pinned by.** `tests/test_operation_attempt_facts.py`,
+`tests/test_hub_operation_attempts.py`.
+
+### INV-OA-5 — an attempt ends only by its executor or by its verified effect
+
+**Normative.** An open attempt MUST end only when its own executor publishes an
+outcome of `not_started`, `confirmed_done` or `confirmed_failed`, or when an
+identity other than the declarer publishes a `verified` verification, which
+also closes the operation. An outcome from any other identity MUST end nothing.
+After an attempt ends, no attempt MUST open until an identity other than the
+declarer publishes a verification whose effect is `observed` or `absent`. The
+declarer's own verifications MUST count for neither. The ledger MUST be rebuilt
+from the journal at start without consulting any clock.
+
+**Implementation.** `core/operation_attempt_ledger.py`, fed by
+`core/handlers/operation_records.py`.
+
+**Pinned by.** `tests/test_operation_attempt_ledger.py`,
+`tests/test_hub_operation_attempts.py`.
+
 ## Normative constants
 
 These values are part of the contract. The drift guard

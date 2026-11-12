@@ -108,6 +108,8 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "LEASE_GRANTED": "lease_granted",
     "MAILBOX_HANDOVER": "mailbox_handover",
     "MAILBOX_HANDOVER_RESULT": "mailbox_handover_result",
+    "OPERATION_ATTEMPT": "operation_attempt",
+    "OPERATION_ATTEMPT_RESULT": "operation_attempt_result",
     "OPERATION_RECORD": "operation_record",
     "OPERATION_RECORD_RESULT": "operation_record_result",
     "LEDGER_PROGRESS": "ledger_progress",

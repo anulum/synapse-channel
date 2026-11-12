@@ -74,14 +74,38 @@ What permits an action is the executor's bound identity and what the hub grants
 that identity: ACL rules and role grants, and an approval bound to the exact
 SHA-256 subject where the hub requires one (see [verdicts](verdicts.md)), such
 as the digest of a declared intent. A note or any other content that says
-"approved" is not authority.
+"approved" is not authority. In this version any other identity of the
+executor's project may approve an intent, through that project's verdict gate;
+an approval by the executor itself or by another project opens nothing. A
+revocable approval grant for named approvers waits for typed permissions.
 
 The contract has no typed, expiring permission for one actor, one action and
-one target that the executor consumes once. Until it has one, this step is
-cooperative: the hub records and fences, and the executor is trusted to stay
-inside what it declared.
+one target. An approved intent is consumed once when the hub opens an attempt
+for it (step 4). This step stays cooperative: the hub records, fences and
+answers, and an executor that never asks is not stopped by it.
 
 ## 4. Execute
+
+When the declaration carries an approved intent, the executor asks the hub to
+open an attempt for exactly that intent before its effect:
+
+```bash
+synapse operation attempt --task T --name P/worker --operation-id op-1 --epoch E \
+  --intent-sha256 <hex>
+```
+
+The hub answers once from a closed set, in a fixed order, and journals every
+answer, refusals included. `approved_fresh` opens the attempt and consumes the
+approval in the same transaction, so one approval admits one attempt. Start the
+effect only when the command exits 0: the answer is `approved_fresh` and the
+attempt is `open`. Every call prints its request key; `--idem-key KEY` asks
+again after a lost answer and returns the stored answer with the attempt's
+present state, opening nothing. The executor ends its attempt by publishing its
+own outcome (step 5), for which it needs `operation-evidence` on its task. A
+grant to its whole project is enough: an outcome from another identity ends
+nothing, and the executor's own verifications count for nothing. A further
+attempt needs a new approval and, after the end, an observation published by
+another identity.
 
 ```bash
 synapse worker-session --identity P/worker --outcome-file run-001.json -- ./do-the-work

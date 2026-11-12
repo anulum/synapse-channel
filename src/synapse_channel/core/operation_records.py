@@ -52,6 +52,7 @@ from synapse_channel.core.authorisation_intent import (
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.execution_outcome import ExecutionOutcome, outcome_from_json
 from synapse_channel.core.journal import EventKind
+from synapse_channel.core.operation_attempt_ledger import AttemptLedger
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.result_verification_record import (
     ResultVerification,
@@ -288,10 +289,11 @@ class _Entry:
 
 
 class OperationLedger:
-    """Declared operations and their record counts, restored from the journal."""
+    """Declared operations, their record counts and their attempts, restored from the journal."""
 
     def __init__(self, store: EventStore | None) -> None:
         self._entries: dict[str, _Entry] = {}
+        self._attempts = AttemptLedger(store)
         if store is None:
             return
         kinds = (
@@ -309,6 +311,11 @@ class OperationLedger:
                     self._entries.setdefault(operation_id, _Entry(task_id, effect))
             elif operation_id in self._entries:
                 self._entries[operation_id].records += 1
+
+    @property
+    def attempts(self) -> AttemptLedger:
+        """Return the attempts of the declared operations."""
+        return self._attempts
 
     def task_of(self, operation_id: str) -> str | None:
         """Return the task an operation was declared on, or ``None``."""

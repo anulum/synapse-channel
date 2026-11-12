@@ -184,6 +184,33 @@ does not add agent grades to protocol envelopes.
   than 32 earlier rows for it. The hub journals `operation_declared`,
   `operation_outcome` or `operation_verified`; verification evidence keeps only
   digest-shaped values. Records are observations and grant no authority.
+- **Operation attempts:** `operation_attempt` asks to open an attempt of a
+  declared operation for the exact intent the requester is about to carry out.
+  It names `task_id`, `operation_id`, the claim `epoch` and `intent_sha256`, and
+  must carry `idem_key`. The hub answers from a closed set, the first that
+  applies: `not_claim_holder` (the requester does not hold the live claim, or
+  another identity declared the operation), `stale_epoch`, `unknown` (the
+  verdict gate is off, the approval came through a bypassed gate, or the hub's
+  clock reads earlier than the declaration; no other loss of the hub's clock is
+  detected), `not_approved` (no such declaration
+  on the task, no intent, another digest, or the latest approval note on the
+  digest is not `approved`), `approval_stale` (the verdict gate would refuse
+  that approval now), `approval_expired` (the hub's clock is at or past the
+  intent's `deadline`), `approver_unauthorised` (the approver is the actor or of
+  another project), `operation_closed` (another identity has verified the
+  operation), `attempt_exists` (an attempt is open, or this approval has
+  already admitted one), `earlier_attempt_unreconciled` (an ended attempt has no
+  observation by another identity since), `approved_fresh`. Only
+  `approved_fresh` opens an attempt; it consumes the approval, whose journal
+  sequence the attempt keeps. Every answer is journalled as
+  `operation_attempt_answered` together with the stored answer in one
+  transaction under the request key; a repeat returns the stored answer
+  unchanged. Requests to open attempts, operation records, claims and progress
+  notes are serialised by the hub's single mutation lock. An attempt ends by
+  its executor's own outcome of `not_started`, `confirmed_done` or
+  `confirmed_failed`, or when another identity's verification is `verified`;
+  nothing else ends it. A malformed request is answered `invalid_request` and a
+  hub without a journal `no_journal`; neither is journalled.
 - **Fleet planning input:** `entitlement_advert` records one owner's redacted
   pool advertisement as an audit-only journal row after the proven-sender,
   `entitlement-advertise` ACL and durable-journal gates. It is never broadcast.
@@ -504,6 +531,12 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   `unknown_operation`, `task_mismatch`, `operation_mismatch`,
   `verifier_mismatch` or `record_limit`), the journal `seq` when accepted, and
   the request's `record`, `task_id`, `operation_id` and `request_id`.
+  `operation_attempt_result` answers an `operation_attempt` with `answer`, the
+  sentence in `payload`, the journal `seq`, `attempt_id` (32 lower-case
+  hexadecimal characters, or empty), `approval_seq`, `intent_sha256`,
+  `hub_time`, `task_id`, `operation_id` and `request_key`; these are the stored
+  answer. Beside them `live` holds `attempt_state` (`none`, `open`, `ended`,
+  `reconciled` or `closed`) and `replayed`, computed when the frame is sent.
   `identity_enroll_result` and `identity_revoke_result` are the verdicts for
   `identity_enroll` and `identity_revoke`. `entitlement_advert_result` is the
   private verdict for `entitlement_advert`. `spend_result` is the private

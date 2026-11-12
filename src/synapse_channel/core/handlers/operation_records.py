@@ -24,6 +24,14 @@ The hub:
    ``operation_record_result`` naming the status, the reason, the sequence and,
    for a declaration that kept an intent, its ``intent_sha256``.
 
+The check and the journal row run under the hub's mutation actor, the lock that
+also orders claims, progress notes and requests to open an attempt, so a record
+can never be journalled between an attempt's reading of its inputs and its
+answer. Each accepted record is also given to the ledger of attempts: a
+declaration names the declarer, an outcome may end its executor's attempt, and a
+verification may reconcile an ended attempt or close the operation
+(:mod:`synapse_channel.core.operation_attempt_ledger`).
+
 Records never grant authority. They are observations a reader can weigh. An
 intent grants nothing either: an approval may name its digest, and what that
 approval admits is decided elsewhere.
@@ -44,8 +52,10 @@ from synapse_channel.core.authorisation_intent import (
     compose_intent,
     intent_time_refusal,
 )
+from synapse_channel.core.handlers.operation_attempts import VERB_SPECS as ATTEMPT_VERB_SPECS
 from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.journal import EventKind
+from synapse_channel.core.operation_attempts import OperationFact
 from synapse_channel.core.operation_records import (
     RECORD_DECLARE,
     REFUSED_DUPLICATE,
@@ -74,6 +84,7 @@ if TYPE_CHECKING:
     from synapse_channel.core.persistence import EventStore
     from synapse_channel.core.state import SynapseState
     from synapse_channel.core.state_models import TaskClaim
+    from synapse_channel.core.state_transaction import SerializedStateMutationActor
 
     class OperationRecordContext(Protocol):
         """Capabilities consumed by the operation record handler."""
@@ -96,6 +107,11 @@ if TYPE_CHECKING:
         @property
         def operation_records(self) -> OperationLedger:
             """Return the declared operations restored from the journal."""
+            ...
+
+        @property
+        def state_mutations(self) -> SerializedStateMutationActor:
+            """Return the hub's single mutation actor."""
             ...
 
         async def send_json(self, websocket: Any, frame: dict[str, Any]) -> None:
@@ -138,7 +154,12 @@ async def handle_operation_record(
     except OperationRecordError as exc:
         verdict = _refused(REFUSED_INVALID, str(exc))
     else:
-        verdict = _apply(hub, sender, request)
+        attempts = hub.operation_records.attempts
+        verdict = await hub.state_mutations.run_subject(
+            attempts,
+            lambda _attempts: _apply(hub, sender, request),
+            publish_candidate=attempts.publish_from,
+        )
     await hub.send_json(
         websocket,
         hub.system(
@@ -174,6 +195,14 @@ def _apply(hub: OperationRecordContext, sender: str, request: OperationRecordReq
         return _refused(refusal, f"the {request.record} record cannot be kept: {refusal}")
     seq = record_operation(store, request, sender=sender)
     ledger.add_record(request.operation_id)
+    if request.outcome is not None:
+        ledger.attempts.note_outcome(request.operation_id, sender, request.outcome.state.value)
+    else:
+        verification = request.verification
+        assert verification is not None, "record_operation keeps only outcomes and verifications"
+        ledger.attempts.note_verification(
+            request.operation_id, sender, effect=verification.effect, result=verification.result
+        )
     return _Verdict(STATUS_ACCEPTED, f"{request.record} recorded", seq=seq)
 
 
@@ -211,8 +240,20 @@ def _declare(
         return _refused(reason, f"{sender} does not hold {request.task_id} at that epoch")
     if ledger.task_of(request.operation_id) is not None:
         return _refused(REFUSED_DUPLICATE, "this operation id is already declared")
-    seq = record_operation(store, request, sender=sender, snapshot_epoch=claim.epoch, intent=intent)
+    seq = record_operation(
+        store, request, sender=sender, snapshot_epoch=claim.epoch, now=now, intent=intent
+    )
     ledger.declare(request.operation_id, request.task_id, effect)
+    ledger.attempts.note_declaration(
+        request.operation_id,
+        OperationFact(
+            task_id=request.task_id,
+            declarer=sender,
+            intent_sha256=None if intent is None else intent.sha256,
+            deadline=None if request.intent is None else request.intent.deadline,
+            declared_at=now,
+        ),
+    )
     digest = "" if intent is None else intent.sha256
     return _Verdict(STATUS_ACCEPTED, "operation declared", seq=seq, intent_sha256=digest)
 
@@ -260,4 +301,6 @@ VERB_SPECS = (
         minimum_wire_version=7,
         commands=("operation",),
     ),
+    *ATTEMPT_VERB_SPECS,
 )
+"""The operation family: records, and requests to open an attempt."""

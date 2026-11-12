@@ -185,7 +185,11 @@ The provider runs with `SYN_OPERATION_ID` set to the operation id its report
 carries. A provider that holds the claim on a task declares that operation on
 the hub before its effect (`synapse operation declare` uses the variable when
 `--operation-id` is omitted), so the report and a `verify-result --outcome`
-record bound to it can later be published for the same operation.
+record bound to it can later be published for the same operation. When the
+declaration carries an approved authorisation intent, the provider asks the hub
+to open an attempt (`synapse operation attempt`) before its effect and starts
+only on `approved_fresh`. Its own report of `not_started`, `confirmed_done` or
+`confirmed_failed` ends that attempt; `started` and `unknown` do not.
 
 The query requires no provider command or identity and never starts, stops or
 retries a process. It refuses malformed or unavailable reports without echoing

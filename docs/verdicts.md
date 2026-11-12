@@ -85,7 +85,10 @@ fresh. Requests and rejections are never gated,
 and other subjects are unaffected.
 
 An approval granted before its subject turned stale is not revoked. `synapse
-verdict status` reports it under `granted_then_stale`.
+verdict status` reports it under `granted_then_stale`. A request to open an
+attempt for an authorisation intent evaluates the gate again at that moment and
+is answered `approval_stale` when the gate would refuse now (see
+[operation attempts](protocol.md)).
 
 The gate is on by default. `synapse hub --verdict-gate off` switches it off;
 each approval of a SHA-256 subject is then journalled as a `verdict_gate_bypass`

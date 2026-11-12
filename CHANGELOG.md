@@ -20,6 +20,25 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- `synapse operation attempt` asks the hub, before an effect, to open an attempt
+  of a declared operation for the exact intent the executor is about to carry
+  out (new request `operation_attempt`). The hub answers once from a closed set
+  in a fixed order and journals every answer, refusals included, as
+  `operation_attempt_answered` together with the stored answer under the
+  request's key. Only `approved_fresh` opens an attempt; it consumes the
+  approval, so one approval admits one attempt, and no second attempt opens
+  while one is open or before another identity has observed the end of the
+  last. The approval is judged when it is used: the verdict gate now, the
+  intent's deadline on the hub's clock, and an approver of the actor's project
+  other than the actor; a switched-off or bypassed gate gives `unknown`. A
+  repeated request returns the stored answer unchanged with the attempt's
+  present state beside it. An attempt ends by its executor's own outcome or by
+  another identity's verified observation; nothing else ends it. Operation
+  records are now written under the hub's mutation lock, so none can land
+  between a request's reading and its answer. The command exits 0 only when the
+  attempt is open and prints its request key on every call. The wire version
+  stays 7; an older hub does not know the request and the command exits 4.
+
 - `synapse operation declare --intent FILE` adds an authorisation intent to a
   declaration: a fixed statement, written before the effect, of the state the
   effect starts from, the changed paths of a Git publication, the recovery
