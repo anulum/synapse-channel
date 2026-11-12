@@ -315,7 +315,9 @@ def discover_processes(
     if type(seconds) not in (int, float) or not 0 <= seconds <= sys.float_info.max:
         raise ValueError("seconds must be a finite non-negative number")
     if not hasattr(os, "geteuid") or not Path("/proc/self/stat").exists():
-        return {}, "unavailable"
+        from synapse_channel.host_sessions_accounting import discover_windows_processes
+
+        return discover_windows_processes(pids=pids, limit=limit, seconds=seconds)
     if not pids and os.geteuid() == 0:
         return {}, "unavailable"
     deadline = time.monotonic() + seconds

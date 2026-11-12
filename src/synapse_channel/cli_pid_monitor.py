@@ -102,6 +102,17 @@ def render_host_observation(document: dict[str, object]) -> str:
         lines.append(
             f"  runtime: {_runtime(document, row)} ({row.get('started_at_status', 'unknown')})"
         )
+        accounting = row.get("accounting")
+        if isinstance(accounting, dict):
+            lines.append(
+                "  accounting: bound {bound} ram {ram} KiB ({sampling}; no job guarantee) "
+                "priority {priority}".format(
+                    bound=accounting.get("bound_pid"),
+                    ram=accounting.get("ram_kib"),
+                    sampling=accounting.get("memory_sampling"),
+                    priority=accounting.get("priority"),
+                )
+            )
         for key in ("cwd", "context_id"):
             status_key = "cwd_status" if key == "cwd" else "context_status"
             lines.append(f"  {key}: {row.get(key) or 'unknown'} ({row.get(status_key, 'unknown')})")

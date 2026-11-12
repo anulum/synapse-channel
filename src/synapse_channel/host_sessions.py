@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import sys
 import threading
 import time
 import uuid
@@ -20,10 +21,13 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Literal
 
+from synapse_channel.host_sessions_accounting import account_process
 from synapse_channel.host_sessions_proc import (
     PROVIDERS,
     KernelClock,
     MetadataStatus,
+    ProcessIdentity,
+    ProcessMetadata,
     discover_processes,
     kernel_clock,
     observe_process,
@@ -113,6 +117,7 @@ class HostSession:
     context_status: MetadataStatus = "not_requested"
     started_at: float | None = None
     started_at_status: StartTimeStatus = "unavailable"
+    accounting: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -164,6 +169,21 @@ class HostObservation:
             If manually constructed fields contain non-finite numbers.
         """
         return json.dumps(asdict(self), ensure_ascii=True, allow_nan=False).encode("utf-8")
+
+
+def _accounting(pid: int) -> dict[str, object]:
+    """Read counters for one row; a missing process stays an explicit gap."""
+    try:
+        return account_process(pid)
+    except (OSError, ValueError):
+        return {"status": "unavailable", "requested_pid": pid, "memory_guarantee": "none"}
+
+
+def _accounting_within(pid: int, deadline: float) -> dict[str, object]:
+    """Count one row until the separate accounting budget is spent."""
+    if time.monotonic() >= deadline:
+        return {"status": "unavailable", "requested_pid": pid, "memory_guarantee": "none"}
+    return _accounting(pid)
 
 
 class HostSessionMonitor:
@@ -321,23 +341,8 @@ class HostSessionMonitor:
                 process_status = "partial"
                 break
             try:
-                metadata = process_metadata(
-                    process.pid,
-                    paths=paths,
-                    context=context,
-                    context_root=self.context_root,
-                    expected_start_ticks=process.start_ticks,
-                )
-                for observed in ancestry if pane is not None else [process]:
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError("ancestor validation budget exhausted")
-                    current = observe_process(observed.pid)
-                    if (
-                        current.start_ticks != observed.start_ticks
-                        or current.parent_pid != observed.parent_pid
-                        or current.command_name != observed.command_name
-                    ):
-                        raise ProcessLookupError("process ancestry changed")
+                metadata = self._row_metadata(process, paths=paths, context=context)
+                self._revalidate(ancestry, process, pane, deadline)
             except (OSError, ValueError, IndexError):
                 process_status = "partial"
                 continue
@@ -377,6 +382,9 @@ class HostSessionMonitor:
             )
         identities = [row.identity for row in rows if row.provider and row.identity]
         observed_at = time.time()
+        # Counters are a second bounded pass so a wide scan cannot run past the
+        # row budget. One requested PID still gets a reading.
+        account_deadline = time.monotonic() + 0.4
         described: list[HostSession] = []
         for row in rows:
             started_at = self._started_at(clock, row.start_ticks, observed_at)
@@ -401,6 +409,7 @@ class HostSessionMonitor:
                     claims=tuple(
                         task for owner, task in claims if row.identity and owner == row.identity
                     ),
+                    accounting=_accounting_within(row.pid, account_deadline),
                 )
             )
         rows = described
@@ -417,6 +426,48 @@ class HostSessionMonitor:
             coordination_observed_at,
             tuple(sorted(rows, key=lambda row: row.pid)),
         )
+
+    def _row_metadata(
+        self, process: ProcessIdentity, *, paths: bool, context: bool
+    ) -> ProcessMetadata:
+        """Read path metadata. Windows has no procfs disclosure to sample."""
+        if sys.platform == "win32":
+            missing = "unsupported"
+            withheld = "not_requested"
+            return ProcessMetadata(
+                None,
+                None,
+                missing if paths else withheld,
+                missing if context else withheld,
+            )
+        return process_metadata(
+            process.pid,
+            paths=paths,
+            context=context,
+            context_root=self.context_root,
+            expected_start_ticks=process.start_ticks,
+        )
+
+    @staticmethod
+    def _revalidate(
+        ancestry: list[ProcessIdentity],
+        process: ProcessIdentity,
+        pane: PaneMetadata | None,
+        deadline: float,
+    ) -> None:
+        """Re-read ancestry on procfs. Windows identity comes from the snapshot."""
+        if sys.platform == "win32":
+            return
+        for observed in ancestry if pane is not None else [process]:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("ancestor validation budget exhausted")
+            current = observe_process(observed.pid)
+            if (
+                current.start_ticks != observed.start_ticks
+                or current.parent_pid != observed.parent_pid
+                or current.command_name != observed.command_name
+            ):
+                raise ProcessLookupError("process ancestry changed")
 
     @staticmethod
     def _started_at(
