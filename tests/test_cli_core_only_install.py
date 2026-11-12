@@ -28,6 +28,7 @@ from pathlib import Path
 import tomllib
 
 import synapse_channel
+from synapse_channel.effect_suite.record import NEEDS_CRYPTOGRAPHY
 
 ROOT = Path(__file__).resolve().parents[1]
 _DEVELOPMENT_GROUPS = frozenset({"dev", "docs"})
@@ -72,6 +73,8 @@ except SystemExit as stop:
     print("version exit", stop.code)
 code = main(["aef", "pq-key", "new", "--out", sys.argv[2], "--trust-out", sys.argv[3]])
 print("pq-key new exit", code)
+code = main(["effect-suite", "run", "--signing-key", sys.argv[2], "--output", sys.argv[4]])
+print("effect-suite run exit", code)
 """
 
 
@@ -79,9 +82,10 @@ def test_the_cli_starts_and_refuses_cleanly_without_any_runtime_extra(tmp_path: 
     blocked = _runtime_extra_modules()
     assert "cryptography" in blocked
     key, trust = tmp_path / "pq.key", tmp_path / "pq.trust"
+    records = tmp_path / "records"
 
     completed = subprocess.run(  # noqa: S603 - this interpreter, a script the test wrote
-        [sys.executable, "-c", _SCRIPT, json.dumps(blocked), str(key), str(trust)],
+        [sys.executable, "-c", _SCRIPT, json.dumps(blocked), str(key), str(trust), str(records)],
         capture_output=True,
         text=True,
         timeout=120,
@@ -96,3 +100,7 @@ def test_the_cli_starts_and_refuses_cleanly_without_any_runtime_extra(tmp_path: 
     assert "pq-key new exit 2" in completed.stdout
     assert "synapse-channel[encryption]" in completed.stderr
     assert not key.exists() and not trust.exists()
+    assert f"effect suite refused: {NEEDS_CRYPTOGRAPHY}\neffect-suite run exit 2" in (
+        completed.stdout
+    )
+    assert not records.exists()

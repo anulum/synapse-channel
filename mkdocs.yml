@@ -72,6 +72,7 @@ nav:
   - Wake relay: wake-relay.md
   - Execution outcomes: execution-outcomes.md
   - Integrator contract: integrator-contract.md
+  - Effect-safety suite: effect-suite.md
   - Operations catalogue: operations.md
   - Contract conflicts: contract-conflicts.md
   - Installation: installation.md

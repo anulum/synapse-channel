@@ -108,7 +108,7 @@ configure retention, mutate the hub or expose dashboard controls.
 Newer or advisory surfaces still settling; shape may change before 1.0. Use them,
 but pin to a version if you depend on their exact behaviour.
 
-`app-task`  `attention`  `auto-action`  `benchmark`  `claim-parse`  `contracts`  `deliberate`  `dispatch`  `label`  `memory-recall`  `native-hook`  `native-record`  `native-seat`  `operation`  `ops`  `participant`  `resource-bids`  `route-task`  `spend`  `verify-result`  `work-state`
+`app-task`  `attention`  `auto-action`  `benchmark`  `claim-parse`  `contracts`  `deliberate`  `dispatch`  `effect-suite`  `label`  `memory-recall`  `native-hook`  `native-record`  `native-seat`  `operation`  `ops`  `participant`  `resource-bids`  `route-task`  `spend`  `verify-result`  `work-state`
 `sandbox`  `service`  `ttl-advice`  `workflow`
 
 `claim-parse` is an opt-in provider-backed draft, not a reservation. See

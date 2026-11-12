@@ -23,7 +23,9 @@ A runnable adapter does all six steps against its own in-process hub:
 python examples/integrator_adapter.py
 ```
 
-It prints `success: integrator adapter completed`.
+It prints `success: integrator adapter completed`. The
+[effect-safety suite](effect-suite.md) drives the same six steps through
+twenty-one variants and checks the effect itself: `synapse effect-suite run`.
 
 ## 1. Register an executor
 
@@ -151,3 +153,4 @@ turns the same records into `SAFE_TO_RETRY`, `ALREADY_HAPPENED` or
 
 [Execution outcomes](execution-outcomes.md) · [Git-native claims](git-claims.md)
 · [Identity and ACL](identity-and-acl.md) · [API and wire stability](api-stability.md)
+· [Effect-safety suite](effect-suite.md)

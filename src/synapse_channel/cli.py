@@ -208,6 +208,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_verify_release:add_parsers", ("verify-release",)),
     ("synapse_channel.cli_verify_result:add_parsers", ("verify-result",)),
     ("synapse_channel.cli_operation:add_parsers", ("operation",)),
+    ("synapse_channel.cli_effect_suite:add_parsers", ("effect-suite",)),
     ("synapse_channel.cli_work_state:add_parsers", ("work-state",)),
     ("synapse_channel.cli_policy_check:add_parsers", ("policy-check",)),
     ("synapse_channel.cli_policy_signing:add_parsers", ("policy",)),

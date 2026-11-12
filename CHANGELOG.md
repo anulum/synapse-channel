@@ -20,6 +20,20 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- `synapse effect-suite run` runs version 0.1 of the effect-safety suite, cases
+  1 to 4 in twenty-one variants, against this package's own stack. Each
+  variant gets a throwaway Git repository and hub; the executor publishes only
+  by a compare-and-swap from exactly the declared base, and the suite's own
+  observer reads the branch, its reflog and the hub's journal, never the
+  executor's report. One record per variant (`synapse.effect-suite-result.v0`)
+  states what was expected and what was read, with the branch's commit and tree
+  before and after, and is signed with an owner-only Ed25519 key file from
+  `synapse merkle keygen`. Failed and unknown variants print first, with no
+  score. `synapse effect-suite verify` checks records offline with the public
+  key. The profile is cooperative: bypass is not excluded. Needs `git` on
+  `PATH` and the `encryption` extra; on a core-only install the command line
+  still starts and both commands refuse with the extra to install. See
+  `docs/effect-suite.md`.
 - `synapse operation attempt` asks the hub, before an effect, to open an attempt
   of a declared operation for the exact intent the executor is about to carry
   out (new request `operation_attempt`). The hub answers once from a closed set

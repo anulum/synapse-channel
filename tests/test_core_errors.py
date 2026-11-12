@@ -471,6 +471,16 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "operation_attempt",
         ValueError,
     ),
+    "EffectSuiteKeyError": (
+        "synapse_channel.effect_suite.record",
+        "effect_suite_key",
+        ValueError,
+    ),
+    "SuiteSessionError": (
+        "synapse_channel.effect_suite.session",
+        "effect_suite_session",
+        RuntimeError,
+    ),
     "OperationRecordError": (
         "synapse_channel.core.operation_records",
         "operation_record",
