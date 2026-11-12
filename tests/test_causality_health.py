@@ -186,6 +186,18 @@ class TestDanglingDependencies:
 
         assert [(item.depends_on, item.declared_seq) for item in report.dangling] == [("C", 1)]
 
+    def test_a_dependency_named_twice_by_one_plan_event_is_listed_once(self) -> None:
+        """The report reads the log as written; one event naming a dependency twice is one row."""
+        events = (_ledger(1, 1.0, "A", deps=("B", "C", "B")),)
+
+        report = assess_causal_health(events)
+
+        assert [(item.depends_on, item.declared_seq) for item in report.dangling] == [
+            ("B", 1),
+            ("C", 1),
+        ]
+        assert report.anomaly_count == 2
+
     def test_a_row_says_whether_the_log_holds_the_dependency_at_all(self) -> None:
         events = (
             _ledger(1, 1.0, "B"),
