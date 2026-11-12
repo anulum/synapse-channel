@@ -19,8 +19,11 @@ how each is invoked, what it needs and how well it is known.
 !!! note "State of this part"
     This page describes the catalogue's foundation: the registered names, the
     description of one row with its native binding, the catalogue that holds
-    rows, and two commands that read a catalogue file. Nothing runs an
-    operation yet: there is no hub verb, no adapter and no permission for it,
+    rows, two commands that read a catalogue file, the qualification gate
+    with its signed bundles, and `synapse ops run`, which runs one
+    command-line row on this host under the operator's local grants file
+    (`synapse ops inquire` reports a recorded run). There is no hub verb and
+    no hub permission for an operation, no row of another transport is run,
     and nothing writes a catalogue file for you.
 
 ## Being listed grants nothing
@@ -123,8 +126,8 @@ bound to the request. Starting a turn grants no permission to approve what
 that turn asks.
 
 The permission names are fixed by this table. They are not yet permissions of
-the hub's access control: until they are, nothing can be granted and nothing
-runs.
+the hub's access control: no hub grant carries them. `synapse ops run` reads
+them from the operator's local grants file (see *Running an operation*).
 
 ### Output
 

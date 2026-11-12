@@ -177,6 +177,13 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- The operations catalogue page said in its opening note that nothing runs an
+  operation yet, and below its effects table that nothing can be granted and
+  nothing runs, while the same page documents `synapse ops run`, which has run
+  one command-line row under the operator's local grants file since 0.99.40.
+  Both passages now say what exists: the runner and its local grants, and no
+  hub verb or hub permission for an operation.
+
 - `synapse causality health` and the dashboard's `/health-anomalies.json`
   listed a dangling dependency once for every plan event of its task, so a task
   posted and then updated appeared twice for the same dependency, the anomaly
