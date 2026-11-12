@@ -30,6 +30,7 @@ import pytest
 from websockets.asyncio.server import serve
 
 from synapse_channel.cli import build_parser
+from synapse_channel.core.authorisation_intent import INTENT_SCHEMA
 from synapse_channel.core.execution_outcome import OUTCOME_SCHEMA
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.result_verification_record import SCHEMA as VERIFICATION_SCHEMA
@@ -47,6 +48,11 @@ CONTRACT_COMMANDS: tuple[tuple[str, ...], ...] = (
     ),
     ("operation", "declare", "--task", "T", "--name", "P/w", "--epoch", "1", "--effect",
      "git_publication", "--operation-id", "op-1"),
+    (
+        "operation", "declare", "--task", "T", "--name", "P/worker", "--epoch", "1",
+        "--effect", "file", "--path", "out/report.txt", "--sha256", "a" * 64,
+        "--intent", "intent.json",
+    ),
     ("operation", "outcome", "--task", "T", "--name", "C/checker", "run-001.json"),
     ("operation", "verification", "--task", "T", "--name", "C/checker", "verification.json"),
     ("worker-session", "--identity", "P/worker", "--outcome-file", "run-001.json", "--", "x"),
@@ -152,9 +158,10 @@ def test_every_contract_callable_keeps_its_parameters(
 
 def test_the_wire_names_and_schemas_stay() -> None:
     assert {name: getattr(MessageType, name) for name in CONTRACT_MESSAGES} == CONTRACT_MESSAGES
-    assert (OUTCOME_SCHEMA, VERIFICATION_SCHEMA) == (
+    assert (OUTCOME_SCHEMA, VERIFICATION_SCHEMA, INTENT_SCHEMA) == (
         "synapse.execution-outcome.v1",
         "synapse.result-verification.v1",
+        "synapse.authorisation-intent.v0",
     )
 
 
@@ -184,6 +191,8 @@ def test_the_page_names_every_contract_command_and_schema() -> None:
         "automatic_retry: false",
         OUTCOME_SCHEMA,
         VERIFICATION_SCHEMA,
+        INTENT_SCHEMA,
+        "--intent",
     ):
         assert text in page
 

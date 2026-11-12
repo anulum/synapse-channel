@@ -27,6 +27,9 @@ Rules (recovery console design, rev 2):
 * At most :data:`MAX_RECORDS_PER_OPERATION` outcome and verification rows per
   operation; the declaration does not count. Rows are append-only: a later row
   never replaces an earlier one.
+* A declaration may carry an authorisation intent
+  (:mod:`synapse_channel.core.authorisation_intent`). Its row then keeps the
+  composed intent and its digest; a declaration without one is unchanged.
 
 Targets are identifiers, not secrets: a repository URL that carries
 credentials is refused, not redacted.
@@ -41,6 +44,11 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
+from synapse_channel.core.authorisation_intent import (
+    AuthorisationIntent,
+    IntentStatement,
+    parse_intent_statement,
+)
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.execution_outcome import ExecutionOutcome, outcome_from_json
 from synapse_channel.core.journal import EventKind
@@ -125,6 +133,8 @@ class OperationRecordRequest:
         For an outcome record, the decoded report.
     verification : ResultVerification or None
         For a verification record, the decoded record.
+    intent : IntentStatement or None
+        For a declaration, the validated statement of its authorisation intent.
     """
 
     record: str
@@ -136,6 +146,7 @@ class OperationRecordRequest:
     budget_remaining: int | None = None
     outcome: ExecutionOutcome | None = None
     verification: ResultVerification | None = None
+    intent: IntentStatement | None = None
 
 
 def _bounded_text(value: object, label: str, limit: int) -> str:
@@ -220,6 +231,8 @@ def decode_operation_record(data: Mapping[str, Any]) -> OperationRecordRequest:
     OperationRecordError
         If any field is missing, of the wrong type, or out of bounds. Rejected
         values are not echoed.
+    AuthorisationIntentError
+        If a declaration carries an intent statement that is malformed.
     """
     record = data.get("record")
     if not isinstance(record, str) or record not in RECORD_KINDS:
@@ -231,6 +244,7 @@ def decode_operation_record(data: Mapping[str, Any]) -> OperationRecordRequest:
         if not isinstance(effect, str) or effect not in VERIFIER_FOR_EFFECT:
             raise OperationRecordError(f"effect must be one of {sorted(VERIFIER_FOR_EFFECT)}")
         budget = data.get("budget_remaining")
+        statement = data.get("intent")
         return OperationRecordRequest(
             record,
             task_id,
@@ -241,6 +255,7 @@ def decode_operation_record(data: Mapping[str, Any]) -> OperationRecordRequest:
             budget_remaining=None
             if budget is None
             else _whole(budget, "budget_remaining", 0, _MAX_BUDGET),
+            intent=None if statement is None else parse_intent_statement(statement, effect),
         )
     try:
         if record == RECORD_OUTCOME:
@@ -355,6 +370,7 @@ def record_operation(
     sender: str,
     snapshot_epoch: int | None = None,
     now: float | None = None,
+    intent: AuthorisationIntent | None = None,
 ) -> int:
     """Durably journal one accepted record and return its sequence.
 
@@ -370,12 +386,22 @@ def record_operation(
         For a declaration, the claim's current epoch at accept time.
     now : float or None, optional
         Record time; defaults to the wall clock.
+    intent : AuthorisationIntent or None, optional
+        For a declaration, the composed intent; the row keeps it and its digest.
 
     Returns
     -------
     int
         The journal sequence of the new event.
+
+    Raises
+    ------
+    OperationRecordError
+        If an intent is given for a record that is not a declaration, or an
+        evidence record carries neither an outcome nor a verification.
     """
+    if intent is not None and request.record != RECORD_DECLARE:
+        raise OperationRecordError("only a declaration carries an authorisation intent")
     at = time.time() if now is None else now
     base: dict[str, Any] = {
         "task_id": request.task_id,
@@ -388,6 +414,9 @@ def record_operation(
         payload["snapshot_epoch"] = snapshot_epoch
         if request.budget_remaining is not None:
             payload["budget_remaining"] = request.budget_remaining
+        if intent is not None:
+            payload["intent"] = intent.document
+            payload["intent_sha256"] = intent.sha256
         return store.append(EventKind.OPERATION_DECLARED, payload, durable=True)
     if request.outcome is not None:
         outcome = request.outcome

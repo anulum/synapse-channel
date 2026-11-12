@@ -46,6 +46,22 @@ synapse operation declare --task T --name P/worker --epoch E --effect file \
 `migration`, each with its own target options. Only the live claim holder at the
 current epoch may declare, and an operation id is declared once.
 
+To make the effect approvable before it happens, the declaration can carry an
+authorisation intent, a statement in the `synapse.authorisation-intent.v0`
+schema of what the operation will do (its fields are listed under
+[operation records](protocol.md)):
+
+```bash
+synapse operation declare --task T --name P/worker --epoch E --effect file \
+  --path out/report.txt --sha256 <hex> --intent intent.json
+```
+
+The hub adds the declaration's identifiers and the executor's identity, keeps
+the intent with the declaration and prints its SHA-256. An approval can name
+exactly that digest (step 3). A hub that does not keep intents accepts the
+declaration alone; the command then exits 4 and says that the operation id is
+used.
+
 ## 3. Coordinate and obtain authority
 
 A claim coordinates. It is not permission. `SynapseAgent.claim(task_id,
@@ -56,8 +72,9 @@ claim is a stop. `SynapseAgent.release(task_id, epoch=E)` ends the claim.
 
 What permits an action is the executor's bound identity and what the hub grants
 that identity: ACL rules and role grants, and an approval bound to the exact
-SHA-256 subject where the hub requires one (see [verdicts](verdicts.md)). A
-note or any other content that says "approved" is not authority.
+SHA-256 subject where the hub requires one (see [verdicts](verdicts.md)), such
+as the digest of a declared intent. A note or any other content that says
+"approved" is not authority.
 
 The contract has no typed, expiring permission for one actor, one action and
 one target that the executor consumes once. Until it has one, this step is

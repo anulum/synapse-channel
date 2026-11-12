@@ -15,6 +15,12 @@ from typing import Any
 import pytest
 
 from synapse_channel.core.acl import CLAIM, OPERATION_EVIDENCE, Target
+from synapse_channel.core.authorisation_intent import (
+    INTENT_SCHEMA,
+    AuthorisationIntentError,
+    IntentStatement,
+    compose_intent,
+)
 from synapse_channel.core.execution_outcome import ExecutionOutcome, OutcomeState
 from synapse_channel.core.handlers import operation_records as handler
 from synapse_channel.core.journal import EventKind
@@ -372,3 +378,81 @@ def test_the_acl_mapping_names_claim_for_a_declaration_and_evidence_otherwise() 
     assert handler.operation_record_access({"record": "outcome", "task_id": "T"}) == [
         (OPERATION_EVIDENCE, Target("claim", "T"))
     ]
+
+
+def _statement() -> dict[str, Any]:
+    return {
+        "schema": INTENT_SCHEMA,
+        "pre_state": SHA,
+        "recovery_class": "restorable",
+        "deadline": 2_000_000_000,
+        "budget": "reservation:pool-1",
+        "egress": ["https://api.example.com:443"],
+        "tool": {"name": "writer", "version": "2"},
+        "arguments_sha256": SHA,
+        "rule_generation": "sha256:" + SHA,
+        "required_assurance": "isolated",
+    }
+
+
+def test_a_declaration_row_keeps_the_composed_intent_beside_the_checked_fields(
+    tmp_path: Path,
+) -> None:
+    """The statement decodes with the declaration; the row adds the intent and its digest."""
+    request = decode_operation_record(_declare(intent=_statement()))
+    assert isinstance(request.intent, IntentStatement)
+    assert request.intent.document["budget"] == "reservation:pool-1"
+    intent = compose_intent(
+        request.intent,
+        task_id="T",
+        operation_id="op-1",
+        effect="file",
+        target=request.target,
+        actor="P/worker",
+    )
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        record_operation(
+            store, request, sender="P/worker", snapshot_epoch=3, now=150.0, intent=intent
+        )
+        (row,) = store.read_since(0, kinds=(EventKind.OPERATION_DECLARED,))
+        assert row.payload["intent"] == intent.document
+        assert row.payload["intent_sha256"] == intent.sha256
+        assert (row.payload["path"], row.payload["snapshot_epoch"]) == ("out/result.txt", 3)
+    finally:
+        store.close()
+
+
+def test_an_intent_is_checked_on_a_declaration_and_belongs_to_no_other_record(
+    tmp_path: Path,
+) -> None:
+    """A malformed statement is refused; evidence records neither read nor journal one."""
+    with pytest.raises(AuthorisationIntentError, match="schema"):
+        decode_operation_record(_declare(intent={**_statement(), "schema": "other"}))
+    outcome = decode_operation_record(
+        {
+            "record": "outcome",
+            "task_id": "T",
+            "operation_id": "op-1",
+            "report": _outcome_report(),
+            "intent": _statement(),
+        }
+    )
+    assert outcome.intent is None
+    declared = decode_operation_record(_declare(intent=_statement()))
+    assert declared.intent is not None
+    intent = compose_intent(
+        declared.intent,
+        task_id="T",
+        operation_id="op-1",
+        effect="file",
+        target=declared.target,
+        actor="P/worker",
+    )
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        with pytest.raises(OperationRecordError, match="only a declaration"):
+            record_operation(store, outcome, sender="P/checker", intent=intent)
+        assert not store.read_since(0)
+    finally:
+        store.close()

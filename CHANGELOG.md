@@ -20,6 +20,21 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- `synapse operation declare --intent FILE` adds an authorisation intent to a
+  declaration: a fixed statement, written before the effect, of the state the
+  effect starts from, the changed paths of a Git publication, the recovery
+  class, a deadline, the budget, the origins it may reach, the tool and the
+  digest of its arguments, the rule generation and the required assurance. The
+  hub adds the declaration's task, operation, effect and target and the
+  authenticated sender as the actor, journals the composed intent with the
+  declaration, and answers with the SHA-256 of its RFC 8785 bytes, which an
+  approval can name. A malformed intent is refused `intent_invalid` and a
+  deadline that is not ahead of the hub's clock `intent_expired`; nothing is
+  journalled for either. A declaration without an intent is unchanged. A hub
+  that does not keep intents accepts the declaration alone, and the command
+  then exits 4 and says that the operation id is used. An intent grants no
+  authority.
+
 - Three read queries on the history request, each answered only to the
   connected identity it names. `activity_query` returns metadata-only pointers
   (journal sequence and kind) to direct messages, new plan assignments and

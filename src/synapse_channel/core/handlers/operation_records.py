@@ -10,17 +10,23 @@
 The hub:
 
 1. refuses a malformed request and a hub without a journal;
-2. for ``declare``, requires the sender to own the live claim at the stated
-   epoch (or its ownership epoch) and refuses an operation id already declared;
+2. for ``declare``, refuses an authorisation intent that is malformed
+   (``intent_invalid``) or whose deadline is not ahead of the hub's clock
+   (``intent_expired``), requires the sender to own the live claim at the
+   stated epoch (or its ownership epoch) and refuses an operation id already
+   declared; an accepted intent is composed with the sender as its actor;
 3. for ``outcome`` and ``verification``, requires the ``operation-evidence``
    permission for the task (enforced here even when ``--require-acl`` is off,
    so an open hub never accepts third-party evidence), a declared operation on
    the same task, a body naming the same operation, the verifier matching the
    declared effect, and fewer than 32 earlier rows for the operation;
 4. journals one event and answers the sender privately with an
-   ``operation_record_result`` naming the status, the reason and the sequence.
+   ``operation_record_result`` naming the status, the reason, the sequence and,
+   for a declaration that kept an intent, its ``intent_sha256``.
 
-Records never grant authority. They are observations a reader can weigh.
+Records never grant authority. They are observations a reader can weigh. An
+intent grants nothing either: an approval may name its digest, and what that
+approval admits is decided elsewhere.
 """
 
 from __future__ import annotations
@@ -30,6 +36,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl import CLAIM, OPERATION_EVIDENCE, WOULD_ALLOW, Target, evaluate_access
+from synapse_channel.core.authorisation_intent import (
+    REFUSED_INTENT_EXPIRED,
+    REFUSED_INTENT_INVALID,
+    AuthorisationIntent,
+    AuthorisationIntentError,
+    compose_intent,
+    intent_time_refusal,
+)
 from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_records import (
@@ -99,10 +113,18 @@ class _Verdict:
     detail: str
     reason: str = ""
     seq: int | None = None
+    intent_sha256: str = ""
 
 
 def _refused(reason: str, detail: str) -> _Verdict:
     return _Verdict(STATUS_REFUSED, detail, reason=reason)
+
+
+_DEADLINE_REFUSALS = {
+    REFUSED_INTENT_EXPIRED: "the intent's deadline is not after the hub's clock",
+    REFUSED_INTENT_INVALID: "the intent's deadline lies more than 366 days after the hub's clock",
+}
+"""The detail of each refusal of an intent's deadline, by its reason."""
 
 
 async def handle_operation_record(
@@ -111,6 +133,8 @@ async def handle_operation_record(
     """Journal one accepted operation record and answer the sender privately."""
     try:
         request = decode_operation_record(data)
+    except AuthorisationIntentError as exc:
+        verdict = _refused(REFUSED_INTENT_INVALID, str(exc))
     except OperationRecordError as exc:
         verdict = _refused(REFUSED_INVALID, str(exc))
     else:
@@ -124,6 +148,7 @@ async def handle_operation_record(
             status=verdict.status,
             reason=verdict.reason,
             seq=verdict.seq,
+            intent_sha256=verdict.intent_sha256,
             record=str(data.get("record") or ""),
             task_id=str(data.get("task_id") or ""),
             operation_id=str(data.get("operation_id") or ""),
@@ -163,15 +188,33 @@ def _declare(
     epoch, effect = request.epoch, request.effect
     if epoch is None or effect is None:
         return _refused(REFUSED_INVALID, "a declaration names an epoch and an effect")
-    refusal = declaration_refusal(claim, sender, epoch, time.time())
+    now = time.time()
+    intent: AuthorisationIntent | None = None
+    if request.intent is not None:
+        timing = intent_time_refusal(request.intent, now)
+        if timing is not None:
+            return _refused(timing, _DEADLINE_REFUSALS[timing])
+        try:
+            intent = compose_intent(
+                request.intent,
+                task_id=request.task_id,
+                operation_id=request.operation_id,
+                effect=effect,
+                target=request.target,
+                actor=sender,
+            )
+        except AuthorisationIntentError as exc:
+            return _refused(REFUSED_INTENT_INVALID, str(exc))
+    refusal = declaration_refusal(claim, sender, epoch, now)
     if refusal is not None or claim is None:
         reason = refusal or REFUSED_NOT_HOLDER
         return _refused(reason, f"{sender} does not hold {request.task_id} at that epoch")
     if ledger.task_of(request.operation_id) is not None:
         return _refused(REFUSED_DUPLICATE, "this operation id is already declared")
-    seq = record_operation(store, request, sender=sender, snapshot_epoch=claim.epoch)
+    seq = record_operation(store, request, sender=sender, snapshot_epoch=claim.epoch, intent=intent)
     ledger.declare(request.operation_id, request.task_id, effect)
-    return _Verdict(STATUS_ACCEPTED, "operation declared", seq=seq)
+    digest = "" if intent is None else intent.sha256
+    return _Verdict(STATUS_ACCEPTED, "operation declared", seq=seq, intent_sha256=digest)
 
 
 def _evidence_allowed(hub: OperationRecordContext, sender: str, task_id: str) -> bool:

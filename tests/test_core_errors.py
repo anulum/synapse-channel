@@ -65,6 +65,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "mcp_native_session",
         ValueError,
     ),
+    "AuthorisationIntentError": (
+        "synapse_channel.core.authorisation_intent",
+        "authorisation_intent",
+        ValueError,
+    ),
     "PriorReleaseUnconfirmedError": (
         "synapse_channel.mcp.release_confirmation",
         "mcp_prior_release_unconfirmed",

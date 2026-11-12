@@ -9,7 +9,10 @@
 
 Each command connects to the hub as ``--name`` and sends one
 ``operation_record``. ``declare`` comes from the holder of the live claim,
-before the effect, and names the effect's exact identifiers. ``outcome``
+before the effect, and names the effect's exact identifiers. With
+``--intent FILE`` it also carries an authorisation intent statement; the hub
+answers with the digest of the intent it kept, which an approval can name.
+``outcome``
 publishes a ``synapse.execution-outcome.v1`` report, for example the
 ``--outcome-file`` of ``synapse worker-session`` or the output of its
 ``--read-outcome``. ``verification`` publishes a
@@ -18,8 +21,9 @@ Both evidence commands need the ``operation-evidence`` grant on the hub.
 
 The command never changes the local file; publishing is separate from
 producing the record. Exit codes: 0 accepted, 1 refused, 2 no verdict
-(hub unreachable or silent), 4 the hub does not know operation records,
-5 the local record could not be read.
+(hub unreachable or silent), 4 the hub does not know operation records, or it
+kept a declaration without the intent it was sent, 5 the local record or
+intent could not be read.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from typing import Any
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
+from synapse_channel.core.aef_canonical import canonicalize_json
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.terminal_text import terminal_text
 from synapse_channel.worker_outcome import OPERATION_ID_ENV
@@ -48,6 +53,7 @@ EXIT_UNREADABLE = 5
 
 _MAX_RECORD_BYTES = 64 * 1024
 _UNKNOWN_TYPE_MARKERS = ("unknown message type", "unsupported message type")
+_INTENT_NOT_KEPT = "intent_not_kept"
 
 
 async def publish_operation_record(
@@ -156,19 +162,46 @@ def _report(result: dict[str, Any], fields: dict[str, Any], *, json_output: bool
     rendered.update(
         record=fields["record"], task_id=fields["task_id"], operation_id=fields["operation_id"]
     )
+    _check_intent_kept(result, fields, rendered)
     if json_output:
         print(json.dumps(rendered, indent=2, sort_keys=True))
+    elif rendered["reason"] == _INTENT_NOT_KEPT:
+        print(f"operation declared but {terminal_text(rendered['detail'])}")
     elif rendered["status"] == "accepted":
+        kept = f"; intent sha256:{rendered['intent_sha256']}" if "intent_sha256" in rendered else ""
         print(
-            f"{rendered['record']} recorded for {rendered['operation_id']} at seq {rendered['seq']}"
+            f"{rendered['record']} recorded for {rendered['operation_id']} "
+            f"at seq {rendered['seq']}{kept}"
         )
     else:
         print(
             f"operation record refused ({rendered['reason']}): {terminal_text(rendered['detail'])}"
         )
-    if rendered["status"] == "accepted":
-        return EXIT_ACCEPTED
-    return EXIT_UNSUPPORTED if rendered["reason"] == "unsupported_by_hub" else EXIT_REFUSED
+    if rendered["reason"] in ("unsupported_by_hub", _INTENT_NOT_KEPT):
+        return EXIT_UNSUPPORTED
+    return EXIT_ACCEPTED if rendered["status"] == "accepted" else EXIT_REFUSED
+
+
+def _check_intent_kept(
+    result: dict[str, Any], fields: dict[str, Any], rendered: dict[str, Any]
+) -> None:
+    """Name the kept intent's digest, or mark a declaration kept without its intent.
+
+    A hub that predates authorisation intents ignores the field and accepts the
+    declaration alone. The operation id is then used, so the command says so
+    instead of reporting a plain success.
+    """
+    if "intent" not in fields or rendered["status"] != "accepted":
+        return
+    digest = result.get("intent_sha256")
+    if isinstance(digest, str) and len(digest) == 64:
+        rendered["intent_sha256"] = digest
+        return
+    rendered["reason"] = _INTENT_NOT_KEPT
+    rendered["detail"] = (
+        "the hub kept the declaration without its intent; "
+        f"the operation id {fields['operation_id']} is used"
+    )
 
 
 def _read_record(path: Path) -> dict[str, Any]:
@@ -180,6 +213,18 @@ def _read_record(path: Path) -> dict[str, Any]:
     document = json.loads(data.decode("utf-8"))
     if not isinstance(document, dict):
         raise ValueError("the record is not a JSON object")
+    return document
+
+
+def _read_intent(path: Path) -> dict[str, Any]:
+    """Read one intent statement strictly: one JSON object, integers only, no repeated key."""
+    with path.open("rb") as handle:
+        data = handle.read(_MAX_RECORD_BYTES + 1)
+    if len(data) > _MAX_RECORD_BYTES:
+        raise ValueError(f"the intent is larger than {_MAX_RECORD_BYTES} bytes")
+    document = json.loads(canonicalize_json(data))
+    if not isinstance(document, dict):
+        raise ValueError("the intent is not a JSON object")
     return document
 
 
@@ -234,6 +279,12 @@ def _cmd_declare(args: argparse.Namespace) -> int:
     }
     if args.budget is not None:
         fields["budget_remaining"] = args.budget
+    if args.intent is not None:
+        try:
+            fields["intent"] = _read_intent(args.intent)
+        except (OSError, ValueError) as exc:
+            print(f"operation declare refused: cannot read the intent: {type(exc).__name__}")
+            return EXIT_UNREADABLE
     return _run(args, fields)
 
 
@@ -333,6 +384,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         declare.add_argument(flag, default=None, help=help_text)
     declare.add_argument(
         "--budget", type=_non_negative, default=None, help="Remaining budget, if one applies."
+    )
+    declare.add_argument(
+        "--intent",
+        type=Path,
+        default=None,
+        help="Authorisation intent statement (JSON); the hub answers with the digest it kept.",
     )
     declare.set_defaults(func=_cmd_declare)
 

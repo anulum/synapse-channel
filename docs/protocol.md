@@ -158,6 +158,24 @@ does not add agent grades to protocol envelopes.
   `path`+`sha256`; `repository`+`branch`+`revision`; `report`+`revision`; or
   `database`+`migration`+`schema_sha256`) and optionally `budget_remaining`. A
   repository URL that carries a credential, a query or a fragment is refused.
+  A `declare` may also carry `intent`, an authorisation intent statement of
+  schema `synapse.authorisation-intent.v0`: `pre_state` (for a file `absent` or
+  its SHA-256; for a Git publication the base commit; for a deployment the
+  running revision; for a migration the schema SHA-256 before), `changed_files`
+  for a Git publication only (sorted relative paths, each with its Git mode or
+  `absent`), `recovery_class` (`reversible`, `restorable`, `one_way`),
+  `deadline` (UNIX seconds), `budget` (`not_applicable` or
+  `reservation:<id>`), `egress` (canonical HTTP(S) origins, sorted), `tool`
+  (`name`, `version`), `arguments_sha256`, optionally `tool_descriptor_sha256`,
+  `rule_generation` (`sha256:<hex>` or `prose-rules:<UTC time>Z`) and
+  `required_assurance` (`cooperative`, `controlled`, `isolated`). Any other
+  field is refused, among them `actor`: the hub adds the task, the operation,
+  the effect, its target and the authenticated sender as `actor`, journals the
+  composed intent with the declaration and names the SHA-256 of its RFC 8785
+  bytes as `intent_sha256` in the result. A malformed intent is refused
+  `intent_invalid`, a deadline not after the hub's clock `intent_expired`; a
+  deadline more than 366 days ahead is invalid. An intent grants nothing; an
+  approval may name its digest.
   An id is declared once per hub; the journal keeps the claim's current epoch as
   `snapshot_epoch`. An `outcome` carries one `synapse.execution-outcome.v1`
   `report`; a `verification` carries one `synapse.result-verification.v1`

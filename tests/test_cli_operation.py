@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import cli_operation as command
 from synapse_channel.cli import build_parser
 from synapse_channel.core.acl import CLAIM, MESSAGE, OPERATION_EVIDENCE, AclPolicy, AclRule
+from synapse_channel.core.authorisation_intent import INTENT_SCHEMA
 from synapse_channel.core.execution_outcome import ExecutionOutcome, OutcomeState
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
@@ -298,3 +300,129 @@ async def test_hub_errors_silence_and_old_hubs_have_their_own_exit_codes(
     assert await _run(None) == command.EXIT_NO_VERDICT
     assert "no verdict" in capsys.readouterr().out
     assert await _run(None, ready=False) == command.EXIT_NO_VERDICT
+
+
+def _intent_document(**changes: Any) -> dict[str, Any]:
+    document: dict[str, Any] = {
+        "schema": INTENT_SCHEMA,
+        "pre_state": "absent",
+        "recovery_class": "reversible",
+        "deadline": int(time.time()) + 3600,
+        "budget": "not_applicable",
+        "egress": [],
+        "tool": {"name": "writer", "version": "1"},
+        "arguments_sha256": SHA,
+        "rule_generation": "prose-rules:2026-11-12T06:16:35Z",
+        "required_assurance": "cooperative",
+    }
+    document.update(changes)
+    return document
+
+
+def test_declare_sends_an_intent_file_read_strictly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A valid file rides with the declaration; a malformed one exits five before connecting."""
+    seen: list[dict[str, Any]] = []
+
+    async def fake(*, fields: dict[str, Any], **_kwargs: Any) -> int:
+        seen.append(fields)
+        return 0
+
+    monkeypatch.setattr(command, "publish_operation_record", fake)
+    common = ["--task", "T1", "--name", "P/worker", "--operation-id", "op-1", "--epoch", "2"]
+    target = ["--effect", "file", "--path", "a", "--sha256", SHA]
+    good = _write(tmp_path / "intent.json", _intent_document())
+    assert command._cmd_declare(_args("declare", *common, *target, "--intent", str(good))) == 0
+    assert seen[0]["intent"] == json.loads(good.read_text(encoding="utf-8"))
+    duplicate = tmp_path / "duplicate.json"
+    duplicate.write_text('{"schema": "a", "schema": "b"}', encoding="utf-8")
+    fractional = _write(tmp_path / "fractional.json", {"deadline": 1.5})
+    listed = _write(tmp_path / "list.json", [_intent_document()])
+    large = _write(tmp_path / "large.json", {"pad": "x" * (64 * 1024)})
+    for bad in (duplicate, fractional, listed, large, tmp_path / "absent.json"):
+        code = command._cmd_declare(_args("declare", *common, *target, "--intent", str(bad)))
+        assert code == command.EXIT_UNREADABLE
+        assert "cannot read the intent" in capsys.readouterr().out
+    assert len(seen) == 1
+
+
+async def test_a_live_hub_names_the_digest_of_the_intent_it_kept(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The command prints the digest the hub journalled with the declaration."""
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_hub, uri):
+            worker = await connect_agent("P/worker", uri)
+            try:
+                await worker.agent.claim("T1", note="intent test")
+                grant = await worker.recorder.wait_for(
+                    lambda frame: frame.get("type") == MessageType.CLAIM_GRANTED
+                )
+            finally:
+                await close_agents(worker)
+            options: dict[str, Any] = {
+                "uri": uri,
+                "token": None,
+                "ready_timeout": 3.0,
+                "result_timeout": 3.0,
+            }
+            base = {
+                "record": "declare",
+                "task_id": "T1",
+                "epoch": grant["epoch"],
+                "effect": "file",
+                "effect_target": {"path": "out.txt", "sha256": SHA},
+                "intent": _intent_document(),
+            }
+            code = await command.publish_operation_record(
+                actor="P/worker",
+                fields={**base, "operation_id": "op-1"},
+                json_output=False,
+                **options,
+            )
+            assert code == command.EXIT_ACCEPTED
+            text = capsys.readouterr().out
+            code = await command.publish_operation_record(
+                actor="P/worker",
+                fields={**base, "operation_id": "op-2"},
+                json_output=True,
+                **options,
+            )
+            assert code == command.EXIT_ACCEPTED
+            rendered = json.loads(capsys.readouterr().out)
+        first, second = store.read_since(0, kinds=(EventKind.OPERATION_DECLARED,))
+        assert f"intent sha256:{first.payload['intent_sha256']}" in text
+        assert rendered["intent_sha256"] == second.payload["intent_sha256"]
+    finally:
+        store.close()
+
+
+async def test_a_hub_that_drops_the_intent_is_reported_as_unsupported(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An older hub accepts the declaration without the intent; the command says so."""
+    accepted = {"type": MessageType.OPERATION_RECORD_RESULT, "status": "accepted", "seq": 4}
+    fields = {
+        "record": "declare",
+        "task_id": "T",
+        "operation_id": "op",
+        "intent": _intent_document(),
+    }
+    for json_output in (False, True):
+        code = await command.publish_operation_record(
+            uri="ws://hub",
+            actor="P/worker",
+            fields=fields,
+            token=None,
+            ready_timeout=0.1,
+            result_timeout=0.1,
+            json_output=json_output,
+            agent_factory=_factory(accepted, ready=True),
+        )
+        assert code == command.EXIT_UNSUPPORTED
+    text, document = capsys.readouterr().out.split("\n", 1)
+    assert "kept the declaration without its intent" in text
+    assert "operation id op is used" in text
+    assert json.loads(document)["reason"] == "intent_not_kept"
