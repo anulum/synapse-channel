@@ -33,6 +33,9 @@ execution evidence when carrying a release claim forward.
   prefix is LF, and a console-script wrapper is a name Windows can resolve.
 - A capability-card history file on Windows is refused when its DACL grants
   another principal. The mode bits cannot express that floor.
+- A cancelled Windows lock command is proved reaped by its exit code.
+  Signal 0 is rejected there whether or not the process exists, and a
+  terminated process stays openable until the parent closes its handle.
 
 ## [0.99.51] - 2026-11-11
 

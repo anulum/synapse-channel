@@ -44,10 +44,41 @@ async def _cancel_the_command_and_its_cleanup(pid_file: Path) -> None:
         await locked
 
 
+def _assert_reaped(pid: int) -> None:
+    """Assert ``pid`` is not a live process.
+
+    ``os.kill(pid, 0)`` is the POSIX existence probe. Windows rejects signal 0
+    with WinError 87 whether or not the process exists, so the probe there is
+    opening the process.
+    """
+    if sys.platform != "win32":
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.OpenProcess(0x1000, False, pid)
+    if not handle:
+        assert ctypes.get_last_error() == 87
+        return
+    # A terminated process stays openable until the parent closes its handle.
+    status = wintypes.DWORD()
+    assert kernel.GetExitCodeProcess(handle, ctypes.byref(status))
+    kernel.CloseHandle(handle)
+    assert status.value != 259
+
+
 def test_a_cancelled_cleanup_still_terminates_and_reaps_the_command(tmp_path: Path) -> None:
     pid_file = tmp_path / "pid"
     started = time.monotonic()
     asyncio.run(_cancel_the_command_and_its_cleanup(pid_file))
     assert time.monotonic() - started < 10
-    with pytest.raises(ProcessLookupError):
-        os.kill(int(pid_file.read_text(encoding="utf-8")), 0)
+    _assert_reaped(int(pid_file.read_text(encoding="utf-8")))
