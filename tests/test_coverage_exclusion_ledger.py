@@ -223,7 +223,9 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_diagnostics_store_and_mcp_edges.py": (1, "optional-dep-guard"),
     "tests/test_cli_streams_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_codex_tmux.py": (1, "optional-dep-guard"),
-    "tests/test_codex_mcp_package.py": (10, "optional-dep-guard"),
+    # Ten guards wait for the exact host binary or the installed entry point;
+    # one leaves the Windows token ACL case to Windows.
+    "tests/test_codex_mcp_package.py": (11, "optional-dep-guard + platform-guard"),
     "tests/test_claim_coverage.py": (2, "platform-guard"),
     "tests/test_cli.py": (1, "platform-guard"),
     # Embedded NT-only subprocess fixture verifies that real platform skips survive sharding.
@@ -242,8 +244,18 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     # host_sessions_accounting has no skip. Both measured hosts leave the
     # no-proc return, the nvidia-smi absence and failure returns, and the
     # Windows API failure returns untaken. Those lines are not exclusions.
-    "tests/test_host_sessions.py": (1, "optional-dep-guard"),
-    "tests/test_host_sessions_proc.py": (1, "optional-dep-guard"),
+    # tmux, and bubblewrap for the sandboxed procfs cases.
+    "tests/test_host_sessions.py": (2, "optional-dep-guard"),
+    # Three sandboxed cases need bubblewrap: an altered procfs, a scan as uid 0,
+    # and a hidden procfs mount.
+    "tests/test_host_sessions_proc.py": (3, "optional-dep-guard"),
+    # Two sandboxed procfs cases need bubblewrap; four guards keep the procfs
+    # cases on Linux and the Windows process queries on Windows.
+    "tests/test_pid_monitor_accounting.py": (6, "optional-dep-guard + platform-guard"),
+    # The live client name of the native readback is set with Linux prctl.
+    "tests/test_agent_pane_state.py": (1, "platform-guard"),
+    # The demonstration fleet is stopped by a POSIX signal.
+    "tests/test_cockpit_demo_fleet.py": (1, "platform-guard"),
     "tests/test_host_sessions_tmux.py": (1, "optional-dep-guard"),
     # core/review_feedback.py line 218 raises when Git patch-id is empty or
     # not a SHA. Git on Linux and Git 2.56 on MSI identify every non-empty
