@@ -32,6 +32,7 @@ from synapse_channel.core.atomic_operations import (
 )
 
 if TYPE_CHECKING:
+    from synapse_channel.core.owned_index import OwnedEntry
     from synapse_channel.core.persistence import OperationCommitResult
     from synapse_channel.core.state import SynapseState
     from synapse_channel.core.state_models import TaskClaim
@@ -79,6 +80,8 @@ class _TaskStateSnapshot:
     checkpoint: str
     presence: tuple[tuple[str, bool, float], ...]
     epoch_seq: int
+    pending_assignment: tuple[str, str] | None
+    owned_entry: OwnedEntry | None
 
     @classmethod
     def capture(
@@ -100,18 +103,22 @@ class _TaskStateSnapshot:
                 for agent in dict.fromkeys(presence_agents)
             ),
             epoch_seq=state._epoch_seq,
+            pending_assignment=state.pending_handoffs.entries.get(task_id),
+            owned_entry=state.owned_claims.entries.get(task_id),
         )
 
     def restore(self, state: SynapseState) -> None:
         """Restore the task and accounting captured before the mutation."""
         checkpoint = self.checkpoint if self.checkpoint_present else None
+        expired = False
         if self.claim is None:
             state.claims.pop(self.task_id, None)
         else:
             claim, value = self.claim
             for field in fields(value):
                 setattr(claim, field.name, getattr(value, field.name))
-            if value.lease_expires_at <= time.time():
+            expired = value.lease_expires_at <= time.time()
+            if expired:
                 state.claims.pop(self.task_id, None)
                 checkpoint = value.checkpoint or checkpoint
             else:
@@ -129,6 +136,10 @@ class _TaskStateSnapshot:
                 state.last_seen.pop(agent, None)
 
         state._epoch_seq = self.epoch_seq
+        state.owned_claims.restore(self.task_id, self.owned_entry if not expired else None)
+        state.pending_handoffs.remove(self.task_id)
+        if not expired and self.claim is not None and self.pending_assignment is not None:
+            state.pending_handoffs.set(self.task_id, *self.pending_assignment)
         state.reindex_leases()
 
 

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.event_row_recovery import CorruptEventRow
 from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
+from synapse_channel.core.notification_events import event_activity
 from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.persistence import StoredEvent
 from synapse_channel.core.state import ResourceOffer, SynapseState, TaskClaim
@@ -93,7 +94,13 @@ def _claim(context: ReplayContext, ports: ReplayPorts, event: StoredEvent) -> No
         raise ports.unsupported(
             f"legacy claim mutation conflicts with protected custody at sequence {event.seq}"
         )
-    context.state.claims[claim.task_id] = claim
+    context.state.restore_claim(
+        claim,
+        legacy_handoff=(
+            event.kind == "handoff"
+            and event_activity(event.kind, event.payload, claim.owner) is None
+        ),
+    )
     context.state.last_seen[claim.owner] = claim.claimed_at
     context.epoch_seq = max(context.epoch_seq, claim.epoch)
 
@@ -104,7 +111,7 @@ def _release(context: ReplayContext, ports: ReplayPorts, event: StoredEvent) -> 
         raise ports.unsupported(
             f"legacy release conflicts with protected custody at sequence {event.seq}"
         )
-    context.state.claims.pop(task, None)
+    context.state.restore_release(task)
 
 
 def _resource(context: ReplayContext, _ports: ReplayPorts, event: StoredEvent) -> None:
@@ -122,7 +129,11 @@ def _resource(context: ReplayContext, _ports: ReplayPorts, event: StoredEvent) -
 
 def _ledger_task(context: ReplayContext, ports: ReplayPorts, event: StoredEvent) -> None:
     task = ports.ledger_task(event.payload)
-    context.blackboard.tasks[task.task_id] = task
+    context.blackboard.restore_task(
+        task,
+        notification_recorded=event_activity(event.kind, event.payload, task.suggested_owner)
+        is not None,
+    )
 
 
 def _progress(context: ReplayContext, ports: ReplayPorts, event: StoredEvent) -> None:

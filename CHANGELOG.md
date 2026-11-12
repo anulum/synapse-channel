@@ -20,6 +20,21 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Three read queries on the history request, each answered only to the
+  connected identity it names. `activity_query` returns metadata-only pointers
+  (journal sequence and kind) to direct messages, new plan assignments and
+  handoffs, under a scanned cursor bound to the hub; version 2 adds stream
+  progress as a fingerprint with no stream id or text. `pending_query` returns
+  content-free fingerprints of unfinished work that was assigned before the
+  reader could be notified. `owned_work_query` lists the tasks and claims the
+  identity currently owns and reads one record in bounded fragments fenced by a
+  revision and a content digest. The first two use the existing `mailbox`
+  permission; the third uses a new permission, `owned-work`. Assignment
+  pointers are written in the same durable event as the task or handoff they
+  describe and rebuilt by replay; public task records are unchanged, and the
+  wire version stays 7. The hub offers the queries; no client command or MCP
+  tool uses them yet.
+
 - A local `synapse pid-monitor` run counts each observed process: birth,
   owner, executable path, CPU seconds, memory, swap, GPU memory when
   `nvidia-smi` lists the process, priority and child PIDs, each with a status.

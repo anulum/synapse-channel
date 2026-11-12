@@ -40,6 +40,7 @@ NAMESPACE = "namespace"
 SANDBOX = "sandbox"
 OBSERVE = "observe"
 MAILBOX = "mailbox"
+OWNED_WORK = "owned-work"
 ROLE_CLAIM = "role-claim"
 PIN_RECLAIM = "identity-pin-reclaim"
 MAILBOX_HANDOVER = "mailbox-handover"
@@ -66,6 +67,7 @@ PERMISSIONS = frozenset(
         SANDBOX,
         OBSERVE,
         MAILBOX,
+        OWNED_WORK,
         ROLE_CLAIM,
         PIN_RECLAIM,
         MAILBOX_HANDOVER,
@@ -96,6 +98,12 @@ the federation follower) read the retained feed and never need it.
 via a mailbox heartbeat (``mailbox_for``). Target kind is ``agent``; the pattern matches
 the identity whose backlog is requested. Self and ``-rx`` sidecar naming still work
 without a grant; this verb is the policy-file path for a trusted monitor that is neither.
+
+``OWNED_WORK`` grants the connected identity access to full current work
+assigned to itself through ``history_request.owned_work_query``. Target kind
+is ``agent``. The handler still refuses another connected owner and mixed
+selectors. This body-reading capability is separate from mailbox metadata.
+
 
 ``ROLE_CLAIM`` grants an identity the right to bind a role on its heartbeat when
 ``--require-role-claim`` is on. Target kind is ``role``; the pattern matches

@@ -19,19 +19,21 @@ from synapse_channel.core.secure_path import SecurePathError, read_owner_only_fi
 
 
 @pytest.mark.parametrize(
-    ("bound", "message"),
+    ("expected_size", "max_bytes", "message"),
     [
-        ({"expected_size": -1}, "expected_size must be non-negative"),
-        ({"max_bytes": -1}, "max_bytes must be non-negative"),
+        (-1, None, "expected_size must be non-negative"),
+        (None, -1, "max_bytes must be non-negative"),
     ],
 )
 def test_negative_read_bounds_are_refused_before_opening(
-    tmp_path: Path, bound: dict[str, int], message: str
+    tmp_path: Path, expected_size: int | None, max_bytes: int | None, message: str
 ) -> None:
     """A negative size or limit is a caller error, refused before the file is opened."""
     absent = tmp_path / "never-opened.key"
     with pytest.raises(SecurePathError, match=f"^secret: {message}$"):
-        read_owner_only_file_bytes(absent, purpose="secret", **bound)
+        read_owner_only_file_bytes(
+            absent, purpose="secret", expected_size=expected_size, max_bytes=max_bytes
+        )
 
 
 @requires_proc

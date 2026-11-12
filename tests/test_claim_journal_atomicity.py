@@ -45,7 +45,7 @@ def _journalled_hub(path: Path) -> tuple[SynapseHub, EventStore]:
     return SynapseHub(journal=store, anti_rollback_checkpoint=False), store
 
 
-def _fail_record_claim(_store: EventStore, _claim: TaskClaim) -> None:
+def _fail_record_claim(_store: EventStore, _claim: TaskClaim, **_fields: object) -> None:
     """Model a durable append failure before any in-memory grant may occur."""
     raise OSError("claim journal unavailable")
 

@@ -294,12 +294,23 @@ def open_nofollow_leaf(path: str | Path, *, directory: bool = False) -> int:
     raise OSError("secure nofollow open is unavailable on this platform")
 
 
+def _read_exact_file_bytes(descriptor: int, size: int, *, path: Path, purpose: str) -> bytes:
+    """Refuse a short or oversized read from an already validated descriptor."""
+    material = os.read(descriptor, size + 1)
+    if len(material) != size:
+        raise SecurePathError(
+            f"{purpose}: {path} must hold exactly {size} bytes (found {len(material)})"
+        )
+    return material
+
+
 def read_owner_only_file_bytes(
     path: str | Path,
     *,
     purpose: str,
     expected_size: int | None = None,
     max_bytes: int | None = None,
+    require_single_link: bool = False,
 ) -> bytes:
     """Read secret file bytes after an owner-only floor, without re-opening for content.
 
@@ -325,6 +336,9 @@ def read_owner_only_file_bytes(
         When set without ``expected_size``, refuse files larger than this.
         When neither size bound is set, the whole file is read (callers that
         need a hard cap must pass one).
+    require_single_link :
+        Refuse a policy inode with additional hard links, retaining the
+        existing permissive default for ordinary key-byte callers.
 
     Returns
     -------
@@ -358,10 +372,14 @@ def read_owner_only_file_bytes(
     try:
         info = os.fstat(fd)
         if _POSIX:
-            assert_posix_owner_only_file_info(info, path=target, purpose=purpose)
+            assert_posix_owner_only_file_info(
+                info, path=target, purpose=purpose, require_single_link=require_single_link
+            )
         else:
             # Path-based NT DACL proof; content still comes from ``fd``.
-            assert_owner_only_file_path(target, purpose=purpose)
+            assert_owner_only_file_path(
+                target, purpose=purpose, require_single_link=require_single_link
+            )
             if not stat.S_ISREG(info.st_mode):
                 raise SecurePathError(f"{purpose}: {target} is not a regular file")
         size = int(info.st_size)
@@ -374,13 +392,7 @@ def read_owner_only_file_bytes(
                 f"{purpose}: {target} exceeds the {max_bytes}-byte secret-file limit"
             )
         if expected_size is not None:
-            material = os.read(fd, expected_size + 1)
-            if len(material) != expected_size:
-                raise SecurePathError(
-                    f"{purpose}: {target} must hold exactly {expected_size} bytes "
-                    f"(found {len(material)})"
-                )
-            return material
+            return _read_exact_file_bytes(fd, expected_size, path=target, purpose=purpose)
         limit = max_bytes if max_bytes is not None else size
         chunks: list[bytes] = []
         total = 0

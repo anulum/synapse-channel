@@ -1121,7 +1121,7 @@ async def _apply_handoff_request(
     def persist(store: EventStore, result: tuple[bool, str, TaskClaim | None]) -> None:
         claim = result[2]
         if claim is not None:
-            record_handoff(store, claim)
+            record_handoff(store, claim, actor=sender)
 
     prepared_progress: list[ProgressNote] = []
 

@@ -1183,3 +1183,126 @@ journals and oversized first messages return `available: false` with fixed
 refusals. Clients must require this explicit schema: a legacy ordinary
 history reply is not proof of an empty inbox. Retention bounds recovery;
 reading does not advance waiter ACKs or prove model processing.
+
+## Durable directed activity query
+
+An optional version-one activity query shares the history envelope and the
+exact-recipient mailbox ACL. It returns routing metadata for direct messages,
+new plan assignments and handoffs:
+
+~~~json
+{"type":"history_request","sender":"PROJ/reader","target":"System",
+ "request_id":"activity-unique-request",
+ "activity_query":{"version":1,"identity":"PROJ/reader","hub_id":"",
+                   "since_seq":0,"limit":50}}
+~~~
+
+The query contains exactly those five fields. Identity and hub bindings are
+strings of at most 256 characters. Sequence and page limits follow the durable
+inbox bounds above. Only the exact connected identity may read activity; roles
+and receive-only sidecars do not expand it. Combining activity and inbox
+selectors is refused. Global recall permission is unnecessary.
+
+The private history snapshot contains activity_page with version, available,
+identity, hub_id, cursor, items and has_more. Each item contains only journal
+seq and kind: messages, tasks or handoffs. Chat text, task IDs, titles, notes,
+checkpoints and signing material are omitted. At most 1,000 chat/task/handoff
+rows are inspected and at most 100 items are returned. Scanned foreign rows
+advance the cursor, so empty pages can still have has_more set. Repeating a
+cursor repeats the same retained activity.
+
+Rows stream through an owned SQLite cursor rather than a materialised batch.
+The scan also stops after crossing 1 MiB of encoded event payloads; one large
+row may cross that budget so the cursor can progress. One additional row is
+read for lookahead and remains unconsumed. The cursor and store lock are closed
+before sending the reply, including after early termination. A corrupt or
+quarantined candidate row refuses the page instead of silently advancing.
+
+A new external suggested owner on a nonterminal task produces trusted
+assignment metadata in the same durable task event. Status changes, repeating
+the same owner, self-assignment, terminal tasks and foreign-project assignments
+produce no assignment notification. Handoffs carry the authenticated prior
+owner and actual recipient in their native event. The reserved _notification
+field also appears on eligible live task/handoff frames; it is excluded from
+public task snapshots. Clients cannot supply or override this server metadata.
+The task or claim ID must belong to the recipient's project namespace.
+
+Only exact-directed chat is eligible; broadcasts, lists, aliases, own echoes
+and private-channel messages are omitted. Stream open/chunk frames advance the
+scan without waking a model; done/abort frames can produce a message hint.
+Version two uses the same exact query and response envelopes with `version: 2`.
+It adds eligible partial frames as `kind: streams` items. Each well-formed
+stream item, including a terminal `messages` item, carries a `stream` object
+with exactly `key` (64 lowercase hexadecimal SHA-256 characters), `terminal`
+(boolean) and `at` (native journal UTC seconds). The fingerprint separates
+publishers and stream IDs; neither original identifier nor text is returned.
+The timestamp comes from the journal, not the publisher's envelope. Version
+one keeps its original item shape and terminal-only stream behaviour.
+The ordinary inbox still retains every frame, and a terminal stream hint does
+not create a final task result or release receipt. Older assignment events without this
+trusted metadata are not retroactively interpreted as new assignments.
+Existing inbox replies and the wire version remain unchanged. An old hub's
+ordinary history reply lacks activity_page and must be treated as unsupported,
+never as a successfully empty activity stream.
+
+## Historical pending work query
+
+The history envelope also accepts exactly
+`pending_query: {version: 1, identity: "PROJ/reader", hub_id: "", limit: 1024}`.
+Identity must be the exact connected seat, with its mailbox permission. The
+nonempty hub binding must match. Limit is an integer from 1 through 1,024;
+booleans are refused. Combining pending, activity or inbox selectors is refused.
+
+The private, request-correlated `history_snapshot` carries `pending_work` with
+exactly `version`, `available`, `identity`, `hub_id`, and `items`. Each item has
+exactly `kind` (`tasks` or `handoffs`) and `key` (64 lowercase hexadecimal
+SHA-256 characters). Items are uniquely fingerprinted and sorted by kind/key.
+This complete bounded snapshot has no paging cursor or processing ACK. A
+recipient population over the limit refuses with `available: false`, empty
+items and a fixed error. Foreign identity/hub, missing journal or quarantined
+startup rows also refuse; old ordinary history is not an empty success.
+
+Recipient indexes follow original native candidate publication, restoration and
+lease/task lifecycle operations. Historical tasks must remain unfinished and
+explicitly scoped to that recipient's project. Historical handoffs require a
+retained native HANDOFF event without a covering directed notification, the
+current ownership generation and an unexpired nonterminal lease. The snapshot
+does not invent a missing historical actor. New task producers persist trusted
+`_assignment_origin` metadata with version 1, owner, integer assignment anchor,
+and boolean legacy marker; it is excluded from public task records and retained
+through same-owner status updates.
+
+Malformed queries, foreign identities/hubs, cursors past retained history,
+missing journals and storage failures return available false with a fixed
+content-free refusal. Invalid or oversized correlation identifiers are omitted.
+Advancing the scan cursor does not acknowledge a message, accept a task, prove
+model processing or establish an exactly-once business effect. Retention bounds
+recovery.
+
+
+### Current-owned business work
+
+`history_request.owned_work_query` version 1 is a separate `owned-work` ACL
+read on an `agent` target. The query fixes the connected `identity` and
+an optional `project`, and refuses mixed inbox, activity
+or historical-pending selectors. It requires a durable complete native projection.
+A private correlated `history_snapshot.owned_work` responds only to that
+connection. An unavailable result is never a successful empty list.
+
+The exact selector includes `version`, `identity`, `hub_id`,
+`project`(null for all this owner's work), `mode`, `after_key`,
+`revision`, `limit`, `key`, `item_version`, `offset`,
+`digest` and `limit_chars`. Mode defaults to `list`, limit to 50,
+limit_chars to 32768; other seek/read fields initially use empty strings or zero.
+List mode allows 1–100 scanned entries. A continuation needs the returned hub ID
+and owner/project revision; it advances from the returned opaque cursor even
+when an expired record filters out. Scope mutation and process restart invalidate
+old revisions. Different owners' changes do not affect this cursor.
+
+Read mode requires an accepted hub ID, opaque key and item generation. It returns
+one public task or claim as bounded canonical JSON text fragments, with offset,
+next_offset, total_chars, has_more and content_sha256. Subsequent offsets require
+that digest; callers join ASCII fragments, verify SHA-256, then parse JSON.
+Ownership, scope, terminal status, lease expiry and body generation are checked
+at every read. Each fragment is at most 32,768 characters; no full global board or
+state snapshot is constructed. Reading does not acknowledge business processing.

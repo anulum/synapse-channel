@@ -37,6 +37,26 @@ def test_read_owner_only_happy_path_exact_size(tmp_path: Path) -> None:
     )
 
 
+def test_policy_read_requires_one_link_without_changing_existing_key_byte_reads(
+    tmp_path: Path,
+) -> None:
+    path = _write_secret(tmp_path / "policy.json", b'{"version":1}')
+    assert (
+        read_owner_only_file_bytes(
+            path, purpose="private policy", max_bytes=64, require_single_link=True
+        )
+        == path.read_bytes()
+    )
+    alias = tmp_path / "policy-alias.json"
+    os.link(path, alias)
+    with pytest.raises(SecurePathError, match="hard links"):
+        read_owner_only_file_bytes(
+            path, purpose="private policy", max_bytes=64, require_single_link=True
+        )
+    assert read_owner_only_file_bytes(path, purpose="existing key bytes") == path.read_bytes()
+    assert alias.read_bytes() == path.read_bytes()
+
+
 def test_read_owner_only_refuses_missing(tmp_path: Path) -> None:
     missing = tmp_path / "absent.bin"
     with pytest.raises(SecurePathError, match="does not exist"):
@@ -47,6 +67,40 @@ def test_read_owner_only_refuses_wrong_size(tmp_path: Path) -> None:
     path = _write_secret(tmp_path / "short.bin", b"\x00" * 8)
     with pytest.raises(SecurePathError, match="exactly"):
         read_owner_only_file_bytes(path, purpose="key file", expected_size=KEY_BYTES)
+
+
+@pytest.mark.parametrize("replacement", [b"", b"x" * (KEY_BYTES + 1)])
+def test_read_owner_only_refuses_size_changes_after_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replacement: bytes
+) -> None:
+    path = _write_secret(tmp_path / "changing.key", b"k" * KEY_BYTES)
+    original = path.stat()
+    identity = (original.st_dev, original.st_ino)
+    native_read = os.read
+    read_descriptors: list[int] = []
+
+    with path.open("r+b") as producer:
+
+        def change_file_then_read(descriptor: int, length: int) -> bytes:
+            opened = os.fstat(descriptor)
+            if (opened.st_dev, opened.st_ino) == identity:
+                producer.seek(0)
+                producer.truncate(0)
+                producer.write(replacement)
+                producer.flush()
+                read_descriptors.append(descriptor)
+            return native_read(descriptor, length)
+
+        with monkeypatch.context() as boundary:
+            boundary.setattr(os, "read", change_file_then_read)
+            with pytest.raises(SecurePathError, match=f"exactly {KEY_BYTES} bytes"):
+                read_owner_only_file_bytes(
+                    path, purpose="key file", expected_size=KEY_BYTES, require_single_link=True
+                )
+
+    assert len(read_descriptors) == 1
+    assert path.read_bytes() == replacement
+    assert (path.stat().st_dev, path.stat().st_ino) == identity
 
 
 def test_read_owner_only_refuses_directory(tmp_path: Path) -> None:

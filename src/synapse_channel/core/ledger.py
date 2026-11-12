@@ -35,6 +35,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from synapse_channel.core.assignment_origin import AssignmentOrigin
+from synapse_channel.core.owned_index import OwnedWorkIndex
+from synapse_channel.core.pending_index import PendingRecipientIndex, assignment_key, scoped_owner
+
 LEDGER_TASK_STATUSES = frozenset({"open", "in_progress", "blocked", "done", "cancelled"})
 """Allowed planning statuses for a :class:`LedgerTask`."""
 
@@ -95,6 +99,8 @@ class LedgerTask:
         Monotonic mutation counter: ``1`` at declaration, ``+1`` on every
         accepted re-declare or update. Enables compare-and-set via
         ``expected_version``.
+    assignment_origin : AssignmentOrigin or None
+        Trusted event-only recovery provenance, excluded from public task dictionaries.
     created_by : str
         Agent that first declared the task.
     created_at : float
@@ -114,6 +120,7 @@ class LedgerTask:
     project: str = ""
     version: int = 1
     created_by: str = ""
+    assignment_origin: AssignmentOrigin | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable snapshot of this task."""
@@ -207,6 +214,8 @@ class Blackboard:
         max_progress_per_task: int = DEFAULT_MAX_PROGRESS_PER_TASK,
     ) -> None:
         self.tasks: dict[str, LedgerTask] = {}
+        self.pending_assignments = PendingRecipientIndex()
+        self.owned_tasks = OwnedWorkIndex("tasks")
         self.progress: list[ProgressNote] = []
         self.max_progress = max(int(max_progress), 1)
         self.max_progress_per_author = max(int(max_progress_per_author), 1)
@@ -217,7 +226,67 @@ class Blackboard:
         if not isinstance(candidate, Blackboard):
             raise TypeError("blackboard candidate must be a Blackboard")
         self.tasks = candidate.tasks
+        self.pending_assignments = candidate.pending_assignments
+        self.owned_tasks = candidate.owned_tasks
         self.progress = candidate.progress
+
+    def _index_task(self, task: LedgerTask, *, current_assignment: bool = False) -> None:
+        """Keep provenance and the recipient index in the same board mutation."""
+        origin = task.assignment_origin
+        if current_assignment or origin is None:
+            origin = AssignmentOrigin(task.suggested_owner, task.version, False)
+            task.assignment_origin = origin
+        if origin.owner != task.suggested_owner or origin.anchor > task.version:
+            raise ValueError("assignment origin does not match its task")
+        if task.status not in ("done", "cancelled") and task.suggested_owner:
+            project = (
+                task.project if task.project and task.task_id.startswith(task.project + "/") else ""
+            )
+            self.owned_tasks.set(task.task_id, task.suggested_owner, project)
+        else:
+            self.owned_tasks.remove(task.task_id)
+        if (
+            origin.legacy
+            and task.status not in ("done", "cancelled")
+            and scoped_owner(task.task_id, task.suggested_owner, task.project)
+        ):
+            self.pending_assignments.set(
+                task.task_id,
+                task.suggested_owner,
+                assignment_key("tasks", task.task_id, task.suggested_owner, origin.anchor),
+            )
+        else:
+            self.pending_assignments.remove(task.task_id)
+
+    def restore_task(self, task: LedgerTask, *, notification_recorded: bool = False) -> None:
+        """Restore durable provenance or retain unknown historical pending work.
+
+        Parameters
+        ----------
+        task : LedgerTask
+            Decoded native task snapshot. Missing provenance is historical only
+            when no trusted activity notification covers its assignment.
+        notification_recorded : bool
+            Whether the original event already carries a valid directed pointer.
+            A version-one task created by its recipient is known self-work.
+        """
+        previous = self.tasks.get(task.task_id)
+        if task.assignment_origin is None:
+            if notification_recorded:
+                task.assignment_origin = AssignmentOrigin(task.suggested_owner, task.version, False)
+            elif previous is not None and previous.suggested_owner == task.suggested_owner:
+                task.assignment_origin = previous.assignment_origin
+            if task.assignment_origin is None:
+                task.assignment_origin = AssignmentOrigin(
+                    task.suggested_owner,
+                    task.version,
+                    not (
+                        notification_recorded
+                        or (task.version == 1 and task.created_by == task.suggested_owner)
+                    ),
+                )
+        self._index_task(task)
+        self.tasks[task.task_id] = task
 
     def post_task(
         self,
@@ -297,6 +366,7 @@ class Blackboard:
                 project=scope,
                 created_by=author,
             )
+            self._index_task(self.tasks[tid], current_assignment=True)
             return True, f"Task '{tid}' declared by {author}."
 
         if scope and existing.project and scope != existing.project:
@@ -304,6 +374,7 @@ class Blackboard:
                 f"Task '{tid}' project conflict: already scoped to "
                 f"'{existing.project}', cannot re-scope to '{scope}'."
             )
+        changed_owner = existing.suggested_owner != suggested_owner.strip()
         existing.title = name
         existing.description = description.strip()
         existing.depends_on = deps
@@ -312,6 +383,7 @@ class Blackboard:
             existing.project = scope
         existing.version += 1
         existing.updated_at = ts
+        self._index_task(existing, current_assignment=changed_owner)
         return True, f"Task '{tid}' re-declared by {author}."
 
     def update_task(
@@ -361,6 +433,7 @@ class Blackboard:
                 f"board has v{task.version}."
             )
 
+        previous_owner, previous_status = task.suggested_owner, task.status
         if status is not None:
             task.status = status
         if suggested_owner is not None:
@@ -369,6 +442,16 @@ class Blackboard:
             task.project = project.strip()
         task.version += 1
         task.updated_at = time.time() if now is None else float(now)
+        self._index_task(
+            task,
+            current_assignment=(
+                previous_owner != task.suggested_owner
+                or (
+                    previous_status in ("done", "cancelled")
+                    and task.status not in ("done", "cancelled")
+                )
+            ),
+        )
         return True, f"Task '{tid}' plan updated."
 
     def post_progress(

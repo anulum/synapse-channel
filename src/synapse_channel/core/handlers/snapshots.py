@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from synapse_channel.core.capability import CapabilityRegistry
     from synapse_channel.core.claim_holder_presence import ClaimHolderPresence
     from synapse_channel.core.dead_letters import DeadLetterLedger
+    from synapse_channel.core.event_row_recovery import CorruptEventRow
     from synapse_channel.core.handlers.inbox import InboxContext
     from synapse_channel.core.ledger import Blackboard
     from synapse_channel.core.mailbox_pending import MailboxPendingTracker
@@ -40,6 +41,11 @@ if TYPE_CHECKING:
 
     class SnapshotsContext(ForwardOriginContext, InboxContext, Protocol):
         """Capabilities consumed by snapshots handlers and their callees."""
+
+        @property
+        def journal_corrupt_rows(self) -> tuple[CorruptEventRow, ...]:
+            """Return startup journal corruption markers for complete recovery reads."""
+            ...
 
         @property
         def agent_roles(self) -> dict[str, tuple[str, ...]]:
@@ -235,6 +241,21 @@ async def handle_history_request(
     A versioned ``inbox_query`` selects the durable exact-identity reader,
     admitted through the mailbox ACL rather than global recall.
     """
+    if "owned_work_query" in data:
+        from synapse_channel.core.handlers.owned_work import handle_owned_work_query
+
+        await handle_owned_work_query(hub, sender, data, websocket)
+        return
+    if "pending_query" in data:
+        from synapse_channel.core.handlers.pending_work import handle_pending_query
+
+        await handle_pending_query(hub, sender, data, websocket)
+        return
+    if "activity_query" in data:
+        from synapse_channel.core.handlers.activity import handle_activity_query
+
+        await handle_activity_query(hub, sender, data, websocket)
+        return
     if "inbox_query" in data:
         from synapse_channel.core.handlers.inbox import handle_inbox_query
 

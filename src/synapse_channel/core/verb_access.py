@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from synapse_channel.core.acl import CLAIM, MAILBOX, MESSAGE, RECALL, RELEASE, Target
+from synapse_channel.core.acl import CLAIM, MAILBOX, MESSAGE, OWNED_WORK, RECALL, RELEASE, Target
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS, normalize_paths
 from synapse_channel.core.verb_registry import AccessMapper
 
@@ -96,8 +96,15 @@ def _claim_targets(data: dict[str, Any], task_id: str) -> list[tuple[str, Target
 
 def history_access(data: dict[str, Any]) -> list[tuple[str, Target]]:
     """Authorize an exact mailbox query or the ordinary global history read."""
-    if "inbox_query" in data:
-        query = data.get("inbox_query")
+    if "owned_work_query" in data:
+        query = data.get("owned_work_query")
+        identity = query.get("identity") if isinstance(query, dict) else None
+        return [(OWNED_WORK, Target("agent", identity if isinstance(identity, str) else ""))]
+    if any(key in data for key in ("pending_query", "activity_query", "inbox_query")):
+        selector = next(
+            key for key in ("pending_query", "activity_query", "inbox_query") if key in data
+        )
+        query = data.get(selector)
         identity = query.get("identity") if isinstance(query, dict) else None
         return [(MAILBOX, Target("agent", identity if isinstance(identity, str) else ""))]
     return [(RECALL, Target("history", "global"))]

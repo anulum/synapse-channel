@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Generator, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.event_row_recovery import (
@@ -40,7 +40,7 @@ class EventReader:
         kinds: Iterable[str] | None = None,
         after_seq: int | None = None,
         apply_row_quarantine: bool = True,
-    ) -> Iterator[StoredEvent]:
+    ) -> Generator[StoredEvent, None, None]:
         """Yield events in ascending sequence order without materialising the log.
 
         This is the bounded-memory read seam for whole-log folds (the Merkle
@@ -89,8 +89,12 @@ class EventReader:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY seq"
         with self.storage.lock:
-            for row in self.storage.connection.execute(sql, params):
-                yield self.storage.decode_event(row, apply_row_quarantine)
+            cursor = self.storage.connection.execute(sql, params)
+            try:
+                for row in cursor:
+                    yield self.storage.decode_event(row, apply_row_quarantine)
+            finally:
+                cursor.close()
 
     def read_since(
         self, after_seq: int, *, kinds: Iterable[str] | None = None, limit: int | None = None

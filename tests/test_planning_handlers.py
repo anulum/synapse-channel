@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 
 from synapse_channel.core.atomic_operations import AtomicExecution
-from synapse_channel.core.handlers import planning
+from synapse_channel.core.handlers import planning, planning_events
 from synapse_channel.core.ledger import ProgressNote
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.task_causality import TaskCausalParent
@@ -27,6 +27,8 @@ if TYPE_CHECKING:
 class _FakeTask:
     def __init__(self, task_id: str) -> None:
         self.task_id = task_id
+        self.suggested_owner = ""
+        self.assignment_origin = None
 
     def as_dict(self) -> dict[str, Any]:
         return {"id": self.task_id}
@@ -124,7 +126,7 @@ def _capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Any]]:
     def _progress(journal: Any, payload: Any) -> None:
         log["progress"].append(payload)
 
-    monkeypatch.setattr(planning, "record_ledger_task", _task)
+    monkeypatch.setattr(planning_events, "record_ledger_task", _task)
     monkeypatch.setattr(planning, "record_ledger_progress", _progress)
     return log
 
@@ -139,7 +141,7 @@ class TestHandleLedgerTask:
         def record(_journal: Any, _task: Any, *, causal_parent: TaskCausalParent) -> None:
             captured.append(causal_parent)
 
-        monkeypatch.setattr(planning, "record_ledger_task", record)
+        monkeypatch.setattr(planning_events, "record_ledger_task", record)
         board = _FakeBlackboard()
         hub = _FakeHub(board, journal=object())
 
@@ -327,7 +329,7 @@ class TestJournalFailureRollback:
         def _raise(_journal: Any, _payload: Any) -> None:
             raise sqlite3.OperationalError("disk full")
 
-        monkeypatch.setattr(planning, "record_ledger_task", _raise)
+        monkeypatch.setattr(planning_events, "record_ledger_task", _raise)
         board = _FakeBlackboard()
         hub = _FakeHub(board, journal=object())
         await planning.handle_ledger_task(
@@ -343,7 +345,7 @@ class TestJournalFailureRollback:
         def _raise(_journal: Any, _payload: Any) -> None:
             raise sqlite3.OperationalError("disk full")
 
-        monkeypatch.setattr(planning, "record_ledger_task", _raise)
+        monkeypatch.setattr(planning_events, "record_ledger_task", _raise)
         board = _FakeBlackboard()
         prior = _FakeTask("t1")
         prior.marker = "pre-mutation"  # type: ignore[attr-defined]
@@ -363,7 +365,7 @@ class TestJournalFailureRollback:
         def _raise(_journal: Any, _payload: Any) -> None:
             raise sqlite3.OperationalError("disk full")
 
-        monkeypatch.setattr(planning, "record_ledger_task", _raise)
+        monkeypatch.setattr(planning_events, "record_ledger_task", _raise)
         board = _FakeBlackboard()
         prior = _FakeTask("t1")
         prior.marker = "pre-mutation"  # type: ignore[attr-defined]

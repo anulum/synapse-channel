@@ -36,6 +36,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import closing, contextmanager
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Literal, NamedTuple
@@ -484,6 +485,29 @@ class EventStore:
             after_seq=after_seq,
             apply_row_quarantine=apply_row_quarantine,
         )
+
+    @contextmanager
+    def stream_events(
+        self, *, kinds: Iterable[str] | None = None, after_seq: int = 0
+    ) -> Iterator[Iterator[StoredEvent]]:
+        """Own a streaming read cursor through bounded early termination.
+
+        Parameters
+        ----------
+        kinds : collections.abc.Iterable of str or None
+            Optional event-kind filter, applied inside SQLite.
+        after_seq : int
+            Exclusive sequence floor.
+
+        Yields
+        ------
+        collections.abc.Iterator of StoredEvent
+            One decoded row at a time. Exiting the context closes the generator
+            and releases its cursor and store lock, including after a break or
+            exception. Do not await while holding this synchronous read scope.
+        """
+        with closing(self._families.reads.iter_events(kinds=kinds, after_seq=after_seq)) as rows:
+            yield rows
 
     @inherit_documentation(EventReader.read_since)
     def read_since(

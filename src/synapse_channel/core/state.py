@@ -25,7 +25,9 @@ from typing import Any
 
 from synapse_channel.core.lifecycle import can_transition
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
+from synapse_channel.core.owned_index import OwnedWorkIndex
 from synapse_channel.core.path_identity import ClaimScopeIdentity
+from synapse_channel.core.pending_index import PendingRecipientIndex, assignment_key, scoped_owner
 from synapse_channel.core.protected_write_admission import ProtectedWriteAdmission
 from synapse_channel.core.protected_write_custody import ProtectedClaimCustody
 from synapse_channel.core.protected_write_enrollment_journal import ProtectedEnrollmentRecord
@@ -141,6 +143,8 @@ class SynapseState:
         )
         self.last_seen: dict[str, float] = {}
         self.claims: dict[str, TaskClaim] = {}
+        self.pending_handoffs = PendingRecipientIndex()
+        self.owned_claims = OwnedWorkIndex("claims")
         self.protected_claim_custody: dict[str, tuple[ProtectedClaimCustody, ...]] = {}
         self.protected_write_admissions: dict[str, ProtectedWriteAdmission] = {}
         self.protected_write_reservations: dict[str, ProtectedWriteReservation] = {}
@@ -195,6 +199,8 @@ class SynapseState:
         self.last_seen.clear()
         self.last_seen.update(candidate.last_seen)
         self.claims = candidate.claims
+        self.pending_handoffs = candidate.pending_handoffs
+        self.owned_claims = candidate.owned_claims
         self.protected_claim_custody = candidate.protected_claim_custody
         self.protected_write_admissions = candidate.protected_write_admissions
         self.protected_write_reservations = candidate.protected_write_reservations
@@ -208,6 +214,49 @@ class SynapseState:
         self._epoch_seq = candidate._epoch_seq
         self._lease_index = candidate._lease_index
 
+    def _index_owned_claim(self, claim: TaskClaim) -> None:
+        """Maintain current-owner lookup after every accepted claim body mutation."""
+        if claim.status in ("done", "failed"):
+            self.owned_claims.remove(claim.task_id)
+        else:
+            prefix, separator, _ = claim.task_id.partition("/")
+            self.owned_claims.set(claim.task_id, claim.owner, prefix if separator else "")
+
+    def restore_claim(self, claim: TaskClaim, *, legacy_handoff: bool = False) -> None:
+        """Restore a journal claim and retain only proven historical handoffs.
+
+        Parameters
+        ----------
+        claim : TaskClaim
+            Native claim snapshot, decoded and custody-checked by replay.
+        legacy_handoff : bool
+            The actual journal kind is HANDOFF without a trusted notification.
+            Ordinary claims never acquire inferred handoff semantics.
+        """
+        self.claims[claim.task_id] = claim
+        self._index_owned_claim(claim)
+        if not legacy_handoff and claim.task_id not in self.pending_handoffs.entries:
+            return
+        key = assignment_key(
+            "handoffs", claim.task_id, claim.owner, claim.ownership_epoch or claim.epoch
+        )
+        if (
+            legacy_handoff
+            and claim.status not in ("done", "failed")
+            and scoped_owner(claim.task_id, claim.owner, claim.owner.partition("/")[0])
+        ):
+            self.pending_handoffs.set(claim.task_id, claim.owner, key)
+        else:
+            self.pending_handoffs.retain(claim.task_id, claim.owner, key)
+            if claim.status in ("done", "failed"):
+                self.pending_handoffs.remove(claim.task_id)
+
+    def restore_release(self, task_id: str) -> None:
+        """Restore an already custody-checked release without leaving a stale index."""
+        self.claims.pop(task_id, None)
+        self.pending_handoffs.remove(task_id)
+        self.owned_claims.remove(task_id)
+
     def _track_lease(self, claim: TaskClaim) -> None:
         """Index a claim's lease for expiry, keeping the heap proportional to live claims.
 
@@ -219,6 +268,15 @@ class SynapseState:
         size to the active-claim count.
         """
         self._lease_index.track(claim, self.claims)
+        self._index_owned_claim(claim)
+        if claim.task_id in self.pending_handoffs.entries:
+            self.pending_handoffs.retain(
+                claim.task_id,
+                claim.owner,
+                assignment_key(
+                    "handoffs", claim.task_id, claim.owner, claim.ownership_epoch or claim.epoch
+                ),
+            )
 
     def reindex_leases(self) -> None:
         """Rebuild the lease-expiry heap from the live claims.
@@ -762,6 +820,9 @@ class SynapseState:
         if data_ref is not None:
             claim.data_ref = data_ref.strip()
         claim.version += 1
+        self._index_owned_claim(claim)
+        if claim.status in ("done", "failed"):
+            self.pending_handoffs.remove(task_id)
         return True, f"Task '{task_id}' updated by {agent}."
 
     def save_checkpoint(
@@ -811,6 +872,7 @@ class SynapseState:
             return False, f"Task '{task}' epoch is stale (current {claim.epoch})."
         claim.checkpoint = str(checkpoint)
         claim.version += 1
+        self._index_owned_claim(claim)
         return True, f"Checkpoint saved for '{task}' by {agent}."
 
     def release(
@@ -858,6 +920,8 @@ class SynapseState:
         if epoch is not None and epoch != existing.epoch:
             return False, f"Task '{task}' epoch is stale (current {existing.epoch})."
         del self.claims[task]
+        self.pending_handoffs.remove(task)
+        self.owned_claims.remove(task)
         # The task is finished; drop any retained checkpoint so a later, unrelated
         # claim of the same id does not resurrect stale resume state.
         self.expired_checkpoints.pop(task, None)
@@ -902,6 +966,8 @@ class SynapseState:
             return False, f"Task '{task}' has outstanding protected custody."
         previous_owner = existing.owner
         del self.claims[task]
+        self.pending_handoffs.remove(task)
+        self.owned_claims.remove(task)
         self.expired_checkpoints.pop(task, None)
         return True, (f"Task '{task}' released by operator {by} (was held by {previous_owner}).")
 
@@ -1141,6 +1207,8 @@ class SynapseState:
             if claim.checkpoint:
                 self.expired_checkpoints[task] = claim.checkpoint
             del self.claims[task]
+            self.pending_handoffs.remove(task)
+            self.owned_claims.remove(task)
 
     def _expire_resources(self, now: float, ttl: float = DEFAULT_RESOURCE_TTL_SECONDS) -> None:
         """Drop resource offers not refreshed within ``ttl`` seconds of ``now``."""

@@ -335,6 +335,7 @@ permission vocabulary should stay small and auditable:
 | `namespace` | Administer project namespace membership and trust material; this is the namespace permission. |
 | `observe` | Receive directed messages the identity is not a party to (when private directed routing is on). Target kind `agent`. |
 | `mailbox` | Replay another identity's directed backlog via a mailbox heartbeat (`mailbox_for`). Target kind `agent`. Self and `-rx` sidecars do not need a grant. |
+| `owned-work` | Read complete current task and claim records assigned to the connected identity through `owned_work_query`. Target kind `agent`; the handler refuses foreign owners. Separate from mailbox metadata access. |
 | `role-claim` | Bind a role on the heartbeat when `--require-role-claim` is on. Target kind `role` (`<project>/<role>`). Complements the role-grant store. |
 | `identity-pin-reclaim` | Remove one exact stale TOFU pin after the liveness, expected-key, requester-binding, and durable-audit gates pass. Target kind `agent`. Always enforced for this verb. |
 | `mailbox-handover` | Hand another name's pending directed mail to a successor, or close it with a reason (`synapse mailbox handover` / `close`). Target kind `agent`. The name itself and its custodian from `--mailbox-custodians` need no grant; this grant is the operator path. |

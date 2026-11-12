@@ -32,6 +32,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from synapse_channel.core.assignment_origin import ASSIGNMENT_ORIGIN_FIELD, AssignmentOrigin
 from synapse_channel.core.delivery_persistence import (
     DELIVERY_ACCEPTED,
     DELIVERY_OWNER_BOUND,
@@ -64,6 +65,7 @@ from synapse_channel.core.message_auth_key_watch import (
     MESSAGE_KEY_SET_REJECTED_KIND,
 )
 from synapse_channel.core.multihub_equivocation import FederationQuarantine, valid_fingerprint
+from synapse_channel.core.notification_events import NOTIFICATION_FIELD, notification_metadata
 from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.path_identity import parse_optional_claim_scope_identity
 from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -741,15 +743,29 @@ def record_checkpoint(store: EventStore, claim: TaskClaim) -> None:
     store.append(EventKind.CHECKPOINT, claim.as_persisted_dict(), durable=True)
 
 
-def record_handoff(store: EventStore, claim: TaskClaim) -> None:
+def record_handoff(store: EventStore, claim: TaskClaim, *, actor: str = "") -> None:
     """Append a durable event capturing a task handed to another agent.
 
     The payload is the full post-handoff claim snapshot — now owned by the
     recipient — so :func:`replay` reconstructs ownership exactly as a ``claim``
     event would. The distinct kind lets the read-side trace ownership transfers
     apart from ordinary claims; coordination replay treats it identically.
+
+    Parameters
+    ----------
+    store : EventStore
+        Authoritative durable native journal.
+    claim : TaskClaim
+        Committed candidate recipient claim.
+    actor : str, optional
+        Authenticated prior owner. When supplied for external project-scoped
+        work, routing metadata is appended inside this same durable event.
     """
-    store.append(EventKind.HANDOFF, claim.as_persisted_dict(), durable=True)
+    payload = claim.as_persisted_dict()
+    notification = notification_metadata("handoffs", actor, claim.owner, payload)
+    if notification is not None:
+        payload[NOTIFICATION_FIELD] = notification
+    store.append(EventKind.HANDOFF, payload, durable=True)
 
 
 def record_resource(store: EventStore, offer: ResourceOffer) -> None:
@@ -796,11 +812,26 @@ def record_ledger_task(
     task: LedgerTask,
     *,
     causal_parent: TaskCausalParent | None = None,
+    notification: dict[str, object] | None = None,
 ) -> None:
-    """Append a durable task snapshot with optional content-bound parent metadata."""
+    """Append a task snapshot and its optional metadata in one durable event.
+
+    Parameters
+    ----------
+    store : EventStore
+        Authoritative durable native journal.
+    task : LedgerTask
+        Candidate task snapshot to publish only after persistence.
+    causal_parent : TaskCausalParent or None
+        Content-bound observed parent, kept outside the public task record.
+    notification : dict[str, object] or None
+        Server-generated assignment pointer, kept outside the task record.
+    """
     store.append(
         EventKind.LEDGER_TASK,
-        task_event_payload(task.as_dict(), causal_parent),
+        task_event_payload(
+            task.as_dict(), causal_parent, notification=notification, origin=task.assignment_origin
+        ),
         durable=True,
     )
 
@@ -890,6 +921,7 @@ def _ledger_task_from_payload(payload: dict[str, Any]) -> LedgerTask:
         project=str(payload.get("project", "")),
         version=int(payload.get("version", 1)),
         created_by=str(payload.get("created_by", "")),
+        assignment_origin=AssignmentOrigin.from_value(payload.get(ASSIGNMENT_ORIGIN_FIELD)),
     )
 
 

@@ -13,7 +13,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.assignment_origin import ASSIGNMENT_ORIGIN_FIELD, AssignmentOrigin
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.notification_events import NOTIFICATION_FIELD
 
 TASK_CAUSAL_PARENT_FIELD = "_causal_parent"
 """Reserved ledger-event field carrying a parent outside the task snapshot."""
@@ -159,14 +161,28 @@ def parse_task_causal_parent_ref(value: str) -> TaskCausalParent:
     return TaskCausalParent(prefix, seq, tail)
 
 
-def task_event_payload(task: Mapping[str, Any], parent: TaskCausalParent | None) -> dict[str, Any]:
-    """Attach optional causal metadata without changing the projected task record."""
+def task_event_payload(
+    task: Mapping[str, Any],
+    parent: TaskCausalParent | None,
+    *,
+    notification: dict[str, object] | None = None,
+    origin: AssignmentOrigin | None = None,
+) -> dict[str, Any]:
+    """Attach causal and notification metadata outside the projected task record."""
     payload = dict(task)
     if parent is not None:
         payload[TASK_CAUSAL_PARENT_FIELD] = parent.to_dict()
+    if notification is not None:
+        payload[NOTIFICATION_FIELD] = notification
+    if origin is not None:
+        payload[ASSIGNMENT_ORIGIN_FIELD] = origin.encode()
     return payload
 
 
 def task_record_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Strip reserved event metadata from the public task snapshot."""
-    return {key: value for key, value in payload.items() if key != TASK_CAUSAL_PARENT_FIELD}
+    return {
+        key: value
+        for key, value in payload.items()
+        if key not in {TASK_CAUSAL_PARENT_FIELD, NOTIFICATION_FIELD, ASSIGNMENT_ORIGIN_FIELD}
+    }

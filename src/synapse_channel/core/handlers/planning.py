@@ -19,22 +19,23 @@ from __future__ import annotations
 import logging
 import sqlite3
 from collections.abc import Callable
+from functools import partial
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from synapse_channel.core.acl import BOARD
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
+from synapse_channel.core.handlers.planning_events import TaskEventRecorder
 from synapse_channel.core.handlers.verdict_admission import (
     announce_stale_verdicts,
     progress_refusal,
 )
-from synapse_channel.core.journal import EventKind, record_ledger_progress, record_ledger_task
+from synapse_channel.core.journal import EventKind, record_ledger_progress
 from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.task_causality import (
     TaskCausalParent,
     TaskCausalParentInputError,
     parse_task_causal_parent,
-    task_event_payload,
 )
 from synapse_channel.core.verb_access import field_access
 from synapse_channel.core.verb_registry import VerbSpec
@@ -179,7 +180,10 @@ async def handle_ledger_task(
     if not parent_valid:
         return
 
+    events = TaskEventRecorder(sender, causal_parent)
+
     def mutate(board: Blackboard) -> tuple[bool, str, LedgerTask | None]:
+        events.capture_owner(board, task_id)
         ok, message = board.post_task(
             task_id=task_id,
             title=str(data.get("title") or ""),
@@ -195,26 +199,11 @@ async def handle_ledger_task(
     def persist(result: tuple[bool, str, LedgerTask | None]) -> None:
         task = result[2]
         if task is not None and hub.journal is not None:
-            if causal_parent is None:
-                record_ledger_task(hub.journal, task)
-            else:
-                record_ledger_task(hub.journal, task, causal_parent=causal_parent)
+            events.record(hub.journal, task)
 
-    def prepare(result: tuple[bool, str, LedgerTask | None]) -> OperationDraft | None:
-        ok, message, task = result
-        if not ok or task is None:
-            return None
-        posted = hub.system(
-            message,
-            msg_type=MessageType.LEDGER_TASK_POSTED,
-            task=task.as_dict(),
-        )
-        event_payload = task_event_payload(task.as_dict(), causal_parent)
-        return OperationDraft(
-            response=posted,
-            events=((EventKind.LEDGER_TASK, event_payload),),
-            intent={"family": "ledger_task", "response_type": MessageType.LEDGER_TASK_POSTED},
-        )
+    prepare = partial(
+        events.draft, hub=hub, msg_type=MessageType.LEDGER_TASK_POSTED, family="ledger_task"
+    )
 
     try:
         execution = await _run_board_operation(hub, data, mutate, prepare, persist)
@@ -260,7 +249,10 @@ async def handle_ledger_task_update(
     if not parent_valid:
         return
 
+    events = TaskEventRecorder(sender, causal_parent)
+
     def mutate(board: Blackboard) -> tuple[bool, str, LedgerTask | None]:
+        events.capture_owner(board, task_id)
         ok, message = board.update_task(
             task_id,
             status=str(status) if status is not None else None,
@@ -273,29 +265,14 @@ async def handle_ledger_task_update(
     def persist(result: tuple[bool, str, LedgerTask | None]) -> None:
         task = result[2]
         if task is not None and hub.journal is not None:
-            if causal_parent is None:
-                record_ledger_task(hub.journal, task)
-            else:
-                record_ledger_task(hub.journal, task, causal_parent=causal_parent)
+            events.record(hub.journal, task)
 
-    def prepare(result: tuple[bool, str, LedgerTask | None]) -> OperationDraft | None:
-        ok, message, task = result
-        if not ok or task is None:
-            return None
-        updated = hub.system(
-            message,
-            msg_type=MessageType.LEDGER_TASK_UPDATED,
-            task=task.as_dict(),
-        )
-        event_payload = task_event_payload(task.as_dict(), causal_parent)
-        return OperationDraft(
-            response=updated,
-            events=((EventKind.LEDGER_TASK, event_payload),),
-            intent={
-                "family": "ledger_task_update",
-                "response_type": MessageType.LEDGER_TASK_UPDATED,
-            },
-        )
+    prepare = partial(
+        events.draft,
+        hub=hub,
+        msg_type=MessageType.LEDGER_TASK_UPDATED,
+        family="ledger_task_update",
+    )
 
     try:
         execution = await _run_board_operation(hub, data, mutate, prepare, persist)

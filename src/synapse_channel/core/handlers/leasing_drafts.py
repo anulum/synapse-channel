@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from synapse_channel.core.atomic_operations import OperationDraft
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.ledger import ProgressNote
+from synapse_channel.core.notification_events import NOTIFICATION_FIELD, notification_metadata
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.receipts import (
     build_release_receipt,
@@ -231,6 +232,11 @@ def prepare_handoff(
         lease_expires_at=claim.lease_expires_at,
         checkpoint=claim.checkpoint,
     )
+    event_payload = claim.as_persisted_dict()
+    notification = notification_metadata("handoffs", sender, claim.owner, event_payload)
+    if notification is not None:
+        event_payload[NOTIFICATION_FIELD] = notification
+        granted[NOTIFICATION_FIELD] = notification
     progress = ProgressNote(
         task_id=task_id,
         author=sender,
@@ -243,7 +249,7 @@ def prepare_handoff(
     return OperationDraft(
         response=granted,
         events=(
-            (EventKind.HANDOFF, claim.as_persisted_dict()),
+            (EventKind.HANDOFF, event_payload),
             (EventKind.LEDGER_PROGRESS, progress.as_dict()),
         ),
         intent={

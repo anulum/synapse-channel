@@ -1099,3 +1099,33 @@ def test_append_returns_the_monotonic_seq_it_assigned(tmp_path: Path) -> None:
     store.close()
     assert second == first + 1
     assert [event.seq for event in events] == [first, second]
+
+
+def test_stream_events_closes_after_early_exit(tmp_path: Path) -> None:
+    """A bounded read owns its generator even when the consumer stops early."""
+    store = EventStore(tmp_path / "stream.db")
+    try:
+        first = store.append("chat", {"payload": "first"})
+        store.append("claim", {"task_id": "second"})
+        with store.stream_events(kinds=("chat",), after_seq=0) as rows:
+            assert next(rows).seq == first
+        assert list(rows) == []
+        assert store.append("chat", {"payload": "later"}) > first
+    finally:
+        store.close()
+
+
+def test_stream_events_closes_after_consumer_exception(tmp_path: Path) -> None:
+    """A consumer refusal cannot retain the native cursor or read lock."""
+    store = EventStore(tmp_path / "stream.db")
+    try:
+        first = store.append("chat", {"payload": "first"})
+        store.append("chat", {"payload": "second"})
+        with pytest.raises(ValueError, match="stop-reading"):
+            with store.stream_events() as rows:
+                assert next(rows).seq == first
+                raise ValueError("stop-reading")
+        assert list(rows) == []
+        assert len(store.read_all()) == 2
+    finally:
+        store.close()
