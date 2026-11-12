@@ -174,6 +174,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_metrics_token_set_cli.py": (1, "platform-guard"),
     # POSIX mode bits define the group-readable key-set file the hub must refuse.
     "tests/test_message_auth_key_set_cli.py": (1, "platform-guard"),
+    # The Windows C runtime is the only place a non-contention lock error is raised.
+    "tests/test_native_hook_spool.py": (1, "platform-guard"),
     "tests/test_worker_session_waiter_cleanup.py": (1, "platform-guard"),
     # Includes the real Linux executable-format fallback/process-image regression.
     "tests/test_launch_record.py": (8, "platform-guard"),

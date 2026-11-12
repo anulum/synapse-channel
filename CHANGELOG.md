@@ -47,6 +47,8 @@ execution evidence when carrying a release claim forward.
   read falls back to ``whoami``. A failed token or security-descriptor
   call is refused, including an allow ACE for Everyone. ``takeown``
   failing does not skip the ACL.
+- A Windows spool lock that fails for a reason other than a held region
+  is raised. It is not reported as a busy flush.
 
 ## [0.99.51] - 2026-11-11
 

@@ -851,3 +851,24 @@ def test_a_step_that_fails_leaves_no_temporary_file_and_the_entry_where_it_was(
     (directory / "recorded" / "2026-10-11" / entry.name / "occupied").rmdir()
     (directory / "recorded" / "2026-10-11" / entry.name).rmdir()
     assert flush(directory, Hub(), now=lambda: _T0).recorded == 1
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="a foreign lock error is reported by the Windows C runtime",
+)
+def test_a_lock_error_that_is_not_contention_is_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A byte-range error other than a held region must not look like busy."""
+    import errno
+
+    import synapse_channel.native_spool as spool_module
+
+    def refuse(_descriptor: int, _mode: int, _length: int) -> None:
+        raise OSError(errno.EINVAL, "invalid lock")
+
+    windows_lock = spool_module.msvcrt  # type: ignore[attr-defined]
+    monkeypatch.setattr(windows_lock, "locking", refuse)
+    with pytest.raises(OSError, match="invalid lock"):
+        flush(tmp_path / "spool", Hub())
