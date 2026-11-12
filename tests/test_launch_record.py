@@ -221,6 +221,16 @@ def test_a_process_that_has_gone_is_recorded_as_unavailable() -> None:
     assert gone.unavailable != ""
 
 
+@pytest.mark.skipif(not WINDOWS, reason="OpenProcess refuses a pid that is not open")
+def test_a_process_windows_cannot_open_has_no_identity() -> None:
+    """A pid the system will not open is recorded, not given a start identity."""
+    missing = process_identity(2_147_483_647)
+
+    assert missing.image is None
+    assert missing.started == ""
+    assert missing.unavailable.startswith("the process cannot be opened")
+
+
 @pytest.mark.skipif(not LINUX, reason="reads the kernel's link to a running program")
 def test_the_image_is_the_program_that_runs_even_after_its_file_was_replaced(
     tmp_path: Path,
