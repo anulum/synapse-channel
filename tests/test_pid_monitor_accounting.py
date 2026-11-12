@@ -570,7 +570,7 @@ def test_windows_query_failures_and_a_launcher_child_are_explicit(tmp_path: Path
     assert missing["status"] == "unavailable"
     assert missing["requested_pid"] == ghost
     assert accounting._windows_birth(ghost) is None
-    base = Path(r"C:\Program Files\Python312\python.exe")
+    base = Path(sys.base_prefix) / "python.exe"  # the interpreter this environment was made from
     alone = subprocess.Popen([str(base), "-c", "import time; time.sleep(20)"])
     try:
         plain = account_process(alone.pid)
@@ -579,7 +579,7 @@ def test_windows_query_failures_and_a_launcher_child_are_explicit(tmp_path: Path
         alone.wait(timeout=5)
     scripts = tmp_path / "Scripts"
     scripts.mkdir()
-    (tmp_path / "pyvenv.cfg").write_text("home = C:\\Program Files\\Python312\n", encoding="utf-8")
+    (tmp_path / "pyvenv.cfg").write_text(f"home = {sys.base_prefix}\n", encoding="utf-8")
     launcher = scripts / "python.exe"
     shutil.copy(base, launcher)
     idle = subprocess.Popen([str(launcher), "-c", "import time; time.sleep(20)"])
