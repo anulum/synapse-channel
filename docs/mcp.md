@@ -243,6 +243,8 @@ provisioned HTTP profile has its own retained-operation confirmation contract.
 | `synapse_release(task_id, evidence?, changed_files?, confidence?)` | Release a lease you hold and validate the hub-attested receipt; supplied evidence is persisted as an assessment note. |
 | `synapse_send(target, message)` | Submit chat to an agent, a group glob, or `all` on the stdio bridge's socket; no delivery receipt is awaited. |
 | `synapse_inbox(limit?)` | Consume up to 1–100 messages for this identity as JSON, from the selected local feed or connected hub journal. |
+| `synapse_inbox_page(hub_id?, after_seq?, limit?)` | Read a repeatable native journal page of exact directed messages for the connected identity, using a caller-owned cursor. No local cursor or processing receipt is written. |
+| `synapse_owned_work(mode?, hub_id?, after_key?, revision?, limit?, key?, item_version?, offset?, digest?, limit_chars?)` | List current work assigned to this exact identity without the global board cap, then read complete public task or claim records in bounded JSON chunks. HTTP requires an explicit optional grant and fixes the project. |
 | `synapse_handoff(task_id, to_agent)` | Hand a held task to another online agent. |
 | `synapse_task_declare(task_id, title, depends_on?)` | Declare or refine a task on the plan. |
 | `synapse_task_update(task_id, status?, suggested_owner?)` | Update a plan task. |
@@ -279,6 +281,22 @@ only complete lines, pages without skipping a remaining tail, and reports
 `available: false` when the adapter cannot see that local file. For a custom
 local layout pass `synapse mcp --inbox-feed PATH --inbox-cursor PATH`. A remote
 MCP process does not pretend that a remote hub's file is locally available.
+
+For clients that must retry a lost response, use `synapse_inbox_page` instead.
+Its initial arguments are `hub_id=""`, `after_seq=0` and `limit=50`. After
+accepting a page, retain its `hub_id` and `cursor`, then supply them as the next
+`hub_id` and `after_seq`. Retry the original arguments if the response is lost.
+The bridge never advances a local cursor for this tool. It always queries its
+admitted hub connection, independently of `SYN_INBOX_SOURCE` and local feed paths.
+
+This page includes only chat whose target exactly equals the connected identity.
+Broadcasts, group aliases, multi-recipient messages, private-channel traffic and
+the identity's own messages are omitted. The native page limit applies before
+this additional filter: an empty `messages` array can still have `has_more=true`.
+Follow that flag using the returned scanned cursor; do not assume an empty page
+means the journal has ended. A cursor from another hub, a refused query or an
+unavailable journal produces an error, without falling back to a local feed.
+Reading establishes neither processing acknowledgement nor completed work.
 
 Inbox read failures return `cannot read local relay feed`; a missing file keeps
 the authored `local relay feed is missing` refusal. A failed cursor write returns

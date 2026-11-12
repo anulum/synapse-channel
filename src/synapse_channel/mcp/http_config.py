@@ -19,10 +19,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
+from synapse_channel.mcp.wake_http import WakeEndpoint
 
 READ_TOOLS = frozenset(
     {"synapse_board", "synapse_state", "synapse_manifest", "synapse_directory", "synapse_status"}
 )
+OPTIONAL_READ_TOOLS = frozenset({"synapse_inbox_page", "synapse_owned_work"})
 MUTATION_TOOLS = frozenset(
     {
         "synapse_claim",
@@ -60,6 +62,9 @@ class RemoteSeat(BaseModel):
         Exclusive task namespace, including its terminating slash.
     tools : frozenset[str]
         Permitted remote actions. Mutations require an explicit grant.
+    wake : WakeEndpoint or None
+        Optional operator-owned signed notification target. A durable inbox read
+        grant is also required; no HTTP client may supply this profile.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -68,13 +73,14 @@ class RemoteSeat(BaseModel):
     identity_key_id: str = Field(min_length=1, max_length=256)
     task_prefix: str = Field(min_length=2, max_length=128)
     tools: frozenset[str] = READ_TOOLS
+    wake: WakeEndpoint | None = None
 
     @model_validator(mode="after")
     def validate_authority(self) -> RemoteSeat:
         """Reject ambiguous task namespaces and unsupported remote operations."""
         if not self.task_prefix.endswith("/") or self.task_prefix.startswith("/"):
             raise ValueError("task namespace must end in a slash")
-        if not self.tools <= READ_TOOLS | MUTATION_TOOLS:
+        if not self.tools <= READ_TOOLS | OPTIONAL_READ_TOOLS | MUTATION_TOOLS:
             raise ValueError("unsupported remote tool grant")
         return self
 
@@ -176,6 +182,33 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
+def parse_http_auth_config(raw: bytes) -> HttpAuthConfig:
+    """Validate one bounded immutable policy snapshot.
+
+    Parameters
+    ----------
+    raw : bytes
+        Exact JSON policy bytes, at most 65,536 bytes.
+
+    Returns
+    -------
+    HttpAuthConfig
+        Issuer, audience and grants derived only from the supplied snapshot.
+
+    Raises
+    ------
+    HttpConfigError
+        If the snapshot exceeds its budget, repeats a key or fails validation.
+    """
+    try:
+        if len(raw) > 65536:
+            raise ValueError("remote MCP configuration exceeds its byte budget")
+        json.loads(raw, object_pairs_hook=_unique_object)
+        return HttpAuthConfig.model_validate_json(raw)
+    except (ValidationError, ValueError, TypeError, UnicodeError) as exc:
+        raise HttpConfigError("remote MCP authentication configuration is invalid") from exc
+
+
 def load_http_auth_config(path: str | Path) -> HttpAuthConfig:
     """Read current grants from one owner-only, single-link policy file.
 
@@ -198,7 +231,6 @@ def load_http_auth_config(path: str | Path) -> HttpAuthConfig:
         text = read_secret_file(
             path, flag="--http-auth-file", require_single_link=True, limit=65536
         )
-        json.loads(text, object_pairs_hook=_unique_object)
-        return HttpAuthConfig.model_validate_json(text)
-    except (SecretFileError, ValidationError, ValueError, TypeError, UnicodeError) as exc:
+    except SecretFileError as exc:
         raise HttpConfigError("remote MCP authentication configuration is invalid") from exc
+    return parse_http_auth_config(text.encode("utf-8"))

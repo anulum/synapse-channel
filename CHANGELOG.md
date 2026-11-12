@@ -32,8 +32,26 @@ execution evidence when carrying a release claim forward.
   permission; the third uses a new permission, `owned-work`. Assignment
   pointers are written in the same durable event as the task or handoff they
   describe and rebuilt by replay; public task records are unchanged, and the
-  wire version stays 7. The hub offers the queries; no client command or MCP
-  tool uses them yet.
+  wire version stays 7. The hub offers the queries; the two MCP tools of
+  the next entry read the inbox and the owned work, and no client command uses
+  the other two yet.
+
+- Two MCP tools on the stdio bridge. `synapse_inbox_page` reads a repeatable
+  page of the messages addressed exactly to the connected identity, under a
+  cursor the caller keeps; it writes no local cursor, so a lost answer is
+  repeated with the same arguments. `synapse_owned_work` lists the tasks and
+  claims the identity owns without the board's size cap and reads one record
+  in bounded pieces fenced by a revision and a content digest. Neither tool
+  acknowledges that anything was processed. `synapse_inbox` is unchanged. The
+  remote HTTP profile accepts both names as optional read grants; the HTTP
+  server does not serve them yet.
+
+- Storage for a notification outbox, built and not yet started by any command:
+  a private bounded SQLite ledger per provisioned subject, seat and hub, a
+  root catalogue with a byte and generation budget under one process lock, an
+  archive step that verifies every byte before it removes a source, and a
+  signed HTTPS sender that runs in a child process. A notification carries a
+  revision and the kinds of change, never a message body.
 
 - A local `synapse pid-monitor` run counts each observed process: birth,
   owner, executable path, CPU seconds, memory, swap, GPU memory when

@@ -54,6 +54,8 @@ def registered_mcp_tool_names() -> frozenset[str]:
             "synapse_release",
             "synapse_send",
             "synapse_inbox",
+            "synapse_inbox_page",
+            "synapse_owned_work",
             "synapse_handoff",
             "synapse_task_declare",
             "synapse_task_update",
@@ -100,6 +102,17 @@ def _require_mcp_server(
     return cast("type[MCPServer]", module.MCPServer)
 
 
+def _register_work_reads(
+    server: MCPServer, bridge: SynapseHubBridge, views: ProjectMcpViews | None
+) -> None:
+    """Keep optional transport imports and fixed-scope work readers together."""
+    from synapse_channel.mcp.inbox_registration import register_inbox_tools
+    from synapse_channel.mcp.owned_work_registration import register_owned_work_tool
+
+    register_inbox_tools(server, bridge)
+    register_owned_work_tool(server, bridge, project=views.project if views is not None else None)
+
+
 def build_mcp_server(
     bridge: SynapseHubBridge,
     *,
@@ -138,10 +151,7 @@ def build_mcp_server(
 
     register_mutation_tools(server, bridge)
 
-    @server.tool()
-    async def synapse_inbox(limit: int = 50) -> str:
-        """Consume a bounded page of local durable messages for this bridge identity."""
-        return await bridge.inbox(limit)
+    _register_work_reads(server, bridge, views)
 
     @server.tool()
     async def synapse_board() -> str:

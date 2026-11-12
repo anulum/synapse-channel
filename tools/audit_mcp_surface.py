@@ -138,33 +138,47 @@ def _resource_uri(decorator: ast.expr) -> str | None:
     return None
 
 
+_DELEGATES = (
+    ("synapse_channel.mcp.outcome_tools", "register_mutation_tools", "outcome_tools.py"),
+    ("synapse_channel.mcp.inbox_registration", "register_inbox_tools", "inbox_registration.py"),
+    (
+        "synapse_channel.mcp.owned_work_registration",
+        "register_owned_work_tool",
+        "owned_work_registration.py",
+    ),
+)
+
+
 def _registration_trees(registration_path: Path) -> tuple[ast.Module, ...]:
-    """Read the entry module and its explicitly called mutation registration module.
+    """Read the entry module and each registration module it imports and calls.
 
     Parse source only: the optional MCP SDK is never imported by this audit.
-    A neighboring file is included only when the entry module imports and calls
-    its known registration function with the server and bridge arguments.
+    A neighbouring file is included only when the entry module imports its
+    known registration function and calls it with the server and the bridge
+    as its first two arguments.
     """
     tree = ast.parse(registration_path.read_text(encoding="utf-8"), filename=str(registration_path))
-    bindings = {
-        alias.asname or alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module == "synapse_channel.mcp.outcome_tools"
-        for alias in node.names
-        if alias.name == "register_mutation_tools"
-    }
-    called = any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id in bindings
-        and [arg.id if isinstance(arg, ast.Name) else None for arg in node.args]
-        == ["server", "bridge"]
-        for node in ast.walk(tree)
-    )
-    if not called:
-        return (tree,)
-    companion = registration_path.with_name("outcome_tools.py")
-    return tree, ast.parse(companion.read_text(encoding="utf-8"), filename=str(companion))
+    trees = [tree]
+    for module, function, filename in _DELEGATES:
+        bindings = {
+            alias.asname or alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == module
+            for alias in node.names
+            if alias.name == function
+        }
+        called = any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in bindings
+            and [arg.id if isinstance(arg, ast.Name) else None for arg in node.args[:2]]
+            == ["server", "bridge"]
+            for node in ast.walk(tree)
+        )
+        if called:
+            companion = registration_path.with_name(filename)
+            trees.append(ast.parse(companion.read_text(encoding="utf-8"), filename=str(companion)))
+    return tuple(trees)
 
 
 def discover_surface(registration_path: Path) -> McpSurface:
@@ -208,7 +222,9 @@ def audit_docs(
     docs = docs_path.read_text(encoding="utf-8")
     errors: list[str] = []
 
-    missing_tools = tuple(tool for tool in surface.tools if f"`{tool}" not in docs)
+    missing_tools = tuple(
+        tool for tool in surface.tools if not re.search(r"`" + re.escape(tool) + r"(?:`|\()", docs)
+    )
     if missing_tools:
         errors.append(f"undocumented tools: {', '.join(missing_tools)}")
 

@@ -192,17 +192,26 @@ def test_safe_opener_follows_a_plain_302_redirect() -> None:
     assert receiver.methods == ["GET"]
 
 
+@pytest.mark.parametrize("header_name", ["Authorization", "Webhook-Signature"])
+@pytest.mark.parametrize("tls", [False, True])
 @pytest.mark.parametrize("code", [307, 308])
 def test_authenticated_same_origin_redirect_preserves_post_and_sensitive_header(
+    tmp_path: Path,
+    header_name: str,
+    tls: bool,
     code: int,
 ) -> None:
-    with _Redirect(location="/final", code=code) as endpoint:
-        opener = transport.build_safe_opener(allow_local=True)
+    """Keep an authenticated POST and its exact credential on one HTTP(S) origin."""
+    certfile, keyfile = _localhost_cert(tmp_path) if tls else (None, None)
+    with _Redirect(location="/final", code=code, certfile=certfile, keyfile=keyfile) as endpoint:
+        opener = transport.build_safe_opener(
+            allow_local=True, ca_file=str(certfile) if certfile else None
+        )
         req = Request(
             f"{endpoint.url}/start",
             data=b'{"task":"safe"}',
             headers={
-                "Authorization": "Bearer test-only-secret",
+                header_name: "test-only-secret",
                 "Content-Type": "application/json",
             },
             method="POST",
@@ -212,18 +221,26 @@ def test_authenticated_same_origin_redirect_preserves_post_and_sensitive_header(
 
     assert endpoint.paths == ["/start", "/final"]
     assert endpoint.methods == ["POST", "POST"]
-    assert endpoint.sensitive_header_names == [{"authorization"}, {"authorization"}]
+    assert endpoint.sensitive_header_names == [{header_name.casefold()}, {header_name.casefold()}]
+    assert [item[header_name.casefold()] for item in endpoint.received_headers] == [
+        "test-only-secret",
+        "test-only-secret",
+    ]
     assert endpoint.bodies == [b'{"task":"safe"}', b'{"task":"safe"}']
 
 
+@pytest.mark.parametrize("header_name", ["Authorization", "Webhook-Signature"])
 @pytest.mark.parametrize("code", [301, 302, 303])
-def test_authenticated_redirect_refuses_method_rewrite_statuses(code: int) -> None:
+def test_authenticated_redirect_refuses_method_rewrite_statuses(
+    header_name: str, code: int
+) -> None:
+    """Reject status codes that could rewrite a credential-bearing request."""
     with _Redirect(location="/final", code=code) as endpoint:
         opener = transport.build_safe_opener(allow_local=True)
         req = Request(
             f"{endpoint.url}/start",
             data=b"{}",
-            headers={"Authorization": "Bearer test-only-secret"},
+            headers={header_name: "test-only-secret"},
             method="POST",
         )
         with pytest.raises(URLError, match="require status 307 or 308"):
@@ -240,6 +257,8 @@ def test_authenticated_redirect_refuses_method_rewrite_statuses(code: int) -> No
         "Proxy-Authorization",
         "Cookie",
         "Cookie2",
+        "Webhook-Signature",
+        "wEbHoOk-SiGnAtUrE",
     ],
 )
 @pytest.mark.parametrize("code", [307, 308])
@@ -247,6 +266,7 @@ def test_sensitive_header_never_crosses_origin(
     header_name: str,
     code: int,
 ) -> None:
+    """Refuse a second origin before it can receive any signed request bytes."""
     with _Receiver() as receiver:
         with _Redirect(location=f"{receiver.url}/final", code=code) as proxy:
             opener = transport.build_safe_opener(allow_local=True)
@@ -263,7 +283,9 @@ def test_sensitive_header_never_crosses_origin(
     assert receiver.paths == []
 
 
-def test_sensitive_header_never_crosses_hostname_on_the_same_port() -> None:
+@pytest.mark.parametrize("header_name", ["Authorization", "Webhook-Signature"])
+def test_sensitive_header_never_crosses_hostname_on_the_same_port(header_name: str) -> None:
+    """An unredirected credential also remains bound to its original hostname."""
     with _Redirect(location="/unused", code=307) as endpoint:
         endpoint.location = f"http://127.0.0.1:{endpoint.port}/final"
         opener = transport.build_safe_opener(allow_local=True)
@@ -272,14 +294,16 @@ def test_sensitive_header_never_crosses_hostname_on_the_same_port() -> None:
             data=b"{}",
             method="POST",
         )
-        req.add_unredirected_header("Authorization", "Bearer test-only-secret")
+        req.add_unredirected_header(header_name, "test-only-secret")
         with pytest.raises(URLError, match="must not cross origins"):
             opener.open(req, timeout=2.0)
 
     assert endpoint.paths == ["/start"]
 
 
-def test_authenticated_http_to_https_redirect_is_refused(tmp_path: Path) -> None:
+@pytest.mark.parametrize("header_name", ["Authorization", "Webhook-Signature"])
+def test_authenticated_http_to_https_redirect_is_refused(tmp_path: Path, header_name: str) -> None:
+    """Changing scheme creates a different credential authority even with TLS."""
     certfile, keyfile = _localhost_cert(tmp_path)
     with _Receiver(certfile=certfile, keyfile=keyfile) as receiver:
         with _Redirect(location=f"{receiver.url}/upgraded", code=307) as proxy:
@@ -287,7 +311,7 @@ def test_authenticated_http_to_https_redirect_is_refused(tmp_path: Path) -> None
             req = Request(
                 f"{proxy.url}/start",
                 data=b"{}",
-                headers={"Authorization": "Bearer test-only-secret"},
+                headers={header_name: "test-only-secret"},
                 method="POST",
             )
             with pytest.raises(URLError, match="must not cross origins"):
@@ -360,6 +384,23 @@ def test_scheme_relative_same_origin_307_is_permitted() -> None:
     assert endpoint.paths == ["/start", "/final"]
 
 
+def test_redirect_discards_body_before_following() -> None:
+    """Do not wait for an advertised redirect body before the next request."""
+    with _Redirect(location="/final", code=307, block_body_until_followed=True) as endpoint:
+        opener = transport.build_safe_opener(allow_local=True)
+        req = Request(
+            f"{endpoint.url}/start",
+            data=b"{}",
+            headers={"Webhook-Signature": "v1,test-only-signature"},
+            method="POST",
+        )
+        with opener.open(req, timeout=0.5) as response:
+            transport.read_bounded(response)
+
+    assert endpoint.paths == ["/start", "/final"]
+    assert endpoint.followed.is_set()
+
+
 def test_redirect_chain_limit_is_explicit_and_bounded() -> None:
     with _Redirect(location="/loop", code=307, always_redirect=True) as endpoint:
         opener = transport.build_safe_opener(allow_local=True)
@@ -396,6 +437,7 @@ def test_webhook_redirect_policy_descriptor_is_stable_and_value_free() -> None:
             "cookie",
             "cookie2",
             "proxy-authorization",
+            "webhook-signature",
         ],
         "authenticated_statuses": [307, 308],
         "authenticated_origin": "exact",
@@ -506,22 +548,31 @@ class _Redirect:
         certfile: Path | None = None,
         keyfile: Path | None = None,
         always_redirect: bool = False,
+        block_body_until_followed: bool = False,
     ) -> None:
+        """Capture native request evidence and serve controlled HTTP(S) redirects."""
         self.location = location
         self.code = code
         self.always_redirect = always_redirect
+        self.block_body_until_followed = block_body_until_followed
+        self.followed = threading.Event()
         self.port = _free_port()
         self.paths: list[str] = []
         self.methods: list[str] = []
         self.sensitive_header_names: list[set[str]] = []
+        self.received_headers: list[dict[str, str]] = []
         self.bodies: list[bytes] = []
         self._scheme = "https" if certfile is not None else "http"
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
             def _handle(self) -> None:
+                """Record literal headers and bytes before issuing the response."""
                 owner.paths.append(self.path)
                 owner.methods.append(self.command)
+                owner.received_headers.append(
+                    {str(name).casefold(): value for name, value in self.headers.items()}
+                )
                 owner.sensitive_header_names.append(
                     {
                         str(name).casefold()
@@ -535,8 +586,15 @@ class _Redirect:
                 self.send_response(owner.code if should_redirect else HTTPStatus.NO_CONTENT)
                 if should_redirect:
                     self.send_header("Location", owner.location)
-                self.send_header("Content-Length", "0")
+                self.send_header(
+                    "Content-Length",
+                    "1048576" if should_redirect and owner.block_body_until_followed else "0",
+                )
                 self.end_headers()
+                if should_redirect and owner.block_body_until_followed:
+                    owner.followed.wait(timeout=2.0)
+                else:
+                    owner.followed.set()
 
             do_GET = _handle
             do_POST = _handle
@@ -561,6 +619,8 @@ class _Redirect:
         return self
 
     def __exit__(self, *_exc: object) -> None:
+        """Release the controlled withheld body and close the owned server."""
+        self.followed.set()
         self._server.shutdown()
         self._server.server_close()
         self._thread.join(timeout=2.0)

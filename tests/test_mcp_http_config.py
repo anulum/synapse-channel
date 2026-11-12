@@ -19,7 +19,12 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from mcp_http_helpers import write_policy
-from synapse_channel.mcp.http_config import READ_TOOLS, HttpConfigError, load_http_auth_config
+from synapse_channel.mcp.http_config import (
+    READ_TOOLS,
+    HttpConfigError,
+    load_http_auth_config,
+    parse_http_auth_config,
+)
 
 
 def test_owner_policy_defaults_to_reads(tmp_path: Path) -> None:
@@ -31,6 +36,29 @@ def test_owner_policy_defaults_to_reads(tmp_path: Path) -> None:
     assert grant.seat == "ALPHA/alice"
     assert grant.task_prefix == "ALPHA/"
     assert grant.tools == READ_TOOLS
+
+
+def test_snapshot_parser_remains_bound_to_captured_bytes_after_owner_replacement(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "policy.json"
+    write_policy(path, Ed25519PrivateKey.generate())
+    original = path.read_bytes()
+    expected = load_http_auth_config(path)
+    payload = json.loads(original)
+    payload["subjects"]["alice"]["enabled"] = False
+    path.write_text(json.dumps(payload))
+    assert not load_http_auth_config(path).subjects["alice"].enabled
+    assert parse_http_auth_config(original) == expected
+    for invalid in (
+        b" " * 65537,
+        b"{",
+        b"\xff",
+        original.replace(b'"issuer":', b'"issuer": "https://duplicate.example.test", "issuer":'),
+    ):
+        with pytest.raises(HttpConfigError) as failure:
+            parse_http_auth_config(invalid)
+        assert str(failure.value) == "remote MCP authentication configuration is invalid"
 
 
 @pytest.mark.parametrize(

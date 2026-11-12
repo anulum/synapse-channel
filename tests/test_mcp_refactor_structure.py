@@ -27,6 +27,8 @@ EXPECTED_TOOLS = {
     "synapse_release",
     "synapse_send",
     "synapse_inbox",
+    "synapse_inbox_page",
+    "synapse_owned_work",
     "synapse_handoff",
     "synapse_task_declare",
     "synapse_task_update",

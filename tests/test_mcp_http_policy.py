@@ -26,6 +26,8 @@ from starlette.applications import Starlette
 from hub_e2e_helpers import running_hub
 from mcp_http_helpers import access_token, https_server, write_policy
 from mcp_server_helpers import start_bridge
+from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.mcp.bridge import SynapseHubBridge
 from synapse_channel.mcp.http_auth import HttpTokenVerifier
 from synapse_channel.mcp.http_config import load_http_auth_config
@@ -55,6 +57,16 @@ def build_policy_app(path: Path, bridge: SynapseHubBridge) -> Starlette:
         """Read the real project board after fresh operation admission."""
         await policy.authorize("synapse_board")
         return await views.board()
+
+    @server.tool(name="synapse_inbox_page")
+    async def scoped_inbox_page() -> None:
+        """Ask for admission to the caller-cursor inbox page."""
+        await policy.authorize("synapse_inbox_page")
+
+    @server.tool(name="synapse_owned_work")
+    async def scoped_owned_work() -> None:
+        """Ask for admission to the owned-work read."""
+        await policy.authorize("synapse_owned_work")
 
     @server.tool(name="synapse_claim")
     async def scoped_claim(task_id: str) -> str:
@@ -128,6 +140,55 @@ async def test_mutations_need_operator_and_token_authority(
                             assert "ALPHA/second" not in hub.state.claims
         finally:
             await handle.close()
+
+
+@pytest.mark.parametrize("tool", ["synapse_inbox_page", "synapse_owned_work"])
+async def test_an_optional_read_named_in_a_grant_is_not_served_yet(
+    tmp_path: Path, tool: str
+) -> None:
+    """A grant may name the two optional reads; this transport still refuses each call.
+
+    The same bridge answers both reads when it is asked directly, so the refusal
+    over HTTP is the transport's and not a hub that cannot answer.
+    """
+    key = Ed25519PrivateKey.generate()
+    path = tmp_path / "grants.json"
+    write_policy(path, key)
+    payload = load_http_auth_config(path).model_dump(mode="json")
+    payload["subjects"]["alice"]["projects"]["ALPHA"]["tools"].extend(
+        ["synapse_inbox_page", "synapse_owned_work"]
+    )
+    path.write_text(json.dumps(payload))
+    granted = load_http_auth_config(path).subjects["alice"].projects["ALPHA"].tools
+    assert {"synapse_board", tool} <= granted
+    token = access_token(key, scope="synapse:read")
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, hub_id="optional-reads")) as (_hub, uri):
+            handle = await start_bridge(uri, name="ALPHA/alice")
+            try:
+                assert json.loads(await handle.bridge.inbox_page())["hub_id"] == "optional-reads"
+                assert json.loads(await handle.bridge.owned_work(project="ALPHA"))["items"] == []
+                app = build_policy_app(path, handle.bridge)
+                async with https_server(app, tmp_path) as (url, tls):
+                    async with httpx2.AsyncClient(
+                        verify=tls,
+                        timeout=5,
+                        trust_env=False,
+                        headers={"Authorization": "Bearer " + token},
+                    ) as client:
+                        async with streamable_http_client(url + "/mcp", http_client=client) as (
+                            read,
+                            write,
+                        ):
+                            async with ClientSession(read, write) as session:
+                                await session.initialize()
+                                assert not (await session.call_tool("synapse_board")).is_error
+                                assert (await session.call_tool(tool)).is_error
+            finally:
+                await handle.close()
+    finally:
+        store.close()
 
 
 async def test_foreign_authenticated_subject_cannot_use_a_bound_seat(tmp_path: Path) -> None:

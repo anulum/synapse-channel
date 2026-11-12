@@ -12,11 +12,17 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Literal
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.numeric_coercion import safe_int
+from synapse_channel.core.owned_work import MAX_OWNED_CHARS, OwnedQuery
+from synapse_channel.mcp.activity_page import ActivityPage, read_activity_page
 from synapse_channel.mcp.hub_inbox import drain_hub_inbox
 from synapse_channel.mcp.inbox import DEFAULT_MCP_INBOX_LIMIT, McpFeedInbox
+from synapse_channel.mcp.inbox_page import read_inbox_page
+from synapse_channel.mcp.owned_work import read_owned_work
+from synapse_channel.mcp.pending_work import PendingSnapshot, read_pending_work
 from synapse_channel.mcp.reply_exchange import McpReplyExchange
 
 
@@ -85,3 +91,101 @@ class _McpInboxQueries(McpReplyExchange):
                 ),
             )
         return self.inbox_reader.drain(limit)
+
+    async def inbox_page(self, *, hub_id: str = "", after_seq: int = 0, limit: int = 50) -> str:
+        """Read exact directed messages without consuming the local feed or cursor.
+
+        Parameters
+        ----------
+        hub_id : str, optional
+            Hub identifier from an accepted page; empty only for the initial read.
+        after_seq : int, optional
+            Last accepted scanned journal sequence, initially zero.
+        limit : int, optional
+            Native page size from one to one hundred, before exact-target filtering.
+
+        Returns
+        -------
+        str
+            Hub-bound page; the caller owns persistence and lost-reply retry.
+
+        Raises
+        ------
+        ValueError
+            When cursor bounds or the initial hub binding are invalid.
+        RuntimeError
+            When the native hub cannot confirm a valid page.
+        """
+        return await read_inbox_page(
+            self.agent, self._await_reply, hub_id=hub_id, after_seq=after_seq, limit=limit
+        )
+
+    async def owned_work(
+        self,
+        *,
+        project: str | None = None,
+        mode: Literal["list", "read"] = "list",
+        hub_id: str = "",
+        after_key: str = "",
+        revision: str = "",
+        limit: int = 50,
+        key: str = "",
+        item_version: str = "",
+        offset: int = 0,
+        digest: str = "",
+        limit_chars: int = MAX_OWNED_CHARS,
+    ) -> str:
+        """Bind full current-owned work reads to this bridge's existing native identity.
+
+        The HTTP registration fixes project outside model arguments. Local stdio
+        selects all this owner's work. A query owns no cursor and opens no socket.
+        """
+        query = OwnedQuery(
+            identity=self.agent.name,
+            hub_id=hub_id,
+            project=project,
+            mode=mode,
+            after_key=after_key,
+            revision=revision,
+            limit=limit,
+            key=key,
+            item_version=item_version,
+            offset=offset,
+            digest=digest,
+            limit_chars=limit_chars,
+        )
+        return await read_owned_work(self.agent, self._await_reply, query)
+
+    async def pending_work(self, *, hub_id: str = "") -> PendingSnapshot:
+        """Read complete historical recovery metadata on this existing connection."""
+        return await read_pending_work(self.agent, self._await_reply, hub_id=hub_id)
+
+    async def activity_page(
+        self, *, hub_id: str = "", after_seq: int = 0, limit: int = 50, version: int = 1
+    ) -> ActivityPage:
+        """Read exact native wake metadata without committing any scan or inbox ACK.
+
+        Parameters
+        ----------
+        hub_id : str
+            Last accepted hub binding, empty only for an initial read.
+        after_seq : int
+            Observer-owned scanned journal position.
+        limit : int
+            Maximum metadata items from one through one hundred.
+        version : int
+            Version two includes content-free stream progress and termination.
+
+        Returns
+        -------
+        ActivityPage
+            Validated source families and cursor on this existing connection.
+        """
+        return await read_activity_page(
+            self.agent,
+            self._await_reply,
+            hub_id=hub_id,
+            after_seq=after_seq,
+            limit=limit,
+            version=version,
+        )

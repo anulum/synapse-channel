@@ -12,7 +12,7 @@ from __future__ import annotations
 from mcp.server.auth.middleware.auth_context import get_access_token
 
 from synapse_channel.mcp.http_auth import HttpTokenVerifier
-from synapse_channel.mcp.http_config import MUTATION_TOOLS, RemoteSeat
+from synapse_channel.mcp.http_config import MUTATION_TOOLS, OPTIONAL_READ_TOOLS, RemoteSeat
 
 
 class HttpOperationPolicy:
@@ -54,8 +54,13 @@ class HttpOperationPolicy:
         Raises
         ------
         PermissionError
-            If authentication, project, seat, tool or mutation authority is absent.
+            If authentication, project, seat, tool or mutation authority is absent,
+            or the tool is one of the optional reads this transport does not serve.
         """
+        if tool in OPTIONAL_READ_TOOLS:
+            # A grant may name these two reads for the notification outbox. This
+            # transport does not serve them until it has its own tests for them.
+            raise PermissionError("remote MCP operation denied")
         token = get_access_token()
         principal = await self.verifier.authenticate(token.token) if token is not None else None
         if principal is None or principal.access_token.subject != self.subject:

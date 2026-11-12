@@ -59,6 +59,7 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "native_composer",
         ValueError,
     ),
+    "WakeLedgerError": ("synapse_channel.mcp.wake_pointer", "mcp_wake_ledger", RuntimeError),
     "LaunchRecordError": ("synapse_channel.launch_record", "launch_record", ValueError),
     "ReceiptProjectionError": (
         "synapse_channel.core.persistence_receipt_view",

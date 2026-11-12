@@ -48,7 +48,9 @@ WEBHOOK_MAX_RESPONSE_BYTES = 64 * 1024
 WEBHOOK_MAX_REDIRECTS = 5
 """Maximum redirects admitted for one webhook delivery."""
 
-SENSITIVE_WEBHOOK_HEADERS = frozenset({"authorization", "proxy-authorization", "cookie", "cookie2"})
+SENSITIVE_WEBHOOK_HEADERS = frozenset(
+    {"authorization", "proxy-authorization", "cookie", "cookie2", "webhook-signature"}
+)
 """Credential-bearing headers whose authority is bound to one exact origin."""
 
 REDIRECT_DOWNGRADE_ERROR = "webhook redirects must not downgrade HTTPS to HTTP"
@@ -251,7 +253,31 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
 class _SafePinnedRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Apply credential-origin policy before every pinned redirect connect."""
 
-    http_error_308 = urllib.request.HTTPRedirectHandler.http_error_302
+    def http_error_302(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+    ) -> http.client.HTTPResponse | None:
+        """Close the discarded response before validating or following a redirect.
+
+        The pinned HTTP(S) response reads empty after close. Closing it before
+        stdlib redirect handling both releases refused responses and prevents
+        urllib's unbounded body drain from reading a hostile redirect payload.
+        Status, Location normalization and loop accounting still use urllib.
+        """
+        fp.close()
+        response: http.client.HTTPResponse | None = super().http_error_302(
+            req, fp, code, msg, headers
+        )
+        return response
+
+    http_error_301 = http_error_302
+    http_error_303 = http_error_302
+    http_error_307 = http_error_302
+    http_error_308 = http_error_302
     max_redirections = WEBHOOK_MAX_REDIRECTS
     max_repeats = min(urllib.request.HTTPRedirectHandler.max_repeats, WEBHOOK_MAX_REDIRECTS)
 
