@@ -223,6 +223,30 @@ production-build directory. The harness otherwise uses `clients/cockpit/dist`.
 For example, after building that directory, run
 `SYNAPSE_COCKPIT_E2E_DIST=/path/to/build npx playwright test e2e/layout.spec.ts`.
 
+The cockpit picture in the repository README is taken by
+`e2e/readme-picture.spec.ts`. The journey opens the production build against
+its own hub and dashboard, then starts the demonstration fleet in
+`e2e/demo_fleet.py`: invented participants that join through the public client,
+post a plan, hold claims and talk. It requires the roster, claims, board, risk
+rail and signal log to show that fleet over a live stream before it takes the
+picture. Its hub and dashboard listen on ports 18776 and 18775 unless
+`SYNAPSE_COCKPIT_E2E_PICTURE_HUB_PORT` and
+`SYNAPSE_COCKPIT_E2E_PICTURE_DASHBOARD_PORT` name others. To take the picture
+again after a visible change, build the client and run, from
+`clients/cockpit`:
+
+```bash
+SYNAPSE_COCKPIT_README_PICTURE=../../docs/assets/feature-cockpit.png \
+  npx playwright test e2e/readme-picture.spec.ts
+```
+
+The run writes `docs/assets/feature-cockpit.png` and, beside it,
+`feature-cockpit.json` with the picture's digest and the fleet it shows.
+`tests/test_readme_cockpit_picture.py` refuses a picture that does not match
+that record and a record that no longer names the fleet as written. Nothing
+compares pixels, because the picture carries live times: whether it still
+matches the running cockpit is decided by taking it again.
+
 The pure data logic — snapshot parsing, the freshness contract, polling stores,
 transition derivation, and every panel's data shaping — is held to full line
 and branch coverage. The behavioural component layer uses jsdom and

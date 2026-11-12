@@ -62,6 +62,14 @@ execution evidence when carrying a release claim forward.
   heads, an executor profile with a per-run record, and a runnable
   effect-safety test set. All remain optional research with no commitment to
   ship. One spelling in the roadmap is now British.
+- The cockpit picture in the README is taken again, from the current
+  production build and a demonstration fleet of invented participants that
+  join a real hub through the public client, post a plan, hold claims and talk.
+  The earlier picture showed an empty cockpit and was clipped. A browser
+  journey states what the picture must show and takes it; a record beside the
+  picture carries its digest and the fleet it shows, and a test refuses a
+  picture that does not match the record. The command that takes the picture
+  again is in `clients/cockpit/README.md`. Pixels are not compared.
 
 - **The federation interface offers record keeping as a feature, not its parts.**
   `synapse_channel.federation_api` gains the record-keeping functions an

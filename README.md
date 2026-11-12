@@ -220,7 +220,7 @@ delivers it today:
 - **Read the fleet from one cockpit.** [`synapse dashboard`](docs/studio.md) serves the local command centre, exact-status task columns, claims, conflicts, security posture, and an optional durable event feed; the read-only Studio projection adds no new hub authority.
 
   <p align="center">
-    <img src="docs/assets/feature-cockpit.png" width="1280" alt="The dark Synapse operator cockpit with live status, claims, task board, risk rail, findings, and signal log">
+    <img src="docs/assets/feature-cockpit.png" width="1280" alt="The dark Synapse operator cockpit showing a demonstration fleet: live status, activity spine, fleet roster, claims, task board, risk rail, findings, and signal log">
   </p>
 
 - **Connect existing agent protocols at the edge.** [`synapse mcp`](docs/mcp.md) exposes coordination tools and read-only resources over stdio; the [A2A bridge](docs/a2a-conformance.md) exposes a local Agent Card and HTTP+JSON surface while keeping its partial validation boundary explicit.
@@ -1940,7 +1940,7 @@ an installed protected runtime or revocation fencing.
 | Classes | 1362 |
 | Wire message types | 118 |
 | CLI subcommands | 303 |
-| Test functions | 13665 |
+| Test functions | 13670 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 98 |
 | GitHub Actions workflows | 29 |

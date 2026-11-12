@@ -1,0 +1,34 @@
+{
+  "picture": "feature-cockpit.png",
+  "sha256": "351f2f94478f71cf31f0aebb7b75aeab3edc87c855496fd69144672c5f9580f5",
+  "width": 1280,
+  "height": 900,
+  "colour_scheme": "dark",
+  "language": "EN",
+  "journey": "clients/cockpit/e2e/readme-picture.spec.ts",
+  "fleet": "clients/cockpit/e2e/demo_fleet.py",
+  "participants": [
+    "harbour/planner",
+    "harbour/api",
+    "harbour/web",
+    "harbour/reviewer",
+    "lighthouse/docs",
+    "lighthouse/release"
+  ],
+  "tasks": [
+    "HARBOUR-101",
+    "HARBOUR-102",
+    "HARBOUR-103",
+    "HARBOUR-104",
+    "HARBOUR-105",
+    "LIGHT-201",
+    "LIGHT-202",
+    "LIGHT-203",
+    "LIGHT-204"
+  ],
+  "claims": [
+    "HARBOUR-101",
+    "HARBOUR-104",
+    "LIGHT-204"
+  ]
+}
