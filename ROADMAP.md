@@ -75,7 +75,7 @@ The intended responsibilities are deliberately separate:
   cycles can learn without treating every generated output as truth.
 - The **human owner** retains policy, release, and irreversible authority.
 
-The target is **self-evolving, never self-authorizing**: agents may propose,
+The target is **self-evolving, never self-authorising**: agents may propose,
 implement, challenge, and improve the system, while independent roles and
 fail-closed evidence gates decide what becomes durable state. "Slop-free" is an
 engineering objective measured through provenance, review separation,
@@ -203,9 +203,21 @@ freeze and release-cut checks.
 Each candidate remains optional and must arrive with a threat model, bounded
 dependencies, real boundary tests, and a reversible adoption path:
 
-- An **Agent Transaction Protocol** joining declared intent, scoped authority,
-  dry-run evidence, governance, atomic apply, and independently verifiable
+- An **agent change transaction** joining a declared intent, scoped authority,
+  an approval bound to that exact intent, a single application of the approval,
+  and independently verifiable receipts. The intent is fixed before approval
+  and checked again at the moment of use. A change whose result has a content
+  address, such as a Git commit, is prepared first, approved by that address,
+  and then published in one step.
+- **Consistency proofs between signed tree heads**, so that two holders of
+  exported evidence can detect a forked or rolled-back log offline, without the
   receipts.
+- An **executor profile** that states how an executor is isolated, with a
+  per-run record a verifier can check, so that an isolation level is evidence
+  and not a label.
+- A **runnable effect-safety test set** for agent executors: a denied operation
+  leaves no effect, a changed operation is refused, a repeated delivery has one
+  effect, and an unknown outcome stays unknown.
 - Semantic claims beyond literal paths and Python symbols: exported APIs,
   OpenAPI operations, protobuf messages, database objects and migrations,
   Terraform resources, manifests, and CI/public contracts.

@@ -32,6 +32,14 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- The roadmap's research candidates are restated. The first candidate is now
+  an agent change transaction: a declared intent, scoped authority, an approval
+  bound to that exact intent and applied once, and independently verifiable
+  receipts. Three candidates are added: consistency proofs between signed tree
+  heads, an executor profile with a per-run record, and a runnable
+  effect-safety test set. All remain optional research with no commitment to
+  ship. One spelling in the roadmap is now British.
+
 - **The federation interface offers record keeping as a feature, not its parts.**
   `synapse_channel.federation_api` gains the record-keeping functions an
   out-of-tree consumer needs (`build_export`, `export_to_json`, `render_human`,

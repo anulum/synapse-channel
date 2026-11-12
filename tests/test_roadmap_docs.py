@@ -160,7 +160,10 @@ def test_roadmap_names_current_pre_one_priorities_and_research_boundary() -> Non
         assert priority in collapsed
 
     for candidate in (
-        "agent transaction protocol",
+        "agent change transaction",
+        "consistency proofs between signed tree heads",
+        "executor profile",
+        "runnable effect-safety test set",
         "pre-execution read/write-set simulation",
         "per-operation, non-transferable capability tokens",
         "oidc or spiffe",
