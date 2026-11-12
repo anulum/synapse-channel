@@ -74,6 +74,14 @@ def test_provider_state_preserves_precedence(provider: str, capture: str, expect
         ("grok", "Approve this tool?\n  │ ❯ " + _HINT + " │", _HINT, False),
         ("grok", "scrollback " + _HINT, _HINT, False),
         ("grok", "     ❯ earlier turn\n  │ ❯" + (" " * 4) + "│", _HINT, False),
+        # An earlier wake is still on the screen as a past turn, and the owner is
+        # typing: Enter would submit the owner's draft, so the wake stays queued.
+        ("grok", "     ❯ " + _HINT + "\n  │ ❯ owner's draft │", _HINT, False),
+        ("grok", "> " + _HINT + "\n> owner's draft", _HINT, False),
+        # Text typed after the pasted hint is a draft too.
+        ("grok", "  │ ❯ " + _HINT + " and more │", _HINT, False),
+        # Rows below the composer that are not prompt rows do not block the wake.
+        ("grok", "  │ ❯ " + _HINT + " │\n  ╰─ Grok 4.7 (high) · always-approve ─╯", _HINT, True),
     ],
 )
 def test_submit_readiness_preserves_exact_staged_hint(

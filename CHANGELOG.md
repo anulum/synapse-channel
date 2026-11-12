@@ -110,6 +110,9 @@ execution evidence when carrying a release claim forward.
   is drawn inside a box, is idle. A pasted wake that is exactly the staged
   prompt on that composer line can be submitted. A permission chooser, a busy
   pane, or any other draft still stays queued.
+- A Grok wake is submitted only when the staged prompt is the whole content of
+  the live composer row. An earlier wake that is still on the screen as a past
+  turn no longer counts, so a draft the owner is typing is not sent.
 
 ## [0.99.51] - 2026-11-11
 

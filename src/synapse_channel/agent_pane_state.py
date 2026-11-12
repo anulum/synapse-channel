@@ -87,6 +87,27 @@ def _contains_rendered_text(screen: str, required_text: str) -> bool:
     return _rendered_text_match(screen, required_text) is not None
 
 
+def _grok_composer_holds_only(screen: str, required_text: str) -> bool:
+    """Return whether the last Grok prompt row holds exactly the staged hint.
+
+    The wake hint is a fixed text, so an earlier wake can still be on the
+    screen as a past turn while the owner types a draft in the composer.
+    Sending Enter then would submit that draft. The hint therefore counts only
+    when the prompt marker is all that precedes it on its row, only the box
+    edge follows it on that row, and no prompt row follows below.
+    """
+    match = _rendered_text_match(screen, required_text)
+    if match is None:
+        return False
+    line_prefix = screen[: match.start()].rsplit("\n", 1)[-1]
+    row_tail, _newline, below = screen[match.end() :].partition("\n")
+    return (
+        re.fullmatch(r"[\s│]*(?:›|❯|>)\s*", line_prefix) is not None
+        and re.fullmatch(r"[\s│]*", row_tail) is not None
+        and re.search(r"(?m)^[\s│]*[›❯>]", below) is None
+    )
+
+
 def screen_is_safe_for_submit(
     provider: str,
     screen: str,
@@ -133,15 +154,14 @@ def screen_is_safe_for_submit(
         # Grok's idle marker matches only an empty composer, including the boxed
         # row the live pane draws. After the fixed wake is pasted, that marker
         # is gone, so Enter was never sent and the hint stayed queued. Admit
-        # the exact hint when the prompt marker, and an optional box gutter,
-        # are the only other text before it on its line. A busy or modal pane
-        # already returned above.
-        if provider == "grok" and required_text is not None:
-            match = _rendered_text_match(screen, required_text)
-            if match is not None:
-                line_prefix = screen[: match.start()].rsplit("\n", 1)[-1]
-                if re.fullmatch(r"[\s│]*(?:›|❯|>)\s*", line_prefix):
-                    return True, "grok staged composer verified"
+        # the exact hint only as the whole content of the live composer row.
+        # A busy or modal pane already returned above.
+        if (
+            provider == "grok"
+            and required_text is not None
+            and _grok_composer_holds_only(screen, required_text)
+        ):
+            return True, "grok staged composer verified"
         return False, f"{provider} idle composer marker is absent"
     if required_text is not None and not _contains_rendered_text(screen, required_text):
         return False, "wake prompt was not accepted by the idle composer"
