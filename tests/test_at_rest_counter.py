@@ -44,6 +44,17 @@ def test_both_counters_satisfy_the_protocol(tmp_path: Path) -> None:
     assert isinstance(PersistentMessageCounter(tmp_path / "c"), MessageCounter)
 
 
+def test_an_unimplemented_counter_does_not_count() -> None:
+    """The protocol stubs are inert. A real counter supplies the bodies."""
+
+    class Unimplemented(MessageCounter):
+        pass
+
+    bare = Unimplemented()  # type: ignore[abstract]
+    assert bare.count is None
+    assert bare.increment() is None
+
+
 # --- persistent: durability and reserve-ahead --------------------------------------------
 
 

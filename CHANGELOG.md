@@ -56,6 +56,8 @@ execution evidence when carrying a release claim forward.
   other refusal. A missing cipher or key-wrap dependency is named.
   Profile migration encrypts plaintext that has no backup. A Windows
   key file with an Everyone ACE is refused.
+- An at-rest message counter that does not implement the protocol does
+  not count. The in-memory and persistent counters do.
 
 ## [0.99.51] - 2026-11-11
 
