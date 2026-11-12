@@ -56,6 +56,15 @@ execution evidence when carrying a release claim forward.
   is tested against the environment-variable contract with real processes; a
   run with the client itself is not part of this release's evidence.
 
+- The remote MCP adapter keeps the lease fence of each keyed operation across
+  its own restarts. The fence a claim, release or handoff was first sent with
+  is written to a private bounded file under the data home, one per provisioned
+  identity, and a retry of the same operation after a restart goes out with it,
+  so the hub sees the same request and answers with the retained receipt. A
+  hint is bound to the hub it was made on. A file that is not owner-only, is
+  linked twice, is too large or holds an invalid value refuses the mutation
+  instead of being replaced.
+
 - Storage for a notification outbox, built and not yet started by any command:
   a private bounded SQLite ledger per provisioned subject, seat and hub, a
   root catalogue with a byte and generation budget under one process lock, an

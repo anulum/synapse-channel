@@ -15,6 +15,12 @@ from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.mcp.http_operation_epochs import (
+    MAX_OPERATION_EPOCHS as MAX_OPERATION_EPOCHS,
+)
+from synapse_channel.mcp.http_operation_epochs import (
+    HttpOperationEpochStore,
+)
 
 HTTP_OPERATION_ID: ContextVar[str] = ContextVar("synapse_http_operation_id", default="")
 """Stable caller operation identity, isolated to the current MCP request task."""
@@ -30,25 +36,51 @@ KEYED_MUTATIONS = frozenset(
 )
 
 
-MAX_OPERATION_EPOCHS = 1024
-"""Most recent keyed operations whose lease epoch is kept for an exact replay."""
-
-
 class OperationEpochs:
     """Remember the lease epoch each keyed operation was first sent with.
 
     A retried operation must be byte-for-byte the same request, or the hub
     refuses the reused key. The client forgets a lease's epoch once the release
     is granted, so a retried release would otherwise go out without it. This
-    bounded map keeps the first epoch per operation and re-applies it.
+    bounded map keeps the first epoch per operation and re-applies it. Provisioned
+    HTTP clients also retain a bounded private disk cache across adapter restarts.
+
+    Parameters
+    ----------
+    limit : int, optional
+        In-memory hint count, oldest first; at least one entry is retained.
+    store : HttpOperationEpochStore or None, optional
+        Durable native-fence hints, checked before any HTTP mutation is sent.
     """
 
-    def __init__(self, limit: int = MAX_OPERATION_EPOCHS) -> None:
+    def __init__(
+        self, limit: int = MAX_OPERATION_EPOCHS, *, store: HttpOperationEpochStore | None = None
+    ) -> None:
+        self.store = store
         self._limit = max(1, int(limit))
         self._epochs: OrderedDict[str, object] = OrderedDict()
 
-    def apply(self, key: str, extra: dict[str, Any]) -> None:
-        """Record ``extra``'s epoch under ``key``, or restore the recorded one."""
+    def apply(self, key: str, extra: dict[str, Any], *, hub_id: str = "") -> None:
+        """Retain the original fence, durably for a provisioned HTTP client.
+
+        Parameters
+        ----------
+        key : str
+            Native message type and the stable caller operation identifier.
+        extra : dict[str, Any]
+            Outgoing business fields; a retained original fence is restored here.
+        hub_id : str, optional
+            Actual admitted hub identity, required when a durable store is used.
+
+        Raises
+        ------
+        ValueError, OSError
+            When the durable cache cannot retain an exact valid hint.
+        """
+        if self.store is not None:
+            epoch = self.store.bind(hub_id, key, extra.get("epoch"))
+            if epoch is not None:
+                extra["epoch"] = epoch
         if "epoch" in extra:
             self._epochs[key] = extra["epoch"]
             self._epochs.move_to_end(key)
@@ -67,8 +99,24 @@ class HttpHubAgent(SynapseAgent):
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Bind the native transport and its fixed identity's durable retry cache.
+
+        Parameters
+        ----------
+        *args : Any
+            Native SynapseAgent positional arguments, starting with its exact name.
+        **kwargs : Any
+            Native transport and operator signing-key configuration.
+        """
         super().__init__(*args, **kwargs)
-        self._operation_epochs = OperationEpochs()
+        scope = "\0".join(
+            (
+                self.name,
+                str(kwargs.get("identity_key_path") or ""),
+                str(kwargs.get("identity_key_id") or ""),
+            )
+        )
+        self._operation_epochs = OperationEpochs(store=HttpOperationEpochStore(scope))
 
     async def send_message(
         self,
@@ -95,7 +143,7 @@ class HttpHubAgent(SynapseAgent):
         operation = HTTP_OPERATION_ID.get()
         if operation and msg_type in KEYED_MUTATIONS:
             extra["idem_key"] = operation
-            self._operation_epochs.apply(f"{msg_type}\0{operation}", extra)
+            self._operation_epochs.apply(f"{msg_type}\0{operation}", extra, hub_id=self.hub_id)
         if operation and msg_type == MessageType.CHAT:
             extra["client_msg_id"] = operation
         if operation and msg_type == MessageType.LEDGER_TASK:

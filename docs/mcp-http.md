@@ -138,7 +138,11 @@ Use a new identifier for a new operation. Inspect current state before deciding
 on an explicit recovery attempt; retain the original identifier and arguments
 if using an applicable retained retry contract. The native hub provides retained idempotency for board
 and lease writes. Durable replay additionally requires a journaled hub; an
-unjournaled hub does not establish cross-restart deduplication. Directed chat
+unjournaled hub does not establish cross-restart deduplication. The adapter
+keeps the lease fence each keyed operation was first sent with in a private
+bounded file under the data home (`synapse/http-operation-epochs`, one file per
+provisioned identity, at most 1,024 operations), so a retry after an adapter
+restart is the same request. A hint never crosses hubs. Directed chat
 uses native message identifiers and receiver deduplication, preserving its
 at-least-once delivery semantics. A send confirmation establishes submission,
 not recipient acknowledgement or completed business work.

@@ -13,9 +13,12 @@ The end-to-end replay of a granted release through the HTTP transport is
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from synapse_channel.mcp.http_agent import MAX_OPERATION_EPOCHS, OperationEpochs
+from synapse_channel.client.lease_epoch_store import default_lease_epoch_root
+from synapse_channel.mcp.http_agent import MAX_OPERATION_EPOCHS, HttpHubAgent, OperationEpochs
+from synapse_channel.mcp.http_operation_epochs import HttpOperationEpochStore
 
 
 def test_the_first_epoch_is_restored_on_a_replay_without_one() -> None:
@@ -40,3 +43,39 @@ def test_the_memory_is_bounded_oldest_first() -> None:
         assert probe.get("epoch") == expected
     assert MAX_OPERATION_EPOCHS == 1024
     assert OperationEpochs(limit=0)._limit == 1
+
+
+def test_a_new_map_restores_the_first_fence_from_the_durable_store(tmp_path: Path) -> None:
+    """After an adapter restart the retried operation goes out with its first fence."""
+
+    def restarted() -> OperationEpochs:
+        store = HttpOperationEpochStore("ALPHA/alice", root=tmp_path / "epochs")
+        return OperationEpochs(store=store)
+
+    first: dict[str, Any] = {"epoch": 7}
+    restarted().apply("claim\0op-1", first, hub_id="hub-a")
+    assert first == {"epoch": 7}
+
+    replay: dict[str, Any] = {}
+    restarted().apply("claim\0op-1", replay, hub_id="hub-a")
+    assert replay == {"epoch": 7}
+
+    later: dict[str, Any] = {"epoch": 9}
+    restarted().apply("claim\0op-1", later, hub_id="hub-a")
+    assert later == {"epoch": 7}
+
+    another_hub: dict[str, Any] = {}
+    restarted().apply("claim\0op-1", another_hub, hub_id="hub-b")
+    assert another_hub == {}
+
+
+def test_the_remote_agent_keeps_one_private_store_per_identity() -> None:
+    """Each provisioned identity has its own file under the data home's retry cache."""
+    root = default_lease_epoch_root().parent / "http-operation-epochs"
+    alice = HttpHubAgent("ALPHA/alice", verbose=False)._operation_epochs.store
+    again = HttpHubAgent("ALPHA/alice", verbose=False)._operation_epochs.store
+    bob = HttpHubAgent("ALPHA/bob", verbose=False)._operation_epochs.store
+    assert alice is not None and again is not None and bob is not None
+    assert alice.path.parent == root
+    assert alice.path == again.path
+    assert alice.path != bob.path
