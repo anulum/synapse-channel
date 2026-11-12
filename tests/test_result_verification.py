@@ -522,7 +522,7 @@ def test_only_an_exact_remote_head_line_is_accepted(
 def test_a_platform_that_cannot_refuse_links_does_not_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Without a no-follow open the file is not read. Windows refuses the link."""
+    """Without a no-follow open the file is not read."""
     import synapse_channel.result_verification as module
 
     path = tmp_path / "out.txt"
@@ -534,19 +534,44 @@ def test_a_platform_that_cannot_refuse_links_does_not_check(
             "verified",
             "content_matches",
         )
-        link = tmp_path / "out.link"
-        try:
-            link.symlink_to(path)
-        except OSError:
-            return
-        refused = verify_file_change(link, GOOD_SHA, operation_id="op")
-        assert (refused.effect, refused.result) == ("unknown", "not_checked")
         return
     monkeypatch.setattr(module, "_NOFOLLOW", None)
 
     verdict = verify_file_change(path, GOOD_SHA, operation_id="op")
 
     assert (verdict.effect, verdict.result) == ("unknown", "not_checked")
+
+
+def _create_link_or_skip(link: Path, target: Path) -> None:
+    """Create ``link``, or skip when this process is not allowed to."""
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"this process cannot create a symlink: {exc}")
+
+
+def test_a_missing_symlink_privilege_skips_instead_of_passing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A process that cannot create a link does not report the file as checked."""
+
+    def refuse(self: Path, target: str | Path, target_is_directory: bool = False) -> None:
+        del self, target, target_is_directory
+        raise OSError("privilege")
+
+    monkeypatch.setattr(Path, "symlink_to", refuse)
+    _create_link_or_skip(tmp_path / "out.link", tmp_path / "out.txt")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a final Windows link is created only on Windows")
+def test_windows_does_not_check_through_a_final_link(tmp_path: Path) -> None:
+    """A final link is not treated as the file it names."""
+    path = tmp_path / "out.txt"
+    path.write_bytes(GOOD)
+    link = tmp_path / "out.link"
+    _create_link_or_skip(link, path)
+    refused = verify_file_change(link, GOOD_SHA, operation_id="op")
+    assert (refused.effect, refused.result) == ("unknown", "not_checked")
 
 
 def test_an_ambiguous_remote_answer_is_not_checked(published: tuple[Path, Path]) -> None:

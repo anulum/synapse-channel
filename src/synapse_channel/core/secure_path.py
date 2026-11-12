@@ -18,12 +18,14 @@ When the platform cannot prove the floor, helpers raise rather than pretend.
 
 from __future__ import annotations
 
+import ctypes
 import os
 import stat
 import subprocess  # nosec B404 - fixed icacls/whoami argv only; never a shell string
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from synapse_channel.core.errors import SynapseError
 
@@ -263,12 +265,124 @@ def assert_owner_only_dir_path(path: str | Path, *, purpose: str) -> None:
         )
 
 
-def open_nofollow_leaf(path: str | Path, *, directory: bool = False) -> int:
-    """Open the leaf of ``path`` without following a final symlink when possible.
+# kernel32, bound on Windows only. Tests replace a method on this object.
+# Any: this tree's Linux mypy ctypes stub has no WinDLL.
+_win_kernel: Any = None
 
-    On POSIX this is a simple ``O_NOFOLLOW`` open of the full path (callers that
-    need full component walking keep using :mod:`secret_files`). On Windows the
-    leaf is refused when it is a reparse point/symlink, then opened normally.
+
+def _windows_kernel() -> Any:
+    """Return the process kernel32, loading it once on Windows."""
+    global _win_kernel
+    if sys.platform != "win32":
+        raise OSError("secure nofollow open is unavailable on this platform")
+    loaded = _win_kernel
+    if loaded is not None:
+        return loaded
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.GetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
+    kernel.GetFileInformationByHandle.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    _win_kernel = kernel
+    return kernel
+
+
+def _windows_open_nofollow(target: Path, *, directory: bool) -> int:
+    """Open ``target`` without following a final reparse point.
+
+    One ``CreateFileW`` asks the kernel not to follow the leaf. Attributes are
+    read from that handle. A reparse point is closed and refused. Any other
+    handle becomes a descriptor the caller closes. ``directory`` does not add
+    backup semantics, so the kernel rejects a directory handle.
+
+    Parameters
+    ----------
+    target : pathlib.Path
+        Leaf to open.
+    directory : bool
+        Accepted so callers keep one signature. A directory is still rejected.
+
+    Returns
+    -------
+    int
+        An open descriptor.
+
+    Raises
+    ------
+    OSError
+        The leaf is missing, is a reparse point, or the kernel refuses it.
+    """
+    kernel = _windows_kernel()
+    # Any: Linux mypy's ctypes stub has no WinError, and msvcrt is Windows-only.
+    ctypes_any: Any = ctypes
+    msvcrt: Any = __import__("msvcrt")
+
+    # FILE_FLAG_OPEN_REPARSE_POINT: the handle is the leaf, not its target.
+    flags = 0x00200000
+    if directory:
+        flags = 0x00200000
+    handle = kernel.CreateFileW(str(target), 0x80000000, 0x00000007, None, 3, flags, None)
+    invalid = ctypes.c_void_p(-1).value
+    if not handle or handle == invalid:
+        raise ctypes_any.WinError(ctypes_any.get_last_error())
+
+    class _FileTime(ctypes.Structure):
+        _fields_ = (("dwLowDateTime", ctypes.c_uint32), ("dwHighDateTime", ctypes.c_uint32))
+
+    class _ByHandle(ctypes.Structure):
+        _fields_ = (
+            ("dwFileAttributes", ctypes.c_uint32),
+            ("ftCreationTime", _FileTime),
+            ("ftLastAccessTime", _FileTime),
+            ("ftLastWriteTime", _FileTime),
+            ("dwVolumeSerialNumber", ctypes.c_uint32),
+            ("nFileSizeHigh", ctypes.c_uint32),
+            ("nFileSizeLow", ctypes.c_uint32),
+            ("nNumberOfLinks", ctypes.c_uint32),
+            ("nFileIndexHigh", ctypes.c_uint32),
+            ("nFileIndexLow", ctypes.c_uint32),
+        )
+
+    info = _ByHandle()
+    if not kernel.GetFileInformationByHandle(handle, ctypes.byref(info)):
+        error = ctypes_any.get_last_error()
+        kernel.CloseHandle(handle)
+        raise ctypes_any.WinError(error)
+    if info.dwFileAttributes & 0x00000400:
+        kernel.CloseHandle(handle)
+        raise OSError(None, "symlink refused", str(target), 22)
+    descriptor_flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)
+    try:
+        return int(msvcrt.open_osfhandle(int(handle), descriptor_flags))
+    except OSError:
+        kernel.CloseHandle(handle)
+        raise
+
+
+def open_nofollow_leaf(path: str | Path, *, directory: bool = False) -> int:
+    """Open the leaf of ``path`` without following a final link.
+
+    On POSIX this is one ``O_NOFOLLOW`` open. On Windows it is one
+    ``CreateFileW`` with ``FILE_FLAG_OPEN_REPARSE_POINT``. Attributes are read
+    from that handle, a reparse point is refused, and the handle becomes a
+    descriptor. Callers that need every parent component walked keep using
+    :mod:`synapse_channel.core.secret_files`.
+
+    A test may mark a non-Windows process as Windows. That process has no
+    Win32 kernel, so a symlink leaf is refused and then the portable open is
+    used.
 
     Returns
     -------
@@ -276,6 +390,8 @@ def open_nofollow_leaf(path: str | Path, *, directory: bool = False) -> int:
         An open file descriptor the caller must close.
     """
     target = Path(path)
+    if sys.platform == "win32" and _WINDOWS:
+        return _windows_open_nofollow(target, directory=directory)
     if _POSIX and hasattr(os, "O_NOFOLLOW"):
         flags = (
             os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -287,9 +403,6 @@ def open_nofollow_leaf(path: str | Path, *, directory: bool = False) -> int:
         if target.is_symlink():
             raise OSError(None, "symlink refused", str(target), 22)
         flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)
-        if directory:
-            # Windows has no O_DIRECTORY; open and validate with fstat/isdir.
-            pass
         return os.open(target, flags)
     raise OSError("secure nofollow open is unavailable on this platform")
 
@@ -537,7 +650,6 @@ def _windows_current_user_sid_native() -> str:  # pragma: no cover - platform-na
     """Read the process token user SID via ``advapi32`` with full prototypes."""
     import ctypes
     from ctypes import wintypes
-    from typing import Any
 
     token_user = 1
     token_query = 0x0008
@@ -675,7 +787,6 @@ def _windows_read_owner_and_aces(
     """Return ``(owner_sid, dacl_present, aces)`` via ``GetNamedSecurityInfoW``."""
     import ctypes
     from ctypes import wintypes
-    from typing import Any
 
     owner_security = 0x00000001
     dacl_security = 0x00000004
