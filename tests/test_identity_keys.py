@@ -96,7 +96,13 @@ def test_load_non_ed25519_key_raises(tmp_path: Path) -> None:
 
 
 def test_expands_home_relative_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``~`` resolves inside the test's own home on every platform.
+
+    POSIX expands ``~`` through ``HOME`` and Windows through ``USERPROFILE``; both
+    point at the temporary directory, so the key is never written to a real profile.
+    """
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
     write_signing_key("~/id.pem", generate_signing_key())
 
