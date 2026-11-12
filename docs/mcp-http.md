@@ -171,7 +171,9 @@ unjournaled hub does not establish cross-restart deduplication. The adapter
 keeps the lease fence each keyed operation was first sent with in a private
 bounded file under the data home (`synapse/http-operation-epochs`, one file per
 provisioned identity, at most 1,024 operations), so a retry after an adapter
-restart is the same request. A hint never crosses hubs.
+restart is the same request. A hint never crosses hubs, and a hub started
+without a configured identifier takes a new one at each start: only a hub with
+a stable identifier lets a hint survive the hub's own restart.
 
 A `synapse_release` that repeats an earlier operation identifier after the
 same seat has taken the task again is asked about first: the adapter reads the
@@ -218,6 +220,16 @@ left out, so a page can be empty with `has_more=true`; continue from its
 cursor. A restart of the hub keeps the replay only when its journal and hub
 identity are kept. Another hub identity, or a refused or unavailable query, is
 a fixed MCP error.
+
+A page is held to the reply limit of the table below. A page that would exceed
+it is shortened from its end: `cursor` is then the sequence of the last message
+returned and `has_more` is `true`, so the next read starts at the first message
+left out. A single message that cannot fit alone is not delivered over this
+transport. It is returned once as a row with `oversize: true`, its `seq`,
+`sender` and `target`, its serialised size as `row_bytes` and a `note`, without
+its payload; the cursor moves past it, and the message stays in the hub's
+journal for a native connection to read. A reader that must not miss content
+treats such a row as a message it has not read.
 
 `synapse_owned_work` reads the whole current records assigned to the
 provisioned seat. The native ACL permission is `owned-work` on the connected

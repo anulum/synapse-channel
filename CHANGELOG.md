@@ -45,7 +45,11 @@ execution evidence when carrying a release claim forward.
   acknowledges that anything was processed. `synapse_inbox` is unchanged. The
   remote HTTP profile serves each of them only to a subject whose grant names
   it, with the identity and the project fixed by the adapter; an argument that
-  would select another identity is refused.
+  would select another identity is refused. Over HTTP an inbox page is held to
+  the reply limit: it is shortened from its end with the cursor at the last
+  message returned, and a message that cannot fit alone is returned once as a
+  row marked `oversize` with its sequence, sender and size and without its
+  payload, so the reader can move past it knowingly.
 
 - `synapse mcp --native-client grok` gives each native client session its own
   routing names: the client's canonical session UUID is appended to the
@@ -62,7 +66,10 @@ execution evidence when carrying a release claim forward.
   is written to a private bounded file under the data home, one per provisioned
   identity, and a retry of the same operation after a restart goes out with it,
   so the hub sees the same request and answers with the retained receipt. A
-  hint is bound to the hub it was made on. A file that is not owner-only, is
+  hint is bound to the hub it was made on, so it survives a hub restart only
+  on a hub with a configured identifier. This changes one behaviour: the first
+  fence of an operation now wins, where a later fence for the same operation
+  identifier used to replace it in memory. A file that is not owner-only, is
   linked twice, is too large or holds an invalid value refuses the mutation
   instead of being replaced.
 

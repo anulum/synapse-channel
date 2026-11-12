@@ -33,6 +33,7 @@ from synapse_channel import __version__
 from synapse_channel.mcp.http_agent import HTTP_OPERATION_ID
 from synapse_channel.mcp.http_arguments import HttpArgumentPolicy, authorize_read_arguments
 from synapse_channel.mcp.http_config import MUTATION_TOOLS
+from synapse_channel.mcp.http_inbox_bound import fit_inbox_page
 from synapse_channel.mcp.http_operation_arguments import http_tool_schema, mutation_arguments
 from synapse_channel.mcp.http_policy import HttpOperationPolicy
 from synapse_channel.mcp.http_views import ProjectMcpViews
@@ -135,9 +136,13 @@ class HttpMcpServer(MCPServer[None]):
             instructions = mcp_instructions()
         super().__init__("synapse", instructions=instructions, version=__version__, **settings)
 
+    def _fits(self, value: object) -> bool:
+        """Measure one serialised reply against the configured limit."""
+        return len(_REPLY.dump_json(value)) <= self.reply_bytes
+
     def _bound(self, value: object) -> None:
         """Refuse an oversized reply before content is handed to the HTTP encoder."""
-        if len(_REPLY.dump_json(value)) > self.reply_bytes:
+        if not self._fits(value):
             raise RuntimeError("remote MCP reply exceeds configured limit")
 
     async def call_tool(
@@ -175,6 +180,8 @@ class HttpMcpServer(MCPServer[None]):
                             task_id=arguments.get("task_id"),
                             seat=self.policy.seat.seat,
                         )
+                    if name == "synapse_inbox_page":
+                        fit_inbox_page(result, self._fits)
                     self._bound(result)
                     return result
         except Exception:

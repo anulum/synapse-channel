@@ -149,6 +149,23 @@ def test_remote_server_rejects_invalid_operation_limits(tmp_path: Path) -> None:
         HttpMcpServer(policy, views, reply_bytes=1023)
 
 
+def test_reply_limit_is_inclusive(tmp_path: Path) -> None:
+    """A reply of exactly the limit is served; one byte more is refused."""
+    issuer = Ed25519PrivateKey.generate()
+    grants = tmp_path / "grants.json"
+    provision(grants, issuer)
+    verifier = HttpTokenVerifier(grants)
+    grant = load_http_auth_config(grants).subjects["alice"].projects["ALPHA"]
+    bridge = SynapseHubBridge(uri="ws://127.0.0.1:1", name=grant.seat, request_timeout=0.05)
+    views = ProjectMcpViews(bridge, "ALPHA")
+    policy = HttpOperationPolicy(verifier, "alice", "ALPHA", grant)
+    server = HttpMcpServer(policy, views, reply_bytes=1024)
+    exact = "x" * 1022  # serialised as JSON text with its two quotation marks
+    server._bound(exact)
+    with pytest.raises(RuntimeError, match="^remote MCP reply exceeds configured limit$"):
+        server._bound(exact + "x")
+
+
 def test_explicit_mcp_instructions_stay_on_the_server(tmp_path: Path) -> None:
     """A non-empty instruction string is kept; a blank one uses the build identity."""
     issuer = Ed25519PrivateKey.generate()
