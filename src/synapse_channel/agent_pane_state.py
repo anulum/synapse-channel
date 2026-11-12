@@ -10,16 +10,10 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING
 
-
-class _ReadbackConfig(Protocol):
-    """Terminal configuration that can opt into native input readback."""
-
-    @property
-    def opencode_editor_readback(self) -> bool:
-        """Whether this client uses native composer readback."""
-
+if TYPE_CHECKING:
+    from synapse_channel.agent_tmux import AgentTmuxConfig, CommandRunner
 
 PROVIDER_IDLE_PATTERNS = {
     "codex": re.compile(r"(?m)^\s*›(?:\s|$)"),
@@ -222,11 +216,11 @@ def staged_wake_was_consumed(
 
 
 def bound_screen_safety(
-    config: _ReadbackConfig,
+    config: AgentTmuxConfig,
     provider: str,
     screen: str,
     *,
-    runner: Any,
+    runner: CommandRunner,
     required_text: str | None = None,
 ) -> tuple[bool, str]:
     """Use the opted-in native input proof, retaining every legacy provider guard.
@@ -257,7 +251,7 @@ def bound_screen_safety(
     from synapse_channel.opencode_composer_probe import inspect_editor_composer
 
     try:
-        snapshot = inspect_editor_composer(cast(Any, config), screen, runner=runner)
+        snapshot = inspect_editor_composer(config, screen, runner=runner)
     except (OSError, ValueError):
         return False, "native OpenCode input readback is unavailable"
     if not snapshot.matches(required_text):
@@ -265,17 +259,17 @@ def bound_screen_safety(
     if required_text is not None:
         from synapse_channel.opencode_composer_probe import set_stage_verified
 
-        set_stage_verified(cast(Any, config), True)
+        set_stage_verified(config, True)
     return True, "native OpenCode input verified"
 
 
 def bound_staged_wake_was_consumed(
-    config: _ReadbackConfig,
+    config: AgentTmuxConfig,
     provider: str,
     screen: str,
     prompt: str,
     *,
-    runner: Any,
+    runner: CommandRunner,
 ) -> bool:
     """Settle a native paste only after its actual staged input was verified.
 
@@ -306,22 +300,22 @@ def bound_staged_wake_was_consumed(
         stage_is_verified,
     )
 
-    if not stage_is_verified(cast(Any, config)) or not profile_is_bound(cast(Any, config), runner):
+    if not stage_is_verified(config) or not profile_is_bound(config, runner):
         return False
     if staged_wake_was_consumed(provider, screen, prompt):
         return True
     try:
-        return inspect_editor_composer(cast(Any, config), screen, runner=runner).matches(None)
+        return inspect_editor_composer(config, screen, runner=runner).matches(None)
     except (OSError, ValueError):
         return False
 
 
 def bound_pane_state(
-    config: _ReadbackConfig,
+    config: AgentTmuxConfig,
     provider: str,
     screen: str,
     *,
-    runner: Any,
+    runner: CommandRunner,
 ) -> str:
     """Describe readiness without invoking any native editor during status.
 
@@ -348,7 +342,7 @@ def bound_pane_state(
         return "unknown"
     from synapse_channel.opencode_composer_probe import footer_is_probeable, profile_is_bound
 
-    if not profile_is_bound(cast(Any, config), runner):
+    if not profile_is_bound(config, runner):
         return "readback-unavailable"
     return "readback-required" if footer_is_probeable(screen) else "blocked"
 

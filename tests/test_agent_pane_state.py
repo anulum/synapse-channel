@@ -183,6 +183,22 @@ def _rename_sleeper() -> subprocess.Popen[bytes]:
     raise AssertionError("kernel name did not become opencode")
 
 
+class _LegacyPathRunner:
+    """Fail when a classification that should stay on the screen runs a command."""
+
+    def __call__(
+        self,
+        args: Sequence[str],
+        *,
+        capture_output: bool = False,
+        text: bool = False,
+        check: bool = False,
+        env: Mapping[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        del args, capture_output, text, check, env
+        raise AssertionError("the legacy path must not run a command")
+
+
 class _ReadbackRunner:
     """Answer the tmux commands the native reader issues, and record its reply."""
 
@@ -288,14 +304,21 @@ def _qualified(tmp_path: Path) -> tuple[AgentTmuxConfig, subprocess.Popen[bytes]
     return config, child, root, started
 
 
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="the live client name is set with Linux prctl, which macOS and Windows do not provide",
+)
 def test_native_readback_classifies_the_live_composer(tmp_path: Path) -> None:
     """Readback admits only the verified draft and names every other native result."""
+    legacy_runner = _LegacyPathRunner()
     legacy = AgentTmuxConfig("E2E/readback", "synapse-readback", tmp_path, ("opencode", "--mini"))
-    ready, reason = bound_screen_safety(legacy, "opencode", "Ask anything...\n", runner=None)
+    ready, reason = bound_screen_safety(
+        legacy, "opencode", "Ask anything...\n", runner=legacy_runner
+    )
     assert ready is True and reason == "opencode idle composer verified"
-    assert bound_pane_state(legacy, "opencode", "Ask anything...\n", runner=None) == "idle"
+    assert bound_pane_state(legacy, "opencode", "Ask anything...\n", runner=legacy_runner) == "idle"
     assert bound_staged_wake_was_consumed(
-        legacy, "opencode", "Ask anything...\n", _HINT, runner=None
+        legacy, "opencode", "Ask anything...\n", _HINT, runner=legacy_runner
     )
     refused, why = bound_screen_safety(
         AgentTmuxConfig(
@@ -308,7 +331,7 @@ def test_native_readback_classifies_the_live_composer(tmp_path: Path) -> None:
         ),
         "codex",
         _FOOTER,
-        runner=None,
+        runner=_LegacyPathRunner(),
     )
     assert refused is False and why == "native input readback requires an OpenCode pane"
     missing = AgentTmuxConfig(
@@ -399,6 +422,46 @@ class _FailRunner:
         if command == "capture-pane":
             return subprocess.CompletedProcess(list(args), 0, _FOOTER, "")
         return subprocess.CompletedProcess(list(args), 1, "", "unbound")
+
+
+def test_a_legacy_command_is_refused_when_issued() -> None:
+    """The runner handed to a screen-only classification fails if it is called."""
+    with pytest.raises(AssertionError, match="legacy path"):
+        _LegacyPathRunner()(["tmux", "capture-pane"])
+
+
+def test_an_unknown_tmux_command_is_refused(tmp_path: Path) -> None:
+    """A tmux verb the native double does not know is a failed command."""
+    runner = _ReadbackRunner(tmp_path, 7, "start", "")
+    result = runner(["tmux", "list-keys"])
+    assert result.returncode == 1
+    assert result.stderr == "unexpected"
+    identity = runner(["tmux", "show-environment"])
+    assert "SYN_IDENTITY=E2E/readback" in identity.stdout
+    pane = runner(["tmux", "display-message", "-p", "#{pane_pid}"])
+    assert pane.stdout == "7\n"
+    command = runner(["tmux", "display-message", "-p", "#{pane_current_command}"])
+    assert command.stdout.startswith("opencode")
+    session = runner(["tmux", "has-session", "-t", "synapse-readback"])
+    assert session.returncode == 0
+    bare = runner(["tmux"])
+    assert bare.returncode == 1
+
+
+def test_a_kernel_name_that_never_arrives_is_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The rename wait stops the child when the kernel name never becomes the client."""
+    seen = {"calls": 0}
+
+    def unread(pid: int) -> tuple[int, str, str]:
+        seen["calls"] += 1
+        if seen["calls"] == 1:
+            raise ComposerError(f"unread {pid}")
+        return pid, "start", "python"
+
+    monkeypatch.setattr(f"{__name__}.process_stamp", unread)
+    with pytest.raises(AssertionError, match="kernel name"):
+        _rename_sleeper()
+    assert seen["calls"] > 1
 
 
 def test_compatibility_names_each_readback_and_update_state() -> None:
