@@ -20,7 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.worker_outcome import WorkerExit, read_worker_outcome
+from synapse_channel.execution_outcome import OutcomeState
+from synapse_channel.worker_outcome import WorkerExit, WorkerObservation, read_worker_outcome
 from synapse_channel.worker_session import run_worker_session
 
 
@@ -215,6 +216,41 @@ def test_public_reader_refuses_truncated_or_nonobject_json(tmp_path: Path, raw: 
     with pytest.raises(ValueError, match="invalid worker outcome document"):
         read_worker_outcome(report)
     assert report.read_bytes() == raw
+
+
+def test_a_finished_tmux_attachment_stays_an_unknown_outcome(tmp_path: Path) -> None:
+    """A tmux launch that returns is still not confirmation that the provider finished."""
+    report = tmp_path / "private" / "outcome.json"
+    observation = WorkerObservation(report)
+    result = observation.tmux_result(lambda: 0)
+    assert result == 0
+    document = read_worker_outcome(report)
+    assert document["state"] == document["external_effect"] == "unknown"
+    assert document["observation"] == "tmux_attachment_ended"
+
+
+def test_a_replace_the_kernel_refuses_leaves_no_temporary(tmp_path: Path) -> None:
+    """A rename the kernel rejects closes the new descriptor and removes its temporary."""
+    report = tmp_path / "private" / "outcome.json"
+    observation = WorkerObservation(report)
+    armed = True
+
+    def refuse_replace(event: str, args: tuple[object, ...]) -> None:
+        nonlocal armed
+        if not armed or event != "os.rename" or Path(str(args[1])) != report.absolute():
+            return
+        armed = False
+        report.unlink()
+        report.mkdir()
+
+    sys.addaudithook(refuse_replace)
+    try:
+        with pytest.raises(OSError):
+            observation.observe(OutcomeState.STARTED, "provider_started")
+    finally:
+        observation.close()
+    assert report.is_dir()
+    assert list(report.parent.glob(".worker-outcome-*")) == []
 
 
 def test_actual_tmux_executable_refusal_preserves_unknown_report(tmp_path: Path) -> None:
