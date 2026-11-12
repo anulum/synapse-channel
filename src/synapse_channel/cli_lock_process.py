@@ -56,7 +56,7 @@ async def run_locked_subprocess(command: list[str]) -> int:
                 os.killpg(proc.pid, signal.SIGTERM)
         try:
             await asyncio.wait_for(proc.wait(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             with contextlib.suppress(ProcessLookupError):
                 if os.name == "nt":
                     proc.kill()
