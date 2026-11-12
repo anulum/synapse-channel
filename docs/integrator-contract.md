@@ -46,13 +46,23 @@ synapse operation declare --task T --name P/worker --epoch E --effect file \
 `migration`, each with its own target options. Only the live claim holder at the
 current epoch may declare, and an operation id is declared once.
 
-## 3. Obtain authority
+## 3. Coordinate and obtain authority
 
-Authority is a claim on the task: `SynapseAgent.claim(task_id, paths=[...])`
-returns a `claim_granted` frame with the `epoch` that fences every later record,
-or `synapse git-claim` for the current branch's paths. A denied claim is a stop.
-ACL rules, role grants and approvals apply where the hub configures them.
-`SynapseAgent.release(task_id, epoch=E)` ends the claim.
+A claim coordinates. It is not permission. `SynapseAgent.claim(task_id,
+paths=[...])` returns a `claim_granted` frame with the `epoch` that fences every
+later record, or use `synapse git-claim` for the current branch's paths. The
+claim gives the executor the task exclusively, and step 2 needs it. A denied
+claim is a stop. `SynapseAgent.release(task_id, epoch=E)` ends the claim.
+
+What permits an action is the executor's bound identity and what the hub grants
+that identity: ACL rules and role grants, and an approval bound to the exact
+SHA-256 subject where the hub requires one (see [verdicts](verdicts.md)). A
+note or any other content that says "approved" is not authority.
+
+The contract has no typed, expiring permission for one actor, one action and
+one target that the executor consumes once. Until it has one, this step is
+cooperative: the hub records and fences, and the executor is trusted to stay
+inside what it declared.
 
 ## 4. Execute
 
@@ -63,7 +73,8 @@ synapse worker-session --identity P/worker --outcome-file run-001.json -- ./do-t
 The provider runs with `SYN_OPERATION_ID`; the launcher writes an owner-only
 `synapse.execution-outcome.v1` report that keeps the process exit apart from the
 external effect. In Python: `run_worker_session(identity=..., command=[...],
-outcome_file=...)`.
+outcome_file=...)`. The launcher does not confine the provider, which runs with
+the user's own permissions.
 
 ## 5. Follow the result
 

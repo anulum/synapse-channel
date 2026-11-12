@@ -30,6 +30,16 @@ execution evidence when carrying a release claim forward.
   `/host-sessions.json` feed carries no accounting: its observer grants cover
   directory and context pathnames only.
 
+### Changed
+
+- The integrator contract page no longer says that a claim is authority. Step
+  3 now separates coordination (the claim and its epoch) from what permits an
+  action (the bound identity with the hub's ACL and role grants, and a
+  digest-bound approval where the hub requires one), and says that the step is
+  cooperative until a consumable permission exists. Step 4 says that the
+  launcher does not confine the provider. No command, name or wire format
+  changes.
+
 ### Fixed
 
 - A Windows `synapse.exe` is still the synapse command, and a freshly

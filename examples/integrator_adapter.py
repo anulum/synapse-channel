@@ -13,7 +13,8 @@ lists:
 1. register the executor: connect as ``DEMO/worker``;
 2. propose the operation: the provider declares ``SYN_OPERATION_ID`` on the task
    (``examples/integrator_provider.py``);
-3. obtain authority: claim the task and keep its epoch;
+3. coordinate: claim the task and keep its epoch (a claim is not permission;
+   the hub's grants to this identity are);
 4. execute: ``run_worker_session`` starts the provider and writes its outcome report;
 5. follow the result: an independent checker, granted ``operation-evidence``,
    publishes the outcome report and a file verification on the hub;
