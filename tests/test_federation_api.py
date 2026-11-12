@@ -14,6 +14,7 @@ its defining module's own object; this file pins the surface itself.
 
 from __future__ import annotations
 
+import ast
 import importlib
 import os
 import subprocess
@@ -79,3 +80,101 @@ def test_importing_the_surface_loads_no_other_module() -> None:
         timeout=60,
     )
     assert result.stdout.strip() == "['synapse_channel.federation_api']"
+
+
+def test_the_package_root_resolves_one_public_name() -> None:
+    """The package root loads a public name on first use and lists the surface."""
+    from synapse_channel.core.protocol import MessageType
+
+    assert synapse_channel.MessageType is MessageType
+    assert "MessageType" in dir(synapse_channel)
+    with pytest.raises(AttributeError, match="has no attribute 'not_a_public_name'"):
+        _ = synapse_channel.not_a_public_name
+
+
+def _type_checking_bindings(source: str) -> list[tuple[str, str, str]]:
+    """Return ``(module, imported name, local name)`` from ``TYPE_CHECKING`` blocks."""
+    bindings: list[tuple[str, str, str]] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.If):
+            continue
+        test = node.test
+        if not isinstance(test, ast.Name) or test.id != "TYPE_CHECKING":
+            continue
+        for statement in node.body:
+            if not isinstance(statement, ast.ImportFrom) or statement.module is None:
+                continue
+            for alias in statement.names:
+                bindings.append((statement.module, alias.name, alias.asname or alias.name))
+    return bindings
+
+
+def test_type_checking_imports_are_the_runtime_lazy_exports(tmp_path: Path) -> None:
+    """Every ``TYPE_CHECKING`` name is the same object the lazy export returns.
+
+    The blocks themselves do not run. This is their applicability check: the
+    parsed import, the runtime object, and a strict mypy probe of a consumer.
+    """
+    negative = _type_checking_bindings(
+        "\n".join(
+            (
+                "if OTHER:",
+                "    from os import path",
+                "if True:",
+                "    x = 1",
+                "if TYPE_CHECKING:",
+                "    x = 1",
+                "    from . import local_name",
+                "    from os import path as file_path",
+                "",
+            )
+        )
+    )
+    assert negative == [("os", "path", "file_path")]
+
+    package_root = Path(synapse_channel.__file__).resolve().parent
+    surface = package_root / "federation_api" / "__init__.py"
+    for module_name, imported, local in _type_checking_bindings(
+        surface.read_text(encoding="utf-8")
+    ):
+        assert local == imported
+        assert local in federation_api.__all__
+        defining = importlib.import_module(module_name)
+        assert getattr(federation_api, local) is getattr(defining, imported)
+
+    for path in sorted((package_root / "federation_api").glob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        assert _type_checking_bindings(path.read_text(encoding="utf-8")) == []
+
+    package_source = (package_root / "__init__.py").read_text(encoding="utf-8")
+    exports = synapse_channel._EXPORTS
+    for module_name, imported, local in _type_checking_bindings(package_source):
+        assert exports[local] == f"{module_name}:{imported}"
+        defining = importlib.import_module(module_name)
+        assert getattr(synapse_channel, local) is getattr(defining, imported)
+
+    consumer = tmp_path / "consumer_probe.py"
+    consumer.write_text(
+        "\n".join(
+            (
+                "from synapse_channel import SynapseHub",
+                "from synapse_channel.federation_api import ClockSkew",
+                "",
+                "def take(hub: SynapseHub, skew: ClockSkew) -> tuple[SynapseHub, ClockSkew]:",
+                "    return hub, skew",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    probe = subprocess.run(
+        [sys.executable, "-m", "mypy", "--strict", str(consumer)],
+        capture_output=True,
+        check=False,
+        cwd=package_root.parent,
+        env={**os.environ, "PYTHONPATH": str(package_root.parent)},
+        text=True,
+        timeout=180,
+    )
+    assert probe.returncode == 0, probe.stdout + probe.stderr

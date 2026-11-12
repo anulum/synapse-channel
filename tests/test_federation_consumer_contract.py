@@ -319,6 +319,17 @@ def _field_names(obj: object) -> set[str]:
     raise AssertionError(f"{obj!r} is neither a dataclass nor a NamedTuple")
 
 
+def test_field_names_accept_a_named_tuple_and_refuse_a_plain_object() -> None:
+    """The record helper accepts a NamedTuple and rejects an object with no fields."""
+
+    class Row(typing.NamedTuple):
+        item: str
+
+    assert _field_names(Row) == {"item"}
+    with pytest.raises(AssertionError, match="neither a dataclass nor a NamedTuple"):
+        _field_names(object())
+
+
 @pytest.mark.parametrize(("location", "required_fields"), _RECORD_CONTRACT.items())
 def test_record_primitives_keep_their_required_fields(
     location: tuple[str, str], required_fields: frozenset[str]
