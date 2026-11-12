@@ -5438,3 +5438,205 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── Identifiers ───────────────────────────────────────────────────────────
+   A seat, a task or a path is told from its neighbours by its end. The head
+   gives way to an ellipsis; the tail is never cut. The element's text is the
+   whole value, so selecting and copying it gives the whole value. */
+.ident {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  user-select: all;
+}
+
+.ident__head {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ident__tail {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Keyboard focus on the identifier, or on the control or row that holds it,
+   shows the whole value. */
+.ident:focus-visible,
+:focus-visible .ident,
+tr:focus-within .ident,
+.log-group__head:focus-within .ident {
+  flex-wrap: wrap;
+  overflow: visible;
+  white-space: normal;
+}
+
+.ident:focus-visible .ident__head,
+:focus-visible .ident .ident__head,
+tr:focus-within .ident .ident__head,
+.log-group__head:focus-within .ident .ident__head {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ident:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+
+.risk-row__subject > .ident,
+.finding-row__meta > .ident,
+.log-group__head > .ident {
+  flex: 0 1 auto;
+}
+
+.dep-chip {
+  display: inline-flex;
+  gap: 0.5ch;
+  min-width: 0;
+}
+
+/* The log's table stays inside its panel. The actor's column is as wide as
+   the longest end an identifier keeps, and no wider; the event's column takes
+   the rest. The identifier has that width itself, so the head gives way inside
+   it and the cell never asks for the whole name's width. */
+.log__actor {
+  max-width: none;
+}
+
+.log__actor .ident {
+  display: flex;
+  width: 16ch;
+}
+
+/* A narrow log drops the lane's column, which repeats what the kind's dot
+   says, and tightens its cells, so that the actor and the event keep room. */
+.log-scroll {
+  container-type: inline-size;
+}
+
+@container (max-width: 560px) {
+  .log__lane,
+  .log thead th:nth-child(3) {
+    display: none;
+  }
+
+  .log__row td,
+  .log thead th {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+}
+
+/* A row gives its identifier room for the longest end before its counts and
+   tags. A claim's and a task's row keep their grid. A roster row carries more
+   tags than fit beside a long name, so there the counts and tags move to a
+   line of their own when the row is too narrow for both, each tag whole. */
+.claim-row,
+.board-row {
+  grid-template-columns: 14px minmax(18ch, 1fr) minmax(0, auto);
+}
+
+.roster-row {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.roster-row__glyph {
+  flex: none;
+  width: 14px;
+}
+
+.roster-row__id {
+  flex: 1 1 18ch;
+}
+
+.roster-row__meta {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+  max-width: 100%;
+}
+
+.roster-row__count,
+.roster-row__tag {
+  white-space: nowrap;
+}
+
+.roster-row__paths {
+  flex: 1 0 100%;
+  padding-left: calc(14px + var(--sp-2));
+}
+
+/* ── The header's controls ─────────────────────────────────────────────────
+   Above a phone's width the wrapper has no box: its children take their old
+   places in the header. On a phone they are one row that scrolls sideways,
+   the live beacon sits beside the mark, and the four counters share a row,
+   so that the fleet's state starts higher on the first screen. */
+.hud__controls {
+  display: contents;
+}
+
+@media (max-width: 640px) {
+  .hud__mark span,
+  .hud__spacer {
+    display: none;
+  }
+
+  .hud > .beacon {
+    order: 1;
+    margin-left: auto;
+  }
+
+  .hud__kpis {
+    order: 2;
+    flex: 1 0 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--sp-2);
+  }
+
+  .hud__kpis .kpi {
+    min-width: 0;
+  }
+
+  .hud__kpis .kpi__label {
+    letter-spacing: 0.06em;
+    overflow-wrap: anywhere;
+  }
+
+  .hud__controls {
+    /* Positioned, so that a control's visually hidden label is clipped with
+       the row and does not widen the page. */
+    position: relative;
+    order: 3;
+    flex: 1 0 100%;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--sp-2);
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .hud__controls > * {
+    flex: none;
+    margin-left: 0;
+    white-space: nowrap;
+  }
+
+  .hud__controls .hud__theme,
+  .hud__controls .hud__focus-input,
+  .hud__controls .hud__locale select {
+    min-height: 44px;
+  }
+}

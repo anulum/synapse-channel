@@ -9,6 +9,8 @@
 import type { JSX } from "react";
 import { memo } from "react";
 
+import { Ident } from "./Ident";
+
 import type { RosterEntry, RowStatus } from "../lib/roster";
 import { identityMatchesSelection } from "../lib/selection";
 import type { CockpitSelection } from "../lib/workspace";
@@ -55,7 +57,7 @@ function RosterRow({ entry, onInspect, selected }: RosterRowProps): JSX.Element 
   const overflow = held - shown.length;
   const claimCount = entry.activeClaims.length + entry.staleClaims.length;
   const identity = <>
-    <span className="roster-row__name">{lastSegment(entry.agent)}</span>
+    <Ident className="roster-row__name" value={lastSegment(entry.agent)} />
     {project(entry.agent) !== "" && <span className="roster-row__project">{project(entry.agent)}</span>}
   </>;
 

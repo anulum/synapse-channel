@@ -247,6 +247,22 @@ that record and a record that no longer names the fleet as written. Nothing
 compares pixels, because the picture carries live times: whether it still
 matches the running cockpit is decided by taking it again.
 
+`e2e/identifiers.spec.ts` uses the same private hub, dashboard and ports with
+the fleet started as `demo_fleet.py --long-names`: the same participants and
+tasks under long names that differ only at their ends, as the names of a large
+installation do. An identifier is drawn by the `Ident` component as a head that
+gives way to an ellipsis and a tail that is never cut
+(`src/lib/identifier.ts` names the tail). At 1440, 1280 and 390 pixels the
+journey requires every identifier in the roster, the claims, the board, the
+risk rail and the signal log to show its whole end inside its panel, and the
+log's table to stay inside its panel. It checks that keyboard focus on a roster
+row shows the whole name and that the detail drawer's title answers the copy
+key with the whole value. At 390 pixels it also requires the header's controls
+on one row, the header within a quarter of the screen, a state panel starting
+in the first screen, whole inspector tab labels and no sideways scroll of the
+page. The identifiers inside the other inspector tabs, the selection chips and
+the role badge still use an ellipsis at the end.
+
 The pure data logic — snapshot parsing, the freshness contract, polling stores,
 transition derivation, and every panel's data shaping — is held to full line
 and branch coverage. The behavioural component layer uses jsdom and

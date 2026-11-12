@@ -95,12 +95,11 @@
   .role-badge { max-width: none; }
   .hud__commands { flex: 1 0 120px; }
 
-  /* Keep the existing five-tab Inspector from widening the access-enabled shell. */
+  /* The Inspector's tabs keep their whole labels and scroll sideways; the strip
+     itself never widens the access-enabled shell. */
   .inspector__tabs { max-width: 100vw; min-width: 0; overflow-x: auto; }
   .inspector__tab {
-    flex: 1 1 0;
-    min-width: 0;
-    padding: 0 var(--sp-1);
+    padding: 0 var(--sp-2);
     letter-spacing: 0.06em;
   }
   .inspector,

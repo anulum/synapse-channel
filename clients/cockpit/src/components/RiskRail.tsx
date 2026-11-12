@@ -16,6 +16,7 @@ import type { HealthAnomaliesState } from "../lib/healthAnomalies";
 import type { WaitsState } from "../lib/waits";
 import { orderSignals } from "../lib/risk";
 import { identityMatchesSelection, subjectMatchesSelection } from "../lib/selection";
+import { Ident } from "./Ident";
 import type { CockpitSelection } from "../lib/workspace";
 import type { RiskView } from "../types";
 
@@ -101,7 +102,7 @@ function RiskRailView({
                 <span className="risk-row__body">
                   <span className="risk-row__subject">
                     <span className="risk-row__category">{signal.category}</span>
-                    {signal.subject}
+                    <Ident value={signal.subject} />
                   </span>
                   {signal.detail !== "" && <span className="risk-row__detail">{signal.detail}</span>}
                 </span>
@@ -134,7 +135,7 @@ function RiskRailView({
                   <span className="risk-row__body">
                     <span className="risk-row__subject">
                       <span className="risk-row__category">{`${letter.count} unread`}</span>
-                      {letter.target}
+                      <Ident value={letter.target} />
                     </span>
                     <span className="risk-row__detail">
                       {`last from ${letter.lastSender === "" ? "—" : letter.lastSender} at ${deadLetterTime(letter.lastTs)}`}
@@ -166,7 +167,7 @@ function RiskRailView({
                   <span className="risk-row__body">
                     <span className="risk-row__subject">
                       <span className="risk-row__category">{item.category}</span>
-                      {item.taskId}
+                      <Ident value={item.taskId} />
                     </span>
                     <span className="risk-row__detail">{item.detail}</span>
                   </span>
@@ -231,7 +232,7 @@ function RiskRailView({
                   <span className="risk-row__body">
                     <span className="risk-row__subject">
                       <span className="risk-row__category">{wait.who === "" ? "unowned" : wait.who}</span>
-                      {wait.taskId}
+                      <Ident value={wait.taskId} />
                     </span>
                     <span className="risk-row__detail">{`waits on ${wait.onWhat.join(", ")}`}</span>
                   </span>
@@ -272,7 +273,7 @@ function RiskRailView({
                   <span className="risk-row__body">
                     <span className="risk-row__subject">
                       <span className="risk-row__category">{approval.action === "" ? "relay" : approval.action}</span>
-                      {approval.taskId === "" ? "—" : approval.taskId}
+                      {approval.taskId === "" ? "—" : <Ident value={approval.taskId} />}
                     </span>
                     <span className="risk-row__detail">
                       {`in ${approval.namespace === "" ? "—" : approval.namespace} · requested by ${approval.requester === "" ? "—" : approval.requester}`}
@@ -305,7 +306,7 @@ function RiskRailView({
                       <span className="risk-row__category">
                         {flag.kind === "claim_churn" ? "churn" : "lease"}
                       </span>
-                      {flag.taskId}
+                      <Ident value={flag.taskId} />
                     </span>
                     <span className="risk-row__detail">{flag.detail}</span>
                   </span>

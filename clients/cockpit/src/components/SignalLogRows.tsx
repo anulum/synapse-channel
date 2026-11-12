@@ -13,6 +13,7 @@ import { groupByTask } from "../lib/logGroups";
 import type { LogQuery } from "../lib/logQuery";
 import { fetchAndVerify, type VerifyResult } from "../lib/merkleVerify";
 import { eventMatchesSelection } from "../lib/selection";
+import { Ident } from "./Ident";
 import type { CockpitSelection } from "../lib/workspace";
 import type { CockpitEvent } from "../types";
 
@@ -136,7 +137,7 @@ export function SignalLogRows({
                 <td className="log__time">{timeOf(event)}</td>
                 <td className="log__lane">{event.lane}</td>
                 <td className="log__kind"><span className="log__dot" aria-hidden="true" />{event.kind}</td>
-                <td className="log__actor" title={event.actor}>{event.actor === "" ? "—" : event.actor}</td>
+                <td className="log__actor">{event.actor === "" ? "—" : <Ident value={event.actor} />}</td>
                 <td className="log__label" title={event.label}>
                   {onSelectTask !== undefined &&
                   ((navigationProvenance === "hub" && event.kind !== "chat") || event.taskId !== "") ? (
@@ -230,10 +231,10 @@ function CompactLogList({
                 title={`Trace the recorded causes of ${group.taskId}`}
                 onClick={() => onSelectTask(group.taskId)}
               >
-                {group.taskId}
+                <Ident value={group.taskId} />
               </button>
-            ) : <span className="log-group__task">{group.taskId}</span>}
-            {group.lastActor !== "" && <span className="log-group__actor" title={group.lastActor}>{group.lastActor}</span>}
+            ) : <Ident className="log-group__task" value={group.taskId} />}
+            {group.lastActor !== "" && <Ident className="log-group__actor" value={group.lastActor} />}
             <span className="log-group__time">{timeOf(group.events.at(-1) as CockpitEvent)}</span>
           </div>
           <div className="log-group__chain">

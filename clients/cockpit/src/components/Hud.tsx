@@ -123,104 +123,106 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
         )}
       </div>
 
-      {accessControl}
-      {onOpenPalette !== undefined && (
-        <button
-          ref={commandTriggerRef}
-          type="button"
-          className="hud__commands"
-          aria-label={`${t("hud.commands")} Ctrl K: ${t("hud.openCommands")}`}
-          onClick={onOpenPalette}
-        >
-          {t("hud.commands")} <kbd>Ctrl K</kbd>
-        </button>
-      )}
-      {onOpenGuide !== undefined && (
-        <button
-          ref={guideTriggerRef}
-          type="button"
-          className="hud__commands hud__guide"
-          aria-label={t("hud.openGuide")}
-          onClick={onOpenGuide}
-        >
-          {t("hud.guide")} <kbd>?</kbd>
-        </button>
-      )}
-      {onOpenSetup !== undefined && (
-        <button
-          ref={setupTriggerRef}
-          type="button"
-          className="hud__commands hud__setup"
-          aria-label={t("hud.openSetup")}
-          onClick={onOpenSetup}
-        >
-          {t("hud.setup")}
-        </button>
-      )}
-      <label className="hud__locale">
-        <span className="visually-hidden">{t("hud.locale")}</span>
-        <select
-          value={locale}
-          onChange={(event) => setLocale(event.target.value as CockpitLocale)}
-          aria-label={t("hud.locale")}
-        >
-          <option value="en">EN</option>
-          <option value="sk">SK</option>
-          <option value="de">DE</option>
-          <option value="es">ES</option>
-          <option value="fr">FR</option>
-        </select>
-      </label>
-      {onFocusChange !== undefined && (
-        <span className={`hud__focus${focus !== "" ? " hud__focus--on" : ""}`}>
-          <input
-            className="hud__focus-input"
-            list="hud-focus-roster"
-            value={focus}
-            onChange={(change) => onFocusChange(change.target.value)}
-            placeholder={t("hud.focusPlaceholder")}
-            aria-label={t("hud.focusLabel")}
-            title={t("hud.focusTitle")}
-          />
-          <datalist id="hud-focus-roster">
-            {rosterNames.map((name) => (
-              <option key={name} value={name} />
-            ))}
-          </datalist>
-          {focus !== "" && (
-            <button
-              type="button"
-              className="panel__clear"
-              onClick={() => onFocusChange("")}
-              aria-label={t("hud.clearFocus")}
-            >
-              {t("hud.clear")}
-            </button>
-          )}
-        </span>
-      )}
-      {onToggleDensity !== undefined && (
-        <button
-          type="button"
-          className="hud__theme"
-          onClick={onToggleDensity}
-          title={density === "cozy" ? t("hud.densityCompactTitle") : t("hud.densityCozyTitle")}
-          aria-label={`${density === "cozy" ? t("hud.compact") : t("hud.cozy")}: ${t("hud.toggleDensity")}`}
-        >
-          {density === "cozy" ? t("hud.compact") : t("hud.cozy")}
-        </button>
-      )}
-      {onToggleTheme !== undefined && (
-        <button
-          type="button"
-          className="hud__theme"
-          onClick={onToggleTheme}
-          title={theme === "dark" ? t("hud.switchLight") : t("hud.switchDark")}
-          aria-label={theme === "dark" ? t("hud.switchLight") : t("hud.switchDark")}
-        >
-          {theme === "dark" ? t("hud.light") : t("hud.dark")}
-        </button>
-      )}
+      <div className="hud__controls">
+        {accessControl}
+        {onOpenPalette !== undefined && (
+          <button
+            ref={commandTriggerRef}
+            type="button"
+            className="hud__commands"
+            aria-label={`${t("hud.commands")} Ctrl K: ${t("hud.openCommands")}`}
+            onClick={onOpenPalette}
+          >
+            {t("hud.commands")} <kbd>Ctrl K</kbd>
+          </button>
+        )}
+        {onOpenGuide !== undefined && (
+          <button
+            ref={guideTriggerRef}
+            type="button"
+            className="hud__commands hud__guide"
+            aria-label={t("hud.openGuide")}
+            onClick={onOpenGuide}
+          >
+            {t("hud.guide")} <kbd>?</kbd>
+          </button>
+        )}
+        {onOpenSetup !== undefined && (
+          <button
+            ref={setupTriggerRef}
+            type="button"
+            className="hud__commands hud__setup"
+            aria-label={t("hud.openSetup")}
+            onClick={onOpenSetup}
+          >
+            {t("hud.setup")}
+          </button>
+        )}
+        <label className="hud__locale">
+          <span className="visually-hidden">{t("hud.locale")}</span>
+          <select
+            value={locale}
+            onChange={(event) => setLocale(event.target.value as CockpitLocale)}
+            aria-label={t("hud.locale")}
+          >
+            <option value="en">EN</option>
+            <option value="sk">SK</option>
+            <option value="de">DE</option>
+            <option value="es">ES</option>
+            <option value="fr">FR</option>
+          </select>
+        </label>
+        {onFocusChange !== undefined && (
+          <span className={`hud__focus${focus !== "" ? " hud__focus--on" : ""}`}>
+            <input
+              className="hud__focus-input"
+              list="hud-focus-roster"
+              value={focus}
+              onChange={(change) => onFocusChange(change.target.value)}
+              placeholder={t("hud.focusPlaceholder")}
+              aria-label={t("hud.focusLabel")}
+              title={t("hud.focusTitle")}
+            />
+            <datalist id="hud-focus-roster">
+              {rosterNames.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+            {focus !== "" && (
+              <button
+                type="button"
+                className="panel__clear"
+                onClick={() => onFocusChange("")}
+                aria-label={t("hud.clearFocus")}
+              >
+                {t("hud.clear")}
+              </button>
+            )}
+          </span>
+        )}
+        {onToggleDensity !== undefined && (
+          <button
+            type="button"
+            className="hud__theme"
+            onClick={onToggleDensity}
+            title={density === "cozy" ? t("hud.densityCompactTitle") : t("hud.densityCozyTitle")}
+            aria-label={`${density === "cozy" ? t("hud.compact") : t("hud.cozy")}: ${t("hud.toggleDensity")}`}
+          >
+            {density === "cozy" ? t("hud.compact") : t("hud.cozy")}
+          </button>
+        )}
+        {onToggleTheme !== undefined && (
+          <button
+            type="button"
+            className="hud__theme"
+            onClick={onToggleTheme}
+            title={theme === "dark" ? t("hud.switchLight") : t("hud.switchDark")}
+            aria-label={theme === "dark" ? t("hud.switchLight") : t("hud.switchDark")}
+          >
+            {theme === "dark" ? t("hud.light") : t("hud.dark")}
+          </button>
+        )}
+      </div>
       <div className={`beacon ${live ? "beacon--live" : "beacon--stale"}`}>
         <span className="beacon__dot" />
         <span>{live ? t("hud.live") : t("hud.stale")}</span>

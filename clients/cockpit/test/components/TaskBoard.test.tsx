@@ -13,6 +13,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskBoard } from "../../src/components/TaskBoard";
 import type { BoardBucket, BoardTask } from "../../src/lib/board";
+import { identText } from "../identText";
+
+/** The one dependency chip that names `taskId`. */
+function chip(taskId: string): HTMLElement {
+  const chips = screen
+    .getAllByText(identText(taskId))
+    .map((element) => element.closest<HTMLElement>(".dep-chip"))
+    .filter((element): element is HTMLElement => element !== null);
+  expect(chips).toHaveLength(1);
+  return chips[0]!;
+}
 
 afterEach(cleanup);
 
@@ -63,10 +74,14 @@ describe("TaskBoard", () => {
       />,
     );
     expect(screen.getByText("1 blocked")).toBeTruthy();
-    expect(screen.getByText("✓ t-done")).toBeTruthy();
-    expect(screen.getByText("✕ t-ghost").className).toContain("dep-chip--missing");
-    expect(screen.getByText("… t-wip").className).toContain("dep-chip--waiting");
-    expect(screen.getByText("↳ t-blocked")).toBeTruthy();
+    expect(chip("t-done").textContent).toBe("✓t-done");
+    expect(chip("t-done").className).toContain("dep-chip--satisfied");
+    expect(chip("t-ghost").textContent).toBe("✕t-ghost");
+    expect(chip("t-ghost").className).toContain("dep-chip--missing");
+    expect(chip("t-wip").textContent).toBe("…t-wip");
+    expect(chip("t-wip").className).toContain("dep-chip--waiting");
+    expect(chip("t-blocked").textContent).toBe("↳t-blocked");
+    expect(chip("t-blocked").className).toContain("dep-chip--unblocks");
     expect(screen.getByText("wire it")).toBeTruthy();
   });
 
@@ -135,8 +150,8 @@ describe("TaskBoard", () => {
         selection={{ kind: "task", id: "t-selected" }}
       />,
     );
-    expect(screen.getByText("t-selected").closest("li")?.className).toContain("context-match");
-    expect(screen.getByText("t-selected").closest("li")?.getAttribute("aria-current")).toBe("true");
+    expect(screen.getByText(identText("t-selected")).closest("li")?.className).toContain("context-match");
+    expect(screen.getByText(identText("t-selected")).closest("li")?.getAttribute("aria-current")).toBe("true");
     expect(screen.getByText("t-other").closest("li")?.className).not.toContain("context-match");
   });
 });

@@ -15,7 +15,11 @@ any seat that cannot be woken. The script prints one JSON line naming the
 participants, tasks and held claims when the fleet is in place, then waits
 until it is stopped or its deadline passes.
 
-Usage: ``python demo_fleet.py HUB_URI``
+With ``--long-names`` the same fleet joins under long names that differ only at
+their ends, as the names of a large installation do; a journey uses it to check
+that a narrow column still shows which seat and which task a row is about.
+
+Usage: ``python demo_fleet.py HUB_URI [--long-names]``
 """
 
 from __future__ import annotations
@@ -83,6 +87,12 @@ MESSAGES = (
 FINDING = "Upload limits are enforced by the API, not by the web client."
 """The one finding the reviewer records."""
 
+LONG_PROJECTS = {
+    "harbour": "harbour-coastal-monitoring-programme",
+    "lighthouse": "lighthouse-navigation-services-group",
+}
+"""The long form of each invented project."""
+
 JOIN_SECONDS = 10.0
 """How long each participant may take to join the hub."""
 
@@ -136,6 +146,30 @@ class Inbox:
                 await asyncio.wait_for(self._arrived.wait(), timeout=remaining)
 
 
+def long_name(name: str) -> str:
+    """Return the long form of a participant, a project or a task name.
+
+    Parameters
+    ----------
+    name : str
+        A name of the picture's fleet: ``project/seat``, a project, or a task
+        such as ``HARBOUR-101``.
+
+    Returns
+    -------
+    str
+        A name of the same kind that keeps what distinguishes it, the seat or
+        the task number, at its very end.
+    """
+    if "/" in name:
+        project, seat = name.split("/", 1)
+        return f"{LONG_PROJECTS[project]}/autonomous-operations-seat-{seat}"
+    if name in LONG_PROJECTS:
+        return LONG_PROJECTS[name]
+    prefix, number = name.rsplit("-", 1)
+    return f"{prefix}-COASTAL-OPERATIONS-WORK-PACKAGE-{number}"
+
+
 def _confirms(kind: str, task_id: str) -> Callable[[Message], bool]:
     """Return a predicate for the hub's confirmation of one task step."""
 
@@ -149,29 +183,44 @@ def _confirms(kind: str, task_id: str) -> Callable[[Message], bool]:
     return matches
 
 
-async def _seed(agents: dict[str, SynapseAgent], inbox: Inbox) -> None:
+async def _seed(
+    agents: dict[str, SynapseAgent], inbox: Inbox, rename: Callable[[str], str]
+) -> None:
     """Post the plan, set its statuses, take the claims, talk and record the finding."""
     planner = agents["harbour/planner"]
     for task_id, title, depends_on in TASKS:
         project = "harbour" if task_id.startswith("HARBOUR") else "lighthouse"
-        await planner.post_task(task_id, title, depends_on=list(depends_on), project=project)
-        await inbox.wait_for(_confirms("ledger_task_posted", task_id))
+        await planner.post_task(
+            rename(task_id),
+            title,
+            depends_on=[rename(needed) for needed in depends_on],
+            project=rename(project),
+        )
+        await inbox.wait_for(_confirms("ledger_task_posted", rename(task_id)))
     for task_id, status in BOARD_STATUSES:
-        await planner.update_ledger_task(task_id, status=status)
-        await inbox.wait_for(_confirms("ledger_task_updated", task_id))
+        await planner.update_ledger_task(rename(task_id), status=status)
+        await inbox.wait_for(_confirms("ledger_task_updated", rename(task_id)))
     for owner, task_id, paths in CLAIMS:
-        await agents[owner].claim(task_id, paths=list(paths))
-        await inbox.wait_for(_confirms("claim_granted", task_id))
-        await agents[owner].update_task(task_id, status="working")
-        await inbox.wait_for(_confirms("task_updated", task_id))
+        await agents[owner].claim(rename(task_id), paths=list(paths))
+        await inbox.wait_for(_confirms("claim_granted", rename(task_id)))
+        await agents[owner].update_task(rename(task_id), status="working")
+        await inbox.wait_for(_confirms("task_updated", rename(task_id)))
     for sender, target, text in MESSAGES:
-        await agents[sender].chat(text, target=target)
-    await agents["harbour/reviewer"].record_finding(FINDING, subkind="decision", project="harbour")
+        for task_id, _title, _needs in TASKS:
+            text = text.replace(task_id, rename(task_id))
+        await agents[sender].chat(text, target=target if target == "all" else rename(target))
+    await agents["harbour/reviewer"].record_finding(
+        FINDING, subkind="decision", project=rename("harbour")
+    )
     await inbox.wait_for(lambda message: message.get("type") == "finding_recorded")
 
 
 async def run_fleet(
-    uri: str, *, join_seconds: float = JOIN_SECONDS, hold_seconds: float = HOLD_SECONDS
+    uri: str,
+    *,
+    rename: Callable[[str], str] = str,
+    join_seconds: float = JOIN_SECONDS,
+    hold_seconds: float = HOLD_SECONDS,
 ) -> int:
     """Connect the fleet, seed it, report readiness and hold until stopped.
 
@@ -179,6 +228,9 @@ async def run_fleet(
     ----------
     uri : str
         WebSocket address of the running hub.
+    rename : Callable[[str], str], optional
+        Maps each name of the picture's fleet to the name used on the hub; the
+        default keeps the names, :func:`long_name` gives the long ones.
     join_seconds : float, optional
         Seconds each participant may take to join.
     hold_seconds : float, optional
@@ -196,7 +248,7 @@ async def run_fleet(
     """
     inbox = Inbox()
     agents = {
-        name: SynapseAgent(name, inbox, uri=uri, heartbeat_interval=20.0, verbose=False)
+        name: SynapseAgent(rename(name), inbox, uri=uri, heartbeat_interval=20.0, verbose=False)
         for name in PARTICIPANTS
     }
     connections = [asyncio.create_task(agent.connect()) for agent in agents.values()]
@@ -210,13 +262,13 @@ async def run_fleet(
     try:
         for name, agent in agents.items():
             if not await agent.wait_until_ready(join_seconds):
-                raise TimeoutError(f"{name} did not join the hub")
-        await _seed(agents, inbox)
+                raise TimeoutError(f"{rename(name)} did not join the hub")
+        await _seed(agents, inbox, rename)
         ready = {
             "ready": True,
-            "participants": list(PARTICIPANTS),
-            "tasks": [task_id for task_id, _title, _needs in TASKS],
-            "claims": [task_id for _owner, task_id, _paths in CLAIMS],
+            "participants": [rename(name) for name in PARTICIPANTS],
+            "tasks": [rename(task_id) for task_id, _title, _needs in TASKS],
+            "claims": [rename(task_id) for _owner, task_id, _paths in CLAIMS],
         }
         print(json.dumps(ready), flush=True)
         with contextlib.suppress(TimeoutError):
@@ -236,12 +288,15 @@ def main() -> int:
     Returns
     -------
     int
-        Zero after the fleet has disconnected; two for a missing argument.
+        Zero after the fleet has disconnected; two unless exactly one hub
+        address is given.
     """
-    if len(sys.argv) != 2:
-        print("usage: python demo_fleet.py HUB_URI", file=sys.stderr)
+    addresses = [argument for argument in sys.argv[1:] if argument != "--long-names"]
+    if len(addresses) != 1:
+        print("usage: python demo_fleet.py HUB_URI [--long-names]", file=sys.stderr)
         return 2
-    return asyncio.run(run_fleet(sys.argv[1]))
+    rename = long_name if "--long-names" in sys.argv[1:] else str
+    return asyncio.run(run_fleet(addresses[0], rename=rename))
 
 
 if __name__ == "__main__":

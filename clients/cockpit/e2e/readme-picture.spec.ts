@@ -6,84 +6,26 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE CHANNEL — the README cockpit picture, taken from a demonstration fleet
 
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
+
+import { startFleet, startHarness, stop, type Fleet, type Started } from "./fleetHarness";
 
 const bearer = process.env["SYNAPSE_COCKPIT_E2E_TOKEN"];
 if (!bearer) throw new Error("SYNAPSE_COCKPIT_E2E_TOKEN is required");
 
 const WIDTH = 1280;
 const HEIGHT = 900;
-const dashboardPort = process.env["SYNAPSE_COCKPIT_E2E_PICTURE_DASHBOARD_PORT"] ?? "18775";
-const hubPort = process.env["SYNAPSE_COCKPIT_E2E_PICTURE_HUB_PORT"] ?? "18776";
-const localPython = resolve("../../.venv/bin/python");
-const python = process.env["SYNAPSE_COCKPIT_E2E_PYTHON"] ??
-  (existsSync(localPython) ? localPython : "python");
-
-interface Started {
-  readonly child: ChildProcessWithoutNullStreams;
-  readonly line: string;
-  readonly exited: Promise<void>;
-}
-
-/** Start one helper process and resolve with its first complete output line. */
-async function start(script: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<Started> {
-  const child = spawn(python, ["-u", script, ...args], { env, stdio: ["pipe", "pipe", "pipe"] });
-  child.stdin.end();
-  const exited = new Promise<void>(done => {
-    child.once("exit", () => done());
-    child.once("error", () => done());
-  });
-  const line = await new Promise<string>((ready, reject) => {
-    let output = "";
-    let errors = "";
-    const deadline = setTimeout(() => reject(new Error(`${script} startup deadline: ${errors}`)), 30_000);
-    child.stderr.on("data", chunk => { errors += String(chunk); });
-    child.once("error", error => { clearTimeout(deadline); reject(error); });
-    child.once("exit", code => {
-      clearTimeout(deadline);
-      reject(new Error(`${script} exited ${code}: ${errors}`));
-    });
-    child.stdout.on("data", chunk => {
-      output += String(chunk);
-      if (!output.includes("\n")) return;
-      clearTimeout(deadline);
-      ready(output.split("\n")[0]!);
-    });
-  });
-  return { child, line, exited };
-}
-
-async function stop(started: Started | undefined): Promise<void> {
-  if (!started) return;
-  started.child.kill("SIGTERM");
-  await started.exited;
-}
-
-function names(value: unknown, key: string): string[] {
-  const list = (value as Record<string, unknown>)[key];
-  if (!Array.isArray(list) || list.length === 0 || !list.every(item => typeof item === "string")) {
-    throw new Error(`the demonstration fleet reported no ${key}`);
-  }
-  return list as string[];
-}
-
 test("the README picture shows a working fleet in the built cockpit", async ({ page }) => {
   test.setTimeout(90_000);
   let harness: Started | undefined;
-  let fleet: Started | undefined;
+  let fleet: Fleet | undefined;
   try {
-    harness = await start("e2e/dashboard_harness.py", [], {
-      ...process.env,
-      PYTHONUNBUFFERED: "1",
-      SYNAPSE_COCKPIT_E2E_DASHBOARD_PORT: dashboardPort,
-      SYNAPSE_COCKPIT_E2E_HUB_PORT: hubPort,
-    });
-    const url = /ready at (\S+)/u.exec(harness.line)?.[1];
-    if (!url) throw new Error(`unexpected harness readiness: ${harness.line}`);
+    const started = await startHarness();
+    harness = started.harness;
+    const url = started.url;
 
     // The operator has the cockpit open before the fleet starts: the activity
     // spine draws only the changes this page itself observed.
@@ -100,11 +42,8 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
     await expect(page.locator("html")).not.toHaveAttribute("data-density");
     await expect(banner.getByRole("combobox", { name: "Interface language" })).toHaveValue("en");
 
-    fleet = await start("e2e/demo_fleet.py", [`ws://127.0.0.1:${hubPort}`], { ...process.env });
-    const seeded: unknown = JSON.parse(fleet.line);
-    const participants = names(seeded, "participants");
-    const tasks = names(seeded, "tasks");
-    const claims = names(seeded, "claims");
+    fleet = await startFleet();
+    const { participants, tasks, claims } = fleet;
 
     const region = (name: string) => page.getByRole("region", { name, exact: true });
     for (const name of ["Fleet roster", "File-scope claims", "Task board", "Risk rail", "Findings stream", "Signal log"]) {
@@ -161,7 +100,7 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
       }, null, 2)}\n`);
     }
   } finally {
-    await stop(fleet);
+    await stop(fleet?.started);
     await stop(harness);
   }
 });

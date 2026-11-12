@@ -11,6 +11,7 @@ import { useEffect, useRef } from "react";
 
 import type { AgentDetail, TaskDetail } from "../lib/detail";
 import { COLOUR_OF } from "../lib/events";
+import { Ident } from "./Ident";
 import type { CockpitEvent } from "../types";
 
 function timeOf(ts: number): string {
@@ -126,9 +127,7 @@ export function DetailDrawer({ agent, task, onClose, onFilterLog, onTrace }: Det
         onClick={(click) => click.stopPropagation()}
       >
         <div className="drawer__head">
-          <span className="drawer__title" title={subject}>
-            {subject}
-          </span>
+          <Ident className="drawer__title" value={subject} focusable />
           <button type="button" className="panel__clear" onClick={onClose} aria-label="Close the drawer">
             close
           </button>

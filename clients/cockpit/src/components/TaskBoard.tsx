@@ -12,6 +12,7 @@ import { memo, useState } from "react";
 import type { BoardBucket, BoardTask, BoardTruncation, DependencyChip } from "../lib/board";
 import { renderBoardReport } from "../lib/boardReport";
 import { taskMatchesSelection } from "../lib/selection";
+import { Ident } from "./Ident";
 import type { CockpitSelection } from "../lib/workspace";
 import {
   boardQueryConstrained,
@@ -65,9 +66,7 @@ function TaskRow({ task, onInspect, selected }: TaskRowProps): JSX.Element {
         {BUCKET_GLYPH[task.bucket]}
       </span>
       <span className="board-row__id">
-        <span className="board-row__task" title={task.taskId}>
-          {task.taskId}
-        </span>
+        <Ident className="board-row__task" value={task.taskId} />
         {task.title !== "" && (
           <span className="board-row__title" title={task.title}>
             {task.title}
@@ -79,7 +78,8 @@ function TaskRow({ task, onInspect, selected }: TaskRowProps): JSX.Element {
         <span className="board-row__edges">
           {task.dependsOn.map((chip) => (
             <span key={chip.taskId} className={chipClass(chip)} title={chipTitle(chip)}>
-              {chip.missing ? "✕" : chip.satisfied ? "✓" : "…"} {chip.taskId}
+              <span aria-hidden="true">{chip.missing ? "✕" : chip.satisfied ? "✓" : "…"}</span>
+              <Ident value={chip.taskId} />
             </span>
           ))}
           {task.bucket === "done" &&
@@ -89,7 +89,8 @@ function TaskRow({ task, onInspect, selected }: TaskRowProps): JSX.Element {
                 className="dep-chip dep-chip--unblocks"
                 title={`${task.taskId} gates ${dependent}; done, so ${dependent} is no longer waiting on it`}
               >
-                ↳ {dependent}
+                <span aria-hidden="true">↳</span>
+                <Ident value={dependent} />
               </span>
             ))}
         </span>

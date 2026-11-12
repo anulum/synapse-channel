@@ -9,6 +9,7 @@
 import type { JSX } from "react";
 import { formatCountdown, type BranchConflictView, type ClaimView } from "../lib/claims";
 import { claimMatchesSelection } from "../lib/selection";
+import { Ident } from "./Ident";
 import type { CockpitSelection } from "../lib/workspace";
 
 /** Glyph per urgency — redundant with colour and order, never colour alone. */
@@ -68,8 +69,8 @@ function ClaimRow({ view, selected }: ClaimRowProps): JSX.Element {
         {URGENCY_GLYPH[view.urgency]}
       </span>
       <span className="claim-row__id">
-        <span className="claim-row__task">{claim.task_id}</span>
-        <span className="claim-row__owner">{claim.owner}</span>
+        <Ident className="claim-row__task" value={claim.task_id} />
+        <Ident className="claim-row__owner" value={claim.owner} />
       </span>
       <span className="claim-row__meta">
         {claim.git !== null && (

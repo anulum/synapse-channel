@@ -11,6 +11,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FindingsStream } from "../../src/components/FindingsStream";
+import { identText } from "../identText";
 
 afterEach(cleanup);
 
@@ -34,7 +35,7 @@ describe("FindingsStream", () => {
       />,
     );
     expect(screen.getByText("root cause found")).toBeTruthy();
-    expect(screen.getByText("quantum/claude")).toBeTruthy();
+    expect(screen.getByText(identText("quantum/claude")).className).toContain("finding-row__author");
     expect(screen.getByText("t-1")).toBeTruthy();
     expect(screen.getByText("unattributed note")).toBeTruthy();
     expect(screen.getAllByText("—")).toHaveLength(2);

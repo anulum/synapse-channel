@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { ClaimsBoard } from "../../src/components/ClaimsBoard";
 import type { BranchConflictView, ClaimView } from "../../src/lib/claims";
+import { identText } from "../identText";
 
 afterEach(cleanup);
 
@@ -105,7 +106,7 @@ describe("ClaimsBoard", () => {
         selection={{ kind: "task", id: "t-selected" }}
       />,
     );
-    expect(screen.getByText("t-selected").closest("li")?.className).toContain("context-match");
+    expect(screen.getByText(identText("t-selected")).closest("li")?.className).toContain("context-match");
     expect(screen.getByText("t-other").closest("li")?.className).not.toContain("context-match");
     rerender(
       <ClaimsBoard

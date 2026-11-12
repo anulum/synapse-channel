@@ -119,6 +119,16 @@ describe("Hud", () => {
       />,
     );
     expect(screen.getByText("viewer · review")).toBeTruthy();
+    // The role and the commands sit in the one element a phone folds into a row;
+    // the counters and the live beacon stay outside it.
+    const controls = document.querySelector(".hud__controls")!;
+    expect(controls.contains(screen.getByText("viewer · review"))).toBe(true);
+    expect(
+      controls.contains(screen.getByRole("button", { name: "commands Ctrl K: Open command palette" })),
+    ).toBe(true);
+    expect(controls.contains(screen.getByRole("combobox", { name: "Interface language" }))).toBe(true);
+    expect(controls.querySelector(".beacon, .hud__kpis, .hud__mark")).toBeNull();
+    expect(document.querySelector(".hud > .beacon")).not.toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "commands Ctrl K: Open command palette" }));
     expect(onOpen).toHaveBeenCalledOnce();
     expect(trigger.current).toBeInstanceOf(HTMLButtonElement);

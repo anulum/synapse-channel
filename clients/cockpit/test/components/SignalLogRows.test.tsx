@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RENDERED_ROWS_CAP, SignalLogRows } from "../../src/components/SignalLogRows";
 import { fetchAndVerify } from "../../src/lib/merkleVerify";
 import type { CockpitEvent, EventKind } from "../../src/types";
+import { identText } from "../identText";
 
 vi.mock("../../src/lib/merkleVerify", () => ({ fetchAndVerify: vi.fn() }));
 
@@ -130,7 +131,8 @@ describe("SignalLogRows", () => {
         onSelectTask={onSelectTask}
       />,
     );
-    const task = screen.getByText("shared-task");
+    const task = screen.getByText(identText("shared-task"));
+    expect(task.closest("button")?.className).toContain("log-group__task");
     expect(task.closest(".log-group")?.className).toContain("context-match");
     task.click();
     expect(onSelectTask).toHaveBeenCalledWith("shared-task");
@@ -160,7 +162,10 @@ describe("SignalLogRows", () => {
         evidenceProvenance="derived"
       />,
     );
-    expect(screen.getByText("read-only-task").tagName).toBe("SPAN");
+    const readOnly = screen.getByText(identText("read-only-task"));
+    expect(readOnly.tagName).toBe("SPAN");
+    expect(readOnly.className).toContain("log-group__task");
+    expect(readOnly.closest("button")).toBeNull();
   });
 
   it("navigates derived rows by task id", async () => {

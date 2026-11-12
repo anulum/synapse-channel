@@ -10,6 +10,7 @@ import type { JSX } from "react";
 import { memo } from "react";
 
 import type { FindingNote } from "../lib/board";
+import { Ident } from "./Ident";
 
 /** Wall-clock HH:MM:SS for a finding's posted time, or a dash without one. */
 function timeOf(note: FindingNote): string {
@@ -47,13 +48,13 @@ function FindingsStreamView({ findings, connected }: FindingsStreamProps): JSX.E
               <li key={`${note.taskId}:${note.postedAt ?? index}`} className="finding-row">
                 <span className="finding-row__meta">
                   <span className="finding-row__time">{timeOf(note)}</span>
-                  <span className="finding-row__author" title={note.author}>
-                    {note.author === "" ? "—" : note.author}
-                  </span>
+                  {note.author === "" ? (
+                    <span className="finding-row__author">—</span>
+                  ) : (
+                    <Ident className="finding-row__author" value={note.author} />
+                  )}
                   {note.taskId !== "" && (
-                    <span className="finding-row__task" title={note.taskId}>
-                      {note.taskId}
-                    </span>
+                    <Ident className="finding-row__task" value={note.taskId} />
                   )}
                 </span>
                 <span className="finding-row__text">{note.text}</span>

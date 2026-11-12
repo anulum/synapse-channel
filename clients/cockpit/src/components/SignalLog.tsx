@@ -297,7 +297,7 @@ function SignalLogView({
         />
       )}
 
-      <div className="panel__body panel__body--flush">
+      <div className="panel__body panel__body--flush log-scroll">
         {shown.length === 0 ? (
           <p className="panel__placeholder panel__placeholder--padded">
             {isConstrained(query)

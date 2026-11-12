@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FleetRoster } from "../../src/components/FleetRoster";
 import type { RosterEntry } from "../../src/lib/roster";
 import type { ClaimRecord } from "../../src/types";
+import { identText } from "../identText";
 
 afterEach(cleanup);
 
@@ -70,9 +71,9 @@ describe("FleetRoster", () => {
     );
     expect(screen.getByText("Fleet roster").parentElement?.textContent).toContain("1");
     expect(screen.getByText("3 waiting")).toBeTruthy();
-    expect(screen.getByText("claude-7f3a")).toBeTruthy();
+    expect(screen.getByText(identText("claude-7f3a")).className).toContain("roster-row__name");
     expect(screen.getByText("quantum")).toBeTruthy();
-    expect(screen.getByText("standalone")).toBeTruthy();
+    expect(screen.getByText(identText("standalone")).className).toContain("roster-row__name");
     expect(screen.getByText("1 claim")).toBeTruthy();
     expect(screen.getByText("no claims")).toBeTruthy();
     expect(screen.getByText("offline")).toBeTruthy();

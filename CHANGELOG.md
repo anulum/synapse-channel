@@ -88,6 +88,21 @@ execution evidence when carrying a release claim forward.
   picture carries its digest and the fleet it shows, and a test refuses a
   picture that does not match the record. The command that takes the picture
   again is in `clients/cockpit/README.md`. Pixels are not compared.
+- The cockpit keeps the end of an identifier. A seat, a task or a dependency in
+  the roster, the claims, the board, the risk rail, the findings and the signal
+  log is drawn with its leading part giving way to an ellipsis and its last
+  segment whole, so that two long names that differ only at their ends can be
+  told apart in a narrow column. The whole value is the title, shows in full
+  under keyboard focus on its row, and is selected as one piece; the detail
+  drawer's title answers the copy key with it. A roster row moves its counts
+  and tags to a line of their own when they do not fit beside the name. The
+  signal log's table now stays inside its panel: the actor's column has the
+  width of the longest end, and a narrow log drops the lane's column, so the
+  event's text is no longer outside the panel. On a phone the header's controls
+  are one row that scrolls sideways, the live beacon sits beside the mark and
+  the four counters share a row; the inspector's tabs keep their whole labels
+  and scroll sideways. Identifiers in the other inspector tabs, the selection
+  chips and the role badge are unchanged. The README picture is taken again.
 
 - **The federation interface offers record keeping as a feature, not its parts.**
   `synapse_channel.federation_api` gains the record-keeping functions an
