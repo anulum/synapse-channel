@@ -106,6 +106,10 @@ execution evidence when carrying a release claim forward.
   The password file uses the Windows owner check when `os.getuid` is absent.
   The adapter open no longer treats the metadata timestamp Windows updates
   on open as a concurrent change.
+- A Grok pane whose status line says always-approve, and whose empty composer
+  is drawn inside a box, is idle. A pasted wake that is exactly the staged
+  prompt on that composer line can be submitted. A permission chooser, a busy
+  pane, or any other draft still stays queued.
 
 ## [0.99.51] - 2026-11-11
 

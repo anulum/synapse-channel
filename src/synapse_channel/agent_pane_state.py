@@ -19,7 +19,8 @@ PROVIDER_IDLE_PATTERNS = {
     "codex": re.compile(r"(?m)^\s*›(?:\s|$)"),
     "claude": re.compile(r"(?m)^\s*❯(?:\s|$)"),
     "kimi": re.compile(r"(?m)^\s*(?:›|❯|>)\s*(?:$|Ask\b|Type\b)"),
-    "grok": re.compile(r"(?m)^\s*(?:›|❯|>)\s*(?:$|Ask\b|Type\b)"),
+    # The live composer is a boxed row (`│ ❯ … │`), not a bare prompt at column 0.
+    "grok": re.compile(r"(?m)^[\s│]*[›❯>]\s*(?:$|Ask\b|Type\b|│\s*$)"),
     "gemini": re.compile(
         r"(?im)^\s*(?:›|❯|>)?\s*(?:Type your message|Type a message|Ask Gemini)\b"
     ),
@@ -30,7 +31,8 @@ PROVIDER_IDLE_PATTERNS = {
 _UNSAFE_PANE_PATTERN = re.compile(
     r"(?im)(?:"
     r"^\s*(?:›|❯|>|→)?\s*\d+[.)]\s+"
-    r"|\b(?:approve|approval|allow|deny|permission|confirm|confirmation|trust)\b"
+    # `always-approve` is the Grok status token, not a permission chooser.
+    r"|\b(?:(?<!always-)approve|approval|allow|deny|permission|confirm|confirmation|trust)\b"
     r"|\b(?:working|thinking|generating|running tool|press .*? to cancel|esc(?: to)? interrupt)\b"
     r")"
 )
@@ -128,6 +130,18 @@ def screen_is_safe_for_submit(
                 r"\s*(?:BUILD|PLAN)\b[^\n]*\bctrl\+p cmd\s*", screen[match.end() :]
             ):
                 return True, "opencode staged composer verified"
+        # Grok's idle marker matches only an empty composer, including the boxed
+        # row the live pane draws. After the fixed wake is pasted, that marker
+        # is gone, so Enter was never sent and the hint stayed queued. Admit
+        # the exact hint when the prompt marker, and an optional box gutter,
+        # are the only other text before it on its line. A busy or modal pane
+        # already returned above.
+        if provider == "grok" and required_text is not None:
+            match = _rendered_text_match(screen, required_text)
+            if match is not None:
+                line_prefix = screen[: match.start()].rsplit("\n", 1)[-1]
+                if re.fullmatch(r"[\s│]*(?:›|❯|>)\s*", line_prefix):
+                    return True, "grok staged composer verified"
         return False, f"{provider} idle composer marker is absent"
     if required_text is not None and not _contains_rendered_text(screen, required_text):
         return False, "wake prompt was not accepted by the idle composer"
