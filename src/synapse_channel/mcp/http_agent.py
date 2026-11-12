@@ -118,6 +118,30 @@ class HttpHubAgent(SynapseAgent):
         )
         self._operation_epochs = OperationEpochs(store=HttpOperationEpochStore(scope))
 
+    def prepare_release(self, task_id: str, **kwargs: Any) -> dict[str, Any]:
+        """Prepare the original HTTP intent for an exact read-only outcome inquiry.
+
+        Parameters
+        ----------
+        task_id : str
+            Project task whose native receipt is requested.
+        **kwargs : Any
+            Existing SynapseAgent release fields, validated by the shared tool.
+
+        Returns
+        -------
+        dict[str, Any]
+            Native release frame with the caller key and retained original fence.
+        """
+        request = super().prepare_release(task_id, **kwargs)
+        operation = HTTP_OPERATION_ID.get()
+        if operation:
+            request["idem_key"] = operation
+            self._operation_epochs.apply(
+                f"{MessageType.RELEASE}\0{operation}", request, hub_id=self.hub_id
+            )
+        return request
+
     async def send_message(
         self,
         msg_type: str,

@@ -171,7 +171,14 @@ unjournaled hub does not establish cross-restart deduplication. The adapter
 keeps the lease fence each keyed operation was first sent with in a private
 bounded file under the data home (`synapse/http-operation-epochs`, one file per
 provisioned identity, at most 1,024 operations), so a retry after an adapter
-restart is the same request. A hint never crosses hubs. Directed chat
+restart is the same request. A hint never crosses hubs.
+
+A `synapse_release` that repeats an earlier operation identifier after the
+same seat has taken the task again is asked about first: the adapter reads the
+hub's retained receipt for that identifier and sends no release. A confirmed
+receipt of the same request is returned as the result. If it cannot be
+confirmed, or the request differs from the one the identifier was first used
+for, the newer lease is kept and the call ends as an error. Directed chat
 uses native message identifiers and receiver deduplication, preserving its
 at-least-once delivery semantics. A send confirmation establishes submission,
 not recipient acknowledgement or completed business work.

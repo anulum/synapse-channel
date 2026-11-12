@@ -28,6 +28,10 @@ from synapse_channel.git.ordinary_claim import (
 )
 from synapse_channel.mcp.git_claim import McpGitClaimError, resolve_mcp_git_claim_scope
 from synapse_channel.mcp.outcome import McpMutation
+from synapse_channel.mcp.release_confirmation import (
+    PriorReleaseUnconfirmed,
+    confirm_prepared_release,
+)
 
 Matcher = Callable[[dict[str, Any]], bool]
 Sender = Callable[[], Awaitable[None]]
@@ -266,7 +270,30 @@ class McpClaimActions:
         changed_files: Sequence[str] = (),
         confidence: str = "",
     ) -> str:
-        """Release a held lease only when the hub returns a matching receipt."""
+        """Release a held lease, or confirm the receipt of the same keyed release.
+
+        A release that carries a caller's operation key and no longer names the
+        lease this client holds is first asked about, read-only: a confirmed
+        earlier receipt is returned and nothing is released again. When that
+        earlier outcome cannot be confirmed while a newer lease is held, the
+        newer lease is kept and the outcome is reported as unknown.
+        """
+        mutation = McpMutation()
+        prepared = self.agent.prepare_release(
+            task_id,
+            evidence=list(evidence),
+            changed_files=list(changed_files),
+            confidence=confidence,
+        )
+        try:
+            confirmed = await confirm_prepared_release(self.agent, prepared, self.await_timed_reply)
+        except PriorReleaseUnconfirmed:
+            return mutation.unknown(
+                f"release outcome unknown: '{task_id}'; an earlier release with this key is "
+                "unconfirmed and the current lease is kept"
+            )
+        if confirmed is not None:
+            return mutation.finished(confirmed, "matching_release_receipt")
 
         def match(data: dict[str, Any]) -> bool:
             return data.get("task_id") == task_id and data.get("type") in {
@@ -274,7 +301,6 @@ class McpClaimActions:
                 MessageType.RELEASE_DENIED,
             }
 
-        mutation = McpMutation()
         reply = await self.await_reply(
             match,
             mutation.sender(

@@ -74,6 +74,14 @@ execution evidence when carrying a release claim forward.
   must match, and a missing, invalid or conflicting identifier is refused
   before anything reaches the hub.
 
+- A remote release that repeats an earlier operation identifier, after the
+  same seat has taken the task again, no longer goes to the hub as a release.
+  The adapter first reads the hub's retained receipt for that identifier: a
+  confirmed receipt of the same request is the answer, and when it cannot be
+  confirmed, or the request has changed, the newer lease is kept and the call
+  fails. A release without an operation identifier, and a release of the lease
+  the seat holds, are sent as before.
+
 - Storage for a notification outbox, built and not yet started by any command:
   a private bounded SQLite ledger per provisioned subject, seat and hub, a
   root catalogue with a byte and generation budget under one process lock, an
