@@ -8,9 +8,11 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -596,6 +598,7 @@ def test_inspect_profile_reports_missing_plain_encrypted_and_read_errors(
 
     report = inspect_profile(surfaces)
 
+    assert report.total == 4
     assert report.existing == 3
     assert report.missing == 1
     assert report.encrypted == 1
@@ -734,3 +737,90 @@ def test_restore_profile_backup_rejects_bad_manifests_and_plaintext_backups(
     )
     with pytest.raises(ValueError, match="plaintext or corrupt"):
         restore_profile_backup(manifest, cipher)
+
+
+def _block_import(monkeypatch: pytest.MonkeyPatch, module_name: str) -> None:
+    """Make one ``import`` raise ``ImportError`` without touching other modules."""
+    real_import = builtins.__import__
+
+    def blocked(name: str, *args: object, **kwargs: object) -> object:
+        if name == module_name:
+            raise ImportError("blocked for test")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", blocked)
+
+
+def test_require_aes_gcm_names_the_missing_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    _block_import(monkeypatch, "cryptography.hazmat.primitives.ciphers.aead")
+    with pytest.raises(RuntimeError, match="optional 'cryptography'"):
+        at_rest.require_aes_gcm()
+
+
+def test_key_wrap_names_the_missing_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    _block_import(monkeypatch, "cryptography.hazmat.primitives.keywrap")
+    with pytest.raises(RuntimeError, match="key wrapping"):
+        wrap_data_key(b"d" * KEY_BYTES, b"k" * KEY_BYTES)
+
+
+def test_migrate_profile_encrypts_plaintext_without_a_backup(tmp_path: Path) -> None:
+    cipher = _cipher()
+    plain = tmp_path / "plain.bin"
+    plain.write_bytes(b"plain")
+
+    result = migrate_profile((AtRestSurface("plain", plain),), cipher)
+
+    assert (result.changed, result.skipped) == (1, 0)
+    assert decrypt_file(plain, cipher) == b"plain"
+
+
+def test_load_key_file_maps_size_kind_and_other_refusals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from synapse_channel.core.secure_path import SecurePathError, apply_owner_only_file
+
+    short = tmp_path / "short.key"
+    short.write_bytes(b"k" * 8)
+    apply_owner_only_file(short)
+    with pytest.raises(ValueError, match="^key file must hold exactly 32 bytes:"):
+        at_rest.load_key_file(short)
+
+    directory = tmp_path / "dir.key"
+    directory.mkdir()
+    # Linux opens the directory and refuses the kind. Windows refuses the open.
+    with pytest.raises(
+        ValueError,
+        match="^key file is not a regular file:|^key file must not be a symlink:",
+    ):
+        at_rest.load_key_file(directory)
+
+    def odd(_path: Path, **_kwargs: object) -> bytes:
+        raise SecurePathError("key file: something else went wrong")
+
+    monkeypatch.setattr(
+        "synapse_channel.core.secure_path.read_owner_only_file_bytes",
+        odd,
+    )
+    with pytest.raises(ValueError, match="something else went wrong"):
+        at_rest.load_key_file(tmp_path / "odd.key")
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="the NT DACL is the Windows owner-only key floor",
+)
+def test_check_key_file_refuses_a_windows_everyone_ace(tmp_path: Path) -> None:
+    import subprocess
+
+    key = tmp_path / "loose.key"
+    generate_key_file(key)
+    granted = subprocess.run(
+        ["icacls", str(key), "/grant", "*S-1-1-0:(R)"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert granted.returncode == 0, granted.stderr
+    ok, reason = check_key_file(key)
+    assert ok is False
+    assert "owner-only" in reason

@@ -52,6 +52,10 @@ execution evidence when carrying a release claim forward.
 - SQLCipher rekey refuses a missing store, a rejected new key, an
   unexpected rekey failure, and an old key that still opens. Migration
   accepts a raw key and still finishes when owner-only mode cannot be set.
+- At-rest key loading maps a short file, a non-regular file, and any
+  other refusal. A missing cipher or key-wrap dependency is named.
+  Profile migration encrypts plaintext that has no backup. A Windows
+  key file with an Everyone ACE is refused.
 
 ## [0.99.51] - 2026-11-11
 

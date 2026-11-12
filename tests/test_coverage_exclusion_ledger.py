@@ -93,6 +93,9 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
         3,
         "protocol-body + validated-helper-boundary",
     ),
+    # Line 45 is the TYPE_CHECKING import: it never runs on either platform.
+    # Line 771 is the inner non-regular check. The public check already
+    # refused that file, so no real stat reaches the inner branch.
     "src/synapse_channel/core/at_rest.py": (3, "optional-import + typing-only"),
     "src/synapse_channel/core/at_rest_cloud_hsm.py": (1, "optional-import"),
     "src/synapse_channel/core/at_rest_counter.py": (2, "protocol-body"),
@@ -181,7 +184,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_launch_record.py": (8, "platform-guard"),
     "tests/test_read_owner_only_file_bytes.py": (3, "platform-guard"),
     "tests/test_analysis_sqlcipher_readers.py": (1, "optional-dep-guard"),
-    "tests/test_at_rest.py": (3, "platform-guard"),
+    # POSIX mode bits, geteuid, and the Windows NT DACL key floor.
+    "tests/test_at_rest.py": (4, "platform-guard"),
     "tests/test_at_rest_cloud_hsm.py": (1, "platform-guard"),
     "tests/test_at_rest_pkcs11.py": (1, "optional-dep-guard"),
     "tests/test_at_rest_tpm2.py": (1, "optional-dep-guard"),
