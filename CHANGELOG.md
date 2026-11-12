@@ -61,6 +61,8 @@ execution evidence when carrying a release claim forward.
 - Escrow recovery refuses a short share list and a repeated index before
   the field inverse or the distinct-index check can run. Those two raises
   have no input on either platform.
+- A missing ``python-pkcs11`` install is named when the PKCS#11 at-rest
+  backend is requested.
 
 ## [0.99.51] - 2026-11-11
 

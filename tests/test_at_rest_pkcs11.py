@@ -268,3 +268,20 @@ def test_cli_generate_wrapped_pkcs11_no_create_kek_errors(
     )
     assert rc == 2
     assert "no PKCS#11 key-encryption key" in capsys.readouterr().out
+
+
+def test_require_pkcs11_names_the_missing_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    import builtins
+
+    from synapse_channel.core.at_rest_pkcs11 import require_pkcs11
+
+    real_import = builtins.__import__
+
+    def blocked(name: str, *args: object, **kwargs: object) -> object:
+        if name == "pkcs11":
+            raise ImportError("blocked for test")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", blocked)
+    with pytest.raises(RuntimeError, match="python-pkcs11"):
+        require_pkcs11()
