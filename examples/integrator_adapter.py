@@ -36,7 +36,7 @@ import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.acl import CLAIM, MESSAGE, OPERATION_EVIDENCE, AclPolicy, AclRule
@@ -79,17 +79,25 @@ class _Session:
         self.frames.append(frame)
 
     async def __aenter__(self) -> _Session:
+        """Connect, and raise once the hub has not welcomed this identity.
+
+        The connect task is cancelled before the refusal is reported. Entering
+        a context does not run the exit method when this method raises, so the
+        task would otherwise keep running after the caller has already stopped.
+        """
         self._task = asyncio.create_task(self.agent.connect())
-        if not await self.agent.wait_until_ready(timeout=5.0):
-            raise RuntimeError(f"{self.agent.name} could not connect")
-        return self
+        if await self.agent.wait_until_ready(timeout=5.0):
+            return self
+        await self.__aexit__(None, None, None)
+        raise RuntimeError(f"{self.agent.name} could not connect")
 
     async def __aexit__(self, *_exc: object) -> None:
+        """Cancel the connect task started when the session was entered."""
         self.agent.running = False
-        if self._task is not None:
-            self._task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._task
+        task = cast(asyncio.Task[None], self._task)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     async def wait(self, kind: str, **match: object) -> dict[str, Any]:
         """Return the first frame of ``kind`` whose fields equal ``match``."""

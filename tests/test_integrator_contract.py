@@ -20,12 +20,14 @@ import importlib
 import importlib.util
 import inspect
 import os
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 import pytest
+from websockets.asyncio.server import serve
 
 from synapse_channel.cli import build_parser
 from synapse_channel.core.execution_outcome import OUTCOME_SCHEMA
@@ -227,3 +229,85 @@ async def test_the_provider_refuses_without_an_operation_id_or_a_declaration(
         refused = await asyncio.to_thread(provider.run, ["--uri", uri, *argv])
     assert refused == 4
     assert not (tmp_path / "x.txt").exists()
+
+
+async def test_the_adapter_refuses_a_hub_that_never_welcomes(tmp_path: Path) -> None:
+    adapter = _load("integrator_adapter")
+
+    async def _drop(_reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(_drop, "127.0.0.1", 0)
+    sockets = server.sockets
+    assert sockets is not None
+    port = sockets[0].getsockname()[1]
+    try:
+        with pytest.raises(RuntimeError, match="could not connect"):
+            await adapter.run_adapter(f"ws://127.0.0.1:{port}", tmp_path)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+async def test_the_adapter_stops_when_the_claim_is_never_granted(tmp_path: Path) -> None:
+    adapter = _load("integrator_adapter")
+
+    async def _welcome_and_hold(connection: Any) -> None:
+        await connection.send('{"type": "welcome"}')
+        await connection.wait_closed()
+
+    async with serve(_welcome_and_hold, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        with pytest.raises(TimeoutError, match="no claim_granted frame arrived"):
+            await adapter.run_adapter(f"ws://127.0.0.1:{port}", tmp_path)
+
+
+async def test_the_demo_hub_yields_when_nothing_accepts_the_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapter = _load("integrator_adapter")
+
+    async def _never_accept(self: object, host: str, port: int, **_kwargs: object) -> None:
+        del self, host, port
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(adapter.SynapseHub, "serve", _never_accept)
+    async with adapter.demo_hub(tmp_path) as uri:
+        assert uri.startswith("ws://127.0.0.1:")
+
+
+async def test_the_example_main_stops_when_the_hub_refuses_evidence(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapter = _load("integrator_adapter")
+    original = adapter.demo_policy
+
+    def _no_evidence() -> object:
+        policy = original()
+        kept = [rule for rule in policy.rules if rule.permission != adapter.OPERATION_EVIDENCE]
+        return adapter.AclPolicy(kept)
+
+    monkeypatch.setattr(adapter, "demo_policy", _no_evidence)
+    assert await adapter._main() == 1
+    report = capsys.readouterr().out
+    assert "integrator adapter stopped:" in report
+    assert "refused" in report
+
+
+def test_the_example_program_completes_in_a_child_process() -> None:
+    env = os.environ.copy()
+    src = str(ROOT / "src")
+    previous = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = src if not previous else src + os.pathsep + previous
+    completed = subprocess.run(
+        [sys.executable, str(EXAMPLES / "integrator_adapter.py")],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=90,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip().endswith("success: integrator adapter completed")
