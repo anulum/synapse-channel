@@ -903,7 +903,7 @@ def test_whoami_sid_parser_refuses_bad_answers(monkeypatch: pytest.MonkeyPatch) 
         Answer(0, ""),
         Answer(0, '"HOST\\user"\n'),
     ]
-    monkeypatch.setattr(module.subprocess, "run", run)  # type: ignore[attr-defined]
+    monkeypatch.setattr(module.subprocess, "run", run)  # type: ignore[attr-defined]  # the module imports this name without re-exporting it
     assert module._windows_current_user_sid_whoami() == "S-1-5-21-9"
     with pytest.raises(SecurePathError, match="cannot resolve Windows user SID"):
         module._windows_current_user_sid_whoami()
@@ -915,7 +915,7 @@ def test_whoami_sid_parser_refuses_bad_answers(monkeypatch: pytest.MonkeyPatch) 
     def missing(argv: list[str], **_kwargs: object) -> Answer:
         raise FileNotFoundError("whoami")
 
-    monkeypatch.setattr(module.subprocess, "run", missing)  # type: ignore[attr-defined]
+    monkeypatch.setattr(module.subprocess, "run", missing)  # type: ignore[attr-defined]  # the module imports this name without re-exporting it
     with pytest.raises(SecurePathError, match="whoami is required"):
         module._windows_current_user_sid_whoami()
 
@@ -944,7 +944,7 @@ def _write_token_user(buffer: object) -> None:
     user = TokenUser()
     user.User.Sid = 0x11
     user.User.Attributes = 0
-    ctypes.memmove(buffer, ctypes.addressof(user), ctypes.sizeof(user))  # type: ignore[arg-type]
+    ctypes.memmove(buffer, ctypes.addressof(user), ctypes.sizeof(user))  # type: ignore[arg-type]  # the stub wants a pointer; an address is valid
 
 
 def _plant_acl(ace_type: int) -> ctypes.Array[ctypes.c_char]:
@@ -998,7 +998,7 @@ def _dispatch_win32(state: _Win32State, name: str, args: tuple[object, ...]) -> 
         if state.scenario == "size_zero":
             return 1
         if buffer is None:
-            size_ptr._obj.value = 32  # type: ignore[attr-defined]
+            size_ptr._obj.value = 32  # type: ignore[attr-defined]  # byref keeps its target in the private _obj
             return 0
         if state.scenario == "read_fail":
             return 0
@@ -1018,22 +1018,22 @@ def _dispatch_win32(state: _Win32State, name: str, args: tuple[object, ...]) -> 
         first = args[0]
         everyone = state.scenario in {"deny_ace", "everyone_allow"}
         if everyone and state.converts >= 2 and isinstance(first, ctypes.c_void_p):
-            out._obj.value = "S-1-1-0"  # type: ignore[attr-defined]
+            out._obj.value = "S-1-1-0"  # type: ignore[attr-defined]  # byref keeps its target in the private _obj
             return 1
         sid = None if state.scenario == "empty_sid" else "S-1-5-21-9"
-        out._obj.value = sid  # type: ignore[attr-defined]
+        out._obj.value = sid  # type: ignore[attr-defined]  # byref keeps its target in the private _obj
         return 1
     if name == "GetNamedSecurityInfoW":
         if state.scenario == "security_status":
             return 5
-        args[3]._obj.value = 1  # type: ignore[attr-defined]
-        args[7]._obj.value = 1  # type: ignore[attr-defined]
+        args[3]._obj.value = 1  # type: ignore[attr-defined]  # byref keeps its target in the private _obj
+        args[7]._obj.value = 1  # type: ignore[attr-defined]  # byref keeps its target in the private _obj
         if state.scenario == "null_dacl":
-            args[5]._obj.value = 0  # type: ignore[attr-defined]
+            args[5]._obj.value = 0  # type: ignore[attr-defined]  # byref keeps its target in the private _obj
             return 0
         ace_type = 1 if state.scenario == "deny_ace" else 0
         state.acl = _plant_acl(ace_type)
-        args[5]._obj.value = ctypes.addressof(state.acl)  # type: ignore[attr-defined]
+        args[5]._obj.value = ctypes.addressof(state.acl)  # type: ignore[attr-defined]  # byref keeps its target in the private _obj
         return 0
     return 0
 
@@ -1108,7 +1108,7 @@ def test_native_sid_failure_falls_back_to_whoami(
         module._windows_current_user_sid_native()
     _install_win32(monkeypatch, scenario)
     whoami = _whoami_sid("S-1-5-21-8")
-    monkeypatch.setattr(module.subprocess, "run", whoami)  # type: ignore[attr-defined]
+    monkeypatch.setattr(module.subprocess, "run", whoami)  # type: ignore[attr-defined]  # the module imports this name without re-exporting it
     identified = current_user_key()
     assert identified.kind == "windows_sid"
     assert identified.value == "S-1-5-21-8"
@@ -1125,7 +1125,7 @@ def test_current_user_key_reads_the_process_token_on_windows(
     def whoami_must_not_run(_argv: list[str], **_kwargs: object) -> object:
         raise AssertionError("whoami must not run when the process token opens")
 
-    monkeypatch.setattr(module.subprocess, "run", whoami_must_not_run)  # type: ignore[attr-defined]
+    monkeypatch.setattr(module.subprocess, "run", whoami_must_not_run)  # type: ignore[attr-defined]  # the module imports this name without re-exporting it
     identified = current_user_key()
     assert identified.kind == "windows_sid"
     assert identified.value == "S-1-5-21-9"

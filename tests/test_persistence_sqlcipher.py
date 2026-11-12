@@ -256,13 +256,13 @@ def test_rekey_wraps_an_unexpected_failure(tmp_path: Path, monkeypatch: pytest.M
         def execute(self, sql: str, *args: object, **kwargs: object) -> object:
             if str(sql).startswith("PRAGMA rekey"):
                 raise RuntimeError("rekey boom")
-            return self._inner.execute(sql, *args, **kwargs)  # type: ignore[attr-defined]
+            return self._inner.execute(sql, *args, **kwargs)  # type: ignore[attr-defined]  # the wrapped driver connection has no stub
 
         def commit(self) -> None:
-            self._inner.commit()  # type: ignore[attr-defined]
+            self._inner.commit()  # type: ignore[attr-defined]  # the wrapped driver connection has no stub
 
         def close(self) -> None:
-            self._inner.close()  # type: ignore[attr-defined]
+            self._inner.close()  # type: ignore[attr-defined]  # the wrapped driver connection has no stub
 
     def connect(path: Path, material: bytes) -> Refusing:
         return Refusing(real_connect(path, material))
@@ -332,5 +332,5 @@ def test_owner_restriction_ignores_a_chmod_failure(
     def refuse(_path: Path, _mode: int) -> None:
         raise OSError("chmod refused")
 
-    monkeypatch.setattr(module.os, "chmod", refuse)  # type: ignore[attr-defined]
+    monkeypatch.setattr(module.os, "chmod", refuse)  # type: ignore[attr-defined]  # the module imports this name without re-exporting it
     assert migrate_plaintext_to_sqlcipher(plain, enc, key=os.urandom(KEY_BYTES)) == {"rows": 0}

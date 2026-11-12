@@ -746,7 +746,7 @@ def _block_import(monkeypatch: pytest.MonkeyPatch, module_name: str) -> None:
     def blocked(name: str, *args: object, **kwargs: object) -> object:
         if name == module_name:
             raise ImportError("blocked for test")
-        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]  # the import hook's arguments are passed through as given
 
     monkeypatch.setattr(builtins, "__import__", blocked)
 

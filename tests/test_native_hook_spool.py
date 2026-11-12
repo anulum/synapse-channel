@@ -868,7 +868,7 @@ def test_a_lock_error_that_is_not_contention_is_raised(
     def refuse(_descriptor: int, _mode: int, _length: int) -> None:
         raise OSError(errno.EINVAL, "invalid lock")
 
-    windows_lock = spool_module.msvcrt  # type: ignore[attr-defined]
+    windows_lock = spool_module.msvcrt  # type: ignore[attr-defined]  # msvcrt exists in the module only on Windows
     monkeypatch.setattr(windows_lock, "locking", refuse)
     with pytest.raises(OSError, match="invalid lock"):
         flush(tmp_path / "spool", Hub())

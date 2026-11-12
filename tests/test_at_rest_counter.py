@@ -50,7 +50,7 @@ def test_an_unimplemented_counter_does_not_count() -> None:
     class Unimplemented(MessageCounter):
         pass
 
-    bare = Unimplemented()  # type: ignore[abstract]
+    bare = Unimplemented()  # type: ignore[abstract]  # built on purpose: an abstract counter must not count
     assert bare.count is None
     assert bare.increment() is None
 

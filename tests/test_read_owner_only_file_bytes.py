@@ -125,13 +125,13 @@ def test_read_owner_only_refuses_when_the_read_overruns_the_stat_size(
     import synapse_channel.core.secure_path as module
 
     path = _write_secret(tmp_path / "grew.bin", b"abcdefghij")
-    real_fstat = module.os.fstat  # type: ignore[attr-defined]
+    real_fstat = module.os.fstat  # type: ignore[attr-defined]  # the module imports os without re-exporting it
 
     def smaller(fd: int) -> object:
         info = real_fstat(fd)
         return info.__class__(list(info)[:6] + [4] + list(info)[7:])
 
-    monkeypatch.setattr(module.os, "fstat", smaller)  # type: ignore[attr-defined]
+    monkeypatch.setattr(module.os, "fstat", smaller)  # type: ignore[attr-defined]  # the module imports this name without re-exporting it
     with pytest.raises(SecurePathError, match="exceeds the 6-byte"):
         module.read_owner_only_file_bytes(path, purpose="blob", max_bytes=6)
 
@@ -146,7 +146,7 @@ def test_read_owner_only_refuses_a_short_read(
     def short(_fd: int, _size: int) -> bytes:
         return b"ab"
 
-    monkeypatch.setattr(module.os, "read", short)  # type: ignore[attr-defined]
+    monkeypatch.setattr(module.os, "read", short)  # type: ignore[attr-defined]  # the module imports this name without re-exporting it
     with pytest.raises(SecurePathError, match="found 2"):
         module.read_owner_only_file_bytes(path, purpose="key file", expected_size=4)
 

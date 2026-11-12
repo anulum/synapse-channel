@@ -280,7 +280,7 @@ def test_require_pkcs11_names_the_missing_dependency(monkeypatch: pytest.MonkeyP
     def blocked(name: str, *args: object, **kwargs: object) -> object:
         if name == "pkcs11":
             raise ImportError("blocked for test")
-        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]  # the import hook's arguments are passed through as given
 
     monkeypatch.setattr(builtins, "__import__", blocked)
     with pytest.raises(RuntimeError, match="python-pkcs11"):
