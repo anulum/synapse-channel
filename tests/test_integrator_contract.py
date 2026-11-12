@@ -266,16 +266,24 @@ async def test_the_adapter_stops_when_the_claim_is_never_granted(tmp_path: Path)
 async def test_the_demo_hub_fails_when_it_never_becomes_ready(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A hub that does not bind does not hand out an address."""
+    """A hub that does not bind hands out no address and still releases its checkpoint."""
     adapter = _load("integrator_adapter")
+    closed: list[object] = []
+    release = adapter.SynapseHub.close
 
     async def _never_bind(self: object, host: str, port: int, **_kwargs: object) -> None:
         del self, host, port
         await asyncio.Event().wait()
 
+    def _close(self: object) -> None:
+        closed.append(self)
+        release(self)
+
     monkeypatch.setattr(adapter.SynapseHub, "serve", _never_bind)
+    monkeypatch.setattr(adapter.SynapseHub, "close", _close)
     with pytest.raises(TimeoutError):
         await adapter.demo_hub(tmp_path).__aenter__()
+    assert len(closed) == 1
 
 
 async def test_the_example_main_stops_when_the_hub_refuses_evidence(

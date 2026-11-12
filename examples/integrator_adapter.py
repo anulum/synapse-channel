@@ -189,7 +189,8 @@ async def demo_hub(directory: Path) -> AsyncIterator[str]:
 
     The hub's own readiness is the signal that the port accepts connections.
     A hub that never becomes ready raises ``TimeoutError`` instead of handing
-    out an address.
+    out an address. On the way out the hub releases what it opened itself
+    (its checkpoint store) before the journal is closed.
     """
     store = EventStore(directory / "hub.db")
     hub = SynapseHub(journal=store, acl_policy=demo_policy())
@@ -201,6 +202,7 @@ async def demo_hub(directory: Path) -> AsyncIterator[str]:
         serving.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await serving
+        hub.close()
         store.close()
 
 
