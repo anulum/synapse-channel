@@ -216,6 +216,8 @@ def test_accounting_refuses_a_bad_pid_and_states_discovery_bounds() -> None:
 
 _FAKE_NVIDIA_SMI = """#!/bin/sh
 echo run >> "$FAKE_GPU_RUNS"
+echo "no separator on this line"
+echo ", 7 MiB"
 echo "$FAKE_GPU_PID, 123 MiB"
 """
 
@@ -284,7 +286,7 @@ def test_one_gpu_query_counts_every_requested_process(tmp_path: Path) -> None:
     [
         (None, 0),
         ('#!/bin/sh\necho run >> "$FAKE_GPU_RUNS"\nexit 3\n', 1),
-        ('#!/bin/sh\necho run >> "$FAKE_GPU_RUNS"\nexec sleep 30\n', 1),
+        ('#!/bin/sh\necho run >> "$FAKE_GPU_RUNS"\nwhile :; do :; done\n', 1),
     ],
     ids=["tool-absent", "tool-fails", "tool-hangs"],
 )
@@ -305,6 +307,15 @@ def test_a_broken_gpu_tool_leaves_the_other_counters(
         assert isinstance(first, dict)
         assert first["status"] == "observed" and first["ram_status"] == "observed"
         assert (first["gpu"], first["gpu_status"]) == (None, "unavailable")
+        counted = []
+        for pid in pids:
+            row_accounting = _row(document, pid)["accounting"]
+            assert isinstance(row_accounting, dict)
+            counted.append(row_accounting["status"])
+        # A tool that hangs is stopped after one second, which spends the shared
+        # accounting budget: the rows after the first say so instead of waiting.
+        hung = script is not None and "while" in script
+        assert counted == (["observed", "unavailable", "unavailable"] if hung else ["observed"] * 3)
         seen = runs.read_text(encoding="utf-8").splitlines() if runs.exists() else []
         assert len(seen) == expected_runs
     finally:
