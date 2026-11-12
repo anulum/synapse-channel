@@ -57,6 +57,7 @@ from synapse_channel.core.result_verification_record import (
 from synapse_channel.core.result_verification_record import (
     verification_from_json as verification_from_json,
 )
+from synapse_channel.core.secure_path import open_nofollow_leaf
 from synapse_channel.execution_outcome import OUTCOME_SCHEMA, OutcomeState
 
 _HEX40 = re.compile(r"[0-9a-f]{40}")
@@ -104,11 +105,14 @@ def read_outcome(path: Path) -> tuple[str, str]:
 
 def _digest(path: Path) -> str:
     """Return the SHA-256 of a regular file, read without following a final link."""
-    if _NOFOLLOW is None:
+    if os.name == "nt":
+        # Windows has no O_NOFOLLOW. The shared opener refuses a reparse point
+        # and opens the leaf in binary mode.
+        descriptor = open_nofollow_leaf(path)
+    elif _NOFOLLOW is None:
         raise PermissionError("this platform cannot open a file without following a final link")
-    # O_BINARY: on Windows a descriptor opened without it translates CRLF and
-    # stops at Ctrl-Z, so the digest would not be the file's bytes.
-    descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW | getattr(os, "O_BINARY", 0))
+    else:
+        descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW)
     if not stat.S_ISREG(os.fstat(descriptor).st_mode):
         os.close(descriptor)
         raise IsADirectoryError(str(path))

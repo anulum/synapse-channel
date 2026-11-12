@@ -130,13 +130,6 @@ def test_file_change_digest_is_the_raw_bytes(tmp_path: Path) -> None:
     path.write_bytes(raw)
     digest = hashlib.sha256(raw).hexdigest()
     verdict = verify_file_change(path, digest, operation_id="op")
-    if getattr(os, "O_NOFOLLOW", None) is None:
-        assert (verdict.effect, verdict.result, verdict.observation) == (
-            "unknown",
-            "not_checked",
-            "file_not_a_readable_regular_file",
-        )
-        return
     assert (verdict.effect, verdict.result, verdict.observation) == (
         "observed",
         "verified",
@@ -529,11 +522,26 @@ def test_only_an_exact_remote_head_line_is_accepted(
 def test_a_platform_that_cannot_refuse_links_does_not_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Without O_NOFOLLOW the file is not opened at all."""
+    """Without a no-follow open the file is not read. Windows refuses the link."""
     import synapse_channel.result_verification as module
 
     path = tmp_path / "out.txt"
     path.write_bytes(GOOD)
+    if os.name == "nt":
+        verdict = verify_file_change(path, GOOD_SHA, operation_id="op")
+        assert (verdict.effect, verdict.result, verdict.observation) == (
+            "observed",
+            "verified",
+            "content_matches",
+        )
+        link = tmp_path / "out.link"
+        try:
+            link.symlink_to(path)
+        except OSError:
+            return
+        refused = verify_file_change(link, GOOD_SHA, operation_id="op")
+        assert (refused.effect, refused.result) == ("unknown", "not_checked")
+        return
     monkeypatch.setattr(module, "_NOFOLLOW", None)
 
     verdict = verify_file_change(path, GOOD_SHA, operation_id="op")
