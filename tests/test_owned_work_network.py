@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -135,7 +136,7 @@ async def test_incomplete_or_foreign_native_work_read_never_becomes_empty(
         import sqlite3
 
         store.append(EventKind.LEDGER_TASK, task().as_dict())
-        with sqlite3.connect(tmp_path / "hub.db") as database:
+        with closing(sqlite3.connect(tmp_path / "hub.db")) as database, database:
             database.execute("UPDATE events SET payload='not JSON'")
     hub = SynapseHub(journal=None if mode == "no-journal" else store)
     try:

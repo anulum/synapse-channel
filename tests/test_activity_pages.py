@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sqlite3
 import tracemalloc
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -157,7 +158,7 @@ def test_corrupt_candidate_row_cannot_be_silently_consumed(tmp_path: Path) -> No
     store = EventStore(path)
     seq = store.append(EventKind.CHAT, {"sender": "ALPHA/operator", "target": "ALPHA/bot"})
     store.close()
-    with sqlite3.connect(path) as database:
+    with closing(sqlite3.connect(path)) as database, database:
         database.execute("UPDATE events SET payload=? WHERE seq=?", ("not-json", seq))
     store = EventStore(path)
     try:

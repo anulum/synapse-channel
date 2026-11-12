@@ -16,6 +16,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +82,7 @@ def test_inactive_generation_archival_preserves_failure_pending_and_raw_evidence
     restored = tmp_path_factory.mktemp("restore") / "state.sqlite3"
     restored.write_bytes((directory / old.path.name).read_bytes())
     restored.chmod(0o600)
-    with sqlite3.connect(restored.as_uri() + "?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(restored.as_uri() + "?mode=ro", uri=True)) as db, db:
         assert db.execute("SELECT pending FROM meta").fetchone()[0] == 2
         assert db.execute("SELECT state FROM deliveries").fetchone()[0] == "dead-letter"
     assert archive(control, info, tmp_path / "archive")["outcome"] == "already_archived"
@@ -300,7 +301,7 @@ def test_corrupted_stored_manifest_refuses_owner_inspection_without_touching_sou
     _, old, control, info = inactive_generation(tmp_path)
     before = old.path.read_bytes()
     interrupt_archive(control, info, tmp_path / "archive", monkeypatch)
-    with sqlite3.connect(old.path.parent / ROOT_CATALOGUE) as database:
+    with closing(sqlite3.connect(old.path.parent / ROOT_CATALOGUE)) as database, database:
         encoded = database.execute(
             "SELECT manifest FROM entries WHERE scope_key=?", (old.scope.key,)
         ).fetchone()[0]

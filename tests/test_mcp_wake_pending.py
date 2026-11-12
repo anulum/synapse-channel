@@ -14,6 +14,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -69,7 +70,7 @@ def test_foreign_or_invalid_snapshot_creates_no_file(
 def test_corrupt_pending_state_is_not_reset(tmp_path: Path, raw: Any) -> None:
     outbox = ledger(tmp_path)
     outbox.summary()
-    with sqlite3.connect(outbox.path) as database:
+    with closing(sqlite3.connect(outbox.path)) as database, database:
         database.execute("INSERT INTO sources VALUES ('pending-legacy',?)", (raw,))
     with pytest.raises(WakeLedgerError, match="invalid stored"):
         outbox.observe_pending_work(snapshot(PendingItem("tasks", "a" * 64)))
@@ -81,7 +82,7 @@ def test_failed_recovery_cannot_consume_seen_markers_or_pending_bits(
 ) -> None:
     outbox = ledger(tmp_path)
     outbox.summary()
-    with sqlite3.connect(outbox.path) as database:
+    with closing(sqlite3.connect(outbox.path)) as database, database:
         if fault == "sql":
             database.execute(
                 "CREATE TRIGGER fail_pending BEFORE UPDATE ON meta BEGIN "
@@ -97,7 +98,7 @@ def test_failed_recovery_cannot_consume_seen_markers_or_pending_bits(
     with pytest.raises(WakeLedgerError):
         outbox.observe_pending_work(snapshot(PendingItem("tasks", "f" * 64)))
     assert outbox.summary()["pending_sources"] == 0
-    with sqlite3.connect(outbox.path) as database:
+    with closing(sqlite3.connect(outbox.path)) as database, database:
         row = database.execute(
             "SELECT position FROM sources WHERE source='pending-legacy'"
         ).fetchone()

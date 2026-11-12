@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -49,7 +50,7 @@ def test_raw_native_corruption_is_unknown_not_an_empty_or_consumed_queue(
     tmp_path: Path, damage: str
 ) -> None:
     _, old, control, _ = inactive_generation(tmp_path)
-    with sqlite3.connect(old.path) as database:
+    with closing(sqlite3.connect(old.path)) as database, database:
         if damage == "application":
             database.execute("PRAGMA application_id=1")
         elif damage == "missing-meta":
@@ -123,7 +124,7 @@ def test_cancel_cannot_discard_a_new_source_or_an_exact_snapshot_fence(
     partial = interrupt_archive(control, info, tmp_path / "archive", monkeypatch)
     copied = partial.read_bytes()
     if case == "changed-source":
-        with sqlite3.connect(old.path) as database:
+        with closing(sqlite3.connect(old.path)) as database, database:
             database.execute("UPDATE meta SET pending=7")
     else:
         info["fingerprint"] = "0" * 64
@@ -136,7 +137,7 @@ def test_cancel_cannot_discard_a_new_source_or_an_exact_snapshot_fence(
 
 def test_rejected_first_legacy_archive_does_not_poison_root_initialization(tmp_path: Path) -> None:
     _, old, control, info = inactive_generation(tmp_path)
-    with sqlite3.connect(old.path) as database:
+    with closing(sqlite3.connect(old.path)) as database, database:
         database.execute("PRAGMA user_version=3")
     before = old.path.read_bytes()
     for name in (ROOT_CATALOGUE, ROOT_LOCK):

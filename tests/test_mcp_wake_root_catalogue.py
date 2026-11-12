@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 
@@ -66,7 +67,7 @@ def test_corrupt_catalogue_refuses_before_native_pending_work_changes(
     entry = ledger(tmp_path / "state")
     entry.observe_page(0, 7, sources=("messages",))
     before = entry.path.read_bytes()
-    with sqlite3.connect(entry.path.parent / ROOT_CATALOGUE) as database:
+    with closing(sqlite3.connect(entry.path.parent / ROOT_CATALOGUE)) as database, database:
         database.execute(statement)
     with pytest.raises(WakeLedgerError):
         entry.observe_page(7, 8, sources=("tasks",))
@@ -80,7 +81,7 @@ def test_corrupt_catalogue_population_refuses_without_forgetting_native_state(
     entry = ledger(tmp_path / "state")
     entry.observe_page(0, 1, sources=("messages",))
     before = entry.path.read_bytes()
-    with sqlite3.connect(entry.path.parent / ROOT_CATALOGUE) as database:
+    with closing(sqlite3.connect(entry.path.parent / ROOT_CATALOGUE)) as database, database:
         database.execute("DELETE FROM entries")
         database.executemany(
             "INSERT INTO entries(scope_key,phase) VALUES(?,?)",
@@ -89,7 +90,7 @@ def test_corrupt_catalogue_population_refuses_without_forgetting_native_state(
     with pytest.raises(WakeLedgerError, match="catalogue capacity exceeded"):
         entry.summary()
     assert entry.path.read_bytes() == before
-    with sqlite3.connect(entry.path.parent / ROOT_CATALOGUE) as database:
+    with closing(sqlite3.connect(entry.path.parent / ROOT_CATALOGUE)) as database, database:
         assert database.execute("SELECT count(*) FROM entries").fetchone()[0] == count
 
 
@@ -98,7 +99,7 @@ def test_retirement_fence_exhaustion_preserves_failed_delivery_and_all_prior_fen
 ) -> None:
     _, old, control, info = inactive_generation(tmp_path)
     before = old.path.read_bytes()
-    with sqlite3.connect(old.path.parent / ROOT_CATALOGUE) as database:
+    with closing(sqlite3.connect(old.path.parent / ROOT_CATALOGUE)) as database, database:
         database.executemany(
             "INSERT INTO entries(scope_key,phase) VALUES(?,'retired')",
             [(f"{number:064x}",) for number in range(MAX_RETIRED_GENERATIONS)],
@@ -119,7 +120,7 @@ def test_archiving_a_legacy_unregistered_generation_preserves_its_raw_failure(
 ) -> None:
     _, old, control, _ = inactive_generation(tmp_path)
     before = old.path.read_bytes()
-    with sqlite3.connect(old.path.parent / ROOT_CATALOGUE) as database:
+    with closing(sqlite3.connect(old.path.parent / ROOT_CATALOGUE)) as database, database:
         database.execute("DELETE FROM entries WHERE scope_key=?", (old.scope.key,))
     info = control.inspect(old.scope.key)
     assert info["phase"] == "legacy"
@@ -247,7 +248,7 @@ def test_catalogue_schema_one_migration_preserves_native_work_and_retirement_fen
     expected = control.status()
     native = old.path.read_bytes() if not retired else None
     database_path = old.path.parent / ROOT_CATALOGUE
-    with sqlite3.connect(database_path) as database:
+    with closing(sqlite3.connect(database_path)) as database, database:
         entries = database.execute("SELECT * FROM entries ORDER BY scope_key").fetchall()
         database.execute("ALTER TABLE meta RENAME TO old_meta")
         database.execute(
@@ -263,7 +264,7 @@ def test_catalogue_schema_one_migration_preserves_native_work_and_retirement_fen
     )
     expected.pop("logical_bytes")
     assert observed == expected
-    with sqlite3.connect(database_path) as database:
+    with closing(sqlite3.connect(database_path)) as database, database:
         assert database.execute("PRAGMA user_version").fetchone()[0] == 2
         assert database.execute("SELECT * FROM entries ORDER BY scope_key").fetchall() == entries
         assert database.execute("SELECT policy_name FROM meta").fetchone()[0] == "grants.json"

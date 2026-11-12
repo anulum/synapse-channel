@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -120,7 +121,7 @@ async def test_incomplete_or_mixed_native_projection_cannot_look_empty(
         import sqlite3
 
         store.append("chat", {"payload": "private"})
-        with sqlite3.connect(tmp_path / "hub.db") as database:
+        with closing(sqlite3.connect(tmp_path / "hub.db")) as database, database:
             database.execute("UPDATE events SET payload='not JSON'")
     hub = SynapseHub(
         journal=None if mode == "no-journal" else store, anti_rollback_checkpoint=False

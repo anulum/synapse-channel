@@ -15,6 +15,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -222,7 +223,7 @@ def test_busy_transaction_refuses_without_advancing_scan(tmp_path: Path) -> None
     """A real SQLite writer lock blocks mutation without hiding or dropping its event."""
     ledger = _ledger(tmp_path)
     assert not ledger.observe("messages", None, 0, relevant=False)
-    with sqlite3.connect(ledger.path) as connection:
+    with closing(sqlite3.connect(ledger.path)) as connection, connection:
         connection.execute("BEGIN IMMEDIATE")
         with pytest.raises(WakeLedgerError, match="ledger unavailable"):
             ledger.observe("messages", 0, 1, relevant=True)
@@ -238,7 +239,7 @@ def test_foreign_or_corrupt_file_refuses_without_echo(tmp_path: Path, contents: 
     if contents:
         ledger.path.write_bytes(contents)
     else:
-        with sqlite3.connect(ledger.path) as connection:
+        with closing(sqlite3.connect(ledger.path)) as connection, connection:
             connection.execute("PRAGMA user_version=5")
     with pytest.raises(WakeLedgerError) as error:
         ledger.summary()
@@ -390,7 +391,7 @@ def test_corrupt_active_record_refuses_before_dispatch(
     """Actual on-disk record damage is refused without a new attempt or body echo."""
     ledger = _ledger(tmp_path)
     _first(ledger)
-    with sqlite3.connect(ledger.path) as connection:
+    with closing(sqlite3.connect(ledger.path)) as connection, connection:
         connection.execute(f"UPDATE deliveries SET {column}=?", (value,))
     before = ledger.path.read_bytes()
     with pytest.raises(WakeLedgerError) as error:
@@ -404,7 +405,7 @@ def test_corrupt_scan_marker_is_not_defaulted_to_zero(tmp_path: Path, position: 
     """A broken saved source position does not silently replay with an invented cursor."""
     ledger = _ledger(tmp_path)
     _first(ledger)
-    with sqlite3.connect(ledger.path) as connection:
+    with closing(sqlite3.connect(ledger.path)) as connection, connection:
         connection.execute("UPDATE sources SET position=?", (position,))
     with pytest.raises(WakeLedgerError, match="position"):
         ledger.position("messages")
@@ -424,7 +425,7 @@ def test_foreign_sqlite_schema_is_not_overwritten(tmp_path: Path) -> None:
     ledger = _ledger(tmp_path)
     ledger.path.parent.mkdir(mode=0o700)
     ledger.path.touch(mode=0o600)
-    with sqlite3.connect(ledger.path) as connection:
+    with closing(sqlite3.connect(ledger.path)) as connection, connection:
         connection.execute("CREATE TABLE foreign_data(value TEXT)")
     with pytest.raises(WakeLedgerError, match="schema"):
         ledger.summary()
@@ -434,7 +435,7 @@ def test_incompatible_real_page_size_is_refused(tmp_path: Path) -> None:
     """An actual differently paged database cannot bypass the fixed byte calculation."""
     ledger = _ledger(tmp_path)
     _first(ledger)
-    with sqlite3.connect(ledger.path) as connection:
+    with closing(sqlite3.connect(ledger.path)) as connection, connection:
         connection.execute("PRAGMA page_size=8192")
         connection.execute("VACUUM")
     with pytest.raises(WakeLedgerError, match="page size"):
@@ -448,7 +449,7 @@ def test_corrupt_population_is_refused_without_discarding_it(tmp_path: Path, dam
     """Do not turn malformed metadata or stored receipt populations into a clean queue."""
     ledger = _ledger(tmp_path)
     _first(ledger)
-    with sqlite3.connect(ledger.path) as connection:
+    with closing(sqlite3.connect(ledger.path)) as connection, connection:
         if damage == "missing-meta":
             connection.execute("DELETE FROM meta")
         elif damage == "counter-type":
@@ -469,7 +470,7 @@ def test_duplicate_active_population_is_refused(tmp_path: Path) -> None:
     """Even damaged uniqueness metadata cannot authorize two active dispatches."""
     ledger = _ledger(tmp_path)
     _first(ledger)
-    with sqlite3.connect(ledger.path) as connection:
+    with closing(sqlite3.connect(ledger.path)) as connection, connection:
         connection.execute("DROP INDEX active_delivery")
         connection.execute(
             "INSERT INTO deliveries(id,revision,bits,body,state,attempt,deadline,due) "
@@ -484,7 +485,7 @@ def test_revision_exhaustion_rolls_back_the_scan_marker(tmp_path: Path) -> None:
     """Do not consume a new native page if its wake cannot be represented."""
     ledger = _ledger(tmp_path)
     _first(ledger)
-    with sqlite3.connect(ledger.path) as connection:
+    with closing(sqlite3.connect(ledger.path)) as connection, connection:
         connection.execute("UPDATE meta SET revision=?", (MAX_WAKE_INTEGER,))
     with pytest.raises(WakeLedgerError, match="revision budget"):
         ledger.observe("messages", 7, 8, relevant=True)
@@ -495,7 +496,7 @@ def test_receipt_counter_exhaustion_preserves_the_inflight_fence(tmp_path: Path)
     """Counter overflow cannot publish a partial local receipt transaction."""
     ledger = _ledger(tmp_path)
     first = _first(ledger)
-    with sqlite3.connect(ledger.path) as connection:
+    with closing(sqlite3.connect(ledger.path)) as connection, connection:
         connection.execute("UPDATE meta SET accepted=?", (MAX_WAKE_INTEGER,))
     with pytest.raises(WakeLedgerError, match="counters"):
         ledger.finish(first, 101, "accepted", http_status=202)

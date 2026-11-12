@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -136,7 +137,7 @@ def test_unresolved_failures_fill_the_budget_without_silently_dropping_work(tmp_
 @pytest.mark.parametrize("action", ["redrive", "acquire"])
 def test_exhausted_lifetime_fence_refuses_instead_of_repeating(tmp_path: Path, action: str) -> None:
     _, ledger, first = operator_ledger(tmp_path)
-    with sqlite3.connect(ledger.path) as db:
+    with closing(sqlite3.connect(ledger.path)) as db, db:
         db.execute(
             "UPDATE deliveries SET attempt=?,cycle_base=?", (MAX_WAKE_INTEGER, MAX_WAKE_INTEGER - 1)
         )
@@ -192,7 +193,7 @@ def test_local_operator_status_refuses_unavailable_or_foreign_state(
         policy["subjects"]["alice"]["enabled"] = False
         path.write_text(json.dumps(policy))
     else:
-        with sqlite3.connect(ledger.path) as db:
+        with closing(sqlite3.connect(ledger.path)) as db, db:
             if damage == "foreign-binding":
                 db.execute("UPDATE meta SET scope='foreign'")
             else:

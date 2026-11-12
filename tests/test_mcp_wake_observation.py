@@ -14,6 +14,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -73,7 +74,7 @@ def test_stale_and_contradictory_commits_preserve_existing_pending_work(tmp_path
 def test_real_sqlite_failure_rolls_back_cursor_and_every_source_bit(tmp_path: Path) -> None:
     ledger = _ledger(tmp_path / "ledger")
     assert ledger.scan_cursor() == 0
-    with sqlite3.connect(ledger.path) as database:
+    with closing(sqlite3.connect(ledger.path)) as database, database:
         database.execute(
             "CREATE TRIGGER refuse_pending BEFORE UPDATE ON meta BEGIN "
             "SELECT RAISE(ABORT,'private storage failure sentinel'); END"
@@ -84,7 +85,7 @@ def test_real_sqlite_failure_rolls_back_cursor_and_every_source_bit(tmp_path: Pa
     assert "sentinel" not in str(failure.value)
     assert ledger.scan_cursor() == 0
     assert ledger.summary()["revision"] == ledger.summary()["pending_sources"] == 0
-    with sqlite3.connect(ledger.path) as database:
+    with closing(sqlite3.connect(ledger.path)) as database, database:
         assert database.execute("SELECT count(*) FROM sources").fetchone()[0] == 0
         database.execute("DROP TRIGGER refuse_pending")
     assert ledger.observe_page(0, 8, sources=("messages", "tasks", "handoffs"))
@@ -94,7 +95,7 @@ def test_real_sqlite_failure_rolls_back_cursor_and_every_source_bit(tmp_path: Pa
 def test_revision_exhaustion_cannot_commit_half_a_page(tmp_path: Path) -> None:
     ledger = _ledger(tmp_path / "ledger")
     assert ledger.scan_cursor() == 0
-    with sqlite3.connect(ledger.path) as database:
+    with closing(sqlite3.connect(ledger.path)) as database, database:
         database.execute("UPDATE meta SET revision=?", (MAX_WAKE_INTEGER,))
     with pytest.raises(WakeLedgerError, match="revision budget exhausted"):
         ledger.observe_page(0, 9, sources=("tasks", "handoffs"))
@@ -188,7 +189,7 @@ def test_invalid_scan_intervals_refuse_before_storage(
 def test_corrupt_scan_is_not_reset_to_zero(tmp_path: Path, raw: object) -> None:
     ledger = _ledger(tmp_path / "ledger")
     ledger.scan_cursor()
-    with sqlite3.connect(ledger.path) as database:
+    with closing(sqlite3.connect(ledger.path)) as database, database:
         database.execute("INSERT INTO sources VALUES ('activity',?)", (raw,))
     with pytest.raises(WakeLedgerError, match="invalid stored wake activity scan"):
         ledger.scan_cursor()

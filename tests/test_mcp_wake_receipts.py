@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +60,7 @@ def test_damaged_receipt_metadata_cannot_escape_through_inspection(
     value: Any,
 ) -> None:
     _, ledger, _ = operator_ledger(tmp_path)
-    with sqlite3.connect(ledger.path) as db:
+    with closing(sqlite3.connect(ledger.path)) as db, db:
         db.execute(f"UPDATE deliveries SET {column}=?", (value,))
     with pytest.raises(WakeLedgerError) as error:
         ledger.inspect()
@@ -70,7 +71,7 @@ def test_only_an_explicitly_queued_redrive_can_have_zero_attempts_in_its_cycle(
     tmp_path: Path,
 ) -> None:
     _, ledger, _ = operator_ledger(tmp_path)
-    with sqlite3.connect(ledger.path) as db:
+    with closing(sqlite3.connect(ledger.path)) as db, db:
         db.execute("UPDATE deliveries SET cycle_base=attempt")
     with pytest.raises(WakeLedgerError, match="invalid stored wake attempt"):
         ledger.receipts()
@@ -78,7 +79,7 @@ def test_only_an_explicitly_queued_redrive_can_have_zero_attempts_in_its_cycle(
 
 def test_schema_one_migration_preserves_pointer_scan_and_failed_receipt(tmp_path: Path) -> None:
     _, ledger, original = operator_ledger(tmp_path)
-    with sqlite3.connect(ledger.path) as db:
+    with closing(sqlite3.connect(ledger.path)) as db, db:
         for column in ("cycle_base", "control_action", "control_at"):
             db.execute("ALTER TABLE deliveries DROP COLUMN " + column)
         db.execute("PRAGMA user_version=1")
@@ -88,20 +89,20 @@ def test_schema_one_migration_preserves_pointer_scan_and_failed_receipt(tmp_path
     assert restored.control_delivery("redrive", original.delivery_id, 1, 102) == "queued"
     resumed = restored.acquire(102)
     assert resumed is not None and resumed.body == original.body and resumed.attempt == 2
-    with sqlite3.connect(ledger.path) as db:
+    with closing(sqlite3.connect(ledger.path)) as db, db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 4
 
 
 def test_partial_schema_migration_rolls_back_every_added_column(tmp_path: Path) -> None:
     _, ledger, original = operator_ledger(tmp_path)
-    with sqlite3.connect(ledger.path) as db:
+    with closing(sqlite3.connect(ledger.path)) as db, db:
         db.execute("ALTER TABLE deliveries DROP COLUMN cycle_base")
         db.execute("ALTER TABLE deliveries DROP COLUMN control_at")
         db.execute("PRAGMA user_version=1")
         before = db.execute("SELECT * FROM deliveries").fetchall()
     with pytest.raises(WakeLedgerError, match="unavailable"):
         ledger.summary()
-    with sqlite3.connect(ledger.path) as db:
+    with closing(sqlite3.connect(ledger.path)) as db, db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 1
         assert "cycle_base" not in {row[1] for row in db.execute("PRAGMA table_info(deliveries)")}
         assert db.execute("SELECT * FROM deliveries").fetchall() == before

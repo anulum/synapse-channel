@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -103,7 +104,7 @@ def test_real_durable_release_failure_restores_historical_recipient_index(tmp_pa
     state.reindex_leases()
     before = state.pending_handoffs.rows("ALPHA/worker", limit=10)
     try:
-        with sqlite3.connect(path) as database:
+        with closing(sqlite3.connect(path)) as database, database:
             database.execute(
                 "CREATE TRIGGER fail_release BEFORE INSERT ON events BEGIN "
                 "SELECT RAISE(ABORT,'injected disk refusal'); END"
@@ -135,7 +136,7 @@ def test_a_failed_write_after_the_lease_ran_out_leaves_no_index_entry(tmp_path: 
     assert "ALPHA/handoff" in state.owned_claims.entries
     assert "ALPHA/handoff" in state.pending_handoffs.entries
     try:
-        with sqlite3.connect(path) as database:
+        with closing(sqlite3.connect(path)) as database, database:
             database.execute(
                 "CREATE TRIGGER fail_release BEFORE INSERT ON events BEGIN "
                 "SELECT RAISE(ABORT,'injected disk refusal'); END"

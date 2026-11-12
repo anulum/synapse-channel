@@ -12,6 +12,7 @@ from __future__ import annotations
 import errno
 import os
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -62,7 +63,7 @@ def test_marker_sync_failure_preserves_initialized_metadata_for_retry(
         with pytest.raises(WakeLedgerError, match="wake ledger unavailable"):
             entry.summary()
     assert failed and not entry.path.exists()
-    with sqlite3.connect(root / ROOT_CATALOGUE) as database:
+    with closing(sqlite3.connect(root / ROOT_CATALOGUE)) as database, database:
         assert database.execute("SELECT revision FROM meta").fetchone()[0] == 0
         assert database.execute("SELECT count(*) FROM entries").fetchone()[0] == 0
     assert entry.summary()["pending_sources"] == 0

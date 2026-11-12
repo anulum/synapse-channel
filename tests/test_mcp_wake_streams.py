@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import sys
 from collections.abc import Callable
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -157,7 +158,7 @@ def test_stale_contradictory_page_and_failing_sql_cannot_consume_progress(tmp_pa
     outbox.observe_recovery_page(0, page(1, stream(1)), now=100)
     with pytest.raises(WakeLedgerError, match="position changed"):
         outbox.observe_recovery_page(0, page(1, stream(1, key="b" * 64)), now=100)
-    with sqlite3.connect(outbox.path) as c:
+    with closing(sqlite3.connect(outbox.path)) as c, c:
         c.execute(
             "CREATE TRIGGER refuse BEFORE UPDATE ON meta BEGIN SELECT RAISE(ABORT,'fault'); END"
         )
@@ -166,7 +167,7 @@ def test_stale_contradictory_page_and_failing_sql_cannot_consume_progress(tmp_pa
     assert outbox.recovery_cursor() == 1
     with pytest.raises(WakeLedgerError):
         outbox.expire_streams(now=400)
-    with sqlite3.connect(outbox.path) as c:
+    with closing(sqlite3.connect(outbox.path)) as c, c:
         c.execute("DROP TRIGGER refuse")
     assert outbox.expire_streams(now=400) == 1
     assert outbox.recovery_cursor() == 1
@@ -176,7 +177,7 @@ def test_capacity_refusal_preserves_cursor_and_every_existing_deadline(tmp_path:
     outbox = ledger(tmp_path)
     outbox.recovery_cursor()
     deadlines = {f"{i:064x}": 500 for i in range(MAX_PENDING_STREAMS)}
-    with sqlite3.connect(outbox.path) as c:
+    with closing(sqlite3.connect(outbox.path)) as c, c:
         c.execute("INSERT INTO sources VALUES ('stream-progress',?)", (json.dumps(deadlines),))
     with pytest.raises(WakeLedgerError, match="capacity exhausted"):
         outbox.observe_recovery_page(0, page(1, stream(1, key="f" * 64)), now=100)
@@ -210,7 +211,7 @@ def test_corrupt_state_refuses_instead_of_resetting(
 ) -> None:
     outbox = ledger(tmp_path)
     outbox.recovery_cursor()
-    with sqlite3.connect(outbox.path) as c:
+    with closing(sqlite3.connect(outbox.path)) as c, c:
         c.execute("INSERT INTO sources VALUES (?,?)", (source, value))
     with pytest.raises(WakeLedgerError):
         outbox.observe_recovery_page(0, page(1, stream(1)), now=100)
@@ -219,7 +220,7 @@ def test_corrupt_state_refuses_instead_of_resetting(
 def test_revision_exhaustion_rolls_back_deadlines_and_cursor(tmp_path: Path) -> None:
     outbox = ledger(tmp_path)
     outbox.recovery_cursor()
-    with sqlite3.connect(outbox.path) as c:
+    with closing(sqlite3.connect(outbox.path)) as c, c:
         c.execute("UPDATE meta SET revision=?", (MAX_WAKE_INTEGER,))
     with pytest.raises(WakeLedgerError, match="revision budget"):
         outbox.observe_recovery_page(0, page(1, stream(1, terminal=True)), now=100)
@@ -234,12 +235,12 @@ def test_schema_two_upgrade_preserves_legacy_cursor_receipts_and_pending_work(
     attempt = outbox.acquire(100)
     assert attempt is not None
     assert outbox.finish(attempt, 101, "rejected", http_status=401)
-    with sqlite3.connect(outbox.path) as database:
+    with closing(sqlite3.connect(outbox.path)) as database, database:
         database.execute("PRAGMA user_version=2")
         before = database.execute("SELECT * FROM deliveries").fetchall()
     assert outbox.recovery_cursor() == 0
     assert outbox.scan_cursor() == 4 and outbox.summary()["unresolved_failures"] == 1
-    with sqlite3.connect(outbox.path) as database:
+    with closing(sqlite3.connect(outbox.path)) as database, database:
         assert database.execute("PRAGMA user_version").fetchone()[0] == 4
         assert database.execute("SELECT * FROM deliveries").fetchall() == before
 
@@ -247,12 +248,12 @@ def test_schema_two_upgrade_preserves_legacy_cursor_receipts_and_pending_work(
 def test_failed_scope_verification_rolls_back_schema_two_upgrade(tmp_path: Path) -> None:
     outbox = ledger(tmp_path)
     outbox.recovery_cursor()
-    with sqlite3.connect(outbox.path) as database:
+    with closing(sqlite3.connect(outbox.path)) as database, database:
         database.execute("PRAGMA user_version=2")
         database.execute("UPDATE meta SET hub='foreign'")
     with pytest.raises(WakeLedgerError, match="identity changed"):
         outbox.recovery_cursor()
-    with sqlite3.connect(outbox.path) as database:
+    with closing(sqlite3.connect(outbox.path)) as database, database:
         assert database.execute("PRAGMA user_version").fetchone()[0] == 2
 
 

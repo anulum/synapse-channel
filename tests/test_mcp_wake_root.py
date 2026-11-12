@@ -14,6 +14,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -216,7 +217,7 @@ def test_root_counter_exhaustion_refuses_admission_without_creating_a_native_fil
     root = tmp_path / "state"
     current = ledger(root)
     current.observe_page(0, 1, sources=("messages",))
-    with sqlite3.connect(root / ROOT_CATALOGUE) as database:
+    with closing(sqlite3.connect(root / ROOT_CATALOGUE)) as database, database:
         database.execute("UPDATE meta SET revision=?", (MAX_WAKE_INTEGER,))
     denied = ledger(root, 1)
     with pytest.raises(WakeLedgerError, match="revision exhausted"):
@@ -318,7 +319,7 @@ def test_real_sqlite_refusal_of_a_required_setting_cannot_claim_a_bounded_profil
     setting: str,
 ) -> None:
     path = tmp_path / "profile.sqlite3"
-    with sqlite3.connect(path) as database:
+    with closing(sqlite3.connect(path)) as database, database:
         if setting == "journal_mode":
             assert database.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
         if setting == "synchronous":
@@ -337,7 +338,7 @@ def test_real_sqlite_refusal_of_a_required_setting_cannot_claim_a_bounded_profil
 
 
 def test_sqlite_permission_denial_of_readback_is_not_silent_success(tmp_path: Path) -> None:
-    with sqlite3.connect(tmp_path / "profile.sqlite3") as database:
+    with closing(sqlite3.connect(tmp_path / "profile.sqlite3")) as database, database:
 
         def deny_readback(
             action: int, first: str | None, second: str | None, db: str | None, trigger: str | None
@@ -353,7 +354,7 @@ def test_sqlite_permission_denial_of_readback_is_not_silent_success(tmp_path: Pa
 
 def test_incompatible_page_size_is_refused_before_changing_existing_records(tmp_path: Path) -> None:
     path = tmp_path / "old-profile.sqlite3"
-    with sqlite3.connect(path) as database:
+    with closing(sqlite3.connect(path)) as database, database:
         database.execute("PRAGMA page_size=8192")
         database.execute("CREATE TABLE proof(value TEXT)")
         database.execute("INSERT INTO proof VALUES('retained')")
@@ -419,13 +420,13 @@ def test_legacy_schema_three_without_root_metadata_upgrades_without_losing_pendi
     root = tmp_path / "state"
     entry = ledger(root)
     entry.observe_page(0, 7, sources=("tasks",))
-    with sqlite3.connect(entry.path) as database:
+    with closing(sqlite3.connect(entry.path)) as database, database:
         database.execute("PRAGMA user_version=3")
     (root / ROOT_CATALOGUE).unlink()
     (root / ROOT_LOCK).unlink()
     assert entry.summary()["pending_sources"] == 2
     assert entry.scan_cursor() == 7
-    with sqlite3.connect(entry.path) as database:
+    with closing(sqlite3.connect(entry.path)) as database, database:
         assert database.execute("PRAGMA user_version").fetchone()[0] == 4
 
 
@@ -478,7 +479,7 @@ def test_file_growth_during_real_creation_sync_refuses_before_native_consumption
     if target_kind == "catalogue":
         assert not entry.path.exists()
     else:
-        with sqlite3.connect(root / ROOT_CATALOGUE) as database:
+        with closing(sqlite3.connect(root / ROOT_CATALOGUE)) as database, database:
             assert database.execute("SELECT phase FROM entries").fetchone()[0] == "creating"
 
 
@@ -511,7 +512,7 @@ def test_real_sqlite_page_limit_rolls_back_dirty_pages_with_bounded_rollback_jou
     assert entry.path.stat().st_size <= MAX_WAKE_DATABASE_BYTES
     assert entry.path.read_bytes() == before
     assert entry.scan_cursor() == 1 and entry.summary()["pending_sources"] == 1
-    with sqlite3.connect(entry.path) as database:
+    with closing(sqlite3.connect(entry.path)) as database, database:
         assert database.execute("SELECT count(*) FROM pressure").fetchone()[0] == 12
         assert (
             database.execute(
