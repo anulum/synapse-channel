@@ -43,8 +43,9 @@ execution evidence when carrying a release claim forward.
   claims the identity owns without the board's size cap and reads one record
   in bounded pieces fenced by a revision and a content digest. Neither tool
   acknowledges that anything was processed. `synapse_inbox` is unchanged. The
-  remote HTTP profile accepts both names as optional read grants; the HTTP
-  server does not serve them yet.
+  remote HTTP profile serves each of them only to a subject whose grant names
+  it, with the identity and the project fixed by the adapter; an argument that
+  would select another identity is refused.
 
 - `synapse mcp --native-client grok` gives each native client session its own
   routing names: the client's canonical session UUID is appended to the
@@ -64,6 +65,14 @@ execution evidence when carrying a release claim forward.
   hint is bound to the hub it was made on. A file that is not owner-only, is
   linked twice, is too large or holds an invalid value refuses the mutation
   instead of being replaced.
+
+- A remote MCP mutation can carry its operation identifier as the tool
+  argument `operation_id`, beside the request metadata entry
+  `synapse/operation-id` that was the only form before. The HTTP tool
+  catalogue shows the argument on the six mutation tools; the adapter takes it
+  out before the shared tool sees the arguments. When both forms are sent they
+  must match, and a missing, invalid or conflicting identifier is refused
+  before anything reaches the hub.
 
 - Storage for a notification outbox, built and not yet started by any command:
   a private bounded SQLite ledger per provisioned subject, seat and hub, a

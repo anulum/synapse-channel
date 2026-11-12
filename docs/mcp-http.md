@@ -97,7 +97,11 @@ Scopes are limited to `synapse:read` and `synapse:mutate`; read is mandatory.
 No token claim creates an operator grant.
 
 The read defaults are `synapse_board`, `synapse_state`, `synapse_manifest`,
-`synapse_directory` and `synapse_status`. To admit a mutation, add its exact
+`synapse_directory` and `synapse_status`. Two further reads are served only to
+a grant that names them: `synapse_inbox_page` and `synapse_owned_work`, each
+under `synapse:read` (see [the seat's own inbox and work](#the-seats-own-inbox-and-work)).
+The consuming `synapse_inbox` tool is not offered over HTTP, because a lost
+reply must not advance a cursor on the server. To admit a mutation, add its exact
 tool to the provisioned grant and issue a token with `synapse:mutate`. Supported
 mutations are `synapse_task_declare`, `synapse_task_update`, `synapse_claim`,
 `synapse_release`, `synapse_handoff` and `synapse_send`. A remote
@@ -128,11 +132,36 @@ project-qualified identities: broadcasts, globs and comma-separated targets
 are refused. The HTTP face provides no local file claims, file receipts,
 filesystem reads, shell execution, account ledger or operator actions.
 
-Every mutation requires a stable request `_meta` entry:
+Every mutation requires a stable operation identifier that the caller
+supplies. A client that sends tool arguments can use the HTTP-only
+`operation_id` argument:
+
+```json
+{
+  "name": "synapse_task_declare",
+  "arguments": {
+    "task_id": "MY-PROJECT/inspect",
+    "title": "Inspect the current state",
+    "operation_id": "declare-inspect-1"
+  }
+}
+```
+
+The HTTP tool catalogue describes this argument on all six mutation tools. The
+adapter takes it out before it passes the business arguments to the shared
+tool, and the stdio signatures are unchanged. A client can instead supply the
+request `_meta` entry:
 
 ```json
 {"synapse/operation-id": "declare-task-20260927-1"}
 ```
+
+If both forms are supplied they must match. A missing, invalid or conflicting
+identifier is refused before anything is sent to the hub. An identifier has 1
+to 128 ASCII characters: a letter or digit first, then letters, digits, `.`,
+`_`, `:` or `-`. The schema marks the argument optional so that clients which
+use the metadata entry stay valid; execution still needs one valid form. No
+identifier is generated for the caller, and an identifier grants no permission.
 
 Use a new identifier for a new operation. Inspect current state before deciding
 on an explicit recovery attempt; retain the original identifier and arguments
@@ -167,6 +196,37 @@ the [bounded MCP retry policy](mcp.md#hub-connection-recovery). Existing HTTP
 sessions retain their normal subject binding and expiry; restoration of the
 hub connection does not reissue an HTTP mutation. Requests made during the
 outage still obey their operation timeout and confirmation contract.
+
+## The seat's own inbox and work
+
+`synapse_inbox_page` reads the provisioned seat's durable inbox from the hub's
+journal. Start with an empty `hub_id` and `after_seq=0`. Take over the returned
+`hub_id` and `cursor` only after accepting the response, and repeat the same
+arguments after a lost reply; on the next request pass `cursor` as `after_seq`.
+No read writes a cursor, acknowledges processing or confirms a business
+effect. The tool accepts no identity, role, local path or project from the
+caller: any other argument is refused. Only messages addressed exactly to the
+provisioned seat are returned; broadcasts, groups and multi-recipient rows are
+left out, so a page can be empty with `has_more=true`; continue from its
+cursor. A restart of the hub keeps the replay only when its journal and hub
+identity are kept. Another hub identity, or a refused or unavailable query, is
+a fixed MCP error.
+
+`synapse_owned_work` reads the whole current records assigned to the
+provisioned seat. The native ACL permission is `owned-work` on the connected
+identity; the mailbox permission alone does not open these records. Start with
+`mode="list"`: each bounded page returns opaque keys, an `item_version` per
+record, a scoped `revision` and a `cursor`. Follow `has_more` with `hub_id`,
+`revision` and `after_key=cursor`, empty pages included. A changed scope or a
+hub restart refuses the old revision; list again. For each key call
+`mode="read"` with `hub_id`, `key` and `item_version`, and join the `content`
+fragments in offset order before parsing the JSON; a fragment holds at most
+32,768 ASCII characters and may split an escape sequence. Continue with
+`offset=next_offset` and `digest=content_sha256`, and check the SHA-256 of the
+joined text. A record that was reassigned, finished or changed refuses a stale
+read. The adapter fixes the identity and the project, and a caller's attempt
+to select either is refused. Reading gives no mutation authority and
+acknowledges nothing.
 
 ## Resource envelope and diagnostics
 

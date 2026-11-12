@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import re
 from collections.abc import Iterable
 from typing import Any
 from urllib.parse import unquote, urlsplit
@@ -32,8 +31,9 @@ from pydantic import AnyUrl, TypeAdapter
 
 from synapse_channel import __version__
 from synapse_channel.mcp.http_agent import HTTP_OPERATION_ID
-from synapse_channel.mcp.http_arguments import HttpArgumentPolicy
+from synapse_channel.mcp.http_arguments import HttpArgumentPolicy, authorize_read_arguments
 from synapse_channel.mcp.http_config import MUTATION_TOOLS
+from synapse_channel.mcp.http_operation_arguments import http_tool_schema, mutation_arguments
 from synapse_channel.mcp.http_policy import HttpOperationPolicy
 from synapse_channel.mcp.http_views import ProjectMcpViews
 from synapse_channel.mcp.outcome import MCP_OUTCOME_ID
@@ -48,7 +48,6 @@ _MUTATION_SUCCESS = {
     "synapse_send": "sent to ",
 }
 
-_OPERATION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _RESOURCE_ACTIONS = {
     "synapse://board": "synapse_board",
     "synapse://state": "synapse_state",
@@ -158,14 +157,10 @@ class HttpMcpServer(MCPServer[None]):
             with fail_after(self.operation_timeout):
                 async with self.dispatch:
                     await self.policy.authorize(name)
+                    authorize_read_arguments(name, arguments)
                     if name in MUTATION_TOOLS:
                         meta = context.request_context.meta if context is not None else None
-                        operation = meta.get("synapse/operation-id") if meta else None
-                        if (
-                            not isinstance(operation, str)
-                            or _OPERATION.fullmatch(operation) is None
-                        ):
-                            raise PermissionError("remote MCP mutation requires operation identity")
+                        operation, arguments = mutation_arguments(arguments, meta)
                         await self.arguments.authorize(name, arguments)
                         token = HTTP_OPERATION_ID.set(operation)
                         scope = f"{self.policy.seat.seat}\0{name}\0{operation}".encode()
@@ -200,7 +195,11 @@ class HttpMcpServer(MCPServer[None]):
 
     async def list_tools(self) -> list[Tool]:
         """Advertise only tools currently permitted to this subject and session."""
-        return [tool for tool in await super().list_tools() if await self._allowed(tool.name)]
+        return [
+            http_tool_schema(tool)
+            for tool in await super().list_tools()
+            if await self._allowed(tool.name)
+        ]
 
     async def list_resources(self) -> list[Resource]:
         """Remove fixed resources whose corresponding read permission was revoked."""

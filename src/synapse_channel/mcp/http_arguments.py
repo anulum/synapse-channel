@@ -19,6 +19,32 @@ _BOARD = TypeAdapter(dict[str, Any])
 _TASKS = TypeAdapter(list[dict[str, Any]])
 
 
+_READ_ARGUMENTS = {
+    "synapse_inbox_page": frozenset({"hub_id", "after_seq", "limit"}),
+    "synapse_owned_work": frozenset(
+        {
+            "mode",
+            "hub_id",
+            "after_key",
+            "revision",
+            "limit",
+            "key",
+            "item_version",
+            "offset",
+            "digest",
+            "limit_chars",
+        }
+    ),
+}
+
+
+def authorize_read_arguments(name: str, arguments: dict[str, Any]) -> None:
+    """Refuse hidden selectors before the SDK can ignore unregistered arguments."""
+    allowed = _READ_ARGUMENTS.get(name)
+    if allowed is not None and not arguments.keys() <= allowed:
+        raise PermissionError("remote MCP read arguments denied")
+
+
 class HttpArgumentPolicy:
     """Bind remote task and recipient arguments to a provisioned project.
 
