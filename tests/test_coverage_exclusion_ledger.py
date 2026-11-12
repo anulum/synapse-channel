@@ -225,6 +225,9 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_event_row_mac.py": (1, "optional-dep-guard"),
     "tests/test_dashboard_host_sessions.py": (1, "optional-dep-guard"),
     "tests/test_delivery_participant_bridge.py": (2, "optional-dep-guard"),
+    # host_sessions_accounting has no skip. Both measured hosts leave the
+    # no-proc return, the nvidia-smi absence and failure returns, and the
+    # Windows API failure returns untaken. Those lines are not exclusions.
     "tests/test_host_sessions.py": (1, "optional-dep-guard"),
     "tests/test_host_sessions_proc.py": (1, "optional-dep-guard"),
     "tests/test_host_sessions_tmux.py": (1, "optional-dep-guard"),
