@@ -291,14 +291,20 @@ def _linux_children() -> dict[int, list[int]]:
 
 
 def _linux_tree(pid: int) -> list[int]:
+    """Return ``pid`` and each descendant once.
+
+    A reused parent id can point back into this set. Those repeats are left
+    out, and the walk stops at 64 ids.
+    """
     children = _linux_children()
     ordered = [pid]
     pending = [pid]
     while pending and len(ordered) < 64:
         current = pending.pop(0)
         for child in children.get(current, []):
-            ordered.append(child)
-            pending.append(child)
+            if child not in ordered:
+                ordered.append(child)
+                pending.append(child)
     return ordered
 
 
@@ -383,6 +389,12 @@ def _venv_launcher(image: str) -> bool:
 
 
 def _windows_tree(pid: int, found: dict[int, tuple[int, str]]) -> list[int]:
+    """Return ``pid`` and each descendant once.
+
+    Windows does not clear a parent id when that parent exits, and the number
+    can be reused inside the same set. Those repeats are left out, and the
+    walk stops at 64 ids.
+    """
     children: dict[int, list[int]] = {}
     for child, (parent, _name) in found.items():
         children.setdefault(parent, []).append(child)
@@ -391,8 +403,9 @@ def _windows_tree(pid: int, found: dict[int, tuple[int, str]]) -> list[int]:
     while pending and len(ordered) < 64:
         current = pending.pop(0)
         for child in children.get(current, []):
-            ordered.append(child)
-            pending.append(child)
+            if child not in ordered:
+                ordered.append(child)
+                pending.append(child)
     return ordered
 
 
