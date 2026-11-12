@@ -8,13 +8,12 @@
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 
-from hub_e2e_helpers import _free_port
+from cli_mcp_helpers import mcp_namespace
 from synapse_channel import cli, cli_mcp
 from synapse_channel.mcp.server import DEFAULT_REQUEST_TIMEOUT
 
@@ -62,22 +61,8 @@ def test_parser_mcp_accepts_owner_only_token_file() -> None:
     assert args.token_file == "/private/hub.token"
 
 
-def _mcp_ns(**overrides: Any) -> argparse.Namespace:
-    port = _free_port()
-    base: dict[str, Any] = {
-        "uri": f"ws://localhost:{port}",
-        "name": "bridge",
-        "token": None,
-        "token_file": None,
-        "request_timeout": DEFAULT_REQUEST_TIMEOUT,
-        "ready_timeout": 0.1,
-    }
-    base.update(overrides)
-    return argparse.Namespace(**base)
-
-
 def test_cmd_mcp_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
-    assert cli_mcp._cmd_mcp(_mcp_ns()) == 1
+    assert cli_mcp._cmd_mcp(mcp_namespace()) == 1
     err = capsys.readouterr().err
     assert "could not reach hub" in err
     assert "bridge" in err
@@ -86,7 +71,7 @@ def test_cmd_mcp_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> 
 def test_cmd_mcp_preserves_distinct_name_in_unreachable_report(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert cli_mcp._cmd_mcp(_mcp_ns(name="adapter")) == 1
+    assert cli_mcp._cmd_mcp(mcp_namespace(name="adapter")) == 1
     assert "[adapter] could not reach hub" in capsys.readouterr().err
 
 
@@ -100,7 +85,7 @@ def test_cmd_mcp_reports_a_missing_mcp_extra(
         raise RuntimeError(msg)
 
     monkeypatch.setattr(cli_mcp, "serve_stdio", refuse)
-    assert cli_mcp._cmd_mcp(_mcp_ns()) == 1
+    assert cli_mcp._cmd_mcp(mcp_namespace()) == 1
     assert "pip install 'synapse-channel[mcp]'" in capsys.readouterr().err
 
 
@@ -113,7 +98,7 @@ def test_cmd_mcp_stops_cleanly_on_interrupt(
         raise KeyboardInterrupt
 
     monkeypatch.setattr(cli_mcp, "serve_stdio", interrupted)
-    assert cli_mcp._cmd_mcp(_mcp_ns(name="bridge")) == 0
+    assert cli_mcp._cmd_mcp(mcp_namespace(name="bridge")) == 0
     assert "[bridge] MCP server stopped." in capsys.readouterr().out
 
 
@@ -130,7 +115,7 @@ def test_mcp_token_file_is_read_without_echoing_its_value(
         return 0
 
     monkeypatch.setattr(cli_mcp, "serve_stdio", capture)
-    assert cli_mcp._cmd_mcp(_mcp_ns(token_file=str(secret))) == 0
+    assert cli_mcp._cmd_mcp(mcp_namespace(token_file=str(secret))) == 0
     assert received == ["test-secret-value"]
     assert "test-secret-value" not in capsys.readouterr().err
 
@@ -159,5 +144,5 @@ def test_top_level_mcp_rejects_both_token_sources(capsys: pytest.CaptureFixture[
 
 
 def test_mcp_refuses_ambiguous_token_sources(capsys: pytest.CaptureFixture[str]) -> None:
-    assert cli_mcp._cmd_mcp(_mcp_ns(token="x", token_file="/no/file")) == 2
+    assert cli_mcp._cmd_mcp(mcp_namespace(token="x", token_file="/no/file")) == 2
     assert "either --token or --token-file" in capsys.readouterr().err

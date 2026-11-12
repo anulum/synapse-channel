@@ -23,9 +23,9 @@ from mcp.types import TextContent
 
 import synapse_channel.cli_mcp as cli_mcp
 from cli_e2e_helpers import isolated_hub
+from cli_mcp_helpers import mcp_namespace
 from synapse_channel.mcp.native_session import NativeSessionError, native_stdio_session
 from synapse_channel.relay import append_jsonl, encode_lite
-from test_cli_mcp import _mcp_ns
 
 SESSION = "01a14c68-36c8-7100-9755-b2f7e673ad78"
 CLOSED_HUB = "ws://127.0.0.1:1"
@@ -277,7 +277,7 @@ def test_an_interrupt_names_the_session_the_bridge_ran_under(
         raise KeyboardInterrupt
 
     monkeypatch.setattr(cli_mcp, "serve_stdio", interrupted)
-    arguments = _mcp_ns(name="PROJ/grok", uri=CLOSED_HUB, native_client="grok")
+    arguments = mcp_namespace(name="PROJ/grok", uri=CLOSED_HUB, native_client="grok")
     assert cli_mcp._cmd_mcp(arguments) == 0
     assert f"[PROJ/grok-{SESSION}] MCP server stopped." in capsys.readouterr().out
 
@@ -298,6 +298,6 @@ def test_another_value_error_of_the_serving_lifetime_is_not_swallowed(
         raise ValueError("a defect elsewhere")
 
     monkeypatch.setattr(cli_mcp, "serve_stdio", broken)
-    arguments = _mcp_ns(name="PROJ/grok", uri=CLOSED_HUB, native_client="grok")
+    arguments = mcp_namespace(name="PROJ/grok", uri=CLOSED_HUB, native_client="grok")
     with pytest.raises(ValueError, match="a defect elsewhere"):
         cli_mcp._cmd_mcp(arguments)
