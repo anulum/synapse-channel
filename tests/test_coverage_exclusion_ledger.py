@@ -202,6 +202,10 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_cli_e2e_mutation_status.py": (1, "platform-guard"),
     # Native supervisor suspension needs POSIX SIGSTOP/SIGCONT.
     "tests/test_cli_lock_stall.py": (1, "platform-guard"),
+    # Not a skip. cli_lock_release.py lines 233-237 catch an unexpected
+    # settle failure. Real synapse lock teardown on Linux and on MSI
+    # returns without raising: transport errors are absorbed, and
+    # cancellation is not an Exception.
     "tests/test_cli_sqlcipher.py": (2, "optional-dep-guard"),
     "tests/test_cli_sqlcipher_refusals.py": (1, "optional-dep-guard"),
     # POSIX directory permissions that bind a non-root owner.
