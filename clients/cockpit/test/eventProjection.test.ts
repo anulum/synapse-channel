@@ -111,6 +111,78 @@ describe("durable-event projection", () => {
     ).toMatchObject({ kind: "chat", actor: "d", label: "hello fleet" });
   });
 
+  it("keeps a task update on the claims lane with its owner and status", () => {
+    // The hub journals the updated claim itself (`claim.as_persisted_dict()`).
+    const update = stored(10, "task_update", {
+      task_id: "HARBOUR-104",
+      owner: "harbour/web",
+      status: "working",
+      paths: ["src/web/audit"],
+    });
+    expect(mapStoredEvent(update)).toMatchObject({
+      kind: "claim",
+      lane: "claims",
+      actor: "harbour/web",
+      taskId: "HARBOUR-104",
+      label: "updated HARBOUR-104 (working)",
+    });
+    expect(mapStoredEvent(stored(11, "task_update", { task_id: "t4" }))).toMatchObject({
+      actor: "",
+      label: "updated t4",
+    });
+  });
+
+  it("shows a recorded finding with the author the hub attested", () => {
+    const finding = stored(12, "finding", {
+      statement: "Upload limits are enforced by the API, not by the web client.",
+      subkind: "decision",
+      provenance: { actor: "harbour/reviewer", project: "harbour" },
+    });
+    expect(mapStoredEvent(finding)).toMatchObject({
+      kind: "finding",
+      lane: "task",
+      actor: "harbour/reviewer",
+      label: "Upload limits are enforced by the API, not by the web client.",
+    });
+    const long = mapStoredEvent(stored(13, "finding", { statement: "y".repeat(400) }));
+    expect(long.actor).toBe("");
+    expect(long.label.endsWith("…")).toBe(true);
+    expect(mapStoredEvent(stored(14, "finding", { provenance: "not a record" })).actor).toBe("");
+    expect(mapStoredEvent(stored(15, "finding", { provenance: null })).actor).toBe("");
+  });
+
+  it("puts an operator relay on the task lane and a refused one on the risk lane", () => {
+    const relay = (seq: number, payload: Record<string, unknown>) =>
+      mapStoredEvent(
+        stored(seq, "operator_relay", {
+          action: "release",
+          task_id: "SEED-1",
+          operator: "operator:seed",
+          ...payload,
+        }),
+      );
+    // Recorded statuses: "applied" and "pending" (`core/handlers/operator_relay.py`
+    // RELAY_STATUS_*), "not_applied" (an approved quorum that found no live lease).
+    expect(relay(20, { status: "applied", applied: true })).toMatchObject({
+      kind: "task",
+      lane: "task",
+      actor: "operator:seed",
+      label: "operator release SEED-1 (applied)",
+    });
+    expect(relay(21, { status: "pending", applied: false }).lane).toBe("task");
+    expect(relay(22, { status: "not_applied", applied: false }).lane).toBe("task");
+    // The outbound half records no status; the dashboard's operator-actions feed
+    // (`dashboard_store_feeds._operator_action_row`) reads it as applied, pending or
+    // refused, and so does the signal log. Only "refused" is a risk.
+    expect(relay(23, { applied: true }).label).toBe("operator release SEED-1 (applied)");
+    expect(relay(24, { pending: true }).lane).toBe("task");
+    expect(relay(25, { applied: false, detail: "relay to the owning hub failed" })).toMatchObject({
+      kind: "conflict",
+      lane: "risk",
+      label: "operator release SEED-1 (refused)",
+    });
+  });
+
   it("truncates an over-long chat payload and shows unknown kinds by name", () => {
     const long = "x".repeat(400);
     const chat = mapStoredEvent(stored(8, "chat", { sender: "d", payload: long }));

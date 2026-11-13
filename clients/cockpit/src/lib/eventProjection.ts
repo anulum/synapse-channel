@@ -21,6 +21,23 @@ function trimmed(text: string): string {
   return text.length > CHAT_LABEL_LIMIT ? `${text.slice(0, CHAT_LABEL_LIMIT)}…` : text;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+/**
+ * A relay's status, read as the dashboard's operator-actions feed reads it
+ * (`dashboard_store_feeds._operator_action_row`): the recorded status ("applied",
+ * "pending", "not_applied"), else "applied", "pending" or "refused" from the flags
+ * of the outbound half, which records none.
+ */
+function relayStatus(payload: Record<string, unknown>): string {
+  const recorded = asString(payload["status"]);
+  if (recorded !== "") return recorded;
+  if (payload["applied"] === true) return "applied";
+  return payload["pending"] === true ? "pending" : "refused";
+}
+
 /**
  * Map one stored hub event onto the cockpit event model. Every mapping keeps
  * the hub's seq and ts verbatim. A kind this build does not know renders on
@@ -37,6 +54,22 @@ export function mapStoredEvent(stored: StoredEvent): CockpitEvent {
     kind = "claim";
     actor = asString(payload["owner"]);
     label = `claimed ${taskId}`;
+  } else if (stored.kind === "task_update") {
+    // The hub journals the updated claim itself.
+    kind = "claim";
+    actor = asString(payload["owner"]);
+    const status = asString(payload["status"]);
+    label = `updated ${taskId}${status === "" ? "" : ` (${status})`}`;
+  } else if (stored.kind === "finding") {
+    // The hub stamps the author it attested into the record's provenance.
+    kind = "finding";
+    actor = asString(asRecord(payload["provenance"])["actor"]);
+    label = trimmed(asString(payload["statement"]));
+  } else if (stored.kind === "operator_relay") {
+    const status = relayStatus(payload);
+    kind = status === "refused" ? "conflict" : "task";
+    actor = asString(payload["operator"]);
+    label = `operator ${asString(payload["action"])} ${taskId} (${status})`;
   } else if (stored.kind === "release") {
     kind = "release";
     actor = asString(payload["owner"]);

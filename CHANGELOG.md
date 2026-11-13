@@ -378,6 +378,15 @@ execution evidence when carrying a release claim forward.
   removable lock is opened with delete sharing, so a second opener meets the
   byte-range lock.
 
+- The cockpit's signal log shows a task update, a recorded finding and an
+  operator relay as what they are. They rode the presence lane as chat, with no
+  actor and the hub's raw kind as their text. A task update now rides the
+  claims lane with the claim's owner and status. A recorded finding rides the
+  task lane with the author the hub attested and its statement. An operator
+  relay rides the task lane with its operator, its action and its status. A
+  relay the operator-actions feed reads as refused rides the risk lane. Kinds
+  the cockpit does not map are still shown under the hub's own name.
+
 - Studio keeps keyboard focus on a panel's or a board column's remainder
   ("N more of M") when the next snapshot arrives. Each snapshot rebuilt the
   lists, so focus fell to the page every five seconds and an Enter pressed

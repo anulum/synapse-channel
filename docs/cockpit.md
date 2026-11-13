@@ -548,6 +548,15 @@ task grouping, pause, raw event detail, and export of the visible evidence.
 Its filter query lives in the URL hash, so you can copy a filtered-log address.
 The exported JSON states its query, provenance, time window, and count.
 
+Each row keeps the hub's sequence and time, and names its lane, kind and actor.
+A claim, a task update and a release ride the claims lane, with the claim's
+owner. A recorded finding rides the task lane, with the author the hub attested.
+An operator relay rides the task lane, with its operator and its status. A relay
+the operator-actions feed reads as refused rides the risk lane instead: one
+with no recorded status that was neither applied nor left pending. A kind of
+event the cockpit does not map stays visible: it is shown as chat on the
+presence lane, with the hub's own name for it as its text.
+
 These capabilities cross explicit implementation boundaries without crossing
 their evidence boundary. Workspace state selects live, history, or imported
 evidence; the row renderer receives the already-filtered immutable set and owns

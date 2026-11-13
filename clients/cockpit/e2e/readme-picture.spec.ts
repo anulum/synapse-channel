@@ -81,6 +81,33 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
       await expect(region("File-scope claims")).toContainText(claim);
       await expect(region("Signal log")).toContainText(`claimed ${claim}`);
     }
+    // Every kind of event keeps its own lane, kind and actor in the signal log: the
+    // fleet's task updates and finding, and the operator relay the harness seeds.
+    const logCells = async (label: string) => {
+      const row = region("Signal log").locator("tr.log__row")
+        .filter({ has: page.locator("td.log__label", { hasText: label }) });
+      await expect(row).toHaveCount(1);
+      return {
+        lane: await row.locator(".log__lane").textContent(),
+        kind: await row.locator(".log__kind").textContent(),
+        actor: await row.locator(".log__actor .ident").getAttribute("title"),
+      };
+    };
+    for (const claim of claims) {
+      const update = await logCells(`updated ${claim} (working)`);
+      expect([update.lane, update.kind]).toEqual(["claims", "claim"]);
+      expect(participants).toContain(update.actor);
+    }
+    expect(await logCells(finding)).toEqual({
+      lane: "task",
+      kind: "finding",
+      actor: participants.find(participant => participant.endsWith("/reviewer")),
+    });
+    expect(await logCells("operator release cockpit-e2e-audit-seed (applied)")).toEqual({
+      lane: "task",
+      kind: "task",
+      actor: "operator:cockpit-e2e-seed",
+    });
     await expect(region("Risk rail")).toContainText("amber", { ignoreCase: true });
     await expect(region("Risk rail")).toContainText("HARBOUR-103");
     // The fleet's plan, posted in its first act, holds four unfinished
