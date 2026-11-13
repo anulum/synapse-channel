@@ -5516,6 +5516,44 @@ tr:focus-within .ident .ident__head,
   width: 16ch;
 }
 
+/* Above a phone, the log is one column of the deck. A fixed table keeps the
+   actor to the end an identifier must show and leaves the event a readable
+   share. The phone rules under 641px are unchanged, including the lane drop. */
+@media (min-width: 641px) {
+  .log {
+    table-layout: fixed;
+  }
+
+  .log__raw {
+    width: 3.4rem;
+  }
+
+  .log__time {
+    width: 8.5ch;
+  }
+
+  .log__lane {
+    width: 7ch;
+  }
+
+  .log__kind {
+    width: 9ch;
+  }
+
+  .log__actor {
+    width: 16ch;
+    max-width: 16ch;
+  }
+
+  .log__row td.log__label {
+    width: auto;
+    max-width: none;
+    min-width: 14ch;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
 /* A narrow log drops the lane's column, which repeats what the kind's dot
    says, and tightens its cells, so that the actor and the event keep room. */
 .log-scroll {
