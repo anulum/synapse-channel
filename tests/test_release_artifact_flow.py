@@ -24,17 +24,21 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     mcp_registry = MCP_REGISTRY_WORKFLOW.read_text(encoding="utf-8")
     security = SECURITY_POLICY.read_text(encoding="utf-8")
     build, after_build = publish.split("\n  integrity:", maxsplit=1)
-    integrity, after_integrity = after_build.split("\n  attest:", maxsplit=1)
-    attest, publish_job = after_integrity.split("\n  publish:", maxsplit=1)
+    integrity, after_integrity = after_build.split("\n  reproduce:", maxsplit=1)
+    reproduce, after_reproduce = after_integrity.split("\n  attest:", maxsplit=1)
+    attest, publish_job = after_reproduce.split("\n  publish:", maxsplit=1)
+    recipe = "python tools/build_release_payload.py"
+    pinned_tools = "pip install --require-hashes -r .github/requirements/requirements-tools.txt"
 
-    assert (release + publish).count("python -m build") == 1
+    # One recipe builds the payload (tools/build_release_payload.py: export under
+    # umask 0022, pinned backend without isolation, commit-time SOURCE_DATE_EPOCH,
+    # repacked sdist); no workflow calls the build frontend itself.
+    assert "python -m build" not in release + publish
+    assert publish.count(recipe) == 2
     assert "python tools/capability_manifest.py --check" in build
-    assert "umask 0022" in build
-    assert "python -m build --outdir build/raw-dist" in build
-    assert build.index("tools/capability_manifest.py --check") < build.index("python -m build")
-    assert build.index("umask 0022") < build.index("python -m build")
-    assert "python tools/repack_sdist.py" in build
-    assert 'mv "${raw_wheels[0]}" release-artifact/' in build
+    assert f"{recipe} --out release-artifact" in build
+    assert build.index(pinned_tools) < build.index(recipe)
+    assert build.index("tools/capability_manifest.py --check") < build.index(recipe)
     assert "--output-reproducible" in build
     assert "sha256sum -- *.whl *.tar.gz *-sbom.cdx.json > SHA256SUMS" in build
     assert "release-artifact/synapse-channel-${GITHUB_REF_NAME}-sbom.cdx.json" in build
@@ -62,7 +66,21 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert "python -m build" not in integrity
     assert "id-token: write" not in integrity
 
-    assert "needs: build" in attest
+    # A second runner rebuilds the same tag independently, on another Python, and
+    # attest refuses to sign unless both payloads match file for file.
+    assert "needs:" not in reproduce
+    assert 'python-version: "3.13"' in reproduce
+    assert reproduce.index(pinned_tools) < reproduce.index(f"{recipe} --out reproduced")
+    assert "name: reproduced-digests" in reproduce
+    assert "path: reproduced/SHA256SUMS" in reproduce
+    assert "id-token: write" not in reproduce
+
+    assert "needs: [build, reproduce]" in attest
+    assert "name: reproduced-digests" in attest
+    assert 'echo "$name built $built reproduced $rebuilt"' in attest
+    assert 'if [ "$built" != "$rebuilt" ]; then status=1; fi' in attest
+    assert 'exit "$status"' in attest
+    assert attest.index("Require the independent rebuild") < attest.index("actions/attest@")
     assert "artifact-metadata: write" in attest
     assert "attestations: write" in attest
     assert "id-token: write" in attest
@@ -183,3 +201,6 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert "--signer-workflow anulum/synapse-channel/.github/workflows/publish.yml" in security
     assert "--source-ref refs/tags/vX.Y.Z" in security
     assert "--deny-self-hosted-runners" in security
+    assert "tools/build_release_payload.py --ref vX.Y.Z --out rebuilt" in security
+    assert "--require-hashes -r release-tools.txt" in security
+    assert "Not\n  claimed: the container image byte for byte" in security

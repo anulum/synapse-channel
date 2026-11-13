@@ -721,6 +721,32 @@ worth stating plainly:
   provenance bundle. A valid attestation binds bytes to the named repository,
   workflow, and source ref; it is not a semantic safety review. It also does not
   enable GitHub's separate owner-controlled immutable-release setting.
+- **Reproducible wheel and source archive.** From the first release after
+  0.99.51 the tag workflow builds the wheel and the source archive with one
+  recipe, `tools/build_release_payload.py`, and a second runner builds the same
+  tag again with that recipe; the payload is signed and published only when the
+  two builds match file for file. The recipe exports the tagged commit under
+  umask 0022, refuses build tools other than the tag's hash-pinned `build`,
+  `setuptools` and `wheel`, builds without isolation with `SOURCE_DATE_EPOCH`
+  set to the commit time, and repacks the source archive. To rebuild a release
+  and compare it with what was published, from a current checkout:
+
+  ```bash
+  git show vX.Y.Z:.github/requirements/requirements-tools.txt > release-tools.txt
+  python3 -m venv .rebuild
+  .rebuild/bin/python -m pip install --require-hashes -r release-tools.txt
+  .rebuild/bin/python tools/build_release_payload.py --ref vX.Y.Z --out rebuilt
+  gh release download vX.Y.Z -R anulum/synapse-channel --pattern SHA256SUMS --dir published
+  diff <(grep -E '\.(whl|tar\.gz)$' published/SHA256SUMS | sort -k2) <(sort -k2 rebuilt/SHA256SUMS)
+  ```
+
+  What was measured: the wheel and the source archive of 0.99.51, rebuilt from
+  the tag on an independent Linux host, equal the published files byte for
+  byte; the host's path, time zone and locale and Python 3.12 or 3.13 did not
+  change them, while another build-backend version or another umask did. Not
+  claimed: the container image byte for byte, the SBOM's bytes, the editor
+  extension (its own check packages it twice on one runner), the cockpit bundle,
+  and builds on other operating systems.
 - **Published container provenance.** Release-image construction uses the
   digest-pinned Python base plus hash-locked build frontend, backend, and base
   runtime inputs. PEP 517 build isolation is disabled after those inputs are

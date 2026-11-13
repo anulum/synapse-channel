@@ -20,6 +20,20 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- The release payload is reproducible and checked before it is signed.
+  `tools/build_release_payload.py` is the one recipe for the wheel and the
+  source archive: it exports the commit's tree through a private index under
+  umask 0022, refuses build tools other than that tree's hash-pinned `build`,
+  `setuptools` and `wheel`, builds without isolation with `SOURCE_DATE_EPOCH`
+  set to the commit time, repacks the source archive and writes `SHA256SUMS`.
+  The tag workflow builds with it, a second runner on another Python builds the
+  same tag again, and the attestation job refuses to sign unless both payloads
+  match file for file, naming both digests of each file. Before this, the
+  release build resolved its backend unpinned at build time and the wheel took
+  the checkout's file modes, so a later rebuild could differ. A rebuild of
+  0.99.51 with the recipe equals the published wheel and source archive byte
+  for byte. `SECURITY.md` says how to rebuild a release and compare it, and
+  what is not claimed.
 - `synapse verify-result git` reads an attempt's marker: with `--attempt-id`,
   `--intent-sha256` and `--base` (all three or none; in Python the keyword
   `attempt=AttemptCheck(...)` of `verify_git_publication`) the same

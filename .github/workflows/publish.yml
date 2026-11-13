@@ -31,27 +31,11 @@ jobs:
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-tools.txt
       - name: Refuse a stale capability snapshot
         run: python tools/capability_manifest.py --check
-      - name: Build a reproducible release payload
-        run: |
-          set -euo pipefail
-          # The build frontend creates the wheel from a temporary sdist extraction.
-          # Fix its umask so archive modes do not depend on the runner or operator.
-          umask 0022
-          export SOURCE_DATE_EPOCH
-          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
-          mkdir -p build/raw-dist release-artifact
-          python -m build --outdir build/raw-dist
-          raw_wheels=(build/raw-dist/*.whl)
-          raw_sdists=(build/raw-dist/*.tar.gz)
-          if [ "${#raw_wheels[@]}" -ne 1 ] || [ "${#raw_sdists[@]}" -ne 1 ]; then
-            echo "expected exactly one raw wheel and one raw sdist" >&2
-            exit 1
-          fi
-          mv "${raw_wheels[0]}" release-artifact/
-          python tools/repack_sdist.py \
-            --input "${raw_sdists[0]}" \
-            --output "release-artifact/$(basename "${raw_sdists[0]}")" \
-            --source-date-epoch "${SOURCE_DATE_EPOCH}"
+      - name: Build the release payload with the repository's own recipe
+        # The tool exports the tagged commit under umask 0022, refuses build tools
+        # other than the pins installed above, builds without isolation at the
+        # commit time and repacks the sdist; a consumer runs the same recipe.
+        run: python tools/build_release_payload.py --out release-artifact
       - run: python -m twine check release-artifact/*.whl release-artifact/*.tar.gz
       - name: Generate CycloneDX SBOM for the built wheel
         run: |
@@ -114,8 +98,30 @@ jobs:
       - name: Verify wheel and sdist ship the same package and the sdist has no tests
         run: python tools/check_wheel_sdist_parity.py release-artifact/*.whl release-artifact/*.tar.gz
 
+  reproduce:
+    # A second runner, with another Python, builds the same tag from its own
+    # checkout with the same recipe. attest compares the two before anything is
+    # signed, so a payload that does not reproduce is never published.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --require-hashes -r .github/requirements/requirements-tools.txt
+      - name: Rebuild the release payload independently
+        run: python tools/build_release_payload.py --out reproduced
+      - name: Preserve the independent digests
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: reproduced-digests
+          path: reproduced/SHA256SUMS
+          if-no-files-found: error
+
   attest:
-    needs: build
+    needs: [build, reproduce]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -128,6 +134,29 @@ jobs:
         with:
           name: release-dist
           path: release-artifact/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: reproduced-digests
+          path: reproduced/
+      - name: Require the independent rebuild to match before signing
+        run: |
+          set -euo pipefail
+          # Each line names both digests of one file, so a mismatch explains itself.
+          built_names="$(find release-artifact -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) -printf '%f\n' | sort)"
+          rebuilt_names="$(sed -E 's/^[0-9a-f]{64}  //' reproduced/SHA256SUMS | sort)"
+          if [ "$built_names" != "$rebuilt_names" ]; then
+            printf 'built: %s\nreproduced: %s\n' "$built_names" "$rebuilt_names" >&2
+            exit 1
+          fi
+          status=0
+          while IFS= read -r line; do
+            rebuilt="${line%%  *}"
+            name="${line#*  }"
+            built="$(sha256sum -- "release-artifact/$name" | cut -d' ' -f1)"
+            echo "$name built $built reproduced $rebuilt"
+            if [ "$built" != "$rebuilt" ]; then status=1; fi
+          done < reproduced/SHA256SUMS
+          exit "$status"
       - name: Verify the exact release payload before signing
         working-directory: release-artifact
         run: |
