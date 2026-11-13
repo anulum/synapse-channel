@@ -378,6 +378,13 @@ async def test_unmark_reports_a_marker_it_may_not_remove_and_a_git_failure(
     no_answer = {MessageType.OPERATION_STATE: None}
     assert await _fake_run("unmark", no_answer, tmp_path / "3") == command.EXIT_NO_VERDICT
     capsys.readouterr()
+    silent = _state_reply("closed")
+    del silent["closed"]
+    unsaid = {MessageType.OPERATION_STATE: silent}
+    assert await _fake_run("unmark", unsaid, tmp_path / "4") == command.EXIT_REFUSED
+    assert capsys.readouterr().out == (
+        f"operation {scene.OPERATION} is not closed; the marker stays\n"
+    )
 
 
 def test_inputs_are_refused_before_the_hub_and_the_commands_dispatch(

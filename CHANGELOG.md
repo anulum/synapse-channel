@@ -55,9 +55,9 @@ execution evidence when carrying a release claim forward.
   creates the `sealed` marker first, so that the effect can never land. Each
   works as a ref transaction in the repository or as an atomic push with
   leases to a remote, and is read back before its result is named.
-  `synapse operation seal` uses them (below). The bounded Git runner with its deadline moved into
-  `git/git_runtime.py` and now takes standard input; the shared runner is
-  unchanged.
+  `synapse operation seal` uses them (above). The bounded Git runner with its
+  deadline moved into `git/git_runtime.py` and now takes standard input; the
+  shared runner is unchanged.
 - `synapse effect-suite run` runs version 0.1 of the effect-safety suite, cases
   1 to 4 in twenty-one variants, against this package's own stack. Each
   variant gets a throwaway Git repository and hub; the executor publishes only

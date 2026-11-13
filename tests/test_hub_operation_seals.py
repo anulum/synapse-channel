@@ -217,6 +217,7 @@ async def test_operation_state_answers_holders_only_and_journals_nothing(tmp_pat
                 await _opened(seats)
                 written = store.max_seq()
                 stranger = await _state(seats.stranger)
+                stranger_unknown = await _state(seats.stranger, operation_id="op-9")
                 checker = await _state(seats.checker)
                 recovery = await _state(seats.recovery)
                 elsewhere = await _state(seats.recovery, task_id="T2")
@@ -233,6 +234,11 @@ async def test_operation_state_answers_holders_only_and_journals_nothing(tmp_pat
         f"{STRANGER} holds neither operation-evidence nor operation-seal for {scene.TASK}",
     )
     assert "attempts" not in stranger and "closed" not in stranger
+    # An operation that does not exist reads the same to a stranger: no existence oracle.
+    assert (stranger_unknown["reason"], stranger_unknown["payload"]) == (
+        stranger["reason"],
+        stranger["payload"],
+    )
     assert checker["attempts"] == recovery["attempts"] and len(recovery["attempts"]) == 1
     assert (elsewhere["reason"], elsewhere["payload"]) == (
         "unknown_operation",
