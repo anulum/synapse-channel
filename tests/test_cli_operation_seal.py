@@ -48,10 +48,20 @@ def _repository(tmp_path: Path) -> tuple[Path, str, str]:
     git = git_executable()
     work = tmp_path / "system-of-record"
     work.mkdir(parents=True)
-    run_git(git, work, ["init", "-q"])
+    # The identity lives in the repository: a hosted runner has no global one.
+    for args in (
+        ["init", "-q"],
+        ["config", "user.name", "seal test"],
+        ["config", "user.email", "seal-test@example.invalid"],
+    ):
+        assert run_git(git, work, args).returncode == 0
     tree = run_git(git, work, ["write-tree"]).stdout.strip()
-    b = run_git(git, work, ["commit-tree", tree, "-m", "b"]).stdout.strip()
-    x = run_git(git, work, ["commit-tree", tree, "-p", b, "-m", "x"]).stdout.strip()
+    made = run_git(git, work, ["commit-tree", tree, "-m", "b"])
+    assert made.returncode == 0, made.stderr
+    b = made.stdout.strip()
+    child = run_git(git, work, ["commit-tree", tree, "-p", b, "-m", "x"])
+    assert child.returncode == 0, child.stderr
+    x = child.stdout.strip()
     run_git(git, work, ["update-ref", "refs/heads/main", b])
     return work, b, x
 

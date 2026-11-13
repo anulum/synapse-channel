@@ -77,12 +77,29 @@ class World:
         self.out(self.record, "update-ref", "refs/heads/main", commit)
 
 
+def _init(git: str, repository: Path, *options: str) -> None:
+    """Create a repository with its own committer identity.
+
+    A hosted runner has no global Git identity, so ``commit-tree`` would refuse
+    there; the identity is set in the repository itself, never globally.
+    """
+    for args in (
+        ["init", "-q", *options],
+        ["config", "user.name", "seal test"],
+        ["config", "user.email", "seal-test@example.invalid"],
+    ):
+        completed = run_git(git, repository, args)
+        assert completed.returncode == 0, completed.stderr
+
+
 def _commit(world_git: str, repository: Path, message: str, *parents: str) -> str:
     tree = run_git(world_git, repository, ["write-tree"]).stdout.strip()
     args = ["commit-tree", tree, "-m", message]
     for parent in parents:
         args += ["-p", parent]
-    return run_git(world_git, repository, args).stdout.strip()
+    completed = run_git(world_git, repository, args)
+    assert completed.returncode == 0, completed.stderr
+    return completed.stdout.strip()
 
 
 @pytest.fixture(params=["sha1-local", "sha1-remote", "sha256-local", "sha256-remote"])
@@ -91,12 +108,7 @@ def world(request: pytest.FixtureRequest, tmp_path: Path) -> World:
     git = git_executable()
     work = tmp_path / "work"
     work.mkdir()
-    for args in (
-        ["init", "-q", f"--object-format={fmt}"],
-        ["config", "user.name", "seal test"],
-        ["config", "user.email", "seal-test@example.invalid"],
-    ):
-        assert run_git(git, work, args).returncode == 0
+    _init(git, work, f"--object-format={fmt}")
     a = _commit(git, work, "a")
     b = _commit(git, work, "b", a)
     x = _commit(git, work, "x", b)
@@ -269,7 +281,7 @@ def test_an_observer_reads_every_state_of_an_attempt_in_the_repository(tmp_path:
     git = git_executable()
     work = tmp_path / "work"
     work.mkdir()
-    run_git(git, work, ["init", "-q"])
+    _init(git, work)
     b = _commit(git, work, "b")
     x = _commit(git, work, "x", b)
     y = _commit(git, work, "y", x)
@@ -381,7 +393,7 @@ def test_a_removal_git_refuses_leaves_the_marker_and_says_why(
     git = git_executable()
     work = tmp_path / "work"
     work.mkdir()
-    run_git(git, work, ["init", "-q"])
+    _init(git, work)
     b = _commit(git, work, "b")
     x = _commit(git, work, "x", b)
     run_git(git, work, ["update-ref", "refs/heads/main", b])
@@ -406,7 +418,7 @@ def test_a_removal_git_reports_but_never_made_is_read_back_as_not_removed(
     git = git_executable()
     work = tmp_path / "work"
     work.mkdir()
-    run_git(git, work, ["init", "-q"])
+    _init(git, work)
     b = _commit(git, work, "b")
     x = _commit(git, work, "x", b)
     run_git(git, work, ["update-ref", "refs/heads/main", b])
