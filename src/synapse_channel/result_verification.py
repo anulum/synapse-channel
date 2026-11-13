@@ -226,7 +226,13 @@ def _git(repo: Path, *args: str, timeout: float) -> subprocess.CompletedProcess[
 
 
 def remote_head(listing: str, branch: str) -> tuple[str, str]:
-    """Read the head of ``refs/heads/{branch}`` from ``git ls-remote`` output.
+    """Read the head of the exact ref ``refs/heads/{branch}`` from ``git ls-remote``.
+
+    ``git ls-remote`` matches a pattern at the tail of a ref after a ``/``, so
+    the listing may also contain another ref such as ``refs/heads/x/refs/heads/{branch}``.
+    That line is not this branch. The ids are taken by
+    :func:`synapse_channel.result_verification_attempt.listed_refs`, which keys
+    the exact ref and ignores every other name.
 
     Parameters
     ----------
@@ -238,18 +244,18 @@ def remote_head(listing: str, branch: str) -> tuple[str, str]:
     Returns
     -------
     tuple[str, str]
-        ``("found", oid)`` for exactly one line whose oid is 40 lower-case hex
-        and whose ref is exactly ``refs/heads/{branch}``; ``("absent", "")``
-        for empty output; ``("unrecognised", "")`` for anything else.
+        ``("found", oid)`` when ``refs/heads/{branch}`` is listed once with a
+        40-hex id; ``("absent", "")`` when that exact ref is not listed;
+        ``("unrecognised", "")`` when a line is not a tab-separated 40-hex
+        answer or the exact ref is listed twice.
     """
-    lines = [line for line in listing.splitlines() if line.strip()]
-    if not lines:
+    ref = f"refs/heads/{branch}"
+    found = listed_refs(listing, (ref,), 40)
+    if found is None:
+        return "unrecognised", ""
+    oid = found.get(ref)
+    if oid is None:
         return "absent", ""
-    if len(lines) != 1:
-        return "unrecognised", ""
-    oid, separator, ref = lines[0].partition("\t")
-    if not separator or ref != f"refs/heads/{branch}" or not _HEX40.fullmatch(oid):
-        return "unrecognised", ""
     return "found", oid
 
 
@@ -266,7 +272,9 @@ def verify_git_publication(
 ) -> ResultVerification:
     """Verify that ``commit`` is on ``branch`` of ``remote``.
 
-    The remote branch head is read with ``git ls-remote``. The result is
+    The remote branch head is read with ``git ls-remote`` and keyed as the
+    exact ref ``refs/heads/{branch}``. Another ref whose name only ends in
+    that pattern does not hide the branch or stand in for it. The result is
     verified when the head is the commit, or when the head is present locally
     and contains the commit. Nothing is fetched or pushed. When the head is
     not available locally, the result is ``not_checked``: fetch it, then

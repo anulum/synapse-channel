@@ -342,6 +342,10 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- The Git publication verifier keys `refs/heads/<branch>` exactly. A pushed
+  branch whose name only ends in that ref no longer makes the answer
+  unrecognised, and that decoy alone is an absent branch.
+
 - The cockpit's Findings panel derived its rows from the board's progress
   notes, whose kinds include no finding, so it could not show one; it now reads
   `/findings.json`. The activity spine found new progress notes by the length

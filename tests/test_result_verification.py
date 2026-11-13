@@ -508,7 +508,12 @@ def test_the_cli_reports_and_exits_by_result(
         (f"{'a' * 40}\trefs/heads/main\n", ("found", "a" * 40)),
         ("--upload-pack=id\trefs/heads/main\n", ("unrecognised", "")),
         (f"{'A' * 40}\trefs/heads/main\n", ("unrecognised", "")),
-        (f"{'a' * 40}\trefs/heads/main2\n", ("unrecognised", "")),
+        (f"{'a' * 40}\trefs/heads/main2\n", ("absent", "")),
+        (f"{'b' * 40}\trefs/heads/x/refs/heads/main\n", ("absent", "")),
+        (
+            f"{'b' * 40}\trefs/heads/x/refs/heads/main\n{'a' * 40}\trefs/heads/main\n",
+            ("found", "a" * 40),
+        ),
         (f"{'a' * 40} refs/heads/main\n", ("unrecognised", "")),
         (f"{'a' * 40}\trefs/heads/main\n{'b' * 40}\trefs/heads/main\n", ("unrecognised", "")),
     ],
@@ -516,7 +521,11 @@ def test_the_cli_reports_and_exits_by_result(
 def test_only_an_exact_remote_head_line_is_accepted(
     listing: str, expected: tuple[str, str]
 ) -> None:
-    """An option-shaped, uppercase, foreign-ref, untabbed or doubled answer is not a head."""
+    """An option-shaped, uppercase, untabbed or doubled answer is not a head.
+
+    A line for another ref, including one whose name merely ends in the asked
+    ref, is ignored. The exact ref is then absent rather than ambiguous.
+    """
     assert remote_head(listing, "main") == expected
 
 
@@ -554,16 +563,53 @@ def test_windows_does_not_check_through_a_final_link(tmp_path: Path) -> None:
     assert (refused.effect, refused.result) == ("unknown", "not_checked")
 
 
-def test_an_ambiguous_remote_answer_is_not_checked(published: tuple[Path, Path]) -> None:
-    """git matches ref patterns from the end, so a branch ending in the name doubles the answer."""
+def test_two_lines_for_the_exact_ref_are_not_checked(
+    published: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two answers for the exact ref stay a refusal."""
+    import synapse_channel.result_verification as verification
+
     work, _remote = published
     first = _git(work, "rev-parse", "HEAD")
-    _git(work, "push", "-q", "origin", "main:refs/heads/feature/refs/heads/main")
+    doubled = f"{first}\trefs/heads/main\n{'b' * 40}\trefs/heads/main\n"
+    original = verification._git
 
+    def listed(repo: Path, *args: str, timeout: float) -> subprocess.CompletedProcess[str]:
+        if args[:1] == ("ls-remote",):
+            return subprocess.CompletedProcess(args, 0, doubled, "")
+        return original(repo, *args, timeout=timeout)
+
+    monkeypatch.setattr(verification, "_git", listed)
+    assert listed(work, "rev-parse", "HEAD", timeout=10).returncode == 0
     verdict = verify_git_publication(work, "origin", "main", first, operation_id="op")
 
     assert (verdict.effect, verdict.result, verdict.observation) == (
         "unknown",
         "not_checked",
         "remote_answer_not_recognised",
+    )
+
+
+def test_a_suffix_decoy_branch_does_not_hide_or_invent_the_exact_ref(
+    published: tuple[Path, Path],
+) -> None:
+    """A branch named as a suffix of the asked ref is not that ref.
+
+    Beside the real branch the publication still verifies. With only the decoy
+    pushed, the asked branch is absent.
+    """
+    work, remote = published
+    first = _git(work, "rev-parse", "HEAD")
+    _git(work, "push", "-q", "origin", "main:refs/heads/x/refs/heads/main")
+
+    beside = verify_git_publication(work, "origin", "main", first, operation_id="op")
+    _git(remote, "symbolic-ref", "HEAD", "refs/heads/x/refs/heads/main")
+    _git(work, "push", "-q", "origin", ":refs/heads/main")
+    alone = verify_git_publication(work, "origin", "main", first, operation_id="op")
+
+    assert (beside.result, beside.observation) == ("verified", "remote_head_is_the_commit")
+    assert (alone.effect, alone.result, alone.observation) == (
+        "absent",
+        "not_verified",
+        "branch_absent_on_remote",
     )
