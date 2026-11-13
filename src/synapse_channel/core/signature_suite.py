@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import importlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -82,7 +83,7 @@ class SignatureSuiteError(SynapseError, ValueError):
 
 def _require_cryptography() -> None:
     try:
-        import cryptography  # noqa: F401 - the import is the availability check
+        importlib.import_module("cryptography")
     except ImportError as exc:
         raise SignatureSuiteError(NEEDS_CRYPTOGRAPHY) from exc
 

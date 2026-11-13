@@ -164,6 +164,20 @@ def test_the_import_probe_reports_a_backend_without_ml_dsa(
     assert signature_suite._probe_ml_dsa() is False
 
 
+def test_the_probe_treats_a_rejected_seed_as_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A backend that imports, then refuses the seed, is recorded as unavailable."""
+    from cryptography.exceptions import UnsupportedAlgorithm
+    from cryptography.hazmat.primitives.asymmetric import mldsa
+
+    def refuse(_seed: bytes) -> None:
+        raise UnsupportedAlgorithm("ML-DSA is not supported by this backend")
+
+    monkeypatch.setattr(mldsa.MLDSA65PrivateKey, "from_seed_bytes", refuse)
+    assert signature_suite._probe_ml_dsa() is False
+
+
 @requires_posix_mode_bits
 def test_a_key_file_loads_only_owner_only_and_only_for_its_suite(tmp_path: Path) -> None:
     key = generate_key(SUITE_HYBRID)
