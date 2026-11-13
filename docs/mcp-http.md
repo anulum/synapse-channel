@@ -100,6 +100,11 @@ The read defaults are `synapse_board`, `synapse_state`, `synapse_manifest`,
 `synapse_directory` and `synapse_status`. Two further reads are served only to
 a grant that names them: `synapse_inbox_page` and `synapse_owned_work`, each
 under `synapse:read` (see [the seat's own inbox and work](#the-seats-own-inbox-and-work)).
+Every one of these reads refuses an argument that is not in its own list,
+before the hub is asked. The five defaults accept no caller arguments.
+`synapse_inbox_page` accepts only `hub_id`, `after_seq` and `limit`.
+`synapse_owned_work` accepts only `mode`, `hub_id`, `after_key`, `revision`,
+`limit`, `key`, `item_version`, `offset`, `digest` and `limit_chars`.
 The consuming `synapse_inbox` tool is not offered over HTTP, because a lost
 reply must not advance a cursor on the server. To admit a mutation, add its exact
 tool to the provisioned grant and issue a token with `synapse:mutate`. Supported

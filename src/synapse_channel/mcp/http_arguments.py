@@ -19,7 +19,13 @@ _BOARD = TypeAdapter(dict[str, Any])
 _TASKS = TypeAdapter(list[dict[str, Any]])
 
 
+_NO_CALLER_ARGUMENTS: frozenset[str] = frozenset()
 _READ_ARGUMENTS = {
+    "synapse_board": _NO_CALLER_ARGUMENTS,
+    "synapse_directory": _NO_CALLER_ARGUMENTS,
+    "synapse_manifest": _NO_CALLER_ARGUMENTS,
+    "synapse_state": _NO_CALLER_ARGUMENTS,
+    "synapse_status": _NO_CALLER_ARGUMENTS,
     "synapse_inbox_page": frozenset({"hub_id", "after_seq", "limit"}),
     "synapse_owned_work": frozenset(
         {
@@ -39,7 +45,11 @@ _READ_ARGUMENTS = {
 
 
 def authorize_read_arguments(name: str, arguments: dict[str, Any]) -> None:
-    """Refuse hidden selectors before the SDK can ignore unregistered arguments."""
+    """Refuse a read argument that is not in that tool's own list.
+
+    The SDK would otherwise ignore an argument the tool does not declare.
+    A name that is not a remote read is left to the mutation checks.
+    """
     allowed = _READ_ARGUMENTS.get(name)
     if allowed is not None and not arguments.keys() <= allowed:
         raise PermissionError("remote MCP read arguments denied")
