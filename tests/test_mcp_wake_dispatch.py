@@ -13,6 +13,7 @@ import asyncio
 import base64
 import hmac
 import json
+import socket
 import ssl
 import subprocess
 import sys
@@ -45,6 +46,9 @@ class _Receiver:
         self.drop = 0
         self.stall = False
         self.requests: list[tuple[str, bytes]] = []
+        self.methods: list[str] = []
+        self.paths: list[str] = []
+        self.location = ""
         self.effects: dict[str, bytes] = {}
         self.signatures: list[str] = []
         self.seen = threading.Event()
@@ -67,6 +71,8 @@ class _Receiver:
                 )
                 valid = valid and timestamp.isdecimal() and abs(int(timestamp) - time.time()) <= 300
                 owner.requests.append((identifier, body))
+                owner.methods.append(self.command)
+                owner.paths.append(self.path)
                 owner.signatures.append(signature)
                 owner.seen.set()
                 if owner.stall:
@@ -74,6 +80,8 @@ class _Receiver:
                     self.close_connection = True
                     return
                 status = owner.status if valid else 401
+                if owner.location and self.path == "/landed":
+                    status = 200
                 if 200 <= status <= 299:
                     owner.effects.setdefault(identifier, body)
                 if owner.drop:
@@ -81,6 +89,8 @@ class _Receiver:
                     self.close_connection = True
                     return
                 self.send_response(status)
+                if owner.location and 300 <= status <= 399:
+                    self.send_header("Location", owner.location)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
 
@@ -207,6 +217,82 @@ async def test_actual_receiver_status_classifies_transport(
         result = await deliver_pointer(endpoint, attempt)
         assert result == WakeHttpResult(outcome, status if status < 600 else 0)
         assert len(receiver.requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [301, 302, 303])
+async def test_a_refused_redirect_is_rejected_with_the_receiver_status(
+    tmp_path: Path, status: int
+) -> None:
+    """A 301, 302 or 303 is one signed POST and a permanent rejection.
+
+    The transport does not follow the redirect or turn the POST into a GET.
+    The receipt keeps the status the receiver sent.
+    """
+    _, attempt = _ledger(tmp_path / "ledger")
+    with _Receiver(tmp_path, tls=False) as receiver:
+        endpoint = receiver.endpoint(tmp_path / "secret")
+        receiver.status = status
+        receiver.location = endpoint.url.rsplit("/", 1)[0] + "/landed"
+        result = await deliver_pointer(endpoint, attempt)
+
+        assert result == WakeHttpResult("rejected", status)
+        assert receiver.methods == ["POST"]
+        assert receiver.paths == ["/wake"]
+        assert len(receiver.requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [307, 308])
+async def test_a_same_origin_redirect_repeats_the_signed_post(tmp_path: Path, status: int) -> None:
+    """307 and 308 still carry the signed POST to the same origin."""
+    _, attempt = _ledger(tmp_path / "ledger")
+    with _Receiver(tmp_path, tls=False) as receiver:
+        endpoint = receiver.endpoint(tmp_path / "secret")
+        receiver.status = status
+        receiver.location = endpoint.url.rsplit("/", 1)[0] + "/landed"
+        result = await deliver_pointer(endpoint, attempt)
+
+        assert result == WakeHttpResult("accepted", 200)
+        assert receiver.methods == ["POST", "POST"]
+        assert receiver.paths == ["/wake", "/landed"]
+        assert [body for _identifier, body in receiver.requests] == [attempt.body, attempt.body]
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_port_stays_a_retry(tmp_path: Path) -> None:
+    """A closed port is still status 0 and the retry class."""
+    _, attempt = _ledger(tmp_path / "ledger")
+    with _Receiver(tmp_path, tls=False) as receiver:
+        endpoint = receiver.endpoint(tmp_path / "secret")
+        probe = socket.socket()
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        unreachable = WakeEndpoint(
+            url=f"http://127.0.0.1:{port}/wake",
+            signing_key_file=endpoint.signing_key_file,
+            allow_local=True,
+        )
+        result = await deliver_pointer(unreachable, attempt)
+
+        assert result == WakeHttpResult("retry", 0)
+        assert receiver.requests == []
+
+
+def test_a_cross_origin_redirect_refusal_stays_zero(tmp_path: Path) -> None:
+    """A refused redirect other than 301, 302 or 303 is still status 0."""
+    _, attempt = _ledger(tmp_path / "ledger")
+    with _Receiver(tmp_path, tls=False) as receiver:
+        endpoint = receiver.endpoint(tmp_path / "secret")
+        receiver.status = 307
+        receiver.location = "http://127.0.0.1:9/other"
+        request = WakeHttpRequest(
+            endpoint=endpoint, delivery_id=attempt.delivery_id, body=attempt.body.decode()
+        )
+        assert send_signed_pointer(request) == 0
+        assert receiver.methods == ["POST"]
+        assert receiver.paths == ["/wake"]
 
 
 @pytest.mark.asyncio

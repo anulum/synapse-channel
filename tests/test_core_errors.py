@@ -31,6 +31,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 from typing import get_args
+from urllib.error import URLError
 
 import pytest
 
@@ -633,6 +634,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     ),
     "PrivateDirError": ("synapse_channel.core.private_dir", "private_dir", ValueError),
     "ReceiptSigningError": ("synapse_channel.core.receipt_signing", "receipt_signing", ValueError),
+    "RedirectRefusedError": (
+        "synapse_channel.safe_webhook_transport",
+        "redirect_refused",
+        URLError,
+    ),
     "RelayTransportError": (
         "synapse_channel.core.operator_relay_transport",
         "relay_transport",

@@ -401,6 +401,72 @@ def test_redirect_discards_body_before_following() -> None:
     assert endpoint.followed.is_set()
 
 
+@pytest.mark.parametrize(
+    ("kind", "status", "reason"),
+    [
+        ("downgrade", 307, transport.REDIRECT_DOWNGRADE_ERROR),
+        ("cross-origin", 307, transport.AUTH_REDIRECT_ORIGIN_ERROR),
+        ("signed-post", 301, transport.AUTH_REDIRECT_STATUS_ERROR),
+        ("signed-post", 302, transport.AUTH_REDIRECT_STATUS_ERROR),
+        ("signed-post", 303, transport.AUTH_REDIRECT_STATUS_ERROR),
+        ("limit", 307, transport.REDIRECT_LIMIT_ERROR),
+    ],
+)
+def test_each_redirect_refusal_keeps_its_status_and_reason(
+    tmp_path: Path, kind: str, status: int, reason: str
+) -> None:
+    """A refused redirect carries the receiver status and the existing reason text."""
+    certfile: Path | None = None
+    keyfile: Path | None = None
+    ca_file: str | None = None
+    headers: dict[str, str] = {"Webhook-Signature": "v1,test-only-signature"}
+    location = "/final"
+    always_redirect = False
+    if kind == "downgrade":
+        certfile, keyfile = _localhost_cert(tmp_path)
+        ca_file = str(certfile)
+        headers = {"Authorization": "Bearer test-only-secret"}
+    elif kind == "cross-origin":
+        headers = {"Authorization": "Bearer test-only-secret"}
+    elif kind == "limit":
+        headers = {"Authorization": "Bearer test-only-secret"}
+        location = "/loop"
+        always_redirect = True
+
+    def open_refused(proxy: _Redirect) -> None:
+        opener = transport.build_safe_opener(allow_local=True, ca_file=ca_file)
+        request = Request(
+            f"{proxy.url}/start",
+            data=b"{}",
+            headers=headers,
+            method="POST",
+        )
+        with pytest.raises(transport.RedirectRefusedError, match=reason) as caught:
+            opener.open(request, timeout=2.0)
+        assert caught.value.status == status
+        assert caught.value.reason == reason
+        assert isinstance(caught.value, URLError)
+
+    if kind == "downgrade":
+        with _Receiver() as receiver:
+            with _Redirect(
+                location=f"{receiver.url}/downgraded",
+                code=status,
+                certfile=certfile,
+                keyfile=keyfile,
+            ) as proxy:
+                open_refused(proxy)
+            assert receiver.paths == []
+    elif kind == "cross-origin":
+        with _Receiver() as receiver:
+            with _Redirect(location=f"{receiver.url}/final", code=status) as proxy:
+                open_refused(proxy)
+            assert receiver.paths == []
+    else:
+        with _Redirect(location=location, code=status, always_redirect=always_redirect) as proxy:
+            open_refused(proxy)
+
+
 def test_redirect_chain_limit_is_explicit_and_bounded() -> None:
     with _Redirect(location="/loop", code=307, always_redirect=True) as endpoint:
         opener = transport.build_safe_opener(allow_local=True)

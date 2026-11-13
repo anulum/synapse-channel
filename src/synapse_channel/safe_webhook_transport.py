@@ -37,6 +37,7 @@ from typing import IO
 from urllib.error import URLError
 from urllib.parse import urljoin, urlparse
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.http_authority import normalise_url_origin
 
 LOCAL_TARGET_ERROR = "pushNotificationConfig.webhookUrl must not target local networks"
@@ -58,6 +59,37 @@ AUTH_REDIRECT_STATUS_ERROR = "authenticated webhook redirects require status 307
 AUTH_REDIRECT_ORIGIN_ERROR = "sensitive webhook headers must not cross origins"
 REDIRECT_TARGET_ERROR = "webhook redirect target must identify one exact HTTP(S) origin"
 REDIRECT_LIMIT_ERROR = "webhook redirect limit exceeded"
+
+
+class RedirectRefusedError(SynapseError, URLError):
+    """A redirect the safe opener refused, carrying the receiver's status.
+
+    The reason text is the policy sentence this opener has always raised.
+    Callers that catch :class:`~urllib.error.URLError` still receive this
+    refusal. ``status`` is read-only.
+
+    The class also joins the package taxonomy so a boundary can classify it
+    without reading the reason text.
+
+    Parameters
+    ----------
+    reason : str or BaseException
+        The existing policy sentence. It is not rewritten.
+    status : int
+        HTTP status of the redirect that was refused.
+    """
+
+    code = "redirect_refused"
+
+    def __init__(self, reason: str | BaseException, *, status: int) -> None:
+        """Store the unchanged reason and the receiver status."""
+        super().__init__(reason)
+        self._status = status
+
+    @property
+    def status(self) -> int:
+        """Return the HTTP status of the refused redirect."""
+        return self._status
 
 
 def is_public_address(raw_address: str) -> bool:
@@ -294,13 +326,15 @@ class _SafePinnedRedirectHandler(urllib.request.HTTPRedirectHandler):
 
         A refused redirect closes its response, and with it the socket, before
         the refusal is raised; otherwise the socket stays open until the
-        garbage collector finds the refusal's traceback.
+        garbage collector finds the refusal's traceback. The refusal is a
+        :class:`RedirectRefusedError`: still a :class:`~urllib.error.URLError`,
+        with the same reason text and the receiver status attached.
         """
         try:
             return self._checked_redirect(req, fp, code, msg, headers, newurl)
-        except URLError:
+        except URLError as exc:
             fp.close()
-            raise
+            raise RedirectRefusedError(exc.reason, status=code) from exc
 
     def _checked_redirect(
         self,

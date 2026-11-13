@@ -414,6 +414,22 @@ calls `synapse_inbox`. Its retained inbox cursor is a separate boundary;
 mailbox-pending counts and transport receipts do not establish provider reading
 or action.
 
+### Signed pointer receipts
+
+A signed wake pointer records one of three transport classes. None of them
+proves that a model read the inbox.
+
+| Class | When | What happens next |
+| --- | --- | --- |
+| `accepted` | The receiver answers 2xx. | The attempt stops. This is transport acceptance only. |
+| `retry` | Status 0 (the receiver was not reached), 408, 425, 429, or 5xx. | The same URL may be tried again. |
+| `rejected` | Any other final status, including 301, 302 and 303. | Permanent. The receiver's address needs the operator. Retrying the same URL repeats the same answer. |
+
+The transport never follows 301, 302 or 303 for a signed POST, and it does not
+turn that POST into a GET. Those answers are recorded as the status the
+receiver sent, not as status 0. Same-origin 307 and 308 still repeat the
+signed POST.
+
 ## Resources
 
 Four read-only resources let an agent pull live coordination context without

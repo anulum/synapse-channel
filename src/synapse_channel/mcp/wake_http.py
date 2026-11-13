@@ -33,7 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from synapse_channel.core.http_authority import normalise_url_origin
 from synapse_channel.core.secret_files import read_secret_file
 from synapse_channel.mcp.wake_pointer import MAX_WAKE_BODY_BYTES
-from synapse_channel.safe_webhook_transport import build_safe_opener
+from synapse_channel.safe_webhook_transport import RedirectRefusedError, build_safe_opener
 
 MAX_WAKE_INPUT_BYTES = 65536
 """Maximum private pipe input, including endpoint paths and exact pointer body."""
@@ -89,6 +89,13 @@ class WakeHttpRequest(BaseModel):
 def send_signed_pointer(request: WakeHttpRequest) -> int:
     """Read the current key and return HTTP acceptance status for exact body bytes.
 
+    A receiver that answers 301, 302 or 303 is not followed: the safe opener
+    still refuses to turn the signed POST into a GET and raises
+    :class:`~synapse_channel.safe_webhook_transport.RedirectRefusedError`.
+    That answer is returned as the receiver's status, not as zero. Any other
+    refused redirect, and an unreachable port, stay zero. Retrying a 301, 302
+    or 303 repeats the same answer; the receiver's address needs the operator.
+
     Parameters
     ----------
     request : WakeHttpRequest
@@ -98,7 +105,8 @@ def send_signed_pointer(request: WakeHttpRequest) -> int:
     Returns
     -------
     int
-        Actual HTTP status, or zero for local/network/signing refusal. Receiver
+        Actual HTTP status, including a refused 301, 302 or 303, or zero for
+        local/network/signing refusal and any other redirect refusal. Receiver
         content is never read, retained or returned. A 2xx is transport
         acceptance only; it does not establish processing or business effect.
     """
@@ -135,6 +143,10 @@ def send_signed_pointer(request: WakeHttpRequest) -> int:
         status = response.code
         response.close()
         return status
+    except RedirectRefusedError as refusal:
+        if refusal.status in {301, 302, 303}:
+            return refusal.status
+        return 0
     except (OSError, ValueError, URLError):
         return 0
 

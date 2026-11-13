@@ -24,16 +24,29 @@ WAKE_ATTEMPT_SECONDS = 8.0
 
 @dataclass(frozen=True)
 class WakeHttpResult:
-    """Separate retry, permanent refusal and asynchronous HTTP acceptance."""
+    """Separate retry, permanent refusal and asynchronous HTTP acceptance.
+
+    A 3xx is a permanent refusal. The receiver's address needs the operator;
+    retrying the same URL repeats the same answer.
+    """
 
     outcome: Literal["accepted", "retry", "rejected"]
     http_status: int
 
 
 def _result(status: int) -> WakeHttpResult:
-    """Classify bounded transport status without claiming a business outcome."""
+    """Classify bounded transport status without claiming a business outcome.
+
+    ``accepted`` is a 2xx transport acceptance. ``retry`` is status 0, 408,
+    425, 429 or any 5xx: the same URL may be tried again. ``rejected`` is
+    permanent. A 3xx, including 301, 302 and 303 that the sender recorded
+    after refusing to follow them, is rejected. Every other final status is
+    rejected too.
+    """
     if 200 <= status <= 299:
         return WakeHttpResult("accepted", status)
+    if 300 <= status <= 399:
+        return WakeHttpResult("rejected", status)
     if status == 0 or status in {408, 425, 429} or status >= 500:
         return WakeHttpResult("retry", status)
     return WakeHttpResult("rejected", status)
@@ -83,7 +96,10 @@ async def deliver_pointer(
     -------
     WakeHttpResult
         Safe transport classification and status. Timeout or unavailable child
-        is retryable. Cancellation propagates after the owned child is reaped.
+        is retryable. A 3xx, including a refused 301, 302 or 303, is rejected:
+        the receiver's address needs the operator, and retrying the same URL
+        repeats the same answer. Cancellation propagates after the owned child
+        is reaped.
 
     Raises
     ------

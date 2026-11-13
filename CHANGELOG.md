@@ -357,6 +357,11 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- A signed wake answered with 301, 302 or 303 keeps that status and is
+  rejected. It is no longer stored as status 0, so it is not retried as
+  though the receiver were unreachable. The transport still does not follow
+  that redirect.
+
 - The Git publication verifier keys `refs/heads/<branch>` exactly. A pushed
   branch whose name only ends in that ref no longer makes the answer
   unrecognised, and that decoy alone is an absent branch.
