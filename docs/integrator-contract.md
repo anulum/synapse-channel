@@ -175,10 +175,27 @@ command again records it.
 
 The seal ends the attempt; it does not reconcile it. A further attempt still
 needs a new approval and an observation of the effect published by another
-identity (step 5). Sealing needs `operation-seal` on the task, which no
-identity holds unless a rule grants it: grant it to a recovery or custody role
-that is neither the executor nor the approver. Once the operation is closed,
-`unmark` removes an attempt's `applied` marker and never a `sealed` one:
+identity (step 5). That observation reads the attempt's marker beside the
+branch:
+
+```bash
+synapse verify-result git --repo repo --remote origin --branch main --commit <declared revision> \
+  --operation-id op-1 --attempt-id <attempt id> --intent-sha256 <hex> --base <declared base commit> \
+  > verification.json
+synapse operation verification --task T --name C/checker verification.json
+```
+
+A sealed attempt reads `attempt_sealed_never_lands` (effect `absent`), which
+reconciles it; the operation stays open for a new approval. A revision found on
+the branch with no marker reads `published_outside_the_protocol` (effect
+`observed`, result `not_checked`): it reconciles an ended attempt but closes
+nothing, so an operator decides that operation, and a new attempt opened after
+it ends `base_gone` at its compare-and-swap, so no second effect can land.
+
+Sealing needs `operation-seal` on the task, which no identity holds unless a
+rule grants it: grant it to a recovery or custody role that is neither the
+executor nor the approver. Once the operation is closed, `unmark` removes an
+attempt's `applied` marker and never a `sealed` one:
 
 ```bash
 synapse operation unmark --task T --name R/recovery --operation-id op-1 \

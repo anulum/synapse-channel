@@ -1511,6 +1511,25 @@ exact object; it MUST NOT remove a `sealed` marker.
 **Pinned by.** `tests/test_cli_operation_seal.py`,
 `tests/test_git_attempt_marker_changes.py`.
 
+### INV-OA-9 — a Git verification with an attempt reads its marker beside the branch
+
+**Normative.** A `git_publication` verification given an attempt MUST read the
+branch and the attempt's marker in one listing and MUST key that listing by the
+exact ref names, ignoring other refs; a malformed line MUST make the result
+`not_checked`. The result MUST be `verified` only when the branch is the
+requested commit or contains it and the marker holds this attempt's `applied`
+blob. A `sealed` marker MUST read as an absent effect, not verified. The
+requested commit on the branch with no marker MUST read as an observed effect
+that is not checked, so it reconciles an ended attempt (INV-OA-5) and closes
+nothing. An ancestry that cannot be read in the local repository MUST NOT be
+guessed. Without an attempt the verification MUST be unchanged.
+
+**Implementation.** `result_verification.py:verify_git_publication`,
+`result_verification_attempt.py`, with the reading of
+`core/attempt_markers.py:observation`.
+
+**Pinned by.** `tests/test_result_verification_attempt.py`.
+
 ## Normative constants
 
 These values are part of the contract. The drift guard

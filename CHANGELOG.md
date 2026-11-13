@@ -20,6 +20,21 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- `synapse verify-result git` reads an attempt's marker: with `--attempt-id`,
+  `--intent-sha256` and `--base` (all three or none; in Python the keyword
+  `attempt=AttemptCheck(...)` of `verify_git_publication`) the same
+  `git ls-remote` lists the branch and `refs/synapse/attempts/<attempt id>`,
+  keyed by the exact ref names, so a ref whose name ends in the same pattern
+  changes nothing. The candidate present over the attempt's `applied` marker
+  is verified; an `applied` marker on a branch that moved away and a `sealed`
+  marker are an absent effect; the base with no marker may still land; the
+  candidate with no marker is `published_outside_the_protocol`, observed and
+  not checked, so it reconciles an ended attempt and leaves the operation to
+  an operator; anything else, and an ancestry that cannot be read locally, is
+  unknown. The commit and base may then be SHA-256 object ids. A seal followed
+  by such a verification from another identity now lets a new approval open a
+  fresh attempt. Without the options the record is unchanged. See
+  `docs/execution-outcomes.md` and `docs/coordination-spec.md` (INV-OA-9).
 - `synapse operation seal` ends an attempt whose executor fell silent, for
   certain. On one connection it asks the hub for the attempt's state and stops
   unless it is open, writes the attempt's `sealed` marker in the repository (or

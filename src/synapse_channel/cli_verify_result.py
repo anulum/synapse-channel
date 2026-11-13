@@ -12,6 +12,8 @@ exits 0 when the result is verified, 1 when it is not, 3 when the verifier
 could not decide, and 2 on unusable input. ``--outcome`` reads the boundary
 state and operation identity from an execution-outcome report, so a worker
 that exited 0 next to a wrong or absent effect is shown as exactly that.
+``git`` with ``--attempt-id``, ``--intent-sha256`` and ``--base`` also reads
+that attempt's marker beside the branch.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from synapse_channel.result_verification import (
     verify_file_change,
     verify_git_publication,
 )
+from synapse_channel.result_verification_attempt import AttemptCheck
 from synapse_channel.result_verification_effects import (
     schema_digest,
     verify_deployment,
@@ -69,7 +72,18 @@ def _file(args: argparse.Namespace) -> int:
     )
 
 
+def _attempt(args: argparse.Namespace) -> AttemptCheck | None:
+    """Return the attempt the options name, ``None`` for none, or refuse a partial set."""
+    given = (args.attempt_id, args.intent_sha256, args.base)
+    if not any(given):
+        return None
+    if not all(given):
+        raise ValueError("give --attempt-id, --intent-sha256 and --base together, or none of them")
+    return AttemptCheck(args.attempt_id, args.intent_sha256, args.base)
+
+
 def _git(args: argparse.Namespace) -> int:
+    attempt = _attempt(args)
     operation_id, communication = _identity(args)
     return _report(
         verify_git_publication(
@@ -80,6 +94,7 @@ def _git(args: argparse.Namespace) -> int:
             operation_id=operation_id,
             communication=communication,
             timeout=args.timeout,
+            attempt=attempt,
         )
     )
 
@@ -133,6 +148,27 @@ def _common(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(func=_command)
 
 
+def _add_git_parser(nested: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register ``verify-result git``, with the optional attempt whose marker it also reads."""
+    git_parser = nested.add_parser("git", help="Verify that a commit is on a remote branch.")
+    git_parser.add_argument("--repo", type=Path, default=Path("."), help="Local repository.")
+    git_parser.add_argument("--remote", required=True, help="Remote name or URL.")
+    git_parser.add_argument("--branch", required=True, help="Branch on the remote.")
+    git_parser.add_argument(
+        "--commit",
+        required=True,
+        help="Full commit identity: 40 hex, or 64 in a SHA-256 repository with --attempt-id.",
+    )
+    git_parser.add_argument("--timeout", type=float, default=60.0, help="Seconds per git call.")
+    git_parser.add_argument(
+        "--attempt-id", help="Also read this attempt's marker beside the branch."
+    )
+    git_parser.add_argument("--intent-sha256", help="The digest of the operation's intent.")
+    git_parser.add_argument("--base", help="The commit the attempt's effect starts from.")
+    git_parser.set_defaults(verify=_git)
+    _common(git_parser)
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register ``verify-result`` with file, git, deployment and migration.
 
@@ -156,14 +192,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     file_parser.set_defaults(verify=_file)
     _common(file_parser)
 
-    git_parser = nested.add_parser("git", help="Verify that a commit is on a remote branch.")
-    git_parser.add_argument("--repo", type=Path, default=Path("."), help="Local repository.")
-    git_parser.add_argument("--remote", required=True, help="Remote name or URL.")
-    git_parser.add_argument("--branch", required=True, help="Branch on the remote.")
-    git_parser.add_argument("--commit", required=True, help="Full 40-hex commit identity.")
-    git_parser.add_argument("--timeout", type=float, default=60.0, help="Seconds per git call.")
-    git_parser.set_defaults(verify=_git)
-    _common(git_parser)
+    _add_git_parser(nested)
 
     deployment_parser = nested.add_parser(
         "deployment",

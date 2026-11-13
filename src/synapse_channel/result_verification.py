@@ -29,6 +29,9 @@ Two verifiers are provided here:
 * :func:`verify_file_change` checks a file's exact content by SHA-256 and can
   also run the change's own tests.
 * :func:`verify_git_publication` checks that a commit is on a remote branch.
+  Given an :class:`~synapse_channel.result_verification_attempt.AttemptCheck`,
+  it also reads that attempt's marker in the same ``git ls-remote`` and
+  answers by the attempt's reading (applied, sealed, absent or foreign).
 
 Deployment and database-migration checks live in
 :mod:`synapse_channel.result_verification_effects`. They only read as well.
@@ -48,6 +51,7 @@ import subprocess  # nosec B404 # explicit argv only, never a shell
 from collections.abc import Sequence
 from pathlib import Path
 
+from synapse_channel.core.attempt_markers import OBJECT_ID_LENGTHS, observation
 from synapse_channel.core.result_verification_record import EFFECTS as EFFECTS
 from synapse_channel.core.result_verification_record import RESULTS as RESULTS
 from synapse_channel.core.result_verification_record import SCHEMA as SCHEMA
@@ -59,6 +63,12 @@ from synapse_channel.core.result_verification_record import (
 )
 from synapse_channel.core.secure_path import open_nofollow_leaf
 from synapse_channel.execution_outcome import OUTCOME_SCHEMA, OutcomeState
+from synapse_channel.result_verification_attempt import (
+    ATTEMPT_ROWS,
+    AttemptCheck,
+    identifier_length,
+    listed_refs,
+)
 
 _HEX40 = re.compile(r"[0-9a-f]{40}")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
@@ -252,6 +262,7 @@ def verify_git_publication(
     operation_id: str,
     communication: str = "not_supplied",
     timeout: float = 60.0,
+    attempt: AttemptCheck | None = None,
 ) -> ResultVerification:
     """Verify that ``commit`` is on ``branch`` of ``remote``.
 
@@ -260,6 +271,12 @@ def verify_git_publication(
     and contains the commit. Nothing is fetched or pushed. When the head is
     not available locally, the result is ``not_checked``: fetch it, then
     verify again.
+
+    With ``attempt``, the same listing also reads the attempt's marker, and the
+    record follows the attempt's reading
+    (:data:`~synapse_channel.result_verification_attempt.ATTEMPT_ROWS`); the
+    commit and base may then be of a SHA-256 repository. Without it the record
+    is exactly what it was before attempts existed.
 
     Parameters
     ----------
@@ -277,23 +294,29 @@ def verify_git_publication(
         The boundary state from the outcome report, or ``not_supplied``.
     timeout : float, optional
         Seconds each git call may take.
+    attempt : AttemptCheck or None, optional
+        The attempt whose marker is read beside the branch.
 
     Returns
     -------
     ResultVerification
-        ``verified`` only when the remote branch contains the commit.
+        ``verified`` only when the remote branch contains the commit, and, with
+        ``attempt``, only over that attempt's ``applied`` marker.
 
     Raises
     ------
     ValueError
-        On a malformed commit, branch or remote, or a non-positive timeout.
+        On a malformed commit, base, branch, remote or attempt identifier, a
+        non-positive timeout, or, with ``attempt``, a commit and base not of the
+        repository's object format.
     """
+    if attempt is not None:
+        return _verify_attempt(
+            repo, remote, branch, commit, attempt, operation_id, communication, timeout
+        )
     if not _HEX40.fullmatch(commit):
         raise ValueError("the commit is a full 40-hex identity")
-    if not _BRANCH.fullmatch(branch) or ".." in branch or not remote or remote.startswith("-"):
-        raise ValueError("the branch or remote is not a plain name")
-    if not 0.0 < timeout < float("inf"):
-        raise ValueError("the git timeout is a positive, finite number of seconds")
+    _check_target(branch, remote, timeout)
     evidence = {"remote": remote, "branch": branch, "requested_commit": commit}
 
     def record(effect: str, result: str, observation: str) -> ResultVerification:
@@ -326,3 +349,83 @@ def verify_git_publication(
     if contained.returncode == 1:
         return record("observed", "not_verified", "remote_head_does_not_contain_the_commit")
     return record("observed", "not_checked", "commit_not_available_locally")
+
+
+def _check_target(branch: str, remote: str, timeout: float) -> None:
+    """Refuse a branch or remote that is not a plain name, and an unusable timeout."""
+    if not _BRANCH.fullmatch(branch) or ".." in branch or not remote or remote.startswith("-"):
+        raise ValueError("the branch or remote is not a plain name")
+    if not 0.0 < timeout < float("inf"):
+        raise ValueError("the git timeout is a positive, finite number of seconds")
+
+
+def _contains(repo: Path, head: str | None, commit: str, timeout: float) -> bool | None:
+    """Return whether ``head`` contains ``commit``; ``None`` when it cannot be read here."""
+    if head is None:
+        return False
+    if head == commit:
+        return True
+    if _git(repo, "cat-file", "-e", f"{head}^{{commit}}", timeout=timeout).returncode != 0:
+        return None
+    contained = _git(repo, "merge-base", "--is-ancestor", commit, head, timeout=timeout)
+    return {0: True, 1: False}.get(contained.returncode)
+
+
+def _verify_attempt(
+    repo: Path,
+    remote: str,
+    branch: str,
+    commit: str,
+    attempt: AttemptCheck,
+    operation_id: str,
+    communication: str,
+    timeout: float,
+) -> ResultVerification:
+    """Verify a publication by the reading of its attempt's branch and marker."""
+    length = identifier_length(commit, attempt.base)
+    marker = attempt.marker(operation_id)
+    _check_target(branch, remote, timeout)
+    branch_ref = f"refs/heads/{branch}"
+    evidence = {
+        "remote": remote,
+        "branch": branch,
+        "requested_commit": commit,
+        "base": attempt.base,
+        "attempt_id": attempt.attempt_id,
+        "marker_ref": marker.ref,
+    }
+
+    def record(effect: str, result: str, observed: str) -> ResultVerification:
+        return ResultVerification(
+            operation_id, "git_publication", communication, effect, result, observed, evidence
+        )
+
+    try:
+        shown = _git(repo, "rev-parse", "--show-object-format", timeout=timeout)
+        listed = _git(repo, "ls-remote", "--", remote, branch_ref, marker.ref, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return record("unknown", "not_checked", "remote_not_reachable")
+    object_format = shown.stdout.strip()
+    if shown.returncode != 0 or object_format not in OBJECT_ID_LENGTHS:
+        return record("unknown", "not_checked", "object_format_not_read")
+    if OBJECT_ID_LENGTHS[object_format] != length:
+        raise ValueError(f"the commit and the base are not {object_format} object ids")
+    evidence["object_format"] = object_format
+    if listed.returncode != 0:
+        return record("unknown", "not_checked", "remote_not_reachable")
+    refs = listed_refs(listed.stdout, (branch_ref, marker.ref), length)
+    if refs is None:
+        return record("unknown", "not_checked", "remote_answer_not_recognised")
+    head, marker_id = refs.get(branch_ref), refs.get(marker.ref)
+    evidence["marker_object"] = marker_id or ""
+    if head is not None:
+        evidence["remote_head"] = head
+    reading = observation(
+        branch=head,
+        marker=marker_id,
+        objects=marker.objects(object_format),
+        base=attempt.base,
+        candidate=commit,
+        contains_candidate=_contains(repo, head, commit, timeout),
+    )
+    return record(*ATTEMPT_ROWS[reading])

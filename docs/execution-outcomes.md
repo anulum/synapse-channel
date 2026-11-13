@@ -73,6 +73,8 @@ whether the requested result exists, and records three facts separately in a
 synapse worker-session --identity P/worker --outcome-file run.json -- ./make-report
 synapse verify-result file --outcome run.json --path report.txt --sha256 <hex> -- pytest tests/test_report.py
 synapse verify-result git --operation-id publish-1 --remote origin --branch main --commit <40 hex>
+synapse verify-result git --operation-id publish-1 --remote origin --branch main --commit <hex> \
+  --attempt-id <attempt id> --intent-sha256 <hex> --base <hex>
 synapse verify-result deployment --operation-id deploy-1 --revision abc123 --report health.json
 synapse verify-result migration --operation-id migrate-1 --database app.db --migration 0001_init --schema-sha256 <hex>
 ```
@@ -106,6 +108,34 @@ anything.
 A worker that exits 0 and writes the wrong content, the wrong revision, or
 the wrong schema is reported as `communication: confirmed_done` with a result
 of `not_verified`.
+
+### A publication made through an attempt
+
+A Git publication made through an attempt leaves the attempt's marker
+`refs/synapse/attempts/<attempt id>` beside the branch: `applied` when the
+effect landed, `sealed` when the attempt was sealed first. `git` with
+`--attempt-id`, `--intent-sha256` and `--base` (all three or none) reads the
+branch and the marker in one `git ls-remote`, keyed by the exact ref names, so
+another ref whose name ends in the same pattern changes nothing. The commit and
+base may then be of a SHA-256 repository. The record follows the reading:
+
+| Branch | Marker | `effect` | `result` | `observation` |
+| --- | --- | --- | --- | --- |
+| the commit, or contains it | `applied` | `observed` | `verified` | `attempt_landed_and_present` |
+| moved away from the commit | `applied` | `absent` | `not_verified` | `attempt_landed_then_the_branch_moved` |
+| any | `sealed` | `absent` | `not_verified` | `attempt_sealed_never_lands` |
+| the base | absent | `unknown` | `not_checked` | `attempt_may_still_land` |
+| the commit, or contains it | absent | `observed` | `not_checked` | `published_outside_the_protocol` |
+| anything else, or an ancestry that cannot be read here | | `unknown` | `not_checked` | `attempt_state_unknown` |
+
+The commit published without a marker cannot be tied to the attempt: the
+observed effect reconciles an ended attempt but closes nothing, so an operator
+decides such an operation, and a new attempt opened after it starts from a base
+the branch no longer holds and ends `base_gone` at its compare-and-swap, so no
+second effect can land. A listing that cannot be read is `not_checked`
+(`remote_not_reachable`, `object_format_not_read`,
+`remote_answer_not_recognised`). The hub keeps the record's digest-shaped
+evidence, among it `marker_object`.
 
 ## A2A correlation and retained state
 
