@@ -108,6 +108,8 @@ async def test_the_script_seeds_a_real_hub_and_leaves_on_a_signal(long_names: bo
                 "participants": [rename(name) for name in fleet.PARTICIPANTS],
                 "tasks": [rename(task_id) for task_id, _title, _needs in fleet.TASKS],
                 "claims": [rename(task_id) for _owner, task_id, _paths in fleet.CLAIMS],
+                "closed": _closed(rename),
+                "finding": fleet.FINDING,
             }
             _assert_seeded(hub, rename)
             child.send_signal(signal.SIGTERM)
@@ -130,6 +132,15 @@ def _assert_standing(hub: Any) -> None:
     }
 
 
+def _closed(rename: Callable[[str], str]) -> list[str]:
+    """Return the closed tasks the script names, which a bounded snapshot counts without loading."""
+    return [
+        rename(task_id)
+        for task_id, status in fleet.BOARD_STATUSES
+        if status in {"done", "cancelled"}
+    ]
+
+
 def _line(act: int, claims: list[str]) -> dict[str, object]:
     """Return the line the script prints after one act."""
     return {
@@ -138,6 +149,8 @@ def _line(act: int, claims: list[str]) -> dict[str, object]:
         "participants": list(fleet.PARTICIPANTS),
         "tasks": [task_id for task_id, _title, _needs in fleet.TASKS],
         "claims": claims,
+        "closed": _closed(str),
+        "finding": fleet.FINDING,
     }
 
 
