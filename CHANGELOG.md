@@ -20,6 +20,30 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- `synapse operation seal` ends an attempt whose executor fell silent, for
+  certain. On one connection it asks the hub for the attempt's state and stops
+  unless it is open, writes the attempt's `sealed` marker in the repository (or
+  by an atomic push with `--remote`) so that the attempt's effect can no longer
+  land, reads it back, and only then sends the new `seal` record of
+  `operation_record`. The hub keeps the record only from an identity holding
+  the new `operation-seal` permission on the task, which no identity holds
+  unless a rule grants it (grant it to a recovery or custody role); only for an
+  open attempt of the named operation (`attempt_unknown`, `attempt_ended`); and
+  only when the record names exactly that attempt's `sealed` blob and ref,
+  which the hub recomputes from the declared intent's digest
+  (`seal_not_observed`). A kept seal is journalled as `operation_sealed`, ends
+  the attempt and counts towards the 32 rows; it does not reconcile the
+  attempt, so a further attempt still needs another identity's observation and
+  a new approval. A repeated attempt request now reports the state `sealed`.
+  `synapse operation state` reads an operation's attempts through the new
+  read-only request `operation_state`, answered only to an identity holding
+  `operation-evidence` or `operation-seal` on the task and journalling nothing.
+  `synapse operation unmark` removes an attempt's `applied` marker once the hub
+  reports the operation closed, by a compare-and-delete on that exact object,
+  and never removes a `sealed` one. The three commands exit 4 on a hub that
+  does not know `operation_state`. The wire version stays 7. See
+  `docs/integrator-contract.md` (step 6) and `docs/coordination-spec.md`
+  (INV-OA-6 to INV-OA-8).
 - An attempt's marker, the first part of the seal: `core/attempt_markers.py`
   states the exact bytes of an attempt's `applied` and `sealed` marker blobs
   (five ASCII lines, so anyone can compute their ids in a SHA-1 or a SHA-256
@@ -30,8 +54,8 @@ execution evidence when carrying a release claim forward.
   candidate and creates the `applied` marker in one atomic change, and the seal
   creates the `sealed` marker first, so that the effect can never land. Each
   works as a ref transaction in the repository or as an atomic push with
-  leases to a remote, and is read back before its result is named. No command
-  uses them yet. The bounded Git runner with its deadline moved into
+  leases to a remote, and is read back before its result is named.
+  `synapse operation seal` uses them (below). The bounded Git runner with its deadline moved into
   `git/git_runtime.py` and now takes standard input; the shared runner is
   unchanged.
 - `synapse effect-suite run` runs version 0.1 of the effect-safety suite, cases

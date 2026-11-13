@@ -150,7 +150,8 @@ does not add agent grades to protocol envelopes.
   looked up under the role's project; a custodian entry may name a role, and a
   connection holding that role acts as the custodian; `to` may name a role, never a `role:` key.
 - **Operation records:** `operation_record` binds an operation and its evidence
-  to one claimed task. `record` is `declare`, `outcome` or `verification`;
+  to one claimed task. `record` is `declare`, `outcome`, `verification` or
+  `seal`;
   `task_id` and `operation_id` (1–128 of `A-Z a-z 0-9 . _ : -`) are required.
   A `declare` comes from the owner of the live claim and names the claim's
   `epoch` or `ownership_epoch`, an `effect` (`file`, `git_publication`,
@@ -183,7 +184,18 @@ does not add agent grades to protocol envelopes.
   `operation-evidence` grant, a declared operation on the same task and fewer
   than 32 earlier rows for it. The hub journals `operation_declared`,
   `operation_outcome` or `operation_verified`; verification evidence keeps only
-  digest-shaped values. Records are observations and grant no authority.
+  digest-shaped values. A `seal` carries one `seal` object naming exactly
+  `attempt_id`, `marker_ref`, `object_format` (`sha1` or `sha256`),
+  `marker_object` and `observation`, the answer read back after the sealed
+  marker was written. It needs the `operation-seal` grant, which no identity
+  holds unless a policy grants it, also on a hub without an ACL policy; the
+  named attempt must be open (`attempt_unknown`, `attempt_ended`), and the hub
+  recomputes the `sealed` marker blob of that operation, attempt and intent
+  digest and refuses any other object or ref, an observation other than
+  `landed` or `landed_earlier`, or an operation without an intent
+  (`seal_not_observed`). A kept seal is journalled as `operation_sealed`,
+  counts towards the 32 rows and ends the attempt without reconciling it.
+  Records are observations and grant no authority.
 - **Operation attempts:** `operation_attempt` asks to open an attempt of a
   declared operation for the exact intent the requester is about to carry out.
   It names `task_id`, `operation_id`, the claim `epoch` and `intent_sha256`, and
@@ -208,9 +220,17 @@ does not add agent grades to protocol envelopes.
   unchanged. Requests to open attempts, operation records, claims and progress
   notes are serialised by the hub's single mutation lock. An attempt ends by
   its executor's own outcome of `not_started`, `confirmed_done` or
-  `confirmed_failed`, or when another identity's verification is `verified`;
-  nothing else ends it. A malformed request is answered `invalid_request` and a
-  hub without a journal `no_journal`; neither is journalled.
+  `confirmed_failed`, when another identity's verification is `verified`, or
+  by a kept seal; nothing else ends it. A malformed request is answered
+  `invalid_request` and a hub without a journal `no_journal`; neither is
+  journalled.
+- **Operation state:** `operation_state` names `task_id` and `operation_id` and
+  reads that operation's attempts. It is answered only to an identity holding
+  `operation-evidence` or `operation-seal` on the task, which the handler
+  enforces also on a hub without an ACL policy; anyone else is refused
+  `not_authorised` and learns nothing. An operation not declared on the named
+  task is `unknown_operation`, a malformed request `invalid_request`. Nothing
+  is journalled.
 - **Fleet planning input:** `entitlement_advert` records one owner's redacted
   pool advertisement as an audit-only journal row after the proven-sender,
   `entitlement-advertise` ACL and durable-journal gates. It is never broadcast.
@@ -529,14 +549,22 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   (`accepted` or `refused`), `reason` (`invalid_request`, `no_journal`,
   `not_claim_holder`, `stale_epoch`, `duplicate_operation`, `not_authorised`,
   `unknown_operation`, `task_mismatch`, `operation_mismatch`,
-  `verifier_mismatch` or `record_limit`), the journal `seq` when accepted, and
-  the request's `record`, `task_id`, `operation_id` and `request_id`.
+  `verifier_mismatch`, `record_limit`, `attempt_unknown`, `attempt_ended` or
+  `seal_not_observed`), the journal `seq` when accepted, and the request's
+  `record`, `task_id`, `operation_id` and `request_id`.
   `operation_attempt_result` answers an `operation_attempt` with `answer`, the
   sentence in `payload`, the journal `seq`, `attempt_id` (32 lower-case
   hexadecimal characters, or empty), `approval_seq`, `intent_sha256`,
   `hub_time`, `task_id`, `operation_id` and `request_key`; these are the stored
-  answer. Beside them `live` holds `attempt_state` (`none`, `open`, `ended`,
-  `reconciled` or `closed`) and `replayed`, computed when the frame is sent.
+  answer. Beside them `live` holds `attempt_state` (`none`, `open`, `sealed`,
+  `ended`, `reconciled` or `closed`) and `replayed`, computed when the frame
+  is sent.
+  `operation_state_result` answers an `operation_state` with `status`
+  (`accepted` or `refused`), `reason` (`invalid_request`, `not_authorised` or
+  `unknown_operation`), the sentence in `payload`, and the request's `task_id`,
+  `operation_id` and `request_id`; when accepted, `closed` and `attempts`, one
+  object per attempt with `attempt_id`, `executor` and `state` (`open`,
+  `sealed`, `ended`, `reconciled` or `closed`).
   `identity_enroll_result` and `identity_revoke_result` are the verdicts for
   `identity_enroll` and `identity_revoke`. `entitlement_advert_result` is the
   private verdict for `entitlement_advert`. `spend_result` is the private

@@ -18,6 +18,9 @@ under the hub's mutation actor, in journal order:
   ``not_started``, ``confirmed_done`` or ``confirmed_failed`` ends it; an
   outcome from any other sender ends nothing, because a third party cannot
   commit the executor to stop;
+* a seal (``operation_sealed``) ends an open attempt without its executor: the
+  sealer created the attempt's ``sealed`` marker at the system of record, so its
+  effect can never land; the seal does not reconcile it;
 * after the end, a verification by a sender other than the declarer with the
   effect ``observed`` or ``absent`` reconciles it;
 * a verification by a sender other than the declarer with the result
@@ -48,6 +51,7 @@ OBSERVED_EFFECTS = frozenset({"observed", "absent"})
 STATE_NONE = "none"
 STATE_OPEN = "open"
 STATE_ENDED = "ended"
+STATE_SEALED = "sealed"
 STATE_RECONCILED = "reconciled"
 STATE_CLOSED = "closed"
 
@@ -56,6 +60,7 @@ _RESTORED_KINDS = (
     EventKind.OPERATION_OUTCOME,
     EventKind.OPERATION_VERIFIED,
     EventKind.OPERATION_ATTEMPT_ANSWERED,
+    EventKind.OPERATION_SEALED,
 )
 
 
@@ -65,6 +70,7 @@ class _Attempt:
     executor: str
     approval_seq: int
     ended: bool = False
+    sealed: bool = False
     reconciled: bool = False
 
 
@@ -73,6 +79,15 @@ class _Operation:
     fact: OperationFact
     attempts: list[_Attempt] = field(default_factory=list)
     closed: bool = False
+
+
+@dataclass(frozen=True)
+class AttemptSummary:
+    """One attempt as ``operation_state`` reports it."""
+
+    attempt_id: str
+    executor: str
+    state: str
 
 
 @dataclass(frozen=True)
@@ -148,6 +163,8 @@ class AttemptLedger:
             attempt, approval = payload.get("attempt_id"), payload.get("approval_seq")
             if isinstance(attempt, str) and isinstance(approval, int):
                 self.open_attempt(operation_id, attempt, executor=sender, approval_seq=approval)
+        elif event.kind == EventKind.OPERATION_SEALED:
+            self.note_seal(operation_id, str(payload.get("attempt_id") or ""))
 
     def _restore_declaration(
         self, operation_id: str, sender: str, payload: Mapping[str, Any]
@@ -194,6 +211,15 @@ class AttemptLedger:
                 if attempt.ended:
                     attempt.reconciled = True
 
+    def note_seal(self, operation_id: str, attempt_id: str) -> None:
+        """End the open attempt ``attempt_id`` as sealed; an ended one is left as it is."""
+        entry = self._operations.get(operation_id)
+        if entry is None:
+            return
+        for attempt in entry.attempts:
+            if attempt.attempt_id == attempt_id and not attempt.ended:
+                attempt.ended = attempt.sealed = True
+
     def open_attempt(
         self, operation_id: str, attempt_id: str, *, executor: str, approval_seq: int
     ) -> None:
@@ -223,8 +249,21 @@ class AttemptLedger:
             ),
         )
 
+    def summary(self, operation_id: str) -> tuple[bool, tuple[AttemptSummary, ...]] | None:
+        """Return whether the operation is closed and each attempt's state, or ``None``."""
+        entry = self._operations.get(operation_id)
+        if entry is None:
+            return None
+        attempts = tuple(
+            AttemptSummary(
+                item.attempt_id, item.executor, self.attempt_state(operation_id, item.attempt_id)
+            )
+            for item in entry.attempts
+        )
+        return entry.closed, attempts
+
     def attempt_state(self, operation_id: str, attempt_id: str) -> str:
-        """Return ``open``, ``ended``, ``reconciled``, ``closed`` or ``none`` for one attempt."""
+        """Return ``open``, ``sealed``, ``ended``, ``reconciled``, ``closed`` or ``none``."""
         entry = self._operations.get(operation_id)
         found = (
             None
@@ -237,4 +276,6 @@ class AttemptLedger:
             return STATE_CLOSED
         if found.reconciled:
             return STATE_RECONCILED
+        if found.sealed:
+            return STATE_SEALED
         return STATE_ENDED if found.ended else STATE_OPEN

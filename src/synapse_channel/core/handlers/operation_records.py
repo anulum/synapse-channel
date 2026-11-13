@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — serve operation records requested over the wire
-"""Serve ``operation_record``: journal a declaration, an outcome or a verification.
+"""Serve ``operation_record``: journal a declaration, an outcome, a verification or a seal.
 
 The hub:
 
@@ -20,7 +20,12 @@ The hub:
    so an open hub never accepts third-party evidence), a declared operation on
    the same task, a body naming the same operation, the verifier matching the
    declared effect, and fewer than 32 earlier rows for the operation;
-4. journals one event and answers the sender privately with an
+4. for ``seal``, requires the ``operation-seal`` permission for the task (also
+   enforced here on an open hub; no identity holds it by default), a declared
+   operation on the same task whose named attempt is open, fewer than 32
+   earlier rows, and a record naming exactly that attempt's ``sealed`` marker,
+   which the hub recomputes; a kept seal ends the attempt without reconciling it;
+5. journals one event and answers the sender privately with an
    ``operation_record_result`` naming the status, the reason, the sequence and,
    for a declaration that kept an intent, its ``intent_sha256``.
 
@@ -43,7 +48,13 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.core.acl import CLAIM, OPERATION_EVIDENCE, WOULD_ALLOW, Target, evaluate_access
+from synapse_channel.core.acl import (
+    CLAIM,
+    OPERATION_EVIDENCE,
+    OPERATION_SEAL,
+    Target,
+    task_grant,
+)
 from synapse_channel.core.authorisation_intent import (
     REFUSED_INTENT_EXPIRED,
     REFUSED_INTENT_INVALID,
@@ -53,11 +64,12 @@ from synapse_channel.core.authorisation_intent import (
     intent_time_refusal,
 )
 from synapse_channel.core.handlers.operation_attempts import VERB_SPECS as ATTEMPT_VERB_SPECS
-from synapse_channel.core.identity_namespace import project_of
+from synapse_channel.core.handlers.operation_state import VERB_SPECS as STATE_VERB_SPECS
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import OperationFact
 from synapse_channel.core.operation_records import (
     RECORD_DECLARE,
+    RECORD_SEAL,
     REFUSED_DUPLICATE,
     REFUSED_INVALID,
     REFUSED_NO_JOURNAL,
@@ -71,6 +83,7 @@ from synapse_channel.core.operation_records import (
     decode_operation_record,
     evidence_refusal,
     record_operation,
+    seal_refusal,
 )
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.verb_registry import VerbSpec
@@ -186,7 +199,9 @@ def _apply(hub: OperationRecordContext, sender: str, request: OperationRecordReq
     ledger = hub.operation_records
     if request.record == RECORD_DECLARE:
         return _declare(store, ledger, hub.state.claims.get(request.task_id), sender, request)
-    if not _evidence_allowed(hub, sender, request.task_id):
+    if request.record == RECORD_SEAL:
+        return _seal(hub, store, ledger, sender, request)
+    if not task_grant(hub.acl_policy, sender, request.task_id, OPERATION_EVIDENCE):
         return _refused(
             REFUSED_NOT_AUTHORISED, f"{sender} lacks operation-evidence for {request.task_id}"
         )
@@ -204,6 +219,29 @@ def _apply(hub: OperationRecordContext, sender: str, request: OperationRecordReq
             request.operation_id, sender, effect=verification.effect, result=verification.result
         )
     return _Verdict(STATUS_ACCEPTED, f"{request.record} recorded", seq=seq)
+
+
+def _seal(
+    hub: OperationRecordContext,
+    store: EventStore,
+    ledger: OperationLedger,
+    sender: str,
+    request: OperationRecordRequest,
+) -> _Verdict:
+    """Journal a seal of an open attempt from a holder of ``operation-seal``; end the attempt."""
+    if not task_grant(hub.acl_policy, sender, request.task_id, OPERATION_SEAL):
+        return _refused(
+            REFUSED_NOT_AUTHORISED, f"{sender} lacks operation-seal for {request.task_id}"
+        )
+    refusal = seal_refusal(ledger, request)
+    if refusal is not None:
+        return _refused(refusal, f"the seal record cannot be kept: {refusal}")
+    seq = record_operation(store, request, sender=sender)
+    ledger.add_record(request.operation_id)
+    seal = request.seal
+    assert seal is not None, "seal_refusal kept a seal record with its body"
+    ledger.attempts.note_seal(request.operation_id, seal.attempt_id)
+    return _Verdict(STATUS_ACCEPTED, "seal recorded", seq=seq)
 
 
 def _declare(
@@ -258,29 +296,18 @@ def _declare(
     return _Verdict(STATUS_ACCEPTED, "operation declared", seq=seq, intent_sha256=digest)
 
 
-def _evidence_allowed(hub: OperationRecordContext, sender: str, task_id: str) -> bool:
-    """Return whether the policy grants ``sender`` ``operation-evidence`` on the task."""
-    if hub.acl_policy is None:
-        return False
-    decision = evaluate_access(
-        subject=sender,
-        project=project_of(sender),
-        permission=OPERATION_EVIDENCE,
-        target=Target("claim", task_id),
-        policy=hub.acl_policy,
-    )
-    return decision.decision == WOULD_ALLOW
-
-
 def operation_record_access(data: dict[str, Any]) -> list[tuple[str, AclTarget]]:
     """Keep a loaded policy's claim rule in force for declarations.
 
-    Evidence records are checked by the handler itself against
-    ``operation-evidence``, which no open-hub posture can waive.
+    Evidence and seal records are checked by the handler itself against
+    ``operation-evidence`` and ``operation-seal``, which no open-hub posture
+    can waive.
     """
     task_id = str(data.get("task_id") or "")
     if data.get("record") == RECORD_DECLARE:
         return [(CLAIM, Target("claim", task_id))]
+    if data.get("record") == RECORD_SEAL:
+        return [(OPERATION_SEAL, Target("claim", task_id))]
     return [(OPERATION_EVIDENCE, Target("claim", task_id))]
 
 
@@ -297,10 +324,12 @@ VERB_SPECS = (
             EventKind.OPERATION_DECLARED,
             EventKind.OPERATION_OUTCOME,
             EventKind.OPERATION_VERIFIED,
+            EventKind.OPERATION_SEALED,
         ),
         minimum_wire_version=7,
         commands=("operation",),
     ),
     *ATTEMPT_VERB_SPECS,
+    *STATE_VERB_SPECS,
 )
-"""The operation family: records, and requests to open an attempt."""
+"""The operation family: records, requests to open an attempt, and reads of its attempts."""

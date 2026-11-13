@@ -85,8 +85,8 @@ class Target:
         return "refs/heads/" + self.branch
 
 
-def _git_out(target: Target, args: list[str], *, git: str, input_text: str | None = None) -> str:
-    completed = run_git(git, target.repository, args, input_text=input_text)
+def _git_out(repository: Path, args: list[str], *, git: str, input_text: str | None = None) -> str:
+    completed = run_git(git, repository, args, input_text=input_text)
     if completed.returncode != 0:
         detail = completed.stderr.strip()[:200] or f"exit code {completed.returncode}"
         raise GitError(f"git {args[0]} failed: {detail}")
@@ -101,7 +101,11 @@ def object_format(target: Target, *, git: str) -> str:
     GitError
         When Git cannot tell, or names a format this module does not know.
     """
-    found = _git_out(target, ["rev-parse", "--show-object-format"], git=git)
+    return _format_of(target.repository, git=git)
+
+
+def _format_of(repository: Path, *, git: str) -> str:
+    found = _git_out(repository, ["rev-parse", "--show-object-format"], git=git)
     if found not in OBJECT_ID_LENGTHS:
         raise GitError(f"the repository's object format {found!r} is not sha1 or sha256")
     return found
@@ -111,7 +115,7 @@ def _check(target: Target, candidate: str | None, *, git: str) -> None:
     """Refuse a branch name or commit names that cannot be what the change says."""
     if _BRANCH.fullmatch(target.branch) is None:
         raise GitError(f"branch {target.branch!r} is not a plain branch name")
-    _git_out(target, ["check-ref-format", "--branch", target.branch], git=git)
+    _git_out(target.repository, ["check-ref-format", "--branch", target.branch], git=git)
     fmt = object_format(target, git=git)
     pattern = re.compile(f"[0-9a-f]{{{OBJECT_ID_LENGTHS[fmt]}}}")
     named = (("base", target.base), ("candidate", candidate))
@@ -131,29 +135,35 @@ def write_marker_objects(target: Target, marker: AttemptMarker, *, git: str) -> 
     objects = marker.objects(object_format(target, git=git))
     for kind, expected in ((APPLIED, objects.applied), (SEALED, objects.sealed)):
         text = marker.blob(kind).decode("ascii")
-        stored = _git_out(target, ["hash-object", "-w", "--stdin"], git=git, input_text=text)
+        args = ["hash-object", "-w", "--stdin"]
+        stored = _git_out(target.repository, args, git=git, input_text=text)
         if stored != expected:
             raise GitError(f"git stored the {kind} marker as {stored}, expected {expected}")
     return objects
 
 
-def _read_local(target: Target, ref: str, *, git: str) -> str | None:
-    completed = run_git(git, target.repository, ["rev-parse", "--verify", "--quiet", ref])
-    value = completed.stdout.strip()
-    return value if completed.returncode == 0 and value else None
+def _read_refs(
+    repository: Path, remote: str | None, refs: list[str], *, git: str
+) -> dict[str, str]:
+    """Return the object each existing ref of ``refs`` holds, from ``remote`` when given."""
+    found: dict[str, str] = {}
+    if remote is None:
+        for ref in refs:
+            completed = run_git(git, repository, ["rev-parse", "--verify", "--quiet", ref])
+            value = completed.stdout.strip()
+            if completed.returncode == 0 and value:
+                found[ref] = value
+        return found
+    for line in _git_out(repository, ["ls-remote", remote, *refs], git=git).splitlines():
+        object_id, _tab, ref = line.partition("\t")
+        found[ref] = object_id
+    return found
 
 
 def _read_back(target: Target, marker_ref: str, *, git: str) -> tuple[str | None, str | None]:
     """Return the marker's object and the branch's commit, from the remote when there is one."""
-    if target.remote is None:
-        return _read_local(target, marker_ref, git=git), _read_local(
-            target, target.branch_ref, git=git
-        )
-    listed = _git_out(target, ["ls-remote", target.remote, target.branch_ref, marker_ref], git=git)
-    found: dict[str, str] = {}
-    for line in listed.splitlines():
-        object_id, _tab, ref = line.partition("\t")
-        found[ref] = object_id
+    refs = [target.branch_ref, marker_ref]
+    found = _read_refs(target.repository, target.remote, refs, git=git)
     return found.get(marker_ref), found.get(target.branch_ref)
 
 
@@ -256,3 +266,56 @@ def observe(target: Target, marker: AttemptMarker, *, candidate: str, git: str) 
         candidate=candidate,
         contains_candidate=contains,
     )
+
+
+@dataclass(frozen=True)
+class RemovalOutcome:
+    """What one removal of an ``applied`` marker did, read back.
+
+    Attributes
+    ----------
+    removed : bool
+        The marker held this attempt's ``applied`` blob and is now gone.
+    marker : str or None
+        What the marker ref holds after the attempt; ``None`` when absent.
+    detail : str
+        Why nothing was removed; empty when it was.
+    """
+
+    removed: bool
+    marker: str | None
+    detail: str
+
+
+def remove_applied_marker(
+    repository: Path, marker: AttemptMarker, *, git: str, remote: str | None = None
+) -> RemovalOutcome:
+    """Remove this attempt's marker while, and only while, it holds the ``applied`` blob.
+
+    A ``sealed`` marker is never removed here: while the branch still holds the
+    base, removing it would let a late effect land, so only an operator removes
+    one, by hand. The deletion is conditional on the ``applied`` blob (a ref
+    transaction locally, a lease on a remote), and the result is read back.
+    Whether the operation is closed is the caller's to ask the hub first.
+    """
+    objects = marker.objects(_format_of(repository, git=git))
+    before = _read_refs(repository, remote, [marker.ref], git=git).get(marker.ref)
+    if before != objects.applied:
+        if before is None:
+            reason = "the marker is absent"
+        elif before == objects.sealed:
+            reason = "the marker is sealed; only an operator removes a sealed marker"
+        else:
+            reason = "the marker holds an object that is not this attempt's"
+        return RemovalOutcome(False, before, reason)
+    if remote is None:
+        args = ["update-ref", "-d", marker.ref, objects.applied]
+    else:
+        lease = f"--force-with-lease={marker.ref}:{objects.applied}"
+        args = ["push", "--porcelain", lease, remote, f":{marker.ref}"]
+    completed = run_git(git, repository, args)
+    after = _read_refs(repository, remote, [marker.ref], git=git).get(marker.ref)
+    if completed.returncode == 0 and after is None:
+        return RemovalOutcome(True, None, "")
+    detail = (completed.stderr.strip() or completed.stdout.strip() or "not removed")[:200]
+    return RemovalOutcome(False, after, detail)

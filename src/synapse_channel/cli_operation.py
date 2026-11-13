@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — declare an operation and publish its evidence to the live hub
-"""``synapse operation declare``, ``outcome``, ``verification`` and ``attempt``.
+"""``synapse operation declare``, ``outcome``, ``verification``, ``attempt`` and the seal.
 
 Each command connects to the hub as ``--name`` and sends one
 ``operation_record``. ``declare`` comes from the holder of the live claim,
@@ -20,6 +20,9 @@ publishes a ``synapse.execution-outcome.v1`` report, for example the
 Both evidence commands need the ``operation-evidence`` grant on the hub.
 ``attempt`` asks the hub to open an attempt before the effect
 (:mod:`synapse_channel.cli_operation_attempt`, with its own exit codes).
+``state``, ``seal`` and ``unmark`` read an operation's attempts, seal an open
+one and remove an applied marker (:mod:`synapse_channel.cli_operation_seal`,
+with their own exit codes).
 
 The command never changes the local file; publishing is separate from
 producing the record. Exit codes: 0 accepted, 1 refused, 2 no verdict
@@ -41,6 +44,7 @@ from typing import Any
 
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.cli_operation_attempt import add_attempt_parser
+from synapse_channel.cli_operation_seal import add_seal_parsers
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.aef_canonical import canonicalize_json
@@ -343,7 +347,10 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register ``synapse operation declare``, ``outcome``, ``verification`` and ``attempt``.
+    """Register every ``synapse operation`` subcommand.
+
+    The subcommands are ``declare``, ``outcome``, ``verification``, ``attempt``, ``state``,
+    ``seal`` and ``unmark``.
 
     Parameters
     ----------
@@ -409,3 +416,4 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         evidence.set_defaults(func=func)
 
     add_attempt_parser(actions, _add_common)
+    add_seal_parsers(actions, _add_common)

@@ -149,6 +149,42 @@ state and the published records) or ask an operator. In Python:
 turns the same records into `SAFE_TO_RETRY`, `ALREADY_HAPPENED` or
 `UNKNOWN_INQUIRE` per task.
 
+### When the executor fell silent
+
+An attempt whose executor never ends it keeps its operation waiting. For a Git
+publication, a recovery identity can end it for certain: it seals the attempt
+at the repository, so that the attempt's effect can no longer land there, and
+then records the seal.
+
+```bash
+synapse operation state --task T --name R/recovery --operation-id op-1
+synapse operation seal --task T --name R/recovery --operation-id op-1 \
+  --attempt-id <attempt id> --intent-sha256 <hex> \
+  --repository repo --branch main --base <declared base commit>
+```
+
+`seal` asks the hub first and stops unless the attempt is open. It then writes
+the attempt's `sealed` marker `refs/synapse/attempts/<attempt id>` in the
+repository, or with `--remote` by an atomic push, reads it back, and only then
+sends the `seal` record. Exit 0 means sealed and recorded. Exit 1 means the
+attempt was not open, the effect landed first (follow the result as in step 5),
+or the hub refused the record. Exit 2 means nothing reached the repository or
+the hub was silent: run it again. Exit 3 means the repository's state is
+unknown: inquire. A seal in place without its record is safe, and running the
+command again records it.
+
+The seal ends the attempt; it does not reconcile it. A further attempt still
+needs a new approval and an observation of the effect published by another
+identity (step 5). Sealing needs `operation-seal` on the task, which no
+identity holds unless a rule grants it: grant it to a recovery or custody role
+that is neither the executor nor the approver. Once the operation is closed,
+`unmark` removes an attempt's `applied` marker and never a `sealed` one:
+
+```bash
+synapse operation unmark --task T --name R/recovery --operation-id op-1 \
+  --attempt-id <attempt id> --intent-sha256 <hex> --repository repo
+```
+
 ## Further reading
 
 [Execution outcomes](execution-outcomes.md) · [Git-native claims](git-claims.md)

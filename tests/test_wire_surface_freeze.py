@@ -112,6 +112,8 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "OPERATION_ATTEMPT_RESULT": "operation_attempt_result",
     "OPERATION_RECORD": "operation_record",
     "OPERATION_RECORD_RESULT": "operation_record_result",
+    "OPERATION_STATE": "operation_state",
+    "OPERATION_STATE_RESULT": "operation_state_result",
     "LEDGER_PROGRESS": "ledger_progress",
     "LEDGER_PROGRESS_POSTED": "ledger_progress_posted",
     "LEDGER_TASK": "ledger_task",

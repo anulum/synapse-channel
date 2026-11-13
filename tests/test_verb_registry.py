@@ -68,6 +68,7 @@ _FROZEN_DISPATCH = {
     "mailbox_handover": "mailbox_handover.handle_mailbox_handover",
     "operation_attempt": "operation_attempts.handle_operation_attempt",
     "operation_record": "operation_records.handle_operation_record",
+    "operation_state": "operation_state.handle_operation_state",
     "manifest_request": "snapshots.handle_manifest_request",
     "multihub_claim_request": "multihub_claim.handle_multihub_claim_request",
     "multihub_log_request": "multihub.handle_multihub_log_request",

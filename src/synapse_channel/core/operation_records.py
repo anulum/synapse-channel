@@ -27,6 +27,11 @@ Rules (recovery console design, rev 2):
 * At most :data:`MAX_RECORDS_PER_OPERATION` outcome and verification rows per
   operation; the declaration does not count. Rows are append-only: a later row
   never replaces an earlier one.
+* A seal record reports that its sender created an open attempt's ``sealed``
+  marker at the system of record (:mod:`synapse_channel.core.operation_seals`).
+  The handler checks it against ``operation-seal``; the hub keeps it only for an
+  open attempt of a declared operation on the same task, and only when it names
+  exactly that attempt's seal. It counts toward the record limit.
 * A declaration may carry an authorisation intent
   (:mod:`synapse_channel.core.authorisation_intent`). Its row then keeps the
   composed intent and its digest; a declaration without one is unchanged.
@@ -52,7 +57,14 @@ from synapse_channel.core.authorisation_intent import (
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.execution_outcome import ExecutionOutcome, outcome_from_json
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.operation_attempt_ledger import AttemptLedger
+from synapse_channel.core.operation_attempt_ledger import STATE_NONE, STATE_OPEN, AttemptLedger
+from synapse_channel.core.operation_seals import (
+    REFUSED_ATTEMPT_ENDED,
+    REFUSED_ATTEMPT_UNKNOWN,
+    SealRecord,
+    decode_seal,
+    seal_mismatch,
+)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.result_verification_record import (
     ResultVerification,
@@ -63,7 +75,8 @@ from synapse_channel.core.state_models import TaskClaim
 RECORD_DECLARE = "declare"
 RECORD_OUTCOME = "outcome"
 RECORD_VERIFICATION = "verification"
-RECORD_KINDS = frozenset({RECORD_DECLARE, RECORD_OUTCOME, RECORD_VERIFICATION})
+RECORD_SEAL = "seal"
+RECORD_KINDS = frozenset({RECORD_DECLARE, RECORD_OUTCOME, RECORD_VERIFICATION, RECORD_SEAL})
 
 EFFECT_FILE = "file"
 EFFECT_GIT = "git_publication"
@@ -78,7 +91,7 @@ VERIFIER_FOR_EFFECT: Mapping[str, str] = {
 """The verifier whose records may speak for each declared effect."""
 
 MAX_RECORDS_PER_OPERATION = 32
-"""Outcome and verification rows kept per operation; the 33rd is refused."""
+"""Outcome, verification and seal rows kept per operation; the 33rd is refused."""
 
 STATUS_ACCEPTED = "accepted"
 STATUS_REFUSED = "refused"
@@ -118,7 +131,7 @@ class OperationRecordRequest:
     Attributes
     ----------
     record : str
-        ``declare``, ``outcome`` or ``verification``.
+        ``declare``, ``outcome``, ``verification`` or ``seal``.
     task_id, operation_id : str
         The claimed task and the operation on it.
     epoch : int or None
@@ -136,6 +149,8 @@ class OperationRecordRequest:
         For a verification record, the decoded record.
     intent : IntentStatement or None
         For a declaration, the validated statement of its authorisation intent.
+    seal : SealRecord or None
+        For a seal record, what the sealer read back.
     """
 
     record: str
@@ -148,6 +163,7 @@ class OperationRecordRequest:
     outcome: ExecutionOutcome | None = None
     verification: ResultVerification | None = None
     intent: IntentStatement | None = None
+    seal: SealRecord | None = None
 
 
 def _bounded_text(value: object, label: str, limit: int) -> str:
@@ -259,6 +275,9 @@ def decode_operation_record(data: Mapping[str, Any]) -> OperationRecordRequest:
             intent=None if statement is None else parse_intent_statement(statement, effect),
         )
     try:
+        if record == RECORD_SEAL:
+            seal = decode_seal(data.get("seal"))
+            return OperationRecordRequest(record, task_id, operation_id, seal=seal)
         if record == RECORD_OUTCOME:
             outcome = outcome_from_json(data.get("report"))
             return OperationRecordRequest(record, task_id, operation_id, outcome=outcome)
@@ -300,6 +319,7 @@ class OperationLedger:
             EventKind.OPERATION_DECLARED,
             EventKind.OPERATION_OUTCOME,
             EventKind.OPERATION_VERIFIED,
+            EventKind.OPERATION_SEALED,
         )
         for event in store.iter_events(kinds=kinds):
             operation_id = event.payload.get("operation_id")
@@ -328,7 +348,7 @@ class OperationLedger:
         return None if entry is None else entry.effect
 
     def records_of(self, operation_id: str) -> int:
-        """Return the number of outcome and verification rows kept for it."""
+        """Return the number of outcome, verification and seal rows kept for it."""
         entry = self._entries.get(operation_id)
         return 0 if entry is None else entry.records
 
@@ -337,7 +357,7 @@ class OperationLedger:
         self._entries[operation_id] = _Entry(task_id, effect)
 
     def add_record(self, operation_id: str) -> None:
-        """Count one journalled outcome or verification row."""
+        """Count one journalled outcome, verification or seal row."""
         self._entries[operation_id].records += 1
 
 
@@ -359,6 +379,32 @@ def evidence_refusal(ledger: OperationLedger, request: OperationRecordRequest) -
     ):
         return REFUSED_VERIFIER_MISMATCH
     return None
+
+
+def seal_refusal(ledger: OperationLedger, request: OperationRecordRequest) -> str | None:
+    """Return why a seal record cannot be kept, or ``None``.
+
+    The operation must be declared on the same task, below the record limit,
+    with the named attempt open, and the record must name exactly that
+    attempt's seal (:func:`synapse_channel.core.operation_seals.seal_mismatch`).
+    """
+    task = ledger.task_of(request.operation_id)
+    if task is None:
+        return REFUSED_UNKNOWN
+    if task != request.task_id:
+        return REFUSED_TASK_MISMATCH
+    if ledger.records_of(request.operation_id) >= MAX_RECORDS_PER_OPERATION:
+        return REFUSED_RECORD_LIMIT
+    seal = request.seal
+    assert seal is not None, "decode_operation_record gives every seal record its body"
+    state = ledger.attempts.attempt_state(request.operation_id, seal.attempt_id)
+    if state == STATE_NONE:
+        return REFUSED_ATTEMPT_UNKNOWN
+    if state != STATE_OPEN:
+        return REFUSED_ATTEMPT_ENDED
+    fact = ledger.attempts.operation(request.operation_id)
+    digest = None if fact is None else fact.intent_sha256
+    return seal_mismatch(seal, operation_id=request.operation_id, intent_sha256=digest)
 
 
 def _digests(evidence: Mapping[str, str]) -> dict[str, str]:
@@ -425,6 +471,9 @@ def record_operation(
             payload["intent"] = intent.document
             payload["intent_sha256"] = intent.sha256
         return store.append(EventKind.OPERATION_DECLARED, payload, durable=True)
+    if request.seal is not None:
+        payload = {**base, **request.seal.to_payload()}
+        return store.append(EventKind.OPERATION_SEALED, payload, durable=True)
     if request.outcome is not None:
         outcome = request.outcome
         payload = {

@@ -58,6 +58,16 @@ CONTRACT_COMMANDS: tuple[tuple[str, ...], ...] = (
         "--epoch", "1", "--intent-sha256", "a" * 64,
     ),
     ("operation", "outcome", "--task", "T", "--name", "C/checker", "run-001.json"),
+    ("operation", "state", "--task", "T", "--name", "R/recovery", "--operation-id", "op-1"),
+    (
+        "operation", "seal", "--task", "T", "--name", "R/recovery", "--operation-id", "op-1",
+        "--attempt-id", "a" * 32, "--intent-sha256", "a" * 64, "--repository", "repo",
+        "--branch", "main", "--base", "b" * 40,
+    ),
+    (
+        "operation", "unmark", "--task", "T", "--name", "R/recovery", "--operation-id", "op-1",
+        "--attempt-id", "a" * 32, "--intent-sha256", "a" * 64, "--repository", "repo",
+    ),
     ("operation", "verification", "--task", "T", "--name", "C/checker", "verification.json"),
     ("worker-session", "--identity", "P/worker", "--outcome-file", "run-001.json", "--", "x"),
     ("worker-session", "--read-outcome", "run-001.json"),
@@ -194,6 +204,8 @@ def test_the_page_names_every_contract_command_and_schema() -> None:
         assert f"synapse {argv[0]}" in page
     for text in (
         "operation-evidence",
+        "operation-seal",
+        "refs/synapse/attempts/",
         "automatic_retry: false",
         OUTCOME_SCHEMA,
         VERIFICATION_SCHEMA,

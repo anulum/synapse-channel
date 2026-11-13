@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.identity_namespace import project_of
 
 MESSAGE = "message"
 CLAIM = "claim"
@@ -45,6 +46,7 @@ ROLE_CLAIM = "role-claim"
 PIN_RECLAIM = "identity-pin-reclaim"
 MAILBOX_HANDOVER = "mailbox-handover"
 OPERATION_EVIDENCE = "operation-evidence"
+OPERATION_SEAL = "operation-seal"
 IDENTITY_ENROLL = "identity-enroll"
 ENTITLEMENT_ADVERTISE = "entitlement-advertise"
 EVIDENCE = "evidence"
@@ -72,6 +74,7 @@ PERMISSIONS = frozenset(
         PIN_RECLAIM,
         MAILBOX_HANDOVER,
         OPERATION_EVIDENCE,
+        OPERATION_SEAL,
         IDENTITY_ENROLL,
         ENTITLEMENT_ADVERTISE,
         EVIDENCE,
@@ -133,6 +136,15 @@ a verification record to an operation declared on a task (``operation_record``).
 Target kind is ``claim``; the pattern matches the task id. The handler enforces
 it even when ``--require-acl`` is off, so an open hub never keeps third-party
 evidence. A declaration needs no grant: only the live claim holder may make it.
+
+``OPERATION_SEAL`` grants an identity the right to journal a seal of an open
+attempt (``operation_record`` with ``record: seal``): the report that it created
+the attempt's ``sealed`` marker at the system of record, so the attempt's effect
+can never land. Target kind is ``claim``; the pattern matches the task id. No
+identity holds it by default; grant it to a recovery or custody role, not to
+every worker. The handler enforces it even when ``--require-acl`` is off.
+``operation_state``, which lists an operation's attempts, is answered to holders
+of ``OPERATION_EVIDENCE`` or ``OPERATION_SEAL`` on the task, by its handler.
 
 ``EVIDENCE`` grants an authenticated recorder the right to append a bounded
 enforcement record. The shipped guard-denial target is
@@ -274,6 +286,26 @@ def evaluate_access(
     return AclDecision(
         WOULD_DENY, subject, permission, target, "no rule grants this access (deny by default)"
     )
+
+
+def task_grant(policy: AclPolicy | None, subject: str, task_id: str, permission: str) -> bool:
+    """Return whether ``policy`` grants ``subject`` ``permission`` on the claim of ``task_id``.
+
+    The subject's project is read from its name. No policy grants nothing: a
+    handler that enforces a permission itself, as the operation records and
+    ``operation_state`` do, keeps an open hub from accepting third-party
+    evidence or a seal and from answering an operation's attempts.
+    """
+    if policy is None:
+        return False
+    decision = evaluate_access(
+        subject=subject,
+        project=project_of(subject),
+        permission=permission,
+        target=Target("claim", task_id),
+        policy=policy,
+    )
+    return decision.decision == WOULD_ALLOW
 
 
 def load_acl_policy(path: str | Path) -> AclPolicy:

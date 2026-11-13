@@ -82,6 +82,7 @@ _OPERATION_KINDS = frozenset(
         "operation_outcome",
         "operation_verified",
         "operation_attempt_answered",
+        "operation_sealed",
         "dead_letter_forwarding",
         "delivery_receipt_requested",
         "delivery_receipt_immediate",

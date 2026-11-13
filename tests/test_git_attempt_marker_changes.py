@@ -14,6 +14,7 @@ to a local bare repository). No test touches a hosted service.
 
 from __future__ import annotations
 
+import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,10 +38,12 @@ from synapse_channel.core.attempt_markers import (
 )
 from synapse_channel.git import attempt_marker_changes as changes
 from synapse_channel.git.attempt_marker_changes import (
+    RemovalOutcome,
     Target,
     apply_effect,
     object_format,
     observe,
+    remove_applied_marker,
     seal,
     write_marker_objects,
 )
@@ -323,3 +326,100 @@ def test_a_format_git_does_not_name_or_a_blob_stored_elsewhere_is_refused(
         write_marker_objects(target, _marker(), git=git)
     expected = _marker().objects("sha1").applied
     assert str(stored.value) == f"git stored the applied marker as {'0' * 40}, expected {expected}"
+
+
+def test_unmark_removes_only_this_attempts_applied_marker(world: World) -> None:
+    marker, sealed_marker, foreign = _marker(1), _marker(2), _marker(3)
+    remote = world.target.remote
+    apply_effect(world.target, marker, candidate=world.x, git=world.git)
+    seal(world.target, sealed_marker, git=world.git)
+    tree = world.out(world.record, "rev-parse", "refs/heads/main^{tree}")
+    world.out(world.record, "update-ref", foreign.ref, tree)
+    sealed_id = sealed_marker.objects(object_format(world.target, git=world.git)).sealed
+    removed = remove_applied_marker(world.work, marker, git=world.git, remote=remote)
+    again = remove_applied_marker(world.work, marker, git=world.git, remote=remote)
+    kept = remove_applied_marker(world.work, sealed_marker, git=world.git, remote=remote)
+    other = remove_applied_marker(world.work, foreign, git=world.git, remote=remote)
+    assert removed == RemovalOutcome(True, None, "")
+    assert world.read(marker.ref) is None and world.read("refs/heads/main") == world.x
+    assert again == RemovalOutcome(False, None, "the marker is absent")
+    assert kept == RemovalOutcome(
+        False, sealed_id, "the marker is sealed; only an operator removes a sealed marker"
+    )
+    assert world.read(sealed_marker.ref) == sealed_id
+    assert other == RemovalOutcome(
+        False, tree, "the marker holds an object that is not this attempt's"
+    )
+
+
+def test_a_seal_that_lands_between_the_reading_and_the_removal_stays(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marker = _marker()
+    apply_effect(world.target, marker, candidate=world.x, git=world.git)
+    sealed = marker.objects(object_format(world.target, git=world.git)).sealed
+    real_run = run_git
+
+    def racing(git: str, repository: Path, args: list[str], **kwargs: Any) -> Any:
+        if args[:2] == ["update-ref", "-d"] or args[-1:] == [f":{marker.ref}"]:
+            text = marker.blob("sealed").decode("ascii")
+            stored = real_run(git, world.record, ["hash-object", "-w", "--stdin"], input_text=text)
+            assert stored.stdout.strip() == sealed
+            world.out(world.record, "update-ref", marker.ref, sealed)
+        return real_run(git, repository, args, **kwargs)
+
+    monkeypatch.setattr(changes, "run_git", racing)
+    outcome = remove_applied_marker(world.work, marker, git=world.git, remote=world.target.remote)
+    # The detail is git's own refusal, whose wording differs between git versions.
+    assert (outcome.removed, outcome.marker, bool(outcome.detail)) == (False, sealed, True)
+    assert world.read(marker.ref) == sealed
+
+
+def test_a_removal_git_refuses_leaves_the_marker_and_says_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    git = git_executable()
+    work = tmp_path / "work"
+    work.mkdir()
+    run_git(git, work, ["init", "-q"])
+    b = _commit(git, work, "b")
+    x = _commit(git, work, "x", b)
+    run_git(git, work, ["update-ref", "refs/heads/main", b])
+    marker = _marker()
+    apply_effect(Target(work, "main", b), marker, candidate=x, git=git)
+    real_run = run_git
+
+    def refusing(git: str, repository: Path, args: list[str], **kwargs: Any) -> Any:
+        if args[:2] == ["update-ref", "-d"]:
+            return subprocess.CompletedProcess(args, 1, "", "fatal: cannot lock ref\n")
+        return real_run(git, repository, args, **kwargs)
+
+    monkeypatch.setattr(changes, "run_git", refusing)
+    outcome = remove_applied_marker(work, marker, git=git)
+    applied = marker.objects("sha1").applied
+    assert outcome == RemovalOutcome(False, applied, "fatal: cannot lock ref")
+
+
+def test_a_removal_git_reports_but_never_made_is_read_back_as_not_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    git = git_executable()
+    work = tmp_path / "work"
+    work.mkdir()
+    run_git(git, work, ["init", "-q"])
+    b = _commit(git, work, "b")
+    x = _commit(git, work, "x", b)
+    run_git(git, work, ["update-ref", "refs/heads/main", b])
+    marker = _marker()
+    apply_effect(Target(work, "main", b), marker, candidate=x, git=git)
+    real_run = run_git
+
+    def claiming(git: str, repository: Path, args: list[str], **kwargs: Any) -> Any:
+        if args[:2] == ["update-ref", "-d"]:
+            return subprocess.CompletedProcess(args, 0, "", "")
+        return real_run(git, repository, args, **kwargs)
+
+    monkeypatch.setattr(changes, "run_git", claiming)
+    outcome = remove_applied_marker(work, marker, git=git)
+    applied = marker.objects("sha1").applied
+    assert outcome == RemovalOutcome(False, applied, "not removed")

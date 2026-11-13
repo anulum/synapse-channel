@@ -148,6 +148,7 @@ class EventKind:
     OPERATION_OUTCOME = "operation_outcome"
     OPERATION_VERIFIED = "operation_verified"
     OPERATION_ATTEMPT_ANSWERED = "operation_attempt_answered"
+    OPERATION_SEALED = "operation_sealed"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
     IDENTITY_ENROLLMENT = "identity_enrollment"
     ENTITLEMENT_ADVERT = "entitlement_advert"

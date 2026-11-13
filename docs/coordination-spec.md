@@ -1435,22 +1435,81 @@ hub's clock is detected; the host keeps its clock synchronised (INV-CK-3).
 **Pinned by.** `tests/test_operation_attempt_facts.py`,
 `tests/test_hub_operation_attempts.py`.
 
-### INV-OA-5 — an attempt ends only by its executor or by its verified effect
+### INV-OA-5 — an attempt ends only by its executor, by its verified effect or by a seal
 
 **Normative.** An open attempt MUST end only when its own executor publishes an
-outcome of `not_started`, `confirmed_done` or `confirmed_failed`, or when an
+outcome of `not_started`, `confirmed_done` or `confirmed_failed`, when an
 identity other than the declarer publishes a `verified` verification, which
-also closes the operation. An outcome from any other identity MUST end nothing.
-After an attempt ends, no attempt MUST open until an identity other than the
-declarer publishes a verification whose effect is `observed` or `absent`. The
-declarer's own verifications MUST count for neither. The ledger MUST be rebuilt
-from the journal at start without consulting any clock.
+also closes the operation, or when the hub keeps a seal of it (INV-OA-6). An
+outcome from any other identity MUST end nothing. After an attempt ends, no
+attempt MUST open until an identity other than the declarer publishes a
+verification whose effect is `observed` or `absent`. The declarer's own
+verifications MUST count for neither. The ledger MUST be rebuilt from the
+journal at start without consulting any clock.
 
 **Implementation.** `core/operation_attempt_ledger.py`, fed by
 `core/handlers/operation_records.py`.
 
 **Pinned by.** `tests/test_operation_attempt_ledger.py`,
-`tests/test_hub_operation_attempts.py`.
+`tests/test_hub_operation_attempts.py`, `tests/test_operation_seals.py`.
+
+### INV-OA-6 — a seal names exactly one open attempt's sealed marker and reconciles nothing
+
+**Normative.** The hub MUST keep a `seal` record only from an identity that
+holds `operation-seal` on the task, which the handler enforces also on a hub
+without an ACL policy, where no identity holds it. The named attempt MUST be an
+open attempt of the named operation, otherwise the record MUST be refused
+`attempt_unknown` or `attempt_ended`. The hub MUST recompute, in the stated
+object format, the id of the `sealed` marker blob of that operation, attempt
+and declared intent digest, and MUST refuse as `seal_not_observed` a record
+whose object or ref differs, whose observation is not `landed` or
+`landed_earlier`, or whose operation was declared without an intent. A kept
+seal MUST end the attempt in the same `operation_sealed` journal row and
+counts towards the operation's record limit. It MUST NOT reconcile the
+attempt: INV-OA-5's verification by another identity still decides when a new
+attempt may open. An outcome the executor publishes after the seal MUST end
+nothing, and a repeat of the sealed attempt's request MUST return its stored
+answer with the attempt state `sealed`.
+
+**Implementation.** `core/operation_seals.py`,
+`core/operation_records.py:seal_refusal`,
+`core/handlers/operation_records.py`,
+`core/operation_attempt_ledger.py:AttemptLedger.note_seal`.
+
+**Pinned by.** `tests/test_operation_seals.py`,
+`tests/test_hub_operation_seals.py`.
+
+### INV-OA-7 — an operation's attempts are read only by holders on the task
+
+**Normative.** An `operation_state` request MUST be answered only to an
+identity that holds `operation-evidence` or `operation-seal` on the named task,
+which the handler enforces also on a hub without an ACL policy. Any other
+identity MUST receive `not_authorised` and no attempt, state or closure. An
+operation not declared on the named task MUST be answered `unknown_operation`.
+The answer MUST list each attempt's id, executor and state and whether the
+operation is closed, and MUST journal nothing.
+
+**Implementation.** `core/handlers/operation_state.py`,
+`core/operation_attempt_ledger.py:AttemptLedger.summary`.
+
+**Pinned by.** `tests/test_hub_operation_seals.py`.
+
+### INV-OA-8 — the seal comes before its record, and only an operator removes it
+
+**Normative.** `synapse operation seal` MUST read the attempt's state from the
+hub, write the `sealed` marker and read it back before it sends the record, and
+MUST send no record unless the read-back answer is `landed` or
+`landed_earlier`; a seal in place without a record is therefore possible and
+safe, a record without a seal is not. `synapse operation unmark` MUST remove a
+marker only when the hub reports the operation closed, and only while the
+marker holds this attempt's `applied` blob, by a compare-and-delete on that
+exact object; it MUST NOT remove a `sealed` marker.
+
+**Implementation.** `cli_operation_seal.py`,
+`git/attempt_marker_changes.py:remove_applied_marker`.
+
+**Pinned by.** `tests/test_cli_operation_seal.py`,
+`tests/test_git_attempt_marker_changes.py`.
 
 ## Normative constants
 
