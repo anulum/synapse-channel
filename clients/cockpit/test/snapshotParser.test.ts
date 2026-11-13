@@ -185,6 +185,9 @@ describe("parseHeadline", () => {
     branch_conflicts: 0,
     peers_reachable: 0,
     peers_total: 0,
+    seats_listening: 3,
+    seats_active_not_listening: 1,
+    seats_silent: 2,
   };
 
   it("reads every counter of the hub's block under its camel-case name", () => {
@@ -206,6 +209,9 @@ describe("parseHeadline", () => {
       branchConflicts: 0,
       peersReachable: 0,
       peersTotal: 0,
+      seatsListening: 3,
+      seatsActiveNotListening: 1,
+      seatsSilent: 2,
     });
   });
 
@@ -216,5 +222,28 @@ describe("parseHeadline", () => {
     }
     const { peers_total: _dropped, ...partial } = block;
     expect(parseHeadline(partial)).toBeNull();
+  });
+});
+
+describe("fleet seats", () => {
+  it("keeps every well-formed seat row and drops the rest", () => {
+    const seats = parseSnapshot({
+      fleet: {
+        seats: [
+          { identity: "a/one", listening: true, active: true, evidence: "note", evidence_at: 12.5, state: "listening" },
+          { identity: "b/two", listening: false, active: true, evidence: "claim", evidence_at: null, state: "active, not listening" },
+          { identity: "c/three", listening: "yes", active: 1, evidence: "rumour", state: "silent" },
+          { identity: "", state: "silent" },
+          { identity: "d/four", state: "offline" },
+          "e/five",
+        ],
+      },
+    })?.fleet.seats;
+    expect(seats).toEqual([
+      { identity: "a/one", listening: true, active: true, evidence: "note", evidenceAt: 12.5, state: "listening" },
+      { identity: "b/two", listening: false, active: true, evidence: "claim", evidenceAt: null, state: "active, not listening" },
+      { identity: "c/three", listening: false, active: false, evidence: null, evidenceAt: null, state: "silent" },
+    ]);
+    expect(parseSnapshot({})?.fleet.seats).toEqual([]);
   });
 });

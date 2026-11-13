@@ -6,7 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — derive the operator fleet roster from a fleet snapshot
 
-import type { ClaimRecord, FleetSnapshot } from "../types";
+import type { ClaimRecord, FleetSnapshot, SeatState } from "../types";
 
 /**
  * A row's worst condition. Ordered worst-first so it doubles as sort priority:
@@ -25,19 +25,18 @@ const STATUS_RANK: Record<RowStatus, number> = {
 export interface RosterEntry {
   readonly agent: string;
   readonly status: RowStatus;
-  /** Whether the identity is in the live roster right now. */
-  readonly online: boolean;
+  /**
+   * What the hub knows about the seat: "listening" (a socket receives its
+   * messages), "active, not listening" (a held claim or recent claim or note),
+   * or "silent". A seat is never called offline (`dashboard_seats.py`).
+   */
+  readonly seat: SeatState;
   readonly activeClaims: readonly ClaimRecord[];
   readonly staleClaims: readonly ClaimRecord[];
   /** Every distinct path the identity holds, active or stale, sorted. */
   readonly paths: readonly string[];
   /** Whether the identity appears in an advisory branch conflict. */
   readonly inConflict: boolean;
-  /**
-   * Whether the hub expected this agent's `-rx` waiter and found it absent —
-   * the agent is reachable-in-name only and will not wake on messages.
-   */
-  readonly wakerMissing: boolean;
   /** Roles the agent answers to, as the hub's registry binds them. */
   readonly roles: readonly string[];
 }
@@ -58,6 +57,11 @@ function statusFor(inConflict: boolean, hasStale: boolean, hasActive: boolean): 
   if (hasStale) return "stale";
   if (hasActive) return "holding";
   return "idle";
+}
+
+function fallbackSeat(connected: boolean, holding: boolean): SeatState {
+  if (connected) return "listening";
+  return holding ? "active, not listening" : "silent";
 }
 
 function uniqueSorted(paths: readonly string[]): string[] {
@@ -83,15 +87,16 @@ function groupByOwner(claims: readonly ClaimRecord[]): Map<string, ClaimRecord[]
 export function deriveRoster(snapshot: FleetSnapshot | null): RosterEntry[] {
   if (snapshot === null) return [];
 
+  const seats = new Map(snapshot.fleet.seats.map((seat) => [seat.identity, seat.state]));
   const live = new Set(snapshot.fleet.agents.live);
   const online = new Set([...snapshot.online_agents, ...live]);
   const inConflict = conflictOwners(snapshot);
-  const missingWaiters = new Set(snapshot.fleet.agents.missing_waiters);
 
   const active = groupByOwner(snapshot.fleet.claims.active_claims);
   const stale = groupByOwner(snapshot.fleet.claims.stale_claims);
 
-  const identities = new Set<string>([...live, ...active.keys(), ...stale.keys()]);
+  // Every seat the hub names, every live agent and any claim owner (a stale claim stays visible).
+  const identities = new Set<string>([...seats.keys(), ...live, ...active.keys(), ...stale.keys()]);
 
   const rows: RosterEntry[] = [];
   for (const agent of identities) {
@@ -105,12 +110,12 @@ export function deriveRoster(snapshot: FleetSnapshot | null): RosterEntry[] {
     rows.push({
       agent,
       status: statusFor(inConflict.has(agent), staleClaims.length > 0, activeClaims.length > 0),
-      online: online.has(agent),
+      // Without the hub's projection (an older dashboard) only presence and claims are known.
+      seat: seats.get(agent) ?? fallbackSeat(online.has(agent), activeClaims.length > 0),
       activeClaims,
       staleClaims,
       paths,
       inConflict: inConflict.has(agent),
-      wakerMissing: missingWaiters.has(`${agent}-rx`),
       roles: snapshot.agent_roles[agent] ?? [],
     });
   }

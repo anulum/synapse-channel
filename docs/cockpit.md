@@ -248,6 +248,10 @@ Click a headline counter to filter the signal log to its underlying event
 kinds. Clear the focus lens before concluding that a board or claim list is
 complete.
 
+Press `Ctrl+K` or `Command+K` to open the command palette. Viewer principals
+receive navigation and inspection commands only. Operator and admin principals
+receive the governed write commands currently enabled by the server.
+
 ### Counter glossary
 
 Every counter below is computed once, on the hub's whole board, in the
@@ -271,20 +275,36 @@ received in the last minute.
 | `tasks_ready` | the hub's ready list: status `open` and every prerequisite closed |
 | `tasks_blocked` | open tasks that cannot start: `tasks_blocked_marked` plus `tasks_blocked_waiting` |
 | `tasks_blocked_marked` | open tasks whose status is `blocked` |
-| `tasks_blocked_waiting` | open tasks not marked blocked whose prerequisite is not closed or is not on the board |
+| `tasks_blocked_waiting` | tasks whose status is `open` and whose prerequisite is not closed or is not on the board (a task in progress has started and is not counted) |
 | `tasks_closed` | tasks whose status is `done` or `cancelled`, counted even when the bounded board does not send them |
 | `risk_signals` | every risk signal, amber and red |
 | `risk_signals_red` | red signals: an unsafe condition such as a stale lease or a branch conflict |
 | `risk_signals_amber` | amber signals: impeded progress |
 | `branch_conflicts` | pairs of live git-scoped claims on different branches towards one base whose paths overlap |
 | `peers_reachable`, `peers_total` | observed peer hubs that answered, and that are configured |
+| `seats_listening` | seats a socket receives messages for now: the identity itself or its waiter sidecar |
+| `seats_active_not_listening` | seats with no such socket whose record shows work: a held claim at any age, or a claim stamped or a note authored in the last 900 seconds |
+| `seats_silent` | seats with neither: the owner of a listed claim whose lease has run out and whose stamp is older than the window |
 
 A closed task (`done` or `cancelled`) sits in the board's "done" bucket. The
 in-product guide carries the same definitions under "Headline counters".
 
-Press `Ctrl+K` or `Command+K` to open the command palette. Viewer principals
-receive navigation and inspection commands only. Operator and admin principals
-receive the governed write commands currently enabled by the server.
+### Seat states
+
+The roster, the agent drawer, Studio's agents panel and the classic page show
+each seat's state from the snapshot's seat projection (`fleet.seats`), and
+never call a seat offline. **listening** says messages arrive, not that the
+seat will answer: the hub keeps no proof of a reaction in the snapshot.
+**active, not listening** is a seat at work by the durable record with nothing
+receiving its messages, for example one that claims through a short connection
+and listens through a waiter that has stopped. **silent** is a seat with
+neither: in practice the owner of a listed claim whose lease has run out and
+whose stamp is older than the window. The seats are the connected identities (a
+waiter stands for its owner), the owners of listed claims and the authors of
+notes inside the window; a note older than the window names no seat.
+`last_seen` is not used: the hub stamps it on keepalive heartbeats, so it
+proves a socket, not work. The window is 900 seconds, measured on the hub's
+snapshot clock.
 
 ## Change language and use the in-product guide
 
@@ -503,7 +523,8 @@ state.
 ## Work with claims and tasks
 
 - Click a roster identity to open its claims, paths, unread dead-letter facts,
-  and recent events.
+  and recent events. Its tag states the seat: none when listening,
+  "active, not listening" or "silent" otherwise (see "Seat states").
 - Click a task card to inspect its owner, dependencies, readiness, claims, and
   history.
 - Use drawer actions to filter the log or trace task causality.

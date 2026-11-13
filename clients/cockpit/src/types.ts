@@ -121,6 +121,21 @@ export interface TaskGraphSection {
 }
 
 /** The derived fleet section the cockpit reads directly. */
+/** What the hub knows about a seat: never "offline" (`dashboard_seats.py`). */
+export type SeatState = "listening" | "active, not listening" | "silent";
+
+/** One seat of the hub's seat projection. */
+export interface SeatRow {
+  readonly identity: string;
+  /** A socket that receives its directed messages is attached: not proof it will answer. */
+  readonly listening: boolean;
+  /** A held claim, or a claim stamped or a note authored within the hub's window. */
+  readonly active: boolean;
+  readonly evidence: "claim" | "note" | null;
+  readonly evidenceAt: number | null;
+  readonly state: SeatState;
+}
+
 export interface FleetSection {
   readonly agents: FleetAgents;
   readonly claims: FleetClaims;
@@ -128,6 +143,8 @@ export interface FleetSection {
   readonly task_graph: TaskGraphSection;
   /** Release-receipt progress notes from the blackboard snapshot. */
   readonly receipts: readonly Record<string, unknown>[];
+  /** The hub's seat projection, sorted by identity. */
+  readonly seats: readonly SeatRow[];
 }
 
 /** One triaged risk pointing back to a concrete snapshot record. */
@@ -192,6 +209,9 @@ export interface Headline {
   readonly branchConflicts: number;
   readonly peersReachable: number;
   readonly peersTotal: number;
+  readonly seatsListening: number;
+  readonly seatsActiveNotListening: number;
+  readonly seatsSilent: number;
 }
 
 export interface FleetSnapshot {

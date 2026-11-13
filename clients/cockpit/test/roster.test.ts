@@ -31,24 +31,34 @@ describe("deriveRoster", () => {
     const rows = deriveRoster(snapshot);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("idle");
-    expect(rows[0]?.online).toBe(true);
+    expect(rows[0]?.seat).toBe("listening");
     expect(rows[0]?.paths).toEqual([]);
   });
 
-  it("flags exactly the agent whose -rx waiter the hub reports missing", () => {
+  it("takes each seat's state from the hub's projection, quiet authors included", () => {
+    const seat = (identity: string, state: string) => ({ identity, state, listening: state === "listening" });
     const snapshot = snapshotOf({
-      online_agents: ["alpha/aster", "beta/briar"],
+      online_agents: ["alpha/aster"],
       fleet: {
-        agents: {
-          live: ["alpha/aster", "beta/briar"],
-          waiters: ["beta/briar-rx"],
-          missing_waiters: ["alpha/aster-rx"],
-        },
+        agents: { live: ["alpha/aster"], waiters: [], missing_waiters: ["alpha/aster-rx"] },
+        seats: [
+          seat("alpha/aster", "listening"),
+          seat("beta/briar", "active, not listening"),
+          seat("gamma/cedar", "silent"),
+          seat("", "silent"),
+          seat("delta/dune", "offline"),
+        ],
       },
     });
-    const byName = new Map(deriveRoster(snapshot).map((row) => [row.agent, row]));
-    expect(byName.get("alpha/aster")?.wakerMissing).toBe(true);
-    expect(byName.get("beta/briar")?.wakerMissing).toBe(false);
+    const byName = new Map(deriveRoster(snapshot).map((row) => [row.agent, row.seat]));
+    // A missing -rx sidecar no longer marks a seat that receives on its own socket.
+    expect(byName).toEqual(
+      new Map([
+        ["alpha/aster", "listening"],
+        ["beta/briar", "active, not listening"],
+        ["gamma/cedar", "silent"],
+      ]),
+    );
   });
 
   it("classifies holding, stale, and conflict, worst-first", () => {
@@ -97,8 +107,18 @@ describe("deriveRoster", () => {
     const rows = deriveRoster(snapshot);
     const ghost = rows.find((row) => row.agent === "ghost/briar");
     expect(ghost?.status).toBe("stale");
-    expect(ghost?.online).toBe(false);
+    expect(ghost?.seat).toBe("silent");
     expect(ghost?.staleClaims).toHaveLength(1);
+  });
+
+  it("without the hub's projection, a claim holder nobody hears is active, not listening", () => {
+    const snapshot = snapshotOf({
+      fleet: {
+        agents: { live: [], waiters: [], missing_waiters: [] },
+        claims: { active_claims: [{ owner: "omega/quiet", task_id: "t1", paths: ["q.py"] }], stale_claims: [] },
+      },
+    });
+    expect(deriveRoster(snapshot)[0]?.seat).toBe("active, not listening");
   });
 
   it("unions, dedupes, and sorts held paths across active and stale claims", () => {
@@ -191,7 +211,7 @@ describe("deriveRoster", () => {
       },
     });
     const rows = deriveRoster(snapshot);
-    expect(rows[0]?.online).toBe(true);
+    expect(rows[0]?.seat).toBe("listening");
     expect(rows[0]?.status).toBe("holding");
   });
 });

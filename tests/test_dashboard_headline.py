@@ -78,10 +78,14 @@ def test_each_counter_has_its_one_definition() -> None:
     assert headline["tasks_closed"] == 2  # done and cancelled
     assert headline["tasks_in_progress"] == 2
     assert headline["tasks_ready"] == 1
-    # cannot start: MARKED, MARKED-GATED (marked); WAITS, ORPHAN, WORK-GATED (waiting)
+    # cannot start: MARKED, MARKED-GATED (marked); WAITS, ORPHAN (open and waiting).
+    # WORK-GATED is in progress: it has started, so its unfinished prerequisite does not count.
     assert headline["tasks_blocked_marked"] == 2
-    assert headline["tasks_blocked_waiting"] == 3
-    assert headline["tasks_blocked"] == 5
+    assert headline["tasks_blocked_waiting"] == 2
+    assert headline["tasks_blocked"] == 4
+    # PLAN/worker (its waiter is connected) and PLAN/lonely are listening.
+    assert (headline["seats_listening"], headline["seats_active_not_listening"]) == (2, 0)
+    assert headline["seats_silent"] == 0
     _blocked_identity(headline)
 
 
@@ -179,4 +183,4 @@ def test_studio_and_the_snapshot_serve_one_block(server: DashboardServer) -> Non
     studio = _json(server, "/studio.json")
 
     assert studio["headline"] == snapshot["headline"]
-    assert snapshot["headline"]["tasks_blocked"] == 5
+    assert snapshot["headline"]["tasks_blocked"] == 4

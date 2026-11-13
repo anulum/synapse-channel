@@ -53,9 +53,13 @@ function isDone(status: string): boolean {
 
 function bucketOf(status: string, ready: boolean, dependsOn: readonly DependencyChip[]): BoardBucket {
   if (isDone(status)) return "done";
-  // A task is blocked either by an unmet edge or because the board itself says
-  // so — operators mark tasks `blocked` for reasons no dependency edge carries.
-  if (status === "blocked" || dependsOn.some((chip) => !chip.satisfied)) return "blocked";
+  // A task is blocked because the board says so (operators mark tasks `blocked`
+  // for reasons no edge carries) or, while still `open`, by an unmet edge. A task
+  // in progress has started, so an unfinished prerequisite does not block it:
+  // the rule of the hub's `tasks_blocked` headline counter.
+  if (status === "blocked" || (status === "open" && dependsOn.some((chip) => !chip.satisfied))) {
+    return "blocked";
+  }
   if (ready) return "ready";
   return "open";
 }

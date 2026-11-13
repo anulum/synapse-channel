@@ -128,6 +128,9 @@
   function list(id, items, renderRow) {
     const host = document.getElementById(id);
     if (!host) return;
+    // Every snapshot rebuilds the list; a keyboard user on its remainder keeps
+    // focus there, or the next Enter would land on the page instead.
+    const keepFocus = host.contains(document.activeElement) && document.activeElement.tagName === "SUMMARY";
     host.replaceChildren();
     if (!items.length) {
       host.appendChild(htmlNode("div", "cc-empty", "none"));
@@ -147,11 +150,11 @@
       if (details.open) openLists.add(id);
       else openLists.delete(id);
     });
-    details.appendChild(
-      htmlNode("summary", "cc-more__summary", hidden.length + " more of " + items.length),
-    );
+    const summary = htmlNode("summary", "cc-more__summary", hidden.length + " more of " + items.length);
+    details.appendChild(summary);
     for (const item of hidden) details.appendChild(rowFor(item));
     host.appendChild(details);
+    if (keepFocus) summary.focus({ preventScroll: true });
   }
 
   function setStat(id, stat) {
@@ -191,10 +194,15 @@
     setStat("cc-peers", peersTotal ? peersReachable + " / " + peersTotal : "—");
     drawClock(data);
 
-    const agents = data.agents || {};
-    const live = (agents.live || []).map((name) => ({ name, tone: "ok" }))
-      .concat((agents.missing_waiters || []).map((name) => ({ name, tone: "bad" })));
-    list("cc-agents-list", live, (agent) => [dot(agent.tone), value(agent.name)]);
+    // Each seat with what the hub knows of it: listening, active but not
+    // listening, or silent. A seat is never called offline.
+    const seatTone = { "listening": "ok", "active, not listening": "warn", "silent": "dark" };
+    const seats = ((data.agents || {}).seats || []).map((seat) => ({
+      name: seat.identity,
+      state: seat.state,
+      tone: seatTone[seat.state] || "dark",
+    }));
+    list("cc-agents-list", seats, (seat) => [dot(seat.tone), value(seat.name), value(seat.state, "cc-muted")]);
 
     const claims = data.claims || {};
     const allClaims = (claims.active || []).map((claim) => ({ claim, tone: "ok" }))

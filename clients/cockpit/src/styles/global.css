@@ -552,9 +552,9 @@ body {
   border-left-color: var(--critical);
 }
 
-.roster-row--offline {
-  /* Offline rides the dashed edge + the explicit tag, never dimmed text —
-     no whole-row opacity keeps every word of a lingering holder readable. */
+.roster-row--not-listening {
+  /* A seat nobody is listening for rides the dashed edge + the explicit tag,
+     never dimmed text — no whole-row opacity keeps every word readable. */
   border-left-style: dashed;
   background: transparent;
 }

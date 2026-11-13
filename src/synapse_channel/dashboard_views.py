@@ -14,6 +14,7 @@ depends on what a surface was sent.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -23,6 +24,7 @@ from synapse_channel.dashboard_headline import build_headline
 from synapse_channel.dashboard_observed_health import build_observed_fleet_health
 from synapse_channel.dashboard_risk import build_risk_view
 from synapse_channel.dashboard_risk_guidance import build_risk_guidance
+from synapse_channel.dashboard_seats import build_seats
 
 if TYPE_CHECKING:
     from synapse_channel.dashboard import DashboardSnapshot
@@ -48,10 +50,19 @@ def derived_views(
     Returns
     -------
     dict[str, Any]
-        ``{"fleet": …, "risk": …, "headline": …}``.
+        ``{"fleet": …, "risk": …, "headline": …}``; ``fleet["seats"]`` is the
+        seat projection of :mod:`synapse_channel.dashboard_seats`.
     """
     fleet = build_fleet_visibility(snapshot, a2a_state_file=a2a_state_file)
     fleet_section = fleet.to_dict()
+    hub_time = snapshot.state.get("generated_at")
+    fleet_section["seats"] = build_seats(
+        snapshot.online_agents,
+        snapshot.state,
+        snapshot.board,
+        # The snapshot's own clock, so a seat's state is exact at the window's edge.
+        now=float(hub_time) if isinstance(hub_time, int | float) else time.time(),
+    )
     risk = build_risk_view(fleet).to_dict()
     risk["guidance"] = build_risk_guidance(
         board=snapshot.board,

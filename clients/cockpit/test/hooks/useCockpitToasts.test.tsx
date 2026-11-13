@@ -33,6 +33,7 @@ function snapshot(epoch: string, risk: "green" | "red" = "green"): FleetSnapshot
       branch_conflicts: [],
       task_graph: { nodes: [], edges: [] },
       receipts: [],
+      seats: [],
     },
     risk: {
       level: risk,

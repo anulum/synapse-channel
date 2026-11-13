@@ -16,6 +16,8 @@ import type {
   Headline,
   RiskSignal,
   RiskView,
+  SeatRow,
+  SeatState,
   SnapshotBounds,
   TaskGraphEdge,
   TaskGraphNode,
@@ -136,6 +138,25 @@ function parseTaskGraph(value: unknown): TaskGraphSection {
   };
 }
 
+const SEAT_STATES: ReadonlySet<string> = new Set(["listening", "active, not listening", "silent"]);
+
+/** One seat row; null when it lacks an identity or a known state. */
+function parseSeat(value: unknown): SeatRow | null {
+  const seat = asRecord(value);
+  const identity = asString(seat["identity"]);
+  const state = asString(seat["state"]);
+  if (identity === "" || !SEAT_STATES.has(state)) return null;
+  const evidence = seat["evidence"];
+  return {
+    identity,
+    listening: seat["listening"] === true,
+    active: seat["active"] === true,
+    evidence: evidence === "claim" || evidence === "note" ? evidence : null,
+    evidenceAt: asNumberOrNull(seat["evidence_at"]),
+    state: state as SeatState,
+  };
+}
+
 function parseFleet(value: unknown): FleetSection {
   const fleet = asRecord(value);
   return {
@@ -144,6 +165,9 @@ function parseFleet(value: unknown): FleetSection {
     branch_conflicts: asRecordArray(fleet["branch_conflicts"]),
     task_graph: parseTaskGraph(fleet["task_graph"]),
     receipts: asRecordArray(fleet["receipts"]),
+    seats: asArray(fleet["seats"])
+      .map(parseSeat)
+      .filter((seat): seat is SeatRow => seat !== null),
   };
 }
 
@@ -230,6 +254,9 @@ const HEADLINE_FIELDS = [
   ["branch_conflicts", "branchConflicts"],
   ["peers_reachable", "peersReachable"],
   ["peers_total", "peersTotal"],
+  ["seats_listening", "seatsListening"],
+  ["seats_active_not_listening", "seatsActiveNotListening"],
+  ["seats_silent", "seatsSilent"],
 ] as const satisfies readonly (readonly [string, keyof Headline])[];
 
 /** Read the snapshot's `headline` block; null when absent or any counter is malformed. */

@@ -32,7 +32,10 @@ describe("cockpit guide model", () => {
   it("defines every headline counter in the counters topic", () => {
     const counters = english.find((topic) => topic.id === "counters");
     expect(counters?.title).toBe("Headline counters");
-    for (const term of ["agents online", "claims held", "red risk signals", '"blocked"', '"ready"', "obs / min"]) {
+    for (const term of [
+      "agents online", "claims held", "red risk signals", '"blocked"', '"ready"', "obs / min",
+      '"listening"', '"active, not listening"', '"silent"', "never called offline",
+    ]) {
       expect(counters?.body).toContain(term);
     }
   });

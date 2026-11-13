@@ -422,13 +422,6 @@ def _escape(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
-def _render_string_list(items: Sequence[str]) -> str:
-    """Render escaped string list items or a single empty marker."""
-    if not items:
-        return '<li class="muted">None</li>'
-    return "".join(f"<li>{_escape(item)}</li>" for item in items)
-
-
 def _render_record_list(items: Sequence[JsonDict], *, empty: str) -> str:
     """Render derived fleet records as compact escaped JSON."""
     if not items:
@@ -461,6 +454,15 @@ def _render_headline(headline: Mapping[str, object]) -> str:
     </section>"""
 
 
+def _render_seats(seats: object) -> str:
+    """Render each seat with what the hub knows of it (never "offline")."""
+    rows = [
+        f"<li>{_escape(seat.get('identity'))}: {_escape(seat.get('state'))}</li>"
+        for seat in _as_mappings(seats)
+    ]
+    return "".join(rows) if rows else '<li class="muted">No seats</li>'
+
+
 def render_fleet_visibility_html(
     snapshot: DashboardSnapshot,
     *,
@@ -483,8 +485,10 @@ def render_fleet_visibility_html(
     """
     fleet = build_fleet_visibility(snapshot, a2a_state_file=a2a_state_file)
     a2a = fleet.a2a
-    # The counters are the snapshot's own headline block, not counted here again.
-    headline = _render_headline(snapshot.to_dict(a2a_state_file=a2a_state_file)["headline"])
+    # The counters and seats are the snapshot's own blocks, not counted here again.
+    document = snapshot.to_dict(a2a_state_file=a2a_state_file)
+    headline = _render_headline(document["headline"])
+    seats = _render_seats(document["fleet"]["seats"])
     return f"""{headline}
     <section>
       <h2>Fleet visibility</h2>
@@ -498,8 +502,8 @@ def render_fleet_visibility_html(
       </ul>
     </section>
     <section>
-      <h2>Missing waiters</h2>
-      <ul>{_render_string_list(fleet.agents.missing_waiters)}</ul>
+      <h2>Seats</h2>
+      <ul>{seats}</ul>
     </section>
     <section>
       <h2>Tasks marked blocked</h2>

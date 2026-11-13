@@ -12,6 +12,7 @@ import { memo } from "react";
 import { Ident } from "./Ident";
 
 import type { RosterEntry, RowStatus } from "../lib/roster";
+import type { SeatState } from "../types";
 import { identityMatchesSelection } from "../lib/selection";
 import type { CockpitSelection } from "../lib/workspace";
 
@@ -24,6 +25,12 @@ const STATUS_GLYPH: Record<RowStatus, string> = {
 };
 
 /** Short status word for the row's accessible label and tooltip. */
+/** What each seat state says, and what it does not. */
+const SEAT_TITLE: Record<Exclude<SeatState, "listening">, string> = {
+  "active, not listening": "Working by the record (a held claim, or a claim or note in the last 15 minutes) with no socket receiving its messages.",
+  silent: "Nothing recent in the record and no socket receiving its messages.",
+};
+
 const STATUS_WORD: Record<RowStatus, string> = {
   conflict: "branch conflict",
   stale: "stale lease",
@@ -63,9 +70,9 @@ function RosterRow({ entry, onInspect, selected }: RosterRowProps): JSX.Element 
 
   return (
     <li
-      className={`roster-row roster-row--${entry.status}${entry.online ? "" : " roster-row--offline"}${onInspect !== undefined ? " roster-row--link" : ""}${selected ? " context-match" : ""}`}
+      className={`roster-row roster-row--${entry.status}${entry.seat === "listening" ? "" : " roster-row--not-listening"}${onInspect !== undefined ? " roster-row--link" : ""}${selected ? " context-match" : ""}`}
       aria-current={selected ? "true" : undefined}
-      title={`${entry.agent} — ${STATUS_WORD[entry.status]}${entry.online ? "" : " (offline)"}`}
+      title={`${entry.agent} — ${STATUS_WORD[entry.status]} · ${entry.seat}`}
     >
       <span className="roster-row__glyph" aria-hidden="true">
         {STATUS_GLYPH[entry.status]}
@@ -94,10 +101,14 @@ function RosterRow({ entry, onInspect, selected }: RosterRowProps): JSX.Element 
             {role}
           </span>
         ))}
-        {entry.wakerMissing && (
-          <span className="roster-row__tag roster-row__tag--warn">waker missing</span>
+        {entry.seat !== "listening" && (
+          <span
+            className={`roster-row__tag${entry.seat === "silent" ? "" : " roster-row__tag--warn"}`}
+            title={SEAT_TITLE[entry.seat]}
+          >
+            {entry.seat}
+          </span>
         )}
-        {!entry.online && <span className="roster-row__tag roster-row__tag--warn">offline</span>}
       </span>
       {held > 0 && (
         <ul className="roster-row__paths">
@@ -124,7 +135,7 @@ interface FleetRosterProps {
 }
 
 function FleetRosterView({ roster, waiters, onInspect, selection = null }: FleetRosterProps): JSX.Element {
-  const live = roster.filter((entry) => entry.online).length;
+  const live = roster.filter((entry) => entry.seat === "listening").length;
 
   return (
     <section className="panel" aria-label="Fleet roster">

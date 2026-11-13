@@ -80,6 +80,9 @@ start, marked blocked or waiting on a prerequisite), "claims active/stale" is
 `claims_active` / `claims_stale`, and "risk signals all/red" is `risk_signals` /
 `risk_signals_red`. The cockpit shows the same numbers under the same names; the
 definitions are in the [cockpit guide's counter glossary](cockpit.md#counter-glossary).
+The agents panel lists every seat with its state from the snapshot's seat
+projection: listening, active but not listening, or silent, never "offline"
+(see [seat states](cockpit.md#seat-states)).
 
 ## The Studio snapshot — `/studio.json`
 

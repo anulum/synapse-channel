@@ -61,6 +61,7 @@ const SNAPSHOT: FleetSnapshot = {
       edges: [],
     },
     receipts: [],
+    seats: [],
   },
   risk: { level: "green", signals: [], safe_next_work: [] },
 };

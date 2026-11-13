@@ -83,6 +83,7 @@
 
   function disclosure(key, summary, hidden) {
     const details = node("details", "syn-board-more");
+    details.dataset.disclosure = key;
     details.open = openDisclosures.has(key);
     details.addEventListener("toggle", () => {
       if (details.open) openDisclosures.add(key);
@@ -130,6 +131,22 @@
     return section;
   }
 
+  // A refresh rebuilds every column. A keyboard user on a column's remainder
+  // keeps focus there, or the next Enter would land on the page instead.
+  function focusedDisclosure(host) {
+    const focused = document.activeElement;
+    return host.contains(focused) && focused.tagName === "SUMMARY"
+      ? focused.parentElement.dataset.disclosure
+      : null;
+  }
+
+  function refocusDisclosure(host, key) {
+    if (!key) return;
+    const again = Array.from(host.querySelectorAll("details.syn-board-more"))
+      .find((details) => details.dataset.disclosure === key);
+    if (again) again.querySelector("summary").focus({ preventScroll: true });
+  }
+
   // options.cardLimit: a positive integer bounds the cards shown per column; the
   // rest stay in the page inside a closed disclosure. options.collapsed: column
   // ids whose cards are all inside the disclosure. Without usable options every
@@ -139,6 +156,7 @@
     const limit = cardLimit(options);
     const collapsed = collapsedColumns(options);
     const hostKey = host.id || "board";
+    const focusKey = focusedDisclosure(host);
     host.replaceChildren();
     const columns = rows(projection && projection.columns);
     if (!columns.length) {
@@ -148,6 +166,7 @@
     for (const column of columns) {
       host.appendChild(renderColumn(column, hostKey, limit, collapsed));
     }
+    refocusDisclosure(host, focusKey);
     if (projection.source_truncated === true) {
       const shown = Number(projection.declared_tasks) || 0;
       const total = Number(projection.total_declared_tasks) || shown;

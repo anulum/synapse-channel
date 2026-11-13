@@ -65,6 +65,7 @@ body.syn { margin:0; }
 .cc-offline { color:var(--syn-amber); font-family:var(--syn-font-mono);
   font-size:var(--syn-fs-data); }
 .cc-empty { color:var(--syn-muted); font-size:var(--syn-fs-body); padding:var(--syn-sp-2) 0; }
+.cc-muted { margin-left:auto; color:var(--syn-muted); font-size:var(--syn-fs-label); white-space:nowrap; }
 .cc-more__summary { padding:var(--syn-sp-2) 0; color:var(--syn-muted); cursor:pointer;
   font-family:var(--syn-font-mono); font-size:var(--syn-fs-label); }
 .cc-grid .syn-row { min-width:0; overflow:hidden; }

@@ -54,6 +54,7 @@ function snapshotOf(options: {
       branch_conflicts: options.conflicts ?? [],
       task_graph: { nodes: [], edges: [] },
       receipts: [],
+      seats: [],
     },
     risk: { level: "green", signals: [], safe_next_work: [] },
   };

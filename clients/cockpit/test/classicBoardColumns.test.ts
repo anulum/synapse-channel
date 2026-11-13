@@ -200,6 +200,33 @@ it("keeps a disclosure the reader opened across a refresh, per column", () => {
   expect(host?.querySelector<HTMLDetailsElement>('[data-column="open"] details')?.open).toBe(false);
 });
 
+it("keeps keyboard focus on the column remainder it was on across a refresh", () => {
+  document.body.innerHTML = '<div id="board"></div>';
+  const board = loadBoardColumns();
+  const host = document.getElementById("board");
+  const projection = {
+    columns: [
+      { id: "open", label: "Open", tasks: cards(4, "OPEN") },
+      { id: "blocked", label: "Blocked", tasks: cards(4, "BLOCK") },
+    ],
+  };
+  const options = { cardLimit: 1 };
+  const summaryOf = (column: string) =>
+    host?.querySelector<HTMLElement>(`[data-column="${column}"] details > summary`);
+
+  board.render(host, projection, options);
+  summaryOf("blocked")?.focus();
+  board.render(host, projection, options);
+  expect(document.activeElement).toBe(summaryOf("blocked"));
+
+  // A remainder that is gone takes no focus; focus elsewhere is never moved.
+  board.render(host, { columns: [{ id: "open", label: "Open", tasks: cards(4, "OPEN") }] }, options);
+  expect(document.activeElement).toBe(document.body);
+  summaryOf("open")?.blur();
+  board.render(host, projection, options);
+  expect(document.activeElement).toBe(document.body);
+});
+
 it("renders every card when no usable limit is given", () => {
   document.body.innerHTML = '<div id="board"></div>';
   const board = loadBoardColumns();

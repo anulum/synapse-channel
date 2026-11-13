@@ -239,6 +239,20 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- The dashboard says what is known about each seat and never calls one
+  offline. A seat projection in the snapshot (`fleet.seats`) marks every seat
+  (a connected identity, the owner of a listed claim, or the author of a note
+  inside the window) as **listening** (a socket receives its messages: the
+  identity itself or its waiter sidecar), **active, not listening** (a held
+  claim at any age, or a claim stamped or a note authored in the last 900
+  seconds, with nothing receiving) or **silent**; the headline counts each
+  state. The cockpit roster and agent drawer, Studio's agents panel and the
+  classic page show the state. A seat that claimed through a short connection
+  and holds the claim read "offline" in the roster, and every participant
+  connected through the client library alone read "waker missing"; they now
+  read "active, not listening" and "listening". A task in progress is no longer
+  counted as blocked when a prerequisite is unfinished: it has started. See
+  `docs/cockpit.md`, "Seat states".
 - Every dashboard counter has one definition and is computed once, on the
   whole board, in the snapshot's new `headline` block (agents, waiters,
   claims, open, in-progress, ready, blocked with its marked and waiting parts,
@@ -356,6 +370,11 @@ execution evidence when carrying a release claim forward.
   changes.
 
 ### Fixed
+
+- Studio keeps keyboard focus on a panel's or a board column's remainder
+  ("N more of M") when the next snapshot arrives. Each snapshot rebuilt the
+  lists, so focus fell to the page every five seconds and an Enter pressed
+  just after a refresh opened nothing.
 
 - A signed wake answered with 301, 302 or 303 keeps that status and is
   rejected. It is no longer stored as status 0, so it is not retried as

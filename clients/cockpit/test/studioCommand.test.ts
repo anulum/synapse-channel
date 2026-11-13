@@ -83,7 +83,7 @@ it("renders the snapshot, exact board projection, and untrusted fields as inert 
       peers_total: 1,
       peers_reachable: 1,
     },
-    agents: { live: [payload], missing_waiters: [] },
+    agents: { live: [payload], missing_waiters: [], seats: [{ identity: payload, state: payload }] },
     claims: { active: [{ owner: payload, paths: [payload] }], stale: [] },
     tasks: {
       ready: [payload],
@@ -104,6 +104,52 @@ it("renders the snapshot, exact board projection, and untrusted fields as inert 
   expect(document.querySelector("#pwn, img, [onerror]")).toBeNull();
   expect((window as typeof window & { __pwned?: number }).__pwned).toBeUndefined();
   expect(feedStart).toHaveBeenCalledWith(expect.objectContaining({ snapshotUrl: "/studio.json" }));
+});
+
+it("keeps keyboard focus on a panel's remainder when the next snapshot arrives", () => {
+  mount();
+  const command = loadCommand(vi.fn());
+  const snapshot = {
+    tasks: { ready: Array.from({ length: 12 }, (_unused, index) => `TASK-${index + 1}`), blocked: [] },
+  };
+
+  command.render(snapshot);
+  document.querySelector<HTMLElement>("#cc-tasks-list summary")?.focus();
+  command.render(snapshot);
+
+  // The list is rebuilt; a keyboard user's next Enter must still reach its summary.
+  expect(document.activeElement).toBe(document.querySelector("#cc-tasks-list summary"));
+  command.render({ tasks: { ready: ["TASK-1"], blocked: [] } });
+  expect(document.querySelector("#cc-tasks-list summary")).toBeNull();
+});
+
+it("lists each seat with its state and tone, never as offline", () => {
+  mount();
+  const command = loadCommand(vi.fn());
+
+  command.render({
+    agents: {
+      live: [],
+      missing_waiters: [],
+      seats: [
+        { identity: "seat/ear", state: "listening" },
+        { identity: "seat/hand", state: "active, not listening" },
+        { identity: "seat/quiet", state: "silent" },
+      ],
+    },
+  });
+
+  const rows = Array.from(document.querySelectorAll("#cc-agents-list > .syn-row"));
+  expect(rows.map((row) => [row.querySelector(".syn-dot")?.className, row.textContent])).toEqual([
+    ["syn-dot syn-dot--ok", "seat/earlistening"],
+    ["syn-dot syn-dot--warn", "seat/handactive, not listening"],
+    ["syn-dot syn-dot--dark", "seat/quietsilent"],
+  ]);
+  expect(rows.map((row) => row.querySelector(".cc-muted")?.textContent)).toEqual([
+    "listening",
+    "active, not listening",
+    "silent",
+  ]);
 });
 
 it("shows a precise offline state when snapshot polling fails", async () => {
@@ -166,7 +212,11 @@ it("bounds the panel lists and the board, stating each remainder and keeping eve
   command.render({
     verdict: "amber",
     headline: { agents_live: 30, tasks_ready: 30 },
-    agents: { live: ids.map((id) => `seat/${id}`), missing_waiters: [] },
+    agents: {
+      live: ids.map((id) => `seat/${id}`),
+      missing_waiters: [],
+      seats: ids.map((id) => ({ identity: `seat/${id}`, state: "listening" })),
+    },
     claims: { active: [], stale: [] },
     tasks: {
       ready: ids,
@@ -211,7 +261,11 @@ it("keeps an opened panel list open when the next snapshot arrives", () => {
   const command = loadCommand(vi.fn());
   const snapshot = {
     tasks: { ready: Array.from({ length: 12 }, (_unused, index) => `TASK-${index + 1}`), blocked: [] },
-    agents: { live: Array.from({ length: 12 }, (_unused, index) => `seat/${index + 1}`), missing_waiters: [] },
+    agents: {
+      live: Array.from({ length: 12 }, (_unused, index) => `seat/${index + 1}`),
+      missing_waiters: [],
+      seats: Array.from({ length: 12 }, (_unused, index) => ({ identity: `seat/${index + 1}`, state: "silent" })),
+    },
   };
 
   command.render(snapshot);

@@ -109,7 +109,12 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
             "config_epoch": str(dashboard.get("config_epoch") or ""),
         },
         "headline": _headline(dashboard),
-        "agents": {"live": live, "waiters": waiters, "missing_waiters": missing_waiters},
+        "agents": {
+            "live": live,
+            "waiters": waiters,
+            "missing_waiters": missing_waiters,
+            "seats": _list(fleet.get("seats")),
+        },
         "claims": {"active": active_claims, "stale": stale_claims},
         "tasks": {
             "ready": ready,

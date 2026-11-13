@@ -201,7 +201,8 @@ def test_fleet_visibility_renders_in_dashboard_html(tmp_path: Path) -> None:
     html = render_dashboard_html(snapshot, refresh_seconds=5, a2a_state_file=a2a_state)
 
     assert "Fleet visibility" in html
-    assert "Missing waiters" in html
+    assert "<h2>Seats</h2>" in html
+    assert "<li>demo: listening</li>" in html  # its waiter demo-rx is connected
     assert "A2A tasks" in html
     assert "Branch conflicts" in html
     assert "Task dependency graph" in html

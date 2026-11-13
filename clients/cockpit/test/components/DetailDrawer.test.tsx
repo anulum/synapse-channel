@@ -52,12 +52,11 @@ const AGENT: AgentDetail = {
   entry: {
     agent: "quantum/claude",
     status: "holding",
-    online: true,
+    seat: "listening",
     activeClaims: [],
     staleClaims: [],
     paths: [],
     inConflict: true,
-    wakerMissing: true,
     roles: ["reviewer"],
   },
   claims: [claimView("t-1", { paths: ["src/a.py"] }), claimView("t-2", { stale: true })],
@@ -163,11 +162,19 @@ describe("DetailDrawer", () => {
     expect(container.innerHTML).toBe("");
   });
 
+  it("states a seat that is not listening as the hub's projection says, as a warning", () => {
+    const entry = { ...AGENT.entry!, seat: "active, not listening" as const };
+    render(<DetailDrawer agent={{ ...AGENT, entry }} onClose={() => {}} onFilterLog={() => {}} />);
+    expect(screen.getByText("active, not listening").className).toBe("drawer__fact drawer__fact--warn");
+    expect(screen.queryByText("listening")).toBeNull();
+    expect(screen.queryByText("offline")).toBeNull();
+  });
+
   it("states the agent's condition, claims, unread mailbox, and window overflow", () => {
     render(<DetailDrawer agent={AGENT} onClose={() => {}} onFilterLog={() => {}} />);
     expect(screen.getByLabelText("Agent quantum/claude")).toBeTruthy();
-    expect(screen.getByText("online")).toBeTruthy();
-    expect(screen.getByText("waker missing")).toBeTruthy();
+    expect(screen.getByText("listening").className).toBe("drawer__fact drawer__fact--ok");
+    expect(screen.queryByText("waker missing")).toBeNull();
     expect(screen.getByText("in conflict")).toBeTruthy();
     expect(screen.getByText("role: reviewer")).toBeTruthy();
     expect(screen.getByText("claims held · 2")).toBeTruthy();

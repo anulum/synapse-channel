@@ -41,6 +41,9 @@ const HEADLINE = {
   branch_conflicts: 0,
   peers_reachable: 0,
   peers_total: 0,
+  seats_listening: 0,
+  seats_active_not_listening: 0,
+  seats_silent: 0,
 };
 
 function node(taskId: string, status: string, ready = false, title = ""): TaskGraphNode {
@@ -76,6 +79,7 @@ function snapshotOf(options: {
       branch_conflicts: [],
       task_graph: { nodes: options.nodes ?? [], edges: options.edges ?? [] },
       receipts: [],
+      seats: [],
     },
     risk: { level: "green", signals: [], safe_next_work: [] },
   };
@@ -142,6 +146,22 @@ describe("deriveBoard", () => {
   it("counts a cancelled task as closed, as the ledger does", () => {
     const rows = deriveBoard(snapshotOf({ nodes: [node("dropped", "cancelled", true)] }));
     expect(rows[0]?.bucket).toBe("done");
+  });
+
+  it("leaves a task in progress out of the blocked bucket: it has started", () => {
+    const rows = deriveBoard(
+      snapshotOf({
+        nodes: [node("started", "in_progress"), node("waits", "open")],
+        edges: [
+          edge("gate", "started", { satisfied: false, from_status: "open" }),
+          edge("gate", "waits", { satisfied: false, from_status: "open" }),
+        ],
+      }),
+    );
+    expect(rows.map((row) => [row.taskId, row.bucket])).toEqual([
+      ["waits", "blocked"],
+      ["started", "open"],
+    ]);
   });
 
   it("honours a board-declared blocked status even with no unmet edge", () => {

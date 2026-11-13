@@ -44,12 +44,11 @@ function rosterEntry(agent: string): RosterEntry {
   return {
     agent,
     status: "idle",
-    online: true,
+    seat: "listening",
     activeClaims: [],
     staleClaims: [],
     paths: [],
     inConflict: false,
-    wakerMissing: false,
   roles: [],
   };
 }

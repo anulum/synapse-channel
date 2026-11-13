@@ -25,8 +25,9 @@ glossary in ``docs/cockpit.md`` repeats them):
     The hub's ready list: status ``open`` and every prerequisite closed.
 ``tasks_blocked``
     Open tasks that cannot start: ``tasks_blocked_marked`` (status
-    ``blocked``) plus ``tasks_blocked_waiting`` (not marked, but a
-    prerequisite is not closed or is not on the board).
+    ``blocked``) plus ``tasks_blocked_waiting`` (status ``open``, but a
+    prerequisite is not closed or is not on the board). A task in progress has
+    started, so an unfinished prerequisite does not count it as blocked.
 ``risk_signals`` / ``risk_signals_red`` / ``risk_signals_amber``
     Every risk signal / the red ones (an unsafe condition) / the amber ones
     (impeded progress).
@@ -35,6 +36,8 @@ glossary in ``docs/cockpit.md`` repeats them):
     whose paths overlap.
 ``peers_reachable`` / ``peers_total``
     Observed peer hubs that answered / that are configured.
+``seats_listening`` / ``seats_active_not_listening`` / ``seats_silent``
+    Seats in each state of :mod:`synapse_channel.dashboard_seats`.
 """
 
 from __future__ import annotations
@@ -62,6 +65,9 @@ HEADLINE_KEYS = (
     "branch_conflicts",
     "peers_reachable",
     "peers_total",
+    "seats_listening",
+    "seats_active_not_listening",
+    "seats_silent",
 )
 """Every headline counter, in display order."""
 
@@ -83,6 +89,16 @@ def _count(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
+def _seat_counts(seats: list[Mapping[str, Any]]) -> dict[str, int]:
+    """Count the seat projection's rows by state."""
+    states = [seat.get("state") for seat in seats]
+    return {
+        "seats_listening": states.count("listening"),
+        "seats_active_not_listening": states.count("active, not listening"),
+        "seats_silent": states.count("silent"),
+    }
+
+
 def _task_counts(board: Mapping[str, Any], graph: Mapping[str, Any]) -> dict[str, int]:
     """Count the board's tasks by the headline's task definitions."""
     tasks = _records(board.get("tasks"))
@@ -91,12 +107,11 @@ def _task_counts(board: Mapping[str, Any], graph: Mapping[str, Any]) -> dict[str
         task_id for task_id, value in status.items() if value not in TERMINAL_LEDGER_STATUSES
     }
     marked = {task_id for task_id in open_ids if status[task_id] == "blocked"}
-    gated = {
+    waiting = {
         str(edge.get("to"))
         for edge in _records(graph.get("edges"))
-        if edge.get("satisfied") is not True and str(edge.get("to")) in open_ids
+        if edge.get("satisfied") is not True and status.get(str(edge.get("to"))) == "open"
     }
-    waiting = gated - marked
     return {
         "tasks_open": len(open_ids),
         "tasks_in_progress": sum(1 for value in status.values() if value == "in_progress"),
@@ -145,6 +160,7 @@ def build_headline(
         "branch_conflicts": _count(fleet.get("branch_conflicts")),
         "peers_reachable": _count(observed.get("peers_reachable")),
         "peers_total": _count(observed.get("peers_total")),
+        **_seat_counts(_records(fleet.get("seats"))),
         **_task_counts(board, _mapping(fleet.get("task_graph"))),
     }
     return {key: counts[key] for key in HEADLINE_KEYS}

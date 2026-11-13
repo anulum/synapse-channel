@@ -131,6 +131,22 @@ def test_the_headline_is_the_snapshots_own_block_copied() -> None:
     assert studio["headline"]["agents_live"] == 2 and studio["headline"]["claims_stale"] == 1
 
 
+def test_studio_carries_the_seat_projection_as_sent() -> None:
+    seat = {
+        "identity": "STUDIO/claimer",
+        "listening": False,
+        "active": True,
+        "evidence": "claim",
+        "evidence_at": 1.0,
+        "state": "active, not listening",
+    }
+    fleet = _DASHBOARD["fleet"]
+    assert isinstance(fleet, dict)
+    dashboard = {**_DASHBOARD, "fleet": {**fleet, "seats": [seat]}}
+
+    assert build_studio_snapshot(dashboard)["agents"]["seats"] == [seat]
+
+
 def test_studio_counts_nothing_itself() -> None:
     """A block that disagrees with the lists is still what Studio shows."""
     studio = build_studio_snapshot(
@@ -148,7 +164,7 @@ def test_empty_payload_projects_to_safe_defaults() -> None:
     assert studio["verdict"] == UNKNOWN_VERDICT
     assert studio["generated_at"] is None
     assert all(count == 0 for count in studio["headline"].values())
-    assert studio["agents"] == {"live": [], "waiters": [], "missing_waiters": []}
+    assert studio["agents"] == {"live": [], "waiters": [], "missing_waiters": [], "seats": []}
     assert studio["claims"] == {"active": [], "stale": []}
     assert studio["tasks"]["graph"] is None
     assert studio["tasks"]["columns"]["total_cards"] == 0

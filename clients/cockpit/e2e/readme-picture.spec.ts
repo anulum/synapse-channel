@@ -59,6 +59,12 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
       await expect(region("Fleet roster").getByRole("button", { name: `Inspect agent ${participant}`, exact: true }))
         .toBeVisible();
     }
+    // The participants connect through the client library and run no waiter: the
+    // socket that receives their messages is their own, so each reads listening.
+    await expect(region("Fleet roster").locator(".roster-row--not-listening")).toHaveCount(0);
+    for (const word of ["waker missing", "offline", "not listening", "silent"]) {
+      await expect(region("Fleet roster")).not.toContainText(word);
+    }
     // The snapshot carries open work in full and counts the closed tasks.
     for (const task of tasks.filter(task => !closed.includes(task))) {
       await expect(region("Task board")).toContainText(task);

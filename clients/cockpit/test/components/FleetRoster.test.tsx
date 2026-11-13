@@ -26,12 +26,11 @@ function entry(agent: string, overrides: Partial<RosterEntry> = {}): RosterEntry
   return {
     agent,
     status: "idle",
-    online: true,
+    seat: "listening",
     activeClaims: [],
     staleClaims: [],
     paths: [],
     inConflict: false,
-    wakerMissing: false,
     roles: [],
     ...overrides,
   };
@@ -64,7 +63,7 @@ describe("FleetRoster", () => {
       <FleetRoster
         roster={[
           entry("quantum/claude-7f3a", { activeClaims: [claim("t-1")] }),
-          entry("standalone", { online: false }),
+          entry("standalone", { seat: "silent" }),
         ]}
         waiters={3}
       />,
@@ -76,16 +75,24 @@ describe("FleetRoster", () => {
     expect(screen.getByText(identText("standalone")).className).toContain("roster-row__name");
     expect(screen.getByText("1 claim")).toBeTruthy();
     expect(screen.getByText("no claims")).toBeTruthy();
-    expect(screen.getByText("offline")).toBeTruthy();
+    const silent = screen.getByText("silent");
+    expect(silent.getAttribute("title")).toBe(
+      "Nothing recent in the record and no socket receiving its messages.",
+    );
+    expect(silent.className).toBe("roster-row__tag");
+    // A listening seat carries no state tag: only the seats that are not listening say so.
+    expect(screen.queryByText("listening")).toBeNull();
+    expect(document.querySelectorAll(".roster-row__tag")).toHaveLength(1);
+    expect(screen.queryByText("offline")).toBeNull();
   });
 
-  it("marks the waker-missing honesty tag and collapses the path tail", () => {
+  it("marks a seat at work with nobody listening, never offline, and collapses the path tail", () => {
     render(
       <FleetRoster
         roster={[
           entry("quantum/claude", {
             status: "holding",
-            wakerMissing: true,
+            seat: "active, not listening",
             activeClaims: [claim("t-1"), claim("t-2")],
             paths: ["a.py", "b.py", "c.py", "d.py", "e.py"],
           }),
@@ -93,7 +100,10 @@ describe("FleetRoster", () => {
         waiters={0}
       />,
     );
-    expect(screen.getByText("waker missing")).toBeTruthy();
+    const tag = screen.getByText("active, not listening");
+    expect(tag.className).toBe("roster-row__tag roster-row__tag--warn");
+    expect(document.querySelector(".roster-row--not-listening")).not.toBeNull();
+    expect(screen.queryByText("waker missing")).toBeNull();
     expect(screen.getByText("2 claims")).toBeTruthy();
     expect(screen.getByText("+2 more")).toBeTruthy();
     expect(document.querySelector(".roster-row--holding")).not.toBeNull();
