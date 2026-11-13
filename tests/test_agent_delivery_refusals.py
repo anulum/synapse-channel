@@ -27,6 +27,7 @@ from synapse_channel.core.persistence import EventStore
 def _private_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep every default data path of a real hub inside the test's directory."""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))

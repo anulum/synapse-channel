@@ -193,6 +193,7 @@ class TestLoad:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         store = tmp_path / ".synapse" / "role-grants.json"
         store.parent.mkdir(parents=True)
         store.write_text(json.dumps({"grants": {"a/r": ["a/me"]}}), encoding="utf-8")
@@ -279,6 +280,7 @@ class TestSave:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
         save_role_grants("~/.synapse/role-grants.json", RoleGrants({}).with_grant("a/r", "a/me"))
 

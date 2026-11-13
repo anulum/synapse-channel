@@ -35,6 +35,7 @@ def _isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     hub refuse to choose pins, so these lifetime checks would depend on the host.
     """
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
 
 
 class RecordedStore(EventStore):

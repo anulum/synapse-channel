@@ -289,6 +289,7 @@ def test_the_default_ledger_is_per_receiver_under_the_data_home(
     )
     monkeypatch.setenv("XDG_DATA_HOME", "")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     assert default_payload_replay_ledger("P/alice").parent == (
         tmp_path / "home" / ".local" / "share" / "synapse" / "payload-replay"
     )

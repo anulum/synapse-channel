@@ -127,6 +127,7 @@ def test_the_default_root_follows_the_data_home(
     assert default_lease_epoch_root() == tmp_path / "data" / "synapse" / "lease-epoch"
     monkeypatch.setenv("XDG_DATA_HOME", "  ")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     assert default_lease_epoch_root() == (
         tmp_path / "home" / ".local" / "share" / "synapse" / "lease-epoch"
     )

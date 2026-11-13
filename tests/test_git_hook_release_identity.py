@@ -145,6 +145,7 @@ def test_read_token_expands_user(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     home.mkdir()
     _owner_only(home / ".hubtoken", "home-token\n")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     assert _read_token("~/.hubtoken") == "home-token"
 
 

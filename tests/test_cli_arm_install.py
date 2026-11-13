@@ -167,6 +167,7 @@ def test_cli_main_installs_waiter_into_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.delenv("SYNAPSE_TOKEN", raising=False)
 
     code = cli.main(
@@ -194,6 +195,7 @@ def test_cli_main_persists_token_file_path_not_raw_token(
     token_file.write_text("fixture-value\n", encoding="utf-8")
     token_file.chmod(0o600)
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.delenv("SYNAPSE_TOKEN", raising=False)
 
     code = cli.main(
@@ -223,6 +225,7 @@ def test_cli_main_refuses_ambient_token_for_persistent_unit(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("SYNAPSE_TOKEN", "fixture-value")
 
     code = cli.main(

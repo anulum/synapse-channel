@@ -65,6 +65,7 @@ def test_a_file_is_read_with_home_expansion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     (tmp_path / "custodians.json").write_text(json.dumps({"*": "OWNER/owner"}), encoding="utf-8")
     assert load_mailbox_custodians("~/custodians.json").custodian_for("P/x") == "OWNER/owner"
 

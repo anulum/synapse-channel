@@ -211,6 +211,7 @@ class TestLoad:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         store = tmp_path / ".synapse" / "identity-trust.json"
         store.parent.mkdir(parents=True)
         _write_bundle(store)

@@ -300,6 +300,7 @@ def test_default_review_store_lives_in_the_owner_state_directory(
     """An absolute XDG_STATE_HOME is used; otherwise the store is under ~/.local/state."""
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     tail = Path("synapse-channel") / "review-feedback" / "reviews.sqlite3"
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     assert default_review_store() == tmp_path / "state" / tail

@@ -114,6 +114,18 @@ class RecordingRunner:
         return subprocess.CompletedProcess(list(args), 0, "", "")
 
 
+def test_recording_runner_returns_a_queued_paste_and_an_unspecified_command() -> None:
+    """A queued paste and any other queued command are returned as themselves."""
+    runner = RecordingRunner(
+        [_result(["tmux", "paste-buffer"]), _result(["tmux", "list-panes"], stdout="1\n")]
+    )
+
+    assert runner(["tmux", "paste-buffer"]).returncode == 0
+    assert runner(["tmux", "list-panes"]).stdout == "1\n"
+    assert runner.results == []
+    assert runner(["tmux", "list-panes"]).stdout == ""
+
+
 def _result(
     args: Sequence[str], code: int = 0, stdout: str = "", stderr: str = ""
 ) -> subprocess.CompletedProcess[str]:
@@ -865,6 +877,7 @@ def test_registry_dir_falls_back_to_runtime_dir_then_tmp(
     assert registry_path(config).parent == tmp_path / "runtime" / "synapse-agent-tmux"
     monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     parent = registry_path(config).parent
     assert parent.name == "synapse-agent-tmux"

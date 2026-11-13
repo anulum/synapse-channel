@@ -243,6 +243,7 @@ def test_the_profile_is_looked_for_under_the_configuration_directory(
     assert load_profile() == ()
     monkeypatch.delenv("XDG_CONFIG_HOME")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     assert default_profile_path() == (
         tmp_path / "home" / ".config" / "synapse" / "terminal_label_profile.json"
     )

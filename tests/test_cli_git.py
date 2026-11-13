@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import subprocess
 from pathlib import Path
@@ -197,6 +198,8 @@ def test_cmd_git_claim_rejects_positional_and_flag(
     async def run_claim(**kwargs: Any) -> int:
         raise AssertionError("claim runner must not be called")
 
+    with pytest.raises(AssertionError, match="claim runner must not be called"):
+        asyncio.run(run_claim())
     ns = argparse.Namespace(
         uri="ws://h",
         name="U",
@@ -223,6 +226,8 @@ def test_cmd_git_claim_requires_a_task_id(capsys: pytest.CaptureFixture[str]) ->
     async def run_claim(**kwargs: Any) -> int:
         raise AssertionError("claim runner must not be called")
 
+    with pytest.raises(AssertionError, match="claim runner must not be called"):
+        asyncio.run(run_claim())
     ns = argparse.Namespace(
         uri="ws://h",
         name="U",
@@ -428,6 +433,7 @@ def test_cmd_git_init_installs_services(
     home = tmp_path / "home"
     monkeypatch.chdir(repo)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
 
     def assert_no_git_init_mutation() -> None:
         assert not (repo / ".synapse").exists()
@@ -559,6 +565,7 @@ def test_cmd_git_init_installs_services_with_resolved_posix_executable(
     relative_executable.chmod(0o755)
     monkeypatch.chdir(repo)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("PATH", f"relative-bin{os.pathsep}/usr/bin{os.pathsep}/bin")
 
     code = cli.main(["git-init", "--install-user-services"])
@@ -780,9 +787,11 @@ def test_cmd_git_release_without_resolve_flag_never_resolves() -> None:
         captured.update(kwargs)
         return 0
 
-    def _forbidden_resolver() -> ReleaseIdentity | None:  # pragma: no cover - must not run
+    def _forbidden_resolver() -> ReleaseIdentity | None:
         raise AssertionError("resolver must not be consulted without --resolve-identity")
 
+    with pytest.raises(AssertionError, match="resolver must not be consulted"):
+        _forbidden_resolver()
     ns = argparse.Namespace(task_id=None, uri="ws://baked", name="ME", trigger="commit", token=None)
     assert (
         cli_git._cmd_git_release(
@@ -848,6 +857,8 @@ def test_cmd_git_claim_refuses_a_comma_joined_paths_value_that_names_no_path(
         dispatched.append(kwargs)
         return 0
 
+    assert asyncio.run(run_claim(task_id="covered")) == 0
+    dispatched.clear()
     assert cli_git._cmd_git_claim(_claim_namespace(["a.py,b.py"]), claim_runner=run_claim) == 2
     assert dispatched == [], "a refused claim must not reach the hub"
     err = capsys.readouterr().err

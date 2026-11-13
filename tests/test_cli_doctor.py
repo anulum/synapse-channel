@@ -556,6 +556,7 @@ def test_cmd_doctor_installs_user_services(
 
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     code = cli.main(
         [
             "doctor",
