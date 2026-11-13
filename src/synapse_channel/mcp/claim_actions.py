@@ -38,6 +38,41 @@ Sender = Callable[[], Awaitable[None]]
 ReplyAwaiter = Callable[[Matcher, Sender], Awaitable[dict[str, Any] | None]]
 TimedReplyAwaiter = Callable[[Matcher, Sender, float], Awaitable[dict[str, Any] | None]]
 
+REPLAYED_RELEASE_NOTE = (
+    "This is an earlier release confirmed again; the newer lease is kept (synapse_owned_work)."
+)
+
+
+def replayed_release_receipt(
+    confirmed: str, prepared_epoch: object, held_epoch: object
+) -> tuple[str, str]:
+    """Choose the text and observation for a confirmed keyed release.
+
+    Parameters
+    ----------
+    confirmed : str
+        Original receipt text from the read-only inquiry.
+    prepared_epoch : object
+        Fence stored with the release being confirmed.
+    held_epoch : object
+        Fence this client holds for the task, or ``None`` when it holds none.
+
+    Returns
+    -------
+    tuple[str, str]
+        Human text and the observation code. A newer live fence keeps the
+        original receipt and names the replay. Every other confirmed receipt
+        keeps the fresh release code and the original text alone.
+    """
+    newer_lease = (
+        isinstance(held_epoch, int)
+        and not isinstance(held_epoch, bool)
+        and held_epoch != prepared_epoch
+    )
+    if newer_lease:
+        return f"{confirmed}\n{REPLAYED_RELEASE_NOTE}", "replayed_release_receipt"
+    return confirmed, "matching_release_receipt"
+
 
 class McpClaimActions:
     """Own MCP task/Git claims and receipt-validated releases.
@@ -273,8 +308,12 @@ class McpClaimActions:
         """Release a held lease, or confirm the receipt of the same keyed release.
 
         A release that carries a caller's operation key and no longer names the
-        lease this client holds is first asked about, read-only: a confirmed
-        earlier receipt is returned and nothing is released again. When that
+        lease this client holds is first asked about, read-only. A confirmed
+        earlier receipt is returned and nothing is released again. When this
+        client holds a newer lease, the text keeps that receipt and adds that
+        the earlier release was confirmed again and that the newer lease is
+        kept; the observation is ``replayed_release_receipt``. A fresh release
+        of the lease now held stays ``matching_release_receipt``. When the
         earlier outcome cannot be confirmed while a newer lease is held, the
         newer lease is kept and the outcome is reported as unknown.
         """
@@ -293,7 +332,10 @@ class McpClaimActions:
                 "unconfirmed and the current lease is kept"
             )
         if confirmed is not None:
-            return mutation.finished(confirmed, "matching_release_receipt")
+            text, observation = replayed_release_receipt(
+                confirmed, prepared.get("epoch"), self.agent.lease_epochs.get(task_id)
+            )
+            return mutation.finished(text, observation)
 
         def match(data: dict[str, Any]) -> bool:
             return data.get("task_id") == task_id and data.get("type") in {

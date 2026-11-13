@@ -183,11 +183,13 @@ a stable identifier lets a hint survive the hub's own restart.
 A `synapse_release` that repeats an earlier operation identifier after the
 same seat has taken the task again is asked about first: the adapter reads the
 hub's retained receipt for that identifier and sends no release. A confirmed
-receipt of the same request is returned as the result, with the same text and
-outcome code as the first answer; it does not say that the seat holds the task
-again under the newer lease, which `synapse_owned_work` reads. If it cannot be
-confirmed, or the request differs from the one the identifier was first used
-for, the newer lease is kept and the call ends as an error. Directed chat
+receipt of the same request is returned as the result. The text keeps the
+original receipt and adds that this is an earlier release confirmed again and
+that the newer lease is kept; `synapse_owned_work` reads that lease. The
+outcome code is `replayed_release_receipt`, distinct from a fresh release's
+`matching_release_receipt`. If it cannot be confirmed, or the request differs
+from the one the identifier was first used for, the newer lease is kept and
+the call ends as an error. Directed chat
 uses native message identifiers and receiver deduplication, preserving its
 at-least-once delivery semantics. A send confirmation establishes submission,
 not recipient acknowledgement or completed business work.

@@ -18,6 +18,7 @@ from mcp.types import CallToolResult, TextContent
 from mcp_http_helpers import provision
 from synapse_channel.build_identity import mcp_instructions
 from synapse_channel.mcp.bridge import SynapseHubBridge
+from synapse_channel.mcp.claim_actions import REPLAYED_RELEASE_NOTE
 from synapse_channel.mcp.http_auth import HttpTokenVerifier
 from synapse_channel.mcp.http_config import load_http_auth_config
 from synapse_channel.mcp.http_policy import HttpOperationPolicy
@@ -108,6 +109,41 @@ def test_qualify_mutation_result_keeps_a_match_and_refuses_a_mismatch() -> None:
         seat="ALPHA/alice",
     )
     assert release.is_error is False
+
+    replayed_text = (
+        "released 'ALPHA/task' with receipt owner 'ALPHA/alice'\n" + REPLAYED_RELEASE_NOTE
+    )
+    replayed = CallToolResult(
+        content=[TextContent(type="text", text=replayed_text)],
+        structured_content={
+            "result": replayed_text,
+            "execution_outcome": {
+                "state": "confirmed_done",
+                "observation": "replayed_release_receipt",
+            },
+        },
+    )
+    qualify_mutation_result(
+        replayed, name="synapse_release", task_id="ALPHA/task", seat="ALPHA/alice"
+    )
+    assert replayed.is_error is False
+    assert replayed.structured_content is not None
+    assert replayed.structured_content["result"] == replayed_text
+
+    other = "released 'ALPHA/task' with receipt owner 'ALPHA/alice'\nother"
+    extra = CallToolResult(
+        content=[TextContent(type="text", text=other)],
+        structured_content={
+            "result": other,
+            "execution_outcome": {"state": "confirmed_done"},
+        },
+    )
+    qualify_mutation_result(extra, name="synapse_release", task_id="ALPHA/task", seat="ALPHA/alice")
+    assert extra.is_error is True
+    assert extra.structured_content == {
+        "result": "remote MCP operation refused or unavailable",
+        "execution_outcome": {"state": "confirmed_done"},
+    }
 
     refused = CallToolResult(
         content=[TextContent(type="text", text="sent to ALPHA/bob")],

@@ -30,6 +30,7 @@ from mcp.types import (
 from pydantic import AnyUrl, TypeAdapter
 
 from synapse_channel import __version__
+from synapse_channel.mcp.claim_actions import REPLAYED_RELEASE_NOTE
 from synapse_channel.mcp.http_agent import HTTP_OPERATION_ID
 from synapse_channel.mcp.http_arguments import HttpArgumentPolicy, authorize_read_arguments
 from synapse_channel.mcp.http_config import MUTATION_TOOLS
@@ -62,6 +63,11 @@ _TEMPLATE_ACTIONS = {
 }
 
 
+def _release_text_confirms(text: str, expected: str) -> bool:
+    """Accept the fresh receipt, or that receipt followed by the replay note."""
+    return text == expected or text == f"{expected}\n{REPLAYED_RELEASE_NOTE}"
+
+
 def qualify_mutation_result(value: object, *, name: str, task_id: object, seat: str) -> None:
     """Retain the shared native envelope while refusing unsuccessful remote actions.
 
@@ -80,7 +86,11 @@ def qualify_mutation_result(value: object, *, name: str, task_id: object, seat: 
         if name == "synapse_release"
         else _MUTATION_SUCCESS[name]
     )
-    confirmed = text == expected if name == "synapse_release" else text.startswith(expected)
+    confirmed = (
+        _release_text_confirms(text, expected)
+        if name == "synapse_release"
+        else text.startswith(expected)
+    )
     if value.is_error or not confirmed:
         message = "remote MCP operation refused or unavailable"
         value.content = [TextContent(type="text", text=message)]

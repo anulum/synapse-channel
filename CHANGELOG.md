@@ -369,6 +369,13 @@ execution evidence when carrying a release claim forward.
   launcher does not confine the provider. No command, name or wire format
   changes.
 
+- A `synapse_release` that repeats an earlier operation identifier after the
+  same seat has taken the task again keeps the original receipt text and adds
+  that this is an earlier release confirmed again and that the newer lease is
+  kept (`synapse_owned_work` reads it). Its outcome code is
+  `replayed_release_receipt`. A fresh release of the lease now held stays
+  `matching_release_receipt` with its text unchanged. See `docs/mcp-http.md`.
+
 ### Fixed
 
 - A native MCP session removes its lock files on a clean exit, while it still

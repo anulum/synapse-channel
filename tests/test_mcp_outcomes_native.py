@@ -14,7 +14,7 @@ import json
 import os
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -49,6 +49,7 @@ from synapse_channel.mcp.http_policy import HttpOperationPolicy
 from synapse_channel.mcp.http_server import HttpMcpServer
 from synapse_channel.mcp.http_views import ProjectMcpViews
 from synapse_channel.mcp.outcome import McpOutcomeFailure
+from test_mcp_http_operation_arguments import remote as remote
 
 
 @pytest.mark.asyncio
@@ -345,3 +346,71 @@ async def test_lost_real_grant_stays_unknown_and_inquiry_does_not_replay(tmp_pat
                 ]
                 assert len(matching) == 1
                 assert counts == {"claims": 1, "dropped": 1}
+
+
+@pytest.mark.asyncio
+async def test_replayed_release_receipt_names_the_kept_newer_lease(
+    remote: Callable[[str], AbstractAsyncContextManager[Any]],
+) -> None:
+    """A repeated keyed release after a new claim says the newer lease is kept.
+
+    The first release of the live lease keeps the fresh receipt code. Repeating
+    that operation identifier after the seat has taken the task again returns
+    the original receipt, says the earlier release was confirmed again, and
+    leaves the newer lease in place. A later release of that lease is fresh.
+    """
+    async with remote("synapse:read synapse:mutate") as runtime:
+        task = "ALPHA/replayed-receipt"
+        declared = await runtime.session.call_tool(
+            "synapse_task_declare",
+            {"task_id": task, "title": "Replayed receipt", "operation_id": "declare-replay"},
+        )
+        assert not declared.is_error
+        claimed = await runtime.session.call_tool(
+            "synapse_claim",
+            {"task_id": task, "task_only": True, "operation_id": "claim-first"},
+        )
+        assert not claimed.is_error
+        first = await runtime.session.call_tool(
+            "synapse_release", {"task_id": task, "operation_id": "release-once"}
+        )
+        assert not first.is_error
+        fresh = report(first)
+        assert first.structured_content is not None
+        fresh_text = first.structured_content["result"]
+        assert fresh["observation"] == "matching_release_receipt"
+        assert fresh_text == f"released '{task}' with receipt owner 'ALPHA/alice'"
+        assert "earlier release confirmed again" not in fresh_text
+        assert task not in runtime.hub.state.claims
+
+        reclaimed = await runtime.session.call_tool(
+            "synapse_claim",
+            {"task_id": task, "task_only": True, "operation_id": "claim-again"},
+        )
+        assert not reclaimed.is_error
+        epoch = runtime.hub.state.claims[task].epoch
+        assert runtime.hub.state.claims[task].owner == "ALPHA/alice"
+
+        replay = await runtime.session.call_tool(
+            "synapse_release", {"task_id": task, "operation_id": "release-once"}
+        )
+        assert not replay.is_error
+        replayed = report(replay)
+        assert replay.structured_content is not None
+        replay_text = replay.structured_content["result"]
+        assert replayed["observation"] == "replayed_release_receipt"
+        assert fresh_text in replay_text
+        assert "earlier release confirmed again" in replay_text
+        assert "newer lease is kept" in replay_text
+        assert "synapse_owned_work" in replay_text
+        assert runtime.hub.state.claims[task].owner == "ALPHA/alice"
+        assert runtime.hub.state.claims[task].epoch == epoch
+
+        second = await runtime.session.call_tool(
+            "synapse_release", {"task_id": task, "operation_id": "release-fresh"}
+        )
+        assert not second.is_error
+        assert report(second)["observation"] == "matching_release_receipt"
+        assert second.structured_content is not None
+        assert second.structured_content["result"] == fresh_text
+        assert task not in runtime.hub.state.claims
