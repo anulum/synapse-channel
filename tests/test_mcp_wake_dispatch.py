@@ -93,6 +93,7 @@ class _Receiver:
         if tls:
             cert, key, _ = tls_files(directory)
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.load_cert_chain(cert, key)
             self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
             self.ca_file = str(cert)
