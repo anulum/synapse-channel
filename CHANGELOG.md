@@ -371,6 +371,13 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- A native MCP session removes its lock files on a clean exit, while it still
+  holds them. A crash leaves them. The next session removes at most 64
+  abandoned lock files that nobody holds and that are older than 24 hours,
+  and it does not remove a lock another process holds. On Windows the
+  removable lock is opened with delete sharing, so a second opener meets the
+  byte-range lock.
+
 - Studio keeps keyboard focus on a panel's or a board column's remainder
   ("N more of M") when the next snapshot arrives. Each snapshot rebuilt the
   lists, so focus fell to the page every five seconds and an Enter pressed

@@ -201,7 +201,10 @@ grants no access.
 
 Processes that share one owner-local `SYN_HOME` hold non-blocking OS locks for
 all derived names until they exit. A duplicate local session or an overlapping
-role is refused; process exit releases the locks. Native mode needs an absolute
+role is refused. A clean exit removes that session's lock files while it still
+holds them. A crash leaves the files. The next native session removes at most
+64 abandoned lock files that nobody holds and that are older than 24 hours,
+and it leaves a lock another process holds. Native mode needs an absolute
 storage path and the stdio transport, and it requests no takeover. On a
 token-gated hub the derived identities and roles must be authorised by the
 hub's existing policy.
