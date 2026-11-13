@@ -12,8 +12,8 @@ client, post a shared plan, take and hold claims, exchange a few messages and
 record one finding. Every name is invented for the picture; none is a real
 seat. No participant arms a waiter, so the cockpit marks each one as it would
 any seat that cannot be woken. The script prints one JSON line naming the
-participants, tasks and held claims when the fleet is in place, then waits
-until it is stopped or its deadline passes.
+participants, tasks, held claims, closed tasks and the finding's statement when
+the fleet is in place, then waits until it is stopped or its deadline passes.
 
 With ``--long-names`` the same fleet joins under long names that differ only at
 their ends, as the names of a large installation do; a journey uses it to check
@@ -252,7 +252,11 @@ async def _second_act(
 
 
 def _report(rename: Callable[[str], str], *, late_claim: bool, act: int | None) -> None:
-    """Print one line naming the participants, the tasks and the claims held so far."""
+    """Print one line naming the participants, the tasks and the claims held so far.
+
+    The line also names the closed tasks, which a bounded snapshot counts
+    without loading, and the statement of the finding the second act records.
+    """
     line: dict[str, object] = {"ready": True}
     if act is not None:
         line["act"] = act
@@ -261,6 +265,10 @@ def _report(rename: Callable[[str], str], *, late_claim: bool, act: int | None) 
     line["claims"] = [
         rename(task_id) for _owner, task_id, _paths in CLAIMS if late_claim or task_id != LATE_TASK
     ]
+    line["closed"] = [
+        rename(task_id) for task_id, status in BOARD_STATUSES if status in {"done", "cancelled"}
+    ]
+    line["finding"] = FINDING
     print(json.dumps(line), flush=True)
 
 

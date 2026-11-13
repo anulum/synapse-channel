@@ -7,9 +7,21 @@
 // SYNAPSE_CHANNEL — task-board derivation and findings-stream tests
 
 import { describe, expect, it } from "vitest";
-import { boardTruncation, deriveBoard, deriveFindings } from "../src/lib/board";
+import { boardTruncation, deriveBoard } from "../src/lib/board";
+import { parseBounds } from "../src/lib/snapshotParser";
 import { parseSnapshot } from "../src/lib/snapshot";
 import type { FleetSnapshot, TaskGraphEdge, TaskGraphNode } from "../src/types";
+
+const BOUNDS = {
+  closed_included: false,
+  tasks_total: 558,
+  tasks_sent: 143,
+  closed_omitted: 415,
+  progress_total: 5000,
+  progress_sent: 200,
+  receipts_total: 60,
+  receipts_sent: 50,
+};
 
 function node(taskId: string, status: string, ready = false, title = ""): TaskGraphNode {
   return { task_id: taskId, title, status, ready };
@@ -29,6 +41,7 @@ function snapshotOf(options: {
   board?: Record<string, unknown>;
 }): FleetSnapshot {
   return {
+    bounds: null,
     hub_version: "",
     config_epoch: "",
     online_agents: [],
@@ -123,57 +136,37 @@ describe("deriveBoard", () => {
 
 describe("boardTruncation", () => {
   it("reads the hub's cap signal and defaults honestly without one", () => {
-    expect(boardTruncation(null)).toEqual({ totalTasks: null, truncated: false, taskCap: null });
+    expect(boardTruncation(null)).toEqual({ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0 });
     expect(boardTruncation(snapshotOf({ board: {} }))).toEqual({
       totalTasks: null,
       truncated: false,
       taskCap: null,
+      closedOmitted: 0,
     });
     expect(
       boardTruncation(snapshotOf({ board: { total_tasks: 977, truncated: true } })),
-    ).toEqual({ totalTasks: 977, truncated: true, taskCap: null });
+    ).toEqual({ totalTasks: 977, truncated: true, taskCap: null, closedOmitted: 0 });
     expect(
       boardTruncation(snapshotOf({ board: { total_tasks: "junk", truncated: "yes" } })),
-    ).toEqual({ totalTasks: null, truncated: false, taskCap: null });
+    ).toEqual({ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0 });
+  });
+
+  it("states the closed tasks a bounded snapshot counted but did not send", () => {
+    const bounded = { ...snapshotOf({ board: {} }), bounds: parseBounds(BOUNDS) };
+    expect(boardTruncation(bounded).closedOmitted).toBe(415);
   });
 
   it("carries the applied cap only while the hub says one is active", () => {
     expect(
       boardTruncation(snapshotOf({ board: { total_tasks: 977, truncated: true, task_cap: 500 } })),
-    ).toEqual({ totalTasks: 977, truncated: true, taskCap: 500 });
+    ).toEqual({ totalTasks: 977, truncated: true, taskCap: 500, closedOmitted: 0 });
     // A malformed or non-positive cap is no cap, never an invented gauge.
     expect(
       boardTruncation(snapshotOf({ board: { total_tasks: 3, truncated: false, task_cap: "500" } })),
-    ).toEqual({ totalTasks: 3, truncated: false, taskCap: null });
+    ).toEqual({ totalTasks: 3, truncated: false, taskCap: null, closedOmitted: 0 });
     expect(
       boardTruncation(snapshotOf({ board: { task_cap: 0 } })),
-    ).toEqual({ totalTasks: null, truncated: false, taskCap: null });
-  });
-});
-
-describe("deriveFindings", () => {
-  it("returns nothing before the first snapshot or without a progress list", () => {
-    expect(deriveFindings(null)).toEqual([]);
-    expect(deriveFindings(snapshotOf({ board: { progress: "corrupt" } }))).toEqual([]);
-  });
-
-  it("keeps only finding-kind notes, newest first, tolerating malformed entries", () => {
-    const findings = deriveFindings(
-      snapshotOf({
-        board: {
-          progress: [
-            { author: "a", kind: "finding", task_id: "t1", text: "older", posted_at: 100 },
-            { author: "b", kind: "note", task_id: "t2", text: "routine" },
-            "not-a-record",
-            { author: "c", kind: "finding", text: "newer, no task, no stamp" },
-          ],
-        },
-      }),
-    );
-    expect(findings).toEqual([
-      { author: "c", taskId: "", text: "newer, no task, no stamp", postedAt: null },
-      { author: "a", taskId: "t1", text: "older", postedAt: 100 },
-    ]);
+    ).toEqual({ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0 });
   });
 });
 

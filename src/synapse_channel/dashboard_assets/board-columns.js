@@ -97,6 +97,10 @@
     const section = node("section", "syn-board-column");
     const columnId = String(column.id || "other");
     const tasks = rows(column.tasks);
+    // The count is the whole column; closed tasks the bounded snapshot left out
+    // are counted in it and named below, never shown as an empty column.
+    const counted = Number.isInteger(column.count) ? column.count : tasks.length;
+    const omitted = Number.isInteger(column.omitted) ? column.omitted : 0;
     const folded = collapsed.includes(columnId);
     const shown = folded ? 0 : limit === null ? tasks.length : Math.min(limit, tasks.length);
     section.dataset.column = columnId;
@@ -104,7 +108,7 @@
     const heading = node("div", "syn-board-column__head");
     heading.append(
       node("h3", "syn-board-column__title", column.label || columnId),
-      node("span", "syn-board-column__count", tasks.length),
+      node("span", "syn-board-column__count", counted),
     );
     const body = node("div", "syn-board-column__body");
     if (tasks.length) {
@@ -116,8 +120,11 @@
           : hidden.length + " more of " + tasks.length;
         body.appendChild(disclosure(hostKey + ":" + columnId, summary, hidden));
       }
-    } else {
+    } else if (omitted === 0) {
       body.appendChild(node("div", "syn-board-column__empty", "No tasks"));
+    }
+    if (omitted > 0) {
+      body.appendChild(node("div", "syn-board-column__omitted", omitted + " not loaded"));
     }
     section.append(heading, body);
     return section;

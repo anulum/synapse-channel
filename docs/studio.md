@@ -194,7 +194,11 @@ claim without a blackboard row appears as an explicitly labelled ad-hoc claim; t
 does not fabricate a declaration. A bounded blackboard snapshot carries its truncation
 and total counts so the UI cannot present a partial page as the whole plan. Its complete
 ready-id set remains authoritative: dependencies whose task rows were omitted are shown
-as unknown when necessary, never fabricated as proven blockers of a ready task.
+as unknown when necessary, never fabricated as proven blockers of a ready task. Studio
+reads the bounded dashboard snapshot, which counts closed tasks without loading them:
+each column reports its full `count` and how many cards were `omitted`, the Closed
+column shows "N not loaded" instead of cards it did not receive, and
+`total_declared_tasks` includes them.
 
 The projection is read-only. It does not claim, assign, route, reserve, approve, release,
 or update work, and the free Studio page renders no mutation controls. Evidence and

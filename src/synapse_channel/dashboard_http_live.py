@@ -17,6 +17,7 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from synapse_channel.dashboard_bounds import bound_snapshot
 from synapse_channel.dashboard_live_transport import (
     LIVE_TRANSPORT_CHANNELS as LIVE_TRANSPORT_CHANNELS,
 )
@@ -99,7 +100,7 @@ def _send_snapshot(
     except (ports.unavailable_error, TimeoutError) as exc:
         send("channel", channel="snapshot", status="error", detail=str(exc))
         return previous
-    document = snapshot.to_dict(a2a_state_file=ports.a2a_state_file)
+    document = bound_snapshot(snapshot.to_dict(a2a_state_file=ports.a2a_state_file))
     fingerprint = snapshot_fingerprint(document)
     if fingerprint == previous:
         send("channel", channel="snapshot", status="unchanged")

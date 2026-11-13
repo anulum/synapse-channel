@@ -14,8 +14,8 @@ import type { AttentionItem } from "../lib/attention";
 import { deriveAttentionQueue } from "../lib/attention";
 import type { PendingApprovalView } from "../lib/approvals";
 import { parsePendingApprovals } from "../lib/approvals";
-import type { BoardTask, FindingNote } from "../lib/board";
-import { deriveBoard, deriveFindings } from "../lib/board";
+import type { BoardTask } from "../lib/board";
+import { deriveBoard } from "../lib/board";
 import type { TimeWindow } from "../lib/brush";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
 import { deriveClaims, parseConflicts } from "../lib/claims";
@@ -40,7 +40,6 @@ export interface CockpitViewModel {
   readonly board: readonly BoardTask[];
   readonly lensedClaims: readonly ClaimView[];
   readonly lensedBoard: readonly BoardTask[];
-  readonly findings: readonly FindingNote[];
   readonly anomalies: readonly AnomalyFlag[];
   readonly deadLetters: readonly DeadLetterView[];
   readonly approvals: readonly PendingApprovalView[];
@@ -82,7 +81,6 @@ export function useCockpitViewModel({
     : liveBoard;
   const lensedClaims = useMemo(() => focusClaims(claims, focus), [claims, focus]);
   const lensedBoard = useMemo(() => focusTasks(board, claims, focus), [board, claims, focus]);
-  const findings = useMemo(() => deriveFindings(snapshot), [snapshot]);
   const anomalies = useMemo(() => deriveAnomalies(feeds.log), [feeds.log]);
   const deadLetters = useMemo(() => parseDeadLetters(snapshot), [snapshot]);
   const approvals = useMemo(() => parsePendingApprovals(snapshot), [snapshot]);
@@ -116,7 +114,6 @@ export function useCockpitViewModel({
     board,
     lensedClaims,
     lensedBoard,
-    findings,
     anomalies,
     deadLetters,
     approvals,

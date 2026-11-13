@@ -107,7 +107,9 @@ test("the production cockpit unlocks, governs writes, and locks on 401", async (
   });
   await expect(page.locator(".palette__outcome")).toContainText("accepted");
   await page.keyboard.press("Escape");
-  await expect(page.locator(".board-row", { hasText: childTask })).toContainText("done");
+  // A closed task leaves the bounded snapshot; the board counts it instead of drawing it.
+  await expect(page.locator(".board-row", { hasText: childTask })).toHaveCount(0);
+  await expect(page.getByText(/^[1-9]\d* closed not loaded$/u)).toBeVisible();
 
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;

@@ -54,7 +54,9 @@ function isStale(fetchedAt: number, now: number, staleAfterMs: number): boolean 
 /**
  * Create a snapshot store that polls the hub on a fixed cadence. Listeners
  * receive a state after each poll; transient errors retain the last good
- * document while freshness controls its visible status.
+ * document while freshness controls its visible status. Each poll after the
+ * first sends the last `ETag` as `If-None-Match`; a `304` keeps the held
+ * document and refreshes its time, so an unchanged fleet costs no body.
  */
 export function createSnapshotStore(options: SnapshotStoreOptions = {}): SnapshotStore {
   const url = options.url ?? DEFAULT_URL;
@@ -73,6 +75,7 @@ export function createSnapshotStore(options: SnapshotStoreOptions = {}): Snapsho
   let timer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
   let stopped = false;
+  let etag: string | null = null;
 
   const publish = (next: SnapshotState): void => {
     state = next;
@@ -82,10 +85,18 @@ export function createSnapshotStore(options: SnapshotStoreOptions = {}): Snapsho
   const poll = async (): Promise<void> => {
     controller = new AbortController();
     try {
-      const response = await fetcher(url, { signal: controller.signal });
+      const headers: Record<string, string> = etag === null ? {} : { "If-None-Match": etag };
+      const response = await fetcher(url, { signal: controller.signal, headers });
+      if (response.status === 304 && state.snapshot !== null) {
+        if (!stopped) {
+          publish({ snapshot: state.snapshot, status: "live", fetchedAt: now(), error: null });
+        }
+        return;
+      }
       if (!response.ok) throw new Error(`hub returned ${response.status}`);
       const snapshot = parseSnapshot(await response.json());
       if (snapshot === null) throw new Error("snapshot payload was not an object");
+      etag = response.headers.get("ETag");
       if (!stopped) {
         publish({ snapshot, status: "live", fetchedAt: now(), error: null });
       }

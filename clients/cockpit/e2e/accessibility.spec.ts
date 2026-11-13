@@ -61,6 +61,11 @@ test("the built live deck has zero axe violations in both themes and viewports",
   // this preserves the production `script-src 'self'` policy under test.
   await page.addInitScript({ content: axe.source });
   await unlock(page);
+  // The harness seeds a re-checked and a retracted finding, so the audit
+  // covers every marking the findings panel draws.
+  const findings = page.getByRole("region", { name: "Findings stream", exact: true });
+  await expect(findings.getByText("verified-at-source", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(findings.getByText("retracted", { exact: true })).toBeVisible();
 
   const viewports = [
     { name: "desktop", width: 1440, height: 1000 },

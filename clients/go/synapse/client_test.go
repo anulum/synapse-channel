@@ -289,3 +289,77 @@ func TestDashboardSnapshotReturnsFetchError(t *testing.T) {
 		t.Fatal("DashboardSnapshot ignored fetch failure")
 	}
 }
+
+func TestDashboardSnapshotWithClosedAsksForClosedTasksAndDecodesBounds(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/snapshot.json" || r.URL.RawQuery != "closed=1" {
+			t.Fatalf("unexpected request: %s", r.URL.String())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"online_agents": [],
+			"board": {"tasks": [{"task_id": "DONE", "status": "done"}]},
+			"bounds": {"closed_included": true, "closed_omitted": 0, "tasks_total": 1}
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL)
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+	snapshot, err := client.DashboardSnapshotWithClosed(context.Background())
+	if err != nil {
+		t.Fatalf("DashboardSnapshotWithClosed failed: %v", err)
+	}
+	if snapshot.Bounds["closed_included"] != true || snapshot.Bounds["tasks_total"] != float64(1) {
+		t.Fatalf("unexpected bounds: %#v", snapshot.Bounds)
+	}
+}
+
+func TestGetJSONKeepsAQueryOutOfThePath(t *testing.T) {
+	t.Parallel()
+
+	client, err := NewClient(
+		"http://127.0.0.1:8765/base/",
+		WithHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != "http://127.0.0.1:8765/base/findings.json?before=5&limit=2" {
+				t.Fatalf("unexpected URL: %s", req.URL.String())
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       io.NopCloser(strings.NewReader(`{"findings": []}`)),
+			}, nil
+		})),
+	)
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+	var payload map[string]any
+	if err := client.GetJSON(context.Background(), "findings.json?before=5&limit=2", &payload); err != nil {
+		t.Fatalf("GetJSON failed: %v", err)
+	}
+}
+
+func TestGetJSONRefusesAPathThatDoesNotParse(t *testing.T) {
+	t.Parallel()
+
+	client, err := NewClient(
+		"http://127.0.0.1:8765",
+		WithHTTPClient(roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			t.Fatal("an unparsable path must not reach the transport")
+			return nil, nil
+		})),
+	)
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+	var payload map[string]any
+	err = client.GetJSON(context.Background(), "/bad%zz", &payload)
+	if err == nil || !strings.HasPrefix(err.Error(), "synapse: parse request path: ") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

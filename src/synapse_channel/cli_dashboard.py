@@ -22,6 +22,17 @@ from synapse_channel.observed_peers import (
     resolve_observed_pins,
 )
 
+_STORE_FEED_LINES: tuple[tuple[str, str], ...] = (
+    ("reliability JSON", "/reliability.json"),
+    ("events tail JSON", "/events.json"),
+    ("causality JSON", "/causality.json"),
+    ("receipts JSON", "/receipts.json"),
+    ("operator actions JSON", "/operator-actions.json"),
+    ("sessions JSON", "/sessions.json"),
+    ("findings JSON", "/findings.json"),
+)
+"""The event-store feeds announced at start when ``--feeds-db`` is given."""
+
 
 def _cmd_dashboard(args: argparse.Namespace) -> int:
     """Serve the local dashboard with optional explicitly armed operator relays."""
@@ -72,12 +83,8 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
         print("operator task: POST " + server.url("/task"))
         print("operator task update: POST " + server.url("/task/update"))
     if args.reliability_db is not None:
-        print("reliability JSON: " + server.url("/reliability.json"))
-        print("events tail JSON: " + server.url("/events.json"))
-        print("causality JSON: " + server.url("/causality.json"))
-        print("receipts JSON: " + server.url("/receipts.json"))
-        print("operator actions JSON: " + server.url("/operator-actions.json"))
-        print("sessions JSON: " + server.url("/sessions.json"))
+        for label, path in _STORE_FEED_LINES:
+            print(f"{label}: {server.url(path)}")
     if args.attention_store is not None:
         print("attention JSON: " + server.url("/attention.json"))
     if args.federation_store is not None:
@@ -173,11 +180,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=Path,
         default=None,
         help=(
-            "Hub event store powering 12 read-only feeds, including "
+            "Hub event store powering 13 read-only feeds, including "
             "/reliability.json (audit signals, not scores), /events.json (raw log "
             "tail), /postmortem.json?task=ID (replayable task evidence), "
-            "/receipts.json, /causality.json, /operator-actions.json, and "
-            "/sessions.json. "
+            "/receipts.json, /causality.json, /operator-actions.json, "
+            "/sessions.json and /findings.json (recorded findings, newest first). "
             "Read-only; without it each endpoint reports its absence with 404. "
             "--reliability-db is the same flag's original name."
         ),

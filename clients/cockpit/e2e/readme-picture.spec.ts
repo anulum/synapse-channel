@@ -47,8 +47,9 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
     for (const claim of fleet.claims) {
       await expect(page.getByRole("region", { name: "File-scope claims", exact: true })).toContainText(claim);
     }
-    const { participants, tasks, claims } = await fleet.secondAct();
+    const { participants, tasks, claims, closed, finding } = await fleet.secondAct();
     expect(claims.length).toBe(fleet.claims.length + 1);
+    expect(closed.length).toBeGreaterThan(0);
 
     const region = (name: string) => page.getByRole("region", { name, exact: true });
     for (const name of ["Fleet roster", "File-scope claims", "Task board", "Risk rail", "Findings stream", "Signal log"]) {
@@ -58,7 +59,18 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
       await expect(region("Fleet roster").getByRole("button", { name: `Inspect agent ${participant}`, exact: true }))
         .toBeVisible();
     }
-    for (const task of tasks) await expect(region("Task board")).toContainText(task);
+    // The snapshot carries open work in full and counts the closed tasks.
+    for (const task of tasks.filter(task => !closed.includes(task))) {
+      await expect(region("Task board")).toContainText(task);
+    }
+    for (const task of closed) await expect(region("Task board")).not.toContainText(task);
+    await expect(region("Task board").getByText(`${closed.length} closed not loaded`, { exact: true }))
+      .toBeVisible();
+    // The finding the second act records arrives through /findings.json.
+    const findings = region("Findings stream");
+    await expect(findings).toContainText(finding, { timeout: 20_000 });
+    await expect(findings.getByText("decision", { exact: true })).toBeVisible();
+    await expect(findings.getByText("untraceable", { exact: true })).toBeVisible();
     for (const claim of claims) {
       await expect(region("File-scope claims")).toContainText(claim);
       await expect(region("Signal log")).toContainText(`claimed ${claim}`);

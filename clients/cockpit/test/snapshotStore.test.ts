@@ -20,6 +20,7 @@ function jsonFetcher(body: unknown, status = 200): typeof fetch {
   return (async () => ({
     ok: status >= 200 && status < 300,
     status,
+    headers: new Headers(),
     json: async () => body,
   })) as unknown as typeof fetch;
 }
@@ -131,7 +132,12 @@ describe("createSnapshotStore", () => {
     const fetcher = (async () => {
       call += 1;
       if (call === 1) {
-        return { ok: true, status: 200, json: async () => ({ online_agents: ["a"] }) };
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({ online_agents: ["a"] }),
+        };
       }
       clock = 8000;
       throw new Error("dropped");
@@ -149,7 +155,12 @@ describe("createSnapshotStore", () => {
     const fetcher = (async () => {
       call += 1;
       if (call === 1) {
-        return { ok: true, status: 200, json: async () => ({ online_agents: ["a"] }) };
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({ online_agents: ["a"] }),
+        };
       }
       throw new Error("blip");
     }) as unknown as typeof fetch;
@@ -195,9 +206,81 @@ describe("createSnapshotStore", () => {
       if (state.status === "live") live = true;
     });
     store.stop();
-    resolvePending?.({ ok: true, status: 200, json: async () => ({}) } as Response);
+    resolvePending?.({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({}),
+    } as Response);
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(live).toBe(false);
+  });
+
+  it("sends the held ETag and keeps the snapshot, refreshed, on a 304", async () => {
+    const sent: unknown[] = [];
+    let call = 0;
+    let clock = 1000;
+    const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(init?.headers);
+      call += 1;
+      if (call === 1) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ ETag: '"v1"' }),
+          json: async () => ({ online_agents: ["a"] }),
+        };
+      }
+      clock = 2000;
+      return { ok: false, status: 304, headers: new Headers(), json: async () => ({}) };
+    }) as unknown as typeof fetch;
+    const store = createSnapshotStore({ fetcher, pollMs: 5, now: () => clock });
+    await firstState(store, (state) => state.status === "live");
+    const refreshed = await firstState(store, (state) => state.fetchedAt === 2000);
+    store.stop();
+    expect(refreshed.status).toBe("live");
+    expect(refreshed.error).toBeNull();
+    expect(refreshed.snapshot?.online_agents).toEqual(["a"]);
+    expect(sent.slice(0, 2)).toEqual([{}, { "If-None-Match": '"v1"' }]);
+  });
+
+  it("treats a 304 with no snapshot held as an error", async () => {
+    const store = createSnapshotStore({ fetcher: jsonFetcher({}, 304), pollMs: 100000 });
+    const failed = await firstState(store, (state) => state.status === "error");
+    store.stop();
+    expect(failed.error).toBe("hub returned 304");
+  });
+
+  it("ignores a 304 that lands after stop", async () => {
+    let call = 0;
+    let resolveSecond: ((response: Response) => void) | undefined;
+    const fetcher = ((): Promise<Response> => {
+      call += 1;
+      if (call === 1) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ ETag: '"v1"' }),
+          json: async () => ({}),
+        } as Response);
+      }
+      return new Promise<Response>((resolve) => {
+        resolveSecond = resolve;
+      });
+    }) as unknown as typeof fetch;
+    let clock = 1;
+    const store = createSnapshotStore({ fetcher, pollMs: 5, now: () => clock });
+    await firstState(store, (state) => state.status === "live");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const published: number[] = [];
+    store.subscribe((state) => {
+      if (state.fetchedAt !== null) published.push(state.fetchedAt);
+    });
+    store.stop();
+    clock = 99;
+    resolveSecond?.({ ok: false, status: 304, headers: new Headers() } as Response);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(published.includes(99)).toBe(false);
   });
 
   it("stops polling and clears listeners on stop", async () => {

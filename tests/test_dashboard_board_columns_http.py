@@ -148,11 +148,14 @@ async def test_live_hub_tasks_and_claims_reach_studio_columns_and_assets() -> No
         "working": ["WORKING"],
         "input_required": [],
         "blocked": ["BLOCKED"],
-        "closed": ["DONE"],
+        "closed": [],
         "other": [],
     }
     projection = studio["tasks"]["columns"]
-    assert projection["declared_tasks"] == 4
+    # The bounded snapshot leaves the closed task out; its column still counts it.
+    closed_column = next(c for c in projection["columns"] if c["id"] == "closed")
+    assert (closed_column["count"], closed_column["omitted"]) == (1, 1)
+    assert (projection["declared_tasks"], projection["total_declared_tasks"]) == (3, 4)
     assert projection["ad_hoc_claims"] == 1
     claimed = next(
         row

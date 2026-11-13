@@ -1485,16 +1485,18 @@ body {
 
 .finding-row__meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--sp-2);
+  gap: 0 var(--sp-2);
   min-width: 0;
 }
 
+/* Micro text on a raised row needs --muted for WCAG AA; --dim measured 2.71:1. */
 .finding-row__time {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   font-variant-numeric: tabular-nums;
-  color: var(--dim);
+  color: var(--muted);
   flex: none;
 }
 
@@ -1509,16 +1511,37 @@ body {
 .finding-row__task {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
-  color: var(--dim);
+  color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.finding-row__axis {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  flex: none;
+  white-space: nowrap;
+}
+
+.finding-row__axis--verified {
+  color: var(--sev-ok-text);
+}
+
+.finding-row__axis--closed {
+  color: var(--sev-warn-text);
 }
 
 .finding-row__text {
   font-size: var(--fs-small);
   color: var(--ink);
   overflow-wrap: anywhere;
+}
+
+.finding-row__text--closed {
+  color: var(--ink-dim);
+  text-decoration: line-through;
 }
 
 /* ---------- inspector tabs (signal log | causality) ---------- */

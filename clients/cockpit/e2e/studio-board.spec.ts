@@ -76,12 +76,18 @@ test("the protected Studio renders exact read-only columns on desktop and mobile
   await expect(board.locator('.syn-board-column[data-column="open"]')).toContainText(openId);
   await expect(board.locator('.syn-board-column[data-column="working"]')).toContainText(workingId);
   await expect(board.locator('.syn-board-column[data-column="blocked"]')).toContainText(blockedId);
-  await expect(board.locator('.syn-board-column[data-column="closed"]')).toContainText(doneId);
+  // The bounded snapshot counts closed tasks without loading them: the Closed
+  // column states how many it did not receive and draws no card for them.
   const closedColumn = board.locator('.syn-board-column[data-column="closed"]');
-  const closedCard = closedColumn.locator(".syn-board-card", { hasText: doneId });
-  await expect(closedCard).toBeHidden();
-  await closedColumn.locator("details.syn-board-more > summary").click();
-  await expect(closedCard).toBeVisible();
+  await expect(closedColumn.locator(".syn-board-column__omitted")).toHaveText(/^[1-9]\d* not loaded$/u);
+  const notLoaded = Number.parseInt(
+    (await closedColumn.locator(".syn-board-column__omitted").textContent()) ?? "",
+    10,
+  );
+  await expect(closedColumn.locator(".syn-board-column__count")).toHaveText(String(notLoaded));
+  await expect(closedColumn.locator(".syn-board-card")).toHaveCount(0);
+  await expect(closedColumn.locator(".syn-board-column__empty")).toHaveCount(0);
+  await expect(board).not.toContainText(doneId);
   await expect(board).toContainText(payload);
   await expect(page.locator("#studio-pwn, img[onerror], [onclick]")).toHaveCount(0);
   expect(await page.evaluate(() => (window as typeof window & { __studioPwned?: number }).__studioPwned))

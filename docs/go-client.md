@@ -77,12 +77,19 @@ for _, agent := range snapshot.OnlineAgents {
 - `Board`
 - `Manifest`
 - `Fleet`
+- `Bounds`
 
-Use `GetJSON` for another local HTTP JSON endpoint:
+The snapshot is bounded: `Board` carries every task that is not closed and the
+newest progress notes, and `Bounds` states the exact totals, including how many
+closed tasks were left out. `DashboardSnapshotWithClosed` requests
+`/snapshot.json?closed=1`, which adds them.
+
+Use `GetJSON` for another local HTTP JSON endpoint. A query in the path is sent
+as a query:
 
 ```go
 var payload map[string]any
-err := client.GetJSON(ctx, "/snapshot.json", &payload)
+err := client.GetJSON(ctx, "/findings.json?limit=20", &payload)
 ```
 
 ## Authentication

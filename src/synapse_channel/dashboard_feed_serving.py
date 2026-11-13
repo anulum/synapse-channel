@@ -35,12 +35,14 @@ from synapse_channel.dashboard_postmortem_feed import (
 )
 from synapse_channel.dashboard_store_feeds import (
     DEFAULT_EVENTS_LIMIT,
+    DEFAULT_FINDINGS_LIMIT,
     MAX_EVENTS_LIMIT,
     DashboardCausalityInputError,
     DashboardCausalityTaskNotFoundError,
     build_causality_feed,
     build_events_tail,
     build_federation_feed,
+    build_findings_feed,
     build_health_anomalies_feed,
     build_merkle_proof_feed,
     build_metrics_feed,
@@ -199,6 +201,26 @@ def serve_health_anomalies(db: Path | None) -> FeedResponse:
     if db is None:
         return _absent("health-anomalies", "--feeds-db")
     return _store_feed(lambda: build_health_anomalies_feed(db))
+
+
+def serve_findings(db: Path | None, query: str) -> FeedResponse:
+    """Serve the recorded findings, newest first, or their honest absence.
+
+    ``before`` (an exclusive sequence cursor) pages back; ``limit`` caps a page.
+    Malformed numbers and a cursor below one are a 400 naming the parameter.
+    """
+    if db is None:
+        return _absent("findings", "--feeds-db")
+    params = parse_qs(query)
+    try:
+        limit = bounded_query_int(params.get("limit", [str(DEFAULT_FINDINGS_LIMIT)])[0])
+        before_raw = params.get("before")
+        before = None if before_raw is None else bounded_query_int(before_raw[0])
+    except ValueError:
+        return plain_response(HTTPStatus.BAD_REQUEST, "before and limit must be integers")
+    if before is not None and before < 1:
+        return plain_response(HTTPStatus.BAD_REQUEST, "before must be at least 1")
+    return _store_feed(lambda: build_findings_feed(db, before=before, limit=limit))
 
 
 def serve_sessions(db: Path | None) -> FeedResponse:

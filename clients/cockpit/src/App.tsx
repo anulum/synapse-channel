@@ -355,10 +355,7 @@ export function App(): JSX.Element {
           </div>
           <div className="seg seg--signals">
             <PanelBoundary name="Findings">
-              <FindingsStream
-                findings={view.findings}
-                connected={view.connected}
-              />
+              <FindingsStream state={feeds.findings} />
             </PanelBoundary>
           </div>
         </div>

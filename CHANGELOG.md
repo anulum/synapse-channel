@@ -34,6 +34,22 @@ execution evidence when carrying a release claim forward.
   0.99.51 with the recipe equals the published wheel and source archive byte
   for byte. `SECURITY.md` says how to rebuild a release and compare it, and
   what is not claimed.
+- The dashboard serves `/findings.json` with `--feeds-db`: the findings agents
+  recorded with the hub, newest first, from the journalled `finding` events,
+  behind the same read token as the other feeds. Each row carries the
+  statement, subkind, the three honesty axes, the lifecycle, the evidence
+  reference, the provenance and the re-check record; `limit` is 1 to 200 and
+  `before` pages back by sequence. The page is read backwards in sequence
+  windows and stops once full, and `total` is counted without decoding
+  payloads. Without `--feeds-db` it answers 404 naming the flag. The cockpit's
+  Findings panel now reads it, marks only `verified-at-source` freshness as
+  re-checked, and strikes through retracted and superseded findings. See
+  `docs/cli.md` and `docs/cockpit.md`.
+- The Go client decodes the snapshot's `Bounds`, gains
+  `DashboardSnapshotWithClosed` for `/snapshot.json?closed=1`, and `GetJSON`
+  now sends a query in its path as a query; before, it was escaped into the
+  path, so no parameterised feed could be read from Go. See
+  `docs/go-client.md`.
 - `synapse verify-result git` reads an attempt's marker: with `--attempt-id`,
   `--intent-sha256` and `--base` (all three or none; in Python the keyword
   `attempt=AttemptCheck(...)` of `verify_git_publication`) the same
@@ -223,6 +239,28 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- The dashboard's fleet snapshot is bounded. `/snapshot.json`, `/studio.json`
+  and the snapshot channel of `/live.ndjson` carry every task that is not
+  closed in full, the newest 200 progress notes, the newest 50 release
+  receipts and the task-graph nodes of those tasks with every edge touching
+  one, with a `bounds` block of exact totals counted before the cut; `fleet` and
+  `risk` are still computed from the whole board. On the ecosystem's own hub
+  the full document measured 9,061,113 bytes and was sent on every two-second
+  poll, more than the cockpit's 8,388,608-byte live-frame limit; measured again
+  with this change, the bounded document is 502,551 bytes of 9,047,943 (with
+  `closed=1`, 738,104), and two fetches two seconds apart read as unchanged.
+  On a seeded board of 1,000 tasks and 5,000 notes the bounded document
+  measures 159,174 bytes against 1,214,002 for the full one, and ten times as
+  many closed tasks add 692 bytes. `/snapshot.json?closed=1` adds the closed
+  tasks. `/snapshot.json` carries a weak `ETag` and answers a matching
+  `If-None-Match` with 304 after the bearer check; the tag and the live
+  stream's `unchanged` heartbeat leave out the three stamps that change on
+  every fetch (`fleet.generated_at`, `state.generated_at`, each agent's
+  `last_seen`), measured to differ between any two fetches of a running hub;
+  before this change the live stream left out only the first, so it never
+  reported `unchanged` against a running hub. The cockpit sends
+  `If-None-Match`, states "N closed not loaded" on the task board, and Studio's
+  Closed column shows "N not loaded" with the full count. See `docs/cli.md`.
 - The complete coverage gate of CI counts the lines only Windows runs. A new
   `test-windows` job runs the test files that exercise them on hosted Windows,
   as one complete shard with coverage, and `test-complete` combines that part
@@ -304,6 +342,12 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- The cockpit's Findings panel derived its rows from the board's progress
+  notes, whose kinds include no finding, so it could not show one; it now reads
+  `/findings.json`. The activity spine found new progress notes by the length
+  of the list, so once the ledger held its full 5,000 notes it found none; it
+  now compares notes by identity and also reports a task that left the bounded
+  snapshot because it closed.
 - The operations catalogue page said in its opening note that nothing runs an
   operation yet, and below its effects table that nothing can be granted and
   nothing runs, while the same page documents `synapse ops run`, which has run

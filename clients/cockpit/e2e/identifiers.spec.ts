@@ -91,7 +91,9 @@ test("identifiers keep their ends at three widths and a phone shows state first"
 
     // A fleet whose names differ only at their ends, as a large installation's do.
     fleet = await startFleet(["--long-names"]);
-    const { participants, tasks } = fleet;
+    const { participants, tasks, closed } = fleet;
+    // The snapshot carries open work in full; closed tasks are counted, not drawn.
+    const open = tasks.filter(task => !closed.includes(task));
     const api = participants.find(name => name.endsWith("-api"))!;
     const web = participants.find(name => name.endsWith("-web"))!;
     expect(api.slice(0, -4)).toBe(web.slice(0, -4));
@@ -100,7 +102,9 @@ test("identifiers keep their ends at three widths and a phone shows state first"
       await expect(region("Fleet roster").getByRole("button", { name: `Inspect agent ${participant}`, exact: true }))
         .toBeVisible();
     }
-    for (const task of tasks) await expect(region("Task board")).toContainText(task);
+    for (const task of open) await expect(region("Task board")).toContainText(task);
+    await expect(region("Task board").getByText(`${closed.length} closed not loaded`, { exact: true }))
+      .toBeVisible();
     await expect(page.locator(".toasts")).toHaveCount(0, { timeout: 30_000 });
 
     const picture = async (name: string): Promise<void> => {
@@ -115,7 +119,7 @@ test("identifiers keep their ends at three widths and a phone shows state first"
         await page.setViewportSize({ width, height: 900 });
         const seen = await identifiers(page);
         expect(seen.cut).toEqual([]);
-        expect(seen.checked).toBeGreaterThanOrEqual(participants.length + tasks.length);
+        expect(seen.checked).toBeGreaterThanOrEqual(participants.length + open.length);
         expect(await logOverhang(page)).toBeLessThanOrEqual(1);
         expect(await rosterEnd(page, api)).toBe("-api");
         expect(await rosterEnd(page, web)).toBe("-web");

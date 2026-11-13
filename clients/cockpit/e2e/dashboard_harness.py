@@ -23,14 +23,34 @@ from websockets.asyncio.client import connect
 from synapse_channel.core.approvals import format_approval_note
 from synapse_channel.core.attention import project_hub_attention
 from synapse_channel.core.attention_store import sync_evidence
+from synapse_channel.core.finding_records import Finding
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind, record_operator_relay
+from synapse_channel.core.journal import EventKind, record_finding, record_operator_relay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import start_dashboard_server
 
 HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 18765
 DEFAULT_HUB_PORT = 18766
+
+SEEDED_FINDINGS = (
+    {
+        "statement": "cockpit-e2e verified finding",
+        "subkind": "codebase-fact",
+        "evidence_kind": "measured",
+        "claim_status": "reference-validated",
+        "evidence_ref": "clients/cockpit/e2e/dashboard_harness.py",
+        "verified_at_source": {"checked_this_session": True, "source_ref": "dashboard_harness.py"},
+        "provenance": {"project": "cockpit-e2e"},
+    },
+    {
+        "statement": "cockpit-e2e retracted finding",
+        "subkind": "estimate",
+        "lifecycle": "retracted",
+        "provenance": {"project": "cockpit-e2e"},
+    },
+)
+"""Findings the browser gate expects in the panel: one re-checked, one withdrawn."""
 
 
 def _port_from_env(name: str, default: int) -> int:
@@ -150,6 +170,13 @@ async def _serve() -> None:
         ts=time.time() - 172800,
         durable=True,
     )
+    # The README picture journey turns this off: its panel shows only the
+    # demonstration fleet's own finding.
+    if os.environ.get("SYNAPSE_COCKPIT_E2E_SEED_FINDINGS", "1") == "1":
+        for seeded in SEEDED_FINDINGS:
+            # The record the hub journals: parsed, then stamped with an attested origin.
+            finding = Finding.from_dict(seeded).attested(by="cockpit-e2e/reviewer", at=time.time())
+            record_finding(journal, finding.as_dict())
     attention_store = Path(scratch.name) / "attention" / "queue.db"
     observed_at = time.time()
     sync_evidence(

@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { parseSnapshot } from "../src/lib/snapshotParser";
+import { parseBounds, parseSnapshot } from "../src/lib/snapshotParser";
 
 describe("parseSnapshot", () => {
   it("rejects non-object payloads", () => {
@@ -126,5 +126,42 @@ describe("parseSnapshot", () => {
     const malformed = parseSnapshot({ hub_version: 98, config_epoch: null });
     expect(malformed?.hub_version).toBe("");
     expect(malformed?.config_epoch).toBe("");
+  });
+});
+
+describe("parseBounds", () => {
+  const block = {
+    closed_included: false,
+    tasks_total: 558,
+    tasks_sent: 143,
+    closed_omitted: 415,
+    progress_total: 5000,
+    progress_sent: 200,
+    receipts_total: 60,
+    receipts_sent: 50,
+  };
+
+  it("reads every exact total of a bounded snapshot", () => {
+    expect(parseBounds(block)).toEqual({
+      closedIncluded: false,
+      tasksTotal: 558,
+      tasksSent: 143,
+      closedOmitted: 415,
+      progressTotal: 5000,
+      progressSent: 200,
+      receiptsTotal: 60,
+      receiptsSent: 50,
+    });
+    expect(parseBounds({ ...block, closed_included: true })?.closedIncluded).toBe(true);
+    expect(parseSnapshot({ bounds: block })?.bounds?.closedOmitted).toBe(415);
+  });
+
+  it("is null for an older dashboard or a malformed block, never a guessed count", () => {
+    expect(parseSnapshot({})?.bounds).toBeNull();
+    for (const value of [null, "x", [1], { ...block, tasks_total: -1 }, { ...block, progress_sent: 1.5 }]) {
+      expect(parseBounds(value)).toBeNull();
+    }
+    const { receipts_sent: _dropped, ...partial } = block;
+    expect(parseBounds(partial)).toBeNull();
   });
 });

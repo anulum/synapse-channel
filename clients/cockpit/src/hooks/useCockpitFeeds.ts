@@ -23,6 +23,7 @@ import {
   type EventCoverage,
 } from "../lib/eventCoverage";
 import type { FederationState } from "../lib/federation";
+import type { FindingsState } from "../lib/findings";
 import type { HealthAnomaliesState } from "../lib/healthAnomalies";
 import type { MetricsState } from "../lib/metrics";
 import {
@@ -106,6 +107,7 @@ export interface CockpitFeeds {
   readonly sessions: SessionsState;
   readonly waits: WaitsState;
   readonly anomalyReport: HealthAnomaliesState;
+  readonly findings: FindingsState;
   readonly receipts: ReceiptsState;
   readonly operatorActions: OperatorActionsState;
   readonly attention: AttentionFeedState;
@@ -392,6 +394,7 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     sessions: auxiliary.sessions,
     waits: auxiliary.waits,
     anomalyReport: auxiliary.anomalyReport,
+    findings: auxiliary.findings,
     receipts,
     operatorActions,
     attention,

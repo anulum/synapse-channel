@@ -11,10 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from functools import partial
 from http import HTTPStatus
@@ -53,6 +52,7 @@ from synapse_channel.dashboard_feed_serving import (
     serve_cockpit_dist,
     serve_events,
     serve_federation,
+    serve_findings,
     serve_health_anomalies,
     serve_merkle_proof,
     serve_metrics_feed,
@@ -426,15 +426,6 @@ async def fetch_dashboard_snapshot(
             await conn_task
 
 
-def _json_bytes(snapshot: DashboardSnapshot, *, a2a_state_file: str | Path | None) -> bytes:
-    """Return stable UTF-8 JSON bytes for ``snapshot``."""
-    return json.dumps(
-        snapshot.to_dict(a2a_state_file=a2a_state_file),
-        ensure_ascii=False,
-        sort_keys=True,
-    ).encode("utf-8")
-
-
 RELIABILITY_PATH = "/reliability.json"
 """Read-only endpoint serving the reliability audit-signal report."""
 
@@ -459,6 +450,9 @@ CAUSALITY_PATH = "/causality.json"
 FEDERATION_PATH = "/federation.json"
 """Read-only endpoint serving the imported peerings from the federation store."""
 
+FINDINGS_PATH = "/findings.json"
+"""Read-only feed of the findings the hub recorded, newest first."""
+
 SESSIONS_PATH = "/sessions.json"
 """Read-only endpoint reporting opt-in session telemetry left in the durable log."""
 
@@ -476,6 +470,23 @@ ATTENTION_PATH = "/attention.json"
 
 COCKPIT_DIST_PREFIX = "/cockpit/"
 """URL prefix under which an operator-named cockpit build directory is served."""
+
+_QUERY_FEEDS: Final[dict[str, Callable[[Path | None, str], FeedResponse]]] = {
+    EVENTS_PATH: serve_events,
+    MERKLE_PROOF_PATH: serve_merkle_proof,
+    CAUSALITY_PATH: serve_causality,
+    FINDINGS_PATH: serve_findings,
+    OPERATOR_ACTIONS_PATH: serve_operator_actions,
+    RECEIPTS_PATH: serve_receipts,
+}
+"""Event-store feeds served straight from the store and the request's query."""
+
+_STORE_FEEDS: Final[dict[str, Callable[[Path | None], FeedResponse]]] = {
+    METRICS_FEED_PATH: serve_metrics_feed,
+    SESSIONS_PATH: serve_sessions,
+    WAITS_PATH: serve_waits,
+}
+"""Event-store feeds that take no query."""
 
 OPERATOR_RATE_MAX: Final = 30
 """Operator write actions permitted within :data:`OPERATOR_RATE_WINDOW_SECONDS`."""
@@ -650,7 +661,6 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             SnapshotPageBindings(
                 fetch=partial(self.snapshot_gate.fetch, wait_timeout=1.0),
                 unavailable_error=DashboardUnavailable,
-                json_bytes=partial(_json_bytes, a2a_state_file=self.a2a_state_file),
                 html=partial(
                     render_dashboard_html,
                     refresh_seconds=self.refresh_seconds,
@@ -659,6 +669,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 a2a_state_file=self.a2a_state_file,
             ),
             write=self._write,
+            query=urlsplit(self.path).query,
+            if_none_match=self.headers.get("If-None-Match"),
         )
 
     def do_POST(self) -> None:
@@ -732,6 +744,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         lives in :mod:`synapse_channel.dashboard_feed_serving`.
         """
         db = self.reliability_db
+        query_feed = _QUERY_FEEDS.get(path)
+        if query_feed is not None:
+            return query_feed(db, query)
+        store_feed = _STORE_FEEDS.get(path)
+        if store_feed is not None:
+            return store_feed(db)
         if path == RELIABILITY_PATH:
             # Served from the durable event store, not the live hub: the
             # reliability report is an offline audit surface, so it stays
@@ -740,34 +758,18 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 RELIABILITY_PATH,
                 partial(serve_reliability, db, self.reliability_db_key_file),
             )
-        if path == EVENTS_PATH:
-            return serve_events(db, query)
-        if path == METRICS_FEED_PATH:
-            return serve_metrics_feed(db)
         if path == STATE_AT_PATH:
             return self.state_feed_cache.get_or_build(
                 f"{STATE_AT_PATH}?{query}",
                 partial(serve_state_at, db, query),
             )
-        if path == MERKLE_PROOF_PATH:
-            return serve_merkle_proof(db, query)
         if path == HEALTH_ANOMALIES_PATH:
             return self.heavy_feed_cache.get_or_build(
                 HEALTH_ANOMALIES_PATH,
                 partial(serve_health_anomalies, db),
             )
-        if path == CAUSALITY_PATH:
-            return serve_causality(db, query)
         if path == FEDERATION_PATH:
             return serve_federation(self.federation_store)
-        if path == SESSIONS_PATH:
-            return serve_sessions(db)
-        if path == WAITS_PATH:
-            return serve_waits(db)
-        if path == OPERATOR_ACTIONS_PATH:
-            return serve_operator_actions(db, query)
-        if path == RECEIPTS_PATH:
-            return serve_receipts(db, query)
         if path == ATTENTION_PATH:
             return serve_attention(self.attention_store)
         if path == POSTMORTEM_PATH:

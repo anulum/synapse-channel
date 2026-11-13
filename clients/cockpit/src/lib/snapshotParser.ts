@@ -15,6 +15,7 @@ import type {
   FleetSnapshot,
   RiskSignal,
   RiskView,
+  SnapshotBounds,
   TaskGraphEdge,
   TaskGraphNode,
   TaskGraphSection,
@@ -174,6 +175,42 @@ function parseRisk(value: unknown): RiskView {
   };
 }
 
+const BOUND_COUNTS = [
+  "tasks_total",
+  "tasks_sent",
+  "closed_omitted",
+  "progress_total",
+  "progress_sent",
+  "receipts_total",
+  "receipts_sent",
+] as const;
+
+type BoundCounts = [number, number, number, number, number, number, number];
+
+function wholeCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+/** Read the bounded snapshot's `bounds` block; null when absent or malformed. */
+export function parseBounds(value: unknown): SnapshotBounds | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const block = value as Record<string, unknown>;
+  const counts = BOUND_COUNTS.map((key) => wholeCount(block[key]));
+  if (counts.some((count) => count === null)) return null;
+  const [tasksTotal, tasksSent, closedOmitted, progressTotal, progressSent, receiptsTotal, receiptsSent] =
+    counts as BoundCounts;
+  return {
+    closedIncluded: block["closed_included"] === true,
+    tasksTotal,
+    tasksSent,
+    closedOmitted,
+    progressTotal,
+    progressSent,
+    receiptsTotal,
+    receiptsSent,
+  };
+}
+
 /**
  * Shape an untrusted `/snapshot.json` payload into a {@link FleetSnapshot}.
  * Returns `null` only when the payload is not an object at all; any partial
@@ -192,5 +229,6 @@ export function parseSnapshot(raw: unknown): FleetSnapshot | null {
     manifest: asRecordArray(payload["manifest"]),
     fleet: parseFleet(payload["fleet"]),
     risk: parseRisk(payload["risk"]),
+    bounds: parseBounds(payload["bounds"]),
   };
 }

@@ -25,7 +25,7 @@ Three feeds:
   hub-runtime state that no durable store carries, so the section ships empty
   with its absence stated rather than guessed.
 
-Seven further store-derived feeds serve the cockpit's operational panels, all
+Eight further store-derived feeds serve the cockpit's operational panels, all
 measured against the log's own timestamps (never the wall clock) so each is
 deterministic and available with the hub down: **metrics** (event counts by
 kind over trailing windows), **state-at** (coordination state reconstructed by
@@ -37,15 +37,16 @@ coordination signals the causality graph makes visible — the honest hub-side
 alert surface), **sessions** (the opt-in ``session_metric`` telemetry the fleet
 left in the log, each record indexed by ``seq`` for a cost-to-causality join),
 **waits** (the pending coordination gates — non-terminal tasks blocked on
-dependencies that have not completed — reconstructed from the plan), and
+dependencies that have not completed — reconstructed from the plan),
 **operator actions** (the governed cross-hub relay audit trail, normalised for
-review).
+review), and **findings** (the ``finding`` events the hub recorded, newest
+first, with their honesty axes and provenance, paged by a sequence cursor).
 """
 
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -66,7 +67,7 @@ from synapse_channel.core.journal import EventKind, replay
 from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
 from synapse_channel.core.merkle import proof_to_json, run_proof
 from synapse_channel.core.multihub_wire import LogSnapshot, encode_log_snapshot
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.universal_receipts import (
     UNIVERSAL_RECEIPT_EVENT_KINDS,
     universal_receipt_to_json,
@@ -124,6 +125,21 @@ DEFAULT_OPERATOR_ACTIONS_LIMIT = 50
 
 DEFAULT_RECEIPTS_LIMIT = 100
 """Universal receipt rows returned when the client names no limit."""
+
+DEFAULT_FINDINGS_LIMIT = 50
+"""Recorded findings one page carries when the client names no limit."""
+
+MAX_FINDINGS_LIMIT = 200
+"""The most recorded findings one page may carry."""
+
+FINDINGS_SCAN_SPAN = 4096
+"""Sequence numbers one backward step of the findings walk reads."""
+
+_FINDING_PROVENANCE = ("project", "actor", "session", "source_event_seq", "ts")
+"""The provenance fields a finding row keeps; everything else stays in the log."""
+
+_FINDING_AXES = ("evidence_kind", "claim_status", "freshness", "lifecycle")
+"""The honesty axes and lifecycle a finding row serves as recorded."""
 
 CAUSALITY_FEED_DIRECTIONS = ("causes", "effects")
 """Query directions the feed answers; the CLI's other modes stay CLI-only."""
@@ -553,6 +569,112 @@ def build_merkle_proof_feed(db_path: str | Path, *, seq: int) -> dict[str, objec
             "note": "no event at that sequence in the committed log",
         }
     return {"present": True, **proof_to_json(proof)}
+
+
+def _text_or_none(value: object) -> str | None:
+    """Return a non-empty string as given, anything else as ``None``."""
+    return value if isinstance(value, str) and value else None
+
+
+def _finding_row(event: StoredEvent) -> dict[str, object]:
+    """Return the served fields of one journalled finding.
+
+    The three honesty axes, the lifecycle and the producer's re-check claim are
+    served as recorded. ``verified_at_source.by`` and ``at`` are the identity
+    and time the hub attested on receipt, set on every finding; only
+    ``checked_this_session`` (and the ``freshness`` derived from it) says that
+    the producer re-checked the reference at its source.
+    """
+    payload = event.payload
+    provenance = payload.get("provenance")
+    origin = provenance if isinstance(provenance, Mapping) else {}
+    source_check = payload.get("verified_at_source")
+    check = source_check if isinstance(source_check, Mapping) else {}
+    return {
+        "seq": event.seq,
+        "ts": event.ts,
+        "statement": str(payload.get("statement") or ""),
+        "subkind": str(payload.get("subkind") or ""),
+        **{axis: _text_or_none(payload.get(axis)) for axis in _FINDING_AXES},
+        "evidence_ref": _text_or_none(payload.get("evidence_ref")),
+        "provenance": {key: origin.get(key) for key in _FINDING_PROVENANCE},
+        "verified_at_source": {
+            "checked_this_session": check.get("checked_this_session") is True,
+            "source_ref": str(check.get("source_ref") or ""),
+            "by": check.get("by"),
+            "at": check.get("at"),
+        },
+    }
+
+
+def _newest_findings(store: EventStore, ceiling: int, wanted: int) -> list[StoredEvent]:
+    """Read at most ``wanted`` findings at or below ``ceiling``, newest first.
+
+    The log is walked backwards in :data:`FINDINGS_SCAN_SPAN` sequence windows,
+    so only findings are decoded and the walk stops once the page is full.
+    """
+    found: list[StoredEvent] = []
+    high = ceiling
+    while high >= 1 and len(found) < wanted:
+        low = max(1, high - FINDINGS_SCAN_SPAN + 1)
+        window = store.read_window(min_seq=low, max_seq=high, kinds=(EventKind.FINDING,))
+        found.extend(reversed(window))
+        high = low - 1
+    return found[:wanted]
+
+
+def build_findings_feed(
+    db_path: str | Path, *, before: int | None = None, limit: int = DEFAULT_FINDINGS_LIMIT
+) -> dict[str, object]:
+    """Return the findings the hub recorded, newest first, below an optional cursor.
+
+    A finding is a journalled ``finding`` event (``record_finding``); each row
+    keeps its sequence and time, the statement and subkind, the three honesty
+    axes (``evidence_kind``, ``claim_status``, ``freshness``), the lifecycle,
+    the evidence reference, the provenance (project, actor, session, source
+    event, time) and the re-check record (:func:`_finding_row`).
+
+    Parameters
+    ----------
+    db_path : str or pathlib.Path
+        The hub event store.
+    before : int or None, optional
+        Exclusive sequence cursor; ``None`` starts at the newest finding.
+    limit : int, optional
+        Page size, clamped to ``1..MAX_FINDINGS_LIMIT``.
+
+    Returns
+    -------
+    dict[str, object]
+        ``findings`` (newest first), ``total`` (every finding the log holds,
+        counted without decoding payloads) and ``next_before`` (the cursor for
+        the next older page, or ``None`` when no older finding remains).
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist.
+    """
+    path = Path(db_path)
+    if not path.exists():
+        msg = f"missing event store: {path}"
+        raise ValueError(msg)
+    bounded = max(1, min(int(limit), MAX_FINDINGS_LIMIT))
+    store = _open_event_store(path)
+    try:
+        by_kind = cast("dict[str, int]", store.event_metrics({})["events_by_kind"])
+        log_end = store.max_seq()
+        ceiling = log_end if before is None else min(before - 1, log_end)
+        page = _newest_findings(store, ceiling, bounded + 1)
+    finally:
+        store.close()
+    more = len(page) > bounded
+    page = page[:bounded]
+    return {
+        "findings": [_finding_row(event) for event in page],
+        "total": int(by_kind.get(EventKind.FINDING, 0)),
+        "next_before": page[-1].seq if more else None,
+    }
 
 
 def build_sessions_feed(db_path: str | Path) -> dict[str, object]:

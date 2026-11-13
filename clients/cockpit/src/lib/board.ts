@@ -113,15 +113,18 @@ export interface BoardTruncation {
   readonly truncated: boolean;
   /** The applied board cap, or null when the board is served uncapped. */
   readonly taskCap: number | null;
+  /** Closed tasks the bounded snapshot counted but did not send. */
+  readonly closedOmitted: number;
 }
 
 /**
  * Read the hub's board-cap signal (`total_tasks` + `truncated`, sent when
  * `--board-task-cap` trims the reply) so the panel can state "N of M" instead
- * of presenting a capped list as the whole plan.
+ * of presenting a capped list as the whole plan, and the dashboard's own count
+ * of the closed tasks its bounded snapshot left out.
  */
 export function boardTruncation(snapshot: FleetSnapshot | null): BoardTruncation {
-  if (snapshot === null) return { totalTasks: null, truncated: false, taskCap: null };
+  if (snapshot === null) return { totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0 };
   const total = snapshot.board["total_tasks"];
   const cap = snapshot.board["task_cap"];
   return {
@@ -129,47 +132,6 @@ export function boardTruncation(snapshot: FleetSnapshot | null): BoardTruncation
     truncated: snapshot.board["truncated"] === true,
     // Present only while a cap is ACTIVE (the hub omits it uncapped).
     taskCap: typeof cap === "number" && Number.isFinite(cap) && cap > 0 ? Math.trunc(cap) : null,
+    closedOmitted: snapshot.bounds === null ? 0 : snapshot.bounds.closedOmitted,
   };
-}
-
-/** One finding note from the blackboard progress ledger. */
-export interface FindingNote {
-  readonly author: string;
-  readonly taskId: string;
-  readonly text: string;
-  /** Epoch seconds the note was posted, or null when the hub omitted it. */
-  readonly postedAt: number | null;
-}
-
-function asString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function asEpochOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-/**
- * Extract `kind == "finding"` notes from the board's progress ledger, newest
- * first. Only findings qualify — routine notes and release receipts stay in
- * their own surfaces.
- */
-export function deriveFindings(snapshot: FleetSnapshot | null): FindingNote[] {
-  if (snapshot === null) return [];
-  const progress = snapshot.board["progress"];
-  if (!Array.isArray(progress)) return [];
-  const findings: FindingNote[] = [];
-  for (const raw of progress) {
-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) continue;
-    const note = raw as Record<string, unknown>;
-    if (asString(note["kind"]) !== "finding") continue;
-    findings.push({
-      author: asString(note["author"]),
-      taskId: asString(note["task_id"]),
-      text: asString(note["text"]),
-      postedAt: asEpochOrNull(note["posted_at"]),
-    });
-  }
-  findings.reverse();
-  return findings;
 }

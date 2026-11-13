@@ -96,6 +96,8 @@ export async function startHarness(): Promise<{ readonly harness: Started; reado
     PYTHONUNBUFFERED: "1",
     SYNAPSE_COCKPIT_E2E_DASHBOARD_PORT: dashboardPort,
     SYNAPSE_COCKPIT_E2E_HUB_PORT: hubPort,
+    // The demonstration fleet records its own finding; the gate's seeded ones stay out.
+    SYNAPSE_COCKPIT_E2E_SEED_FINDINGS: "0",
   });
   const url = /ready at (\S+)/u.exec(harness.line)?.[1];
   if (!url) {
@@ -110,6 +112,10 @@ export interface Seeded {
   readonly tasks: readonly string[];
   /** The claims held when the line was printed. */
   readonly claims: readonly string[];
+  /** Tasks the plan closed: a bounded snapshot counts them without loading them. */
+  readonly closed: readonly string[];
+  /** The statement of the finding the second act records. */
+  readonly finding: string;
 }
 
 export interface Fleet extends Seeded {
@@ -134,10 +140,16 @@ function seeded(line: string, act?: number): Seeded {
   if (act !== undefined && (value as Record<string, unknown>)["act"] !== act) {
     throw new Error(`the demonstration fleet did not report act ${act}: ${line}`);
   }
+  const finding = (value as Record<string, unknown>)["finding"];
+  if (typeof finding !== "string" || finding === "") {
+    throw new Error("the demonstration fleet reported no finding");
+  }
   return {
     participants: names(value, "participants"),
     tasks: names(value, "tasks"),
     claims: names(value, "claims"),
+    closed: names(value, "closed"),
+    finding,
   };
 }
 

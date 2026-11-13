@@ -276,7 +276,7 @@ def test_dashboard_parser_wires_the_reliability_store_flag(
         parser.parse_args(["dashboard", "--help"])
     assert exc_info.value.code == 0
     help_text = capsys.readouterr().out
-    assert "12 read-only feeds" in help_text
+    assert "13 read-only feeds" in help_text
     assert "/postmortem.json?task=ID" in help_text
 
 

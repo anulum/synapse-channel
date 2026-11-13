@@ -78,6 +78,7 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     board_columns = build_board_columns(
         _mapping(dashboard.get("board")),
         _mapping(dashboard.get("state")),
+        closed_omitted=_int(_mapping(dashboard.get("bounds")).get("closed_omitted")),
     )
     observed_fleet = build_observed_fleet_health(dashboard)
 

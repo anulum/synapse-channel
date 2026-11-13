@@ -480,6 +480,33 @@ per task. These are the same deterministic local scorers as the CLI, remain
 advisory-only, and never claim work, assign owners, reserve capacity, or grant
 execution authority.
 
+### The bounded snapshot
+
+`/snapshot.json`, `/studio.json` and the snapshot channel of `/live.ndjson`
+carry a bounded document: every task that is not closed (`done` or
+`cancelled`) in full, the newest 200 progress notes, the newest 50 release
+receipts, and the task graph's nodes of those tasks with every edge that
+touches one; an edge keeps its prerequisite's status and whether it is
+satisfied, so a dependency on a closed task still reads correctly. A `bounds`
+block states exactly what was left out, counted before
+anything is cut: `tasks_total`, `tasks_by_status`, `tasks_sent`,
+`closed_omitted`, `progress_total`, `progress_sent`, `receipts_total`,
+`receipts_sent`, `graph_nodes_total` and `graph_nodes_sent`. The `fleet` and
+`risk` sections are computed from the whole board, so their counts do not
+change. `/snapshot.json?closed=1` adds the closed tasks; any other `closed`
+value is refused with 400. With `--feeds-db`, the journalled progress notes
+remain readable as `ledger_progress` events through `/events.json`.
+
+`/snapshot.json` carries a weak `ETag` (`W/"…"`) and answers a matching
+`If-None-Match` with `304 Not Modified` and no body, after the same bearer
+check as every other read; a request without a valid bearer gets 401, never
+304. The tag leaves out the three stamps that change on every fetch without any
+change in work: `fleet.generated_at`, `state.generated_at` and each agent's
+`state.agents[].last_seen`. A client whose copy differs only in those stamps
+therefore gets 304; a client that needs fresh stamps asks without
+`If-None-Match`. The live stream applies the same rule to its `unchanged`
+heartbeat. Responses keep `Cache-Control: no-store`.
+
 ### Dashboard browser principals
 
 For more than one browser identity, use `--dashboard-access-file FILE` instead
@@ -582,6 +609,7 @@ configured principal grants as protected dashboard data:
   that root requires a separately trusted commitment or signed tree head; a `seq` the committed log does not hold returns `{"present": false}` with a note, never a fabricated proof.
 - `/health-anomalies.json` — the honest hub-side alert surface: the orphaned, dangling, and stale coordination anomalies the causality graph makes visible, in the same shape `synapse causality --health` emits, with an `anomaly_count` for a cockpit alerts badge. Fired alerts stay collector-side off `/metrics`; this is only what the durable log can prove.
 - `/sessions.json` — the opt-in `session_metric` telemetry the fleet left in the log, in the same shape `synapse participant costs` renders: per-session token counts, cost, latency, and error/abstention rates, with `totals` aggregated across sessions. Every record carries the `seq` of the snapshot it was read from, so a cockpit joins a session's cost straight to its causal cone via `/causality.json`; each record's coordination `task_id` (from the note body) is the same join key `synapse participant costs` reports. A log with no session notes reports empty `sessions` and zeroed `totals`, never a fabricated cost.
+- `/findings.json?before=SEQ&limit=N` — the findings the hub recorded from agents' `finding` requests, newest first, from the journalled `finding` events: each row keeps its sequence and time, the statement and subkind, the three honesty axes (`evidence_kind`, `claim_status`, `freshness`), the `lifecycle`, the `evidence_ref`, the provenance (project, actor, session, source event, time) and the re-check record `verified_at_source`. Its `by` and `at` are the identity and time the hub attested on receipt, present on every finding; only `checked_this_session` (and a `freshness` of `verified-at-source`) says the producer re-checked the reference at its source. `limit` is 1 to 200 (default 50); `before` is an exclusive sequence cursor of at least 1, and `next_before` names the next older page or is `null`. `total` counts every finding in the log, without decoding payloads; the page itself is read backwards in sequence windows and stops once full. The cockpit's findings panel reads it.
 - `/waits.json` — the pending coordination gates reconstructed from the plan: each non-terminal task blocked on a dependency that has not reached a terminal status, with `who` is waiting (the task's suggested owner, or whoever declared it), `on_what` dependency ids it is blocked on, and `since` when it was declared, plus a `wait_count`. This is the "what is the fleet stuck behind" panel. Transient socket waiters (a client's `-rx` connection) are not journalled and are omitted; this is only the coordination gates the durable plan can prove.
 - `/operator-actions.json?since=SEQ&limit=N` — the governed operator-action history reconstructed from `operator_relay` audit events: direction, action, namespace, task, operator, origin/owner hubs, peer or local requester, status, reason, break-glass tag, detail, and real `seq`/`ts` join anchors. Ordinary releases without relay provenance are omitted.
 - `/receipts.json?since=SEQ&limit=N` — the universal receipt feed projected from receipt-bearing durable events: release/claim evidence, content-minimized claim and guard denials, delivery receipts, dead-letter escalations, identity-pin reclaim decisions, sandbox run attestations, approval/policy/verification notes, governed operator relays, cross-hub pointers, A2A validation notes, and postmortem notes in one shape (`seq`, `ts`, `receipt_id`, `kind`, `subject`, `actor`, `status`, `summary`, `source_event_kind`, `payload`). Every declared durable `EventKind` has an explicit receipt/non-receipt disposition; ordinary state, chat, memory, and idempotency events remain intentionally omitted rather than being inferred as receipts.

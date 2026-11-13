@@ -82,6 +82,7 @@
 .syn-board-card__status,
 .syn-board-card__meta-label,
 .syn-board-column__empty,
+.syn-board-column__omitted,
 .syn-board-source-note {
   color: var(--syn-muted);
 }
@@ -114,6 +115,7 @@
 }
 
 .syn-board-column__empty,
+.syn-board-column__omitted,
 .syn-board-empty,
 .syn-board-source-note {
   padding: var(--syn-sp-3);

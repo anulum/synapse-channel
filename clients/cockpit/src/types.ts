@@ -151,6 +151,23 @@ export interface RiskView {
  * typed; the raw hub `state`/`board` payloads stay loose until a panel claims
  * them.
  */
+/**
+ * What the dashboard's bounded snapshot left out, with exact totals counted
+ * before the cut. `null` when an older dashboard served the full snapshot.
+ */
+export interface SnapshotBounds {
+  /** Closed tasks were asked for (`?closed=1`) and are in the board. */
+  readonly closedIncluded: boolean;
+  readonly tasksTotal: number;
+  readonly tasksSent: number;
+  /** Closed tasks counted but not sent. */
+  readonly closedOmitted: number;
+  readonly progressTotal: number;
+  readonly progressSent: number;
+  readonly receiptsTotal: number;
+  readonly receiptsSent: number;
+}
+
 export interface FleetSnapshot {
   readonly online_agents: readonly string[];
   /** Roles each agent answers to, {} when the hub (or dashboard) predates them. */
@@ -164,4 +181,6 @@ export interface FleetSnapshot {
   readonly manifest: readonly Record<string, unknown>[];
   readonly fleet: FleetSection;
   readonly risk: RiskView;
+  /** The bounded snapshot's statement of what it left out. */
+  readonly bounds: SnapshotBounds | null;
 }

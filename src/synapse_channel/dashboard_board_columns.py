@@ -239,11 +239,32 @@ def _card(
     )
 
 
+def _columns(cards: list[_BoardCard], *, closed_omitted: int) -> list[JsonDict]:
+    """Group ``cards`` into the stable columns; the closed one also counts omitted tasks."""
+    by_column: dict[str, list[_BoardCard]] = {column_id: [] for column_id, _ in COLUMN_SPECS}
+    for card in cards:
+        by_column[card.column].append(card)
+    return [
+        {
+            "id": column_id,
+            "label": label,
+            "tasks": [
+                card.to_dict()
+                for card in sorted(by_column[column_id], key=lambda card: card.task_id)
+            ],
+            "count": len(by_column[column_id]) + (closed_omitted if column_id == "closed" else 0),
+            "omitted": closed_omitted if column_id == "closed" else 0,
+        }
+        for column_id, label in COLUMN_SPECS
+    ]
+
+
 def build_board_columns(
     board: Mapping[str, object],
     state: Mapping[str, object],
     *,
     now: float | None = None,
+    closed_omitted: int = 0,
 ) -> JsonDict:
     """Build deterministic board columns from blackboard and claim snapshots.
 
@@ -256,6 +277,9 @@ def build_board_columns(
     now : float or None, optional
         Explicit lease comparison time. When omitted, the state's finite
         ``generated_at`` value is used. No local clock is consulted.
+    closed_omitted : int, optional
+        Closed tasks the bounded snapshot left out; the closed column counts
+        them and reports them as ``omitted`` without cards.
 
     Returns
     -------
@@ -294,23 +318,10 @@ def build_board_columns(
         )
         for task_id in ad_hoc_ids
     )
-    by_column: dict[str, list[_BoardCard]] = {column_id: [] for column_id, _ in COLUMN_SPECS}
-    for card in cards:
-        by_column[card.column].append(card)
-    columns = [
-        {
-            "id": column_id,
-            "label": label,
-            "tasks": [
-                card.to_dict()
-                for card in sorted(by_column[column_id], key=lambda card: card.task_id)
-            ],
-        }
-        for column_id, label in COLUMN_SPECS
-    ]
+    columns = _columns(cards, closed_omitted=closed_omitted)
     declared = len(tasks_by_id)
     total_declared = max(
-        declared,
+        declared + closed_omitted,
         _nonnegative_int(board.get("total_tasks"), fallback=declared),
     )
     return {

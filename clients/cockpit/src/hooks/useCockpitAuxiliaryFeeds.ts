@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { createFederationStore, type FederationState } from "../lib/federation";
+import { createFindingsStore, type FindingsState } from "../lib/findings";
 import {
   createHealthAnomaliesStore,
   type HealthAnomaliesState,
@@ -34,6 +35,8 @@ export interface CockpitAuxiliaryFeeds {
   readonly sessions: SessionsState;
   readonly waits: WaitsState;
   readonly anomalyReport: HealthAnomaliesState;
+  /** The recorded findings, read from the durable log. */
+  readonly findings: FindingsState;
   readonly start: () => void;
 }
 
@@ -54,6 +57,7 @@ export function useCockpitAuxiliaryFeeds(
   const [sessions, setSessions] = useState<SessionsState>(CONNECTING);
   const [waits, setWaits] = useState<WaitsState>(CONNECTING);
   const [anomalyReport, setAnomalyReport] = useState<HealthAnomaliesState>(CONNECTING);
+  const [findings, setFindings] = useState<FindingsState>(CONNECTING);
   const startRef = useRef<(() => void) | null>(null);
   const start = useCallback(() => startRef.current?.(), []);
 
@@ -64,6 +68,7 @@ export function useCockpitAuxiliaryFeeds(
     setSessions(CONNECTING);
     setWaits(CONNECTING);
     setAnomalyReport(CONNECTING);
+    setFindings(CONNECTING);
     startRef.current = null;
     if (blocked) return;
 
@@ -77,10 +82,12 @@ export function useCockpitAuxiliaryFeeds(
       const metricsStore = createMetricsStore();
       const sessionsStore = createSessionsStore();
       const waitsStore = createWaitsStore();
+      const findingsStore = createFindingsStore();
       const unsubscribeFederation = federationStore.subscribe(setFederation);
       const unsubscribeMetrics = metricsStore.subscribe(setMetrics);
       const unsubscribeSessions = sessionsStore.subscribe(setSessions);
       const unsubscribeWaits = waitsStore.subscribe(setWaits);
+      const unsubscribeFindings = findingsStore.subscribe(setFindings);
       let anomaliesStore: ReturnType<typeof createHealthAnomaliesStore> | undefined;
       let unsubscribeAnomalies: (() => void) | undefined;
       let anomalyFallback: ReturnType<typeof setTimeout>;
@@ -101,6 +108,7 @@ export function useCockpitAuxiliaryFeeds(
         unsubscribeMetrics();
         unsubscribeSessions();
         unsubscribeWaits();
+        unsubscribeFindings();
         clearTimeout(anomalyFallback);
         unsubscribeAnomalies?.();
         reliabilityStore.stop();
@@ -108,6 +116,7 @@ export function useCockpitAuxiliaryFeeds(
         metricsStore.stop();
         sessionsStore.stop();
         waitsStore.stop();
+        findingsStore.stop();
         anomaliesStore?.stop();
       };
     };
@@ -121,5 +130,5 @@ export function useCockpitAuxiliaryFeeds(
     };
   }, [blocked, credentialRevision]);
 
-  return { reliability, federation, metrics, sessions, waits, anomalyReport, start };
+  return { reliability, federation, metrics, sessions, waits, anomalyReport, findings, start };
 }

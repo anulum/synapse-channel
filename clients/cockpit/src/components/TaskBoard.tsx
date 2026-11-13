@@ -172,6 +172,14 @@ function TaskBoardView({
           </span>
         )}
         {capped && blocked === 0 && !constrained && <span className="panel__sub">capped reply</span>}
+        {truncation !== undefined && truncation.closedOmitted > 0 && (
+          <span
+            className="panel__sub"
+            title="Closed tasks are counted but not loaded: the snapshot carries open work in full."
+          >
+            {`${truncation.closedOmitted} closed not loaded`}
+          </span>
+        )}
       </div>
       <div className="board-controls">
         <input

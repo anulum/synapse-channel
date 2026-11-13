@@ -44,12 +44,17 @@ type Client struct {
 }
 
 // DashboardSnapshot is the stable JSON shape returned by /snapshot.json.
+//
+// The document is bounded: Board carries every task that is not closed and
+// the newest progress notes; Bounds states the exact totals, including how
+// many closed tasks were left out. DashboardSnapshotWithClosed adds them.
 type DashboardSnapshot struct {
 	OnlineAgents []string         `json:"online_agents"`
 	State        map[string]any   `json:"state"`
 	Board        map[string]any   `json:"board"`
 	Manifest     []map[string]any `json:"manifest"`
 	Fleet        map[string]any   `json:"fleet"`
+	Bounds       map[string]any   `json:"bounds"`
 }
 
 // StatusError reports a non-2xx HTTP response from a SYNAPSE endpoint.
@@ -116,8 +121,18 @@ func NewClient(baseURL string, options ...Option) (*Client, error) {
 
 // DashboardSnapshot fetches and decodes /snapshot.json from synapse dashboard.
 func (client *Client) DashboardSnapshot(ctx context.Context) (*DashboardSnapshot, error) {
+	return client.snapshot(ctx, "/snapshot.json")
+}
+
+// DashboardSnapshotWithClosed fetches /snapshot.json?closed=1, which also
+// carries the closed tasks the default document counts without loading.
+func (client *Client) DashboardSnapshotWithClosed(ctx context.Context) (*DashboardSnapshot, error) {
+	return client.snapshot(ctx, "/snapshot.json?closed=1")
+}
+
+func (client *Client) snapshot(ctx context.Context, path string) (*DashboardSnapshot, error) {
 	var snapshot DashboardSnapshot
-	if err := client.GetJSON(ctx, "/snapshot.json", &snapshot); err != nil {
+	if err := client.GetJSON(ctx, path, &snapshot); err != nil {
 		return nil, err
 	}
 	return &snapshot, nil
@@ -175,9 +190,16 @@ func (client *Client) endpoint(path string) (string, error) {
 	if !strings.HasPrefix(trimmed, "/") {
 		trimmed = "/" + trimmed
 	}
+	// A query travels as a query (for example "/snapshot.json?closed=1"),
+	// never escaped into the path.
+	reference, err := url.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("synapse: parse request path: %w", err)
+	}
 	next := *client.baseURL
-	next.Path = strings.TrimRight(client.baseURL.Path, "/") + trimmed
-	next.RawQuery = ""
+	next.Path = strings.TrimRight(client.baseURL.Path, "/") + reference.Path
+	next.RawPath = ""
+	next.RawQuery = reference.RawQuery
 	next.Fragment = ""
 	return next.String(), nil
 }

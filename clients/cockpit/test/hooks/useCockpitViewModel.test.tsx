@@ -25,6 +25,7 @@ const CLAIM = {
 } as const;
 
 const SNAPSHOT: FleetSnapshot = {
+  bounds: null,
   online_agents: ["alpha/one"],
   agent_roles: { "alpha/one": ["worker"] },
   hub_version: "1.0.0",
@@ -128,6 +129,7 @@ function feeds(snapshot: FleetSnapshot | null): CockpitFeeds {
       error: null,
     },
     anomalyReport: ABSENT,
+    findings: ABSENT,
     receipts: ABSENT,
     operatorActions: ABSENT,
     attention: ABSENT,
@@ -173,7 +175,6 @@ describe("useCockpitViewModel", () => {
     expect(result.current.claims).toHaveLength(1);
     expect(result.current.board.map((task) => task.taskId)).toEqual(["TASK-1"]);
     expect(result.current.communication.messages).toBe(1);
-    expect(result.current.findings.map((finding) => finding.text)).toEqual(["evidence"]);
     expect(result.current.deadLetters.map((letter) => letter.target)).toEqual(["ghost"]);
     expect(result.current.approvals.map((approval) => approval.taskId)).toEqual(["TASK-1"]);
     expect(result.current.attention.some((item) => item.kind === "missing_waiter")).toBe(true);

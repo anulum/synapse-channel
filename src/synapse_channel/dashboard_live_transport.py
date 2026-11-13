@@ -123,11 +123,29 @@ def decode_feed_response(response: FeedResponse) -> tuple[str, object | None, st
 
 
 def snapshot_fingerprint(document: dict[str, Any]) -> str:
-    """Hash snapshot evidence while excluding its presentation-only generation time."""
+    """Hash snapshot evidence while excluding the stamps that change on every fetch.
+
+    Two snapshots of an unchanged hub differ only in ``fleet.generated_at`` (the
+    dashboard's render time), ``state.generated_at`` (the hub's clock when it
+    answered) and ``state.agents[*].last_seen`` (liveness stamps, including the
+    dashboard observer's own heartbeat on each fetch). None of them is evidence
+    of a change in work, so all three are left out; ``document`` is not changed.
+    """
     stable = dict(document)
     fleet = stable.get("fleet")
     if isinstance(fleet, dict):
         stable["fleet"] = {key: value for key, value in fleet.items() if key != "generated_at"}
+    state = stable.get("state")
+    if isinstance(state, dict):
+        stable["state"] = {key: value for key, value in state.items() if key != "generated_at"}
+        agents = state.get("agents")
+        if isinstance(agents, list):
+            stable["state"]["agents"] = [
+                {k: v for k, v in agent.items() if k != "last_seen"}
+                if isinstance(agent, dict)
+                else agent
+                for agent in agents
+            ]
     encoded = json.dumps(
         stable,
         ensure_ascii=False,

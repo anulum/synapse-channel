@@ -58,6 +58,13 @@ client, err := synapse.NewClient(
 )
 ```
 
+The snapshot is bounded: `Board` carries every task that is not closed and
+the newest progress notes, and `Bounds` states the exact totals, including how
+many closed tasks were left out. `DashboardSnapshotWithClosed` requests
+`/snapshot.json?closed=1`, which adds them. `GetJSON` keeps a query as a query,
+so `client.GetJSON(ctx, "/findings.json?limit=20", &payload)` reads one page of
+a feed.
+
 ## Test
 
 ```bash

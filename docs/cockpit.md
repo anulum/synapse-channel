@@ -49,7 +49,7 @@ synapse dashboard \
 Open `http://127.0.0.1:8765/cockpit/`.
 
 Add the durable hub database when you want the event log, reliability,
-metrics, audit, causality, sessions, waits, and time-travel feeds:
+metrics, audit, causality, sessions, waits, findings, and time-travel feeds:
 
 ```bash
 synapse dashboard \
@@ -476,7 +476,10 @@ state.
 - Treat branch conflicts as advisory evidence derived from declared claims;
   the dashboard does not run Git to refine them.
 - Check board truncation text before treating visible task rows as the whole
-  plan.
+  plan. The snapshot carries open work in full and counts closed tasks without
+  loading them, so the board states "N closed not loaded"; the exact counts by
+  status are in the snapshot's `bounds` block. `/snapshot.json?closed=1`
+  returns the closed tasks as well.
 
 The risk rail separates server-provided risk, dead letters, local fleet-health
 counts, waits, pending approvals, and client-side repetition heuristics. The
@@ -587,6 +590,15 @@ processes.
   A task hop from the log opens this panel with the task already selected.
 - **topology** joins identities and held tasks and adds imported federation
   posture when configured.
+
+The **Findings** panel lists the findings agents recorded with the hub, newest
+first, from `/findings.json`, so it needs `--feeds-db`; without it the panel
+says the feed is not served. Each row shows the hub-attested author and
+project, the subkind, the claim status and the freshness. Only a freshness of
+`verified-at-source` (in green) means the producer re-checked the reference at
+its source in that session; a retracted or superseded finding is struck
+through and labelled. The count reads "N of M" when older findings stay in the
+log.
 
 Each optional feed reports connecting, live, stale last-good, absent, or failed
 state independently.

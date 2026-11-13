@@ -25,6 +25,7 @@
   --sev-ok: #3fb77e;
   --sev-ok-text: #3fb77e; /* the dark fill green already reads as text */
   --sev-warn: #e0a93b;
+  --sev-warn-text: #e0a93b; /* the dark fill amber already reads as text */
   --sev-crit: #e5484d;
   --sev-crit-text: #f0767b; /* crit as TEXT on the dark ground; the fill red sits under AA */
 
@@ -96,6 +97,7 @@
   --sev-ok: #1a7a4d;
   --sev-ok-text: #14603c; /* ok as TEXT on paper; the fill green sits under AA */
   --sev-warn: #8a6410;
+  --sev-warn-text: #6e500c; /* warn as TEXT on a raised row; the fill amber measured 4.11:1 */
   --sev-crit: #b3261e;
   --sev-crit-text: #b3261e; /* the light-theme crit already reads as text */
 

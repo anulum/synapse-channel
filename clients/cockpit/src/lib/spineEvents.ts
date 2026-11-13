@@ -149,6 +149,9 @@ function claimSeeds(previous: FleetSnapshot, next: FleetSnapshot): EventSeed[] {
   return seeds;
 }
 
+/** Statuses that end a task; a bounded snapshot leaves such tasks out. */
+const CLOSED_STATUSES: ReadonlySet<string> = new Set(["done", "cancelled"]);
+
 function taskSeeds(previous: FleetSnapshot, next: FleetSnapshot): EventSeed[] {
   const before = taskStatuses(previous);
   const after = taskStatuses(next);
@@ -161,16 +164,32 @@ function taskSeeds(previous: FleetSnapshot, next: FleetSnapshot): EventSeed[] {
       seeds.push({ kind: "task", actor: "", label: `task ${taskId}: ${prior} → ${status}`, taskId });
     }
   }
+  // A bounded snapshot without closed tasks drops a task the moment it closes;
+  // say that it left open work, without guessing whether it was done or cancelled.
+  if (next.bounds !== null && !next.bounds.closedIncluded) {
+    for (const [taskId, prior] of before) {
+      if (!after.has(taskId) && !CLOSED_STATUSES.has(prior)) {
+        seeds.push({ kind: "task", actor: "", label: `task ${taskId}: ${prior} → closed`, taskId });
+      }
+    }
+  }
   return seeds;
 }
 
+/** A progress note's identity across snapshots: author, task, time, kind and text. */
+function noteKey(note: Record<string, unknown>): string {
+  return [note["author"], note["task_id"], note["posted_at"], note["kind"], note["text"]]
+    .map((part) => String(part))
+    .join("\u0000");
+}
+
 function progressSeeds(previous: FleetSnapshot, next: FleetSnapshot): EventSeed[] {
-  const before = recordsOf(previous.board["progress"]);
+  // Both snapshots carry only the newest notes, so a note is new when the
+  // previous window did not hold it, not when it lies past the previous length.
+  const before = new Set(recordsOf(previous.board["progress"]).map(noteKey));
   const after = recordsOf(next.board["progress"]);
-  // The board's progress list is append-ordered; entries beyond the previous
-  // length are the notes that landed between the two fetches.
   const seeds: EventSeed[] = [];
-  for (const note of after.slice(before.length)) {
+  for (const note of after.filter((candidate) => !before.has(noteKey(candidate)))) {
     const kind: EventKind = asString(note["kind"]) === "finding" ? "finding" : "chat";
     const taskId = asString(note["task_id"]);
     const text = asString(note["text"]);

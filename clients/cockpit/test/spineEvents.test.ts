@@ -9,7 +9,13 @@
 import { describe, expect, it } from "vitest";
 import type { SnapshotState, SnapshotStore } from "../src/lib/snapshot";
 import { createSnapshotEventSource, deriveTransitionEvents } from "../src/lib/spineEvents";
-import type { ClaimRecord, CockpitEvent, FleetSnapshot, RiskSignal } from "../src/types";
+import type {
+  ClaimRecord,
+  CockpitEvent,
+  FleetSnapshot,
+  RiskSignal,
+  SnapshotBounds,
+} from "../src/types";
 
 function claim(owner: string, taskId: string, paths: readonly string[] = []): ClaimRecord {
   return { task_id: taskId, owner, lease_expires_at: null, paths, stale: false, git: null };
@@ -21,12 +27,14 @@ interface SnapshotOverrides {
   readonly stale?: readonly ClaimRecord[];
   readonly board?: Record<string, unknown>;
   readonly signals?: readonly RiskSignal[];
+  readonly bounds?: SnapshotBounds | null;
 }
 
 function snapshotOf(overrides: SnapshotOverrides = {}): FleetSnapshot {
   const active = overrides.active ?? [];
   const stale = overrides.stale ?? [];
   return {
+    bounds: overrides.bounds ?? null,
     hub_version: "",
     config_epoch: "",
     online_agents: [...(overrides.live ?? [])],
@@ -160,6 +168,44 @@ describe("deriveTransitionEvents", () => {
       ["chat", "b", "just a note"],
     ]);
     expect(events.map((event) => event.taskId)).toEqual(["t1", ""]);
+  });
+
+  it("finds the new notes of a full window that slid forward", () => {
+    const note = (text: string): Record<string, unknown> => ({ author: "a", kind: "note", text, posted_at: 1 });
+    const previous = snapshotOf({ board: { progress: [note("one"), note("two")] } });
+    const next = snapshotOf({ board: { progress: [note("two"), note("three")] } });
+    const events = deriveTransitionEvents(previous, next, 2_000, 1);
+    expect(events.map((event) => event.label)).toEqual(["three"]);
+  });
+
+  it("reads a task that left a bounded snapshot without closed tasks as closed", () => {
+    const bounds: SnapshotBounds = {
+      closedIncluded: false,
+      tasksTotal: 3,
+      tasksSent: 1,
+      closedOmitted: 2,
+      progressTotal: 0,
+      progressSent: 0,
+      receiptsTotal: 0,
+      receiptsSent: 0,
+    };
+    const previous = snapshotOf({
+      board: {
+        tasks: [
+          { task_id: "t1", status: "in_progress" },
+          { task_id: "t2", status: "done" },
+          { task_id: "t3", status: "open" },
+        ],
+      },
+    });
+    const board = { tasks: [{ task_id: "t3", status: "open" }] };
+    const closed = deriveTransitionEvents(previous, snapshotOf({ board, bounds }), 2_000, 1);
+    expect(closed.map((event) => [event.label, event.taskId])).toEqual([
+      ["task t1: in_progress → closed", "t1"],
+    ]);
+    const included = { ...bounds, closedIncluded: true };
+    expect(deriveTransitionEvents(previous, snapshotOf({ board, bounds: included }), 2_000, 1)).toEqual([]);
+    expect(deriveTransitionEvents(previous, snapshotOf({ board }), 2_000, 1)).toEqual([]);
   });
 
   it("tolerates a missing or non-list progress payload", () => {
