@@ -66,6 +66,19 @@ if TYPE_CHECKING:
             ...
 
 
+READER_LEFT_ERRORS: tuple[type[OSError], ...] = (
+    BrokenPipeError,
+    ConnectionResetError,
+    ConnectionAbortedError,
+    TimeoutError,
+)
+"""What writing to a reader that has left raises; Windows reports it as an abort.
+
+A page that closes or moves on is not an error of the server: the live stream and
+every ordinary response end quietly on these, rather than printing a traceback.
+"""
+
+
 @dataclass(frozen=True)
 class LiveStreamBindings:
     """Bounded collection and HTTP I/O owned by one admitted live request.
@@ -176,6 +189,5 @@ def serve_dashboard_live(query: str, ports: LiveStreamBindings) -> None:
             if cycle_limit is None or cycles < cycle_limit:
                 time.sleep(2.0)
         send("close", status="complete", detail="bounded diagnostic stream complete")
-    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError):
-        # A client that left is not an error of the server; Windows reports it as an abort.
+    except READER_LEFT_ERRORS:
         return

@@ -376,6 +376,11 @@ execution evidence when carrying a release claim forward.
   lists, so focus fell to the page every five seconds and an Enter pressed
   just after a refresh opened nothing.
 
+- The dashboard no longer prints a traceback when a page leaves while a response
+  is being written to it (a closed tab, a reload, a browser moving on). Every
+  ordinary response now ends quietly on the same errors as the live stream,
+  which already did, and the server goes on serving the next reader.
+
 - A signed wake answered with 301, 302 or 303 keeps that status and is
   rejected. It is no longer stored as status 0, so it is not retried as
   though the receiver were unreachable. The transport still does not follow

@@ -100,6 +100,7 @@ from synapse_channel.dashboard_http_live import (
 from synapse_channel.dashboard_http_live import (
     LIVE_TRANSPORT_CONTENT_TYPE,
     LIVE_TRANSPORT_PATH,
+    READER_LEFT_ERRORS,
     LiveStreamBindings,
     serve_dashboard_live,
 )
@@ -830,7 +831,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         authenticate: bool = False,
         extra_headers: tuple[tuple[str, str], ...] = (),
     ) -> None:
-        """Write one HTTP response with browser-hardening headers."""
+        """Write one HTTP response with browser-hardening headers.
+
+        A reader that has left ends the response quietly, as it ends a live stream
+        (:data:`~synapse_channel.dashboard_http_live.READER_LEFT_ERRORS`). The
+        handler speaks HTTP/1.0, so the connection closes after this response.
+        """
         self.send_response(status.value)
         if authenticate:
             self.send_header("WWW-Authenticate", 'Bearer realm="synapse-dashboard"')
@@ -841,8 +847,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self.send_header(header, value)
         for header, value in extra_headers:
             self.send_header(header, value)
-        self.end_headers()
-        self.wfile.write(body)
+        with contextlib.suppress(*READER_LEFT_ERRORS):
+            self.end_headers()
+            self.wfile.write(body)
 
 
 def _handler_class(
