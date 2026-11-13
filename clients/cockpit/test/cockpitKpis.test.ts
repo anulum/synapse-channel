@@ -14,6 +14,11 @@ import {
   headlineMetricsOf,
   ZERO_HEADLINE_METRICS,
 } from "../src/lib/cockpitKpis";
+import { ENGLISH } from "../src/lib/i18n/catalogues/english";
+import { FRENCH } from "../src/lib/i18n/catalogues/french";
+import { GERMAN } from "../src/lib/i18n/catalogues/german";
+import { SLOVAK } from "../src/lib/i18n/catalogues/slovak";
+import { SPANISH } from "../src/lib/i18n/catalogues/spanish";
 import { parseSnapshot, type SnapshotState } from "../src/lib/snapshot";
 import type { CockpitEvent } from "../src/types";
 
@@ -56,6 +61,38 @@ describe("headlineMetricsOf", () => {
       claims: 3,
       risk: 2,
       ratePerMinute: 2,
+    });
+  });
+
+  it("leaves amber warnings out of the alarm count and names that count", () => {
+    const state: SnapshotState = {
+      snapshot: parseSnapshot({
+        fleet: { agents: { live: ["alpha"] }, claims: { active: 1 } },
+        risk: {
+          signals: [
+            { level: "amber", category: "wait", subject: "T-2", detail: "gated" },
+            { level: "green", category: "clear", subject: "T-4", detail: "quiet" },
+          ],
+        },
+      }),
+      status: "live",
+      fetchedAt: 20_000,
+      error: null,
+    };
+
+    expect(headlineMetricsOf(state, [], 20_000).risk).toBe(0);
+    expect({
+      en: ENGLISH["kpi.risk"],
+      fr: FRENCH["kpi.risk"],
+      de: GERMAN["kpi.risk"],
+      sk: SLOVAK["kpi.risk"],
+      es: SPANISH["kpi.risk"],
+    }).toEqual({
+      en: "red risk signals",
+      fr: "signaux de risque rouges",
+      de: "rote Risikosignale",
+      sk: "červené rizikové signály",
+      es: "señales de riesgo rojas",
     });
   });
 

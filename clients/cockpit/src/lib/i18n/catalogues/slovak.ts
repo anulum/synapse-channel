@@ -99,7 +99,7 @@ export const SLOVAK: Catalogue = {
   "kpi.agents": "agenti online",
   "kpi.claims": "držané claims",
   "kpi.observations": "pozorovania / min",
-  "kpi.risk": "rizikové signály",
+  "kpi.risk": "červené rizikové signály",
   "tab.attention": "pozornosť",
   "tab.log": "signal log",
   "tab.fleet": "flotila",

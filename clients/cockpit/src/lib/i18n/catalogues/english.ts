@@ -97,7 +97,7 @@ export const ENGLISH = {
   "kpi.agents": "agents online",
   "kpi.claims": "claims held",
   "kpi.observations": "obs / min",
-  "kpi.risk": "risk signals",
+  "kpi.risk": "red risk signals",
   "tab.attention": "attention",
   "tab.log": "signal log",
   "tab.fleet": "fleet",

@@ -35,7 +35,7 @@ gate checks panel and header-control bounds at 1100, 1280, 1440 and 1920 pixels
 across all five interface languages and both display densities.
 
 - **HUD** — mark, the KPIs (agents online / claims held / observed
-  transitions per minute / risk signals, each with a redundant delta —
+  transitions per minute / red risk signals, each with a redundant delta —
   clicking one drills the signal log to its event kinds), the **focus
   lens** (name an identity and the claims board and task board narrow to
   its orbit, persistently, with a lens chip on every narrowed panel), the

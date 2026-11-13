@@ -26,7 +26,11 @@ export const ZERO_HEADLINE_METRICS: HeadlineMetrics = {
   ratePerMinute: 0,
 };
 
-/** Project the current snapshot and retained event minute into headline values. */
+/**
+ * Project the current snapshot and retained event minute into headline values.
+ * `risk` counts red signals only. The guide treats red as the alarm; amber
+ * stays a warning on the rail, so the headline names the colour it counts.
+ */
 export function headlineMetricsOf(
   state: SnapshotState,
   log: readonly CockpitEvent[],

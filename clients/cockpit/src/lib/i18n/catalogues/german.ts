@@ -99,7 +99,7 @@ export const GERMAN: Catalogue = {
   "kpi.agents": "Agenten online",
   "kpi.claims": "gehaltene Claims",
   "kpi.observations": "Beob. / Min.",
-  "kpi.risk": "Risikosignale",
+  "kpi.risk": "rote Risikosignale",
   "tab.attention": "Aufmerksamkeit",
   "tab.log": "Signal Log",
   "tab.fleet": "Flotte",
