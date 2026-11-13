@@ -35,6 +35,15 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 
+_DROPPED_REPLY_BUDGET = "2"
+"""Seconds ``--release-timeout`` gives each release exchange where the proxy drops a reply.
+
+The same budget also bounds the exchanges that must succeed: the fresh epoch read before the
+release, and the confirmation read after it. It must cover one real round trip on a loaded
+runner; a dropped reply costs exactly this long. At 0.1 s the epoch read missed it on a hosted
+runner (main, 2026-11-13), so no release was sent and the claim stayed.
+"""
+
 _RENEW = """
 import asyncio,sys
 from synapse_channel.client.agent import SynapseAgent
@@ -322,7 +331,7 @@ async def test_lost_reply_recovers_only_the_original_durable_operation(
                     "--name",
                     "mutex-owner",
                     "--release-timeout",
-                    "0.1",
+                    _DROPPED_REPLY_BUDGET,
                     "--",
                     sys.executable,
                     "-c",
@@ -368,7 +377,7 @@ async def test_absent_claim_without_durable_confirmation_is_unknown() -> None:
                 "--name",
                 "mutex-owner",
                 "--release-timeout",
-                "0.1",
+                _DROPPED_REPLY_BUDGET,
                 "--",
                 sys.executable,
                 "-c",
