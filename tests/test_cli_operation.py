@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
+import io
 import json
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -447,3 +450,123 @@ async def test_a_hub_that_drops_the_intent_is_reported_as_unsupported(
     assert "kept the declaration without its intent" in text
     assert "operation id op is used" in text
     assert json.loads(document)["reason"] == "intent_not_kept"
+
+
+def _commits(repo: Path, object_format: str) -> tuple[str, str]:
+    """Return the base and the tip of two commits in a throwaway repository."""
+    arguments = ["git", "init", "-q", "-b", "main", str(repo)]
+    if object_format == "sha256":
+        arguments[3:3] = ["--object-format=sha256"]
+    subprocess.run(arguments, check=True)
+    for key, value in (("user.email", "t@example.com"), ("user.name", "Test")):
+        subprocess.run(["git", "-C", str(repo), "config", key, value], check=True)
+    note = repo / "note.txt"
+    note.write_text("one\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "note.txt"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "one"], check=True)
+    base = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    note.write_text("two\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-am", "two"], check=True)
+    revision = subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+    ).strip()
+    return base, revision
+
+
+def _declare_publication(
+    uri: str, epoch: int, revision: str, intent: Path, operation_id: str
+) -> tuple[int, str]:
+    """Run ``synapse operation declare`` on its own loop and return code and text."""
+    args = _args(
+        "declare",
+        "--task",
+        "T1",
+        "--name",
+        "P/worker",
+        "--uri",
+        uri,
+        "--epoch",
+        str(epoch),
+        "--operation-id",
+        operation_id,
+        "--effect",
+        "git_publication",
+        "--repository",
+        "origin",
+        "--branch",
+        "main",
+        "--revision",
+        revision,
+        "--intent",
+        str(intent),
+        "--ready-timeout",
+        "5",
+        "--timeout",
+        "5",
+    )
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        code = command._cmd_declare(args)
+    return code, buffer.getvalue()
+
+
+async def _claimed_epoch(uri: str) -> int:
+    """Claim ``T1`` as ``P/worker`` and return the epoch a later connection still holds."""
+    worker = await connect_agent("P/worker", uri)
+    try:
+        await worker.agent.claim("T1", note="commit format")
+        grant = await worker.recorder.wait_for(
+            lambda frame: frame.get("type") == MessageType.CLAIM_GRANTED
+        )
+    finally:
+        await close_agents(worker)
+    return int(grant["epoch"])
+
+
+@pytest.mark.parametrize("object_format", ["sha1", "sha256"])
+async def test_either_object_format_declares_through_the_command(
+    tmp_path: Path, object_format: str
+) -> None:
+    """Commit names from a real repository declare, and the row records the format."""
+    base, revision = _commits(tmp_path / "repo", object_format)
+    assert len(revision) == len(base) == (64 if object_format == "sha256" else 40)
+    intent = _write(
+        tmp_path / "intent.json",
+        _intent_document(pre_state=base, changed_files=[{"path": "note.txt", "mode": "100644"}]),
+    )
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_hub, uri):
+            epoch = await _claimed_epoch(uri)
+            code, text = await asyncio.to_thread(
+                _declare_publication, uri, epoch, revision, intent, f"op-{object_format}"
+            )
+        assert code == 0, text
+        (row,) = store.read_since(0, kinds=(EventKind.OPERATION_DECLARED,))
+        assert row.payload["revision"] == revision
+        assert row.payload["intent"]["pre_state"] == base
+        assert row.payload["object_format"] == object_format
+    finally:
+        store.close()
+
+
+async def test_a_mixed_commit_length_is_refused(tmp_path: Path) -> None:
+    """A 40-hex base with a 64-hex revision is refused and journals nothing."""
+    base, _revision = _commits(tmp_path / "sha1", "sha1")
+    _base, revision = _commits(tmp_path / "sha256", "sha256")
+    intent = _write(
+        tmp_path / "intent.json",
+        _intent_document(pre_state=base, changed_files=[{"path": "note.txt", "mode": "100644"}]),
+    )
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_hub, uri):
+            epoch = await _claimed_epoch(uri)
+            code, text = await asyncio.to_thread(
+                _declare_publication, uri, epoch, revision, intent, "op-mixed"
+            )
+        assert code == command.EXIT_REFUSED
+        assert "different object formats" in text
+        assert not store.read_since(0, kinds=(EventKind.OPERATION_DECLARED,))
+    finally:
+        store.close()

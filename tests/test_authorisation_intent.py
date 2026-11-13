@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from synapse_channel.core.attempt_markers import commit_object_format
 from synapse_channel.core.authorisation_intent import (
     INTENT_SCHEMA,
     MAX_DEADLINE_AHEAD,
@@ -108,6 +109,44 @@ def test_the_same_statement_gives_the_same_digest_and_any_change_gives_another()
     assert other_actor.sha256 != first.sha256
 
 
+def test_an_object_id_length_outside_the_two_formats_is_refused() -> None:
+    """Only the lengths named by the shared object-format table are formats."""
+    with pytest.raises(ValueError, match="40 or 64"):
+        commit_object_format(7)
+
+
+def test_an_existing_forty_hex_git_declaration_keeps_its_digest() -> None:
+    """The canonical digest of the existing 40-hex git fixture does not move."""
+    intent = _compose(_git_statement(), "git_publication")
+    assert intent.sha256 == "46a03176adfad5e0d4f483125777d2812e0f7eb063df58f116c149c6defdc97d"
+
+
+def test_a_sixty_four_hex_git_base_composes_with_a_revision_of_the_same_length() -> None:
+    """A SHA-256 base is kept, and a base of the other length is refused."""
+    document = _git_statement()
+    document["pre_state"] = "e" * 64
+    statement = parse_intent_statement(document, "git_publication")
+    intent = compose_intent(
+        statement,
+        task_id="T1",
+        operation_id="op-1",
+        effect="git_publication",
+        target={"repository": "origin", "branch": "main", "revision": "f" * 64},
+        actor="P/worker",
+    )
+    assert intent.document["pre_state"] == "e" * 64
+    mixed = parse_intent_statement(_git_statement(), "git_publication")
+    with pytest.raises(AuthorisationIntentError, match="different object formats"):
+        compose_intent(
+            mixed,
+            task_id="T1",
+            operation_id="op-1",
+            effect="git_publication",
+            target={"repository": "origin", "branch": "main", "revision": "f" * 64},
+            actor="P/worker",
+        )
+
+
 def test_a_git_intent_names_its_base_and_its_changed_files() -> None:
     """A git publication starts from a base commit and lists every changed path with its mode."""
     intent = _compose(_git_statement(tool_descriptor_sha256="d" * 64), "git_publication")
@@ -142,7 +181,8 @@ def test_each_effect_accepts_its_own_pre_state(effect: str, pre_state: str) -> N
         ("file", HEX40),
         ("file", "ABSENT"),
         ("git_publication", "absent"),
-        ("git_publication", HEX64),
+        ("git_publication", "B" * 40),
+        ("git_publication", 7),
         ("deployment", ""),
         ("deployment", "x" * 129),
         ("deployment", "line\nbreak"),

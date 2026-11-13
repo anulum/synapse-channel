@@ -161,7 +161,8 @@ does not add agent grades to protocol envelopes.
   repository URL that carries a credential, a query or a fragment is refused.
   A `declare` may also carry `intent`, an authorisation intent statement of
   schema `synapse.authorisation-intent.v0`: `pre_state` (for a file `absent` or
-  its SHA-256; for a Git publication the base commit; for a deployment the
+  its SHA-256; for a Git publication the base commit, 40 or 64 lower-case hex
+  of the same object format as `revision`; for a deployment the
   running revision; for a migration the schema SHA-256 before), `changed_files`
   for a Git publication only (sorted relative paths, each with its Git mode or
   `absent`), `recovery_class` (`reversible`, `restorable`, `one_way`),

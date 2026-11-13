@@ -37,6 +37,7 @@ from synapse_channel.core.aef_canonical import (
     AefCanonicalizationError,
     canonical_json,
 )
+from synapse_channel.core.attempt_markers import commit_id_length
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.http_authority import normalise_url_origin
 
@@ -81,7 +82,6 @@ _REQUIRED = frozenset(
 )
 _OPTIONAL = frozenset({"changed_files", "tool_descriptor_sha256"})
 
-_HEX40 = re.compile(r"[0-9a-f]{40}")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _RESERVATION = re.compile(r"reservation:[A-Za-z0-9._:-]{1,128}")
 _RULE_DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
@@ -162,7 +162,15 @@ def _pre_state(effect: str, value: object) -> str:
             return "absent"
         return _match(value, "a file pre_state ('absent' or a content SHA-256)", _HEX64)
     if effect == "git_publication":
-        return _match(value, "a git_publication pre_state (the base commit)", _HEX40)
+        if not isinstance(value, str):
+            raise _refuse("a git_publication pre_state (the base commit) has the wrong form")
+        try:
+            commit_id_length(value, value)
+        except ValueError:
+            raise _refuse(
+                "a git_publication pre_state (the base commit) has the wrong form"
+            ) from None
+        return value
     if effect == "deployment":
         return _text(value, "a deployment pre_state (the running revision)")
     if effect == "migration":
@@ -375,6 +383,11 @@ def compose_intent(
         If the canonical intent is larger than :data:`MAX_INTENT_BYTES` or cannot
         be represented canonically.
     """
+    if effect == "git_publication":
+        try:
+            commit_id_length(target["revision"], statement.document["pre_state"])
+        except (KeyError, ValueError) as exc:
+            raise _refuse(str(exc)) from None
     document: dict[str, Any] = {
         **statement.document,
         "task_id": task_id,

@@ -45,8 +45,11 @@ synapse operation declare --task T --name P/worker --epoch E --effect file \
 
 `--operation-id` may be omitted inside `synapse worker-session`, which sets
 `SYN_OPERATION_ID`. Effects are `file`, `git_publication`, `deployment` and
-`migration`, each with its own target options. Only the live claim holder at the
-current epoch may declare, and an operation id is declared once.
+`migration`, each with its own target options. A Git publication's revision
+and its intent's base commit are commit names of 40 lower-case hex or 64, both
+of that repository's one object format; a mixed pair is refused, and the
+declaration records the format. Only the live claim holder at the current
+epoch may declare, and an operation id is declared once.
 
 To make the effect approvable before it happens, the declaration can carry an
 authorisation intent, a statement in the `synapse.authorisation-intent.v0`

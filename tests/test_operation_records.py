@@ -184,6 +184,20 @@ def test_each_effect_decodes_its_exact_target(effect: str, target: dict[str, str
             },
             "branch has the wrong form",
         ),
+        (
+            {
+                "effect": "git_publication",
+                "effect_target": {"repository": "repo", "branch": "main", "revision": 7},
+            },
+            "revision has the wrong form",
+        ),
+        (
+            {
+                "effect": "git_publication",
+                "effect_target": {"repository": "repo", "branch": "main", "revision": "abc"},
+            },
+            "revision has the wrong form",
+        ),
     ],
 )
 def test_a_malformed_declaration_is_refused(changes: dict[str, Any], message: str) -> None:

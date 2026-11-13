@@ -49,6 +49,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
+from synapse_channel.core.attempt_markers import commit_id_length, commit_object_format
 from synapse_channel.core.authorisation_intent import (
     AuthorisationIntent,
     IntentStatement,
@@ -180,6 +181,17 @@ def _pattern(value: object, label: str, pattern: re.Pattern[str]) -> str:
     return value
 
 
+def _commit_name(value: object) -> str:
+    """Return one 40- or 64-hex commit name, using the shared object-id check."""
+    if not isinstance(value, str):
+        raise OperationRecordError("revision has the wrong form")
+    try:
+        commit_id_length(value, value)
+    except ValueError:
+        raise OperationRecordError("revision has the wrong form") from None
+    return value
+
+
 def _repository(value: object) -> str:
     """Return a repository name or URL that carries no credential."""
     text = _bounded_text(value, "repository", _MAX_PATH)
@@ -206,7 +218,7 @@ def _target(effect: str, value: object) -> dict[str, str]:
         fields = {
             "repository": _repository(value.get("repository")),
             "branch": _pattern(value.get("branch"), "branch", _BRANCH),
-            "revision": _pattern(value.get("revision"), "revision", _HEX40),
+            "revision": _commit_name(value.get("revision")),
         }
     elif effect == EFFECT_DEPLOYMENT:
         fields = {
@@ -464,6 +476,10 @@ def record_operation(
     }
     if request.record == RECORD_DECLARE:
         payload = {**base, "effect": request.effect, **request.target}
+        if request.effect == EFFECT_GIT:
+            payload["object_format"] = commit_object_format(
+                commit_id_length(payload["revision"], payload["revision"])
+            )
         payload["snapshot_epoch"] = snapshot_epoch
         if request.budget_remaining is not None:
             payload["budget_remaining"] = request.budget_remaining

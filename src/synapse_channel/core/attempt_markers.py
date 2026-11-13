@@ -47,6 +47,51 @@ KINDS = (APPLIED, SEALED)
 OBJECT_ID_LENGTHS = {"sha1": 40, "sha256": 64}
 """Object formats a repository can use, with the length of their object ids."""
 
+_COMMIT_HEX = re.compile(r"[0-9a-f]+")
+
+
+def commit_id_length(commit: str, base: str) -> int:
+    """Return the object id length both commits share: 40 (SHA-1) or 64 (SHA-256).
+
+    Parameters
+    ----------
+    commit, base : str
+        Full commit names in one repository. Passing the same name twice checks
+        that one name on its own.
+
+    Returns
+    -------
+    int
+        ``40`` or ``64``.
+
+    Raises
+    ------
+    ValueError
+        When either is not lower-case hex of one of those lengths, or the two differ.
+    """
+    lengths = set(OBJECT_ID_LENGTHS.values())
+    for name, value in (("commit", commit), ("base", base)):
+        if len(value) not in lengths or _COMMIT_HEX.fullmatch(value) is None:
+            raise ValueError(f"the {name} is a full commit identity of 40 or 64 lower-case hex")
+    if len(commit) != len(base):
+        raise ValueError("the commit and the base are of different object formats")
+    return len(commit)
+
+
+def commit_object_format(length: int) -> str:
+    """Return ``sha1`` or ``sha256`` for an object-id length from :data:`OBJECT_ID_LENGTHS`.
+
+    Raises
+    ------
+    ValueError
+        When ``length`` is neither 40 nor 64.
+    """
+    for name, size in OBJECT_ID_LENGTHS.items():
+        if size == length:
+            return name
+    raise ValueError("the commit is a full commit identity of 40 or 64 lower-case hex")
+
+
 _OPERATION_ID = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 """The operation id rule of operation records; no space, control character or line break."""
 

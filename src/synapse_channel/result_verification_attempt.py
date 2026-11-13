@@ -42,11 +42,11 @@ from synapse_channel.core.attempt_markers import (
     LANDED_PRESENT,
     LANDED_THEN_MOVED,
     MAY_STILL_LAND,
-    OBJECT_ID_LENGTHS,
     PUBLISHED_OUTSIDE_PROTOCOL,
     SEALED_NEVER_LANDS,
     UNKNOWN,
     AttemptMarker,
+    commit_id_length,
 )
 
 ATTEMPT_ROWS: dict[str, tuple[str, str, str]] = {
@@ -101,13 +101,7 @@ def identifier_length(commit: str, base: str) -> int:
     ValueError
         When either is not lower-case hex of one of those lengths, or the two differ.
     """
-    lengths = set(OBJECT_ID_LENGTHS.values())
-    for name, value in (("commit", commit), ("base", base)):
-        if len(value) not in lengths or _LOWER_HEX.fullmatch(value) is None:
-            raise ValueError(f"the {name} is a full commit identity of 40 or 64 lower-case hex")
-    if len(commit) != len(base):
-        raise ValueError("the commit and the base are of different object formats")
-    return len(commit)
+    return commit_id_length(commit, base)
 
 
 def listed_refs(listing: str, wanted: Sequence[str], length: int) -> dict[str, str] | None:

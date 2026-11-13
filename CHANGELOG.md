@@ -388,6 +388,12 @@ execution evidence when carrying a release claim forward.
   `replayed_release_receipt`. A fresh release of the lease now held stays
   `matching_release_receipt` with its text unchanged. See `docs/mcp-http.md`.
 
+- A Git publication can be declared in a SHA-256 repository. Its revision and
+  the intent's base commit are commit names of 40 lower-case hex or 64, and the
+  two must be the same length; a mixed pair is refused. The declaration records
+  `object_format` (`sha1` or `sha256`). An existing 40-hex intent keeps its
+  canonical digest. See `docs/integrator-contract.md`.
+
 ### Fixed
 
 - A native MCP session removes its lock files on a clean exit, while it still
