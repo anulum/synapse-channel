@@ -28,8 +28,10 @@ export const ZERO_HEADLINE_METRICS: HeadlineMetrics = {
 
 /**
  * Project the current snapshot and retained event minute into headline values.
- * `risk` counts red signals only. The guide treats red as the alarm; amber
- * stays a warning on the rail, so the headline names the colour it counts.
+ * Agents, claims and red risk signals are the snapshot's own headline block,
+ * computed once on the hub's whole board; the browser counts only the event
+ * rate, a property of the stream. `risk` is `risk_signals_red`: the guide
+ * treats red as the alarm and the HUD names the colour it shows.
  */
 export function headlineMetricsOf(
   state: SnapshotState,
@@ -42,12 +44,12 @@ export function headlineMetricsOf(
     if (event.ts < since) break;
     ratePerMinute += 1;
   }
-  const snapshot = state.snapshot;
-  if (snapshot === null) return { ...ZERO_HEADLINE_METRICS, ratePerMinute };
+  const headline = state.snapshot?.headline ?? null;
+  if (headline === null) return { ...ZERO_HEADLINE_METRICS, ratePerMinute };
   return {
-    agents: snapshot.fleet.agents.live.length,
-    claims: snapshot.fleet.claims.active,
-    risk: snapshot.risk.signals.filter((signal) => signal.level === "red").length,
+    agents: headline.agentsLive,
+    claims: headline.claimsActive,
+    risk: headline.riskSignalsRed,
     ratePerMinute,
   };
 }

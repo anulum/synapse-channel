@@ -239,6 +239,21 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Every dashboard counter has one definition and is computed once, on the
+  whole board, in the snapshot's new `headline` block (agents, waiters,
+  claims, open, in-progress, ready, blocked with its marked and waiting parts,
+  closed, risk signals with their red and amber parts, branch conflicts,
+  peers). The cockpit HUD and task board, Studio's header, the classic page and
+  the Go client read the block instead of counting. "Blocked" now means one
+  thing everywhere: an open task that cannot start, because it is marked
+  blocked or waits on a prerequisite that is not closed. On the README's
+  demonstration fleet Studio's "blocked" read 1 (the marked task only) and now
+  reads 3 (1 marked, 2 waiting), the number the cockpit board already showed.
+  Studio shows risk signals as all/red; the classic page lists the counters
+  under their names, calls its roster "Connected names" (it includes waiters)
+  and its blocked list "Tasks marked blocked". The cockpit board counts a
+  cancelled task as closed, as the ledger does. The counter glossary is in
+  `docs/cockpit.md` and in the in-product guide.
 - The dashboard's fleet snapshot is bounded. `/snapshot.json`, `/studio.json`
   and the snapshot channel of `/live.ndjson` carry every task that is not
   closed in full, the newest 200 progress notes, the newest 50 release

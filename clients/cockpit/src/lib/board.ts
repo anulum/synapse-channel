@@ -46,8 +46,9 @@ const BUCKET_RANK: Record<BoardBucket, number> = {
 };
 
 /** Statuses the hub's graph treats as terminal for dependency satisfaction. */
+/** Closed as the ledger means it: done or cancelled (`TERMINAL_LEDGER_STATUSES`). */
 function isDone(status: string): boolean {
-  return status === "done";
+  return status === "done" || status === "cancelled";
 }
 
 function bucketOf(status: string, ready: boolean, dependsOn: readonly DependencyChip[]): BoardBucket {
@@ -115,6 +116,8 @@ export interface BoardTruncation {
   readonly taskCap: number | null;
   /** Closed tasks the bounded snapshot counted but did not send. */
   readonly closedOmitted: number;
+  /** The headline's `tasks_blocked` (cannot start), or null without a headline. */
+  readonly blocked: number | null;
 }
 
 /**
@@ -124,7 +127,9 @@ export interface BoardTruncation {
  * of the closed tasks its bounded snapshot left out.
  */
 export function boardTruncation(snapshot: FleetSnapshot | null): BoardTruncation {
-  if (snapshot === null) return { totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0 };
+  if (snapshot === null) {
+    return { totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0, blocked: null };
+  }
   const total = snapshot.board["total_tasks"];
   const cap = snapshot.board["task_cap"];
   return {
@@ -133,5 +138,6 @@ export function boardTruncation(snapshot: FleetSnapshot | null): BoardTruncation
     // Present only while a cap is ACTIVE (the hub omits it uncapped).
     taskCap: typeof cap === "number" && Number.isFinite(cap) && cap > 0 ? Math.trunc(cap) : null,
     closedOmitted: snapshot.bounds === null ? 0 : snapshot.bounds.closedOmitted,
+    blocked: snapshot.headline === null ? null : snapshot.headline.tasksBlocked,
   };
 }

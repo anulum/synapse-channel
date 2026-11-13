@@ -19,6 +19,7 @@ import type { FleetSnapshot } from "../../src/types";
 function snapshot(epoch: string, risk: "green" | "red" = "green"): FleetSnapshot {
   return {
     bounds: null,
+    headline: null,
     online_agents: [],
     agent_roles: {},
     hub_version: "",

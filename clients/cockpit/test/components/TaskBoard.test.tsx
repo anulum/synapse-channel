@@ -118,11 +118,25 @@ describe("TaskBoard", () => {
       <TaskBoard
         connected
         tasks={[task("t-1", "open")]}
-        truncation={{ totalTasks: 500, truncated: true, taskCap: null, closedOmitted: 0 }}
+        truncation={{ totalTasks: 500, truncated: true, taskCap: null, closedOmitted: 0, blocked: null }}
       />,
     );
     expect(screen.getByText("1 of 500")).toBeTruthy();
     expect(screen.getByText("capped reply")).toBeTruthy();
+  });
+
+  it("heads the board with the hub's blocked count, not the rows it happens to show", () => {
+    const { rerender } = render(
+      <TaskBoard
+        connected
+        tasks={[task("t-1", "blocked"), task("t-2", "open")]}
+        truncation={{ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0, blocked: 9 }}
+      />,
+    );
+    expect(screen.getByText("9 blocked")).toBeTruthy();
+    // A replayed moment has no headline: its own rows, counted by the same rule.
+    rerender(<TaskBoard connected tasks={[task("t-1", "blocked"), task("t-2", "open")]} />);
+    expect(screen.getByText("1 blocked")).toBeTruthy();
   });
 
   it("says how many closed tasks the bounded snapshot counted but did not load", () => {
@@ -130,7 +144,7 @@ describe("TaskBoard", () => {
       <TaskBoard
         connected
         tasks={[task("t-1", "open")]}
-        truncation={{ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 415 }}
+        truncation={{ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 415, blocked: null }}
       />,
     );
     expect(screen.getByText("415 closed not loaded")).toBeTruthy();
@@ -138,7 +152,7 @@ describe("TaskBoard", () => {
       <TaskBoard
         connected
         tasks={[task("t-1", "open")]}
-        truncation={{ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0 }}
+        truncation={{ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0, blocked: null }}
       />,
     );
     expect(screen.queryByText(/closed not loaded/)).toBeNull();
@@ -181,7 +195,7 @@ describe("TaskBoard cap headroom", () => {
       <TaskBoard
         connected
         tasks={[task("t-1", "open")]}
-        truncation={{ totalTasks: 100, truncated: false, taskCap: 500, closedOmitted: 0 }}
+        truncation={{ totalTasks: 100, truncated: false, taskCap: 500, closedOmitted: 0, blocked: null }}
       />,
     );
     expect(screen.getByText("cap 500")).toBeTruthy();
@@ -191,7 +205,7 @@ describe("TaskBoard cap headroom", () => {
       <TaskBoard
         connected
         tasks={[task("t-1", "open")]}
-        truncation={{ totalTasks: 450, truncated: false, taskCap: 500, closedOmitted: 0 }}
+        truncation={{ totalTasks: 450, truncated: false, taskCap: 500, closedOmitted: 0, blocked: null }}
       />,
     );
     expect(screen.getByText("near cap · 450/500").className).toContain("panel__sub--warn");
@@ -200,7 +214,7 @@ describe("TaskBoard cap headroom", () => {
 
   it("shows no gauge at all while the board is served uncapped", () => {
     render(
-      <TaskBoard connected tasks={[task("t-1", "open")]} truncation={{ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0 }} />,
+      <TaskBoard connected tasks={[task("t-1", "open")]} truncation={{ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0, blocked: null }} />,
     );
     expect(screen.queryByText(/cap /)).toBeNull();
   });

@@ -14,11 +14,11 @@ module is the projection that produces it — a pure dict-to-dict reshape of the
 call and no new state, only a curated view of what the dashboard already exposes.
 
 The projection foregrounds the risk **verdict** (the reserved red/amber/green signal),
-derives agent, task, conflict and risk counts from the projected lists, carries the
-fleet model's reported claim totals, and adds security posture from that source.
-Missing sections receive renderable defaults; these do not establish complete or
-current evidence. :func:`frozen_studio_snapshot` returns a deterministic sample for
-offline rendering and tests.
+carries the snapshot's ``headline`` counters as computed once on the whole board
+(:mod:`synapse_channel.dashboard_headline`; Studio counts nothing itself), and adds
+security posture from that source. Missing sections receive renderable defaults;
+these do not establish complete or current evidence. :func:`frozen_studio_snapshot`
+returns a deterministic sample for offline rendering and tests.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from synapse_channel.dashboard_board_columns import build_board_columns
+from synapse_channel.dashboard_headline import HEADLINE_KEYS, build_headline
 from synapse_channel.dashboard_observed_health import build_observed_fleet_health
 from synapse_channel.dashboard_security_posture import build_security_posture
 
@@ -52,6 +53,12 @@ def _int(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
+def _headline(dashboard: Mapping[str, Any]) -> dict[str, int]:
+    """Return the snapshot's headline block; a counter it does not carry reads zero."""
+    block = _mapping(dashboard.get("headline"))
+    return {key: _int(block.get(key)) for key in HEADLINE_KEYS}
+
+
 def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     """Project a ``DashboardSnapshot.to_dict()`` payload into the Studio command-centre shape.
 
@@ -66,9 +73,9 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     dict[str, Any]
         ``verdict``, ``generated_at``, a ``headline`` counter row, and the ``agents``,
         ``hub``, ``claims``, ``tasks``, ``conflicts``, ``security_posture``,
-        ``observed_fleet``, and ``risk`` sections behind it. Counts are derived from the
-        projected lists except claim totals, which come from the fleet model.
-        Defaults do not establish completeness of a partial source payload.
+        ``observed_fleet``, and ``risk`` sections behind it. The headline is the
+        snapshot's own block, copied, not counted again. Defaults do not establish
+        completeness of a partial source payload.
     """
     fleet = _mapping(dashboard.get("fleet"))
     risk = _mapping(dashboard.get("risk"))
@@ -101,18 +108,7 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
             "version": str(dashboard.get("hub_version") or ""),
             "config_epoch": str(dashboard.get("config_epoch") or ""),
         },
-        "headline": {
-            "agents_live": len(live),
-            "waiters_missing": len(missing_waiters),
-            "claims_active": _int(claims.get("active")),
-            "claims_stale": _int(claims.get("stale")),
-            "tasks_ready": len(ready),
-            "tasks_blocked": len(blocked),
-            "branch_conflicts": len(conflicts),
-            "risk_signals": len(signals),
-            "peers_reachable": _int(observed_fleet.get("peers_reachable")),
-            "peers_total": _int(observed_fleet.get("peers_total")),
-        },
+        "headline": _headline(dashboard),
         "agents": {"live": live, "waiters": waiters, "missing_waiters": missing_waiters},
         "claims": {"active": active_claims, "stale": stale_claims},
         "tasks": {
@@ -132,105 +128,112 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+_SAMPLE_DASHBOARD: dict[str, Any] = {
+    "fleet": {
+        "agents": {
+            "live": ["SCPN-FUSION-CORE/claude-a1", "REMANENTIA/codex-b2"],
+            "waiters": ["SCPN-FUSION-CORE/claude-a1"],
+            "missing_waiters": ["DIRECTOR-AI/claude-c3"],
+        },
+        "claims": {
+            "active": 2,
+            "stale": 1,
+            "active_claims": [
+                {"owner": "SCPN-FUSION-CORE/claude-a1", "scope": "src/", "lease_ms": 42000},
+                {"owner": "REMANENTIA/codex-b2", "scope": "docs/", "lease_ms": 18000},
+            ],
+            "stale_claims": [{"owner": "DIRECTOR-AI/claude-c3", "scope": "tests/"}],
+        },
+        "tasks": {
+            "ready": ["build-wheel"],
+            "blocked": [{"task_id": "publish", "depends_on": ["run-suite"]}],
+        },
+        "task_graph": {"nodes": 3, "edges": 1},
+        "receipts": [
+            {
+                "task_id": "build-wheel",
+                "author": "SCPN-FUSION-CORE/claude-a1",
+                "text": "release receipt: evidence=pytest tests/test_studio_snapshot.py -q",
+            }
+        ],
+        "branch_conflicts": [],
+        "generated_at": 1782760000.0,
+    },
+    "board": {
+        "tasks": [
+            {"task_id": "build-wheel", "title": "Build wheel", "status": "open"},
+            {
+                "task_id": "publish",
+                "title": "Publish release",
+                "status": "blocked",
+                "depends_on": ["run-suite"],
+            },
+            {
+                "task_id": "run-suite",
+                "title": "Run focused suite",
+                "status": "in_progress",
+            },
+        ],
+        "ready": ["build-wheel"],
+        "progress": [],
+    },
+    "state": {
+        "active_claims": [
+            {
+                "task_id": "run-suite",
+                "owner": "SCPN-FUSION-CORE/claude-a1",
+                "status": "working",
+                "lease_expires_at": 1782760060.0,
+                "paths": ["tests/"],
+            },
+            {
+                "task_id": "docs-refresh",
+                "owner": "REMANENTIA/codex-b2",
+                "note": "Refresh docs",
+                "status": "claimed",
+                "lease_expires_at": 1782760040.0,
+                "paths": ["docs/"],
+            },
+        ],
+        "generated_at": 1782760000.0,
+    },
+    "risk": {
+        "level": "amber",
+        "signals": [
+            {
+                "level": "amber",
+                "category": "waiter",
+                "subject": "DIRECTOR-AI/claude-c3",
+                "detail": "declared but no live waiter",
+            }
+        ],
+        "safe_next_work": ["build-wheel", "run-suite"],
+    },
+    "manifest": [
+        {
+            "agent": "SCPN-FUSION-CORE/claude-a1",
+            "skills": ["sandbox"],
+            "task_classes": ["wasm"],
+        }
+    ],
+    "agent_roles": {"SCPN-FUSION-CORE/claude-a1": ["SYNAPSE-CHANNEL/operator"]},
+    "config_epoch": "sha256:demo",
+    "hub_id": "studio-demo",
+    "hub_version": "0.98.21",
+    "observed_peers": [{"hub_id": "ml350", "reachable": True}],
+}
+"""The fixed dashboard payload behind :func:`frozen_studio_snapshot`."""
+
+
 def frozen_studio_snapshot() -> dict[str, Any]:
     """Return a deterministic, representative Studio snapshot for offline rendering and tests.
 
     Built by running :func:`build_studio_snapshot` over a fixed dashboard payload, so the
     sample exercises the real projection rather than hand-mirroring its shape.
     """
-    return build_studio_snapshot(
-        {
-            "fleet": {
-                "agents": {
-                    "live": ["SCPN-FUSION-CORE/claude-a1", "REMANENTIA/codex-b2"],
-                    "waiters": ["SCPN-FUSION-CORE/claude-a1"],
-                    "missing_waiters": ["DIRECTOR-AI/claude-c3"],
-                },
-                "claims": {
-                    "active": 2,
-                    "stale": 1,
-                    "active_claims": [
-                        {"owner": "SCPN-FUSION-CORE/claude-a1", "scope": "src/", "lease_ms": 42000},
-                        {"owner": "REMANENTIA/codex-b2", "scope": "docs/", "lease_ms": 18000},
-                    ],
-                    "stale_claims": [{"owner": "DIRECTOR-AI/claude-c3", "scope": "tests/"}],
-                },
-                "tasks": {
-                    "ready": ["build-wheel"],
-                    "blocked": [{"task_id": "publish", "depends_on": ["run-suite"]}],
-                },
-                "task_graph": {"nodes": 3, "edges": 1},
-                "receipts": [
-                    {
-                        "task_id": "build-wheel",
-                        "author": "SCPN-FUSION-CORE/claude-a1",
-                        "text": "release receipt: evidence=pytest tests/test_studio_snapshot.py -q",
-                    }
-                ],
-                "branch_conflicts": [],
-                "generated_at": 1782760000.0,
-            },
-            "board": {
-                "tasks": [
-                    {"task_id": "build-wheel", "title": "Build wheel", "status": "open"},
-                    {
-                        "task_id": "publish",
-                        "title": "Publish release",
-                        "status": "blocked",
-                        "depends_on": ["run-suite"],
-                    },
-                    {
-                        "task_id": "run-suite",
-                        "title": "Run focused suite",
-                        "status": "in_progress",
-                    },
-                ],
-                "ready": ["build-wheel"],
-                "progress": [],
-            },
-            "state": {
-                "active_claims": [
-                    {
-                        "task_id": "run-suite",
-                        "owner": "SCPN-FUSION-CORE/claude-a1",
-                        "status": "working",
-                        "lease_expires_at": 1782760060.0,
-                        "paths": ["tests/"],
-                    },
-                    {
-                        "task_id": "docs-refresh",
-                        "owner": "REMANENTIA/codex-b2",
-                        "note": "Refresh docs",
-                        "status": "claimed",
-                        "lease_expires_at": 1782760040.0,
-                        "paths": ["docs/"],
-                    },
-                ],
-                "generated_at": 1782760000.0,
-            },
-            "risk": {
-                "level": "amber",
-                "signals": [
-                    {
-                        "level": "amber",
-                        "category": "waiter",
-                        "subject": "DIRECTOR-AI/claude-c3",
-                        "detail": "declared but no live waiter",
-                    }
-                ],
-                "safe_next_work": ["build-wheel", "run-suite"],
-            },
-            "manifest": [
-                {
-                    "agent": "SCPN-FUSION-CORE/claude-a1",
-                    "skills": ["sandbox"],
-                    "task_classes": ["wasm"],
-                }
-            ],
-            "agent_roles": {"SCPN-FUSION-CORE/claude-a1": ["SYNAPSE-CHANNEL/operator"]},
-            "config_epoch": "sha256:demo",
-            "hub_id": "studio-demo",
-            "hub_version": "0.98.21",
-            "observed_peers": [{"hub_id": "ml350", "reachable": True}],
-        }
+    payload = dict(_SAMPLE_DASHBOARD)
+    # The sample's headline comes from the same computation the live snapshot uses.
+    payload["headline"] = build_headline(
+        payload["board"], payload["fleet"], payload["risk"], build_observed_fleet_health(payload)
     )
+    return build_studio_snapshot(payload)

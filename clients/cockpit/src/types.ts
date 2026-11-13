@@ -168,6 +168,32 @@ export interface SnapshotBounds {
   readonly receiptsSent: number;
 }
 
+/**
+ * The snapshot's headline counters, computed once on the hub's whole board
+ * (`dashboard_headline.py`); every surface reads these and none counts again.
+ * The counter glossary in the cockpit guide defines each one.
+ */
+export interface Headline {
+  readonly agentsLive: number;
+  readonly waitersMissing: number;
+  readonly claimsActive: number;
+  readonly claimsStale: number;
+  readonly tasksOpen: number;
+  readonly tasksInProgress: number;
+  readonly tasksReady: number;
+  /** Open tasks that cannot start: `tasksBlockedMarked + tasksBlockedWaiting`. */
+  readonly tasksBlocked: number;
+  readonly tasksBlockedMarked: number;
+  readonly tasksBlockedWaiting: number;
+  readonly tasksClosed: number;
+  readonly riskSignals: number;
+  readonly riskSignalsRed: number;
+  readonly riskSignalsAmber: number;
+  readonly branchConflicts: number;
+  readonly peersReachable: number;
+  readonly peersTotal: number;
+}
+
 export interface FleetSnapshot {
   readonly online_agents: readonly string[];
   /** Roles each agent answers to, {} when the hub (or dashboard) predates them. */
@@ -183,4 +209,6 @@ export interface FleetSnapshot {
   readonly risk: RiskView;
   /** The bounded snapshot's statement of what it left out. */
   readonly bounds: SnapshotBounds | null;
+  /** The headline block; null when the dashboard served none. */
+  readonly headline: Headline | null;
 }

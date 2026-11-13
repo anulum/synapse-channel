@@ -65,7 +65,6 @@ from synapse_channel.dashboard_feed_serving import (
     serve_state_at,
     serve_waits,
 )
-from synapse_channel.dashboard_fleet import build_fleet_visibility
 from synapse_channel.dashboard_fleet_mirror import (
     FLEET_MIRROR_PATHS,
     fleet_mirror_response,
@@ -160,9 +159,8 @@ from synapse_channel.dashboard_operator_writes import (
 )
 from synapse_channel.dashboard_postmortem_feed import POSTMORTEM_PATH
 from synapse_channel.dashboard_render import render_dashboard_html
-from synapse_channel.dashboard_risk import build_risk_view
-from synapse_channel.dashboard_risk_guidance import build_risk_guidance
 from synapse_channel.dashboard_store_feeds import event_store_key
+from synapse_channel.dashboard_views import derived_views
 from synapse_channel.observed_peers import (
     ObservedPeerSnapshot,
     ObservedPeerSpec,
@@ -238,16 +236,9 @@ class DashboardSnapshot:
         """
         payload = asdict(self)
         payload["observed_peers"] = observed_peers_to_dict(self.observed_peers)
-        fleet = build_fleet_visibility(self, a2a_state_file=a2a_state_file)
-        payload["fleet"] = fleet.to_dict()
-        risk = build_risk_view(fleet).to_dict()
-        risk["guidance"] = build_risk_guidance(
-            board=self.board,
-            manifest=self.manifest,
-            state=self.state,
-            safe_task_ids=fleet.tasks.ready,
-        ).to_dict()
-        payload["risk"] = risk
+        payload.update(
+            derived_views(self, payload["observed_peers"], a2a_state_file=a2a_state_file)
+        )
         return payload
 
 

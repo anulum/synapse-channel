@@ -15,17 +15,26 @@ describe("cockpit guide model", () => {
   const english = guideTopics((key, values) => formatMessage("en", key, values), "fleet");
 
   it("puts the active panel first and follows with the stable reference topics", () => {
-    expect(english).toHaveLength(7);
+    expect(english).toHaveLength(8);
     expect(english[0]?.id).toBe("panel-fleet");
     expect(english[0]?.title).toBe("Fleet views");
     expect(english.map((topic) => topic.id).slice(1)).toEqual([
       "orientation",
+      "counters",
       "limits",
       "actions",
       "shortcuts",
       "troubleshooting",
       "setup",
     ]);
+  });
+
+  it("defines every headline counter in the counters topic", () => {
+    const counters = english.find((topic) => topic.id === "counters");
+    expect(counters?.title).toBe("Headline counters");
+    for (const term of ["agents online", "claims held", "red risk signals", '"blocked"', '"ready"', "obs / min"]) {
+      expect(counters?.body).toContain(term);
+    }
   });
 
   it("returns all topics for an empty query and searches all local topic text", () => {

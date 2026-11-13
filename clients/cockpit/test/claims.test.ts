@@ -35,6 +35,7 @@ function snapshotOf(options: {
   const stale = options.stale ?? [];
   return {
     bounds: null,
+    headline: null,
     hub_version: "",
     config_epoch: "",
     online_agents: [],

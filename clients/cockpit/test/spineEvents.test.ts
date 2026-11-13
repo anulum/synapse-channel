@@ -35,6 +35,7 @@ function snapshotOf(overrides: SnapshotOverrides = {}): FleetSnapshot {
   const stale = overrides.stale ?? [];
   return {
     bounds: overrides.bounds ?? null,
+    headline: null,
     hub_version: "",
     config_epoch: "",
     online_agents: [...(overrides.live ?? [])],

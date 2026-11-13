@@ -281,7 +281,7 @@ def render_dashboard_html(
     fallback_html = f"""<h1>SYNAPSE CHANNEL dashboard</h1>
   <div class="grid">
     <section>
-      <h2>Online agents ({len(snapshot.online_agents)})</h2>
+      <h2>Connected names ({len(snapshot.online_agents)})</h2>
       <ul>{_render_list(snapshot.online_agents)}</ul>
     </section>
     <section><h2>Ready tasks</h2><ul>{_render_list(ready_items)}</ul></section>

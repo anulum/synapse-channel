@@ -301,7 +301,8 @@ func TestDashboardSnapshotWithClosedAsksForClosedTasksAndDecodesBounds(t *testin
 		_, _ = w.Write([]byte(`{
 			"online_agents": [],
 			"board": {"tasks": [{"task_id": "DONE", "status": "done"}]},
-			"bounds": {"closed_included": true, "closed_omitted": 0, "tasks_total": 1}
+			"bounds": {"closed_included": true, "closed_omitted": 0, "tasks_total": 1},
+			"headline": {"tasks_blocked": 3, "tasks_blocked_marked": 1, "tasks_blocked_waiting": 2}
 		}`))
 	}))
 	defer server.Close()
@@ -316,6 +317,11 @@ func TestDashboardSnapshotWithClosedAsksForClosedTasksAndDecodesBounds(t *testin
 	}
 	if snapshot.Bounds["closed_included"] != true || snapshot.Bounds["tasks_total"] != float64(1) {
 		t.Fatalf("unexpected bounds: %#v", snapshot.Bounds)
+	}
+	headline := snapshot.Headline
+	if headline["tasks_blocked"] != headline["tasks_blocked_marked"]+headline["tasks_blocked_waiting"] ||
+		headline["tasks_blocked"] != 3 {
+		t.Fatalf("unexpected headline: %#v", headline)
 	}
 }
 

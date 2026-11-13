@@ -223,7 +223,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/setup_verifier.py::verify_setup" = 158
 "src/synapse_channel/shell_integration.py::_render_fish_shell_hook" = 206
 "src/synapse_channel/shell_integration.py::render_shell_hook" = 185
-"src/synapse_channel/studio_snapshot.py::frozen_studio_snapshot" = 96
 "tools/audit_mcp_surface.py::_audit_onboarding_artifacts" = 84
 "tools/exhaustive_coordination_model.py::_apply_action" = 100
 "tools/generate_commercial_certificate.py::main" = 73

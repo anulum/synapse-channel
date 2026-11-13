@@ -63,7 +63,8 @@ the newest progress notes, and `Bounds` states the exact totals, including how
 many closed tasks were left out. `DashboardSnapshotWithClosed` requests
 `/snapshot.json?closed=1`, which adds them. `GetJSON` keeps a query as a query,
 so `client.GetJSON(ctx, "/findings.json?limit=20", &payload)` reads one page of
-a feed.
+a feed. `Headline` holds the counters the hub computed once on the whole board,
+keyed by name; read them instead of counting the bounded `Board`.
 
 ## Test
 

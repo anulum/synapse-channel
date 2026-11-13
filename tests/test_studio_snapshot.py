@@ -8,6 +8,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
+from synapse_channel.dashboard_headline import HEADLINE_KEYS, build_headline
+from synapse_channel.dashboard_observed_health import build_observed_fleet_health
 from synapse_channel.studio_snapshot import (
     STUDIO_SNAPSHOT_PATH,
     UNKNOWN_VERDICT,
@@ -106,18 +111,36 @@ def test_projection_foregrounds_the_verdict_and_sections() -> None:
     assert studio["security_posture"]["level"] == "amber"
 
 
-def test_headline_counts_are_derived_from_the_section_lists() -> None:
-    studio = build_studio_snapshot(_DASHBOARD)
-    headline = studio["headline"]
-    # every count matches the length of the list the panels render — they cannot drift apart
-    assert headline["agents_live"] == len(studio["agents"]["live"]) == 2
-    assert headline["waiters_missing"] == len(studio["agents"]["missing_waiters"]) == 1
-    assert headline["tasks_ready"] == len(studio["tasks"]["ready"]) == 2
-    assert headline["tasks_blocked"] == len(studio["tasks"]["blocked"]) == 1
-    assert headline["branch_conflicts"] == len(studio["conflicts"]) == 1
-    assert headline["risk_signals"] == len(studio["risk"]["signals"]) == 1
-    # active/stale are integer counts carried straight from the fleet view
-    assert headline["claims_active"] == 2 and headline["claims_stale"] == 1
+def _with_headline(dashboard: Mapping[str, Any]) -> dict[str, Any]:
+    """Add the headline the live snapshot would carry for ``dashboard``."""
+    headline = build_headline(
+        dashboard.get("board", {}),
+        dashboard.get("fleet", {}),
+        dashboard.get("risk", {}),
+        build_observed_fleet_health(dashboard),
+    )
+    return {**dashboard, "headline": headline}
+
+
+def test_the_headline_is_the_snapshots_own_block_copied() -> None:
+    dashboard = _with_headline(_DASHBOARD)
+    studio = build_studio_snapshot(dashboard)
+
+    assert studio["headline"] == dashboard["headline"]
+    assert list(studio["headline"]) == list(HEADLINE_KEYS)
+    assert studio["headline"]["agents_live"] == 2 and studio["headline"]["claims_stale"] == 1
+
+
+def test_studio_counts_nothing_itself() -> None:
+    """A block that disagrees with the lists is still what Studio shows."""
+    studio = build_studio_snapshot(
+        {**_DASHBOARD, "headline": {"agents_live": 7, "tasks_blocked": 4}}
+    )
+
+    assert studio["headline"]["agents_live"] == 7
+    assert studio["headline"]["tasks_blocked"] == 4
+    assert studio["headline"]["risk_signals"] == 0  # not carried, so not counted from the list
+    assert len(studio["agents"]["live"]) == 2
 
 
 def test_empty_payload_projects_to_safe_defaults() -> None:
@@ -158,12 +181,14 @@ def test_frozen_snapshot_is_a_valid_representative_sample() -> None:
 
 def test_observed_fleet_projects_from_dashboard_peers() -> None:
     studio = build_studio_snapshot(
-        {
-            **_DASHBOARD,
-            "observed_peers": [
-                {"hub_id": "soak", "reachable": False, "error": "timeout"},
-            ],
-        }
+        _with_headline(
+            {
+                **_DASHBOARD,
+                "observed_peers": [
+                    {"hub_id": "soak", "reachable": False, "error": "timeout"},
+                ],
+            }
+        )
     )
     assert studio["observed_fleet"]["level"] == "red"
     assert studio["headline"]["peers_total"] == 1

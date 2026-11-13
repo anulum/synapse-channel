@@ -497,6 +497,13 @@ change. `/snapshot.json?closed=1` adds the closed tasks; any other `closed`
 value is refused with 400. With `--feeds-db`, the journalled progress notes
 remain readable as `ledger_progress` events through `/events.json`.
 
+Every snapshot also carries a `headline` block: the dashboard's counters
+(`agents_live`, `claims_active`, `tasks_blocked` with its parts
+`tasks_blocked_marked` and `tasks_blocked_waiting`, `tasks_closed`,
+`risk_signals_red` and the rest), each computed once on the whole board before
+the bound. The cockpit, Studio, the classic page and the Go client read it; the
+definitions are in the [cockpit guide's counter glossary](cockpit.md#counter-glossary).
+
 `/snapshot.json` carries a weak `ETag` (`W/"…"`) and answers a matching
 `If-None-Match` with `304 Not Modified` and no body, after the same bearer
 check as every other read; a request without a valid bearer gets 401, never

@@ -23,6 +23,7 @@ type Translator = (
 
 const GENERAL_TOPIC_KEYS = [
   "orientation",
+  "counters",
   "limits",
   "actions",
   "shortcuts",

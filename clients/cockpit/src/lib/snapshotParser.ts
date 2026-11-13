@@ -13,6 +13,7 @@ import type {
   FleetClaims,
   FleetSection,
   FleetSnapshot,
+  Headline,
   RiskSignal,
   RiskView,
   SnapshotBounds,
@@ -211,6 +212,39 @@ export function parseBounds(value: unknown): SnapshotBounds | null {
   };
 }
 
+const HEADLINE_FIELDS = [
+  ["agents_live", "agentsLive"],
+  ["waiters_missing", "waitersMissing"],
+  ["claims_active", "claimsActive"],
+  ["claims_stale", "claimsStale"],
+  ["tasks_open", "tasksOpen"],
+  ["tasks_in_progress", "tasksInProgress"],
+  ["tasks_ready", "tasksReady"],
+  ["tasks_blocked", "tasksBlocked"],
+  ["tasks_blocked_marked", "tasksBlockedMarked"],
+  ["tasks_blocked_waiting", "tasksBlockedWaiting"],
+  ["tasks_closed", "tasksClosed"],
+  ["risk_signals", "riskSignals"],
+  ["risk_signals_red", "riskSignalsRed"],
+  ["risk_signals_amber", "riskSignalsAmber"],
+  ["branch_conflicts", "branchConflicts"],
+  ["peers_reachable", "peersReachable"],
+  ["peers_total", "peersTotal"],
+] as const satisfies readonly (readonly [string, keyof Headline])[];
+
+/** Read the snapshot's `headline` block; null when absent or any counter is malformed. */
+export function parseHeadline(value: unknown): Headline | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const block = value as Record<string, unknown>;
+  const counts: Partial<Record<keyof Headline, number>> = {};
+  for (const [wire, field] of HEADLINE_FIELDS) {
+    const count = wholeCount(block[wire]);
+    if (count === null) return null;
+    counts[field] = count;
+  }
+  return counts as Headline;
+}
+
 /**
  * Shape an untrusted `/snapshot.json` payload into a {@link FleetSnapshot}.
  * Returns `null` only when the payload is not an object at all; any partial
@@ -230,5 +264,6 @@ export function parseSnapshot(raw: unknown): FleetSnapshot | null {
     fleet: parseFleet(payload["fleet"]),
     risk: parseRisk(payload["risk"]),
     bounds: parseBounds(payload["bounds"]),
+    headline: parseHeadline(payload["headline"]),
   };
 }

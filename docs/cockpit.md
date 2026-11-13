@@ -248,6 +248,40 @@ Click a headline counter to filter the signal log to its underlying event
 kinds. Clear the focus lens before concluding that a board or claim list is
 complete.
 
+### Counter glossary
+
+Every counter below is computed once, on the hub's whole board, in the
+snapshot's `headline` block (`/snapshot.json`, `/studio.json`, the live
+stream, the classic page and the Go client all carry it). No surface counts
+again, so one name shows one number everywhere. The HUD shows **agents
+online** (`agents_live`), **claims held** (`claims_active`) and **red risk
+signals** (`risk_signals_red`); the task board's head shows `tasks_blocked`;
+Studio's header shows ready/blocked, active/stale and all/red risk signals.
+**obs / min** is not a fleet counter: it is the event rate this browser
+received in the last minute.
+
+| Name | Definition |
+| --- | --- |
+| `agents_live` | identities connected now, not counting waiter sidecars |
+| `waiters_missing` | live identities with no waiter sidecar |
+| `claims_active` | claims whose lease expires after the snapshot's time |
+| `claims_stale` | claims whose lease expired at or before it and that the hub still lists |
+| `tasks_open` | tasks whose status is not `done` or `cancelled` |
+| `tasks_in_progress` | tasks whose status is `in_progress` |
+| `tasks_ready` | the hub's ready list: status `open` and every prerequisite closed |
+| `tasks_blocked` | open tasks that cannot start: `tasks_blocked_marked` plus `tasks_blocked_waiting` |
+| `tasks_blocked_marked` | open tasks whose status is `blocked` |
+| `tasks_blocked_waiting` | open tasks not marked blocked whose prerequisite is not closed or is not on the board |
+| `tasks_closed` | tasks whose status is `done` or `cancelled`, counted even when the bounded board does not send them |
+| `risk_signals` | every risk signal, amber and red |
+| `risk_signals_red` | red signals: an unsafe condition such as a stale lease or a branch conflict |
+| `risk_signals_amber` | amber signals: impeded progress |
+| `branch_conflicts` | pairs of live git-scoped claims on different branches towards one base whose paths overlap |
+| `peers_reachable`, `peers_total` | observed peer hubs that answered, and that are configured |
+
+A closed task (`done` or `cancelled`) sits in the board's "done" bucket. The
+in-product guide carries the same definitions under "Headline counters".
+
 Press `Ctrl+K` or `Command+K` to open the command palette. Viewer principals
 receive navigation and inspection commands only. Operator and admin principals
 receive the governed write commands currently enabled by the server.

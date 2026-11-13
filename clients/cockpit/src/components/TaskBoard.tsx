@@ -133,7 +133,9 @@ function TaskBoardView({
   // A constrained board is being searched: show every match, no done-cap.
   const doneShown = constrained ? done : done.slice(0, DONE_SHOWN);
   const doneOverflow = done.length - doneShown.length;
-  const blocked = active.filter((task) => task.bucket === "blocked").length;
+  // The hub's headline counts what cannot start, once, on the whole board; a
+  // replayed moment has no headline and counts its own rows by the same rule.
+  const blocked = truncation?.blocked ?? active.filter((task) => task.bucket === "blocked").length;
   const capped = truncation?.truncated === true && truncation.totalTasks !== null;
   // Headroom against the hub's own applied cap — plain arithmetic on two
   // hub facts, no prediction. Loud from nine tenths full.

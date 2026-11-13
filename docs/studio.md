@@ -72,6 +72,15 @@ cockpit at `/cockpit/` and use its unlock screen; see
 The static design reference needs no hub data, but its page still requires
 dashboard authentication.
 
+## Headline counters
+
+Studio's header reads the snapshot's `headline` block and counts nothing itself:
+"tasks ready/blocked" is `tasks_ready` / `tasks_blocked` (open tasks that cannot
+start, marked blocked or waiting on a prerequisite), "claims active/stale" is
+`claims_active` / `claims_stale`, and "risk signals all/red" is `risk_signals` /
+`risk_signals_red`. The cockpit shows the same numbers under the same names; the
+definitions are in the [cockpit guide's counter glossary](cockpit.md#counter-glossary).
+
 ## The Studio snapshot — `/studio.json`
 
 The command centre reads one JSON contract, served live at `/studio.json`: a single risk

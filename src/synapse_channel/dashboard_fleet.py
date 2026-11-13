@@ -448,6 +448,19 @@ def _render_key_counts(values: Mapping[str, int]) -> str:
     )
 
 
+def _render_headline(headline: Mapping[str, object]) -> str:
+    """Render the snapshot's headline counters under their glossary names."""
+    rows = "".join(
+        f"<li><code>{_escape(name)}</code>: {_escape(value)}</li>"
+        for name, value in headline.items()
+    )
+    return f"""
+    <section>
+      <h2>Counters</h2>
+      <ul>{rows}</ul>
+    </section>"""
+
+
 def render_fleet_visibility_html(
     snapshot: DashboardSnapshot,
     *,
@@ -470,7 +483,9 @@ def render_fleet_visibility_html(
     """
     fleet = build_fleet_visibility(snapshot, a2a_state_file=a2a_state_file)
     a2a = fleet.a2a
-    return f"""
+    # The counters are the snapshot's own headline block, not counted here again.
+    headline = _render_headline(snapshot.to_dict(a2a_state_file=a2a_state_file)["headline"])
+    return f"""{headline}
     <section>
       <h2>Fleet visibility</h2>
       <ul>
@@ -487,7 +502,7 @@ def render_fleet_visibility_html(
       <ul>{_render_string_list(fleet.agents.missing_waiters)}</ul>
     </section>
     <section>
-      <h2>Blocked tasks</h2>
+      <h2>Tasks marked blocked</h2>
       <ul>{_render_record_list(fleet.tasks.blocked, empty="No blocked tasks")}</ul>
     </section>
     {render_task_dependency_graph_html(snapshot.board)}

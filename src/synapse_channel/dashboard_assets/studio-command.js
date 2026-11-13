@@ -182,7 +182,7 @@
     setStat("cc-claims", (headline.claims_active || 0) + " / " + (headline.claims_stale || 0));
     setStat("cc-tasks", (headline.tasks_ready || 0) + " / " + (headline.tasks_blocked || 0));
     setStat("cc-conflicts", headline.branch_conflicts || 0);
-    setStat("cc-signals", headline.risk_signals || 0);
+    setStat("cc-signals", (headline.risk_signals || 0) + " / " + (headline.risk_signals_red || 0));
     const posture = data.security_posture || {};
     setStat("cc-posture", posture.level || "unknown");
     const observed = data.observed_fleet || {};

@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { parseBounds, parseSnapshot } from "../src/lib/snapshotParser";
+import { parseBounds, parseHeadline, parseSnapshot } from "../src/lib/snapshotParser";
 
 describe("parseSnapshot", () => {
   it("rejects non-object payloads", () => {
@@ -163,5 +163,58 @@ describe("parseBounds", () => {
     }
     const { receipts_sent: _dropped, ...partial } = block;
     expect(parseBounds(partial)).toBeNull();
+  });
+});
+
+describe("parseHeadline", () => {
+  const block = {
+    agents_live: 2,
+    waiters_missing: 1,
+    claims_active: 1,
+    claims_stale: 0,
+    tasks_open: 7,
+    tasks_in_progress: 2,
+    tasks_ready: 1,
+    tasks_blocked: 5,
+    tasks_blocked_marked: 2,
+    tasks_blocked_waiting: 3,
+    tasks_closed: 2,
+    risk_signals: 3,
+    risk_signals_red: 1,
+    risk_signals_amber: 2,
+    branch_conflicts: 0,
+    peers_reachable: 0,
+    peers_total: 0,
+  };
+
+  it("reads every counter of the hub's block under its camel-case name", () => {
+    expect(parseSnapshot({ headline: block })?.headline).toEqual({
+      agentsLive: 2,
+      waitersMissing: 1,
+      claimsActive: 1,
+      claimsStale: 0,
+      tasksOpen: 7,
+      tasksInProgress: 2,
+      tasksReady: 1,
+      tasksBlocked: 5,
+      tasksBlockedMarked: 2,
+      tasksBlockedWaiting: 3,
+      tasksClosed: 2,
+      riskSignals: 3,
+      riskSignalsRed: 1,
+      riskSignalsAmber: 2,
+      branchConflicts: 0,
+      peersReachable: 0,
+      peersTotal: 0,
+    });
+  });
+
+  it("refuses a block with any counter missing or malformed", () => {
+    expect(parseSnapshot({})?.headline).toBeNull();
+    for (const value of [null, "x", [1], { ...block, tasks_blocked: -1 }, { ...block, risk_signals: 1.5 }]) {
+      expect(parseHeadline(value)).toBeNull();
+    }
+    const { peers_total: _dropped, ...partial } = block;
+    expect(parseHeadline(partial)).toBeNull();
   });
 });

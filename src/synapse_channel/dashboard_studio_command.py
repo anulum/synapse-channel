@@ -143,7 +143,7 @@ def render_studio_command_html(
         <div class="cc-stat"><b id="cc-claims">0 / 0</b><span>claims active/stale</span></div>
         <div class="cc-stat"><b id="cc-tasks">0 / 0</b><span>tasks ready/blocked</span></div>
         <div class="cc-stat"><b id="cc-conflicts">0</b><span>conflicts</span></div>
-        <div class="cc-stat"><b id="cc-signals">0</b><span>risk signals</span></div>
+        <div class="cc-stat"><b id="cc-signals">0 / 0</b><span>risk signals all/red</span></div>
         <div class="cc-stat"><b id="cc-posture">unknown</b><span>security posture</span></div>
         <div class="cc-stat"><b id="cc-peers">—</b><span>peers reachable</span></div>
       </div>

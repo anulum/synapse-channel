@@ -48,6 +48,8 @@ type Client struct {
 // The document is bounded: Board carries every task that is not closed and
 // the newest progress notes; Bounds states the exact totals, including how
 // many closed tasks were left out. DashboardSnapshotWithClosed adds them.
+// Headline holds the counters the hub computed once on the whole board, by
+// name (for example "tasks_blocked"); read them rather than counting Board.
 type DashboardSnapshot struct {
 	OnlineAgents []string         `json:"online_agents"`
 	State        map[string]any   `json:"state"`
@@ -55,6 +57,7 @@ type DashboardSnapshot struct {
 	Manifest     []map[string]any `json:"manifest"`
 	Fleet        map[string]any   `json:"fleet"`
 	Bounds       map[string]any   `json:"bounds"`
+	Headline     map[string]int   `json:"headline"`
 }
 
 // StatusError reports a non-2xx HTTP response from a SYNAPSE endpoint.

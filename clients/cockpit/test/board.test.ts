@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import { boardTruncation, deriveBoard } from "../src/lib/board";
-import { parseBounds } from "../src/lib/snapshotParser";
+import { parseBounds, parseHeadline } from "../src/lib/snapshotParser";
 import { parseSnapshot } from "../src/lib/snapshot";
 import type { FleetSnapshot, TaskGraphEdge, TaskGraphNode } from "../src/types";
 
@@ -21,6 +21,26 @@ const BOUNDS = {
   progress_sent: 200,
   receipts_total: 60,
   receipts_sent: 50,
+};
+
+const HEADLINE = {
+  agents_live: 2,
+  waiters_missing: 1,
+  claims_active: 1,
+  claims_stale: 0,
+  tasks_open: 7,
+  tasks_in_progress: 2,
+  tasks_ready: 1,
+  tasks_blocked: 5,
+  tasks_blocked_marked: 2,
+  tasks_blocked_waiting: 3,
+  tasks_closed: 2,
+  risk_signals: 3,
+  risk_signals_red: 1,
+  risk_signals_amber: 2,
+  branch_conflicts: 0,
+  peers_reachable: 0,
+  peers_total: 0,
 };
 
 function node(taskId: string, status: string, ready = false, title = ""): TaskGraphNode {
@@ -42,6 +62,7 @@ function snapshotOf(options: {
 }): FleetSnapshot {
   return {
     bounds: null,
+    headline: null,
     hub_version: "",
     config_epoch: "",
     online_agents: [],
@@ -118,6 +139,11 @@ describe("deriveBoard", () => {
     expect(byId.get("second")?.bucket).toBe("open");
   });
 
+  it("counts a cancelled task as closed, as the ledger does", () => {
+    const rows = deriveBoard(snapshotOf({ nodes: [node("dropped", "cancelled", true)] }));
+    expect(rows[0]?.bucket).toBe("done");
+  });
+
   it("honours a board-declared blocked status even with no unmet edge", () => {
     const rows = deriveBoard(snapshotOf({ nodes: [node("held-back", "blocked")] }));
     expect(rows[0]?.bucket).toBe("blocked");
@@ -136,19 +162,25 @@ describe("deriveBoard", () => {
 
 describe("boardTruncation", () => {
   it("reads the hub's cap signal and defaults honestly without one", () => {
-    expect(boardTruncation(null)).toEqual({ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0 });
+    expect(boardTruncation(null)).toEqual({ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0, blocked: null });
     expect(boardTruncation(snapshotOf({ board: {} }))).toEqual({
       totalTasks: null,
       truncated: false,
       taskCap: null,
       closedOmitted: 0,
+      blocked: null,
     });
     expect(
       boardTruncation(snapshotOf({ board: { total_tasks: 977, truncated: true } })),
-    ).toEqual({ totalTasks: 977, truncated: true, taskCap: null, closedOmitted: 0 });
+    ).toEqual({ totalTasks: 977, truncated: true, taskCap: null, closedOmitted: 0, blocked: null });
     expect(
       boardTruncation(snapshotOf({ board: { total_tasks: "junk", truncated: "yes" } })),
-    ).toEqual({ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0 });
+    ).toEqual({ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0, blocked: null });
+  });
+
+  it("carries the headline's blocked count, which the board header shows", () => {
+    const headed = { ...snapshotOf({ board: {} }), headline: parseHeadline(HEADLINE) };
+    expect(boardTruncation(headed).blocked).toBe(5);
   });
 
   it("states the closed tasks a bounded snapshot counted but did not send", () => {
@@ -159,14 +191,14 @@ describe("boardTruncation", () => {
   it("carries the applied cap only while the hub says one is active", () => {
     expect(
       boardTruncation(snapshotOf({ board: { total_tasks: 977, truncated: true, task_cap: 500 } })),
-    ).toEqual({ totalTasks: 977, truncated: true, taskCap: 500, closedOmitted: 0 });
+    ).toEqual({ totalTasks: 977, truncated: true, taskCap: 500, closedOmitted: 0, blocked: null });
     // A malformed or non-positive cap is no cap, never an invented gauge.
     expect(
       boardTruncation(snapshotOf({ board: { total_tasks: 3, truncated: false, task_cap: "500" } })),
-    ).toEqual({ totalTasks: 3, truncated: false, taskCap: null, closedOmitted: 0 });
+    ).toEqual({ totalTasks: 3, truncated: false, taskCap: null, closedOmitted: 0, blocked: null });
     expect(
       boardTruncation(snapshotOf({ board: { task_cap: 0 } })),
-    ).toEqual({ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0 });
+    ).toEqual({ totalTasks: null, truncated: false, taskCap: null, closedOmitted: 0, blocked: null });
   });
 });
 
