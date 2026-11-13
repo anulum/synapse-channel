@@ -82,7 +82,8 @@ start, marked blocked or waiting on a prerequisite), "claims active/stale" is
 definitions are in the [cockpit guide's counter glossary](cockpit.md#counter-glossary).
 The agents panel lists every seat with its state from the snapshot's seat
 projection: listening, active but not listening, or silent, never "offline"
-(see [seat states](cockpit.md#seat-states)).
+(see [seat states](cockpit.md#seat-states)), with the hub's mark, such as
+"deaf ~5h", where the hub would warn a sender.
 
 ## The Studio snapshot — `/studio.json`
 

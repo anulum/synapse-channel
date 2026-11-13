@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 from synapse_channel.cli_mailbox_pending import render_mailbox_pending
+from synapse_channel.core.agent_liveness import deaf_mark
 from synapse_channel.core.clock_skew import format_clock_skew
 from synapse_channel.core.mailbox_pending import format_pending_line
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN, wake_capability_label
@@ -26,15 +27,6 @@ from synapse_channel.waiter_identity import (
 )
 
 
-def _format_reaction_age(seconds: float) -> str:
-    """Render an elapsed-since-last-reaction duration coarsely (``~4m``, ``~2h``)."""
-    if seconds < 60:
-        return f"~{int(seconds)}s"
-    if seconds < 3600:
-        return f"~{int(seconds // 60)}m"
-    return f"~{int(seconds // 3600)}h"
-
-
 def _liveness_suffix(info: dict[str, Any]) -> str:
     """Return the deaf marker for one agent's liveness record, or empty if proven live.
 
@@ -43,12 +35,8 @@ def _liveness_suffix(info: dict[str, Any]) -> str:
     out. A stale agent is flagged with how long it has been silent, or that no reaction
     has ever been seen from it.
     """
-    if info.get("proven_live"):
-        return ""
-    age = info.get("last_reaction_age")
-    if age is None:
-        return "  (deaf — no reaction seen)"
-    return f"  (deaf {_format_reaction_age(float(age))})"
+    mark = deaf_mark(info)
+    return f"  ({mark})" if mark else ""
 
 
 def _wake_capability_suffix(name: str, capabilities: dict[str, str] | None) -> str:

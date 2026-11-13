@@ -27,6 +27,7 @@ function entry(agent: string, overrides: Partial<RosterEntry> = {}): RosterEntry
     agent,
     status: "idle",
     seat: "listening",
+    deaf: null,
     activeClaims: [],
     staleClaims: [],
     paths: [],
@@ -84,6 +85,16 @@ describe("FleetRoster", () => {
     expect(screen.queryByText("listening")).toBeNull();
     expect(document.querySelectorAll(".roster-row__tag")).toHaveLength(1);
     expect(screen.queryByText("offline")).toBeNull();
+  });
+
+  it("marks a listening seat the hub judges deaf, with the hub's reason", () => {
+    render(<FleetRoster roster={[entry("quantum/quiet", { deaf: { lastReactionAt: 700 } })]} waiters={0} />);
+    const tag = screen.getByText("deaf");
+    expect(tag.className).toBe("roster-row__tag roster-row__tag--warn");
+    expect(tag.getAttribute("title")).toBe(
+      "The hub would warn a sender: no live waiter, and no reaction within its window.",
+    );
+    expect(screen.queryByText("listening")).toBeNull();
   });
 
   it("marks a seat at work with nobody listening, never offline, and collapses the path tail", () => {

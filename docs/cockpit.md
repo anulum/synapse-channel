@@ -285,6 +285,7 @@ received in the last minute.
 | `seats_listening` | seats a socket receives messages for now: the identity itself or its waiter sidecar |
 | `seats_active_not_listening` | seats with no such socket whose record shows work: a held claim at any age, or a claim stamped or a note authored in the last 900 seconds |
 | `seats_silent` | seats with neither: the owner of a listed claim whose lease has run out and whose stamp is older than the window |
+| `seats_deaf` | seats the hub judges deaf: connected under their own name, with no live waiter and no reaction within the hub's window (90 seconds by default), so a directed message to them draws a warning to its sender |
 
 A closed task (`done` or `cancelled`) sits in the board's "done" bucket. The
 in-product guide carries the same definitions under "Headline counters".
@@ -303,7 +304,20 @@ whose stamp is older than the window. The seats are the connected identities (a
 waiter stands for its owner), the owners of listed claims and the authors of
 notes inside the window; a note older than the window names no seat.
 `last_seen` is not used: the hub stamps it on keepalive heartbeats, so it
-proves a socket, not work. The window is 900 seconds, measured on the hub's
+proves a socket, not work.
+
+A socket is not a reaction. The hub keeps its own proof: a seat is proven live
+when a waiter of its own was seen within 20 seconds, or when the seat itself
+connected or sent anything other than a keepalive within the hub's reaction
+window (90 seconds by default). A connected seat with neither is **deaf**, the word `synapse who`
+prints, and the hub warns anyone who sends it a directed message. The roster
+tags such a seat "deaf", the agent drawer says when it last reacted on the hub's
+clock, and Studio's agents panel and the classic page add the CLI's mark (for
+example "deaf ~5h"). A seat the hub does not judge (one that is not connected
+under its own name, or a hub that tracks no reactions) carries no mark: none is
+invented. Presence daemons are seats: on the live hub they declare the same
+wake capability as a working agent and no role, so the hub has no fact that
+tells them apart, and they read deaf as the hub sees them. The window is 900 seconds, measured on the hub's
 snapshot clock.
 
 ## Change language and use the in-product guide

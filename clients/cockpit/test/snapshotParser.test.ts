@@ -188,6 +188,7 @@ describe("parseHeadline", () => {
     seats_listening: 3,
     seats_active_not_listening: 1,
     seats_silent: 2,
+    seats_deaf: 1,
   };
 
   it("reads every counter of the hub's block under its camel-case name", () => {
@@ -212,6 +213,7 @@ describe("parseHeadline", () => {
       seatsListening: 3,
       seatsActiveNotListening: 1,
       seatsSilent: 2,
+      seatsDeaf: 1,
     });
   });
 
@@ -230,9 +232,15 @@ describe("fleet seats", () => {
     const seats = parseSnapshot({
       fleet: {
         seats: [
-          { identity: "a/one", listening: true, active: true, evidence: "note", evidence_at: 12.5, state: "listening" },
+          {
+            identity: "a/one", listening: true, active: true, evidence: "note", evidence_at: 12.5, state: "listening",
+            reaction: { proven: false, live_waiter: false, last_reaction_age: 240.5, mark: "deaf ~4m" },
+          },
           { identity: "b/two", listening: false, active: true, evidence: "claim", evidence_at: null, state: "active, not listening" },
-          { identity: "c/three", listening: "yes", active: 1, evidence: "rumour", state: "silent" },
+          {
+            identity: "c/three", listening: "yes", active: 1, evidence: "rumour", state: "silent",
+            reaction: { proven: "no", live_waiter: 0, last_reaction_age: "long" },
+          },
           { identity: "", state: "silent" },
           { identity: "d/four", state: "offline" },
           "e/five",
@@ -240,9 +248,18 @@ describe("fleet seats", () => {
       },
     })?.fleet.seats;
     expect(seats).toEqual([
-      { identity: "a/one", listening: true, active: true, evidence: "note", evidenceAt: 12.5, state: "listening" },
-      { identity: "b/two", listening: false, active: true, evidence: "claim", evidenceAt: null, state: "active, not listening" },
-      { identity: "c/three", listening: false, active: false, evidence: null, evidenceAt: null, state: "silent" },
+      {
+        identity: "a/one", listening: true, active: true, evidence: "note", evidenceAt: 12.5, state: "listening",
+        reaction: { proven: false, liveWaiter: false, lastReactionAge: 240.5 },
+      },
+      {
+        identity: "b/two", listening: false, active: true, evidence: "claim", evidenceAt: null, state: "active, not listening",
+        reaction: { proven: null, liveWaiter: null, lastReactionAge: null },
+      },
+      {
+        identity: "c/three", listening: false, active: false, evidence: null, evidenceAt: null, state: "silent",
+        reaction: { proven: null, liveWaiter: null, lastReactionAge: null },
+      },
     ]);
     expect(parseSnapshot({})?.fleet.seats).toEqual([]);
   });

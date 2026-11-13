@@ -454,10 +454,17 @@ def _render_headline(headline: Mapping[str, object]) -> str:
     </section>"""
 
 
+def _seat_words(seat: Mapping[str, object]) -> str:
+    """Return a seat's state, with the hub's mark when it judges the seat deaf."""
+    reaction = seat.get("reaction")
+    mark = reaction.get("mark") if isinstance(reaction, Mapping) else ""
+    return f"{seat.get('state')} · {mark}" if mark else str(seat.get("state"))
+
+
 def _render_seats(seats: object) -> str:
     """Render each seat with what the hub knows of it (never "offline")."""
     rows = [
-        f"<li>{_escape(seat.get('identity'))}: {_escape(seat.get('state'))}</li>"
+        f"<li>{_escape(seat.get('identity'))}: {_escape(_seat_words(seat))}</li>"
         for seat in _as_mappings(seats)
     ]
     return "".join(rows) if rows else '<li class="muted">No seats</li>'

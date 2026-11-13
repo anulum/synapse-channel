@@ -61,6 +61,48 @@ describe("deriveRoster", () => {
     );
   });
 
+  it("marks the seats the hub judges deaf, with their last reaction on the hub's clock", () => {
+    const seat = (identity: string, reaction?: Record<string, unknown>) => ({
+      identity,
+      state: "listening",
+      listening: true,
+      ...(reaction === undefined ? {} : { reaction }),
+    });
+    const snapshot = snapshotOf({
+      online_agents: ["a/quiet", "a/never", "a/heard", "a/unjudged", "a/old"],
+      state: { generated_at: 1000 },
+      fleet: {
+        agents: { live: [], waiters: [], missing_waiters: [] },
+        seats: [
+          seat("a/quiet", { proven: false, live_waiter: false, last_reaction_age: 300 }),
+          seat("a/never", { proven: false, live_waiter: false, last_reaction_age: null }),
+          seat("a/heard", { proven: true, live_waiter: true, last_reaction_age: 5 }),
+          seat("a/unjudged", { proven: null }),
+          seat("a/old"),
+        ],
+      },
+    });
+    const deaf = new Map(deriveRoster(snapshot).map((row) => [row.agent, row.deaf]));
+    expect(deaf).toEqual(
+      new Map([
+        ["a/quiet", { lastReactionAt: 700 }],
+        ["a/never", { lastReactionAt: null }],
+        ["a/heard", null],
+        ["a/unjudged", null],
+        ["a/old", null],
+      ]),
+    );
+    // Without the hub's clock the time is unknown, not invented.
+    const clockless = snapshotOf({
+      online_agents: ["a/quiet"],
+      fleet: {
+        agents: { live: [], waiters: [], missing_waiters: [] },
+        seats: [seat("a/quiet", { proven: false, last_reaction_age: 300 })],
+      },
+    });
+    expect(deriveRoster(clockless)[0]?.deaf).toEqual({ lastReactionAt: null });
+  });
+
   it("classifies holding, stale, and conflict, worst-first", () => {
     const snapshot = snapshotOf({
       online_agents: ["alpha/aster", "beta/briar", "gamma/cedar"],

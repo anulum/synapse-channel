@@ -139,6 +139,13 @@ export function DetailDrawer({ agent, task, onClose, onFilterLog, onTrace }: Det
               <span className={`drawer__fact${agent.entry?.seat === "listening" ? " drawer__fact--ok" : " drawer__fact--warn"}`}>
                 {agent.entry === null ? "not in roster" : agent.entry.seat}
               </span>
+              {agent.entry?.deaf != null && (
+                <span className="drawer__fact drawer__fact--warn">
+                  {agent.entry.deaf.lastReactionAt === null
+                    ? "deaf · no reaction seen"
+                    : `deaf · last reaction ${timeOf(agent.entry.deaf.lastReactionAt)}`}
+                </span>
+              )}
               {agent.entry !== null &&
                 agent.entry.roles.map((role) => (
                   <span key={role} className="drawer__fact">{`role: ${role}`}</span>

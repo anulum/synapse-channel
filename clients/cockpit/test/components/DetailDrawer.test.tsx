@@ -53,6 +53,7 @@ const AGENT: AgentDetail = {
     agent: "quantum/claude",
     status: "holding",
     seat: "listening",
+    deaf: null,
     activeClaims: [],
     staleClaims: [],
     paths: [],
@@ -168,6 +169,20 @@ describe("DetailDrawer", () => {
     expect(screen.getByText("active, not listening").className).toBe("drawer__fact drawer__fact--warn");
     expect(screen.queryByText("listening")).toBeNull();
     expect(screen.queryByText("offline")).toBeNull();
+  });
+
+  it("states a deaf seat with its last reaction on the hub's clock, or that none was seen", () => {
+    const at = 1_783_000_000;
+    const heard = { ...AGENT.entry!, deaf: { lastReactionAt: at } };
+    const view = render(<DetailDrawer agent={{ ...AGENT, entry: heard }} onClose={() => {}} onFilterLog={() => {}} />);
+    const expected = new Date(at * 1000).toLocaleTimeString([], {
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+    });
+    expect(screen.getByText(`deaf · last reaction ${expected}`).className).toBe("drawer__fact drawer__fact--warn");
+    view.unmount();
+    const never = { ...AGENT.entry!, deaf: { lastReactionAt: null } };
+    render(<DetailDrawer agent={{ ...AGENT, entry: never }} onClose={() => {}} onFilterLog={() => {}} />);
+    expect(screen.getByText("deaf · no reaction seen").className).toBe("drawer__fact drawer__fact--warn");
   });
 
   it("states the agent's condition, claims, unread mailbox, and window overflow", () => {

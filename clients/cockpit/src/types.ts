@@ -124,6 +124,15 @@ export interface TaskGraphSection {
 /** What the hub knows about a seat: never "offline" (`dashboard_seats.py`). */
 export type SeatState = "listening" | "active, not listening" | "silent";
 
+/** The hub's judgement on whether a seat reacts; every field null where it made none. */
+export interface SeatReaction {
+  /** False = deaf: no live waiter and no reaction within the hub's window, so the hub warns a sender. */
+  readonly proven: boolean | null;
+  readonly liveWaiter: boolean | null;
+  /** Seconds from its last reaction to the snapshot; null when the hub has seen none. */
+  readonly lastReactionAge: number | null;
+}
+
 /** One seat of the hub's seat projection. */
 export interface SeatRow {
   readonly identity: string;
@@ -134,6 +143,7 @@ export interface SeatRow {
   readonly evidence: "claim" | "note" | null;
   readonly evidenceAt: number | null;
   readonly state: SeatState;
+  readonly reaction: SeatReaction;
 }
 
 export interface FleetSection {
@@ -212,6 +222,7 @@ export interface Headline {
   readonly seatsListening: number;
   readonly seatsActiveNotListening: number;
   readonly seatsSilent: number;
+  readonly seatsDeaf: number;
 }
 
 export interface FleetSnapshot {

@@ -214,6 +214,11 @@ class DashboardSnapshot:
     observed_peers : tuple[ObservedPeerSnapshot, ...]
         Optional advisory peer snapshots fetched through the multi-hub log
         request path. Empty unless the dashboard was started with observed peers.
+    agent_liveness : dict[str, Any]
+        The ``who`` snapshot's ``agent_liveness`` as the hub sent it: whether each
+        online agent is proven live, has a live waiter, and how long ago it last
+        reacted. Empty when the hub tracks no reactions. The seat projection reads
+        it; the document leaves it out, because its ages change on every fetch.
     """
 
     online_agents: list[str]
@@ -225,6 +230,7 @@ class DashboardSnapshot:
     config_epoch: str = ""
     agent_roles: dict[str, list[str]] = field(default_factory=dict)
     observed_peers: tuple[ObservedPeerSnapshot, ...] = ()
+    agent_liveness: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self, *, a2a_state_file: str | Path | None = None) -> dict[str, Any]:
         """Return a JSON-serialisable dictionary for HTTP responses.
@@ -236,6 +242,8 @@ class DashboardSnapshot:
             derived ``fleet.a2a`` summary.
         """
         payload = asdict(self)
+        # Each seat row carries its own part of the hub's proof (fleet.seats[].reaction).
+        del payload["agent_liveness"]
         payload["observed_peers"] = observed_peers_to_dict(self.observed_peers)
         payload.update(
             derived_views(self, payload["observed_peers"], a2a_state_file=a2a_state_file)
@@ -295,6 +303,12 @@ class DashboardServer:
             self.heavy_feed_cache.close()
         if self.state_feed_cache is not None:
             self.state_feed_cache.close()
+
+
+def _mapping_from_who(who: Mapping[str, Any], key: str) -> dict[str, Any]:
+    """Return one mapping field of a ``who`` snapshot, or an empty map when absent or malformed."""
+    raw = who.get(key)
+    return dict(raw) if isinstance(raw, Mapping) else {}
 
 
 def _agent_roles_from_who(who: Mapping[str, Any]) -> dict[str, list[str]]:
@@ -410,6 +424,7 @@ async def fetch_dashboard_snapshot(
             config_epoch=str(who.get("config_epoch", "")),
             agent_roles=_agent_roles_from_who(who),
             observed_peers=observed,
+            agent_liveness=_mapping_from_who(who, "agent_liveness"),
         )
     finally:
         agent.running = False

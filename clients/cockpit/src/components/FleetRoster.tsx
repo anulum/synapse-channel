@@ -25,6 +25,10 @@ const STATUS_GLYPH: Record<RowStatus, string> = {
 };
 
 /** Short status word for the row's accessible label and tooltip. */
+/** What the hub's "deaf" means, as `synapse who` and the glossary say it. */
+const DEAF_TITLE =
+  "The hub would warn a sender: no live waiter, and no reaction within its window.";
+
 /** What each seat state says, and what it does not. */
 const SEAT_TITLE: Record<Exclude<SeatState, "listening">, string> = {
   "active, not listening": "Working by the record (a held claim, or a claim or note in the last 15 minutes) with no socket receiving its messages.",
@@ -107,6 +111,11 @@ function RosterRow({ entry, onInspect, selected }: RosterRowProps): JSX.Element 
             title={SEAT_TITLE[entry.seat]}
           >
             {entry.seat}
+          </span>
+        )}
+        {entry.deaf !== null && (
+          <span className="roster-row__tag roster-row__tag--warn" title={DEAF_TITLE}>
+            deaf
           </span>
         )}
       </span>

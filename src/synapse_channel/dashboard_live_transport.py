@@ -122,19 +122,36 @@ def decode_feed_response(response: FeedResponse) -> tuple[str, object | None, st
     return "live", document, None
 
 
+def _seat_without_ages(seat: object) -> object:
+    """Return one seat row without the parts of its reaction that grow with the clock."""
+    if not isinstance(seat, dict) or not isinstance(seat.get("reaction"), dict):
+        return seat
+    reaction = {
+        key: value
+        for key, value in seat["reaction"].items()
+        if key not in ("last_reaction_age", "mark")
+    }
+    return {**seat, "reaction": reaction}
+
+
 def snapshot_fingerprint(document: dict[str, Any]) -> str:
     """Hash snapshot evidence while excluding the stamps that change on every fetch.
 
     Two snapshots of an unchanged hub differ only in ``fleet.generated_at`` (the
     dashboard's render time), ``state.generated_at`` (the hub's clock when it
-    answered) and ``state.agents[*].last_seen`` (liveness stamps, including the
-    dashboard observer's own heartbeat on each fetch). None of them is evidence
-    of a change in work, so all three are left out; ``document`` is not changed.
+    answered), ``state.agents[*].last_seen`` (liveness stamps, including the
+    dashboard observer's own heartbeat on each fetch) and, in each seat's
+    ``reaction``, ``last_reaction_age`` and the ``mark`` worded from it, which grow
+    with the clock. None of them is evidence of a change in work, so all are left
+    out; whether a seat is proven live stays in. ``document`` is not changed.
     """
     stable = dict(document)
     fleet = stable.get("fleet")
     if isinstance(fleet, dict):
         stable["fleet"] = {key: value for key, value in fleet.items() if key != "generated_at"}
+        seats = fleet.get("seats")
+        if isinstance(seats, list):
+            stable["fleet"]["seats"] = [_seat_without_ages(seat) for seat in seats]
     state = stable.get("state")
     if isinstance(state, dict):
         stable["state"] = {key: value for key, value in state.items() if key != "generated_at"}

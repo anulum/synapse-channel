@@ -86,6 +86,7 @@ def test_each_counter_has_its_one_definition() -> None:
     # PLAN/worker (its waiter is connected) and PLAN/lonely are listening.
     assert (headline["seats_listening"], headline["seats_active_not_listening"]) == (2, 0)
     assert headline["seats_silent"] == 0
+    assert headline["seats_deaf"] == 0  # the hub sent no judgement, so none is counted
     _blocked_identity(headline)
 
 

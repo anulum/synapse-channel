@@ -34,7 +34,7 @@ describe("cockpit guide model", () => {
     expect(counters?.title).toBe("Headline counters");
     for (const term of [
       "agents online", "claims held", "red risk signals", '"blocked"', '"ready"', "obs / min",
-      '"listening"', '"active, not listening"', '"silent"', "never called offline",
+      '"listening"', '"active, not listening"', '"silent"', "never called offline", '"deaf"', "synapse who",
     ]) {
       expect(counters?.body).toContain(term);
     }

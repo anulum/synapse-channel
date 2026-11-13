@@ -239,6 +239,18 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- The dashboard shows the hub's own proof that a seat reacts. The hub already
+  judged each connected agent (a waiter seen within 20 seconds, or a reaction
+  within its window) and warned a sender about one it could not prove; the
+  dashboard dropped that judgement. Each seat row now carries it
+  (`fleet.seats[].reaction`), the headline counts `seats_deaf`, and every surface
+  says "deaf" where `synapse who` does: the cockpit roster tags the seat and the
+  agent drawer gives its last reaction on the hub's clock; Studio and the classic
+  page add the CLI's mark, such as "deaf ~5h". The ages are left out of the
+  snapshot's fingerprint, so only a change of judgement moves it. Presence
+  daemons stay seats: they declare the same wake capability as a working agent
+  and no role, so the hub has no fact that tells them apart. See
+  `docs/cockpit.md`, "Seat states".
 - The dashboard says what is known about each seat and never calls one
   offline. A seat projection in the snapshot (`fleet.seats`) marks every seat
   (a connected identity, the owner of a listed claim, or the author of a note

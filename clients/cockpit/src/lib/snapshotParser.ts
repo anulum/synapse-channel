@@ -57,6 +57,10 @@ function asNumberOrNull(value: unknown): number | null {
   return null;
 }
 
+function asBooleanOrNull(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
 function asIntOr(value: unknown, fallback: number): number {
   const parsed = asNumberOrNull(value);
   return parsed === null ? fallback : Math.trunc(parsed);
@@ -147,6 +151,8 @@ function parseSeat(value: unknown): SeatRow | null {
   const state = asString(seat["state"]);
   if (identity === "" || !SEAT_STATES.has(state)) return null;
   const evidence = seat["evidence"];
+  // A dashboard older than the hub's reaction proof sends no reaction: no judgement, none invented.
+  const reaction = asRecord(seat["reaction"]);
   return {
     identity,
     listening: seat["listening"] === true,
@@ -154,6 +160,11 @@ function parseSeat(value: unknown): SeatRow | null {
     evidence: evidence === "claim" || evidence === "note" ? evidence : null,
     evidenceAt: asNumberOrNull(seat["evidence_at"]),
     state: state as SeatState,
+    reaction: {
+      proven: asBooleanOrNull(reaction["proven"]),
+      liveWaiter: asBooleanOrNull(reaction["live_waiter"]),
+      lastReactionAge: asNumberOrNull(reaction["last_reaction_age"]),
+    },
   };
 }
 
@@ -257,6 +268,7 @@ const HEADLINE_FIELDS = [
   ["seats_listening", "seatsListening"],
   ["seats_active_not_listening", "seatsActiveNotListening"],
   ["seats_silent", "seatsSilent"],
+  ["seats_deaf", "seatsDeaf"],
 ] as const satisfies readonly (readonly [string, keyof Headline])[];
 
 /** Read the snapshot's `headline` block; null when absent or any counter is malformed. */

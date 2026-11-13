@@ -62,7 +62,9 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
     // The participants connect through the client library and run no waiter: the
     // socket that receives their messages is their own, so each reads listening.
     await expect(region("Fleet roster").locator(".roster-row--not-listening")).toHaveCount(0);
-    for (const word of ["waker missing", "offline", "not listening", "silent"]) {
+    // Every participant acted within the hub's 90-second window, so the hub proves
+    // each one live and none reads deaf.
+    for (const word of ["waker missing", "offline", "not listening", "silent", "deaf"]) {
       await expect(region("Fleet roster")).not.toContainText(word);
     }
     // The snapshot carries open work in full and counts the closed tasks.

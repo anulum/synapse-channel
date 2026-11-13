@@ -38,6 +38,9 @@ glossary in ``docs/cockpit.md`` repeats them):
     Observed peer hubs that answered / that are configured.
 ``seats_listening`` / ``seats_active_not_listening`` / ``seats_silent``
     Seats in each state of :mod:`synapse_channel.dashboard_seats`.
+``seats_deaf``
+    Seats the hub judges not proven live (no live waiter, no reaction within its
+    window): the seats a directed message to which draws a warning to its sender.
 """
 
 from __future__ import annotations
@@ -68,6 +71,7 @@ HEADLINE_KEYS = (
     "seats_listening",
     "seats_active_not_listening",
     "seats_silent",
+    "seats_deaf",
 )
 """Every headline counter, in display order."""
 
@@ -96,6 +100,9 @@ def _seat_counts(seats: list[Mapping[str, Any]]) -> dict[str, int]:
         "seats_listening": states.count("listening"),
         "seats_active_not_listening": states.count("active, not listening"),
         "seats_silent": states.count("silent"),
+        "seats_deaf": sum(
+            1 for seat in seats if _mapping(seat.get("reaction")).get("proven") is False
+        ),
     }
 
 

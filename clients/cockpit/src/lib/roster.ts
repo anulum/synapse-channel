@@ -6,7 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — derive the operator fleet roster from a fleet snapshot
 
-import type { ClaimRecord, FleetSnapshot, SeatState } from "../types";
+import type { ClaimRecord, FleetSnapshot, SeatReaction, SeatState } from "../types";
 
 /**
  * A row's worst condition. Ordered worst-first so it doubles as sort priority:
@@ -31,6 +31,13 @@ export interface RosterEntry {
    * or "silent". A seat is never called offline (`dashboard_seats.py`).
    */
   readonly seat: SeatState;
+  /**
+   * The hub judges the seat deaf (no live waiter, no reaction within its window,
+   * so it warns a sender): when the seat last reacted, on the hub's clock in epoch
+   * seconds, or null when no reaction was seen. Null when the hub judges it live
+   * or made no judgement. A time, not an age, so it never goes stale.
+   */
+  readonly deaf: { readonly lastReactionAt: number | null } | null;
   readonly activeClaims: readonly ClaimRecord[];
   readonly staleClaims: readonly ClaimRecord[];
   /** Every distinct path the identity holds, active or stale, sorted. */
@@ -57,6 +64,12 @@ function statusFor(inConflict: boolean, hasStale: boolean, hasActive: boolean): 
   if (hasStale) return "stale";
   if (hasActive) return "holding";
   return "idle";
+}
+
+function deafOf(reaction: SeatReaction | undefined, hubTime: unknown): RosterEntry["deaf"] {
+  if (reaction?.proven !== false) return null;
+  const age = reaction.lastReactionAge;
+  return { lastReactionAt: age === null || typeof hubTime !== "number" ? null : hubTime - age };
 }
 
 function fallbackSeat(connected: boolean, holding: boolean): SeatState {
@@ -87,7 +100,9 @@ function groupByOwner(claims: readonly ClaimRecord[]): Map<string, ClaimRecord[]
 export function deriveRoster(snapshot: FleetSnapshot | null): RosterEntry[] {
   if (snapshot === null) return [];
 
-  const seats = new Map(snapshot.fleet.seats.map((seat) => [seat.identity, seat.state]));
+  const rowsBySeat = new Map(snapshot.fleet.seats.map((seat) => [seat.identity, seat]));
+  const seats = new Map([...rowsBySeat].map(([identity, row]) => [identity, row.state]));
+  const hubTime = snapshot.state["generated_at"];
   const live = new Set(snapshot.fleet.agents.live);
   const online = new Set([...snapshot.online_agents, ...live]);
   const inConflict = conflictOwners(snapshot);
@@ -112,6 +127,7 @@ export function deriveRoster(snapshot: FleetSnapshot | null): RosterEntry[] {
       status: statusFor(inConflict.has(agent), staleClaims.length > 0, activeClaims.length > 0),
       // Without the hub's projection (an older dashboard) only presence and claims are known.
       seat: seats.get(agent) ?? fallbackSeat(online.has(agent), activeClaims.length > 0),
+      deaf: deafOf(rowsBySeat.get(agent)?.reaction, hubTime),
       activeClaims,
       staleClaims,
       paths,

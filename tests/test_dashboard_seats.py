@@ -9,15 +9,20 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from synapse_channel.core.agent_liveness import deaf_mark, format_reaction_age
+from synapse_channel.core.hub import SynapseHub
 from synapse_channel.dashboard import DashboardSnapshot, fetch_dashboard_snapshot
 from synapse_channel.dashboard_bounds import bound_snapshot
+from synapse_channel.dashboard_fleet import render_fleet_visibility_html
 from synapse_channel.dashboard_live_transport import snapshot_fingerprint
 from synapse_channel.dashboard_seats import SEAT_ACTIVE_WINDOW_SECONDS, build_seats
 
 NOW = 1_783_000_000.0
+NO_JUDGEMENT = {"proven": None, "live_waiter": None, "last_reaction_age": None, "mark": ""}
 
 
 def _states(rows: list[dict[str, Any]]) -> dict[str, str]:
@@ -45,6 +50,7 @@ def test_a_seat_holding_a_claim_with_nobody_listening_is_active_not_listening() 
             "evidence": "claim",
             "evidence_at": NOW - 86_400,  # a held claim counts at any age
             "state": "active, not listening",
+            "reaction": NO_JUDGEMENT,
         }
     ]
 
@@ -121,6 +127,7 @@ def test_a_time_that_is_not_a_finite_number_is_no_evidence() -> None:
             "evidence": None,
             "evidence_at": None,
             "state": "silent",
+            "reaction": NO_JUDGEMENT,
         }
     ]
 
@@ -222,3 +229,147 @@ async def test_a_real_seat_that_claimed_and_left_reads_active_not_listening() ->
     assert seats["SEATS/claimer"]["state"] == "active, not listening"
     assert seats["SEATS/claimer"]["evidence"] == "claim"
     assert seats["SEATS/observer"]["state"] == "listening"
+
+
+def test_the_hub_s_word_for_a_seat_that_does_not_react() -> None:
+    """The dashboard says "deaf" exactly as ``synapse who`` does."""
+    assert [format_reaction_age(age) for age in (0, 59.9, 60, 3599, 3600)] == [
+        "~0s",
+        "~59s",
+        "~1m",
+        "~59m",
+        "~1h",
+    ]
+    assert deaf_mark({"proven_live": True, "last_reaction_age": 900}) == ""
+    assert deaf_mark({"proven_live": False, "last_reaction_age": 240}) == "deaf ~4m"
+    assert deaf_mark({"proven_live": False, "last_reaction_age": None}) == "deaf — no reaction seen"
+
+
+def test_each_seat_carries_the_hub_s_judgement_and_none_where_it_made_none() -> None:
+    liveness = {
+        "S/quiet": {"proven_live": False, "has_live_waiter": False, "last_reaction_age": 240.5},
+        "S/never": {"proven_live": False, "has_live_waiter": False, "last_reaction_age": None},
+        "S/heard": {"proven_live": True, "has_live_waiter": True, "last_reaction_age": 3.0},
+        "S/talker": {"proven_live": True, "has_live_waiter": False, "last_reaction_age": 2.0},
+        "S/odd": {"proven_live": "yes", "has_live_waiter": 1, "last_reaction_age": float("nan")},
+        "S/junk": "not a record",
+    }
+    online = ["S/quiet", "S/never", "S/heard", "S/talker", "S/odd", "S/junk", "S/unjudged"]
+    rows = {
+        row["identity"]: row["reaction"]
+        for row in build_seats(online, {}, {}, now=NOW, liveness=liveness)
+    }
+
+    assert rows == {
+        "S/quiet": {
+            "proven": False,
+            "live_waiter": False,
+            "last_reaction_age": 240.5,
+            "mark": "deaf ~4m",
+        },
+        "S/never": {
+            "proven": False,
+            "live_waiter": False,
+            "last_reaction_age": None,
+            "mark": "deaf — no reaction seen",
+        },
+        "S/heard": {"proven": True, "live_waiter": True, "last_reaction_age": 3.0, "mark": ""},
+        # Proven by its own reaction, without a waiter.
+        "S/talker": {"proven": True, "live_waiter": False, "last_reaction_age": 2.0, "mark": ""},
+        "S/odd": NO_JUDGEMENT,
+        "S/junk": NO_JUDGEMENT,
+        "S/unjudged": NO_JUDGEMENT,  # the hub judged it not: nothing is invented
+    }
+    # A hub that tracks no reactions sends none, and every seat has no judgement.
+    assert all(row["reaction"] == NO_JUDGEMENT for row in build_seats(online, {}, {}, now=NOW))
+
+
+def _judged(age: float, *, proven: bool) -> DashboardSnapshot:
+    return DashboardSnapshot(
+        online_agents=["S/quiet"],
+        state={"active_claims": [], "generated_at": NOW},
+        board={"tasks": []},
+        manifest=[],
+        agent_liveness={
+            "S/quiet": {"proven_live": proven, "has_live_waiter": False, "last_reaction_age": age}
+        },
+    )
+
+
+def test_only_a_proven_flip_moves_the_weak_tag_and_the_document_keeps_no_raw_ages() -> None:
+    tags = [
+        snapshot_fingerprint(bound_snapshot(_judged(age, proven=proven).to_dict()))
+        for age, proven in ((100.0, False), (4000.0, False), (4001.0, True), (9000.0, True))
+    ]
+    document = _judged(240.0, proven=False).to_dict()
+
+    assert tags[0] == tags[1]  # only the age and its mark grew
+    assert tags[1] != tags[2]  # the hub now proves the seat live
+    assert tags[2] == tags[3]
+    assert "agent_liveness" not in document
+    assert document["headline"]["seats_deaf"] == 1
+    assert _judged(1.0, proven=True).to_dict()["headline"]["seats_deaf"] == 0
+
+
+def test_the_classic_page_shows_the_hub_s_mark() -> None:
+    page = render_fleet_visibility_html(_judged(7300.0, proven=False))
+
+    assert "<li>S/quiet: listening · deaf ~2h</li>" in page
+
+
+async def test_a_real_hub_s_judgement_reaches_each_seat() -> None:
+    hub = SynapseHub(
+        hub_id="seats-reaction", warn_stale_recipients=True, recipient_liveness_window=1.0
+    )
+    async with running_hub(hub) as (_, uri):
+        quiet = await connect_agent("SEATS/quiet", uri)
+        await asyncio.sleep(1.5)  # past the hub's window, without a reaction
+        deaf = await fetch_dashboard_snapshot(
+            uri=uri, name="SEATS/observer", token=None, ready_timeout=2.0, response_timeout=2.0
+        )
+        waiter = await connect_agent("SEATS/quiet-rx", uri)
+        armed = await fetch_dashboard_snapshot(
+            uri=uri, name="SEATS/observer", token=None, ready_timeout=2.0, response_timeout=2.0
+        )
+        await close_agents(quiet, waiter)
+
+    before = {row["identity"]: row for row in deaf.to_dict()["fleet"]["seats"]}
+    after = {row["identity"]: row for row in armed.to_dict()["fleet"]["seats"]}
+    assert before["SEATS/quiet"]["state"] == "listening"
+    assert before["SEATS/quiet"]["reaction"]["proven"] is False
+    assert before["SEATS/quiet"]["reaction"]["mark"].startswith("deaf ~")
+    assert before["SEATS/observer"]["reaction"]["proven"] is True  # it asked: a reaction
+    assert after["SEATS/quiet"]["reaction"]["proven"] is True
+    assert after["SEATS/quiet"]["reaction"]["live_waiter"] is True
+    assert (
+        deaf.to_dict()["headline"]["seats_deaf"],
+        armed.to_dict()["headline"]["seats_deaf"],
+    ) == (1, 0)
+
+
+def test_a_seat_row_without_a_reaction_is_fingerprinted_whole() -> None:
+    """A hand-written document may carry seat rows the projection never makes."""
+    odd = {"fleet": {"seats": ["odd", {"identity": "a/one"}]}}
+    other = {"fleet": {"seats": ["odd", {"identity": "a/two"}]}}
+
+    assert snapshot_fingerprint(odd) == snapshot_fingerprint(odd)
+    assert snapshot_fingerprint(odd) != snapshot_fingerprint(other)
+
+
+def test_a_changed_judgement_moves_the_weak_tag_even_when_no_count_moves() -> None:
+    """Proven, then no judgement: the same waiter flag and age, and no deaf seat either way."""
+
+    def tag(info: dict[str, Any]) -> str:
+        snapshot = DashboardSnapshot(
+            online_agents=["S/seat"],
+            state={"active_claims": [], "generated_at": NOW},
+            board={"tasks": []},
+            manifest=[],
+            agent_liveness={"S/seat": info},
+        )
+        return snapshot_fingerprint(bound_snapshot(snapshot.to_dict()))
+
+    proven = {"proven_live": True, "has_live_waiter": False, "last_reaction_age": 5.0}
+    unjudged = {"has_live_waiter": False, "last_reaction_age": 5.0}
+
+    assert tag(proven) != tag(unjudged)

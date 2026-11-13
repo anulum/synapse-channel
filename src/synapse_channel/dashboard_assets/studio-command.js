@@ -195,13 +195,17 @@
     drawClock(data);
 
     // Each seat with what the hub knows of it: listening, active but not
-    // listening, or silent. A seat is never called offline.
+    // listening, or silent; and "deaf" with how long, as synapse who says it, when
+    // the hub would warn a sender. A seat is never called offline.
     const seatTone = { "listening": "ok", "active, not listening": "warn", "silent": "dark" };
-    const seats = ((data.agents || {}).seats || []).map((seat) => ({
-      name: seat.identity,
-      state: seat.state,
-      tone: seatTone[seat.state] || "dark",
-    }));
+    const seats = ((data.agents || {}).seats || []).map((seat) => {
+      const mark = (seat.reaction || {}).mark || "";
+      return {
+        name: seat.identity,
+        state: mark ? seat.state + " · " + mark : seat.state,
+        tone: mark ? "warn" : seatTone[seat.state] || "dark",
+      };
+    });
     list("cc-agents-list", seats, (seat) => [dot(seat.tone), value(seat.name), value(seat.state, "cc-muted")]);
 
     const claims = data.claims || {};

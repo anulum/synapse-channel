@@ -28,6 +28,9 @@ explicitly disable the warning and delivery gate together for compatibility.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 DEFAULT_WARN_STALE_RECIPIENTS = True
 """Whether a bare hub reports and gates recipients that are not proven live."""
 
@@ -60,6 +63,32 @@ connects as ``<identity>-pane-rx``. Either fresh socket is independent evidence 
 when the identity itself has not reacted within the window. These constants live in
 ``core`` so routing, authorization, and feature-layer roster views share one contract.
 """
+
+
+def format_reaction_age(seconds: float) -> str:
+    """Render an elapsed-since-last-reaction duration coarsely (``~4m``, ``~2h``)."""
+    if seconds < 60:
+        return f"~{int(seconds)}s"
+    if seconds < 3600:
+        return f"~{int(seconds // 60)}m"
+    return f"~{int(seconds // 3600)}h"
+
+
+def deaf_mark(info: Mapping[str, Any]) -> str:
+    """Return the hub's word for a present agent that is not proven live, else ``""``.
+
+    ``info`` is one entry of the ``who`` snapshot's ``agent_liveness``. A proven-live
+    agent (a live waiter, or a reaction within the window) has no mark. Otherwise the
+    mark is ``deaf`` with how long the agent has been silent (``deaf ~4m``), or
+    ``deaf — no reaction seen`` when the hub has seen none. ``synapse who`` and the
+    dashboard print the same words.
+    """
+    if info.get("proven_live"):
+        return ""
+    age = info.get("last_reaction_age")
+    if age is None:
+        return "deaf — no reaction seen"
+    return f"deaf {format_reaction_age(float(age))}"
 
 
 def waiter_owner(name: str) -> str:

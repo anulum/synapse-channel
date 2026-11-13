@@ -45,6 +45,7 @@ function rosterEntry(agent: string): RosterEntry {
     agent,
     status: "idle",
     seat: "listening",
+    deaf: null,
     activeClaims: [],
     staleClaims: [],
     paths: [],

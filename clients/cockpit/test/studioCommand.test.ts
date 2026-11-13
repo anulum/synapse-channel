@@ -135,6 +135,7 @@ it("lists each seat with its state and tone, never as offline", () => {
         { identity: "seat/ear", state: "listening" },
         { identity: "seat/hand", state: "active, not listening" },
         { identity: "seat/quiet", state: "silent" },
+        { identity: "seat/deaf", state: "listening", reaction: { proven: false, mark: "deaf ~5h" } },
       ],
     },
   });
@@ -144,11 +145,14 @@ it("lists each seat with its state and tone, never as offline", () => {
     ["syn-dot syn-dot--ok", "seat/earlistening"],
     ["syn-dot syn-dot--warn", "seat/handactive, not listening"],
     ["syn-dot syn-dot--dark", "seat/quietsilent"],
+    // The hub's mark, as synapse who prints it, and a warning tone.
+    ["syn-dot syn-dot--warn", "seat/deaflistening · deaf ~5h"],
   ]);
   expect(rows.map((row) => row.querySelector(".cc-muted")?.textContent)).toEqual([
     "listening",
     "active, not listening",
     "silent",
+    "listening · deaf ~5h",
   ]);
 });
 
