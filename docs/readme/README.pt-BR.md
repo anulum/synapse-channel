@@ -24,6 +24,8 @@ SYNAPSE CHANNEL — visão geral do repositório (tradução em português do Br
   <img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/header.png" width="1280" alt="SYNAPSE CHANNEL — local-first multi-agent coordination bus">
 </p>
 
+> This repository is a public mirror of ANULUM's canonical source; development history predating publication is held privately.
+
 <p align="center">
   <em>Coordene agentes de IA paralelos por escopos de arquivos declarados; hooks e o gate de Git cobrem apenas as mutações documentadas.</em>
 </p>

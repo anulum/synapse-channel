@@ -24,6 +24,8 @@ SYNAPSE CHANNEL — 저장소 개요 (한국어 번역본이며, 영어 원문�
   <img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/header.png" width="1280" alt="SYNAPSE CHANNEL — local-first multi-agent coordination bus">
 </p>
 
+> This repository is a public mirror of ANULUM's canonical source; development history predating publication is held privately.
+
 <p align="center">
   <em>선언한 파일 범위로 병렬 AI 에이전트를 조율하세요. 훅과 Git 게이트는 문서에 명시된 변경 범위만 다룹니다.</em>
 </p>

@@ -13,6 +13,8 @@ SYNAPSE CHANNEL — repository overview
   <img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/header.png" width="1280" alt="SYNAPSE CHANNEL — local-first multi-agent coordination bus">
 </p>
 
+> This repository is a public mirror of ANULUM's canonical source; development history predating publication is held privately.
+
 <p align="center">
   <strong>The local-first coordination bus for fleets of AI agents.</strong><br>
   One WebSocket hub is the shared source of truth for presence, file-scope claims, a shared plan, task status, and capabilities — for agents working in one repository or across a whole ecosystem of them.

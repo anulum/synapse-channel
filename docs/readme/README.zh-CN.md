@@ -24,6 +24,8 @@ SYNAPSE CHANNEL — 仓库概览（简体中文翻译；英文原文为准）
   <img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/header.png" width="1280" alt="SYNAPSE CHANNEL — local-first multi-agent coordination bus">
 </p>
 
+> This repository is a public mirror of ANULUM's canonical source; development history predating publication is held privately.
+
 <p align="center">
   <em>通过声明的文件范围协调并行 AI 智能体；hook 和 Git 检查仅覆盖各自文档规定的修改边界。</em>
 </p>

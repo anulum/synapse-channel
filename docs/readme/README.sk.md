@@ -24,6 +24,8 @@ SYNAPSE CHANNEL — prehľad repozitára (slovenský preklad; anglický originá
   <img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/header.png" width="1280" alt="SYNAPSE CHANNEL — local-first multi-agent coordination bus">
 </p>
 
+> This repository is a public mirror of ANULUM's canonical source; development history predating publication is held privately.
+
 <p align="center">
   <em>Koordinujte paralelné AI agenty cez deklarované rozsahy súborov; hooky a Git gate kontrolujú iba dokumentované mutácie.</em>
 </p>
