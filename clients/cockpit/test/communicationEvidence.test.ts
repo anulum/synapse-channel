@@ -14,6 +14,7 @@ import {
   isChatEvent,
   receiptOutcome,
   receiptOutcomeRank,
+  storedKindOf,
 } from "../src/lib/communicationEvidence";
 import type { CockpitEvent } from "../src/types";
 
@@ -58,6 +59,18 @@ describe("communication evidence normalisation", () => {
     expect(receiptOutcome(event("delivery_receipt_other", {}))).toBeNull();
     expect(receiptOutcome(event("chat", { delivered: true }))).toBeNull();
     expect(receiptOutcome(event("delivery_receipt_missing"))).toBeNull();
+  });
+
+  it("reads the stored kind, not the hub's words, when the event carries both", () => {
+    const worded = (storedKind: string, payload: Record<string, unknown>): CockpitEvent => ({
+      ...event("delivery receipt failed: P/a", payload),
+      storedKind,
+    });
+    expect(receiptOutcome(worded("delivery_receipt_expired", {}))).toBe("failed");
+    expect(receiptOutcome(worded("delivery_receipt_immediate", { delivered: true }))).toBe("delivered");
+    expect(receiptOutcome(worded("chat", { delivered: true }))).toBeNull();
+    expect(storedKindOf(worded("delivery_receipt_deferred", {}))).toBe("delivery_receipt_deferred");
+    expect(storedKindOf(event("delivery_receipt_deferred"))).toBe("delivery_receipt_deferred");
   });
 
   it("orders failure above deferral above delivery", () => {

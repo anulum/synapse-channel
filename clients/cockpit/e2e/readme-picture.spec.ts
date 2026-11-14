@@ -110,6 +110,19 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
       kind: "task",
       actor: "operator:cockpit-e2e-seed",
     });
+    // Every row carries the hub's words: an actor, or "—" where the record names
+    // none, and never a bare stored kind in place of a line.
+    const cells = await region("Signal log").locator("tr.log__row").evaluateAll(rows =>
+      rows.map(row => ({
+        actor: row.querySelector(".log__actor")?.textContent ?? "",
+        label: row.querySelector(".log__label")?.textContent ?? "",
+      })),
+    );
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(cell.actor).not.toBe("");
+      expect(cell.label).not.toMatch(/^[a-z]+(?:_[a-z]+)+$/u);
+    }
     await expect(region("Risk rail")).toContainText("amber", { ignoreCase: true });
     await expect(region("Risk rail")).toContainText("HARBOUR-103");
     // The fleet's plan, posted in its first act, holds four unfinished

@@ -8,6 +8,7 @@
 
 import { eventsInWindow, type TimeWindow } from "./brush";
 import type { ClaimView } from "./claims";
+import { storedKindOf } from "./communicationEvidence";
 import { projectOf } from "./communications";
 import type { CockpitEvent } from "../types";
 
@@ -94,7 +95,7 @@ function text(value: unknown): string {
 }
 
 function timelineLane(event: CockpitEvent): TimelineLane | null {
-  if (event.kind === "chat" || event.label.startsWith("delivery_receipt_")) return "message";
+  if (event.kind === "chat" || storedKindOf(event).startsWith("delivery_receipt_")) return "message";
   if (event.kind === "claim" || event.kind === "lease" || event.kind === "release" || event.kind === "conflict") {
     return "claim";
   }

@@ -585,7 +585,12 @@ configured principal grants as protected dashboard data:
 - `/events.json?since=SEQ&limit=N` — the raw event-log tail past a
   cursor, in the exact multihub snapshot shape (`events`, `next_cursor`,
   and `log_end_seq`),
-  so a polling client can continue through retained rows. Persist a cursor only
+  so a polling client can continue through retained rows. Each event of a kind
+  the hub knows also carries the hub's words for it: `actor`, the identity its
+  writer recorded (empty when the record names none, as for a release), and
+  `summary`, one line. They come from `core/event_description.py`, which has an
+  entry for every journal kind, and are added after the multihub encoding, so
+  the shape peer hubs exchange is unchanged. Persist a cursor only
   after processing its page; this response does not acknowledge consumer work,
   prevent caller duplicates or recover compacted/deleted rows;
   `since=latest` starts at the log's end — the tail shortcut that spares

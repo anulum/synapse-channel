@@ -40,6 +40,12 @@ export interface CockpitEvent {
   readonly actor: string;
   /** Short human-readable summary for the detail panel and tooltip. */
   readonly label: string;
+  /**
+   * The kind the hub journalled (`delivery_receipt_expired`, …), on hub-attested
+   * events. Code that needs the stored kind reads it here, never from `label`,
+   * which carries the hub's words.
+   */
+  readonly storedKind?: string;
   /** The task the event concerns, when it names one; "" otherwise. */
   readonly taskId: string;
   /**

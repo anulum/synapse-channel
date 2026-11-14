@@ -50,7 +50,7 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from synapse_channel.core.causality import DEFAULT_MAX_GRAPH_NODES, causality_to_json, run_causality
 from synapse_channel.core.causality_health import (
@@ -59,6 +59,7 @@ from synapse_channel.core.causality_health import (
     run_causal_health,
 )
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.event_description import describe_event
 from synapse_channel.core.federation_lifecycle import classify_federation_lifecycle
 from synapse_channel.core.federation_store import load_store
 from synapse_channel.core.federation_wire import bundle_fingerprint
@@ -164,6 +165,9 @@ def build_events_tail(
     dict[str, object]
         ``encode_log_snapshot`` output: ``events`` (each with real ``seq``,
         ``ts``, ``kind``, ``payload``) and ``next_cursor`` for the next poll.
+        Each event of a kind the hub knows also carries the hub's words for it,
+        ``actor`` and ``summary`` (:func:`describe_event`). They are added here,
+        after the multihub wire encoding, so that wire shape stays as it is.
 
     Raises
     ------
@@ -182,9 +186,17 @@ def build_events_tail(
     finally:
         store.close()
     next_cursor = events[-1].seq if events else max(0, int(since))
-    return encode_log_snapshot(
+    document = encode_log_snapshot(
         LogSnapshot(events=tuple(events), next_cursor=next_cursor, log_end_seq=log_end_seq)
     )
+    worded = [_with_words(event) for event in cast("list[dict[str, Any]]", document["events"])]
+    return {**document, "events": worded}
+
+
+def _with_words(event: dict[str, Any]) -> dict[str, Any]:
+    """Return one encoded event with the hub's ``actor`` and ``summary``, when it knows its kind."""
+    words = describe_event(str(event.get("kind", "")), event.get("payload") or {})
+    return event if words is None else {**event, "actor": words.actor, "summary": words.summary}
 
 
 METRIC_WINDOWS_SECONDS = {"last_hour": 3600.0, "last_day": 86400.0}

@@ -32,13 +32,22 @@ export function isChatEvent(event: CockpitEvent): boolean {
   );
 }
 
+/**
+ * The kind the hub journalled. An event built before `storedKind` existed (an
+ * older export) carried that kind as its label, so the label stands in for it.
+ */
+export function storedKindOf(event: CockpitEvent): string {
+  return event.storedKind ?? event.label;
+}
+
 /** Project one retained delivery-receipt event into its finality class. */
 export function receiptOutcome(event: CockpitEvent): ReceiptOutcome | null {
   const payload = event.payload;
-  if (payload === undefined || !event.label.startsWith("delivery_receipt_")) return null;
-  if (event.label === "delivery_receipt_expired" || payload["expired"] === true) return "failed";
-  if (event.label === "delivery_receipt_deferred" || payload["deferred"] === true) return "deferred";
-  if (event.label === "delivery_receipt_immediate") {
+  const kind = storedKindOf(event);
+  if (payload === undefined || !kind.startsWith("delivery_receipt_")) return null;
+  if (kind === "delivery_receipt_expired" || payload["expired"] === true) return "failed";
+  if (kind === "delivery_receipt_deferred" || payload["deferred"] === true) return "deferred";
+  if (kind === "delivery_receipt_immediate") {
     return payload["delivered"] === true ? "delivered" : "failed";
   }
   return null;

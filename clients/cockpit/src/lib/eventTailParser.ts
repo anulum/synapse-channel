@@ -6,12 +6,19 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — defensive parsing for the hub-attested event tail
 
-/** One stored event as the multihub wire encodes it. */
+/** The hub's own words for one event: who acted ("" when its record names no one), and one line. */
+export interface HubWords {
+  readonly actor: string;
+  readonly summary: string;
+}
+
+/** One stored event as the multihub wire encodes it, with the hub's words when the dashboard sent them. */
 export interface StoredEvent {
   readonly seq: number;
   readonly ts: number;
   readonly kind: string;
   readonly payload: Record<string, unknown>;
+  readonly words?: HubWords;
 }
 
 /** One parsed cursor page from the durable event endpoint. */
@@ -38,12 +45,16 @@ function asNumber(value: unknown): number {
 /** Parse one wire event tolerantly; a malformed entry yields seq 0 (dropped). */
 export function parseStoredEvent(raw: unknown): StoredEvent {
   const event = asRecord(raw);
-  return {
+  const stored = {
     seq: Math.trunc(asNumber(event["seq"])),
     ts: asNumber(event["ts"]),
     kind: asString(event["kind"]),
     payload: asRecord(event["payload"]),
   };
+  const summary = event["summary"];
+  return typeof summary === "string"
+    ? { ...stored, words: { actor: asString(event["actor"]), summary } }
+    : stored;
 }
 
 /** Parse a tail response; `null` when the payload is not an object at all. */

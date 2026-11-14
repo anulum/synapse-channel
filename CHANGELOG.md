@@ -262,6 +262,17 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- The events feed carries the hub's own words for every event. Each event in
+  `/events.json` (and the live stream's events channel) of a kind the journal
+  names has an `actor`, the identity its writer recorded or empty, and a
+  one-line `summary`, from one describer in `core/event_description.py` with an
+  entry for every `EventKind`; a test holds the two to the same set. The cockpit's
+  former labels moved there as they were, receipt-bearing kinds use the universal
+  receipt's actor and line, and the rest got new words in the same style. The
+  words are added after the multihub encoding, so the shape peer hubs exchange is
+  unchanged. The cockpit's signal log shows them for every kind and keeps its own
+  lanes; without them it words events as before. A release row names no actor:
+  its record holds only the task id.
 - `synapse listen` declares the wake capability `passive`: it prints what it
   receives and never acts on it. The `synapse-presence@` units run it, so a
   presence holder installed by an older package takes this at its next start

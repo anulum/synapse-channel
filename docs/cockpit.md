@@ -597,13 +597,19 @@ Its filter query lives in the URL hash, so you can copy a filtered-log address.
 The exported JSON states its query, provenance, time window, and count.
 
 Each row keeps the hub's sequence and time, and names its lane, kind and actor.
-A claim, a task update and a release ride the claims lane, with the claim's
-owner. A recorded finding rides the task lane, with the author the hub attested.
-An operator relay rides the task lane, with its operator and its status. A relay
+The actor and the line are the hub's own words for the event: `/events.json`
+carries an `actor` and a `summary` for every kind the journal names, read from
+the fields each event's writer records. The actor shows "—" where the record
+names none, as for a release, whose record holds only the task id. The lane is
+the cockpit's. A claim, a task update and a release ride the claims lane. A
+recorded finding rides the task lane, with the author the hub attested. An
+operator relay rides the task lane, with its operator and its status. A relay
 the operator-actions feed reads as refused rides the risk lane instead: one
 with no recorded status that was neither applied nor left pending. A kind of
-event the cockpit does not map stays visible: it is shown as chat on the
-presence lane, with the hub's own name for it as its text.
+event the cockpit has no lane for is shown as chat on the presence lane, with
+the hub's words. Without them, as from an older dashboard or an imported
+export, the cockpit words the kinds it knows itself and shows any other kind
+by its name.
 
 These capabilities cross explicit implementation boundaries without crossing
 their evidence boundary. Workspace state selects live, history, or imported

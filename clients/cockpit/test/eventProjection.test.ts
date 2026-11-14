@@ -183,6 +183,31 @@ describe("durable-event projection", () => {
     });
   });
 
+  it("takes the hub's words for actor and line, and keeps its own lane", () => {
+    const relay = mapStoredEvent({
+      ...stored(40, "operator_relay", { operator: "cockpit-own", action: "release", applied: false }),
+      words: { actor: "op/hub", summary: "operator release T-1 (refused)" },
+    });
+    expect([relay.kind, relay.lane, relay.actor, relay.label]).toEqual([
+      "conflict",
+      "risk",
+      "op/hub",
+      "operator release T-1 (refused)",
+    ]);
+    const unknown = mapStoredEvent({
+      ...stored(41, "mailbox_watermark", { identity: "P/a" }),
+      words: { actor: "P/a", summary: "mailbox read through 4" },
+    });
+    expect([unknown.kind, unknown.lane, unknown.actor, unknown.label]).toEqual([
+      "chat",
+      "presence",
+      "P/a",
+      "mailbox read through 4",
+    ]);
+    const silent = mapStoredEvent({ ...stored(42, "release", { task_id: "T-2" }), words: { actor: "", summary: "released T-2" } });
+    expect([silent.actor, silent.label, silent.storedKind]).toEqual(["", "released T-2", "release"]);
+  });
+
   it("truncates an over-long chat payload and shows unknown kinds by name", () => {
     const long = "x".repeat(400);
     const chat = mapStoredEvent(stored(8, "chat", { sender: "d", payload: long }));

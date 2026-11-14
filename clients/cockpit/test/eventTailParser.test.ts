@@ -19,6 +19,18 @@ describe("event-tail parsing", () => {
       payload: { a: 1 },
     });
     expect(parseStoredEvent("junk")).toEqual({ seq: 0, ts: 0, kind: "", payload: {} });
+    expect(parseStoredEvent({ seq: 8, kind: "release", payload: {}, actor: "", summary: "released T" })).toEqual({
+      seq: 8,
+      ts: 0,
+      kind: "release",
+      payload: {},
+      words: { actor: "", summary: "released T" },
+    });
+    expect(parseStoredEvent({ seq: 9, kind: "chat", actor: 7, summary: "hi" }).words).toEqual({
+      actor: "",
+      summary: "hi",
+    });
+    expect(parseStoredEvent({ seq: 9, kind: "chat", actor: "P/a", summary: 3 }).words).toBeUndefined();
     const tail = parseTail({
       events: [{ seq: 3, ts: 1, kind: "chat", payload: {} }, "junk"],
       next_cursor: 3,

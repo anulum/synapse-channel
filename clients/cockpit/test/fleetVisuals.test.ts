@@ -59,6 +59,14 @@ function claim(owner: string, taskId: string, inConflict = false): ClaimView {
 }
 
 describe("deriveFleetTimeline", () => {
+  it("puts a delivery receipt on the message lane by its stored kind, whatever its words", () => {
+    const receipt = {
+      ...event(1, "presence", "delivery receipt delivered: delta/four"),
+      storedKind: "delivery_receipt_immediate",
+    };
+    expect(deriveFleetTimeline([receipt]).points.map((point) => point.lane)).toEqual(["message"]);
+  });
+
   it("maps every supported retained event family and leaves unrelated presence inert", () => {
     const result = deriveFleetTimeline([
       event(1, "presence", "connected"),

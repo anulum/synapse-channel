@@ -40,8 +40,11 @@ function relayStatus(payload: Record<string, unknown>): string {
 
 /**
  * Map one stored hub event onto the cockpit event model. Every mapping keeps
- * the hub's seq and ts verbatim. A kind this build does not know renders on
- * the chatter lane under its own name — shown, never hidden, never dressed up.
+ * the hub's seq and ts verbatim. The lane is the cockpit's own reading of the
+ * kind; the actor and the line are the hub's words when the dashboard sent them
+ * (`core/event_description.py`), and this build's own otherwise, as from an
+ * older dashboard. A kind with neither renders on the chatter lane under its
+ * own name — shown, never hidden, never dressed up.
  */
 export function mapStoredEvent(stored: StoredEvent): CockpitEvent {
   const payload = stored.payload;
@@ -110,6 +113,10 @@ export function mapStoredEvent(stored: StoredEvent): CockpitEvent {
     actor = "";
     label = stored.kind;
   }
+  if (stored.words !== undefined) {
+    actor = stored.words.actor;
+    label = stored.words.summary;
+  }
 
   return {
     seq: stored.seq,
@@ -121,5 +128,6 @@ export function mapStoredEvent(stored: StoredEvent): CockpitEvent {
     label,
     taskId,
     payload: stored.payload,
+    storedKind: stored.kind,
   };
 }
