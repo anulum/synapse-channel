@@ -292,11 +292,12 @@ The run's authority is the operator's local grants file, named in
 `authority` in the report and in both records. It is not a hub grant and does
 not authenticate the seat named by `--subject`.
 
-A run like this is outside the hub's governed operations. The hub holds no
-declaration, approval, attempt or outcome for it, so nothing that reads the
-hub's records counts it, and an approval on the hub neither admits it nor is
-needed for it. Its records are the local journal's alone. An effect that must
-be approved and recorded on the hub follows the
+Without `--hub`, a run like this is outside the hub's governed operations. The
+hub holds no declaration, approval, attempt or outcome for it, so nothing that
+reads the hub's records counts it, and an approval on the hub neither admits it
+nor is needed for it. Its records are the local journal's alone. An effect that
+must be approved and recorded on the hub runs
+[through the hub](#through-the-hub-opt-in), which follows the
 [integrator contract](integrator-contract.md): declare the operation on its
 claimed task, obtain an approval bound to its exact intent, open one attempt
 for that intent, and publish the outcome.
@@ -310,7 +311,7 @@ The report is one JSON object with `state` (`confirmed_done`,
 `confirmed_failed`, `not_started`, `unknown`), `observation`,
 `external_effect` (`unknown` unless a verifier observed it),
 `verification_error`, `output_truncated`, `output_complete`, `output_error`,
-`authority` and
+`authority`, `hub_governed` and
 `automatic_retry: false`.
 
 | Exit | Meaning |
@@ -319,6 +320,41 @@ The report is one JSON object with `state` (`confirmed_done`,
 | 1 | the component failed, the result is not verified, or `inquire` finds no run |
 | 2 | refused; nothing was invoked |
 | 3 | the outcome or the result is unknown |
+
+### Through the hub (opt-in)
+
+With `--hub URI`, a run goes through the hub's governed operations as well as
+the local grants ([integrator contract](integrator-contract.md)). It takes two
+calls. Both need `--task` (the claimed task), `--epoch` (the claim's epoch),
+`--intent-deadline` (UNIX seconds, at most 366 days ahead), `--verify-file` and
+`--verify-sha256`. `--name` is the identity on the hub; it defaults to
+`--subject`.
+
+1. `--declare` plans the row and declares the operation with an authorisation
+   intent built from the plan: the tool and its version, the executable's
+   fingerprint, the row's binding digest, the digest of the row's identity and
+   command line, the file's state now and the content it must hold afterwards.
+   It prints one JSON object with the hub's `intent_sha256`, and runs nothing.
+   Another identity of the project approves that digest through its verdict
+   gate.
+2. `--intent-sha256 HEX` plans again and composes the whole intent locally. A
+   different digest is refused before the hub is asked: the program, the
+   arguments, the file or the identity changed since the declaration. The local
+   grants are checked next, so a missing permission never consumes the
+   approval. The hub is then asked for one attempt of that exact intent
+   (`--idem-key` asks again after a lost answer), and the run starts only when
+   the attempt is open. Its outcome is published on the task, which ends the
+   attempt.
+
+Both authorities are required, and `authority` names both
+(`…; hub_attempt:<attempt id>`). Only a row that changes one file goes through:
+an `execute` row is refused, and so are `extend` and `approve` rows, because an
+approval on the hub is not a named person's consent. A report says
+`hub_governed: true` for a run through the hub and `false` otherwise. After
+`--intent-sha256`, exit 1 with an `attempt` object means that the attempt did not
+open. Exit 3 can also mean that the hub did not take the outcome: the attempt
+then stays open until the outcome is published (`synapse operation outcome`) or
+the attempt is sealed.
 
 **Interrupted and lost runs.** A run killed after its start (the runner
 crashed, the machine stopped) has a start without an outcome. A run whose

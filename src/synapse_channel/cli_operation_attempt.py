@@ -26,15 +26,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import json
 import uuid
 from collections.abc import Callable
 from typing import Any
 
+from synapse_channel.cli_hub_request import ask_hub
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.client.agent import SynapseAgent
-from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.terminal_text import terminal_text
 
@@ -79,50 +78,34 @@ async def request_attempt(
     int
         The command's exit code.
     """
-    replies: list[dict[str, Any]] = []
-
-    async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") == MessageType.ERROR or (
+    outcome = await ask_hub(
+        uri=uri,
+        actor=actor,
+        message_type=MessageType.OPERATION_ATTEMPT,
+        fields=fields,
+        answers=lambda data: (
             data.get("type") == MessageType.OPERATION_ATTEMPT_RESULT
             and data.get("request_key") == fields["idem_key"]
-        ):
-            replies.append(data)
-
-    agent = agent_factory(actor, collect, uri=uri, verbose=False, token=token)
-    connection = asyncio.create_task(agent.connect())
-    try:
-        if not await agent.wait_until_ready(timeout=ready_timeout) or await closed_after_ready(
-            agent, timeout=ready_timeout
-        ):
-            failure = describe_connect_failure(
-                actor, uri, close_code=agent.last_close_code, close_reason=agent.last_close_reason
-            )
-            print(terminal_text(failure))
-            print(f"request key: {fields['idem_key']}")
-            return EXIT_NO_VERDICT
-        await agent.send_message(MessageType.OPERATION_ATTEMPT, target="System", **fields)
-        result = await _first_reply(replies, timeout=result_timeout)
-        if result is None:
-            print("operation attempt failed: the hub returned no answer")
-            print(f"request key: {fields['idem_key']}")
-            return EXIT_NO_VERDICT
-        return _report(result, fields, json_output=json_output)
-    finally:
-        agent.running = False
-        connection.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await connection
+        ),
+        token=token,
+        ready_timeout=ready_timeout,
+        result_timeout=result_timeout,
+        agent_factory=agent_factory,
+    )
+    if outcome.reply is None:
+        return _no_answer(outcome.failure, fields)
+    return _report(outcome.reply, fields, json_output=json_output)
 
 
-async def _first_reply(replies: list[dict[str, Any]], *, timeout: float) -> dict[str, Any] | None:
-    """Return the first matching answer or hub error before ``timeout``."""
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + max(float(timeout), 0.0)
-    while loop.time() <= deadline:
-        if replies:
-            return replies[0]
-        await asyncio.sleep(0.01)
-    return None
+def _no_answer(failure: str, fields: dict[str, Any]) -> int:
+    """Print why no answer came, with the key to ask again, and return the exit code."""
+    print(
+        terminal_text(failure)
+        if failure
+        else "operation attempt failed: the hub returned no answer"
+    )
+    print(f"request key: {fields['idem_key']}")
+    return EXIT_NO_VERDICT
 
 
 def _rendered(result: dict[str, Any], fields: dict[str, Any]) -> dict[str, Any]:

@@ -20,14 +20,20 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
-- The authorisation intent of a planned catalogue run, built and not yet used by any command:
-  `synapse_channel.operations.hub_intent` turns a planned `synapse ops run` row into the intent
-  statement and the file target that a hub declaration carries. The tool and its version, the
-  executable's fingerprint, the row's binding digest and the digest of the row's identity and
-  rendered command line all come from the plan, so any change to what would run changes the
-  digest an approval names. Only a row that changes one file goes through: `execute`, `extend` and
-  `approve` rows, and read-only rows, are refused with the reason. The opt-in hub path of
-  `synapse ops run` will use it.
+- `synapse ops run --hub` runs a catalogue operation through the hub's governed operations, opt-in.
+  `--declare` plans the row and declares the operation on the seat's claimed task, with an
+  authorisation intent built from the plan by `synapse_channel.operations.hub_intent`: the tool and
+  its version, the executable's fingerprint, the row's binding digest, the digest of the row's
+  identity and command line, and the one file's state now and expected content afterwards. It prints
+  the hub's intent digest and runs nothing. After another identity of the project approves that
+  digest, `--intent-sha256` plans again and composes the intent locally. A changed plan, file or
+  identity is refused before the hub is asked, and so is a run the local grants do not cover, which
+  never consumes the approval. The run starts only inside the one attempt the hub opens, and its
+  outcome is published on the task, which ends the attempt. The local grants file stays required,
+  and the report names both authorities. Only a row that changes one file goes through: `execute`,
+  `extend`, `approve` and read-only rows are refused with the reason. A run's report now says whether
+  the hub governed it (`hub_governed`). `synapse operation declare` and `synapse operation attempt`
+  share the one hub request the new path uses; their output is unchanged.
 - The wheel carries the cockpit's production build, without source maps (about
   1.3 MB), in `synapse_channel/dashboard_assets/cockpit/`, with
   `THIRD_PARTY_NOTICES.md`: every npm package whose code the build carries, with

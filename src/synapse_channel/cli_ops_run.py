@@ -35,6 +35,7 @@ from synapse_channel.operations.qualification_bundle import PROFILES
 from synapse_channel.operations.runner import (
     OperationRunRefused,
     OperationTarget,
+    RunPlan,
     RunProfile,
     RunReport,
     Verifier,
@@ -90,8 +91,8 @@ def _status(report: RunReport) -> int:
 
 
 def _print(report: RunReport) -> int:
-    """Print the report as JSON and return its exit status."""
-    print(json.dumps(report.to_json(), sort_keys=True))
+    """Print the report of a run outside the hub as JSON and return its exit status."""
+    print(json.dumps({**report.to_json(), "hub_governed": False}, sort_keys=True))
     return _status(report)
 
 
@@ -125,10 +126,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
             trusted_keys(args.trust),
             tuple(args.require_environment),
         )
+        _check_hub_options(args)
         prepared = plan(catalogue, target, arguments, profile=profile)
+        return _hub_path(args, prepared, verifier) if args.hub else _local(args, prepared, verifier)
     except (OSError, ValueError, OperationSpecError) as exc:
         print(f"synapse ops run: refused: {exc}", file=sys.stderr)
         return 2
+
+
+def _local(args: argparse.Namespace, prepared: RunPlan, verifier: Verifier | None) -> int:
+    """Execute the planned run under the local grants alone, outside the hub."""
     try:
         report = execute(
             prepared,
@@ -144,6 +151,33 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"synapse ops run: refused: {exc}", file=sys.stderr)
         return 2
     return _print(report)
+
+
+def _check_hub_options(args: argparse.Namespace) -> None:
+    """Refuse hub options without ``--hub``, and an incomplete hub request."""
+    hub_only = ("task", "epoch", "intent_deadline", "intent_sha256", "idem_key", "name", "token")
+    if not args.hub:
+        named = [name for name in hub_only if getattr(args, name) is not None] + (
+            ["declare"] if args.declare else []
+        )
+        if named:
+            raise OperationRunRefused(f"--{named[0].replace('_', '-')} needs --hub")
+        return
+    if args.task is None or args.epoch is None:
+        raise OperationRunRefused("the hub path needs --task and --epoch")
+    if args.declare == (args.intent_sha256 is not None):
+        raise OperationRunRefused("the hub path takes exactly one of --declare and --intent-sha256")
+
+
+def _hub_path(args: argparse.Namespace, prepared: RunPlan, verifier: Verifier | None) -> int:
+    """Declare the planned run on the hub, or run it inside one approved attempt."""
+    from synapse_channel.cli_ops_hub import declare, run_attempt
+
+    if args.declare:
+        return declare(args, prepared)
+    return run_attempt(
+        args, prepared, verifier, journal=args.journal or default_journal(), status=_status
+    )
 
 
 def _cmd_inquire(args: argparse.Namespace) -> int:
@@ -163,6 +197,23 @@ def _verification_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--verify-file", type=Path, help="File the operation must produce.")
     parser.add_argument("--verify-sha256", help="Requested content SHA-256 of that file.")
     parser.add_argument("--journal", type=Path, help="Run journal directory.")
+
+
+def _hub_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add the options of the opt-in hub path; without ``--hub`` none of them is allowed."""
+    hub = parser.add_argument_group("hub path (opt-in)")
+    hub.add_argument("--hub", default=None, help="Hub URI; run through its governed operations.")
+    hub.add_argument("--task", default=None, help="The claimed task the operation is declared on.")
+    hub.add_argument("--epoch", type=int, default=None, help="The claim's epoch.")
+    hub.add_argument("--name", default=None, help="Identity on the hub (default: --subject).")
+    hub.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    hub.add_argument(
+        "--intent-deadline", type=int, default=None, help="The intent's deadline, UNIX seconds."
+    )
+    hub.add_argument("--idem-key", default=None, help="Key to ask again for a lost attempt answer.")
+    step = hub.add_mutually_exclusive_group()
+    step.add_argument("--declare", action="store_true", help="Declare the run; run nothing.")
+    step.add_argument("--intent-sha256", default=None, help="Run inside an approved attempt.")
 
 
 def add_parsers(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -195,6 +246,7 @@ def add_parsers(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -
     run.add_argument("--timeout", type=float, default=60.0, help="Deadline in seconds.")
     run.add_argument("--catalogue", default=None, help="Catalogue file to read.")
     _verification_arguments(run)
+    _hub_arguments(run)
     run.set_defaults(func=_cmd_run)
 
     ask = commands.add_parser("inquire", help="Report a recorded run; never run it.")

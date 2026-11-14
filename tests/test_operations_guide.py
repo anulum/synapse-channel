@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — the operations guide states where a catalogue run's authority stops
-"""The operations guide says that a local catalogue run is not a governed operation of the hub."""
+"""The operations guide says that only a run through the hub is a governed operation of the hub."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def test_the_guide_says_a_local_run_is_outside_the_hubs_governed_operations() ->
     """A reader learns that the hub neither records nor admits a local run."""
     text = _collapsed("operations.md")
 
-    assert "A run like this is outside the hub's governed operations." in text
+    assert "Without `--hub`, a run like this is outside the hub's governed operations." in text
     assert "The hub holds no declaration, approval, attempt or outcome for it" in text
     assert "an approval on the hub neither admits it nor is needed for it" in text
 
@@ -36,3 +36,14 @@ def test_the_guide_points_to_a_governed_path_that_exists() -> None:
     assert "[integrator contract](integrator-contract.md)" in text
     for step in ("synapse operation declare", "synapse operation attempt", "--intent-sha256"):
         assert step in contract, step
+
+
+def test_the_guide_links_the_runners_own_hub_path() -> None:
+    """A local run points to the section that runs the same row through the hub."""
+    raw = (DOCS / "operations.md").read_text(encoding="utf-8")
+    text = _collapsed("operations.md")
+
+    assert "[through the hub](#through-the-hub-opt-in)" in text
+    assert "\n### Through the hub (opt-in)\n" in raw
+    for option in ("`--declare`", "`--intent-sha256 HEX`", "`hub_governed: true`"):
+        assert option in text, option

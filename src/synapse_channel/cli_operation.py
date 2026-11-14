@@ -35,18 +35,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import json
 import os
 import uuid
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.cli_hub_request import ask_hub
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.cli_operation_attempt import add_attempt_parser
 from synapse_channel.cli_operation_seal import add_seal_parsers
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
-from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.aef_canonical import canonicalize_json
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.terminal_text import terminal_text
@@ -97,56 +96,38 @@ async def publish_operation_record(
         The command's exit code.
     """
     request_id = uuid.uuid4().hex
-    replies: list[dict[str, Any]] = []
-
-    async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") == MessageType.ERROR or (
-            data.get("type") == MessageType.OPERATION_RECORD_RESULT
-            and data.get("request_id") == request_id
-        ):
-            replies.append(data)
-
-    agent = agent_factory(actor, collect, uri=uri, verbose=False, token=token)
-    connection = asyncio.create_task(agent.connect())
-    try:
-        if not await agent.wait_until_ready(timeout=ready_timeout) or await closed_after_ready(
-            agent, timeout=ready_timeout
-        ):
-            print(
-                terminal_text(
-                    describe_connect_failure(
-                        actor,
-                        uri,
-                        close_code=agent.last_close_code,
-                        close_reason=agent.last_close_reason,
-                    )
-                )
-            )
-            return EXIT_NO_VERDICT
-        await agent.send_message(
-            MessageType.OPERATION_RECORD, target="System", request_id=request_id, **fields
-        )
-        result = await _await_result(replies, timeout=result_timeout)
-        if result is None:
-            print("operation record failed: the hub returned no verdict")
-            return EXIT_NO_VERDICT
-        return _report(result, fields, json_output=json_output)
-    finally:
-        agent.running = False
-        connection.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await connection
+    outcome = await ask_hub(
+        uri=uri,
+        actor=actor,
+        message_type=MessageType.OPERATION_RECORD,
+        fields={**fields, "request_id": request_id},
+        answers=lambda data: _is_verdict(data, request_id),
+        token=token,
+        ready_timeout=ready_timeout,
+        result_timeout=result_timeout,
+        agent_factory=agent_factory,
+    )
+    if outcome.reply is None:
+        return _no_verdict(outcome.failure)
+    return _report(outcome.reply, fields, json_output=json_output)
 
 
-async def _await_result(replies: list[dict[str, Any]], *, timeout: float) -> dict[str, Any] | None:
-    """Return the first matching verdict or hub error before ``timeout``."""
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + max(float(timeout), 0.0)
-    while loop.time() <= deadline:
-        if replies:
-            return replies[0]
-        await asyncio.sleep(0.01)
-    return None
+def _is_verdict(data: dict[str, Any], request_id: str) -> bool:
+    """Return whether ``data`` is the hub's verdict on the record ``request_id`` names."""
+    return (
+        data.get("type") == MessageType.OPERATION_RECORD_RESULT
+        and data.get("request_id") == request_id
+    )
+
+
+def _no_verdict(failure: str) -> int:
+    """Print why no verdict came and return the exit code."""
+    print(
+        terminal_text(failure)
+        if failure
+        else "operation record failed: the hub returned no verdict"
+    )
+    return EXIT_NO_VERDICT
 
 
 def _report(result: dict[str, Any], fields: dict[str, Any], *, json_output: bool) -> int:
