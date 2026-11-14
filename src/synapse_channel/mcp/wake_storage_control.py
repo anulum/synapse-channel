@@ -38,6 +38,9 @@ from synapse_channel.mcp.wake_root_archive import (
 )
 from synapse_channel.mcp.wake_root_catalogue import RootEntry, root_catalogue
 
+# The status phase of a ledger file in the root that the catalogue does not list.
+_UNREGISTERED = "unregistered"
+
 
 def _policy_digest(config: HttpAuthConfig) -> str:
     """Fence semantic operator authority without exposing its URLs, paths or key material."""
@@ -147,7 +150,7 @@ class WakeStorageControl:
                     entries.append(
                         {
                             "key": key,
-                            "phase": entry.phase if entry is not None else "legacy",
+                            "phase": entry.phase if entry is not None else _UNREGISTERED,
                             "main_bytes": inventory.sizes.get(key + ".sqlite3", 0),
                             "journal_bytes": inventory.sizes.get(key + ".sqlite3-journal", 0),
                         }
@@ -206,7 +209,7 @@ class WakeStorageControl:
             )
             return {
                 "key": key,
-                "phase": entry.phase if entry is not None else "legacy",
+                "phase": entry.phase if entry is not None else _UNREGISTERED,
                 "fingerprint": snapshot.fingerprint,
                 "files": [item.encode() for item in snapshot.files],
                 "transport": _native_summary(self.root / (key + ".sqlite3")),

@@ -119,15 +119,18 @@ def test_retirement_fence_exhaustion_preserves_failed_delivery_and_all_prior_fen
     }
 
 
-def test_archiving_a_legacy_unregistered_generation_preserves_its_raw_failure(
+def test_archiving_an_unregistered_generation_preserves_its_raw_failure(
     tmp_path: Path,
 ) -> None:
     _, old, control, _ = inactive_generation(tmp_path)
     before = old.path.read_bytes()
     with closing(sqlite3.connect(old.path.parent / ROOT_CATALOGUE)) as database, database:
         database.execute("DELETE FROM entries WHERE scope_key=?", (old.scope.key,))
+    entries = control.status()["entries"]
+    assert isinstance(entries, list)
+    assert [entry["phase"] for entry in entries] == ["unregistered"]
     info = control.inspect(old.scope.key)
-    assert info["phase"] == "legacy"
+    assert info["phase"] == "unregistered"
     result = archive(control, info, tmp_path / "archive")
     assert result["outcome"] == "archived" and not old.path.exists()
     assert (Path(result["archive_directory"]) / old.path.name).read_bytes() == before

@@ -64,6 +64,16 @@ def test_foreign_or_invalid_snapshot_creates_no_file(
     assert not outbox.path.exists()
 
 
+def test_recovered_fingerprints_are_stored_under_the_historical_source(tmp_path: Path) -> None:
+    """The source names what it holds: work handed off before activity metadata existed."""
+    outbox = ledger(tmp_path)
+    assert outbox.observe_pending_work(snapshot(PendingItem("tasks", "a" * 64)))
+    with closing(sqlite3.connect(outbox.path)) as database:
+        sources = dict(database.execute("SELECT source,position FROM sources").fetchall())
+    assert set(sources) == {"pending-historical"}
+    assert json.loads(sources["pending-historical"]) == [{"kind": "tasks", "key": "a" * 64}]
+
+
 @pytest.mark.parametrize(
     "raw", ["not json", b"[]", "x" * 131073, "{}", '[{"kind":"tasks","key":"private"}]']
 )
@@ -71,7 +81,7 @@ def test_corrupt_pending_state_is_not_reset(tmp_path: Path, raw: Any) -> None:
     outbox = ledger(tmp_path)
     outbox.summary()
     with closing(sqlite3.connect(outbox.path)) as database, database:
-        database.execute("INSERT INTO sources VALUES ('pending-legacy',?)", (raw,))
+        database.execute("INSERT INTO sources VALUES ('pending-historical',?)", (raw,))
     with pytest.raises(WakeLedgerError, match="invalid stored"):
         outbox.observe_pending_work(snapshot(PendingItem("tasks", "a" * 64)))
 
@@ -93,14 +103,14 @@ def test_failed_recovery_cannot_consume_seen_markers_or_pending_bits(
         else:
             known = [{"kind": "tasks", "key": f"{i:064x}"} for i in range(1024)]
             database.execute(
-                "INSERT INTO sources VALUES ('pending-legacy',?)", (json.dumps(known),)
+                "INSERT INTO sources VALUES ('pending-historical',?)", (json.dumps(known),)
             )
     with pytest.raises(WakeLedgerError):
         outbox.observe_pending_work(snapshot(PendingItem("tasks", "f" * 64)))
     assert outbox.summary()["pending_sources"] == 0
     with closing(sqlite3.connect(outbox.path)) as database, database:
         row = database.execute(
-            "SELECT position FROM sources WHERE source='pending-legacy'"
+            "SELECT position FROM sources WHERE source='pending-historical'"
         ).fetchone()
         assert (len(json.loads(row[0])) == 1024) if fault == "capacity" else row is None
 

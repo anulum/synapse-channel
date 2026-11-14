@@ -23,12 +23,13 @@ from synapse_channel.mcp.wake_pointer import (
     WakeScope,
 )
 
+# Work handed off under hubs that journalled no activity metadata, recovered once.
+_SOURCE = "pending-historical"
+
 
 def _stored_items(connection: sqlite3.Connection) -> tuple[PendingItem, ...]:
     """Refuse corrupt or oversized historical recovery state without resetting it."""
-    row = connection.execute(
-        "SELECT position FROM sources WHERE source='pending-legacy'"
-    ).fetchone()
+    row = connection.execute("SELECT position FROM sources WHERE source=?", (_SOURCE,)).fetchone()
     try:
         if row is not None and (type(row[0]) is not str or len(row[0]) > 131072):
             raise ValueError("invalid pending recovery record")
@@ -86,9 +87,9 @@ class WakePendingObservation:
                 return False
             values = [x.encode() for x in sorted(retained.values(), key=lambda x: (x.kind, x.key))]
             connection.execute(
-                "INSERT INTO sources VALUES ('pending-legacy',?) ON CONFLICT(source) "
+                "INSERT INTO sources VALUES (?,?) ON CONFLICT(source) "
                 "DO UPDATE SET position=excluded.position",
-                (json.dumps(values),),
+                (_SOURCE, json.dumps(values)),
             )
             if (
                 connection.execute(
