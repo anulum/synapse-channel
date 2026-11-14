@@ -262,6 +262,10 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- The operations guide says that a `synapse ops run` run is outside the hub's governed operations: the
+  hub holds no declaration, approval, attempt or outcome for it, and an approval on the hub neither
+  admits it nor is needed for it. It points to the integrator contract for an effect that must be
+  approved and recorded on the hub. No behaviour changes.
 - The events feed carries the hub's own words for every event. Each event in
   `/events.json` (and the live stream's events channel) of a kind the journal
   names has an `actor`, the identity its writer recorded or empty, and a

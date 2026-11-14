@@ -292,6 +292,15 @@ The run's authority is the operator's local grants file, named in
 `authority` in the report and in both records. It is not a hub grant and does
 not authenticate the seat named by `--subject`.
 
+A run like this is outside the hub's governed operations. The hub holds no
+declaration, approval, attempt or outcome for it, so nothing that reads the
+hub's records counts it, and an approval on the hub neither admits it nor is
+needed for it. Its records are the local journal's alone. An effect that must
+be approved and recorded on the hub follows the
+[integrator contract](integrator-contract.md): declare the operation on its
+claimed task, obtain an approval bound to its exact intent, open one attempt
+for that intent, and publish the outcome.
+
 A plan is a snapshot. `execute` runs the row admitted when the run was
 planned and re-checks the grants, the gate and the program; it does not read
 the catalogue again, so a row changed or removed on disk after planning is
