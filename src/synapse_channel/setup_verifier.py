@@ -511,7 +511,7 @@ class SystemdVerificationAdapter:
             remaining = max(0.0, deadline - self._clock())
             try:
                 await asyncio.wait_for(replayed.wait(), timeout=remaining)
-            except (TimeoutError, asyncio.TimeoutError) as exc:
+            except TimeoutError as exc:
                 raise VerificationProbeError("verification_replay_failed") from exc
         finally:
             agent.running = False

@@ -18,7 +18,7 @@ The hub-wired path over a real socket lives in
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -50,8 +50,8 @@ def _peer_der() -> bytes:
         .issuer_name(name)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime(2020, 1, 1, tzinfo=timezone.utc))
-        .not_valid_after(datetime(2030, 1, 1, tzinfo=timezone.utc))
+        .not_valid_before(datetime(2020, 1, 1, tzinfo=UTC))
+        .not_valid_after(datetime(2030, 1, 1, tzinfo=UTC))
         .sign(key, hashes.SHA256())
     )
     return cert.public_bytes(serialization.Encoding.DER)

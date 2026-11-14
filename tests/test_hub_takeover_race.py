@@ -64,7 +64,7 @@ async def main():
         try:
             while True:
                 await asyncio.wait_for(websocket.recv(), timeout=1.5)
-        except (TimeoutError, asyncio.TimeoutError):
+        except TimeoutError:
             ready.with_suffix(".survivor").touch()
             while not done.exists():
                 await asyncio.sleep(0.005)
@@ -209,7 +209,7 @@ async def _drain_until_closed_or_quiet(websocket: Any, *, window: float = 0.8) -
     try:
         while True:
             await read_json(websocket, timeout=window)
-    except (TimeoutError, asyncio.TimeoutError):
+    except TimeoutError:
         return "open"
     except ConnectionClosed as exc:
         received = exc.rcvd

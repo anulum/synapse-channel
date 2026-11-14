@@ -14,7 +14,7 @@ import asyncio
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +42,7 @@ from synapse_channel.core.token_set import TokenSetAuthenticator, connect_token_
 
 
 def _instant(moment: float) -> str:
-    return datetime.fromtimestamp(moment, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.fromtimestamp(moment, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _write(path: Path, *entries: tuple[Any, ...]) -> tuple[Path, list[float]]:

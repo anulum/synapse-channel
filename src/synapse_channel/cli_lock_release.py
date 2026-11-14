@@ -112,7 +112,7 @@ class LockRelease:
 
         try:
             return await asyncio.wait_for(complete(), self.reply_timeout)
-        except (asyncio.TimeoutError, ConnectionClosed, OSError):
+        except (TimeoutError, ConnectionClosed, OSError):
             return None
         finally:
             self.pending = None

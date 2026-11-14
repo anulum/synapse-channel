@@ -103,7 +103,7 @@ async def _await_listening(port: int, timeout: float = 3.0) -> None:
             connection = await ws_connect(
                 f"ws://localhost:{port}", open_timeout=min(1.0, remaining)
             )
-        except (OSError, TimeoutError, asyncio.TimeoutError):
+        except (OSError, TimeoutError):
             await asyncio.sleep(0.02)
             continue
         await connection.close()

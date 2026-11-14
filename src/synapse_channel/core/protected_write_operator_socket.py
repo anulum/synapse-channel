@@ -139,7 +139,7 @@ async def handle_operator_connection(
             UnicodeError,
             json.JSONDecodeError,
             RecursionError,
-            asyncio.TimeoutError,
+            TimeoutError,
             asyncio.IncompleteReadError,
         ):
             response = _REFUSED

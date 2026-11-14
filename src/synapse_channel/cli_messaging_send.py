@@ -233,7 +233,7 @@ async def _send(
                 receipt = await _wait_for_delivery_receipt(
                     receipts, timeout=deadline - asyncio.get_running_loop().time()
                 )
-        except (asyncio.TimeoutError, ConnectionClosed, OSError):
+        except (TimeoutError, ConnectionClosed, OSError):
             return _unknown_write_result(agent, target, client_msg_id)
         if request_receipt and receipt is None:
             print(

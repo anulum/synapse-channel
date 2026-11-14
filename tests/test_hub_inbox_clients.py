@@ -293,7 +293,7 @@ async def test_legacy_published_hub_is_unavailable_without_consuming_local_feed(
             process.terminate()
             try:
                 await asyncio.wait_for(process.wait(), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 process.kill()
                 await process.wait()
 

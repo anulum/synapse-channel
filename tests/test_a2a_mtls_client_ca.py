@@ -32,7 +32,7 @@ def _write_ca_and_certs(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
     """Return CA cert, server cert/key, client cert/key PEMs."""
     ca_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "a2a-test-ca")])
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     ca_cert = (
         x509.CertificateBuilder()
         .subject_name(ca_name)

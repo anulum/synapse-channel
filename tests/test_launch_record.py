@@ -16,7 +16,7 @@ import stat
 import subprocess
 import sys
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -260,9 +260,9 @@ def test_the_image_is_the_program_that_runs_even_after_its_file_was_replaced(
 def test_a_process_that_exited_and_was_not_collected_is_not_given_an_identity() -> None:
     process = subprocess.Popen([sys.executable, "-c", "pass"])
     try:
-        deadline = datetime.now(timezone.utc).timestamp() + 30
+        deadline = datetime.now(UTC).timestamp() + 30
         state = ""
-        while state != "Z" and datetime.now(timezone.utc).timestamp() < deadline:
+        while state != "Z" and datetime.now(UTC).timestamp() < deadline:
             text = Path(f"/proc/{process.pid}/stat").read_text(encoding="utf-8")
             state = text.rsplit(")", 1)[1].split()[0]
         found = process_identity(process.pid)
@@ -277,7 +277,7 @@ def test_a_record_keeps_the_command_as_a_name_a_count_and_a_digest(
     sleeper: subprocess.Popen[bytes], tmp_path: Path
 ) -> None:
     command = [sys.executable, "--api-key", "sk-live-do-not-store", "run"]
-    moment = datetime(2026, 10, 12, 12, 0, 0, 123456, tzinfo=timezone.utc)
+    moment = datetime(2026, 10, 12, 12, 0, 0, 123456, tzinfo=UTC)
 
     record = make_record(seat=" GROUP/seat-1 ", command=command, pid=sleeper.pid, now=moment)
     data = record.to_json()
@@ -329,7 +329,7 @@ def test_a_record_keeps_the_command_as_a_name_a_count_and_a_digest(
 def test_each_record_is_a_new_owner_only_file_that_is_never_replaced(
     sleeper: subprocess.Popen[bytes], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    moment = datetime(2026, 10, 12, 12, 0, 0, tzinfo=timezone.utc)
+    moment = datetime(2026, 10, 12, 12, 0, 0, tzinfo=UTC)
     record = make_record(seat="GROUP/seat 1", command=[sys.executable], pid=sleeper.pid, now=moment)
     directory = tmp_path / "state" / "launch-records"
     # The directory is there already and open to others, as a directory made

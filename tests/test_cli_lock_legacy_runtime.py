@@ -273,6 +273,6 @@ async def test_published_hub_without_confirmation_refuses_manual_release(
                 hub.terminate()
             try:
                 await asyncio.wait_for(hub.wait(), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 hub.kill()
                 await hub.wait()

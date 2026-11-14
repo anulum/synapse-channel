@@ -24,7 +24,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Iterator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -61,7 +61,7 @@ from synapse_channel.native_spool import (
     spool,
 )
 
-_T0 = datetime(2026, 10, 11, 12, 0, 0, tzinfo=timezone.utc)
+_T0 = datetime(2026, 10, 11, 12, 0, 0, tzinfo=UTC)
 _SESSION = "0f3c9a52-6d1e-4b7a-9c35-2f1d8e7a6b40"
 _CALL = "toolu_01ExampleCall0000000000001"
 _MESSAGE_ID = "7a1c2b3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"

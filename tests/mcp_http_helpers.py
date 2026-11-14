@@ -117,7 +117,7 @@ def tls_files(directory: Path) -> tuple[Path, Path, ssl.SSLContext]:
     """Issue a real loopback certificate and owner-only key for finite test servers."""
     key = ec.generate_private_key(ec.SECP256R1())
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     certificate = (
         x509.CertificateBuilder()
         .subject_name(subject)

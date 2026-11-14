@@ -344,7 +344,7 @@ class _NetworkFetcher:
         except (
             OSError,
             WebSocketException,
-            asyncio.TimeoutError,
+            TimeoutError,
             MultiHubWireError,
             json.JSONDecodeError,
         ) as exc:

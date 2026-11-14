@@ -85,7 +85,7 @@ async def claim_outcome(
 
         try:
             return await asyncio.wait_for(exchange(), reply_timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
         finally:
             pending = None

@@ -120,5 +120,5 @@ async def deliver_pointer(
     try:
         status = await asyncio.wait_for(_owned_attempt(raw), timeout)
         return _result(status)
-    except (OSError, ValueError, asyncio.TimeoutError):
+    except (TimeoutError, OSError, ValueError):
         return WakeHttpResult("retry", 0)

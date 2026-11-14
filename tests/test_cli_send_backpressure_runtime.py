@@ -192,7 +192,7 @@ async def test_public_send_classifies_a_real_blocked_write_without_replaying(
                             stdout, stderr = await asyncio.wait_for(
                                 asyncio.shield(collection), timeout=20
                             )
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             process.kill()
                             stdout, stderr = await collection
                             pytest.fail(

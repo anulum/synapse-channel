@@ -31,7 +31,7 @@ def _write_server_tls_pair(tmp_path: Path) -> tuple[Path, Path]:
     """Write a self-signed server cert + key PEM pair for loopback HTTPS."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)

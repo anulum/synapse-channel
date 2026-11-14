@@ -256,13 +256,7 @@ async def relay_operator_action(
         raise
     # WebSocketException covers a dropped stream and also a refused handshake (an HTTP
     # error status, for one from a proxy) or a URI the client rejects.
-    except (
-        OSError,
-        WebSocketException,
-        asyncio.TimeoutError,
-        RelayWireError,
-        json.JSONDecodeError,
-    ) as exc:
+    except (TimeoutError, OSError, WebSocketException, RelayWireError, json.JSONDecodeError) as exc:
         msg = f"relaying an operator action to {uri!r} failed: {exc}"
         raise RelayTransportError(msg) from exc
 

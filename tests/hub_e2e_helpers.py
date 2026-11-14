@@ -20,7 +20,7 @@ import threading
 import traceback
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from cryptography import x509
@@ -159,7 +159,7 @@ def authorised_multihub_serving_policy(*senders: str) -> MultiHubServingPolicy:
     """
     key = ed25519.Ed25519PrivateKey.generate()
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "synapse-test-peer")])
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     certificate = (
         x509.CertificateBuilder()
         .subject_name(name)
@@ -387,5 +387,5 @@ async def collect_available(websocket: Connection, duration: float = 0.15) -> li
             return messages
         try:
             messages.append(await read_json(websocket, timeout=remaining))
-        except (TimeoutError, asyncio.TimeoutError):
+        except TimeoutError:
             return messages

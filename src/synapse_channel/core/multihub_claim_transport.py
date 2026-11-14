@@ -299,7 +299,7 @@ async def forward_claim(
         return decode_claim_forward_result(frame)
     except ClaimForwardError:
         raise
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         msg = f"forwarding a claim to {uri!r} timed out after {timeout:g}s"
         raise ClaimForwardTimeoutError(msg) from exc
     # WebSocketException covers a dropped stream and also a refused handshake (an HTTP

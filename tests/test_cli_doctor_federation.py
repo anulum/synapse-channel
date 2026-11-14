@@ -12,7 +12,7 @@ import builtins
 import contextlib
 import json
 from collections.abc import AsyncIterator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -502,14 +502,14 @@ def test_finite_timestamp_rejects_unusable_values() -> None:
 
 def test_peer_certificate_expiry_is_read_from_tls_object() -> None:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    expires = datetime.now(timezone.utc) + timedelta(days=9)
+    expires = datetime.now(UTC) + timedelta(days=9)
     certificate = (
         x509.CertificateBuilder()
         .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "peer")]))
         .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "peer")]))
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now(timezone.utc) - timedelta(minutes=1))
+        .not_valid_before(datetime.now(UTC) - timedelta(minutes=1))
         .not_valid_after(expires)
         .sign(key, hashes.SHA256())
     )
@@ -635,7 +635,7 @@ def test_load_der_certificate_returns_none_without_cryptography(
 def test_peer_certificate_expiry_supports_legacy_cryptography_datetime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    expires = datetime(2026, 7, 9, tzinfo=timezone.utc)
+    expires = datetime(2026, 7, 9, tzinfo=UTC)
 
     class _LegacyCertificate:
         not_valid_after = expires.replace(tzinfo=None)

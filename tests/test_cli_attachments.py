@@ -200,7 +200,7 @@ async def test_cli_recipient_policy_serves_the_governed_source_over_real_tls(
             process.terminate()
         try:
             _, stderr = await asyncio.wait_for(process.communicate(), 5)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             process.kill()
             _, stderr = await process.communicate()
         assert process.returncode == 0, stderr.decode("utf-8", errors="replace")[-4096:]

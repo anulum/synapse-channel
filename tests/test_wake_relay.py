@@ -20,7 +20,7 @@ import os
 import subprocess
 import sys
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +44,7 @@ from synapse_channel.wake_relay import WAKE_FAILED, RelayResult, relay
 
 SEAT = "PROJECT/seat-aaaa"
 TARGET = WakeTarget(SEAT, "native-session-1", "host-a")
-_T0 = datetime(2026, 10, 11, 12, 0, 0, tzinfo=timezone.utc)
+_T0 = datetime(2026, 10, 11, 12, 0, 0, tzinfo=UTC)
 
 
 class FileAdapter:

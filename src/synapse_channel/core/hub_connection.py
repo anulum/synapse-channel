@@ -234,7 +234,7 @@ class HubConnection:
         secured = self._authenticator is not None
         try:
             first = await asyncio.wait_for(websocket.recv(), timeout=self._auth_timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             reason = "auth timeout" if secured else "registration timeout"
             await websocket.close(code=4012, reason=reason)
             return False

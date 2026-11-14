@@ -206,7 +206,7 @@ async def supervise_locked_command(
                 code, renewed, reason = await asyncio.wait_for(
                     renew_lock(profile, hub_id=hub_id, session=session), remaining
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return 3, "no renewal answer before the lease deadline"
             # register_owner and the exchange absorb connection errors, so only a
             # future change below them could let one through; it still stops safely.

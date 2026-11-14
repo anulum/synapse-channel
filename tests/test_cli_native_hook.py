@@ -24,7 +24,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -504,7 +504,7 @@ async def test_the_waits_given_on_the_command_line_bound_a_hook_call(
 
 def _record() -> dict[str, Any]:
     registrations = (Registration(SESSION, SENDER, None, "2026-10-11T12:00:00.000000Z"),)
-    moment = datetime(2026, 10, 11, 12, 0, tzinfo=timezone.utc)
+    moment = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
     record = record_from_hook(json.loads(_hook()), registrations, captured_at=moment).record
     assert record is not None
     return record
