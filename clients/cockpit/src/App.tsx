@@ -41,6 +41,7 @@ import { useCockpitToasts } from "./hooks/useCockpitToasts";
 import { useCockpitViewModel } from "./hooks/useCockpitViewModel";
 import { useCockpitWorkspace } from "./hooks/useCockpitWorkspace";
 import { useDashboardAccess } from "./hooks/useDashboardAccess";
+import { useServedSurfaces } from "./hooks/useServedSurfaces";
 import { capabilitiesOf } from "./lib/access";
 import { boardTruncation } from "./lib/board";
 import type { TimeWindow } from "./lib/brush";
@@ -109,6 +110,7 @@ export function App(): JSX.Element {
     toggleDensity: preferences.toggleDensity,
     toggleTravel: replay.toggleTravel,
   });
+  const served = useServedSurfaces(overlays.setupOpen && !shellBlocked, auth.revision);
   const toastController = useCockpitToasts({
     blocked: shellBlocked,
     snapshot: feeds.snap.snapshot,
@@ -391,6 +393,7 @@ export function App(): JSX.Element {
             feeds.receipts.status,
             feeds.operatorActions.status,
           ],
+          served: served.data,
           loopbackOrigin: isLoopbackHostname(location.hostname),
         }}
       />

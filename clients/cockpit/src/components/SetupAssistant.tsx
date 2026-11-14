@@ -10,6 +10,7 @@ import type { JSX, MouseEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useCockpitI18n } from "../context/CockpitI18n";
+import type { ServedSurfaces } from "../lib/servedSurfaces";
 import {
   buildSetupCommandPlan,
   deriveSetupPreflight,
@@ -35,6 +36,33 @@ const DEFAULT_PROFILE: SetupProfileInput = Object.freeze({
   durableEvidence: false,
   protectedDashboard: false,
 });
+
+/** The dashboard's own list of optional surfaces, each with the flag that turns it on. */
+function ServedSurfacesPanel({ served }: { readonly served: ServedSurfaces | null }): JSX.Element {
+  const { t } = useCockpitI18n();
+  return (
+    <section className="setup-served" aria-labelledby="setup-served-title">
+      <h3 id="setup-served-title">{t("setup.served.title")}</h3>
+      {served === null ? (
+        <p>{t("setup.served.unknown")}</p>
+      ) : (
+        <>
+          <p>{t("setup.served.count", { configured: served.configured, total: served.total })}</p>
+          <ul className="setup-served-list">
+            {served.surfaces.map((surface) => (
+              <li key={surface.path} className="setup-served-row">
+                <code>{surface.path}</code>
+                <span className={`setup-status setup-status--${surface.configured ? "configured" : "absent"}`}>
+                  {surface.configured ? t("setup.served.on") : t("setup.served.off", { flag: surface.flag })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
 
 export function SetupAssistant({ open, evidence, onClose }: SetupAssistantProps): JSX.Element | null {
   const { t } = useCockpitI18n();
@@ -166,23 +194,26 @@ export function SetupAssistant({ open, evidence, onClose }: SetupAssistantProps)
 
         <div className="setup-assistant__body" tabIndex={0}>
           {step === "preflight" && (
-            <section aria-labelledby="setup-preflight-title">
-              <h3 id="setup-preflight-title">{t("setup.preflight.title")}</h3>
-              <p>{t("setup.preflight.body")}</p>
-              <div className="setup-evidence-list">
-                {preflight.map((row) => (
-                  <article key={row.id} className="setup-evidence-row">
-                    <div>
-                      <strong>{t(`setup.preflight.${row.id}.title`)}</strong>
-                      <p>{t(`setup.preflight.${row.id}.body`)}</p>
-                    </div>
-                    <span className={`setup-status setup-status--${row.truth}`}>
-                      {t(`setup.truth.${row.truth}`)}
-                    </span>
-                  </article>
-                ))}
-              </div>
-            </section>
+            <>
+              <section aria-labelledby="setup-preflight-title">
+                <h3 id="setup-preflight-title">{t("setup.preflight.title")}</h3>
+                <p>{t("setup.preflight.body")}</p>
+                <div className="setup-evidence-list">
+                  {preflight.map((row) => (
+                    <article key={row.id} className="setup-evidence-row">
+                      <div>
+                        <strong>{t(`setup.preflight.${row.id}.title`)}</strong>
+                        <p>{t(`setup.preflight.${row.id}.body`)}</p>
+                      </div>
+                      <span className={`setup-status setup-status--${row.truth}`}>
+                        {t(`setup.truth.${row.truth}`)}
+                      </span>
+                    </article>
+                  ))}
+                </div>
+              </section>
+              <ServedSurfacesPanel served={evidence.served} />
+            </>
           )}
 
           {step === "profile" && (

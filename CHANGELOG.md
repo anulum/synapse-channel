@@ -31,6 +31,13 @@ execution evidence when carrying a release claim forward.
   (`tools/check_wheel_sdist_parity.py`) refuses a wheel or sdist without the
   build's entry page or the notice. `LICENSES/MIT.txt` and `REUSE.toml` declare
   the bundled code.
+- The dashboard says what it serves. `/capabilities.json`, read-gated like every
+  feed, lists each optional surface with its path, the flag that turns it on and
+  whether this start serves it; the start prints one line per missing flag with
+  the surfaces it would add (`not served without --feeds-db: reliability, …`),
+  and the cockpit's setup assistant shows the list under "What this dashboard
+  serves" and judges the optional feeds from it. The list, those lines and each
+  surface's `404` answer come from one table in `dashboard_feed_serving`.
 - The release payload is reproducible and checked before it is signed.
   `tools/build_release_payload.py` is the one recipe for the wheel and the
   source archive: it exports the commit's tree through a private index under
@@ -260,6 +267,12 @@ execution evidence when carrying a release claim forward.
   linked directory or one open to other users) and prints only the path; a start
   with `--dashboard-access-file` names the policy. See `docs/cockpit.md`, "Open
   the cockpit".
+- A reliability feed asked for without a store now names the flag the CLI
+  documents, `--feeds-db`, instead of its older alias `--reliability-db`; the
+  attention feed answers `attention feed not configured; start the dashboard
+  with --attention-store` like every other surface. The setup assistant's
+  dashboard command no longer adds `--cockpit-dist clients/cockpit/dist`, since
+  the package carries the build.
 - The dashboard shows the hub's own proof that a seat reacts. The hub already
   judged each connected agent (a waiter seen within 20 seconds, or a reaction
   within its window) and warned a sender about one it could not prove; the

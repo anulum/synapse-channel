@@ -17,7 +17,11 @@ from synapse_channel.cli_dashboard_access import add_dashboard_access_arguments
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.dashboard import DashboardServer, start_dashboard_server
 from synapse_channel.dashboard_bearer_file import write_generated_bearer
-from synapse_channel.dashboard_feed_serving import packaged_cockpit_dist
+from synapse_channel.dashboard_feed_serving import (
+    OPTIONAL_SURFACES,
+    configured_flags,
+    packaged_cockpit_dist,
+)
 from synapse_channel.observed_peers import (
     parse_observed_peer,
     parse_observed_pin,
@@ -125,6 +129,18 @@ def _announce(args: argparse.Namespace, server: DashboardServer, cockpit_dist: P
         print("attention JSON: " + server.url("/attention.json"))
     if args.federation_store is not None:
         print("federation JSON: " + server.url("/federation.json"))
+    print("capabilities JSON: " + server.url("/capabilities.json"))
+    given = configured_flags(
+        feeds_db=args.reliability_db,
+        federation_store=args.federation_store,
+        attention_store=args.attention_store,
+    )
+    missing: dict[str, list[str]] = {}
+    for surface in OPTIONAL_SURFACES:
+        if surface.flag not in given:
+            missing.setdefault(surface.flag, []).append(surface.name)
+    for flag, names in missing.items():
+        print(f"not served without {flag}: {', '.join(names)}")
     if args.dashboard_access_file is not None:
         print(f"dashboard access policy: {args.dashboard_access_file}")
     if bearer is not None:

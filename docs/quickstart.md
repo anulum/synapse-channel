@@ -224,6 +224,8 @@ synapse git-claim BUILD --name myproj/alice --auto-release-on manual \
 synapse dashboard --port 8765 --feeds-db ~/synapse/hub.db
 # front door (cockpit): http://127.0.0.1:8765/  → the cockpit's unlock screen
 # studio command: http://127.0.0.1:8765/studio/command
+# capabilities JSON: http://127.0.0.1:8765/capabilities.json  (what this start serves)
+# not served without --federation-store: federation  (one line per missing flag)
 # dashboard bearer: ~/.local/state/synapse/dashboard/bearer.token  (unlock with its contents)
 # Optional at-rest: hub --db-key-file + dashboard --feeds-db-key-file (see at-rest-encryption.md)
 # Multi-machine fleet fabric uses its own exact released-core pin (see SYNAPSE-CHANNEL-FLEET)

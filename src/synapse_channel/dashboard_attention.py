@@ -15,7 +15,12 @@ from http import HTTPStatus
 from pathlib import Path
 
 from synapse_channel.core.attention_store import AttentionStoreError, queue_view
-from synapse_channel.dashboard_feed_serving import FeedResponse, json_response, plain_response
+from synapse_channel.dashboard_feed_serving import (
+    FeedResponse,
+    absent_surface,
+    json_response,
+    plain_response,
+)
 
 
 def serve_attention(path: Path | None) -> FeedResponse:
@@ -32,7 +37,7 @@ def serve_attention(path: Path | None) -> FeedResponse:
         Authenticated JSON, an absent-feed 404 or a storage-failure 503.
     """
     if path is None:
-        return plain_response(HTTPStatus.NOT_FOUND, "attention store not configured")
+        return absent_surface("attention")
     if not path.is_file():
         return plain_response(HTTPStatus.SERVICE_UNAVAILABLE, "attention store unavailable")
     try:

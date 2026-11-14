@@ -48,6 +48,9 @@ from synapse_channel.dashboard_bind import (
 )
 from synapse_channel.dashboard_feed_serving import (
     FeedResponse,
+    capability_summary,
+    configured_flags,
+    json_response,
     serve_causality,
     serve_cockpit_dist,
     serve_events,
@@ -475,6 +478,9 @@ RECEIPTS_PATH = "/receipts.json"
 ATTENTION_PATH = "/attention.json"
 """Authenticated owner-local alert queue, when explicitly configured."""
 
+CAPABILITIES_PATH = "/capabilities.json"
+"""What this start serves: every optional surface, whether it is on, and its flag."""
+
 COCKPIT_DIST_PREFIX = "/cockpit/"
 """URL prefix under which an operator-named cockpit build directory is served."""
 
@@ -755,6 +761,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             )
         )
 
+    def _configured_flags(self) -> frozenset[str]:
+        """Return the optional-surface flags this start was given."""
+        return configured_flags(
+            feeds_db=self.reliability_db,
+            federation_store=self.federation_store,
+            attention_store=self.attention_store,
+        )
+
     def _feed_response(self, path: str, query: str) -> FeedResponse | None:
         """Compute the read-side feed response for ``path``, or ``None``.
 
@@ -763,6 +777,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         including the honest-absence 404 and fail-visible 503 postures —
         lives in :mod:`synapse_channel.dashboard_feed_serving`.
         """
+        if path == CAPABILITIES_PATH:
+            return json_response(capability_summary(self._configured_flags()))
         db = self.reliability_db
         query_feed = _QUERY_FEEDS.get(path)
         if query_feed is not None:

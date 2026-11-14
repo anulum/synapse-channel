@@ -103,7 +103,7 @@ def test_bounded_query_int_rejects_malformed_or_oversize(raw: str) -> None:
 @pytest.mark.parametrize(
     ("serve", "flag"),
     [
-        (lambda: serve_reliability(None, None), "--reliability-db"),
+        (lambda: serve_reliability(None, None), "--feeds-db"),
         (lambda: serve_metrics_feed(None), "--feeds-db"),
         (lambda: serve_state_at(None, ""), "--feeds-db"),
         (lambda: serve_merkle_proof(None, ""), "--feeds-db"),

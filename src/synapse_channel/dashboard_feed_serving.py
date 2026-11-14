@@ -113,12 +113,79 @@ def bounded_query_int(raw: str) -> int:
     return value
 
 
-def _absent(feed: str, flag: str) -> FeedResponse:
-    """Return the honest-absence 404 for an unconfigured store feed."""
+@dataclass(frozen=True)
+class OptionalSurface:
+    """One read surface a dashboard serves only when its start named the store it reads."""
+
+    name: str
+    path: str
+    flag: str
+
+
+OPTIONAL_SURFACES: Final[tuple[OptionalSurface, ...]] = (
+    OptionalSurface("reliability", "/reliability.json", "--feeds-db"),
+    OptionalSurface("events", "/events.json", "--feeds-db"),
+    OptionalSurface("metrics", "/metrics.json", "--feeds-db"),
+    OptionalSurface("state-at", "/state-at.json", "--feeds-db"),
+    OptionalSurface("merkle-proof", "/merkle-proof.json", "--feeds-db"),
+    OptionalSurface("health-anomalies", "/health-anomalies.json", "--feeds-db"),
+    OptionalSurface("causality", "/causality.json", "--feeds-db"),
+    OptionalSurface("findings", "/findings.json", "--feeds-db"),
+    OptionalSurface("sessions", "/sessions.json", "--feeds-db"),
+    OptionalSurface("waits", "/waits.json", "--feeds-db"),
+    OptionalSurface("operator-actions", "/operator-actions.json", "--feeds-db"),
+    OptionalSurface("receipts", "/receipts.json", "--feeds-db"),
+    OptionalSurface("postmortem", "/postmortem.json", "--feeds-db"),
+    OptionalSurface("federation", "/federation.json", "--federation-store"),
+    OptionalSurface("attention", "/attention.json", "--attention-store"),
+)
+"""Every optional read surface with the start flag that turns it on.
+
+One table answers both "what does this start serve" (:func:`capability_summary`,
+``/capabilities.json``) and each surface's own absence (:func:`absent_surface`),
+so the two cannot disagree.
+"""
+
+_SURFACES: Final = {surface.name: surface for surface in OPTIONAL_SURFACES}
+
+
+def absent_surface(name: str) -> FeedResponse:
+    """Return the honest-absence 404 of the optional surface ``name``, naming its flag."""
+    surface = _SURFACES[name]
     return plain_response(
         HTTPStatus.NOT_FOUND,
-        f"{feed} feed not configured; start the dashboard with {flag}",
+        f"{surface.name} feed not configured; start the dashboard with {surface.flag}",
     )
+
+
+def configured_flags(
+    *, feeds_db: object, federation_store: object, attention_store: object
+) -> frozenset[str]:
+    """Return the optional-surface flags a start was given, from the stores it names."""
+    stores = {
+        "--feeds-db": feeds_db,
+        "--federation-store": federation_store,
+        "--attention-store": attention_store,
+    }
+    return frozenset(flag for flag, store in stores.items() if store is not None)
+
+
+def capability_summary(configured_flags: frozenset[str]) -> dict[str, object]:
+    """Return what this start serves: each optional surface, whether it is on, and its flag."""
+    surfaces = [
+        {
+            "name": surface.name,
+            "path": surface.path,
+            "flag": surface.flag,
+            "configured": surface.flag in configured_flags,
+        }
+        for surface in OPTIONAL_SURFACES
+    ]
+    return {
+        "surfaces": surfaces,
+        "configured": sum(1 for surface in surfaces if surface["configured"]),
+        "total": len(surfaces),
+    }
 
 
 def _store_feed(build: Callable[[], dict[str, Any]]) -> FeedResponse:
@@ -137,7 +204,7 @@ def _store_feed(build: Callable[[], dict[str, Any]]) -> FeedResponse:
 def serve_reliability(db: Path | None, key_file: Path | None) -> FeedResponse:
     """Serve the reliability audit-signal report, or its honest absence."""
     if db is None:
-        return _absent("reliability", "--reliability-db")
+        return absent_surface("reliability")
     return _store_feed(
         lambda: dict(reliability_to_json(run_reliability_report(db, key_file=key_file)))
     )
@@ -150,7 +217,7 @@ def serve_metrics_feed(db: Path | None) -> FeedResponse:
     hub's own ``/metrics`` endpoint, not here.
     """
     if db is None:
-        return _absent("metrics", "--feeds-db")
+        return absent_surface("metrics")
     return _store_feed(lambda: build_metrics_feed(db))
 
 
@@ -163,7 +230,7 @@ def serve_state_at(db: Path | None, query: str) -> FeedResponse:
     document says so).
     """
     if db is None:
-        return _absent("state-at", "--feeds-db")
+        return absent_surface("state-at")
     raw = parse_qs(query).get("seq", ["0"])[0]
     try:
         seq = bounded_query_int(raw)
@@ -181,7 +248,7 @@ def serve_merkle_proof(db: Path | None, query: str) -> FeedResponse:
     never a fabricated proof.
     """
     if db is None:
-        return _absent("merkle-proof", "--feeds-db")
+        return absent_surface("merkle-proof")
     raw = parse_qs(query).get("seq", ["0"])[0]
     try:
         seq = bounded_query_int(raw)
@@ -199,7 +266,7 @@ def serve_health_anomalies(db: Path | None) -> FeedResponse:
     durable log can prove.
     """
     if db is None:
-        return _absent("health-anomalies", "--feeds-db")
+        return absent_surface("health-anomalies")
     return _store_feed(lambda: build_health_anomalies_feed(db))
 
 
@@ -210,7 +277,7 @@ def serve_findings(db: Path | None, query: str) -> FeedResponse:
     Malformed numbers and a cursor below one are a 400 naming the parameter.
     """
     if db is None:
-        return _absent("findings", "--feeds-db")
+        return absent_surface("findings")
     params = parse_qs(query)
     try:
         limit = bounded_query_int(params.get("limit", [str(DEFAULT_FINDINGS_LIMIT)])[0])
@@ -231,7 +298,7 @@ def serve_sessions(db: Path | None) -> FeedResponse:
     no notes reports empty sessions and zeroed totals, not a fabricated cost.
     """
     if db is None:
-        return _absent("sessions", "--feeds-db")
+        return absent_surface("sessions")
     return _store_feed(lambda: build_sessions_feed(db))
 
 
@@ -243,7 +310,7 @@ def serve_waits(db: Path | None) -> FeedResponse:
     log. Transient socket waiters are not journalled and are omitted.
     """
     if db is None:
-        return _absent("waits", "--feeds-db")
+        return absent_surface("waits")
     return _store_feed(lambda: build_waits_feed(db))
 
 
@@ -254,7 +321,7 @@ def serve_operator_actions(db: Path | None, query: str) -> FeedResponse:
     events; 400 on a malformed cursor or limit.
     """
     if db is None:
-        return _absent("operator-actions", "--feeds-db")
+        return absent_surface("operator-actions")
     params = parse_qs(query)
     try:
         since = bounded_query_int(params.get("since", ["0"])[0])
@@ -271,7 +338,7 @@ def serve_receipts(db: Path | None, query: str) -> FeedResponse:
     400 on malformed ``since`` or ``limit``.
     """
     if db is None:
-        return _absent("receipts", "--feeds-db")
+        return absent_surface("receipts")
     params = parse_qs(query)
     try:
         since = bounded_query_int(params.get("since", ["0"])[0])
@@ -289,7 +356,7 @@ def serve_postmortem(db: Path | None, key_file: Path | None, query: str) -> Feed
     ``present=false``; only missing configuration or unreadable storage fail.
     """
     if db is None:
-        return _absent("postmortem", "--feeds-db")
+        return absent_surface("postmortem")
     values = parse_qs(query, keep_blank_values=True).get("task", [])
     task_id = values[0].strip() if len(values) == 1 else ""
     if not task_id or len(task_id) > MAX_POSTMORTEM_TASK_ID_LENGTH:
@@ -310,7 +377,7 @@ def serve_events(db: Path | None, query: str) -> FeedResponse:
     default.
     """
     if db is None:
-        return _absent("events", "--feeds-db")
+        return absent_surface("events")
     params = parse_qs(query)
     since_raw = params.get("since", ["0"])[0]
     try:
@@ -358,7 +425,7 @@ def serve_causality(db: Path | None, query: str) -> FeedResponse:
     the log never recorded is a 404 — absent, not invented.
     """
     if db is None:
-        return _absent("causality", "--feeds-db")
+        return absent_surface("causality")
     params = parse_qs(query)
     direction = params.get("direction", ["causes"])[0]
     task = params.get("task", [None])[0]
@@ -373,7 +440,7 @@ def serve_causality(db: Path | None, query: str) -> FeedResponse:
 def serve_federation(store: Path | None) -> FeedResponse:
     """Serve the imported peerings, or the feed's honest absence."""
     if store is None:
-        return _absent("federation", "--federation-store")
+        return absent_surface("federation")
     return _store_feed(lambda: build_federation_feed(store))
 
 

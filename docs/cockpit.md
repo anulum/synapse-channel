@@ -35,6 +35,10 @@ and participants), then the dashboard:
 ```bash
 synapse dashboard --port 8765
 # front door (cockpit): http://127.0.0.1:8765/
+# capabilities JSON: http://127.0.0.1:8765/capabilities.json
+# not served without --feeds-db: reliability, events, metrics, state-at, merkle-proof, health-anomalies, causality, findings, sessions, waits, operator-actions, receipts, postmortem
+# not served without --federation-store: federation
+# not served without --attention-store: attention
 # dashboard bearer: ~/.local/state/synapse/dashboard/bearer.token (written for this start; a restart writes a new one)
 ```
 
@@ -46,6 +50,14 @@ owner-only, and never prints it. The directory is `$XDG_STATE_HOME/synapse/dashb
 link or open to other users. With `--dashboard-token` the bearer is the one you
 gave; with `--dashboard-access-file` the start names the policy, whose token
 files hold the bearers.
+
+The start also names each optional surface it does not serve, with the flag
+that turns it on. `/capabilities.json` says the same to a client, behind the
+same bearer: every optional surface with its path, its flag, and whether this
+start serves it. The setup assistant (**setup** in the HUD) shows that list
+under "What this dashboard serves". A surface asked for without its store
+answers `404` with `<name> feed not configured; start the dashboard with <flag>`;
+the list and that answer come from one table, so they agree.
 
 ## Start the cockpit from a source checkout
 

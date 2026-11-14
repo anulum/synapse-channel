@@ -8,6 +8,7 @@
 
 import type { FeedStatus } from "./feed";
 import type { LiveConnectionStatus } from "./liveTransport";
+import type { ServedSurfaces } from "./servedSurfaces";
 import type { SnapshotStatus } from "./snapshot";
 
 export type SetupTruth = "installed" | "configured" | "absent" | "unverifiable";
@@ -20,6 +21,8 @@ export interface SetupEvidence {
   readonly snapshot: SnapshotStatus;
   readonly transport: LiveConnectionStatus;
   readonly optionalFeeds: readonly FeedStatus[];
+  /** The dashboard's own capability summary, or null when it has not given one. */
+  readonly served: ServedSurfaces | null;
   readonly loopbackOrigin: boolean;
 }
 
@@ -60,7 +63,10 @@ function parsedPort(value: string): number | null {
   return port >= 1024 && port <= 65_535 ? port : null;
 }
 
-function optionalFeedTruth(statuses: readonly FeedStatus[]): SetupTruth {
+/** The dashboard's own summary decides; without one, the feeds that answered do. */
+function optionalFeedTruth(evidence: SetupEvidence): SetupTruth {
+  if (evidence.served !== null) return evidence.served.configured > 0 ? "configured" : "absent";
+  const statuses = evidence.optionalFeeds;
   if (statuses.some((status) => status === "live")) return "configured";
   if (statuses.length === 0 || statuses.every((status) => status === "absent")) return "absent";
   return "unverifiable";
@@ -79,13 +85,13 @@ export function deriveSetupPreflight(evidence: SetupEvidence): readonly SetupPre
     { id: "access", truth: evidence.access === "ready" ? "configured" : "unverifiable" },
     { id: "hub", truth: evidence.snapshot === "live" ? "configured" : "unverifiable" },
     { id: "transport", truth: transportTruth(evidence.transport) },
-    { id: "feeds", truth: optionalFeedTruth(evidence.optionalFeeds) },
+    { id: "feeds", truth: optionalFeedTruth(evidence) },
   ];
 }
 
 /** Convert current browser evidence into a proof checklist without inferring health. */
 export function deriveSetupProof(evidence: SetupEvidence): readonly SetupProofRow[] {
-  const feedTruth = optionalFeedTruth(evidence.optionalFeeds);
+  const feedTruth = optionalFeedTruth(evidence);
   return [
     { id: "hub", verdict: evidence.snapshot === "live" ? "pass" : "attention" },
     { id: "access", verdict: evidence.access === "ready" ? "pass" : "attention" },
@@ -127,7 +133,6 @@ export function buildSetupCommandPlan(input: SetupProfileInput): SetupCommandPla
   const dashboardParts = [
     "synapse", "dashboard", "--uri", `ws://${LOOPBACK_HOST}:${hubPort}`,
     "--host", LOOPBACK_HOST, "--port", String(dashboardPort),
-    "--cockpit-dist", "clients/cockpit/dist",
   ];
   if (input.durableEvidence) dashboardParts.push("--feeds-db", HUB_DB_PLACEHOLDER);
   if (input.protectedDashboard) {

@@ -574,7 +574,7 @@ and durable audit as before. Without an access file, the existing one-token and
 generated-bearer profile applies on loopback too; no anonymous live-data access is implied.
 
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
-name) the dashboard serves twelve feeds off the **durable event store** —
+name) the dashboard serves thirteen feeds off the **durable event store** —
 available when the hub is down, real sequences and timestamps, behind the
 configured principal grants as protected dashboard data:
 
@@ -640,6 +640,16 @@ carries is served read-only under `/cockpit/`, and the root `/` opens it;
 directory or with unrecognised suffixes are refused). A generated bearer is
 written owner-only under `$XDG_STATE_HOME/synapse/dashboard/` and only its path
 is printed.
+
+The start names each optional surface it does not serve, one line per missing
+flag (`not served without --feeds-db: reliability, events, …`).
+`/capabilities.json`, read-gated like every feed, says the same to a client:
+`surfaces` lists every optional surface with its `name`, `path`, `flag` and
+whether this start serves it (`configured`), and `configured` and `total` count
+them. A surface asked for without its store answers `404` with
+`<name> feed not configured; start the dashboard with <flag>`. The list, that
+answer and the start's lines come from one table, so they cannot disagree. The
+cockpit's setup assistant shows the list under "What this dashboard serves".
 
 **Operator write-path (opt-in).** `--operator` arms three write routes so the
 cockpit can act on the fleet rather than only observe it:

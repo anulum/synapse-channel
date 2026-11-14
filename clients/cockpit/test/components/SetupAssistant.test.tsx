@@ -20,6 +20,7 @@ const EVIDENCE: SetupEvidence = {
   snapshot: "live",
   transport: "live",
   optionalFeeds: ["live", "absent"],
+  served: null,
   loopbackOrigin: true,
 };
 
@@ -76,6 +77,36 @@ describe("SetupAssistant", () => {
     expect(storageWrite).not.toHaveBeenCalled();
     expect(location.href).toBe(startingUrl);
     expect(document.activeElement).toBe(screen.getByLabelText("Close setup assistant"));
+  });
+
+  it("says what the dashboard serves, each missing surface with its flag", () => {
+    renderAssistant({
+      ...EVIDENCE,
+      served: {
+        surfaces: [
+          { name: "waits", path: "/waits.json", flag: "--feeds-db", configured: true },
+          { name: "federation", path: "/federation.json", flag: "--federation-store", configured: false },
+        ],
+        configured: 1,
+        total: 2,
+      },
+    });
+
+    const panel = screen.getByRole("region", { name: "What this dashboard serves" });
+    expect(panel.textContent).toContain("1 of 2 optional surfaces are served.");
+    const rows = Array.from(panel.querySelectorAll("li"), (row) => row.textContent);
+    expect(rows).toEqual(["/waits.jsonserved", "/federation.jsonstart with --federation-store"]);
+  });
+
+  it("says plainly when the dashboard has not given its summary", () => {
+    renderAssistant();
+
+    const panel = screen.getByRole("region", { name: "What this dashboard serves" });
+    expect(panel.textContent).toBe(
+      "What this dashboard serves" +
+        "The dashboard has not said which optional surfaces it serves. " +
+        "A dashboard older than its capability summary cannot.",
+    );
   });
 
   it("validates the profile and never offers a broader bind", async () => {

@@ -430,3 +430,33 @@
     justify-self: start;
   }
 }
+
+.setup-served {
+  margin-top: var(--sp-4);
+}
+
+.setup-served-list {
+  display: grid;
+  gap: var(--sp-1);
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup-served-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--abyss);
+}
+
+.setup-served-row code {
+  color: var(--ink);
+  font: var(--fs-small) var(--font-mono);
+  overflow-wrap: anywhere;
+}

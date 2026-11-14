@@ -56,7 +56,7 @@ def test_dashboard_reliability_endpoint_reports_absence_without_a_store() -> Non
 
     assert status == 404
     assert content_type == "text/plain"
-    assert "--reliability-db" in body
+    assert body == "reliability feed not configured; start the dashboard with --feeds-db\n"
 
 
 def test_dashboard_reliability_endpoint_serves_the_report_with_the_hub_down(
@@ -732,7 +732,7 @@ def test_receipts_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
     ("path", "flag"),
     [
         ("/state-at.json?seq=1", "--feeds-db"),
-        ("/reliability.json", "--reliability-db"),
+        ("/reliability.json", "--feeds-db"),
         ("/health-anomalies.json", "--feeds-db"),
     ],
 )

@@ -22,6 +22,7 @@ const LIVE: SetupEvidence = {
   snapshot: "live",
   transport: "live",
   optionalFeeds: ["live", "absent"],
+  served: null,
   loopbackOrigin: true,
 };
 
@@ -81,6 +82,18 @@ describe("setup assistant model", () => {
     expect(deriveSetupProof({ ...LIVE, transport: "gap" })[3]?.verdict).toBe("attention");
   });
 
+  it("lets the dashboard's own summary decide the optional feeds over the feeds that answered", () => {
+    const surface = { name: "waits", path: "/waits.json", flag: "--feeds-db" };
+    const none = { surfaces: [{ ...surface, configured: false }], configured: 0, total: 1 };
+    const one = { surfaces: [{ ...surface, configured: true }], configured: 1, total: 1 };
+
+    expect(deriveSetupPreflight({ ...LIVE, served: none })[4]).toEqual({ id: "feeds", truth: "absent" });
+    expect(deriveSetupProof({ ...LIVE, served: none })[4]).toEqual({ id: "feeds", verdict: "absent" });
+    const unanswered = { ...LIVE, optionalFeeds: ["error", "connecting"] as const, served: one };
+    expect(deriveSetupPreflight(unanswered)[4]).toEqual({ id: "feeds", truth: "configured" });
+    expect(deriveSetupProof(unanswered)[4]).toEqual({ id: "feeds", verdict: "pass" });
+  });
+
   it("recognises only explicit browser loopback hostnames", () => {
     expect(isLoopbackHostname("localhost")).toBe(true);
     expect(isLoopbackHostname(" LOCALHOST ")).toBe(true);
@@ -103,7 +116,7 @@ describe("setup assistant model", () => {
         { id: "hub", text: "synapse hub --host 127.0.0.1 --port 8876 --metrics" },
         {
           id: "dashboard",
-          text: "synapse dashboard --uri ws://127.0.0.1:8876 --host 127.0.0.1 --port 8765 --cockpit-dist clients/cockpit/dist",
+          text: "synapse dashboard --uri ws://127.0.0.1:8876 --host 127.0.0.1 --port 8765",
         },
       ],
     });
