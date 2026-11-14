@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 
-from _platform_caps import requires_posix_process_group
+from _platform_caps import requires_child_subreaper, requires_posix_process_group
 from cli_e2e_helpers import _CLI, git_repo, git_run, run_cli
 from hub_e2e_helpers import running_hub
 from synapse_channel.cli_locking import _lock, _run_subprocess
@@ -648,7 +648,7 @@ def descendant_reaper() -> Iterator[bool]:
 
 
 @pytest.mark.asyncio
-@requires_posix_process_group
+@requires_child_subreaper
 async def test_cancellation_stops_descendant_after_group_leader_exits(
     tmp_path: Path, descendant_reaper: bool
 ) -> None:

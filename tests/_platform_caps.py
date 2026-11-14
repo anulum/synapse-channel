@@ -132,6 +132,15 @@ requires_posix_process_group = pytest.mark.skipif(
 )
 """Skip marker for tests of POSIX process-group termination."""
 
+requires_child_subreaper = pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason=(
+        "adopts a descendant whose parent has exited with prctl(PR_SET_CHILD_SUBREAPER), "
+        "which only Linux has"
+    ),
+)
+"""Skip marker for tests that reap a descendant after its process-group leader exits."""
+
 
 PACKAGED_PYTHON312_AVAILABLE = Path("/usr/bin/python3.12").is_file() and os.access(
     "/usr/bin/python3.12", os.X_OK

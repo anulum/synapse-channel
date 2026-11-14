@@ -151,9 +151,9 @@ PROBE_EXCLUSIONS: dict[str, dict[int, tuple[str, str]]] = {
 
 #: Every conditional-skip line in ``tests/``, by file: (line count, justification class).
 SKIP_LEDGER: dict[str, tuple[int, str]] = {
-    # Ten platform markers, and one helper that skips when this process may
+    # Eleven platform markers, and one helper that skips when this process may
     # not create a symbolic link.
-    "tests/_platform_caps.py": (11, "platform-guard + filesystem-capability"),
+    "tests/_platform_caps.py": (12, "platform-guard + filesystem-capability"),
     "tests/_portable_exec.py": (1, "platform-guard"),
     # Only Linux SO_PEERCRED journeys use this marker; signed TCP tests stay portable.
     "tests/protected_write_socket_examples.py": (1, "platform-guard"),
