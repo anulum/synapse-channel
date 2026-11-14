@@ -26,10 +26,31 @@ requested data before retrying. If the retained event log advances while roster,
 claims, and board remain unavailable, check the dashboard's client version and
 receive diagnostics. Unavailable snapshot counts do not prove an empty fleet.
 
+## Open the cockpit
+
+The package carries a build of the cockpit, and the cockpit is the dashboard's
+front door. Start a hub first (the [quick start](quickstart.md) covers the hub
+and participants), then the dashboard:
+
+```bash
+synapse dashboard --port 8765
+# front door (cockpit): http://127.0.0.1:8765/
+# dashboard bearer: ~/.local/state/synapse/dashboard/bearer.token (written for this start; a restart writes a new one)
+```
+
+Open `http://127.0.0.1:8765/`. The browser is sent on to `/cockpit/`, keeping
+any query such as `?lang=sk`, where the unlock screen asks for the bearer. Read
+it from the file the start names: the start writes a generated bearer there,
+owner-only, and never prints it. The directory is `$XDG_STATE_HOME/synapse/dashboard/`
+(`~/.local/state/...` without it); the start refuses when that directory is a
+link or open to other users. With `--dashboard-token` the bearer is the one you
+gave; with `--dashboard-access-file` the start names the policy, whose token
+files hold the bearers.
+
 ## Start the cockpit from a source checkout
 
-Start a hub first; the [quick start](quickstart.md) covers the basic hub and
-participant flow. In a second terminal, build the static cockpit:
+A development build of the client replaces the packaged one with
+`--cockpit-dist`. In a second terminal, build the static cockpit:
 
 ```bash
 cd clients/cockpit
@@ -46,7 +67,7 @@ synapse dashboard \
   --cockpit-dist clients/cockpit/dist
 ```
 
-Open `http://127.0.0.1:8765/cockpit/`.
+Open `http://127.0.0.1:8765/`, which opens this build.
 
 Add the durable hub database when you want the event log, reliability,
 metrics, audit, causality, sessions, waits, findings, and time-travel feeds:

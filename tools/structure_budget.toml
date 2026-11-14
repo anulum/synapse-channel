@@ -62,7 +62,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/cli_causality.py::add_parsers" = 116
 "src/synapse_channel/cli_claude_plugin.py::_command" = 81
 "src/synapse_channel/cli_cross_repo.py::add_parsers" = 66
-"src/synapse_channel/cli_dashboard.py::_cmd_dashboard" = 67
 "src/synapse_channel/cli_dashboard.py::add_parsers" = 154
 "src/synapse_channel/cli_doctor.py::_cmd_doctor" = 184
 "src/synapse_channel/cli_doctor.py::_diagnose" = 123

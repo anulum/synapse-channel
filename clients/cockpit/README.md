@@ -438,13 +438,15 @@ npm run build
 synapse dashboard --port 8765 --cockpit-dist "$PWD/dist"
 ```
 
-Open `http://127.0.0.1:8765/cockpit/` and use the unlock form. Add `--operator`
-only when you intend to enable the governed write routes.
+Open `http://127.0.0.1:8765/` and use the unlock form. Add `--operator`
+only when you intend to enable the governed write routes. Without
+`--cockpit-dist` the dashboard serves the build the package carries.
 
 | Page | Purpose | Access |
 | --- | --- | --- |
-| `/cockpit/` | Rich React client, when `--cockpit-dist` is configured | Public validated static shell; bearer-authenticated feeds |
-| `/` or `/studio/command` | Packaged read-only Studio command centre | Bearer required for page and feeds |
+| `/` | The front door: sends the browser on to `/cockpit/`, query kept | Public redirect |
+| `/cockpit/` | Rich React client: the packaged build, or `--cockpit-dist` | Public validated static shell; bearer-authenticated feeds |
+| `/studio/command` | Packaged read-only Studio command centre (also `/` without a cockpit build) | Bearer required for page and feeds |
 | `/studio` | Static design-system reference, not live telemetry | Bearer required |
 | `/classic` or `/index.html` | Legacy server-rendered dashboard | Bearer required |
 

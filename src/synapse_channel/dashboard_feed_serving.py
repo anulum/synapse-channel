@@ -398,6 +398,15 @@ _DIST_CONTENT_TYPES = {
 _NOT_FOUND: Final = FeedResponse(HTTPStatus.NOT_FOUND, b"not found\n", "text/plain")
 
 
+PACKAGED_COCKPIT = Path(__file__).resolve().parent / "dashboard_assets" / "cockpit"
+"""Where the package carries the built cockpit (``tools/vendor_cockpit_build.py`` writes it)."""
+
+
+def packaged_cockpit_dist(directory: Path = PACKAGED_COCKPIT) -> Path | None:
+    """Return the cockpit build the package carries, or ``None`` when it carries none."""
+    return directory if (directory / "index.html").is_file() else None
+
+
 def serve_cockpit_dist(dist_dir: Path | None, prefix: str, path: str) -> FeedResponse:
     """Serve one file from the operator-named cockpit build directory.
 

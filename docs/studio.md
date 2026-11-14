@@ -58,17 +58,19 @@ visual reference the live command centre is assembled from.
 
 ```bash
 synapse dashboard --port 8765
-# front door (command centre): http://127.0.0.1:8765/
-# design reference:           http://127.0.0.1:8765/studio
-# classic hub HTML:           http://127.0.0.1:8765/classic
+# front door (cockpit):    http://127.0.0.1:8765/
+# studio command:          http://127.0.0.1:8765/studio/command
+# studio design reference: http://127.0.0.1:8765/studio
+# classic hub HTML:        http://127.0.0.1:8765/classic
 ```
 
 Dashboard page and feed reads require a bearer, including on loopback.
-The CLI prints a generated bearer when no token or principal policy is supplied.
+When no token or principal policy is supplied, the CLI writes a generated bearer
+to an owner-only file and prints only that file's path.
 Packaged Studio pages require an explicit Authorization header and have no
 interactive unlock form. For ordinary browser use, serve the built React
-cockpit at `/cockpit/` and use its unlock screen; see
-[cockpit setup](cockpit.md#start-the-cockpit-from-a-source-checkout).
+cockpit, which the root `/` opens, and use its unlock screen; see
+[opening the cockpit](cockpit.md#open-the-cockpit).
 The static design reference needs no hub data, but its page still requires
 dashboard authentication.
 
@@ -277,11 +279,13 @@ than implying a quiet log.
 
 ```bash
 synapse dashboard --port 8765 --feeds-db ./hub.db
-# open http://127.0.0.1:8765/  (same shell as /studio/command)
+# open http://127.0.0.1:8765/studio/command
 ```
 
-The dashboard CLI prints the Studio URL first. Root `/` and `/studio/command`
-serve the same command-centre shell; `/classic` keeps the pre-Studio hub HTML.
+The dashboard CLI prints the front door first. With a cockpit build (the one the
+package carries, or `--cockpit-dist`) the root `/` opens the cockpit and the
+command centre stays at `/studio/command`; without one the root serves the
+command centre. `/classic` keeps the pre-Studio hub HTML.
 
 ## What comes next
 

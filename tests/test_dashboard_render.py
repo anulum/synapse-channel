@@ -10,8 +10,10 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from websockets.asyncio.client import connect
 
@@ -19,10 +21,12 @@ from dashboard_helpers import _authorized_get, _feeds_server, _http_get
 from hub_e2e_helpers import read_until_type, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.dashboard import (
+    DashboardServer,
     DashboardSnapshot,
     _agent_roles_from_who,
     fetch_dashboard_snapshot,
 )
+from synapse_channel.dashboard_feed_serving import PACKAGED_COCKPIT, packaged_cockpit_dist
 from synapse_channel.dashboard_render import render_dashboard_html
 
 
@@ -312,3 +316,49 @@ def test_dashboard_html_renders_observed_peer_rows() -> None:
     assert "observed@quiet" in page
     assert "lag=unknown" in page
     assert "no observed claim owners" in page
+
+
+def _raw_get(server: DashboardServer, path: str) -> tuple[int, str | None]:
+    """GET ``path`` as a browser navigation does: no bearer, no redirect followed."""
+    address = urlsplit(server.url("/"))
+    assert address.hostname is not None and address.port is not None
+    connection = http.client.HTTPConnection(address.hostname, address.port, timeout=5)
+    try:
+        connection.request("GET", path, headers={"Host": address.netloc})
+        response = connection.getresponse()
+        response.read()
+        return response.status, response.getheader("Location")
+    finally:
+        connection.close()
+
+
+def test_the_root_opens_the_cockpit_unlock_screen_when_a_build_is_served(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<title>unlock cockpit</title>", encoding="utf-8")
+    server = _feeds_server(cockpit_dist=dist, dashboard_token="secret")
+    try:
+        plain, with_query = _raw_get(server, "/"), _raw_get(server, "/?lang=sk")
+        page_status, _, page = _http_get(server.url("/"))  # a browser follows it
+    finally:
+        server.close()
+
+    assert plain == (302, "/cockpit/")
+    assert with_query == (302, "/cockpit/?lang=sk")
+    assert (page_status, page) == (200, "<title>unlock cockpit</title>")
+
+
+def test_the_root_stays_the_studio_page_without_a_cockpit_build() -> None:
+    server = _feeds_server(dashboard_token="secret")
+    try:
+        status, location = _raw_get(server, "/")
+    finally:
+        server.close()
+
+    assert (status, location) == (401, None)  # the read gate, as before: no redirect
+
+
+def test_the_package_carries_its_cockpit_build(tmp_path: Path) -> None:
+    assert packaged_cockpit_dist() == PACKAGED_COCKPIT
+    assert (PACKAGED_COCKPIT / "index.html").is_file()
+    assert packaged_cockpit_dist(tmp_path) is None

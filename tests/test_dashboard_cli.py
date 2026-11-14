@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from typing import cast
 
@@ -215,23 +216,70 @@ def test_cmd_dashboard_serves_until_interrupted_and_closes(
     server = _FakeDashboardServer(token=None, generated=False)
     assert _run_dispatcher(monkeypatch, server) == 0
     out = capsys.readouterr().out
-    assert "studio (command centre): http://127.0.0.1:8765/" in out
+    # The package carries the cockpit build: it is the front door, announced first.
+    assert out.splitlines()[0] == "front door (cockpit): http://127.0.0.1:8765/"
+    assert "studio (command centre)" not in out
+    assert "studio command: http://127.0.0.1:8765/studio/command" in out
     assert "classic hub HTML: http://127.0.0.1:8765/classic" in out
     assert "snapshot JSON: http://127.0.0.1:8765/snapshot.json" in out
     assert "dashboard auth" not in out  # no token configured, nothing to announce
     assert server.closed
 
 
-def test_cmd_dashboard_announces_a_generated_token(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_cmd_dashboard_keeps_a_generated_token_in_a_file_and_never_prints_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    """A token the server generated must be shown once — the user cannot know it."""
-    server = _FakeDashboardServer(token="generated-secret", generated=True)
+    """The person needs the generated bearer: the start keeps it owner-only and prints the path."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    server = _FakeDashboardServer(token="generated-secret-bearer", generated=True)
     assert _run_dispatcher(monkeypatch, server) == 0
     out = capsys.readouterr().out
-    assert "dashboard token: generated-secret" in out
-    assert "Authorization: Bearer" in out
+    bearer = tmp_path / "synapse" / "dashboard" / "bearer.token"
+    assert "generated-secret-bearer" not in out
+    assert f"dashboard bearer: {bearer} (written for this start; a restart writes a new one)" in out
+    assert "dashboard auth: Authorization: Bearer <the token in that file>" in out
+    assert bearer.read_text(encoding="utf-8") == "generated-secret-bearer\n"
     assert server.closed
+
+
+def test_cmd_dashboard_refuses_to_start_when_the_bearer_cannot_be_kept(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    directory = tmp_path / "synapse" / "dashboard"
+    directory.mkdir(parents=True, mode=0o755)
+    directory.chmod(0o755)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    server = _FakeDashboardServer(token="generated-secret-bearer", generated=True)
+
+    assert _run_dispatcher(monkeypatch, server) == 2
+    out = capsys.readouterr().out
+    assert out.startswith("refused: the generated dashboard bearer cannot be kept: ")
+    assert "accessible by other users" in out
+    assert "generated-secret-bearer" not in out
+    assert "front door" not in out  # nothing is announced for a server that closes
+    assert server.closed
+    assert list(directory.iterdir()) == []
+
+
+def test_cmd_dashboard_names_the_access_policy_it_read(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    from synapse_channel import cli_dashboard
+
+    policy = tmp_path / "dashboard-access.json"
+
+    def interrupt(_: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        cli_dashboard,
+        "start_dashboard_server",
+        lambda **_: _FakeDashboardServer(token=None, generated=False),
+    )
+    monkeypatch.setattr("synapse_channel.cli_dashboard.time.sleep", interrupt)
+    args = cast("argparse.Namespace", _dashboard_args(dashboard_access_file=policy))
+    assert int(args.func(args)) == 0
+    assert f"dashboard access policy: {policy}" in capsys.readouterr().out
 
 
 def test_cmd_dashboard_never_echoes_a_supplied_token(
@@ -373,7 +421,7 @@ def test_cmd_dashboard_announces_every_configured_feed(
     assert "events tail JSON: http://127.0.0.1:8765/events.json" in out
     assert "causality JSON: http://127.0.0.1:8765/causality.json" in out
     assert "federation JSON: http://127.0.0.1:8765/federation.json" in out
-    assert "cockpit: http://127.0.0.1:8765/cockpit/" in out
+    assert "front door (cockpit): http://127.0.0.1:8765/" in out
 
 
 def test_cmd_dashboard_announces_operator_write_routes(
@@ -420,3 +468,33 @@ def test_cmd_dashboard_refuses_a_stray_observed_pin(capsys: pytest.CaptureFixtur
 
     assert cli_dashboard._cmd_dashboard(args) == 2
     assert "does not fetch" in capsys.readouterr().out + capsys.readouterr().err
+
+
+def test_cmd_dashboard_serves_the_packaged_cockpit_unless_another_build_is_named(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    from synapse_channel import cli_dashboard
+    from synapse_channel.dashboard_feed_serving import PACKAGED_COCKPIT
+
+    started: list[object] = []
+
+    def start(**kwargs: object) -> _FakeDashboardServer:
+        started.append(kwargs["cockpit_dist"])
+        return _FakeDashboardServer(token=None, generated=False)
+
+    def interrupt(_: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli_dashboard, "start_dashboard_server", start)
+    monkeypatch.setattr("synapse_channel.cli_dashboard.time.sleep", interrupt)
+    for cockpit_dist in (None, tmp_path):
+        named = cast("argparse.Namespace", _dashboard_args(cockpit_dist=cockpit_dist))
+        assert int(named.func(named)) == 0
+    # A package without a build: the Studio command centre stays at the root.
+    monkeypatch.setattr(cli_dashboard, "packaged_cockpit_dist", lambda: None)
+    bare = cast("argparse.Namespace", _dashboard_args())
+    assert int(bare.func(bare)) == 0
+
+    assert started == [PACKAGED_COCKPIT, tmp_path, None]
+    last = capsys.readouterr().out.split("studio command:")[-2].splitlines()[-1]
+    assert last == "studio (command centre): http://127.0.0.1:8765/"

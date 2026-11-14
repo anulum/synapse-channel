@@ -634,9 +634,12 @@ retain their reasons. The events, receipts and operator-actions channels in
 `/federation.json` — the imported peerings with provenance and the bundle
 fingerprints operators compared in the exchange ceremony; namespace
 outcomes are hub-runtime state no durable store carries, so that section
-ships empty with the reason stated. `--cockpit-dist <dir>` serves a built
-cockpit single-page app read-only under `/cockpit/` (paths escaping the
-directory or with unrecognised suffixes are refused).
+ships empty with the reason stated. The cockpit single-page app the package
+carries is served read-only under `/cockpit/`, and the root `/` opens it;
+`--cockpit-dist <dir>` serves another build instead (paths escaping the
+directory or with unrecognised suffixes are refused). A generated bearer is
+written owner-only under `$XDG_STATE_HOME/synapse/dashboard/` and only its path
+is printed.
 
 **Operator write-path (opt-in).** `--operator` arms three write routes so the
 cockpit can act on the fleet rather than only observe it:

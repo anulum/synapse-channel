@@ -15,7 +15,9 @@ from pathlib import Path
 
 from synapse_channel.cli_dashboard_access import add_dashboard_access_arguments
 from synapse_channel.client.agent import default_hub_uri
-from synapse_channel.dashboard import start_dashboard_server
+from synapse_channel.dashboard import DashboardServer, start_dashboard_server
+from synapse_channel.dashboard_bearer_file import write_generated_bearer
+from synapse_channel.dashboard_feed_serving import packaged_cockpit_dist
 from synapse_channel.observed_peers import (
     parse_observed_peer,
     parse_observed_pin,
@@ -35,7 +37,12 @@ _STORE_FEED_LINES: tuple[tuple[str, str], ...] = (
 
 
 def _cmd_dashboard(args: argparse.Namespace) -> int:
-    """Serve the local dashboard with optional explicitly armed operator relays."""
+    """Serve the local dashboard with optional explicitly armed operator relays.
+
+    The cockpit build the package carries is the front door unless
+    ``--cockpit-dist`` names another build; ``/`` then opens it.
+    """
+    cockpit_dist = args.cockpit_dist if args.cockpit_dist is not None else packaged_cockpit_dist()
     try:
         server = start_dashboard_server(
             host=args.host,
@@ -58,7 +65,7 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             reliability_db_key_file=getattr(args, "feeds_db_key_file", None),
             attention_store=args.attention_store,
             federation_store=args.federation_store,
-            cockpit_dist=args.cockpit_dist,
+            cockpit_dist=cockpit_dist,
             operator=args.operator,
             operator_name=args.operator_name,
             observed_peers=tuple(args.observed_peers),
@@ -72,7 +79,36 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc))
         return 2
-    print(f"studio (command centre): {server.url('/')}")
+    if not _announce(args, server, cockpit_dist):
+        server.close()
+        return 2
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        server.close()
+
+
+def _announce(args: argparse.Namespace, server: DashboardServer, cockpit_dist: Path | None) -> bool:
+    """Print where everything is served and where the bearer is, never the bearer itself.
+
+    A generated bearer is first written owner-only (:func:`write_generated_bearer`),
+    and only its path is printed. Returns ``False``, having printed why, when it
+    cannot be kept safely; the caller then closes the server.
+    """
+    bearer: Path | None = None
+    if server.dashboard_token_generated and server.dashboard_token is not None:
+        try:
+            bearer = write_generated_bearer(server.dashboard_token)
+        except (OSError, ValueError) as exc:  # SecurePathError is a ValueError
+            print(f"refused: the generated dashboard bearer cannot be kept: {exc}")
+            return False
+    if cockpit_dist is not None:
+        print(f"front door (cockpit): {server.url('/')}")
+    else:
+        print(f"studio (command centre): {server.url('/')}")
     print("studio command: " + server.url("/studio/command"))
     print("studio design reference: " + server.url("/studio"))
     print("classic hub HTML: " + server.url("/classic"))
@@ -89,20 +125,14 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
         print("attention JSON: " + server.url("/attention.json"))
     if args.federation_store is not None:
         print("federation JSON: " + server.url("/federation.json"))
-    if args.cockpit_dist is not None:
-        print("cockpit: " + server.url("/cockpit/"))
-    if server.dashboard_token_generated and server.dashboard_token is not None:
-        print("dashboard token: " + server.dashboard_token)
-        print("dashboard auth: Authorization: Bearer <dashboard token>")
+    if args.dashboard_access_file is not None:
+        print(f"dashboard access policy: {args.dashboard_access_file}")
+    if bearer is not None:
+        print(f"dashboard bearer: {bearer} (written for this start; a restart writes a new one)")
+        print("dashboard auth: Authorization: Bearer <the token in that file>")
     elif server.dashboard_token is not None:
         print("dashboard auth: Authorization: Bearer <dashboard token>")
-    try:
-        while True:
-            time.sleep(3600)
-    except KeyboardInterrupt:
-        return 0
-    finally:
-        server.close()
+    return True
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

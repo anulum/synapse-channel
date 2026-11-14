@@ -595,6 +595,19 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if self._reject_foreign_host():
             return
         path = urlsplit(self.path).path
+        if path == "/" and self.cockpit_dist is not None:
+            # The cockpit is the front door. Its build resolves its files against
+            # /cockpit/, and a navigation carries no bearer: send the browser to the
+            # unlock screen there, keeping any query (such as ?lang=sk).
+            query = urlsplit(self.path).query
+            target = COCKPIT_DIST_PREFIX + (f"?{query}" if query else "")
+            self._write(
+                HTTPStatus.FOUND,
+                b"",
+                content_type="text/plain",
+                extra_headers=(("Location", target),),
+            )
+            return
         authorization = self.headers.get("Authorization")
         if path in FLEET_MIRROR_PATHS:
             self._write_access_decision(

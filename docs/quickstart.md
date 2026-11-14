@@ -220,10 +220,11 @@ synapse git-claim BUILD --name myproj/alice --auto-release-on manual \
   --paths src/parser.py
 # Continue only after the claim command confirms a grant.
 
-# 5. Open Studio (front door is the command centre)
+# 5. Open the front door (the cockpit the package carries)
 synapse dashboard --port 8765 --feeds-db ~/synapse/hub.db
-# open http://127.0.0.1:8765/  → Studio command centre
-# classic hub HTML: http://127.0.0.1:8765/classic
+# front door (cockpit): http://127.0.0.1:8765/  → the cockpit's unlock screen
+# studio command: http://127.0.0.1:8765/studio/command
+# dashboard bearer: ~/.local/state/synapse/dashboard/bearer.token  (unlock with its contents)
 # Optional at-rest: hub --db-key-file + dashboard --feeds-db-key-file (see at-rest-encryption.md)
 # Multi-machine fleet fabric uses its own exact released-core pin (see SYNAPSE-CHANNEL-FLEET)
 

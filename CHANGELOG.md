@@ -250,6 +250,16 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- The cockpit is the dashboard's front door. `synapse dashboard` serves the
+  build the package carries (or `--cockpit-dist`), and a browser opening `/` is
+  sent on to `/cockpit/` with its query kept, where the unlock screen asks for
+  the bearer; the start announces the front door first. The Studio command
+  centre stays at `/studio/command`, and at `/` when no cockpit build is served.
+  A generated dashboard bearer is no longer printed: the start writes it
+  owner-only to `$XDG_STATE_HOME/synapse/dashboard/bearer.token` (refusing a
+  linked directory or one open to other users) and prints only the path; a start
+  with `--dashboard-access-file` names the policy. See `docs/cockpit.md`, "Open
+  the cockpit".
 - The dashboard shows the hub's own proof that a seat reacts. The hub already
   judged each connected agent (a waiter seen within 20 seconds, or a reaction
   within its window) and warned a sender about one it could not prove; the
