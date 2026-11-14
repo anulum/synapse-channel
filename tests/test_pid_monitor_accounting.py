@@ -117,7 +117,11 @@ def _stop(pid: int) -> None:
 
 @_ACCOUNTING_HOST
 def test_pid_monitor_binds_the_working_interpreter_and_stops_within_a_bound() -> None:
-    """The public monitor reports the process that does the work, then returns."""
+    """The public monitor reports the process that does the work, then returns.
+
+    A Windows venv launcher binds its interpreter child. A plain interpreter
+    is the requested process, so it has no separate launcher working set.
+    """
     program = _WINDOWS_SLEEPER if sys.platform == "win32" else _LINUX_SLEEPER
     child = subprocess.Popen([sys.executable, "-c", program])
     bound = child.pid
@@ -141,13 +145,21 @@ def test_pid_monitor_binds_the_working_interpreter_and_stops_within_a_bound() ->
         assert accounting["bound_pid"] in accounting["tree_pids"]
         bound = int(accounting["bound_pid"])
         if sys.platform == "win32":
-            assert accounting["binding"] == "venv-launcher-child"
-            assert accounting["bound_pid"] != child.pid
+            # The sleeper sets priority class 0x4000. Swap is not a working-set field.
             assert accounting["swap_status"] == "unavailable"
             assert accounting["priority"] == "below-normal"
-            assert accounting["ram_kib"] > accounting["launcher_ram_kib"]
-            assert str(accounting["source"]).lower().endswith("python.exe")
-            assert "scripts" not in str(accounting["source"]).lower()
+            source = str(accounting["source"])
+            if sys.prefix != sys.base_prefix:
+                assert accounting["binding"] == "venv-launcher-child"
+                assert accounting["bound_pid"] != child.pid
+                assert accounting["ram_kib"] > accounting["launcher_ram_kib"]
+                assert source.lower().endswith("python.exe")
+                assert "scripts" not in source.lower()
+            else:
+                assert accounting["binding"] == "requested-process"
+                assert accounting["bound_pid"] == child.pid
+                assert accounting["launcher_ram_kib"] is None
+                assert Path(source).name.lower() == Path(sys.executable).name.lower()
         else:
             assert accounting["binding"] == "requested-process"
             assert accounting["bound_pid"] == child.pid
