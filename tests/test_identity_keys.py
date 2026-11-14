@@ -15,6 +15,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from home_redirect import bind_home
 from synapse_channel.core.identity_binding import (
     enroll_identity_key,
     load_identity_trust_bundle,
@@ -101,8 +102,7 @@ def test_expands_home_relative_path(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     POSIX expands ``~`` through ``HOME`` and Windows through ``USERPROFILE``; both
     point at the temporary directory, so the key is never written to a real profile.
     """
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    bind_home(monkeypatch, tmp_path)
 
     write_signing_key("~/id.pem", generate_signing_key())
 

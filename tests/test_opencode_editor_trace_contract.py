@@ -431,6 +431,7 @@ def test_proxy_isolates_each_lifecycle_runtime(tmp_path: Path) -> None:
     assert second_environment["OPENCODE_CONFIG_CONTENT"] == '{"model":"test"}'
     isolated_keys = (
         "HOME",
+        "USERPROFILE",
         "OPENCODE_TEST_HOME",
         "XDG_STATE_HOME",
         "XDG_CACHE_HOME",

@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from _platform_caps import requires_linux
+from home_redirect import redirect_home
 from synapse_channel.waker_config import DESIRED_ARMED, DESIRED_INHIBITED, load_waker_config
 from synapse_channel.waker_transition import transition_state
 
@@ -28,14 +29,9 @@ pytestmark = requires_linux
 
 
 def _run_cli(home: Path, fake_bin: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-    env = dict(os.environ)
-    env.update(
-        {
-            "HOME": str(home),
-            "PATH": f"{fake_bin}:{env['PATH']}",
-            "PYTHONPATH": str(REPO_ROOT / "src"),
-        }
-    )
+    env = redirect_home(os.environ, home)
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    env["PYTHONPATH"] = str(REPO_ROOT / "src")
     return subprocess.run(
         [sys.executable, "-m", "synapse_channel.cli", *arguments],
         cwd=REPO_ROOT,

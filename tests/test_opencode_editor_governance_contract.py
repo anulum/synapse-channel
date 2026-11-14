@@ -55,6 +55,8 @@ def test_isolated_environment_disables_network_bootstrap(tmp_path: Path) -> None
     assert stat.S_IMODE(config_dir.stat().st_mode) == 0o500
     assert environment["OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER"] == "1"
     assert environment["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1"
+    assert environment["HOME"] == str(home)
+    assert environment["USERPROFILE"] == environment["HOME"]
 
 
 def test_governed_project_environment_loads_installed_adapter(tmp_path: Path) -> None:

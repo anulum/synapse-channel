@@ -21,6 +21,7 @@ import pytest
 
 from _platform_caps import requires_sealed_launch
 from _portable_exec import install_posix_tool
+from home_redirect import bind_home
 from synapse_channel import cli, cli_mcp_call
 from synapse_channel.core.mcp_outbound import (
     McpDependencyError,
@@ -202,7 +203,7 @@ def test_mcp_call_crosses_trusted_config_and_real_stdio_server(
     capfd: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("HOME", "/sensitive/parent-home")
+    bind_home(monkeypatch, "/sensitive/parent-home")
     mcp_spec = importlib.util.find_spec("mcp")
     assert mcp_spec is not None and mcp_spec.origin is not None
     mcp_site_packages = str(Path(mcp_spec.origin).parent.parent)

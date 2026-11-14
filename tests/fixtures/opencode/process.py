@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from fixtures.opencode.llm import provider_config
+from home_redirect import redirect_home
 
 OPENCODE_VERSION = "1.18.32"
 TEST_MODEL = "test/test-model"
@@ -39,22 +40,23 @@ def isolated_environment(
     config_dir = home / ".config" / "opencode"
     config_dir.mkdir(mode=0o500, parents=True, exist_ok=True)
     config_dir.chmod(0o500)
-    environment = {
-        **os.environ,
-        "OPENCODE_TEST_HOME": str(home),
-        "HOME": str(home),
-        "XDG_CONFIG_HOME": str(home / ".config"),
-        "XDG_DATA_HOME": str(home / ".local" / "share"),
-        "XDG_STATE_HOME": str(home / ".local" / "state"),
-        "XDG_CACHE_HOME": str(home / ".cache"),
-        "OPENCODE_CONFIG_CONTENT": json.dumps(provider_config(llm_url)),
-        "OPENCODE_DISABLE_AUTOUPDATE": "1",
-        "OPENCODE_DISABLE_AUTOCOMPACT": "1",
-        "OPENCODE_DISABLE_MODELS_FETCH": "1",
-        "OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER": "1",
-        "OPENCODE_AUTH_CONTENT": "{}",
-        "NO_COLOR": "1",
-    }
+    environment = redirect_home(os.environ, home)
+    environment.update(
+        {
+            "OPENCODE_TEST_HOME": str(home),
+            "XDG_CONFIG_HOME": str(home / ".config"),
+            "XDG_DATA_HOME": str(home / ".local" / "share"),
+            "XDG_STATE_HOME": str(home / ".local" / "state"),
+            "XDG_CACHE_HOME": str(home / ".cache"),
+            "OPENCODE_CONFIG_CONTENT": json.dumps(provider_config(llm_url)),
+            "OPENCODE_DISABLE_AUTOUPDATE": "1",
+            "OPENCODE_DISABLE_AUTOCOMPACT": "1",
+            "OPENCODE_DISABLE_MODELS_FETCH": "1",
+            "OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER": "1",
+            "OPENCODE_AUTH_CONTENT": "{}",
+            "NO_COLOR": "1",
+        }
+    )
     for key in ("OPENCODE_PURE", "OPENCODE_DISABLE_PROJECT_CONFIG"):
         environment.pop(key, None)
     if pure:

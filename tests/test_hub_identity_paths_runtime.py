@@ -21,6 +21,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from cli_e2e_helpers import free_port, run_cli
+from home_redirect import redirect_home
 
 # A cold CLI start on a loaded Windows runner once took longer than 10 s.
 # The loop still fails at once when the hub process exits, so a longer
@@ -31,14 +32,11 @@ HUB_START_SECONDS = 30.0
 def hub_environment(home: Path) -> dict[str, str]:
     """Give owned subprocesses a temporary home, keys and candidate imports."""
     root = Path(__file__).resolve().parents[1]
-    return {
-        **os.environ,
-        "HOME": str(home),
-        "USERPROFILE": str(home),
-        "XDG_DATA_HOME": str(home / "data"),
-        "PYTHONPATH": os.pathsep.join((str(root / "src"), str(root / "tests"))),
-        "PYTHONUTF8": "1",
-    }
+    environment = redirect_home(os.environ, home)
+    environment["XDG_DATA_HOME"] = str(home / "data")
+    environment["PYTHONPATH"] = os.pathsep.join((str(root / "src"), str(root / "tests")))
+    environment["PYTHONUTF8"] = "1"
+    return environment
 
 
 @contextmanager

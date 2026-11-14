@@ -26,6 +26,7 @@ from typing import cast
 import pytest
 
 import synapse_channel.setup_verifier as setup_verifier
+from home_redirect import redirect_home
 from hub_e2e_helpers import close_agents, connect_agent
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.journal import EventKind
@@ -404,7 +405,7 @@ def _start_disposable_hub(
             # the default durable-ingress quota would (correctly) refuse that flood.
             "--no-durable-ingress-quota",
         ],
-        env={**os.environ, "HOME": str(isolated_home)},
+        env=redirect_home(os.environ, isolated_home),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

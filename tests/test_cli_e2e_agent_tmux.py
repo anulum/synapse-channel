@@ -37,6 +37,7 @@ import pytest
 
 from _platform_caps import requires_proc
 from cli_e2e_helpers import _candidate_environment, _release, _stop, isolated_hub, run_cli
+from home_redirect import redirect_home
 from synapse_channel.agent_tmux import (
     PANE_CAPTURE_MAX_CHARS,
     AgentTmuxConfig,
@@ -1135,7 +1136,7 @@ def test_a_wake_for_a_lost_pane_is_not_injected_and_stays_in_the_hub(tmp_path: P
             "--max-wakes",
             "1",
             uri=hub.uri,
-            env={"HOME": str(home)},
+            env=redirect_home({}, home),
         )
         assert inbox.ok(), inbox.output
         assert "wake for a gone pane" in inbox.stdout

@@ -127,6 +127,7 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
         "SYNAPSE_EDITOR_E2E_PROMPT": "governed prompt",
         "SYNAPSE_ACP_PROXY_ARGV_JSON": '["/opt/opencode", "acp"]',
         "HOME": str(home),
+        "USERPROFILE": str(home),
         "SYNAPSE_EDITOR_E2E_ARTIFACT_DIR": str(artifacts),
         "XDG_DATA_HOME": str(data),
     }

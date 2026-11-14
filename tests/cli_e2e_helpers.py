@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import synapse_channel
+from home_redirect import redirect_home
 
 # ``-u`` forces the child interpreter's stdout/stderr unbuffered. The server
 # helpers capture a subprocess's merged output and, on a readiness timeout, kill
@@ -462,7 +463,7 @@ def isolated_team(*, no_workers: bool = True, ready_timeout: float = 10.0) -> It
             stderr=subprocess.DEVNULL,
             text=True,
             start_new_session=True,
-            env={**os.environ, "HOME": home},
+            env=redirect_home(os.environ, home),
         )
         try:
             _await_listening(port, timeout=ready_timeout)

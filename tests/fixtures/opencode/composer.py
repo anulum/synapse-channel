@@ -157,6 +157,7 @@ def _native_environment(
         "LANG",
         "LC_ALL",
         "HOME",
+        "USERPROFILE",
         "NO_COLOR",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",

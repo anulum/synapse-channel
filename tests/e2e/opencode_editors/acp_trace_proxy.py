@@ -343,6 +343,7 @@ def _lifecycle_environment(trace_path: Path, environment: Mapping[str, str]) -> 
     child.update(
         {
             "HOME": str(home),
+            "USERPROFILE": str(home),
             "OPENCODE_TEST_HOME": str(home),
             "XDG_STATE_HOME": str(state),
             "XDG_CACHE_HOME": str(cache),
