@@ -28,6 +28,29 @@ from pathlib import Path
 
 _PACKAGE_PREFIX = "synapse_channel/"
 
+REQUIRED_PACKAGE_FILES = {
+    "synapse_channel/dashboard_assets/cockpit/index.html": "the packaged cockpit's entry page",
+    "synapse_channel/dashboard_assets/cockpit/THIRD_PARTY_NOTICES.md": (
+        "the notice of the third-party code the packaged cockpit redistributes"
+    ),
+}
+"""Files both distributions must carry, each with what it is."""
+
+
+def _wheel_names(wheel_path: Path) -> set[str]:
+    with zipfile.ZipFile(wheel_path) as archive:
+        return set(archive.namelist())
+
+
+def _sdist_package_names(sdist_path: Path) -> set[str]:
+    """Return the sdist's ``synapse_channel/…`` member paths, without the project and ``src``."""
+    names: set[str] = set()
+    for name in _sdist_members(sdist_path):
+        _, separator, tail = name.partition("/src/")
+        if separator and tail.startswith(_PACKAGE_PREFIX):
+            names.add(tail)
+    return names
+
 
 def wheel_package_modules(wheel_path: Path) -> set[str]:
     """Return the ``synapse_channel/*.py`` module paths inside a wheel."""
@@ -82,6 +105,15 @@ def parity_problems(wheel_path: Path, sdist_path: Path) -> list[str]:
         problems.append(f"sdist ships package modules absent from the wheel: {sorted(extra)[:5]}")
     if not wheel_modules:
         problems.append("wheel ships no synapse_channel package modules")
+    for label, names in (
+        ("wheel", _wheel_names(wheel_path)),
+        ("sdist", _sdist_package_names(sdist_path)),
+    ):
+        problems.extend(
+            f"{label} lacks {path}, {what}"
+            for path, what in REQUIRED_PACKAGE_FILES.items()
+            if path not in names
+        )
     return problems
 
 

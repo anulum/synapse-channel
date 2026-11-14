@@ -19,27 +19,39 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
-    from tools.check_wheel_sdist_parity import main, parity_problems
+    from tools.check_wheel_sdist_parity import REQUIRED_PACKAGE_FILES, main, parity_problems
 else:
     # ``tools`` is release/build tooling outside the installed package, so the
     # repository root must be on the path before importing it (the same shim the
     # other tools-backed tests use).
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from tools.check_wheel_sdist_parity import main, parity_problems
+    from tools.check_wheel_sdist_parity import REQUIRED_PACKAGE_FILES, main, parity_problems
 
 
-def _make_wheel(path: Path, modules: tuple[str, ...]) -> Path:
+def _make_wheel(
+    path: Path, modules: tuple[str, ...], *, files: tuple[str, ...] = tuple(REQUIRED_PACKAGE_FILES)
+) -> Path:
     with zipfile.ZipFile(path, "w") as archive:
         for module in modules:
             archive.writestr(f"synapse_channel/{module}", b"# module\n")
+        for name in files:
+            archive.writestr(name, b"packaged\n")
         archive.writestr("synapse_channel-0.1.dist-info/METADATA", b"Name: synapse-channel\n")
     return path
 
 
-def _make_sdist(path: Path, modules: tuple[str, ...], *, tests: tuple[str, ...] = ()) -> Path:
+def _make_sdist(
+    path: Path,
+    modules: tuple[str, ...],
+    *,
+    tests: tuple[str, ...] = (),
+    files: tuple[str, ...] = tuple(REQUIRED_PACKAGE_FILES),
+) -> Path:
     with tarfile.open(path, "w:gz") as archive:
         for module in modules:
             _add(archive, f"synapse_channel-0.1/src/synapse_channel/{module}", b"# module\n")
+        for name in files:
+            _add(archive, f"synapse_channel-0.1/src/{name}", b"packaged\n")
         for test in tests:
             _add(archive, f"synapse_channel-0.1/tests/{test}", b"# test\n")
         _add(archive, "synapse_channel-0.1/PKG-INFO", b"Name: synapse-channel\n")
@@ -96,3 +108,16 @@ def test_main_prints_success(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     sdist = _make_sdist(tmp_path / "s.tar.gz", ("__init__.py",))
     assert main([str(wheel), str(sdist)]) == 0
     assert "distribution-integrity OK" in capsys.readouterr().out
+
+
+def test_both_distributions_must_carry_the_packaged_cockpit_and_its_notice(tmp_path: Path) -> None:
+    index, notice = REQUIRED_PACKAGE_FILES
+    wheel = _make_wheel(tmp_path / "w.whl", ("__init__.py",), files=(index,))
+    sdist = _make_sdist(tmp_path / "s.tar.gz", ("__init__.py",), files=(notice,))
+
+    assert parity_problems(wheel, sdist) == [
+        f"wheel lacks {notice}, the notice of the third-party code the packaged cockpit "
+        "redistributes",
+        f"sdist lacks {index}, the packaged cockpit's entry page",
+    ]
+    assert main([str(wheel), str(sdist)]) == 1

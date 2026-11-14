@@ -18,6 +18,7 @@ on:
       - "src/synapse_channel/dashboard_operator_writes.py"
       - "src/synapse_channel/cli_dashboard.py"
       - "src/synapse_channel/dashboard_assets/**"
+      - "tools/vendor_cockpit_build.py"
       - "pyproject.toml"
       - ".github/requirements/requirements.txt"
       - ".github/workflows/clients-cockpit.yml"
@@ -31,6 +32,7 @@ on:
       - "src/synapse_channel/dashboard_operator_writes.py"
       - "src/synapse_channel/cli_dashboard.py"
       - "src/synapse_channel/dashboard_assets/**"
+      - "tools/vendor_cockpit_build.py"
       - "pyproject.toml"
       - ".github/requirements/requirements.txt"
       - ".github/workflows/clients-cockpit.yml"
@@ -67,6 +69,8 @@ jobs:
         working-directory: clients/cockpit
       - run: npm run build
         working-directory: clients/cockpit
+      - name: The cockpit vendored in the package equals a build on this pinned Node
+        run: python tools/vendor_cockpit_build.py --check
       - name: Install Chromium for the production browser gate
         run: npx playwright install --with-deps chromium
         working-directory: clients/cockpit

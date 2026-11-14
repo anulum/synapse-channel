@@ -19,10 +19,14 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # The vendored cockpit build is generated, and CI checks it byte for byte against
+      # a fresh build (tools/vendor_cockpit_build.py --check): no fixer may rewrite it.
       - id: trailing-whitespace
         stages: [pre-commit]
+        exclude: ^src/synapse_channel/dashboard_assets/cockpit/
       - id: end-of-file-fixer
         stages: [pre-commit]
+        exclude: ^src/synapse_channel/dashboard_assets/cockpit/
       - id: check-yaml
         stages: [pre-commit]
       - id: check-toml
@@ -32,6 +36,9 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=500]
         stages: [pre-commit]
+        # The vendored build's entry script is about 537 KB; its size was agreed
+        # with the Core owner (about 1.3 MB for the whole build) and CI checks it.
+        exclude: ^src/synapse_channel/dashboard_assets/cockpit/
   - repo: https://github.com/crate-ci/typos
     rev: v1.52.0
     hooks:
@@ -42,7 +49,7 @@ repos:
         # bypasses the _typos.toml files.extend-exclude walker rule; the
         # translated READMEs, cockpit catalogues, opaque AEF signatures, and
         # externally supplied vendor identifiers must be excluded here too.
-        exclude: ^(docs/readme/|tests/fixtures/aef_receipt_v0_1\.json$|tests/fixtures/aef_sth_v0_1\.json$|tests/fixtures/signature_suite_v0_1\.json$|integrations/vendor-discovery/catalog\.json$|clients/cockpit/src/lib/i18n/catalogues/(?:french|german|slovak|spanish)\.ts$)
+        exclude: ^(docs/readme/|src/synapse_channel/dashboard_assets/cockpit/|tests/fixtures/aef_receipt_v0_1\.json$|tests/fixtures/aef_sth_v0_1\.json$|tests/fixtures/signature_suite_v0_1\.json$|integrations/vendor-discovery/catalog\.json$|clients/cockpit/src/lib/i18n/catalogues/(?:french|german|slovak|spanish)\.ts$)
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:

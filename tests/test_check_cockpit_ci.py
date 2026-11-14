@@ -158,3 +158,17 @@ def test_workflow_guard_accepts_the_complete_contract(tmp_path: Path) -> None:
     workflow.write_text("\n".join(guard.REQUIRED_WORKFLOW_MARKERS), encoding="utf-8")
 
     assert guard.audit_workflow(workflow) == ()
+
+
+def test_the_workflow_must_check_the_vendored_cockpit(tmp_path: Path) -> None:
+    """The package carries a committed build; CI must compare it with a fresh one."""
+    workflow = tmp_path / "clients-cockpit.yml"
+    real = (REPO_ROOT / ".github" / "workflows" / "clients-cockpit.yml").read_text(encoding="utf-8")
+    workflow.write_text(
+        real.replace("python tools/vendor_cockpit_build.py --check", "true"), encoding="utf-8"
+    )
+
+    findings = guard.audit_workflow(workflow)
+
+    assert [finding.code for finding in findings] == ["workflow-gate-missing"]
+    assert "python tools/vendor_cockpit_build.py --check" in findings[0].detail

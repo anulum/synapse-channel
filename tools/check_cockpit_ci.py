@@ -41,6 +41,8 @@ REQUIRED_WORKFLOW_MARKERS = (
     "npm run typecheck",
     "npm run coverage",
     "npm run build",
+    "tools/vendor_cockpit_build.py",
+    "python tools/vendor_cockpit_build.py --check",
     "playwright install --with-deps chromium",
     "npm run e2e",
     "if: failure()",

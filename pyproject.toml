@@ -195,6 +195,10 @@ synapse_channel = [
   "dashboard_assets/*.js",
   "dashboard_assets/fonts/*.md",
   "dashboard_assets/fonts/*.woff2",
+  # The built cockpit, vendored by tools/vendor_cockpit_build.py; one pattern per directory.
+  "dashboard_assets/cockpit/*",
+  "dashboard_assets/cockpit/assets/*",
+  "dashboard_assets/cockpit/icons/*",
   "integrations/claude_code/.claude-plugin/plugin.json",
   "integrations/claude_code/README.md",
 ]

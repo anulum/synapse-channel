@@ -218,6 +218,27 @@ npm run e2e        # production build against a real local hub/dashboard (Chromi
 npm run preview    # serves the PRODUCTION build on :8772 with the same proxy
 ```
 
+### The build the package carries
+
+The wheel ships a production build in
+`src/synapse_channel/dashboard_assets/cockpit/`, so the dashboard has a cockpit
+without a source checkout. `tools/vendor_cockpit_build.py` makes it: it refuses
+any Node other than the version this workflow pins (22.23.4), runs
+`npm run build`, copies the build without its source maps, and writes
+`THIRD_PARTY_NOTICES.md` beside it. The notice names each npm package whose code
+the build carries (the lock's packages that are not only for development, and
+Vite and the bundler, which write helpers into the output) with its version,
+licence and licence text. A package whose licence does not allow redistribution,
+or that ships no licence text, is refused. After a change to the client, run
+from the repository root, after `npm ci` in this directory:
+
+```bash
+python tools/vendor_cockpit_build.py --write   # on Node 22.23.4
+```
+
+The cockpit CI runs it with `--check` and fails when a fresh build differs from
+the committed copy.
+
 For an isolated browser run, set `SYNAPSE_COCKPIT_E2E_DIST` to an absolute
 production-build directory. The harness otherwise uses `clients/cockpit/dist`.
 For example, after building that directory, run

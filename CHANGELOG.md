@@ -20,6 +20,17 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- The wheel carries the cockpit's production build, without source maps (about
+  1.3 MB), in `synapse_channel/dashboard_assets/cockpit/`, with
+  `THIRD_PARTY_NOTICES.md`: every npm package whose code the build carries, with
+  its version, licence and licence text (React, Vite's preload helper and the
+  bundler's module helpers under MIT, the two font families under OFL-1.1).
+  `tools/vendor_cockpit_build.py` makes the copy on the Node version the cockpit
+  CI pins and refuses a licence that does not allow redistribution; the cockpit
+  CI fails when a fresh build differs from it; the release gate
+  (`tools/check_wheel_sdist_parity.py`) refuses a wheel or sdist without the
+  build's entry page or the notice. `LICENSES/MIT.txt` and `REUSE.toml` declare
+  the bundled code.
 - The release payload is reproducible and checked before it is signed.
   `tools/build_release_payload.py` is the one recipe for the wheel and the
   source archive: it exports the commit's tree through a private index under

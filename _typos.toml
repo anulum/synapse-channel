@@ -30,6 +30,8 @@ extend-exclude = [
     # Translated READMEs are non-English by definition; the checker's English
     # dictionary misreads legitimate foreign words (e.g. French "sur") as typos.
     "docs/readme/*.md",
+    # The vendored cockpit build is minified and generated; CI checks it against a fresh build.
+    "src/synapse_channel/dashboard_assets/cockpit/**",
     # The typed cockpit catalogues contain complete Slovak, German, Spanish, and French copy;
     # catalogue-parity and production-browser gates validate these surfaces.
     "clients/cockpit/src/lib/i18n/catalogues/german.ts",
