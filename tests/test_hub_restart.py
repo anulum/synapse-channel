@@ -8,8 +8,10 @@
 """The hub restart on the real systemd user manager, with units the test owns.
 
 Every test starts its own hub as a transient user unit on a free port, with its
-own dependents, and removes them afterwards. No installed unit is read for
-state, started, stopped or restarted: every call names the test's hub unit.
+own dependents, and removes them afterwards. When that hub's own error says the
+bind lost the port, the start takes a fresh port and tries again, and it stops
+on any other failure. No installed unit is read for state, started, stopped or
+restarted: every call names the test's hub unit.
 The test hub keeps its event store and its identity pins in the test's own
 directory; ``synapse hub`` would otherwise default the pin file to the one the
 installed hub uses.
@@ -17,8 +19,11 @@ installed hub uses.
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import json
 import os
+import select
 import shutil
 import socket
 import subprocess
@@ -32,6 +37,7 @@ from pathlib import Path
 
 import pytest
 
+from hub_e2e_helpers import free_port
 from synapse_channel.cli import main as cli_main
 from synapse_channel.cli_service import PROBE_NAME, hub_answers
 from synapse_channel.hub_restart import (
@@ -52,6 +58,19 @@ pytestmark = [
 ]
 
 _RUNNER = partial(run_waker_command, timeout=30.0)
+_BIND_ATTEMPTS = 5
+
+
+def _lost_bind(detail: str) -> bool:
+    """Return whether the hub's own error says this bind lost its port."""
+    return os.strerror(errno.EADDRINUSE).casefold() in detail.casefold()
+
+
+def _replacement_port(detail: str, attempt: int) -> int | None:
+    """Return a fresh port only when this attempt lost its bind and another remains."""
+    if attempt >= _BIND_ATTEMPTS or not _lost_bind(detail):
+        return None
+    return free_port()
 
 
 def _user_manager_available() -> bool:
@@ -66,10 +85,102 @@ def _user_manager_available() -> bool:
     return completed.returncode == 0 and bool(completed.stdout.strip())
 
 
-def free_port() -> int:
+def _require_user_manager() -> None:
+    """Skip when this host has no systemd user manager for the test units."""
+    if not _user_manager_available():
+        pytest.skip("no systemd user manager answers here")
+
+
+def _unit_has_stopped(unit: str) -> bool:
+    """Return whether the test's transient unit has already exited."""
+    completed = subprocess.run(
+        ["systemctl", "--user", "show", unit, "--property=ActiveState", "--value"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.stdout.strip() in {"failed", "inactive"}
+
+
+def _tcp_accepts(port: int) -> bool:
+    """Return whether a loopback client can connect to ``port``."""
     with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
+        return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
+@contextlib.contextmanager
+def _held_listener(port: int) -> Iterator[None]:
+    """Hold an IPv4 listener on ``port``, as another process on this host can."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", port))
+        listener.listen()
+        yield
+
+
+_CLOSING_HUB_SCRIPT = (
+    "import asyncio, json, sys\n"
+    "from websockets.asyncio.server import serve\n"
+    "async def handler(connection):\n"
+    "    await connection.send(json.dumps({'type': 'welcome', 'hub_id': 'closing'}))\n"
+    "    await connection.close(4013, 'identity pin mismatch')\n"
+    "async def main():\n"
+    "    async with serve(handler, '127.0.0.1', int(sys.argv[1])):\n"
+    "        print('listening', flush=True)\n"
+    "        await asyncio.Future()\n"
+    "asyncio.run(main())\n"
+)
+
+
+def _finish_script(server: subprocess.Popen[str]) -> str:
+    """Stop a script, close its pipes, and return the error it wrote."""
+    if server.poll() is None:
+        server.terminate()
+    try:
+        _, detail = server.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        server.kill()
+        _, detail = server.communicate(timeout=10)
+    return detail or ""
+
+
+def _stop_script(server: subprocess.Popen[str]) -> None:
+    """Stop a script and close the pipe that carries its own error."""
+    _finish_script(server)
+
+
+def _child_error(server: subprocess.Popen[str]) -> str:
+    """Return the error a script wrote, stopping it first when it is still running."""
+    return _finish_script(server)
+
+
+def _script_is_listening(server: subprocess.Popen[str], timeout: float) -> bool:
+    """Return whether the script reported that its own bind is listening."""
+    stream = server.stdout
+    assert stream is not None
+    readable, _, _ = select.select([stream], [], [], timeout)
+    if not readable:
+        return False
+    return stream.readline().startswith("listening") and server.poll() is None
+
+
+def _closing_server(script: Path) -> tuple[subprocess.Popen[str], int]:
+    """Start the welcome-then-close script, moving on only after its bind loses the port."""
+    port = free_port()
+    for attempt in range(1, _BIND_ATTEMPTS + 1):
+        server = subprocess.Popen(
+            [sys.executable, str(script), str(port)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if _script_is_listening(server, 20.0):
+            return server, port
+        detail = _child_error(server)
+        replacement = _replacement_port(detail, attempt)
+        if replacement is None:
+            break
+        port = replacement
+    raise AssertionError("the test hub did not answer")
 
 
 @dataclass
@@ -112,26 +223,68 @@ class OwnedFleet:
         self.units.append(unit)
         return unit
 
-    def start_hub(self) -> str:
-        unit = self._run(
-            "hub",
-            [],
-            [
-                sys.executable,
-                "-m",
-                "synapse_channel.cli",
-                "hub",
-                f"--port={self.port}",
-                f"--db={self.workdir / 'hub.db'}",
-                # Without this the hub would use the installed hub's pin file.
-                f"--identity-pins={self.workdir / 'identity-pins.json'}",
-            ],
+    def _hub_error_path(self) -> Path:
+        return self.workdir / "hub-process-error.txt"
+
+    def _release_unit(self, unit: str) -> None:
+        """Stop a transient unit so the same name can start again."""
+        subprocess.run(["systemctl", "--user", "stop", unit], capture_output=True, check=False)
+        subprocess.run(
+            ["systemctl", "--user", "reset-failed", unit], capture_output=True, check=False
         )
-        deadline = time.monotonic() + 30.0
-        while time.monotonic() < deadline and not self.answers():
+        self.units = [item for item in self.units if item != unit]
+
+    def _discard_hub_store(self) -> None:
+        """Remove a store left by a hub that exited before it listened."""
+        for path in self.workdir.glob("hub.db*"):
+            if path.is_file():
+                path.unlink()
+
+    def _hub_process_error(self) -> str:
+        """Return the hub process's own stderr from the attempt that just ended."""
+        return self._hub_error_path().read_text(encoding="utf-8", errors="replace")
+
+    def _wait_until_ready(self, unit: str, ready: Callable[[], bool], timeout: float) -> bool:
+        """Return whether ``ready`` became true before the unit exited or the wait ended."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if ready() or _unit_has_stopped(unit):
+                break
             time.sleep(0.2)
-        assert self.answers(), "the test hub did not answer"
-        return unit
+        return ready()
+
+    def _start_hub_process(self, *, ready: Callable[[], bool], timeout: float) -> str:
+        """Start the hub, taking a fresh port only when its own error says the bind lost it."""
+        for attempt in range(1, _BIND_ATTEMPTS + 1):
+            self._hub_error_path().write_bytes(b"")
+            unit = self._run(
+                "hub",
+                [f"StandardError=truncate:{self._hub_error_path()}"],
+                [
+                    sys.executable,
+                    "-m",
+                    "synapse_channel.cli",
+                    "hub",
+                    f"--port={self.port}",
+                    f"--db={self.workdir / 'hub.db'}",
+                    # Without this the hub would use the installed hub's pin file.
+                    f"--identity-pins={self.workdir / 'identity-pins.json'}",
+                ],
+            )
+            if self._wait_until_ready(unit, ready, timeout):
+                return unit
+            detail = self._hub_process_error()
+            self._release_unit(unit)
+            replacement = _replacement_port(detail, attempt)
+            if replacement is None:
+                break
+            self._discard_hub_store()
+            self.port = replacement
+        raise AssertionError("the test hub did not answer")
+
+    def start_hub(self) -> str:
+        """Start the test hub and wait until its probe answers."""
+        return self._start_hub_process(ready=self.answers, timeout=30.0)
 
     def sleeper(self, name: str, relations: list[str]) -> str:
         """Start a dependent that only sleeps, related to the hub as given."""
@@ -182,8 +335,7 @@ class OwnedFleet:
 
 @pytest.fixture
 def fleet(tmp_path: Path) -> Iterator[OwnedFleet]:
-    if not _user_manager_available():
-        pytest.skip("no systemd user manager answers here")
+    _require_user_manager()
     owned = OwnedFleet(tag=uuid.uuid4().hex[:10], port=free_port(), workdir=tmp_path)
     try:
         yield owned
@@ -389,25 +541,11 @@ def test_the_probe_reports_an_absent_hub_and_a_refusing_hub_without_raising(
         ),
         encoding="utf-8",
     )
-    fleet._run(
-        "hub",
-        [],
-        [
-            sys.executable,
-            "-m",
-            "synapse_channel.cli",
-            "hub",
-            f"--port={fleet.port}",
-            f"--db={fleet.workdir / 'hub.db'}",
-            f"--identity-pins={fleet.workdir / 'identity-pins.json'}",
-        ],
-    )
-    deadline = time.monotonic() + 30.0
-    while time.monotonic() < deadline:
-        with socket.socket() as probe:
-            if probe.connect_ex(("127.0.0.1", fleet.port)) == 0:
-                break
-        time.sleep(0.2)
+
+    def port_accepts() -> bool:
+        return _tcp_accepts(fleet.port)
+
+    fleet._start_hub_process(ready=port_accepts, timeout=30.0)
 
     assert not fleet.answers()
     assert fleet.pid(fleet.hub_unit) > 0
@@ -416,35 +554,16 @@ def test_the_probe_reports_an_absent_hub_and_a_refusing_hub_without_raising(
 def test_the_probe_reports_a_hub_that_welcomes_and_then_closes(tmp_path: Path) -> None:
     # A hub can accept a client, welcome it and close at once, for example on
     # an identity pin mismatch. The question then fails while it is sent.
-    port = free_port()
     script = tmp_path / "closing_hub.py"
-    script.write_text(
-        "import asyncio, json, sys\n"
-        "from websockets.asyncio.server import serve\n"
-        "async def handler(connection):\n"
-        "    await connection.send(json.dumps({'type': 'welcome', 'hub_id': 'closing'}))\n"
-        "    await connection.close(4013, 'identity pin mismatch')\n"
-        "async def main():\n"
-        "    async with serve(handler, '127.0.0.1', int(sys.argv[1])):\n"
-        "        await asyncio.Future()\n"
-        "asyncio.run(main())\n",
-        encoding="utf-8",
-    )
-    server = subprocess.Popen([sys.executable, str(script), str(port)])
+    script.write_text(_CLOSING_HUB_SCRIPT, encoding="utf-8")
+    server, port = _closing_server(script)
     try:
-        deadline = time.monotonic() + 20.0
-        while time.monotonic() < deadline:
-            with socket.socket() as probe:
-                if probe.connect_ex(("127.0.0.1", port)) == 0:
-                    break
-            time.sleep(0.1)
         outcomes = {
             hub_answers(uri=f"ws://127.0.0.1:{port}", token=None, ready_timeout=3.0)
             for _ in range(5)
         }
     finally:
-        server.terminate()
-        server.wait(timeout=10)
+        _stop_script(server)
 
     assert outcomes == {False}
 
@@ -639,3 +758,170 @@ def test_command_returns_two_when_the_service_manager_does_not_answer(
         assert capsys.readouterr().out.startswith(
             "synapse service hub-restart: failed: systemctl --user show"
         )
+
+
+def test_a_missing_service_manager_tool_is_not_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    def absent(name: str) -> str | None:
+        return None
+
+    monkeypatch.setattr(shutil, "which", absent)
+    assert _user_manager_available() is False
+
+
+def test_the_suite_skips_without_a_user_manager(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unavailable() -> bool:
+        return False
+
+    monkeypatch.setattr(sys.modules[__name__], "_user_manager_available", unavailable)
+    with pytest.raises(pytest.skip.Exception):
+        _require_user_manager()
+
+
+def test_a_silent_script_has_not_reported_that_it_is_listening() -> None:
+    server = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert _script_is_listening(server, 0.05) is False
+    finally:
+        _stop_script(server)
+
+
+def test_a_script_that_does_not_stop_is_killed(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    calls = {"n": 0}
+
+    def expire_once(self: subprocess.Popen[str], timeout: float | None = None) -> tuple[str, str]:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise subprocess.TimeoutExpired(self.args, timeout or 0)
+        return "", ""
+
+    monkeypatch.setattr(subprocess.Popen, "communicate", expire_once)
+    try:
+        assert _finish_script(server) == ""
+    finally:
+        if server.stdout is not None:
+            server.stdout.close()
+        if server.stderr is not None:
+            server.stderr.close()
+        if server.poll() is None:
+            server.kill()
+            server.wait(timeout=5)
+    assert calls["n"] == 2
+
+
+def test_a_store_left_by_a_failed_bind_is_removed(tmp_path: Path) -> None:
+    owned = OwnedFleet(tag="store", port=9, workdir=tmp_path)
+    (tmp_path / "hub.db").write_text("left behind", encoding="utf-8")
+    (tmp_path / "hub.db-dir").mkdir()
+    owned._discard_hub_store()
+    assert not (tmp_path / "hub.db").exists()
+    assert (tmp_path / "hub.db-dir").is_dir()
+
+
+def test_a_hub_wait_that_ends_immediately_is_not_ready(tmp_path: Path) -> None:
+    def not_ready() -> bool:
+        return False
+
+    owned = OwnedFleet(tag="wait", port=9, workdir=tmp_path)
+    assert owned._wait_until_ready("unused", not_ready, 0.0) is False
+
+
+def test_a_lost_bind_takes_a_fresh_port_only_while_an_attempt_remains() -> None:
+    detail = f"OSError: [Errno {errno.EADDRINUSE}] {os.strerror(errno.EADDRINUSE)}"
+    assert _replacement_port(detail, 1) is not None
+    assert _replacement_port(detail, _BIND_ATTEMPTS) is None
+    assert _replacement_port("refused: the database is locked", 1) is None
+
+
+def test_a_hub_start_does_not_retry_when_the_error_is_not_a_lost_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owned = OwnedFleet(tag="once", port=9, workdir=tmp_path)
+    attempts: list[int] = []
+
+    def fake_run(name: str, properties: list[str], command: list[str]) -> str:
+        attempts.append(owned.port)
+        return "synapse-test-once-hub.service"
+
+    def not_ready(unit: str, ready: Callable[[], bool], timeout: float) -> bool:
+        return False
+
+    def locked_error() -> str:
+        return "refused: the database is locked"
+
+    def release(unit: str) -> None:
+        return None
+
+    monkeypatch.setattr(owned, "_run", fake_run)
+    monkeypatch.setattr(owned, "_wait_until_ready", not_ready)
+    monkeypatch.setattr(owned, "_hub_process_error", locked_error)
+    monkeypatch.setattr(owned, "_release_unit", release)
+
+    with pytest.raises(AssertionError, match="the test hub did not answer"):
+        owned.start_hub()
+
+    assert attempts == [9]
+
+
+def test_a_closing_hub_does_not_retry_when_it_fails_for_another_reason(tmp_path: Path) -> None:
+    script = tmp_path / "closing_hub.py"
+    script.write_text(
+        "import sys\nsys.stderr.write('refused: the database is locked\\n')\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="the test hub did not answer"):
+        _closing_server(script)
+
+
+def test_the_fleet_moves_on_when_its_port_is_taken(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A listener on the fleet's first port makes both hub starts take another port."""
+    _require_user_manager()
+    held = free_port()
+    owned = OwnedFleet(tag=uuid.uuid4().hex[:10], port=held, workdir=tmp_path)
+    script = tmp_path / "closing_hub.py"
+    script.write_text(_CLOSING_HUB_SCRIPT, encoding="utf-8")
+    offered_held = False
+    real_free_port = free_port
+
+    def held_once() -> int:
+        nonlocal offered_held
+        if not offered_held:
+            offered_held = True
+            return held
+        return real_free_port()
+
+    server: subprocess.Popen[str] | None = None
+    try:
+        with _held_listener(held):
+            unit = owned.start_hub()
+            assert owned.port != held
+            assert owned.answers()
+            assert owned.pid(unit) > 0
+            monkeypatch.setattr(sys.modules[__name__], "free_port", held_once)
+            server, moved = _closing_server(script)
+            assert moved != held
+            assert server.poll() is None
+    finally:
+        if server is not None:
+            _stop_script(server)
+        for unit_name in reversed(owned.units):
+            subprocess.run(
+                ["systemctl", "--user", "stop", unit_name], capture_output=True, check=False
+            )
+            subprocess.run(
+                ["systemctl", "--user", "reset-failed", unit_name],
+                capture_output=True,
+                check=False,
+            )
