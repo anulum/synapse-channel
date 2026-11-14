@@ -123,6 +123,15 @@ requires_script_launch = pytest.mark.skipif(
     reason="starts a script file by its interpreter line, which Windows does not execute",
 )
 
+requires_posix_process_group = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "the lock signals a process group and a child can ignore SIGTERM; "
+        "Windows terminates the direct child once"
+    ),
+)
+"""Skip marker for tests of POSIX process-group termination."""
+
 
 PACKAGED_PYTHON312_AVAILABLE = Path("/usr/bin/python3.12").is_file() and os.access(
     "/usr/bin/python3.12", os.X_OK

@@ -77,6 +77,34 @@ def _assert_reaped(pid: int) -> None:
     assert status.value != 259
 
 
+def _assert_absent(pid: int) -> None:
+    """The process id no longer names a live process.
+
+    A Windows process that has already been reaped cannot be opened, and that
+    refusal is the same fact as a POSIX ``ProcessLookupError``. An open process
+    is absent only when its exit code is no longer active.
+    """
+    if sys.platform != "win32":
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+        return
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    kernel.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+    kernel.GetExitCodeProcess.restype = ctypes.c_int
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel.CloseHandle.restype = ctypes.c_int
+    handle = kernel.OpenProcess(0x1000, False, pid)
+    if not handle:
+        assert ctypes.get_last_error() == 87
+        return
+    status = ctypes.c_uint32()
+    assert kernel.GetExitCodeProcess(handle, ctypes.byref(status))
+    kernel.CloseHandle(handle)
+    assert status.value != 259
+
+
 def _still_alive(pid: int) -> bool:
     """Return whether a POSIX process id still names a process."""
     try:

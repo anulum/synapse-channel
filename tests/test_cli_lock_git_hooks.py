@@ -14,16 +14,17 @@ import contextlib
 import ctypes
 import os
 import secrets
+import shlex
 import signal
 import sys
-import sysconfig
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from cli_e2e_helpers import git_repo, git_run, run_cli
+from _platform_caps import requires_posix_process_group
+from cli_e2e_helpers import _CLI, git_repo, git_run, run_cli
 from hub_e2e_helpers import running_hub
 from synapse_channel.cli_locking import _lock, _run_subprocess
 from synapse_channel.client.agent import SynapseAgent
@@ -31,6 +32,7 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from test_cli_lock_process import _assert_absent
 
 _PUBLISH_PID = (
     "pid_file = sys.argv[1]; "
@@ -39,9 +41,147 @@ _PUBLISH_PID = (
 )
 """Child code that publishes its PID file whole: a reader never sees it empty."""
 
-_SYNAPSE_BIN = Path(sysconfig.get_path("scripts")) / (
-    "synapse.exe" if os.name == "nt" else "synapse"
-)
+
+class _Owned:
+    """Resources one test started, stopped again when the test ends."""
+
+    def __init__(self) -> None:
+        """Start with nothing to kill, cancel or close."""
+        self.processes: list[asyncio.subprocess.Process] = []
+        self.tasks: list[asyncio.Task[Any]] = []
+        self.journals: list[EventStore] = []
+        self.contexts: list[tuple[Any, Callable[[], bool]]] = []
+        self.actions: list[Callable[[], None]] = []
+
+    def process(self, process: asyncio.subprocess.Process) -> asyncio.subprocess.Process:
+        """Remember a subprocess and return it."""
+        self.processes.append(process)
+        return process
+
+    def task(self, task: asyncio.Task[Any]) -> asyncio.Task[Any]:
+        """Remember a task and return it."""
+        self.tasks.append(task)
+        return task
+
+    def journal(self, journal: EventStore) -> EventStore:
+        """Remember a journal and return it."""
+        self.journals.append(journal)
+        return journal
+
+    def context(self, context: Any, closed: Callable[[], bool]) -> None:
+        """Remember a hub context that is closed unless ``closed`` is already true."""
+        self.contexts.append((context, closed))
+
+    def action(self, action: Callable[[], None]) -> None:
+        """Remember a synchronous cleanup step."""
+        self.actions.append(action)
+
+    async def aclose(self) -> None:
+        """Cancel tasks, kill processes, and close hubs and journals."""
+        for task in self.tasks:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        for process in self.processes:
+            with contextlib.suppress(OSError):
+                process.kill()
+            await process.wait()
+        for context, closed in self.contexts:
+            if not closed():
+                await context.__aexit__(None, None, None)
+        for journal in self.journals:
+            journal.close()
+        for action in self.actions:
+            action()
+
+
+@contextlib.asynccontextmanager
+async def owned() -> AsyncIterator[_Owned]:
+    """Stop everything the test registered, on the success path and on failure."""
+    resources = _Owned()
+    try:
+        yield resources
+    finally:
+        await resources.aclose()
+
+
+async def wait_until(ready: Callable[[], Awaitable[bool]], timeout: float) -> None:
+    """Wait until ``ready`` reports the real condition, within ``timeout`` seconds."""
+
+    async def _poll() -> None:
+        while not await ready():
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(_poll(), timeout)
+
+
+async def wait_for_file(path: Path, timeout: float) -> None:
+    """Wait until ``path`` exists."""
+
+    async def ready() -> bool:
+        return path.is_file()
+
+    await wait_until(ready, timeout)
+
+
+def _hook_launcher(directory: Path) -> str:
+    """Write a shell launcher a git hook can execute and return its POSIX path."""
+    launcher = directory / "synapse-hook"
+    command = " ".join(shlex.quote(Path(part).as_posix()) for part in _CLI)
+    launcher.write_text(
+        f'#!/bin/sh\nexec {command} "$@"\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    launcher.chmod(0o755)
+    return launcher.as_posix()
+
+
+def _release_member(pid: int) -> None:
+    """Stop one POSIX descendant this test adopted and do not leave it unreaped."""
+    with contextlib.suppress(OSError):
+        os.kill(pid, signal.SIGKILL)
+    with contextlib.suppress(ChildProcessError):
+        os.waitpid(pid, os.WNOHANG)
+
+
+@pytest.mark.asyncio
+async def test_bounded_wait_follows_the_real_condition() -> None:
+    """The wait returns once the condition becomes true, after seeing it false."""
+    state = {"ready": False}
+
+    async def ready() -> bool:
+        if not state["ready"]:
+            state["ready"] = True
+            return False
+        return True
+
+    await wait_until(ready, 1)
+
+
+@pytest.mark.asyncio
+async def test_owned_cleanup_stops_a_live_command_and_closes_its_hub(tmp_path: Path) -> None:
+    """Success still kills a live command, cancels a live task, and closes the hub."""
+    process: asyncio.subprocess.Process | None = None
+    task: asyncio.Task[Any] | None = None
+    async with owned() as resources:
+        context = running_hub()
+        await context.__aenter__()
+        resources.context(context, lambda: False)
+        process = resources.process(
+            await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-c",
+                "import time; time.sleep(30)",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        )
+        task = resources.task(asyncio.create_task(asyncio.sleep(30)))
+        resources.journal(EventStore(tmp_path / "cleanup.db"))
+        assert process.returncode is None
+        assert not task.done()
+    assert process is not None and process.returncode is not None
+    assert task is not None and task.done()
 
 
 @pytest.mark.asyncio
@@ -51,8 +191,8 @@ async def test_refused_scope_extension_preserves_preexisting_owned_claim(tmp_pat
     (repo / "other.md").write_text("other owner\n", encoding="utf-8")
     git_run(repo, "add", "other.md")
     git_run(repo, "commit", "-q", "-m", "other scope")
-    journal = EventStore(tmp_path / "hub.db")
-    try:
+    async with owned() as resources:
+        journal = resources.journal(EventStore(tmp_path / "hub.db"))
         async with running_hub(SynapseHub(journal=journal)) as (hub, uri):
             for task_id, owner, path in (
                 ("existing-lock", "existing-owner", "README.md"),
@@ -101,15 +241,12 @@ async def test_refused_scope_extension_preserves_preexisting_owned_claim(tmp_pat
             assert retained.epoch == original_epoch
             assert hub.state.claims["other-lock"].owner == "other-owner"
             assert not any(row.kind == "release" for row in journal.iter_events())
-    finally:
-        journal.close()
 
 
 @pytest.mark.asyncio
 async def test_cancellation_after_real_grant_releases_before_command_start(tmp_path: Path) -> None:
     """Cancellation upon an actual grant cleans up the still-connected owner."""
     marker = tmp_path / "command.started"
-    journal = EventStore(tmp_path / "hub.db")
     operation: asyncio.Task[int] | None = None
 
     def observing_agent(
@@ -132,22 +269,25 @@ async def test_cancellation_after_real_grant_releases_before_command_start(tmp_p
 
         return SynapseAgent(name, receive, **options)
 
-    try:
+    async with owned() as resources:
+        journal = resources.journal(EventStore(tmp_path / "hub.db"))
         async with running_hub(SynapseHub(journal=journal)) as (hub, uri):
-            operation = asyncio.create_task(
-                _lock(
-                    uri=uri,
-                    name="early-owner",
-                    task_id="early-cancel",
-                    command=[
-                        sys.executable,
-                        "-c",
-                        "import sys; from pathlib import Path; Path(sys.argv[1]).touch()",
-                        str(marker),
-                    ],
-                    paths=[],
-                    wait_timeout=0,
-                    agent_factory=observing_agent,
+            operation = resources.task(
+                asyncio.create_task(
+                    _lock(
+                        uri=uri,
+                        name="early-owner",
+                        task_id="early-cancel",
+                        command=[
+                            sys.executable,
+                            "-c",
+                            "import sys; from pathlib import Path; Path(sys.argv[1]).touch()",
+                            str(marker),
+                        ],
+                        paths=[],
+                        wait_timeout=0,
+                        agent_factory=observing_agent,
+                    )
                 )
             )
             with pytest.raises(asyncio.CancelledError):
@@ -158,17 +298,13 @@ async def test_cancellation_after_real_grant_releases_before_command_start(tmp_p
                 row.kind == "release" and row.payload.get("task_id") == "early-cancel"
                 for row in journal.iter_events()
             )
-    finally:
-        if operation is not None:
-            operation.cancel()
-            await asyncio.gather(operation, return_exceptions=True)
-        journal.close()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "stop_loop,repeat_shutdown", [(False, False), (True, False), (False, True)]
 )
+@requires_posix_process_group
 async def test_runner_shutdown_during_process_cleanup_does_not_hang(
     tmp_path: Path,
     stop_loop: bool,
@@ -206,35 +342,23 @@ async def test_runner_shutdown_during_process_cleanup_does_not_hang(
         )
         + "asyncio.run(main())\n"
     )
-    async with running_hub() as (hub, uri):
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-c",
-            script,
-            uri,
-            str(pid_path),
-            child,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        try:
+    async with owned() as resources:
+        async with running_hub() as (hub, uri):
+            process = resources.process(
+                await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    "-c",
+                    script,
+                    uri,
+                    str(pid_path),
+                    child,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+            )
             assert await asyncio.wait_for(process.wait(), timeout=10) == 0
             assert "shutdown-mutex" not in hub.state.claims
-            with pytest.raises(ProcessLookupError):
-                os.kill(int(pid_path.read_text()), 0)
-        finally:
-            if process.returncode is None:
-                process.kill()
-            await process.wait()
-            if pid_path.exists():
-                child_pid = int(pid_path.read_text())
-                command_line = Path(f"/proc/{child_pid}/cmdline")
-                with contextlib.suppress(FileNotFoundError, ProcessLookupError):
-                    if (
-                        command_line.stat().st_uid == os.getuid()
-                        and str(pid_path).encode() in command_line.read_bytes()
-                    ):
-                        os.killpg(child_pid, signal.SIGKILL)
+            _assert_absent(int(pid_path.read_text()))
 
 
 @pytest.mark.asyncio
@@ -248,7 +372,6 @@ async def test_commit_hook_releases_edit_claim_inside_same_owner_lock(
 
     gate = tmp_path / "renewing"
     repo = git_repo(tmp_path / "repository")
-    journal = EventStore(tmp_path / "hub.db")
     environment = {"SYN_PROJECT": "hook-journey", "SYN_IDENTITY": "hook-journey/owner"}
     token = secrets.token_urlsafe(32) if secured else ""
     environment["SYNAPSE_TOKEN"] = token
@@ -257,7 +380,10 @@ async def test_commit_hook_releases_edit_claim_inside_same_owner_lock(
         token_path.touch(mode=0o600)
         token_path.write_text(token, encoding="utf-8")
     authenticator = TokenAuthenticator({token: ["hook-journey/owner"]}) if secured else None
-    try:
+    launcher = _hook_launcher(tmp_path)
+    async with owned() as resources:
+        resources.action(lambda: token_path.unlink(missing_ok=True))
+        journal = resources.journal(EventStore(tmp_path / "hub.db"))
         async with running_hub(SynapseHub(journal=journal, authenticator=authenticator)) as (
             hub,
             uri,
@@ -272,7 +398,7 @@ async def test_commit_hook_releases_edit_claim_inside_same_owner_lock(
                         "--base",
                         "HEAD",
                         "--synapse-bin",
-                        str(_SYNAPSE_BIN),
+                        launcher,
                         *(["--token-file", str(token_path)] if secured else []),
                     ),
                     (
@@ -333,9 +459,6 @@ async def test_commit_hook_releases_edit_claim_inside_same_owner_lock(
                     for row in journal.iter_events()
                 ), "commit hook must persist an edit-claim release"
                 assert "release requested on commit: edited-file" in result.output
-    finally:
-        journal.close()
-        token_path.unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio
@@ -373,49 +496,46 @@ async def test_runner_shutdown_retries_cancelled_release_cleanup(
         )
         + "asyncio.run(main())\n"
     )
-    context = running_hub()
-    hub, uri = await context.__aenter__()
-    server_closed = False
-    process = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-c",
-        script,
-        uri,
-        str(ready),
-        str(stopped),
-        str(finished),
-        child,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    try:
-        deadline = asyncio.get_running_loop().time() + 10
-        while not ready.exists():
-            assert process.returncode is None, "runner ended before launching command"
-            assert asyncio.get_running_loop().time() < deadline, "command did not start"
-            await asyncio.sleep(0.01)
+    state = {"closed": False}
+    async with owned() as resources:
+        context = running_hub()
+        hub, uri = await context.__aenter__()
+        resources.context(context, lambda: state["closed"])
+        resources.action(stopped.touch)
+        process = resources.process(
+            await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-c",
+                script,
+                uri,
+                str(ready),
+                str(stopped),
+                str(finished),
+                child,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        )
+        await wait_for_file(ready, 10)
+        assert process.returncode is None, "runner ended before launching command"
         assert hub.state.claims["release-shutdown-mutex"].owner == "release-shutdown-owner"
         await context.__aexit__(None, None, None)
-        server_closed = True
+        state["closed"] = True
         stopped.write_text("stopped", encoding="utf-8")
         assert await asyncio.wait_for(process.wait(), timeout=5) == 0
-        assert finished.read_text() == "finished"
+        assert finished.read_text(encoding="utf-8") == "finished"
         assert hub.state.claims["release-shutdown-mutex"].owner == "release-shutdown-owner"
-        with pytest.raises(ProcessLookupError):
-            os.kill(int(ready.read_text()), 0)
-    finally:
-        # Unblock this test-owned child even if server shutdown/assertion fails.
-        stopped.touch()
-        if process.returncode is None:
-            process.kill()
-        await process.wait()
-        if not server_closed:
-            await context.__aexit__(None, None, None)
+        _assert_absent(int(ready.read_text(encoding="utf-8")))
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "ignore_termination,repeat_cancel", [(False, False), (True, False), (True, True)]
+    ("ignore_termination", "repeat_cancel"),
+    [
+        (False, False),
+        pytest.param(True, False, marks=requires_posix_process_group),
+        pytest.param(True, True, marks=requires_posix_process_group),
+    ],
 )
 async def test_cancelled_command_is_reaped_before_mutex_release(
     tmp_path: Path,
@@ -430,24 +550,23 @@ async def test_cancelled_command_is_reaped_before_mutex_release(
         + _PUBLISH_PID
         + "; time.sleep(60)"
     )
-    async with running_hub() as (hub, uri):
-        task = asyncio.create_task(
-            _lock(
-                uri=uri,
-                name="cancel-owner",
-                task_id="cancel-mutex",
-                command=[sys.executable, "-c", child, str(pid_path)],
-                paths=[],
-                wait_timeout=0,
+    async with owned() as resources:
+        async with running_hub() as (hub, uri):
+            task = resources.task(
+                asyncio.create_task(
+                    _lock(
+                        uri=uri,
+                        name="cancel-owner",
+                        task_id="cancel-mutex",
+                        command=[sys.executable, "-c", child, str(pid_path)],
+                        paths=[],
+                        wait_timeout=0,
+                    )
+                )
             )
-        )
-        try:
-            deadline = asyncio.get_running_loop().time() + 10
-            while not pid_path.exists():
-                assert not task.done(), "lock ended before launching its child"
-                assert asyncio.get_running_loop().time() < deadline, "child did not start"
-                await asyncio.sleep(0.02)
-            pid = int(pid_path.read_text())
+            await wait_for_file(pid_path, 10)
+            assert not task.done(), "lock ended before launching its child"
+            pid = int(pid_path.read_text(encoding="utf-8"))
             assert hub.state.claims["cancel-mutex"].owner == "cancel-owner"
             task.cancel()
             if repeat_cancel:
@@ -459,13 +578,8 @@ async def test_cancelled_command_is_reaped_before_mutex_release(
                 os.kill(pid, 0)
             with pytest.raises(asyncio.CancelledError):
                 await task
-            with pytest.raises(ProcessLookupError):
-                os.kill(pid, 0)
+            _assert_absent(pid)
             assert "cancel-mutex" not in hub.state.claims
-        finally:
-            if not task.done():
-                task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -477,31 +591,32 @@ async def test_hub_shutdown_preserves_command_outcome_and_visible_claim(
     """A real unavailable hub leaves the claim for TTL without changing child exit."""
     hub = SynapseHub()
     context = running_hub(hub)
-    _, uri = await context.__aenter__()
-    server_closed = False
-    closed = asyncio.Event()
-    operation: asyncio.Task[int] | None = None
+    state = {"closed": False}
 
     async def stop_hub_and_run(command: list[str]) -> int:
         """Stop the actual server before executing the wrapped child process."""
-        nonlocal server_closed
         await context.__aexit__(None, None, None)
-        server_closed = True
+        state["closed"] = True
         closed.set()
         return await _run_subprocess(command)
 
-    try:
+    async with owned() as resources:
+        _, uri = await context.__aenter__()
+        resources.context(context, lambda: state["closed"])
+        closed = asyncio.Event()
         with caplog.at_level("DEBUG", logger="synapse.lock"):
-            operation = asyncio.create_task(
-                _lock(
-                    uri=uri,
-                    name="offline-owner",
-                    task_id="offline-mutex",
-                    command=[sys.executable, "-c", "raise SystemExit(7)"],
-                    paths=[],
-                    wait_timeout=0,
-                    ready_timeout=0.5,
-                    runner=stop_hub_and_run,
+            operation = resources.task(
+                asyncio.create_task(
+                    _lock(
+                        uri=uri,
+                        name="offline-owner",
+                        task_id="offline-mutex",
+                        command=[sys.executable, "-c", "raise SystemExit(7)"],
+                        paths=[],
+                        wait_timeout=0,
+                        ready_timeout=0.5,
+                        runner=stop_hub_and_run,
+                    )
                 )
             )
             if interrupt_teardown:
@@ -517,21 +632,11 @@ async def test_hub_shutdown_preserves_command_outcome_and_visible_claim(
                 assert await operation == 7
         assert hub.state.claims["offline-mutex"].owner == "offline-owner"
         assert "could not reconnect to release the held claim" in caplog.text
-    finally:
-        if operation is not None:
-            if not operation.done():
-                operation.cancel()
-            await asyncio.gather(operation, return_exceptions=True)
-        if not server_closed:
-            await context.__aexit__(None, None, None)
 
 
 @pytest.fixture
 def descendant_reaper() -> Iterator[bool]:
     """Adopt this test's orphan on Linux and restore the caller's kernel setting."""
-    if sys.platform != "linux":
-        yield False
-        return
     native = ctypes.CDLL(None, use_errno=True)
     original = ctypes.c_int()
     assert native.prctl(37, ctypes.byref(original), 0, 0, 0) == 0, ctypes.get_errno()
@@ -543,6 +648,7 @@ def descendant_reaper() -> Iterator[bool]:
 
 
 @pytest.mark.asyncio
+@requires_posix_process_group
 async def test_cancellation_stops_descendant_after_group_leader_exits(
     tmp_path: Path, descendant_reaper: bool
 ) -> None:
@@ -562,7 +668,7 @@ async def test_cancellation_stops_descendant_after_group_leader_exits(
         try:
             stdout, stderr = await asyncio.wait_for(probe.communicate(), timeout=2)
         finally:
-            if probe.returncode is None:
+            with contextlib.suppress(OSError):
                 probe.kill()
             await probe.wait()
         assert probe.returncode in (0, 1), stderr.decode()
@@ -582,55 +688,44 @@ async def test_cancellation_stops_descendant_after_group_leader_exits(
         + _PUBLISH_PID
         + "\ntime.sleep(60)\n"
     )
-    async with running_hub() as (hub, uri):
-        task = asyncio.create_task(
-            _lock(
-                uri=uri,
-                name="tree-owner",
-                task_id="tree-mutex",
-                command=[sys.executable, "-c", leader, str(leader_path), str(descendant_path)],
-                paths=[],
-                wait_timeout=0,
+    async with owned() as resources:
+        async with running_hub() as (hub, uri):
+            task = resources.task(
+                asyncio.create_task(
+                    _lock(
+                        uri=uri,
+                        name="tree-owner",
+                        task_id="tree-mutex",
+                        command=[
+                            sys.executable,
+                            "-c",
+                            leader,
+                            str(leader_path),
+                            str(descendant_path),
+                        ],
+                        paths=[],
+                        wait_timeout=0,
+                    )
+                )
             )
-        )
-        try:
-            deadline = asyncio.get_running_loop().time() + 10
-            while not leader_path.exists():
-                assert not task.done(), "leader exited before its child registered"
-                assert asyncio.get_running_loop().time() < deadline, "leader did not start"
-                await asyncio.sleep(0.02)
-            descendant_pid = int(descendant_path.read_text())
+            await wait_for_file(leader_path, 10)
+            assert not task.done(), "leader exited before its child registered"
+            descendant_pid = int(descendant_path.read_text(encoding="utf-8"))
+            resources.action(lambda: _release_member(descendant_pid))
             assert await process_state(descendant_pid) not in ("", "Z")
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
-            deadline = asyncio.get_running_loop().time() + 5
-            while await process_state(descendant_pid) not in ("", "Z"):
-                assert asyncio.get_running_loop().time() < deadline, "descendant still executes"
-                await asyncio.sleep(0.02)
+
+            async def stopped() -> bool:
+                return await process_state(descendant_pid) in ("", "Z")
+
+            await wait_until(stopped, 5)
             assert "tree-mutex" not in hub.state.claims
-            if descendant_reaper:
-                waited, status = os.waitpid(descendant_pid, os.WNOHANG)
-                assert waited == descendant_pid
-                assert os.waitstatus_to_exitcode(status) == -signal.SIGKILL
-        finally:
-            if not task.done():
-                task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-            if descendant_reaper and descendant_path.exists():
-                owned_pid = int(descendant_path.read_text())
-                try:
-                    waited, _status = os.waitpid(owned_pid, os.WNOHANG)
-                except ChildProcessError:
-                    pass
-                else:
-                    if not waited:
-                        with contextlib.suppress(ProcessLookupError):
-                            os.kill(owned_pid, signal.SIGKILL)
-                        deadline = asyncio.get_running_loop().time() + 5
-                        while not os.waitpid(owned_pid, os.WNOHANG)[0]:
-                            assert asyncio.get_running_loop().time() < deadline
-                            await asyncio.sleep(0.005)
+            waited, status = os.waitpid(descendant_pid, os.WNOHANG)
+            assert waited == descendant_pid
+            assert os.waitstatus_to_exitcode(status) == -signal.SIGKILL
+            assert descendant_reaper
 
 
 @pytest.mark.asyncio
@@ -640,17 +735,17 @@ async def test_disconnected_lock_still_excludes_contender_and_releases(
     exit_code: int,
 ) -> None:
     """A real competing CLI cannot enter while the wrapped process owns its claim."""
-    journal = EventStore(tmp_path / "hub.db")
-    try:
+    async with owned() as resources:
+        journal = resources.journal(EventStore(tmp_path / "hub.db"))
         async with running_hub(SynapseHub(journal=journal)) as (hub, uri):
             child = (
                 "import subprocess,sys; "
-                "r=subprocess.run([sys.argv[1],'lock','mutex','--name','contender',"
-                "'--uri',sys.argv[2],'--wait-timeout','0','--',"
+                "r=subprocess.run([sys.executable,'-u','-m','synapse_channel.cli','lock','mutex',"
+                "'--name','contender','--uri',sys.argv[1],'--wait-timeout','0','--',"
                 "sys.executable,'-c','raise SystemExit(99)'],capture_output=True,text=True); "
                 "assert r.returncode==1,(r.returncode,r.stdout,r.stderr); "
                 "assert 'Could not acquire lock' in r.stdout,r.stdout; "
-                "raise SystemExit(int(sys.argv[3]))"
+                "raise SystemExit(int(sys.argv[2]))"
             )
             result = await asyncio.to_thread(
                 run_cli,
@@ -662,7 +757,6 @@ async def test_disconnected_lock_still_excludes_contender_and_releases(
                 sys.executable,
                 "-c",
                 child,
-                str(_SYNAPSE_BIN),
                 uri,
                 str(exit_code),
                 uri=uri,
@@ -674,5 +768,3 @@ async def test_disconnected_lock_still_excludes_contender_and_releases(
                 row.kind == "claim" and row.payload.get("owner") == "owner" for row in events
             )
             assert any(row.kind == "release" for row in events)
-    finally:
-        journal.close()
