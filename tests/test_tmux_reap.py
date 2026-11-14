@@ -169,9 +169,18 @@ def _fake_proc(root: Path, *processes: tuple[int, str, int, int]) -> Path:
 
 
 def test_a_pane_program_that_ignores_sighup_is_stopped_with_the_server(rig: Rig) -> None:
-    """The server and every pane program are gone; nothing outside the panes is touched."""
+    """The server and every pane program are gone; nothing outside the panes is touched.
+
+    ``kill-server`` inside the helper can land while the client is still the
+    forked server child. That child has the default SIGHUP disposition, so the
+    hangup ends it and the assertion would pass without the helper killing
+    anything. The read waits until the client program ignores SIGHUP, which is
+    the program the helper has to stop.
+    """
     rig.start("anchor", "exec sleep 600")
+    started_before = set(rig.sessions)
     rig.start("client", HUP_PROOF)
+    (client,) = set(rig.sessions) - started_before
     sessions = pane_sessions(rig.base)
     assert len(sessions) == 2 and None not in sessions.values()
     started = _wait_for(sessions, 2)
@@ -179,6 +188,7 @@ def test_a_pane_program_that_ignores_sighup_is_stopped_with_the_server(rig: Rig)
     (socket,) = rig.sockets
     assert socket.exists()
     try:
+        _wait_until_the_proof_program_ignores_hangup(client)
         stop_private_tmux_server(rig.base)
 
         assert processes_in_sessions(sessions) == []
