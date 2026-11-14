@@ -13,12 +13,13 @@ import os
 import ssl
 import tempfile
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
 from typing import Protocol, cast
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.member_text import MemberText
 from synapse_channel.core.secret_files import (
     SecretFileError,
     read_regular_file_bytes,
@@ -112,7 +113,7 @@ def load_client_certificate_chain(
         raise HubTLSConfigError(f"could not load multi-hub client identity: {exc}") from exc
 
 
-class MTLSVerificationResult(str, Enum):
+class MTLSVerificationResult(MemberText, StrEnum):
     """Stable mutual-TLS peer verification result strings."""
 
     VALID = "valid"

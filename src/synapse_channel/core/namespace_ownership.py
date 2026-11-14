@@ -31,10 +31,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
+
+from synapse_channel.core.member_text import MemberText
 
 
-class OwnershipOutcome(str, Enum):
+class OwnershipOutcome(MemberText, StrEnum):
     """The four outcomes of resolving which hub may grant claims in a namespace."""
 
     LOCAL = "local"

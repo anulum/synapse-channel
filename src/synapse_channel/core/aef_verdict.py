@@ -9,10 +9,12 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
+
+from synapse_channel.core.member_text import MemberText
 
 
-class AefVerdictCode(str, Enum):
+class AefVerdictCode(MemberText, StrEnum):
     """Machine-readable outcome of an AEF or legacy-receipt verification.
 
     ``VALID`` is reserved for receipts verified under the accepted AEF profile.

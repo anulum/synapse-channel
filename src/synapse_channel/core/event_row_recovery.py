@@ -23,8 +23,10 @@ import json
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any, cast
+
+from synapse_channel.core.member_text import MemberText
 
 CORRUPT_EVENT_KIND = "corrupt_event"
 """Synthetic in-memory event kind used for a quarantined SQLite row."""
@@ -33,7 +35,7 @@ CORRUPT_EVENT_SCHEMA_VERSION = 1
 """Schema version of the public, non-secret corrupt-row marker payload."""
 
 
-class CorruptEventReason(str, Enum):
+class CorruptEventReason(MemberText, StrEnum):
     """Stable machine-readable reasons a stored event row was quarantined."""
 
     INVALID_TIMESTAMP = "invalid_timestamp"

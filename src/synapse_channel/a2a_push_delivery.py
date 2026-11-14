@@ -13,10 +13,11 @@ import math
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from urllib.error import URLError
 
 from synapse_channel.a2a import JsonMap
+from synapse_channel.core.member_text import MemberText
 
 DEFAULT_PUSH_RETRY_DELAYS_SECONDS = (0.25, 1.0)
 """Delays before the second and third bounded delivery attempts."""
@@ -28,7 +29,7 @@ MAX_PUSH_RETRY_WINDOW_SECONDS = 60.0
 """Hard ceiling on the sum of configured retry delays."""
 
 
-class PushDeliveryState(str, Enum):
+class PushDeliveryState(MemberText, StrEnum):
     """Stable terminal and intermediate push-delivery states."""
 
     RETRY_SCHEDULED = "retry-scheduled"
@@ -36,7 +37,7 @@ class PushDeliveryState(str, Enum):
     DEAD_LETTERED = "dead-lettered"
 
 
-class PushFailureClass(str, Enum):
+class PushFailureClass(MemberText, StrEnum):
     """Credential-free failure classes safe to persist and expose."""
 
     TIMEOUT = "timeout"

@@ -23,12 +23,13 @@ top of this evidence, never folded into it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
+from synapse_channel.core.member_text import MemberText
 from synapse_channel.participants.session_telemetry import SessionMetrics
 
 
-class SessionSignal(str, Enum):
+class SessionSignal(MemberText, StrEnum):
     """A kind of operational advice. The value is a stable lowercase string for logs and notes."""
 
     COMPACT_SOON = "compact-soon"

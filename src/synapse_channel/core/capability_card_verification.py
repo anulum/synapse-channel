@@ -13,7 +13,7 @@ import base64
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from synapse_channel.core.capability_card_signing import (
@@ -27,9 +27,10 @@ from synapse_channel.core.capability_card_trust import (
     CapabilityCardHistoryResult,
     CapabilityCardTrustBundle,
 )
+from synapse_channel.core.member_text import MemberText
 
 
-class CapabilityCardVerificationResult(str, Enum):
+class CapabilityCardVerificationResult(MemberText, StrEnum):
     """Stable signed-card verification and lifecycle results."""
 
     VALID = "valid"

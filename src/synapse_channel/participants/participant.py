@@ -24,14 +24,16 @@ never inside it, so the abstraction stays free of routing or moderation policy.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+from synapse_channel.core.member_text import MemberText
 
 if TYPE_CHECKING:
     from synapse_channel.participants.envelope import TurnRequest, TurnResult
 
 
-class ParticipantChannel(str, Enum):
+class ParticipantChannel(MemberText, StrEnum):
     """How a participant's provider session is driven, ranked by robustness.
 
     The selection policy is ``MCP > API > HEADLESS > PTY``: an in-session tool call is the most

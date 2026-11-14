@@ -43,15 +43,16 @@ from __future__ import annotations
 import contextlib
 import os
 import threading
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from types import TracebackType
 
+from synapse_channel.core.member_text import MemberText
 from synapse_channel.core.persistence import BUSY_TIMEOUT_MS
 from synapse_channel.core.persistence_sqlcipher import connect_event_store
 
 
-class SequenceFloorMode(str, Enum):
+class SequenceFloorMode(MemberText, StrEnum):
     """How strictly the durable store enforces per-sender sequence floors."""
 
     OFF = "off"
@@ -59,7 +60,7 @@ class SequenceFloorMode(str, Enum):
     STRICT = "strict"
 
 
-class DurableAdmitResult(str, Enum):
+class DurableAdmitResult(MemberText, StrEnum):
     """Outcome of one atomic durable admission attempt."""
 
     ACCEPTED = "accepted"

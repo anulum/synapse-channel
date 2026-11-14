@@ -17,11 +17,12 @@ import time
 from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from hashlib import sha256
 from typing import Any
 
 from synapse_channel.core.aef_domain import AEF_LEGACY_EVENT_DOMAIN, aef_signature_preimage
+from synapse_channel.core.member_text import MemberText
 from synapse_channel.core.message_auth_durable import (
     DurableAdmitResult,
     DurableMessageAuthReplayStore,
@@ -92,12 +93,11 @@ DEFAULT_SIGNED_MESSAGE_TYPES = (
 """Inbound frame types covered by the first per-message-authentication tranche."""
 
 
-class VerificationResult(str, Enum):
+class VerificationResult(MemberText, StrEnum):
     """Stable per-message authentication verification result strings.
 
-    Subclasses ``(str, Enum)`` rather than ``enum.StrEnum`` so the module imports
-    on Python 3.10, where ``StrEnum`` does not exist; members remain ``str`` and
-    their ``.value`` is the stable wire string.
+    Members remain ``str`` and their ``.value`` is the stable wire string.
+    ``str`` and ``format`` stay on the member name.
     """
 
     OK = "ok"
@@ -111,7 +111,7 @@ class VerificationResult(str, Enum):
     REPLAYED = "replayed"
 
 
-class SignedEventVerificationResult(str, Enum):
+class SignedEventVerificationResult(MemberText, StrEnum):
     """Stable signed-event verification result strings."""
 
     VALID = "valid"

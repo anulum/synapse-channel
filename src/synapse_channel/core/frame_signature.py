@@ -29,10 +29,11 @@ import base64
 import binascii
 import copy
 from collections.abc import Mapping
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.frame_canonical import FrameCanonicalError, frame_canonical_json
+from synapse_channel.core.member_text import MemberText
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -54,7 +55,7 @@ _ENVELOPE_KEYS = frozenset(
 )
 
 
-class FrameSignatureResult(str, Enum):
+class FrameSignatureResult(MemberText, StrEnum):
     """Stable outcomes of a frame-signature check."""
 
     VALID = "valid"

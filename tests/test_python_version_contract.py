@@ -105,6 +105,27 @@ def test_public_enum_string_format_and_wire_values_remain_stable(
     assert json.dumps({"result": member}) == json.dumps({"result": wire_value})
 
 
+@pytest.mark.parametrize("module_name,type_name,member_name,wire_value", _STRING_ENUMS)
+def test_string_enum_identity_comparison_and_member_text(
+    module_name: str, type_name: str, member_name: str, wire_value: str
+) -> None:
+    """Pin identity, wire equality, membership and an f-string.
+
+    Call sites compare members with ``is`` and read them in f-strings and
+    ``repr``. The string-format pin does not state those.
+    """
+    enum_type = getattr(importlib.import_module(module_name), type_name)
+    member = getattr(enum_type, member_name)
+    assert member is getattr(enum_type, member_name)
+    assert member == wire_value
+    assert wire_value == member
+    assert member != f"{wire_value}\x00"
+    assert member in (member,)
+    assert wire_value in (member,)
+    assert f"{member}" == f"{type_name}.{member_name}"
+    assert repr(member) == f"<{type_name}.{member_name}: {wire_value!r}>"
+
+
 def test_every_string_enum_of_the_package_is_in_the_table() -> None:
     """A string enum added to the package must be pinned above before it ships."""
     found = set()

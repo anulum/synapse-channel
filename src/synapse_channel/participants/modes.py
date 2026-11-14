@@ -26,7 +26,9 @@ a moderator is available), which is the dynamic selection the modes exist to sup
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
+
+from synapse_channel.core.member_text import MemberText
 
 COLLOQUY_MAX_PARTICIPANTS = 2
 """At most this many participants selects :attr:`ConversationMode.COLLOQUY`."""
@@ -35,7 +37,7 @@ ROUNDTABLE_MAX_PARTICIPANTS = 4
 """Above :data:`COLLOQUY_MAX_PARTICIPANTS` and up to this many selects a roundtable."""
 
 
-class ConversationMode(str, Enum):
+class ConversationMode(MemberText, StrEnum):
     """The shape of a moderated multi-party conversation.
 
     The value is a stable lowercase string so a mode survives a round trip through a JSON bus

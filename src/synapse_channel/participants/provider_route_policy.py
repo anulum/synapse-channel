@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from synapse_channel.core.accounting import ModelPrice
+from synapse_channel.core.member_text import MemberText
 
 
-class PriceKind(str, Enum):
+class PriceKind(MemberText, StrEnum):
     """Whether a candidate has a quoted price, verified free use, or no price."""
 
     PRICED = "priced"
@@ -25,7 +26,7 @@ class PriceKind(str, Enum):
     UNKNOWN = "unknown"
 
 
-class EvidenceStatus(str, Enum):
+class EvidenceStatus(MemberText, StrEnum):
     """Whether a price or quota observation can support a routing decision."""
 
     CURRENT = "current"

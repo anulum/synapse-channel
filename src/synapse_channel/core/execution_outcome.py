@@ -16,8 +16,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
+
+from synapse_channel.core.member_text import MemberText
 
 OutcomeBoundary = Literal[
     "a2a_exchange", "mcp_exchange", "app_task_store", "wake_transport", "worker_process"
@@ -28,7 +30,7 @@ OUTCOME_SCHEMA = "synapse.execution-outcome.v1"
 """Version of the additive observation envelope; never an authority grant."""
 
 
-class OutcomeState(str, Enum):
+class OutcomeState(MemberText, StrEnum):
     """Five states of an execution, independent of protocol-specific lifecycle."""
 
     NOT_STARTED = "not_started"

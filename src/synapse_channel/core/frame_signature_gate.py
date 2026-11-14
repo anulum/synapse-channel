@@ -43,13 +43,14 @@ import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.frame_signature import FrameSignatureResult, verify_session_frame
 from synapse_channel.core.frame_signing import FrameSigner, FrameSigningSessions
 from synapse_channel.core.hub_identity_gate import IDENTITY_BINDING_CLOSE_CODE
 from synapse_channel.core.identity_pins import IdentityPinStore
+from synapse_channel.core.member_text import MemberText
 from synapse_channel.core.message_auth import EventSignatureTrustBundle
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.release_confirmation import (
@@ -75,7 +76,7 @@ RECHECK_INTERVAL_SECONDS = 5.0
 """Seconds between re-checks of every connection's key while the hub serves."""
 
 
-class GateVerdict(str, Enum):
+class GateVerdict(MemberText, StrEnum):
     """What the hub does with a checked frame."""
 
     ADMIT = "admit"

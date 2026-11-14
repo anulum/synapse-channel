@@ -38,11 +38,12 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import cast
 
 from synapse_channel.core.aef_verdict import AefVerdictCode
 from synapse_channel.core.aef_verification import AefVerification
+from synapse_channel.core.member_text import MemberText
 
 GENESIS_RECEIPT = "aef1:" + "0" * 64
 """The ``prev_receipt`` of the first receipt of every AEF log."""
@@ -51,7 +52,7 @@ AUTHENTIC_VERDICTS = frozenset({AefVerdictCode.VALID, AefVerdictCode.EXPIRED})
 """Per-receipt verdicts reached only after the content id and signature verified."""
 
 
-class AefChainCode(str, Enum):
+class AefChainCode(MemberText, StrEnum):
     """Findings of the chain check."""
 
     CHAIN_CONTINUOUS = "CHAIN_CONTINUOUS"

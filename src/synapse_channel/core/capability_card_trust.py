@@ -22,11 +22,12 @@ import tempfile
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.member_text import MemberText
 from synapse_channel.core.message_auth import EventSignatureKey
 
 DEFAULT_CAPABILITY_CARD_CLOCK_SKEW_SECONDS = 30.0
@@ -47,7 +48,7 @@ class CapabilityCardTrustError(SynapseError, ValueError):
     code = "capability_card_trust"
 
 
-class CapabilityCardHistoryResult(str, Enum):
+class CapabilityCardHistoryResult(MemberText, StrEnum):
     """Outcome of applying sequence and downgrade policy to a verified card."""
 
     ACCEPTED = "accepted"

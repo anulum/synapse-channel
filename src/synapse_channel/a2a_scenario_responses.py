@@ -23,10 +23,11 @@ import base64
 import re
 import uuid
 from collections.abc import Mapping
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from synapse_channel.a2a import JsonMap
+from synapse_channel.core.member_text import MemberText
 
 # Official TCK residual names used in messageId prefixes (tck-<name>-session).
 _TCK_MESSAGE_ID = re.compile(
@@ -60,7 +61,7 @@ TCK_FILE_RAW_BYTES = b"Generated file content"
 """Raw file payload encoded as base64 for raw file-part artifacts."""
 
 
-class ScenarioKind(str, Enum):
+class ScenarioKind(MemberText, StrEnum):
     """Named send-response profiles the bridge can answer immediately."""
 
     ARTIFACT_TEXT = "artifact-text"

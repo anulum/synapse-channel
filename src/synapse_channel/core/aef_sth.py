@@ -30,7 +30,7 @@ from __future__ import annotations
 import base64
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from synapse_channel.core.aef_canonical import AefCanonicalizationError, canonical_json
 from synapse_channel.core.aef_chain import verify_aef_chain
@@ -46,11 +46,12 @@ from synapse_channel.core.aef_verification import (
     verified_sth,
     verify_aef_receipt,
 )
+from synapse_channel.core.member_text import MemberText
 from synapse_channel.core.merkle import merkle_tree_hash
 from synapse_channel.core.receipt_signing import ReceiptSigningKey, receipt_key_id
 
 
-class AefSthVerdict(str, Enum):
+class AefSthVerdict(MemberText, StrEnum):
     """How an export compares with one signed tree head."""
 
     STH_COMPLETE = "STH_COMPLETE"

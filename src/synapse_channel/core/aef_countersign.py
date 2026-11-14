@@ -34,7 +34,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from synapse_channel.core.aef_canonical import AefCanonicalizationError, canonical_json
 from synapse_channel.core.aef_verification import (
@@ -43,6 +43,7 @@ from synapse_channel.core.aef_verification import (
     verified_sth,
 )
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.member_text import MemberText
 from synapse_channel.core.signature_suite import (
     SUITE_HYBRID,
     SignatureSuiteError,
@@ -67,7 +68,7 @@ class AefCountersignError(SynapseError, ValueError):
     code = "aef_countersign"
 
 
-class CountersignVerdict(str, Enum):
+class CountersignVerdict(MemberText, StrEnum):
     """The verdict on one countersignature against one tree head."""
 
     VALID = "VALID"

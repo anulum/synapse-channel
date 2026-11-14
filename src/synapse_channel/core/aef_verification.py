@@ -23,7 +23,7 @@ import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from types import MappingProxyType
 from typing import Protocol, TypeGuard
 
@@ -31,6 +31,7 @@ from synapse_channel.core.aef_canonical import AefCanonicalizationError, canonic
 from synapse_channel.core.aef_domain import AEF_RECEIPT_DOMAIN, AEF_STH_DOMAIN, AefDomain
 from synapse_channel.core.aef_time import AefTimestampError, validate_epoch_ms
 from synapse_channel.core.aef_verdict import AefVerdictCode
+from synapse_channel.core.member_text import MemberText
 from synapse_channel.core.merkle import InclusionProof, verify_inclusion
 from synapse_channel.core.receipt_signing import receipt_key_id
 
@@ -174,7 +175,7 @@ class AefReplayIndex(Protocol):
         ...  # pragma: no cover - structural typing declaration
 
 
-class AefInclusionVerdict(str, Enum):
+class AefInclusionVerdict(MemberText, StrEnum):
     """Closed outcome of receipt inclusion against a signed tree head."""
 
     INCLUSION_VALID = "INCLUSION_VALID"
