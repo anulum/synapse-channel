@@ -12,7 +12,7 @@ none of them counts again. Each name below has one meaning (the counter
 glossary in ``docs/cockpit.md`` repeats them):
 
 ``agents_live``
-    Identities connected now, not counting waiter sidecars.
+    Identities connected now, not counting waiter sidecars or presence holders.
 ``waiters_missing``
     Live identities with no waiter sidecar.
 ``claims_active`` / ``claims_stale``
@@ -41,6 +41,10 @@ glossary in ``docs/cockpit.md`` repeats them):
 ``seats_deaf``
     Seats the hub judges not proven live (no live waiter, no reaction within its
     window): the seats a directed message to which draws a warning to its sender.
+``presence_holders``
+    Connected names that declared the wake capability ``passive`` and are not
+    waiter sidecars (``synapse listen``, the ``synapse-presence@`` unit). They
+    receive and never act, so they are neither agents nor seats.
 """
 
 from __future__ import annotations
@@ -72,6 +76,7 @@ HEADLINE_KEYS = (
     "seats_active_not_listening",
     "seats_silent",
     "seats_deaf",
+    "presence_holders",
 )
 """Every headline counter, in display order."""
 
@@ -158,6 +163,7 @@ def build_headline(
     counts = {
         "agents_live": _count(agents.get("live")),
         "waiters_missing": _count(agents.get("missing_waiters")),
+        "presence_holders": _count(agents.get("presence_holders")),
         "claims_active": _count(claims.get("active")),
         "claims_stale": _count(claims.get("stale")),
         "tasks_ready": _count(_mapping(fleet.get("tasks")).get("ready")),

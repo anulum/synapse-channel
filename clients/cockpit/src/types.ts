@@ -223,6 +223,8 @@ export interface Headline {
   readonly seatsActiveNotListening: number;
   readonly seatsSilent: number;
   readonly seatsDeaf: number;
+  /** Connections that declared they never act on what they receive: neither agents nor seats. */
+  readonly presenceHolders: number;
 }
 
 export interface FleetSnapshot {

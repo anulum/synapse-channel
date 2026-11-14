@@ -29,6 +29,7 @@ function headline(counts: Record<string, number>): Record<string, number> {
     "tasks_blocked_waiting", "tasks_closed", "risk_signals", "risk_signals_red",
     "risk_signals_amber", "branch_conflicts", "peers_reachable", "peers_total",
     "seats_listening", "seats_active_not_listening", "seats_silent", "seats_deaf",
+    "presence_holders",
   ];
   return Object.fromEntries(keys.map((key) => [key, counts[key] ?? 0]));
 }

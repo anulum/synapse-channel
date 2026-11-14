@@ -20,19 +20,29 @@ from synapse_channel.terminal_text import shell_long_option, terminal_text
 
 @dataclass(frozen=True)
 class DoctorRoster:
-    """Roster and additive mailbox projection returned by one WHO snapshot."""
+    """Roster, additive mailbox projection and declared wake capabilities of one WHO snapshot.
+
+    ``wake_capabilities`` is ``None`` when the hub reported none.
+    """
 
     agents: tuple[str, ...]
     mailbox_pending: dict[str, int] | None
+    wake_capabilities: dict[str, str] | None = None
 
 
 def doctor_roster_from_snapshot(data: dict[str, object]) -> DoctorRoster:
     """Parse the WHO fields doctor needs without treating malformed data as zero."""
     raw_agents = data.get("online_agents")
     agents = tuple(str(agent) for agent in raw_agents) if isinstance(raw_agents, list) else ()
+    raw_capabilities = data.get("wake_capabilities")
     return DoctorRoster(
         agents=agents,
         mailbox_pending=parse_pending_counts(data.get("mailbox_pending")),
+        wake_capabilities=(
+            {str(name): str(value) for name, value in raw_capabilities.items()}
+            if isinstance(raw_capabilities, dict)
+            else None
+        ),
     )
 
 

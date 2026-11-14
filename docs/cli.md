@@ -743,6 +743,13 @@ subject presence it reports.
 output honest: presence is not a wake loop, and a missing `-rx` waiter means
 directed messages will not wake that terminal promptly.
 
+`synapse who` counts presence holders apart: a connected name that declared the
+wake capability `passive` and is not a waiter sidecar (a `synapse listen`, such as
+a `synapse-presence@` unit) is listed under "Presence holders", never as an agent,
+never marked deaf and never "Unarmed". `synapse doctor`'s `deaf-agents` check
+leaves them out by the same fact; against a hub that reports no capabilities it
+falls back to names ending in `-presence`, and its detail says so.
+
 `synapse wait --directed-only` suppresses *routine* broadcasts: it wakes on messages
 that name you (or a group you are in), but still wakes on a **priority broadcast**
 (`synapse send --priority`) and on any message from **`CEO`** — so an `all` that
@@ -1785,7 +1792,10 @@ selectors. The dashboard observation carries no accounting, because observer
 grants cover directory and context pathnames only. This command provides
 observation only, not process termination.
 
-`synapse listen` streams chat (and optional presence) until it stops. An intentional
+`synapse listen` streams chat (and optional presence) until it stops. It declares
+the wake capability `passive`, because it prints what it receives and never acts
+on it: the hub's delivery receipts say "passive receiver" for it, and `who`, `doctor`
+and the dashboard read it as presence, not as an agent. An intentional
 stop — Ctrl+C, or a finite message cap in tests/tools — exits `0`. If the hub
 refuses the name (close `4009` name conflict, including after the welcome
 handshake) or the socket dies for any other hub-initiated reason while listening,

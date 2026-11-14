@@ -9,10 +9,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from synapse_channel.core.agent_liveness import PANE_WAITER_SUFFIX, WAITER_SUFFIX
 from synapse_channel.core.agent_liveness import waiter_owner as _core_waiter_owner
+from synapse_channel.core.wake_capability import WAKE_PASSIVE, normalize_wake_capability
 
 __all__ = [
     "PANE_WAITER_SUFFIX",
@@ -20,6 +21,7 @@ __all__ = [
     "is_waiter",
     "legacy_project_scoped_terminal_sidecar",
     "pane_waiter_name",
+    "presence_holders",
     "split_roster",
     "waiter_name",
     "waiter_owner",
@@ -61,3 +63,34 @@ def split_roster(roster: Iterable[str]) -> tuple[list[str], list[str]]:
     for name in roster:
         (waiters if is_waiter(name) else agents).append(name)
     return sorted(agents), sorted(waiters)
+
+
+def presence_holders(
+    online: Iterable[str], wake_capabilities: Mapping[str, object] | None
+) -> frozenset[str]:
+    """Return the connected names that only hold presence.
+
+    A presence holder (``synapse listen``, which the ``synapse-presence@`` unit
+    runs) receives frames and never acts on them, and says so by declaring the
+    wake capability ``passive``. A waiter sidecar is passive too, but it stands
+    for its owner, so it is never a presence holder. A name that declared no
+    capability, or a hub that reports none, makes no holder.
+
+    Parameters
+    ----------
+    online : Iterable[str]
+        Every connected name.
+    wake_capabilities : Mapping[str, object] or None
+        The ``who`` answer's ``wake_capabilities``: each name's declared capability.
+
+    Returns
+    -------
+    frozenset[str]
+        The non-waiter names that declared ``passive``.
+    """
+    declared = wake_capabilities or {}
+    return frozenset(
+        name
+        for name in online
+        if not is_waiter(name) and normalize_wake_capability(declared.get(name)) == WAKE_PASSIVE
+    )

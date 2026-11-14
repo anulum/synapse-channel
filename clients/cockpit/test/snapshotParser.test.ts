@@ -189,6 +189,7 @@ describe("parseHeadline", () => {
     seats_active_not_listening: 1,
     seats_silent: 2,
     seats_deaf: 1,
+    presence_holders: 4,
   };
 
   it("reads every counter of the hub's block under its camel-case name", () => {
@@ -214,6 +215,7 @@ describe("parseHeadline", () => {
       seatsActiveNotListening: 1,
       seatsSilent: 2,
       seatsDeaf: 1,
+      presenceHolders: 4,
     });
   });
 

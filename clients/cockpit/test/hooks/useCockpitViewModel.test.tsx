@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import type { ReplaySlot } from "../../src/components/ReplayWorkbench";
 import type { CockpitFeeds } from "../../src/hooks/useCockpitFeeds";
 import { useCockpitViewModel } from "../../src/hooks/useCockpitViewModel";
+import { parseHeadline } from "../../src/lib/snapshotParser";
 import type { FleetSnapshot } from "../../src/types";
 
 const CLAIM = {
@@ -174,6 +175,7 @@ describe("useCockpitViewModel", () => {
     expect(result.current.connected).toBe(true);
     expect(result.current.roster.map((row) => row.agent)).toEqual(["alpha/one"]);
     expect(result.current.waiters).toBe(1);
+    expect(result.current.presenceHolders).toBe(0);
     expect(result.current.claims).toHaveLength(1);
     expect(result.current.board.map((task) => task.taskId)).toEqual(["TASK-1"]);
     expect(result.current.communication.messages).toBe(1);
@@ -185,6 +187,30 @@ describe("useCockpitViewModel", () => {
     expect(result.current.claims).toEqual([]);
     expect(result.current.board.map((task) => task.taskId)).toEqual(["TASK-OLD"]);
     expect(result.current.conflicts).toEqual([]);
+    expect(result.current.roster.map((row) => row.agent)).toEqual(["alpha/one"]);
+  });
+
+  it("counts the headline's presence holders and lists none of them", () => {
+    const counters = [
+      "agents_live", "waiters_missing", "claims_active", "claims_stale", "tasks_open",
+      "tasks_in_progress", "tasks_ready", "tasks_blocked", "tasks_blocked_marked",
+      "tasks_blocked_waiting", "tasks_closed", "risk_signals", "risk_signals_red",
+      "risk_signals_amber", "branch_conflicts", "peers_reachable", "peers_total",
+      "seats_listening", "seats_active_not_listening", "seats_silent", "seats_deaf",
+    ];
+    const headline = parseHeadline({
+      ...Object.fromEntries(counters.map((key) => [key, 0])),
+      presence_holders: 16,
+    });
+    const { result } = renderHook(() => useCockpitViewModel({
+      feeds: feeds({ ...SNAPSHOT, headline }),
+      replaySlot: null,
+      travelling: false,
+      focus: "",
+      brush: null,
+    }));
+
+    expect(result.current.presenceHolders).toBe(16);
     expect(result.current.roster.map((row) => row.agent)).toEqual(["alpha/one"]);
   });
 

@@ -8,7 +8,7 @@
 
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
-import { startFleet, startHarness, stop, type Fleet, type Started } from "./fleetHarness";
+import { hubPort, start, startFleet, startHarness, stop, type Fleet, type Started } from "./fleetHarness";
 
 const bearer = process.env["SYNAPSE_COCKPIT_E2E_TOKEN"];
 if (!bearer) throw new Error("SYNAPSE_COCKPIT_E2E_TOKEN is required");
@@ -31,17 +31,31 @@ test("the HUD, the board, Studio and the snapshot show one number per counter", 
   test.setTimeout(120_000);
   let harness: Started | undefined;
   let fleet: Fleet | undefined;
+  let holder: Started | undefined;
   try {
     const started = await startHarness();
     harness = started.harness;
     const origin = new URL(started.url).origin;
     fleet = await startFleet();
+    // A presence holder: the real `synapse listen`, which declares itself passive. Its
+    // first line is its own arrival, so it is connected when `start` returns.
+    holder = await start(
+      "-m",
+      ["synapse_channel.cli", "listen", "--name", "E2E-presence", "--uri", `ws://127.0.0.1:${hubPort}`],
+      { ...process.env },
+    );
     // The fleet holds its three claims once both acts have played.
     await expect
       .poll(async () => (await headlineAt(page.request, `${origin}/snapshot.json`))["claims_active"], {
         timeout: 30_000,
       })
       .toBe(fleet.claims.length);
+    // The holder is counted, and is neither an agent nor a seat.
+    await expect
+      .poll(async () => (await headlineAt(page.request, `${origin}/snapshot.json`))["presence_holders"], {
+        timeout: 30_000,
+      })
+      .toBe(1);
     const snapshot = await headlineAt(page.request, `${origin}/snapshot.json`);
     const studio = await headlineAt(page.request, `${origin}/studio.json`);
     expect(studio).toEqual(snapshot);
@@ -54,6 +68,9 @@ test("the HUD, the board, Studio and the snapshot show one number per counter", 
     await expect.poll(() => kpi(page, "agents online"), { timeout: 20_000 }).toBe(snapshot["agents_live"]);
     expect(await kpi(page, "claims held")).toBe(snapshot["claims_active"]);
     expect(await kpi(page, "red risk signals")).toBe(snapshot["risk_signals_red"]);
+    const roster = page.getByRole("region", { name: "Fleet roster", exact: true });
+    await expect(roster.getByText("presence holders: 1", { exact: true })).toBeVisible();
+    await expect(roster.getByRole("button", { name: "Inspect agent E2E-presence" })).toHaveCount(0);
     const board = page.getByRole("region", { name: "Task board", exact: true });
     await expect(board.getByText(`${snapshot["tasks_blocked"]} blocked`, { exact: true })).toBeVisible();
 
@@ -67,6 +84,7 @@ test("the HUD, the board, Studio and the snapshot show one number per counter", 
     );
     await expect(page.locator("#cc-conflicts")).toHaveText(String(snapshot["branch_conflicts"]));
   } finally {
+    await stop(holder);
     await stop(fleet?.started);
     await stop(harness);
   }

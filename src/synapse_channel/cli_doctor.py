@@ -257,6 +257,11 @@ def _split_roster(
     return doctor_roster, roster
 
 
+def _declared_capabilities(doctor_roster: DoctorRoster | None) -> dict[str, str] | None:
+    """Return the WHO answer's declared wake capabilities; ``None`` without a WHO projection."""
+    return None if doctor_roster is None else doctor_roster.wake_capabilities
+
+
 async def _diagnose(
     *,
     uri: str,
@@ -360,7 +365,7 @@ async def _diagnose(
     doctor_roster, roster = _split_roster(roster_result, probe_name)
     diagnoses.append(check_reachable(roster is not None, uri))
     diagnoses.append(check_waiter(roster, identity.waiter_name))
-    diagnoses.append(check_deaf_agents(roster))
+    diagnoses.append(check_deaf_agents(roster, _declared_capabilities(doctor_roster)))
     if doctor_roster is not None:
         diagnoses.append(
             diagnose_mailbox_pending(

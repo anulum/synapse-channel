@@ -11,6 +11,7 @@ import { memo } from "react";
 
 import { Ident } from "./Ident";
 
+import { useCockpitI18n } from "../context/CockpitI18n";
 import type { RosterEntry, RowStatus } from "../lib/roster";
 import type { SeatState } from "../types";
 import { identityMatchesSelection } from "../lib/selection";
@@ -137,13 +138,22 @@ interface FleetRosterProps {
   readonly roster: readonly RosterEntry[];
   /** Number of `-rx` waiters folded out of the primary rows, if any. */
   readonly waiters: number;
+  /** Presence holders the headline counts; they never get a row. */
+  readonly presenceHolders?: number;
   /** Opens the agent detail drawer. */
   readonly onInspect?: ((name: string) => void) | undefined;
   /** Shared cockpit entity selected in the URL. */
   readonly selection?: CockpitSelection | null;
 }
 
-function FleetRosterView({ roster, waiters, onInspect, selection = null }: FleetRosterProps): JSX.Element {
+function FleetRosterView({
+  roster,
+  waiters,
+  presenceHolders = 0,
+  onInspect,
+  selection = null,
+}: FleetRosterProps): JSX.Element {
+  const { t } = useCockpitI18n();
   const live = roster.filter((entry) => entry.seat === "listening").length;
 
   return (
@@ -152,6 +162,11 @@ function FleetRosterView({ roster, waiters, onInspect, selection = null }: Fleet
         <span>Fleet roster</span>
         <span className="panel__count">{live}</span>
         {waiters > 0 && <span className="panel__sub">{`${waiters} waiting`}</span>}
+        {presenceHolders > 0 && (
+          <span className="panel__sub" title={t("roster.presenceTitle")}>
+            {t("roster.presenceHolders", { count: presenceHolders })}
+          </span>
+        )}
       </div>
       <div className="panel__body" tabIndex={0}>
         {roster.length === 0 ? (

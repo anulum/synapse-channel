@@ -235,6 +235,7 @@ export function App(): JSX.Element {
               <FleetRoster
                 roster={view.roster}
                 waiters={view.waiters}
+                presenceHolders={view.presenceHolders}
                 selection={workspace.selection}
                 onInspect={overlays.inspectAgent}
               />

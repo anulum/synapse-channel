@@ -26,7 +26,12 @@ from synapse_channel.dashboard_task_graph import (
     render_task_dependency_graph_html,
 )
 from synapse_channel.git.gitconflict import find_conflicts
-from synapse_channel.waiter_identity import is_waiter, pane_waiter_name, waiter_name
+from synapse_channel.waiter_identity import (
+    is_waiter,
+    pane_waiter_name,
+    presence_holders,
+    waiter_name,
+)
 
 if TYPE_CHECKING:
     from synapse_channel.dashboard import DashboardSnapshot
@@ -47,11 +52,15 @@ class FleetAgents:
         Online identities ending in ``-rx``.
     missing_waiters : list[str]
         Expected ``-rx`` waiter names missing for online non-waiter agents.
+    presence_holders : int
+        Online names that only hold presence (:func:`presence_holders`): counted
+        here, and left out of ``live`` and ``missing_waiters``.
     """
 
     live: list[str]
     waiters: list[str]
     missing_waiters: list[str]
+    presence_holders: int = 0
 
     def to_dict(self) -> JsonDict:
         """Return a JSON-compatible mapping."""
@@ -59,6 +68,7 @@ class FleetAgents:
             "live": self.live,
             "waiters": self.waiters,
             "missing_waiters": self.missing_waiters,
+            "presence_holders": self.presence_holders,
         }
 
 
@@ -216,17 +226,24 @@ def _sort_unique(values: Sequence[str]) -> list[str]:
     return sorted({value for value in values if value})
 
 
-def _fleet_agents(online_agents: Sequence[str]) -> FleetAgents:
-    """Derive agent and waiter status from an online roster."""
+def _fleet_agents(
+    online_agents: Sequence[str], wake_capabilities: Mapping[str, object] | None = None
+) -> FleetAgents:
+    """Derive agent and waiter status from an online roster; presence holders are only counted."""
+    holders = presence_holders(online_agents, wake_capabilities)
     waiters = _sort_unique([agent for agent in online_agents if is_waiter(agent)])
-    live = _sort_unique([agent for agent in online_agents if not is_waiter(agent)])
+    live = _sort_unique(
+        [agent for agent in online_agents if not is_waiter(agent) and agent not in holders]
+    )
     waiter_set = set(waiters)
     missing = [
         waiter_name(agent)
         for agent in live
         if waiter_name(agent) not in waiter_set and pane_waiter_name(agent) not in waiter_set
     ]
-    return FleetAgents(live=live, waiters=waiters, missing_waiters=missing)
+    return FleetAgents(
+        live=live, waiters=waiters, missing_waiters=missing, presence_holders=len(holders)
+    )
 
 
 def _float_or_none(value: object) -> float | None:
@@ -406,7 +423,7 @@ def build_fleet_visibility(
     path = Path(a2a_state_file) if a2a_state_file is not None else None
     claims = _fleet_claims(snapshot.state, now=timestamp)
     return FleetVisibility(
-        agents=_fleet_agents(snapshot.online_agents),
+        agents=_fleet_agents(snapshot.online_agents, snapshot.wake_capabilities),
         claims=claims,
         tasks=_fleet_tasks(snapshot.board),
         task_graph=build_task_dependency_graph(snapshot.board),

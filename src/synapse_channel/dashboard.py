@@ -222,6 +222,10 @@ class DashboardSnapshot:
         online agent is proven live, has a live waiter, and how long ago it last
         reacted. Empty when the hub tracks no reactions. The seat projection reads
         it; the document leaves it out, because its ages change on every fetch.
+    wake_capabilities : dict[str, Any]
+        The ``who`` snapshot's ``wake_capabilities``: the capability each online
+        name declared. The fleet and seat projections read it to leave presence
+        holders out; the document carries only their count (``headline``).
     """
 
     online_agents: list[str]
@@ -234,6 +238,7 @@ class DashboardSnapshot:
     agent_roles: dict[str, list[str]] = field(default_factory=dict)
     observed_peers: tuple[ObservedPeerSnapshot, ...] = ()
     agent_liveness: dict[str, Any] = field(default_factory=dict)
+    wake_capabilities: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self, *, a2a_state_file: str | Path | None = None) -> dict[str, Any]:
         """Return a JSON-serialisable dictionary for HTTP responses.
@@ -247,6 +252,7 @@ class DashboardSnapshot:
         payload = asdict(self)
         # Each seat row carries its own part of the hub's proof (fleet.seats[].reaction).
         del payload["agent_liveness"]
+        del payload["wake_capabilities"]
         payload["observed_peers"] = observed_peers_to_dict(self.observed_peers)
         payload.update(
             derived_views(self, payload["observed_peers"], a2a_state_file=a2a_state_file)
@@ -312,6 +318,18 @@ def _mapping_from_who(who: Mapping[str, Any], key: str) -> dict[str, Any]:
     """Return one mapping field of a ``who`` snapshot, or an empty map when absent or malformed."""
     raw = who.get(key)
     return dict(raw) if isinstance(raw, Mapping) else {}
+
+
+def _who_fields(who: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the snapshot fields a ``who`` answer carries: the roster and the hub's word on it."""
+    return {
+        "online_agents": [str(agent_name) for agent_name in who.get("online_agents", [])],
+        "hub_version": str(who.get("hub_version", "")),
+        "config_epoch": str(who.get("config_epoch", "")),
+        "agent_roles": _agent_roles_from_who(who),
+        "agent_liveness": _mapping_from_who(who, "agent_liveness"),
+        "wake_capabilities": _mapping_from_who(who, "wake_capabilities"),
+    }
 
 
 def _agent_roles_from_who(who: Mapping[str, Any]) -> dict[str, list[str]]:
@@ -414,7 +432,6 @@ async def fetch_dashboard_snapshot(
             ),
         )
         return DashboardSnapshot(
-            online_agents=[str(agent_name) for agent_name in who.get("online_agents", [])],
             state=dict(messages[MessageType.STATE_SNAPSHOT].get("snapshot", {})),
             board=dict(messages[MessageType.BOARD_SNAPSHOT].get("board", {})),
             manifest=[
@@ -422,12 +439,9 @@ async def fetch_dashboard_snapshot(
                 for card in messages[MessageType.MANIFEST_SNAPSHOT].get("manifest", [])
                 if isinstance(card, Mapping)
             ],
-            hub_version=str(who.get("hub_version", "")),
             hub_id=agent.hub_id if agent.hub_id != "unknown" else "",
-            config_epoch=str(who.get("config_epoch", "")),
-            agent_roles=_agent_roles_from_who(who),
             observed_peers=observed,
-            agent_liveness=_mapping_from_who(who, "agent_liveness"),
+            **_who_fields(who),
         )
     finally:
         agent.running = False

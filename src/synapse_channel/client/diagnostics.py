@@ -18,7 +18,7 @@ gathers the live inputs and renders the report.
 from __future__ import annotations
 
 import json
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
@@ -29,6 +29,7 @@ from synapse_channel.core.hub import is_loopback_host
 from synapse_channel.terminal_text import shell_long_option, terminal_text
 from synapse_channel.waiter_identity import (
     pane_waiter_name,
+    presence_holders,
     split_roster,
     waiter_name,
     waiter_owner,
@@ -706,13 +707,18 @@ def check_sqlcipher_event_store(
     )
 
 
-def check_deaf_agents(roster: list[str] | None) -> Diagnosis:
+def check_deaf_agents(
+    roster: list[str] | None, wake_capabilities: Mapping[str, object] | None = None
+) -> Diagnosis:
     """Warn when live agents have no matching ``-rx`` wake waiter on the bus.
 
     Presence without a waiter is the "online but deaf" failure: directed messages
-    land in the feed and never wake the seat. Passive ``-rx`` names are ignored as
-    agents (they are waiters themselves), as are deliberate ``-presence`` holders:
-    those keep a project visible and durable but never represent a wakeable seat.
+    land in the feed and never wake the seat. ``-rx`` names are ignored as agents
+    (they are waiters themselves), as are presence holders: names that declared
+    the wake capability ``passive`` (:func:`presence_holders`), which keep a
+    project visible and durable but never represent a wakeable seat. When the hub
+    reports no capabilities (``wake_capabilities`` is ``None``), a name ending in
+    ``-presence`` is taken as a holder instead, and the detail says so.
     """
     if roster is None:
         return Diagnosis(
@@ -722,7 +728,13 @@ def check_deaf_agents(roster: list[str] | None) -> Diagnosis:
             remedy="bring the hub up, then re-run",
         )
     agents, _waiters = split_roster(roster)
-    wakeable_agents = [agent for agent in agents if not agent.endswith("-presence")]
+    if wake_capabilities is None:
+        holders = {agent for agent in agents if agent.endswith("-presence")}
+        basis = "; the hub reported no wake capabilities, so -presence names count as presence"
+    else:
+        holders = set(presence_holders(agents, wake_capabilities))
+        basis = ""
+    wakeable_agents = [agent for agent in agents if agent not in holders]
     live = set(roster)
     deaf = [
         agent
@@ -735,7 +747,7 @@ def check_deaf_agents(roster: list[str] | None) -> Diagnosis:
             status="pass",
             detail=(
                 "every live agent that is wakeable has a -rx waiter "
-                f"({len(wakeable_agents)} agent(s))"
+                f"({len(wakeable_agents)} agent(s)){basis}"
             ),
         )
     listing = ", ".join(terminal_text(agent) for agent in deaf[:3])
@@ -744,7 +756,7 @@ def check_deaf_agents(roster: list[str] | None) -> Diagnosis:
     return Diagnosis(
         check="deaf-agents",
         status="warn",
-        detail=f"agents present without a wake waiter: {listing}{more}",
+        detail=f"agents present without a wake waiter: {listing}{more}{basis}",
         remedy=(
             "arm waiters: synapse wait "
             f"{shell_long_option('--name', waiter_name(sample))} "

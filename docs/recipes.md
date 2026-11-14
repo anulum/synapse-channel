@@ -267,7 +267,8 @@ The discipline that makes it reliable:
   replayed the whole backlog again. Off by default; needs a wire version `2` hub.
 - **Presence is not a wake.** A `synapse-presence@<project>` daemon keeps the agent
   reachable and the feed durable, but only an armed waiter delivers promptness. Keep
-  both (see the [deployment guide](deployment.md)). Run `syn who --me` for the
+  both (see the [deployment guide](deployment.md)). The holder declares itself
+  `passive`, so `synapse who` lists it under "Presence holders", never as a deaf agent. Run `syn who --me` for the
   resolved identity, or `synapse who --name <identity> --me` explicitly, to see
   presence and `-rx` waiter status separately; presence is not a wake loop.
 - **Prefer a self-healing waiter.** Re-arming by hand is fragile — a missed re-arm
@@ -282,7 +283,8 @@ The discipline that makes it reliable:
   a harness that re-invokes on each wake. The hub warns by default when a directed
   message reaches a present-but-deaf recipient; `synapse who` also marks such agents
   `(deaf …)` and lists any present agent with no live waiter under
-  `Unarmed (present, no live waiter)`. Use `--no-warn-stale-recipients` only for an
+  `Unarmed (present, no live waiter)`; presence holders are listed apart and are
+  never unarmed. Use `--no-warn-stale-recipients` only for an
   explicit compatibility opt-out.
 - **Supervise active delivery separately.** A permanent `arm` is intentionally
   passive: it records/replays traffic but cannot wake a provider turn. On Linux

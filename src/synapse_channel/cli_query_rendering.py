@@ -21,6 +21,7 @@ from synapse_channel.observed_peers import ObservedPeerSnapshot
 from synapse_channel.terminal_text import shell_long_option, terminal_text
 from synapse_channel.waiter_identity import (
     pane_waiter_name,
+    presence_holders,
     split_roster,
     waiter_name,
     waiter_owner,
@@ -49,6 +50,27 @@ def _wake_capability_suffix(name: str, capabilities: dict[str, str] | None) -> s
     return f"  ({wake_capability_label(capability)})"
 
 
+def _split_presence(
+    agents: list[str], wake_capabilities: dict[str, str] | None
+) -> tuple[list[str], list[str]]:
+    """Split roster agents into agents and presence holders, each sorted as given."""
+    holders = sorted(presence_holders(agents, wake_capabilities))
+    return [agent_name for agent_name in agents if agent_name not in holders], holders
+
+
+def _presence_count(holders: list[str]) -> str:
+    """Return the roster headline's presence-holder count, empty when there are none."""
+    return f" · {len(holders)} presence holders" if holders else ""
+
+
+def _print_presence_holders(holders: list[str]) -> None:
+    """Print the presence holders' own section: names only, never a deaf mark."""
+    if holders:
+        print(f"Presence holders ({len(holders)}):")
+        for holder in holders:
+            print(f"  {terminal_text(holder)}")
+
+
 def _render_who(
     roster: list[str],
     *,
@@ -75,15 +97,20 @@ def _render_who(
     ones an operator should re-arm before they go quiet. Without that data the roster
     renders exactly as before. Owners represented only by receiver sockets are listed
     separately as reachable seats, so ``0 agents`` cannot be mistaken for ``0 seats``.
+    Presence holders (names that declared ``passive`` and are not waiters, such as a
+    ``synapse-presence@`` unit) are neither agents nor deaf: they get their own
+    section and count, and stay out of ``Unarmed``.
     """
     names = roster
     if project:
         prefix = f"{project}/"
         names = [name for name in names if name == project or name.startswith(prefix)]
-    agents, waiters = split_roster(names)
+    everyone, waiters = split_roster(names)
+    agents, holders = _split_presence(everyone, wake_capabilities)
     reachable_seats = sorted({waiter_owner(waiter) for waiter in waiters} - set(agents))
     scope = f" in {terminal_text(project)}" if project else ""
-    print(f"Online{scope} ({len(agents)} agents · {len(waiters)} waiters):")
+    counts = f"{len(agents)} agents · {len(waiters)} waiters{_presence_count(holders)}"
+    print(f"Online{scope} ({counts}):")
     if reachable_seats:
         print(
             f"Reachable seats via waiters ({len(reachable_seats)}): "
@@ -98,6 +125,7 @@ def _render_who(
         print(f"Waiters ({len(waiters)}):")
         for waiter in waiters:
             print(f"  {terminal_text(waiter)}{_wake_capability_suffix(waiter, wake_capabilities)}")
+    _print_presence_holders(holders)
     unarmed = [
         agent_name
         for agent_name in agents

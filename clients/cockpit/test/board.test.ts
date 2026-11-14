@@ -45,6 +45,7 @@ const HEADLINE = {
   seats_active_not_listening: 0,
   seats_silent: 0,
   seats_deaf: 0,
+  presence_holders: 0,
 };
 
 function node(taskId: string, status: string, ready = false, title = ""): TaskGraphNode {

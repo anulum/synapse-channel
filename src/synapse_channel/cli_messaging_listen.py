@@ -12,7 +12,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sqlite3
-from typing import Any
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import Any, Final
 
 from synapse_channel.cli_messaging_types import AgentFactory, AsyncRunner, ListenRunner
 from synapse_channel.client.agent import SynapseAgent
@@ -28,7 +30,15 @@ from synapse_channel.core.payload_replay import (
     open_payload,
 )
 from synapse_channel.core.protocol import MessageType, is_recipient
+from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.terminal_text import terminal_chat_line, terminal_text
+
+LISTENER_OPTIONS: Final[Mapping[str, object]] = MappingProxyType(
+    {"verbose": True, "wake_capability": WAKE_PASSIVE}
+)
+"""How ``synapse listen`` connects. A listener prints frames and never acts on them,
+so it declares itself ``passive``: the hub, ``synapse who`` and the dashboard read it
+as presence, not as an agent to wake."""
 
 
 async def _listen(
@@ -124,7 +134,7 @@ async def _listen(
                 if agent.connection is not None:
                     await agent.connection.close()
 
-    agent = agent_factory(name, show, uri=uri, verbose=True, token=token)
+    agent = agent_factory(name, show, uri=uri, **LISTENER_OPTIONS, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):

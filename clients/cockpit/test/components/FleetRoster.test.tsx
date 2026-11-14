@@ -87,6 +87,21 @@ describe("FleetRoster", () => {
     expect(screen.queryByText("offline")).toBeNull();
   });
 
+  it("counts presence holders beside the seats, with what they are, and only when there are some", () => {
+    const { rerender } = render(
+      <FleetRoster roster={[entry("project/worker")]} waiters={0} presenceHolders={16} />,
+    );
+    const count = screen.getByText("presence holders: 16");
+    expect(count.className).toBe("panel__sub");
+    expect(count.getAttribute("title")).toBe(
+      "Connections that declared they never act on what they receive (synapse listen, a presence unit). They are neither agents nor seats.",
+    );
+    expect(document.querySelectorAll(".roster-row")).toHaveLength(1);
+
+    rerender(<FleetRoster roster={[entry("project/worker")]} waiters={0} presenceHolders={0} />);
+    expect(screen.queryByText(/presence holders/u)).toBeNull();
+  });
+
   it("marks a listening seat the hub judges deaf, with the hub's reason", () => {
     render(<FleetRoster roster={[entry("quantum/quiet", { deaf: { lastReactionAt: 700 } })]} waiters={0} />);
     const tag = screen.getByText("deaf");

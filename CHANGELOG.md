@@ -262,6 +262,18 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- `synapse listen` declares the wake capability `passive`: it prints what it
+  receives and never acts on it. The `synapse-presence@` units run it, so a
+  presence holder installed by an older package takes this at its next start
+  (for example after `synapse ops redeploy`). Every reader now tells a presence
+  holder (a non-waiter name that declared `passive`) from an agent by that fact:
+  `synapse who` lists holders under "Presence holders", without a deaf mark and
+  outside "Unarmed"; `synapse doctor`'s `deaf-agents` check leaves them out, and
+  falls back to `-presence` names, saying so, only against a hub that reports no
+  capabilities; the dashboard leaves them out of the seats, `seats_deaf`,
+  `agents_live` and `waiters_missing`, and counts them in a new headline counter,
+  `presence_holders`, which the cockpit's roster header shows. A seat reachable
+  only through its waiter stays a seat.
 - The cockpit is the dashboard's front door. `synapse dashboard` serves the
   build the package carries (or `--cockpit-dist`), and a browser opening `/` is
   sent on to `/cockpit/` with its query kept, where the unlock screen asks for

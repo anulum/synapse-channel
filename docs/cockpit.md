@@ -299,7 +299,7 @@ received in the last minute.
 
 | Name | Definition |
 | --- | --- |
-| `agents_live` | identities connected now, not counting waiter sidecars |
+| `agents_live` | identities connected now, not counting waiter sidecars or presence holders |
 | `waiters_missing` | live identities with no waiter sidecar |
 | `claims_active` | claims whose lease expires after the snapshot's time |
 | `claims_stale` | claims whose lease expired at or before it and that the hub still lists |
@@ -319,6 +319,7 @@ received in the last minute.
 | `seats_active_not_listening` | seats with no such socket whose record shows work: a held claim at any age, or a claim stamped or a note authored in the last 900 seconds |
 | `seats_silent` | seats with neither: the owner of a listed claim whose lease has run out and whose stamp is older than the window |
 | `seats_deaf` | seats the hub judges deaf: connected under their own name, with no live waiter and no reaction within the hub's window (90 seconds by default), so a directed message to them draws a warning to its sender |
+| `presence_holders` | connections that declared the wake capability `passive` and are not waiter sidecars (`synapse listen`, a `synapse-presence@` unit): they receive and never act, so they are neither agents nor seats; the roster's header counts them and no row names them |
 
 A closed task (`done` or `cancelled`) sits in the board's "done" bucket. The
 in-product guide carries the same definitions under "Headline counters".

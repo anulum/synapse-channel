@@ -32,6 +32,8 @@ import { deriveRoster } from "../lib/roster";
 export interface CockpitViewModel {
   readonly roster: readonly RosterEntry[];
   readonly waiters: number;
+  /** The headline's presence holders: counted beside the seats, never listed. */
+  readonly presenceHolders: number;
   readonly liveClaims: readonly ClaimView[];
   readonly liveConflicts: readonly BranchConflictView[];
   readonly liveBoard: readonly BoardTask[];
@@ -106,6 +108,7 @@ export function useCockpitViewModel({
   return {
     roster,
     waiters: snapshot?.fleet.agents.waiters.length ?? 0,
+    presenceHolders: snapshot?.headline?.presenceHolders ?? 0,
     liveClaims,
     liveConflicts,
     liveBoard,

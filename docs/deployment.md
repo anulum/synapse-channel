@@ -230,6 +230,12 @@ operators who manage units by hand.
 
 It registers as `myproject-presence` and holds a process and socket without a model
 turn. It keeps the project visible in `synapse who` while the agent is offline.
+The holder runs `synapse listen`, which declares the wake capability `passive`: it
+prints what it receives and never acts on it. `synapse who` therefore lists it
+under "Presence holders", `synapse doctor` does not ask it for a waiter, and the
+dashboard counts it (`presence_holders`) without making it an agent or a seat. A
+unit installed by an older package takes this at its next start, for example after
+`synapse ops redeploy`; until then it reads as an agent, as before.
 Recovery depends on admitted records in a configured durable journal/feed and
 its retention; presence alone does not preserve or deliver messages. A returning
 operator can inspect retained project records with `synapse relay --project myproject`.

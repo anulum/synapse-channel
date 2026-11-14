@@ -34,6 +34,7 @@ from synapse_channel.core.agent_liveness import deaf_mark
 from synapse_channel.core.waiter_identity import (
     is_waiter,
     pane_waiter_name,
+    presence_holders,
     waiter_name,
     waiter_owner,
 )
@@ -119,6 +120,7 @@ def build_seats(
     *,
     now: float,
     liveness: Mapping[str, Any] | None = None,
+    wake_capabilities: Mapping[str, object] | None = None,
 ) -> list[dict[str, Any]]:
     """Return one row per seat the snapshot names, sorted by identity.
 
@@ -135,6 +137,10 @@ def build_seats(
     liveness : Mapping[str, Any] or None, optional
         The ``who`` snapshot's ``agent_liveness``; empty or ``None`` when the hub
         tracks no reactions.
+    wake_capabilities : Mapping[str, object] or None, optional
+        The ``who`` snapshot's ``wake_capabilities``. A connected presence holder
+        (:func:`~synapse_channel.core.waiter_identity.presence_holders`) adds no
+        seat; ``None`` or empty when the hub reports none.
 
     Returns
     -------
@@ -149,9 +155,11 @@ def build_seats(
     evidence = _evidence(state, board, now)
     # A seat is connected (a waiter stands for its owner), owns a listed claim, or has
     # evidence (a note inside the window). An older note names no seat: the board keeps
-    # every author it ever had.
+    # every author it ever had. A connected presence holder is not a seat by that
+    # connection: it declared that it never acts on what it receives.
     owners = {str(claim.get("owner") or "") for claim in _records(state.get("active_claims"))}
-    seats = {waiter_owner(name) if is_waiter(name) else name for name in online}
+    holders = presence_holders(online, wake_capabilities)
+    seats = {waiter_owner(name) if is_waiter(name) else name for name in online - holders}
     seats |= owners | set(evidence)
     rows: list[dict[str, Any]] = []
     for identity in sorted(seat for seat in seats if seat):

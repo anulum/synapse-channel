@@ -269,6 +269,7 @@ const HEADLINE_FIELDS = [
   ["seats_active_not_listening", "seatsActiveNotListening"],
   ["seats_silent", "seatsSilent"],
   ["seats_deaf", "seatsDeaf"],
+  ["presence_holders", "presenceHolders"],
 ] as const satisfies readonly (readonly [string, keyof Headline])[];
 
 /** Read the snapshot's `headline` block; null when absent or any counter is malformed. */
