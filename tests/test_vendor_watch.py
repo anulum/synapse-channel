@@ -103,14 +103,14 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
     matrix = load_matrix(DEFAULT_MATRIX)
     matrix["reviewed_at"] = "2026-09-22"
     matrix["next_review_at"] = "2026-09-29"
-    assert matrix["surfaces"]["claude-code"]["verified_version"] == "2.1.284"
+    assert matrix["surfaces"]["claude-code"]["verified_version"] == "2.1.311"
     assert matrix["surfaces"]["codex-cli"]["verified_version"] == "0.156.0"
     assert matrix["surfaces"]["codex-cli"]["capability_class"] == "manual"
     assert matrix["surfaces"]["opencode"]["verified_version"] == "1.18.32"
     assert matrix["surfaces"]["pi"]["verified_version"] == "0.87.1"
     matrix["surfaces"]["opencode"]["verified_version"] = "1.17.20"
     same_notes = parse_release(
-        SOURCES["claude-code"][0], _source_payload("claude-code", "2.1.284")
+        SOURCES["claude-code"][0], _source_payload("claude-code", "2.1.311")
     )[2]
     matrix["surfaces"]["claude-code"]["reviewed_notes_sha256"] = hashlib.sha256(
         same_notes.encode()
@@ -122,7 +122,7 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
         if name == "pi":
             raise OSError("offline")
         if name == "claude-code":
-            return _source_payload(name, "2.1.284")
+            return _source_payload(name, "2.1.311")
         if name == "opencode":
             return _source_payload(name, "1.18.32", "Breaking Changes: hook permission")
         if name == "gemini-cli":

@@ -32,9 +32,15 @@ from cli_e2e_helpers import (
 # --- editor adapters and shell integration ----------------------------------
 
 
-def test_adapters_list_shows_detected_tools() -> None:
-    """``adapters list`` reports each known tool and where its guide would live."""
-    result = run_cli("adapters", "list")
+def test_adapters_list_shows_detected_tools(tmp_path: Path) -> None:
+    """``adapters list`` reports each known tool and where its guide would live.
+
+    The home is the test's own. A person's real home may hold links or shared folders
+    that the custody check rightly refuses, and it must never decide this test.
+    """
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    result = run_cli("adapters", "list", "--home", str(home), "--project", str(tmp_path))
     assert result.ok(), result.output
     assert "claude-code" in result.stdout
     assert "codex" in result.stdout

@@ -12,20 +12,34 @@ Contact: www.anulum.li | protoscience@anulum.li
 The optional `synapse-channel` Claude Code plugin packages the existing
 Synapse MCP bridge and the `PreToolUse` claim guard. The plugin is versioned
 separately at **0.1.0**. It requires Synapse Channel **0.99.26 or newer** with
-the `mcp` extra; the historical validation profile used Claude Code **2.1.284**.
+the `mcp` extra; the validation profile uses Claude Code **2.1.311**.
 Other host versions need their own validation before installation. The plugin
 adds one MCP server and one `Edit|Write|Bash` hook. It does not grant permissions
 or change Claude Code's model, account, or project settings.
 
-The reported 2.1.284 review (2026-09-29), recorded by source change
+On 2026-11-14, Claude Code 2.1.311 passed the same profile on Linux. It is the
+vendor's stable release, published 2026-10-26. The checks were:
+- the host's strict plugin validator;
+- an isolated host profile;
+- install, upgrade and removal;
+- the refusal of an unverified host version;
+- a local Synapse hub, on which a live claim allowed the covered write and an
+  unclaimed write was denied.
+2.1.284 is the rollback version. The 2.1.285 to 2.1.311 release notes change no
+surface the plugin uses; the installer reads only the validator's exit code. Two
+host behaviours stay unqualified: the cancellation and resumption of a turn, and
+transcript handling. Both need an authenticated model turn, which needs the
+owner's word; the plugin uses neither.
+
+The earlier 2.1.284 review (2026-09-29), recorded by source change
 [`3c9dded82f43d898445ab38b8edc708dcac276b3`](https://github.com/anulum/synapse-channel/commit/3c9dded82f43d898445ab38b8edc708dcac276b3),
 used the installed Linux host, its strict
 plugin validator, an isolated host profile and a local Synapse hub. The profile
 loaded the MCP server and hook; a live claim allowed the covered write and an
 unclaimed write was denied. No model turn or user profile change was required.
 The 2.1.281 to 2.1.284 release notes change no surface this plugin uses. 2.1.280
-remains the previous verified rollback version; installer acceptance is pinned
-to 2.1.284. This source identity and host version do not identify the original
+was then the previous verified rollback version, and installer acceptance was
+pinned to 2.1.284. This source identity and host version do not identify the original
 host executable digest and complete run artifact. Keep the result attached to
 that historical profile; a current installation needs its exact host and
 plugin artifacts and a retained validation result.

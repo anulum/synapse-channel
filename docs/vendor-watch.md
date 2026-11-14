@@ -89,6 +89,19 @@ resume. The compatibility matrix now accepts 0.86.0 for these paths and keeps
 0.85.1 as the verified rollback reference. A model-driven claim mutation on
 0.86.0 and other operating systems remain separate verification work.
 
+On 2026-11-14, Claude Code 2.1.311 passed the plugin's checks, with 2.1.284 as its
+rollback version. 2.1.311 is the vendor's stable release, published 2026-10-26, and
+was at least 14 days old when it was admitted. The checks were:
+- the strict plugin validator;
+- isolated plugin load;
+- install, upgrade and removal;
+- an unverified version refused;
+- a local MCP hub claim with allowed and denied writes.
+Its 2.1.285 to 2.1.311 notes touch no surface the plugin uses. Cancellation and
+resumption of a turn, and transcript handling, stay unqualified: they need an
+authenticated model turn, which needs the owner's word, and the plugin uses
+neither.
+
 On 2026-09-29, Claude Code 2.1.284 passed the same checks, with 2.1.280 as its
 rollback version; its 2.1.281 to 2.1.284 notes touch no surface the plugin
 uses.

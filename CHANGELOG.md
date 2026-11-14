@@ -285,6 +285,16 @@ execution evidence when carrying a release claim forward.
   `agents_live` and `waiters_missing`, and counts them in a new headline counter,
   `presence_holders`, which the cockpit's roster header shows. A seat reachable
   only through its waiter stays a seat.
+
+- The Claude Code plugin's tested host is now 2.1.311, the vendor's stable release of
+  2026-10-26, with 2.1.284 as the rollback version. On Linux it passed the plugin's
+  exercised profile: the strict plugin validator, isolated plugin load, install,
+  upgrade and removal, the refusal of an unverified version, and a live claim on a
+  local hub that allowed the covered write and denied an unclaimed one. The installer
+  now accepts 2.1.311 and refuses other versions; CI installs that exact host. Two host
+  behaviours stay unqualified, because each needs an authenticated model turn, which
+  needs the owner's word: the cancellation and resumption of a turn, and transcript
+  handling. The plugin uses neither.
 - The cockpit is the dashboard's front door. `synapse dashboard` serves the
   build the package carries (or `--cockpit-dist`), and a browser opening `/` is
   sent on to `/cockpit/` with its query kept, where the unlock screen asks for
