@@ -20,6 +20,14 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- The authorisation intent of a planned catalogue run, built and not yet used by any command:
+  `synapse_channel.operations.hub_intent` turns a planned `synapse ops run` row into the intent
+  statement and the file target that a hub declaration carries. The tool and its version, the
+  executable's fingerprint, the row's binding digest and the digest of the row's identity and
+  rendered command line all come from the plan, so any change to what would run changes the
+  digest an approval names. Only a row that changes one file goes through: `execute`, `extend` and
+  `approve` rows, and read-only rows, are refused with the reason. The opt-in hub path of
+  `synapse ops run` will use it.
 - The wheel carries the cockpit's production build, without source maps (about
   1.3 MB), in `synapse_channel/dashboard_assets/cockpit/`, with
   `THIRD_PARTY_NOTICES.md`: every npm package whose code the build carries, with
