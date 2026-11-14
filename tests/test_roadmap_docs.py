@@ -53,6 +53,12 @@ def test_roadmap_reclassifies_features_that_already_shipped() -> None:
         "machine-key trust-on-first-use identity pins",
         "opencode",
         "webassembly tool sandbox",
+        "operation records",
+        "signed tree heads",
+        "rotating credentials",
+        "integrator contract",
+        "delivery matrix",
+        "linux protected-execution primitives",
     ):
         assert shipped_surface in text
 
@@ -63,8 +69,78 @@ def test_roadmap_reclassifies_features_that_already_shipped() -> None:
         "an optional opentelemetry exporter over the event log",
         "a gated cross-host bridge, only on real cross-machine demand",
         "cryptographic agent identity in the single-owner local setting",
+        "the covered hook surfaces are",
     ):
         assert stale_statement not in text
+
+
+def _subcommands(family: str) -> set[str]:
+    """Return the registered subcommands of one top-level command family."""
+    parser = cli.build_parser()
+    top = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    family_parser = top.choices[family]
+    nested = [a for a in family_parser._actions if isinstance(a, argparse._SubParsersAction)]
+    return set(nested[0].choices) if nested else set()
+
+
+def _options(family: str) -> set[str]:
+    """Return the option strings one top-level command registers directly."""
+    parser = cli.build_parser()
+    top = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    return {option for action in top.choices[family]._actions for option in action.option_strings}
+
+
+def test_roadmap_release_range_commands_exist_in_the_production_parser() -> None:
+    """Every command and hub flag the roadmap names, shipped or on main, is registered."""
+    named = {
+        "contracts": {"check"},
+        "mailbox": {"orphans", "handover", "close", "drain"},
+        "work-state": {"build"},
+        "waker": {"uncertain"},
+        "operation": {"declare", "outcome", "verification", "attempt", "seal"},
+        "verify-result": {"file", "git", "deployment", "migration"},
+        "ops": {"run"},
+        "export": {"create"},
+        "aef": {"sth", "verify"},
+        "policy": {"sign", "verify"},
+        "compliance": {"export", "retention", "report"},
+        "token-set": {"new", "retire", "list", "status"},
+        "effect-suite": {"run"},
+    }
+    for family, subcommands in named.items():
+        assert subcommands <= _subcommands(family), family
+    assert {"reputation", "demo"} <= _top_level_commands()
+    assert "--recovery" in _options("demo")
+    assert "--mailbox-orphans" in _options("doctor")
+    assert {
+        "--token-set",
+        "--require-token-expiry",
+        "--max-token-days",
+        "--token-expiry-closes-sessions",
+        "--metrics-token-set",
+        "--message-auth-key-set",
+        "--require-signed-frames",
+        "--require-identity-proof",
+    } <= _options("hub")
+
+
+def test_roadmap_names_unreleased_work_only_as_unreleased() -> None:
+    """Work that is on main but in no release appears only in its own section."""
+    text = " ".join(_roadmap().split())
+    shipped, rest = text.split("## On `main`, not yet released", 1)
+    unreleased = rest.split("## Active pre-1.0 priorities", 1)[0]
+
+    for unreleased_surface in (
+        "`synapse operation attempt`",
+        "`synapse operation seal`",
+        "`synapse operation declare --intent`",
+        "`synapse effect-suite run`",
+        "`/capabilities.json`",
+        "`/findings.json`",
+    ):
+        assert unreleased_surface in unreleased, unreleased_surface
+        assert unreleased_surface not in shipped, unreleased_surface
+    assert "in no release yet" in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:
@@ -142,6 +218,7 @@ def test_roadmap_names_current_pre_one_priorities_and_research_boundary() -> Non
     for heading in (
         "## Shipped foundation",
         "## Shipped experimental surfaces",
+        "## On `main`, not yet released",
         "## Active pre-1.0 priorities",
         "## Research candidates",
         "## Explicit limits and non-goals",

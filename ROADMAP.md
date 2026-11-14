@@ -94,6 +94,11 @@ interfaces, maturity, and release commitments.
   leases, epochs, optimistic-concurrency versions, staged-claim enforcement,
   Git hooks, and provider edit guards. See
   [Git-native claims](docs/git-claims.md).
+- Contract conflicts between branches that share no file: each dependent of a
+  declared contract records the spec digest it was built from, and
+  `synapse contracts check` reports a stale dependent or a spec change whose
+  dependents were not regenerated. The check is advisory and claims or blocks
+  nothing. See [contract conflicts](docs/contract-conflicts.md).
 - A typed task lifecycle and dependency-aware blackboard, append-only progress,
   atomic handoff, stalled-task supervision, resumable checkpoints, deadlock
   detection, and release receipts.
@@ -104,6 +109,19 @@ interfaces, maturity, and release commitments.
 - Identity-scoped mailbox, waiter, tmux, shell-hook, and worker-session
   ergonomics for keeping provider processes reachable without making presence
   itself a wake loop.
+- Mail that no session will collect can be found, handed to a successor or
+  closed (`synapse mailbox orphans`, `handover`, `close` and `drain`, and
+  `synapse doctor --mailbox-orphans`), and mail addressed to a role waits in
+  the role's own mailbox. See the [CLI reference](docs/cli.md).
+- Work state that a receiver can check, never authority: `synapse work-state
+  build` pins input files by SHA-256 and repositories by commit. Uncertain
+  wakes are brought to an operational end with `synapse waker uncertain`. See
+  the [coordination model](docs/coordination-model.md) and
+  [wake relay](docs/wake-relay.md).
+- Recovery evidence: `synapse demo --recovery` runs one reproducible recovery
+  story on a real local hub, and the [delivery matrix](docs/delivery-matrix.md)
+  lists every request type a hub accepts with its delivery and retry key,
+  backed by a whole-hub `kill -9` test.
 
 ### Agent, protocol, and editor integrations
 
@@ -115,9 +133,20 @@ interfaces, maturity, and release commitments.
   matrix and reproducible validation receipts. This is partial validation, not
   external A2A certification. See
   [A2A conformance](docs/a2a-conformance.md).
-- Provider-specific adapters and guarded mutation paths. The covered hook
-  surfaces are Claude Code, Codex, Gemini CLI, Kimi Code and OpenCode;
-  configuration adapters are not universal write interception.
+- An `interop` workflow that drives the official MCP and A2A client libraries
+  against real `synapse hub`, `synapse mcp` and `synapse a2a-serve` processes
+  and judges each journey by the hub's own journal. See the
+  [official-client interop lane](docs/interop.md). The
+  [protocol conformance tests](docs/protocol-conformance-tests.md) page names
+  the test behind each protocol version and feature it lists.
+- An [integrator contract](docs/integrator-contract.md) that names one command
+  or call for each of the six steps an integrator needs: register an executor,
+  propose an operation, obtain authority, execute, follow the result, and
+  recover after an unknown outcome.
+- Provider-specific adapters and guarded mutation paths. The covered native
+  tools of each provider are listed in
+  [provider mutation claim hooks](docs/claim-guard-hooks.md); configuration
+  adapters are not universal write interception.
 - A pinned **OpenCode** integration plus ACP-driven real-client paths for Zed,
   JetBrains, Neovim, and Emacs. See the
   [OpenCode integration guide](docs/opencode.md).
@@ -129,13 +158,47 @@ interfaces, maturity, and release commitments.
 - Human-in-the-loop approval request/decision/status flows, policy evaluation,
   access-control and role surfaces, universal receipts, release verification,
   Merkle evidence, postmortem, reliability, accounting, and causality tools.
+- **Operation records** bound to a claimed task: the live claim holder
+  declares an operation and its effect (a file, a Git publication, a
+  deployment or a migration) before acting, and its outcome report and
+  verification records follow, each one journal event
+  (`synapse operation declare`, `outcome` and `verification`).
+  `synapse verify-result` checks the requested result
+  itself: a file's exact SHA-256 and the change's tests, a commit on a remote
+  branch, a deployment's health report, or a migration. See
+  [execution outcomes](docs/execution-outcomes.md).
+- Catalogue operations run end to end with `synapse ops run`, along one
+  checked path: the exact target and executable fingerprint, the qualification
+  gate of the named profile, the operator's grants read again just before the
+  run, then an outcome record and an optional result verification. See
+  [operations](docs/operations.md).
+- Evidence that leaves the hub: `synapse export` writes a hub store's journal
+  and AEF receipts as plain JSON Lines with a manifest. Signed tree heads
+  (`synapse aef sth`) tell a complete export from a cut-off or rolled-back
+  one, `synapse aef verify` checks chain continuity, and an optional hybrid
+  countersignature (Ed25519 plus ML-DSA-65) covers a tree head. See
+  [export](docs/export.md) and
+  [verifying AEF evidence offline](docs/aef-verification.md).
+- Signed, versioned policies for `policy-check` (`synapse policy sign` and
+  `verify`), verdicts that turn stale when an input they read is corrected,
+  compliance export, retention and report over one read-only journal
+  snapshot, and a `reputation` ranking of recorded evidence for human triage.
+  See the [policy engine](docs/policy-engine.md), [verdicts](docs/verdicts.md),
+  [compliance](docs/compliance.md) and [reputation](docs/reputation.md).
+- The running artefact names itself: `synapse --version` and `synapse doctor`
+  print the source commit, the wheel digest and the declared profile. See
+  [build identity](docs/build-identity.md). A generated
+  [guarantee register](docs/guarantee-register.md) shows, for each
+  capability, the last stage it has reached, checked against the tree.
 - A dashboard and Studio projection for live claims, tasks, conflicts, security
   posture, receipts, governed operator actions, and observed peer state. See
   [Studio](docs/studio.md).
 - Event-log ingestion and recall as the memory seam, rather than a second
   authoritative memory database.
 - OpenTelemetry projection of causality evidence through an optional exporter;
-  telemetry remains outside the core dependency set. See
+  telemetry remains outside the core dependency set. With `--correlate`,
+  `synapse causality otel` places recorded model usage, claim denials and
+  operation records into the task traces. See
   [observability](docs/observability.md).
 - Capability cards, signed advisory cards, directories, manifests, and
   evidence-preserving local routing. Cards and routing recommendations do not
@@ -146,17 +209,35 @@ interfaces, maturity, and release commitments.
 - Shared-secret connect authentication, exposure guards, bounded rate policy,
   private runtime directories, owner-only secret loading, dashboard Host
   defence, webhook egress pinning, and shared-host attack regressions.
+- Rotating credentials: `synapse hub --token-set` admits connections from an
+  owner-only set of identified tokens with validity windows, and can require
+  expiry, cap a token's lifetime and close a session when its token ends;
+  with a journal it records audit rows (`synapse token-set new`, `retire`,
+  `list` and `status`). `/metrics` and `/health` take a token set of the same
+  format, per-message HMAC keys come from a key set the hub reads again, and
+  outbound peer tokens rotate without a restart. See
+  [secure mode](docs/secure-mode.md) and
+  [per-message authentication](docs/per-message-authentication.md).
 - Machine-key trust-on-first-use identity pins, operator identity bundles,
   optional ACL and role enforcement, per-message authentication, signed-event
   verification primitives, mTLS contexts, and certificate-pin trust bundles.
   The packaged profile and managed key lifecycle remain narrower than the
   underlying primitives. See [identity and ACL](docs/identity-and-acl.md) and
   [signed events and mTLS](docs/signed-events-mtls.md).
+- A hub can require every frame after registration to be signed by the key
+  that proved the connection (`--require-signed-frames`; the Python and
+  JavaScript clients sign when it is required) and refuse a name that proves
+  no key (`--require-identity-proof`). Signing connections are closed once
+  their key stops being trusted, and the hub journals each change in the
+  roles a connection binds. See
+  [per-message authentication](docs/per-message-authentication.md).
 - Multi-hub observation, claim forwarding, protocol-version negotiation,
   federation bundle offer/fetch/import/rotate/revoke flows, and guarded relay
   primitives. Federation does not turn observed peer state into local
   authority. See [multi-hub sync](docs/multi-hub-sync.md) and the
-  [federated trust model](docs/federated-trust-model.md).
+  [federated trust model](docs/federated-trust-model.md). Out-of-tree
+  federation consumers import from one package, `synapse_channel.federation_api`
+  (see [API stability](docs/api-stability.md)).
 
 ## Shipped experimental surfaces
 
@@ -172,6 +253,38 @@ contracts and external evidence mature:
   resource bidding, and other lab-tier analysis/governance helpers.
 - Advanced federation, trust, encryption, and hardware-backed key adapters
   whose stable operator profiles are still being consolidated.
+- Linux protected-execution primitives: one trusted writer API over live
+  kernel checks and signed authority status, root-owned installation bytes
+  retained in sealed memory files, cgroup ancestry and process-subtree
+  observations, and a protected frontend control channel over native Unix
+  channels. They expose observations and refuse on mismatch; they install no
+  writer, supervisor or service and grant no recovery authority. See the
+  [coordination specification](docs/coordination-spec.md#durable-protected-execution-evidence).
+
+## On `main`, not yet released
+
+These changes are on the `main` branch and in no release yet. The
+"Unreleased" section of the [changelog](CHANGELOG.md) records them; they are
+shipped only when a release carries them.
+
+- The cockpit as the dashboard's front door, built into the wheel.
+  `/capabilities.json` lists each optional surface and whether this start
+  serves it, and `/findings.json` serves the findings agents recorded with the
+  hub. See [cockpit](docs/cockpit.md).
+- Attempts and seals for declared operations: `synapse operation declare
+  --intent` fixes an authorisation intent before the effect,
+  `synapse operation attempt` asks the hub to open an attempt for that exact
+  intent, `synapse operation seal` ends an attempt whose executor fell silent,
+  and `synapse verify-result git` reads an attempt's marker. See
+  [execution outcomes](docs/execution-outcomes.md).
+- Version 0.1 of the effect-safety suite: `synapse effect-suite run` runs
+  cases 1 to 4 in twenty-one variants against this package's own stack. See
+  [effect suite](docs/effect-suite.md).
+- History read queries answered only to the identity they name; an inbox page
+  and an owned-work listing on the MCP stdio bridge; and remote MCP mutations
+  that carry their operation identifier as a tool argument, with lease fences
+  that survive the adapter's restarts. See the [MCP guide](docs/mcp.md) and
+  the [protocol](docs/protocol.md).
 
 ## Active pre-1.0 priorities
 

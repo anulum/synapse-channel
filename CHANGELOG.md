@@ -401,6 +401,20 @@ execution evidence when carrying a release claim forward.
   heads, an executor profile with a per-run record, and a runnable
   effect-safety test set. All remain optional research with no commitment to
   ship. One spelling in the roadmap is now British.
+- The roadmap's shipped sections now name what releases 0.99.39 to 0.99.51
+  added: contract conflicts, orphaned-mail hand-over, checkable work state,
+  recovery evidence and the delivery matrix, the official-client interop lane,
+  the integrator contract, operation records and result verification,
+  catalogue operations, journal export with signed tree heads, signed
+  policies, stale verdicts, compliance and reputation reports, build identity
+  and the guarantee register, rotating connect, metrics and message keys,
+  signed frames and identity proof, the federation import surface, and the
+  Linux protected-execution primitives (experimental). Each links its page. A
+  new section lists the work on `main` that no release carries yet. The list
+  of covered hook providers is replaced by a link to the claim-hook page,
+  which also names the provider the list left out. `tests/test_roadmap_docs.py`
+  checks every named command and hub flag against the CLI parser, and that
+  unreleased work appears only in its own section.
 - The cockpit picture in the README is taken again, from the current
   production build and a demonstration fleet of invented participants that
   join a real hub through the public client, post a plan, hold claims and talk.
