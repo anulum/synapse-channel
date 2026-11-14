@@ -383,6 +383,75 @@ and `journal_corrupt_rows` is `0` before allowing agents to mutate state again.
 Use `--all` instead of `--floor-seq` only when no read-side consumer can still need
 any event in the log.
 
+## The activity page names no row
+
+One chat, task or handoff row the journal cannot read refuses the activity
+page for every identity whose cursor is still before that row. The scan is
+shared. It is not that identity's private inbox.
+
+The history snapshot answers with `activity_page.error` set to
+`activity page unavailable`, `available` false, `cursor` 0 and `items` empty.
+The scan raises `activity journal row is not available` and does not put that
+text, or the sequence, in the answer. There is no command-line activity query.
+The hub does not log this refusal.
+
+An MCP read fails with
+`durable activity page unavailable; observer cursor unchanged` and does not
+move the observer cursor.
+
+The hub refuses rather than skips. A skip would move the shared cursor past a
+row it could not prove, and later pages would look complete.
+
+The sequence is on the startup record for that row:
+
+- An undecodable payload is logged, with `N` and `SEQ` filled in, as:
+
+  ```text
+  Recovered around N corrupt event row(s); first affected seq=SEQ. Replayed state may omit affected mutations, health is degraded, and the hub refuses all mutations. After every consumer has settled the affected prefix, archive and remove it explicitly with `synapse compact <db> --floor-seq <settled-seq> --drop-corrupt --archive-report <path>`.
+  ```
+
+  `/health` reports `status: degraded` and `journal_corrupt_rows`. `/metrics`
+  exposes `synapse_journal_corrupt_rows`. Repair is the compact run in
+  [The hub reports degraded health and refuses mutations](#the-hub-reports-degraded-health-and-refuses-mutations).
+  `synapse compact --drop-corrupt` removes rows the journal marks corrupt. It
+  does not remove a row that still decodes.
+- A row that fails authentication is printed on standard error as
+  `synapse hub: WARNING N event row(s) failed row authentication and are quarantined (seq SEQ); the hub serves read-only until an operator removes them or restores the log from a trusted copy`.
+  The sequences are in that line. When more than ten rows fail, the line adds
+  ` and N more`. `synapse compact --drop-corrupt` does not select these rows.
+  No command deletes them by sequence. Restore the log from a trusted copy,
+  which is the recovery that line names.
+
+## A malformed assignment origin stops the hub
+
+A task row can carry `_assignment_origin`. The hub is the only writer. On
+start, replay reads it. A present value that is not exactly version 1 with an
+owner, an integer anchor and a boolean legacy marker raises
+`invalid assignment origin`. Fields that are present but whose owner or anchor
+does not match the task raise `assignment origin does not match its task`.
+Either exception stops `synapse hub` before it serves. The process exits 2
+and prints one of these lines on standard error:
+
+```text
+synapse hub: could not initialise hub: invalid assignment origin
+synapse hub: could not initialise hub: assignment origin does not match its task
+```
+
+Neither line names a sequence. There is no further log line and no MCP answer,
+because the hub is not up.
+
+Replay does not quarantine the row. An undecodable payload becomes a corrupt
+marker and start continues, degraded, as the previous section describes. This
+row still decodes as a task. Continuing would rebuild pending work and owned
+work without the assignment the journal recorded, so the hub stops.
+
+Nothing shipped names the row. `synapse compact --drop-corrupt` removes only
+rows that decode as corrupt markers, so it leaves this task row in place.
+`synapse export create` copies the journal out and does not point at the field
+or rewrite it. No command moves a cursor past the row. Restore the database
+from a trusted copy taken before the bad row, then start again. Do not rewrite
+the row by hand: no tool checks that edit.
+
 ## Still stuck?
 
 - `synapse <command> --help` documents every flag.

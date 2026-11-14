@@ -1297,6 +1297,18 @@ row may cross that budget so the cursor can progress. One additional row is
 read for lookahead and remains unconsumed. The cursor and store lock are closed
 before sending the reply, including after early termination. A corrupt or
 quarantined candidate row refuses the page instead of silently advancing.
+The history snapshot then sets `activity_page.error` to
+`activity page unavailable`, with `available` false, `cursor` 0 and `items`
+empty. That answer does not include the sequence. The scan raises
+`activity journal row is not available` and does not send that text. There is
+no command-line activity query, and the hub writes no log line for this
+refusal. An MCP read fails with
+`durable activity page unavailable; observer cursor unchanged` and leaves the
+observer cursor unchanged. The scan walks every chat, task and handoff row,
+so one such row refuses the page for every identity whose cursor is still
+before it. Skipping the row would publish a cursor past a row the hub could
+not read. Where the sequence is printed, and what repair exists, is in
+[troubleshooting](troubleshooting.md#the-activity-page-names-no-row).
 
 A new external suggested owner on a nonterminal task produces trusted
 assignment metadata in the same durable task event. Work set back from a
@@ -1352,7 +1364,14 @@ current ownership generation and an unexpired nonterminal lease. The snapshot
 does not invent a missing historical actor. New task producers persist trusted
 `_assignment_origin` metadata with version 1, owner, integer assignment anchor,
 and boolean legacy marker; it is excluded from public task records and retained
-through same-owner status updates.
+through same-owner status updates. The hub is the only writer. A present value
+that is not exactly that version-1 object, or an origin whose owner or anchor
+does not match the task, stops hub start. Replay does not quarantine the row,
+because the row still decodes as a task. The process exits 2 and prints
+`synapse hub: could not initialise hub: invalid assignment origin` or
+`synapse hub: could not initialise hub: assignment origin does not match its task`.
+Neither line names a sequence. See
+[troubleshooting](troubleshooting.md#a-malformed-assignment-origin-stops-the-hub).
 
 Malformed queries, foreign identities/hubs, cursors past retained history,
 missing journals and storage failures return available false with a fixed

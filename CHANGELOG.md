@@ -243,7 +243,12 @@ execution evidence when carrying a release claim forward.
   root catalogue with a byte and generation budget under one process lock, an
   archive step that verifies every byte before it removes a source, and a
   signed HTTPS sender that runs in a child process. A notification carries a
-  revision and the kinds of change, never a message body.
+  revision and the kinds of change, never a message body. A ledger or state
+  file with more than one hard link is refused. A second link is another name
+  for the same inode, outside the private root, so the owner-only directory
+  does not hold every way those bytes can be read or replaced. The refusal
+  says the file has N hard links and an owner-only policy file must have
+  exactly one link.
 
 - A local `synapse pid-monitor` run counts each observed process: birth,
   owner, executable path, CPU seconds, memory, swap, GPU memory when
