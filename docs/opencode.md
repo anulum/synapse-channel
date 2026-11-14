@@ -508,16 +508,21 @@ and inode, reject replacement or truncation, and reject any post-baseline chat
 or process event for another agent. After configuration reload, the observed
 2026.2 schedules may expose zero or one dormant replay controller, but no
 process or trace. Opening the chat must then produce exactly one local process
-and base trace while still allowing only zero or one controller; the first real
-prompt must produce `session/new`, the required plugin/readiness events,
-`session/prompt`, and its successful response while cardinality remains exactly
-one. Screenshots are written through owner-only temporary regular files and
+and base trace while still allowing only zero or one controller. Before any
+prompt input the driver waits for the IDE's own readiness: the chat's replay
+controller in the IDE log, `session/new` and its successful response in the
+trace, and the required plugin check, the started client session and the
+agent's command list in the IDE log. A prompt typed earlier lands on the
+agent-selection screen and is lost. Only then does it type the first real
+prompt, which must produce `session/prompt` and its successful response while
+cardinality remains exactly one. Screenshots are written through owner-only temporary regular files and
 sealed to previously absent destinations. The generated IDEA ACP entry refuses
 an empty or relative proxy executable. IDEA starts as an isolated process-group
 leader;
 cleanup terminates every helper with bounded
-`SIGTERM`/`SIGKILL` escalation. Its ACP initialization phase has a bounded
-three-minute budget for delayed plugin continuations on loaded headless hosts
+`SIGTERM`/`SIGKILL` escalation. Its ACP initialization phase, session creation
+and readiness included, has a bounded three-minute budget for delayed plugin
+continuations on loaded headless hosts
 and a separate five-minute startup budget for first-run, project loading, and
 plugin discovery under bounded host contention;
 every X11 subprocess receives the lesser of its ten-second ceiling and the

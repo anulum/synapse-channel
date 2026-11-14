@@ -70,6 +70,46 @@ def _required_env(name: str) -> str:
     return value
 
 
+def _wait_for_agent_session(
+    trace: Path,
+    log_root: Path,
+    deadline: float,
+    process: subprocess.Popen[str],
+    lifecycle: JetBrainsLifecycleGuard,
+) -> None:
+    """Wait, within the handshake phase, until IDEA's ACP chat can take a prompt.
+
+    The chat's input exists only after the IDE has created the chat, the agent
+    has answered ``session/new``, and the IDE has started its client session and
+    received the agent's commands. A prompt typed earlier lands on the agent
+    selection screen and is lost. A missing signal raises ``RuntimeError`` that
+    names it.
+    """
+    wait_for_idea_log(
+        log_root,
+        _ACP_CHAT_CREATED_MARKER,
+        deadline,
+        process.poll,
+        guard=lifecycle.assert_at_most_one,
+    )
+    for marker in ('"method":"session/new"', '"response_to":"session/new"'):
+        wait_for_trace(trace, marker, deadline, process, guard=lifecycle.assert_at_most_one)
+    lifecycle.require_exactly_one()
+    wait_for_idea_log(
+        log_root,
+        (_ACP_SESSION_PREREQUISITE, *_ACP_SESSION_COMPLETIONS),
+        deadline,
+        process.poll,
+        guard=lifecycle.require_exactly_one,
+        matcher=lambda contents: prerequisite_then_all(
+            contents,
+            _ACP_SESSION_PREREQUISITE,
+            _ACP_SESSION_COMPLETIONS,
+        ),
+        contents_reader=lifecycle.idea_contents,
+    )
+
+
 def main() -> int:
     """Run the isolated JetBrains/OpenCode ACP acceptance flow."""
     binary = Path(_required_env("SYNAPSE_JETBRAINS_BIN"))
@@ -249,37 +289,10 @@ def main() -> int:
                 guard=lifecycle.assert_at_most_one,
             )
             lifecycle.require_initialized_state()
+            _wait_for_agent_session(trace, log_root, handshake_deadline, process, lifecycle)
             capture_screenshot(chat_screenshot, deadline=handshake_deadline)
             prompt_deadline = time.monotonic() + _ACP_PROMPT_TIMEOUT_SECONDS
             x11._submit_chat_prompt(window, prompt, deadline=prompt_deadline)
-            wait_for_idea_log(
-                log_root,
-                _ACP_CHAT_CREATED_MARKER,
-                prompt_deadline,
-                process.poll,
-                guard=lifecycle.assert_at_most_one,
-            )
-            wait_for_trace(
-                trace,
-                '"method":"session/new"',
-                prompt_deadline,
-                process,
-                guard=lifecycle.assert_at_most_one,
-            )
-            lifecycle.require_exactly_one()
-            wait_for_idea_log(
-                log_root,
-                (_ACP_SESSION_PREREQUISITE, *_ACP_SESSION_COMPLETIONS),
-                prompt_deadline,
-                process.poll,
-                guard=lifecycle.require_exactly_one,
-                matcher=lambda contents: prerequisite_then_all(
-                    contents,
-                    _ACP_SESSION_PREREQUISITE,
-                    _ACP_SESSION_COMPLETIONS,
-                ),
-                contents_reader=lifecycle.idea_contents,
-            )
             wait_for_trace(
                 trace,
                 '"method":"session/prompt"',

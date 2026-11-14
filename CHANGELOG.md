@@ -486,6 +486,13 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- The JetBrains editor acceptance types its prompt only after the IDE reports the agent session
+  ready: the chat's replay controller in the IDE log, `session/new` and its successful response in
+  the ACP trace, and the started client session with the agent's command list. It used to type the
+  prompt right after `initialize`, while the AI Chat panel could still show the agent selection
+  screen; the prompt was then lost, and the run failed with no `session/prompt` in a trace that held
+  `session/new`. The readiness waits now belong to the handshake phase, as its budget states, and a
+  signal that never comes ends the run with its name. The OpenCode guide says so.
 - The dashboard's release receipts are only the notes the release path writes. `fleet.receipts`
   kept every `assessment` progress note (4,709 of 5,000 notes on one live hub), and the
   security posture's receipts row counted them as release receipt rows. A receipt is now recognised by
