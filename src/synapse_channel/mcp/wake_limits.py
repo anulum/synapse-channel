@@ -5,13 +5,18 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — finite wake storage limits
-"""Define finite per-file and aggregate wake-storage admission budgets."""
+"""Define the wake-storage layout versions, its budgets and the inventory checked against them."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 WAKE_DATABASE_APPLICATION_ID = 0x53574B31
+# The one layout of each file. No release wrote another, so a file with any
+# other version is refused with that version named, and never migrated.
+WAKE_LEDGER_VERSION = 4
+ROOT_CATALOGUE_VERSION = 2
 
 MAX_WAKE_DATABASE_BYTES = 4 * 1024 * 1024
 MAX_WAKE_RECEIPTS = 64
@@ -50,3 +55,16 @@ class RootLimits:
             or not 32 * 1024 * 1024 <= self.max_bytes <= 16 * 1024**3
         ):
             raise ValueError("invalid wake root limits")
+
+
+@dataclass(frozen=True)
+class RootInventory:
+    """Keep a bounded metadata-only inventory without reading notification bodies."""
+
+    sizes: Mapping[str, int]
+    keys: frozenset[str]
+
+    @property
+    def logical_bytes(self) -> int:
+        """Return actual logical file bytes, separately from reserved write headroom."""
+        return sum(self.sizes.values())

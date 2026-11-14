@@ -44,7 +44,8 @@ def test_disabled_subject_generation_can_be_archived_without_native_processing(
 
 
 @pytest.mark.parametrize(
-    "damage", ["application", "missing-meta", "pending", "schema", "state", "population"]
+    "damage",
+    ["application", "missing-meta", "pending", "schema", "unshipped-schema", "state", "population"],
 )
 def test_raw_native_corruption_is_unknown_not_an_empty_or_consumed_queue(
     tmp_path: Path, damage: str
@@ -59,6 +60,8 @@ def test_raw_native_corruption_is_unknown_not_an_empty_or_consumed_queue(
             database.execute("UPDATE meta SET pending=8")
         elif damage == "schema":
             database.execute("PRAGMA user_version=99")
+        elif damage == "unshipped-schema":
+            database.execute("PRAGMA user_version=3")
         elif damage == "state":
             database.execute("UPDATE deliveries SET state='unknown'")
         else:
@@ -135,19 +138,22 @@ def test_cancel_cannot_discard_a_new_source_or_an_exact_snapshot_fence(
     assert control.inspect(old.scope.key)["phase"] == "archiving"
 
 
-def test_rejected_first_legacy_archive_does_not_poison_root_initialization(tmp_path: Path) -> None:
+def test_a_refused_first_root_initialization_does_not_poison_the_root(tmp_path: Path) -> None:
     _, old, control, info = inactive_generation(tmp_path)
     with closing(sqlite3.connect(old.path)) as database, database:
         database.execute("PRAGMA user_version=3")
     before = old.path.read_bytes()
     for name in (ROOT_CATALOGUE, ROOT_LOCK):
         (old.path.parent / name).unlink()
-    with pytest.raises(WakeLedgerError, match="policy changed"):
+    with pytest.raises(WakeLedgerError) as error:
         control.archive(old.scope.key, info["fingerprint"], "0" * 64, tmp_path / "archive", 100)
+    assert str(error.value) == "unsupported wake ledger schema version 3"
     assert old.path.read_bytes() == before
-    assert control.status()["revision"] == 0
-    fresh = control.inspect(old.scope.key)
-    assert archive(control, fresh, tmp_path / "archive")["outcome"] == "archived"
+    assert not (old.path.parent / ROOT_CATALOGUE).exists()
+    old.path.rename(tmp_path / old.path.name)
+    status = control.status()
+    assert (status["revision"], status["entries"]) == (0, [])
+    assert (old.path.parent / ROOT_CATALOGUE).exists()
 
 
 def test_another_policy_file_cannot_archive_a_current_generation_in_the_same_directory(

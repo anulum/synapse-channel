@@ -17,7 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.mcp.wake_limits import MAX_RETIRED_GENERATIONS, ROOT_CATALOGUE
+from synapse_channel.mcp.wake_limits import (
+    MAX_RETIRED_GENERATIONS,
+    ROOT_CATALOGUE,
+    ROOT_CATALOGUE_VERSION,
+)
 from synapse_channel.mcp.wake_pointer import WakeLedgerError
 from synapse_channel.mcp.wake_root import locked_wake_root
 from synapse_channel.mcp.wake_root_archive import snapshot_wake_generation
@@ -237,40 +241,28 @@ def test_policy_binding_accepts_physical_alias_but_never_a_replacement_or_missin
     assert entry.path.read_bytes() == before and entry.scan_cursor() == 1
 
 
-@pytest.mark.parametrize("retired", [False, True])
-def test_catalogue_schema_one_migration_preserves_native_work_and_retirement_fences(
-    tmp_path: Path,
-    retired: bool,
+def test_a_new_catalogue_is_written_with_its_one_version_and_read_back(tmp_path: Path) -> None:
+    root = tmp_path / "state"
+    entry = ledger(root)
+    entry.observe_page(0, 1, sources=("messages",))
+    with closing(sqlite3.connect(root / ROOT_CATALOGUE)) as database:
+        assert database.execute("PRAGMA user_version").fetchone()[0] == ROOT_CATALOGUE_VERSION
+    with locked_wake_root(root), root_catalogue(root) as catalogue:
+        assert catalogue.get(entry.scope.key) == RootEntry(entry.scope.key, "active")
+    assert entry.scan_cursor() == 1
+
+
+@pytest.mark.parametrize("version", [0, 1, 3, -1])
+def test_a_stored_catalogue_of_another_version_is_refused_by_name_and_kept(
+    tmp_path: Path, version: int
 ) -> None:
-    _, old, control, info = inactive_generation(tmp_path)
-    if retired:
-        archive(control, info, tmp_path / "archive")
-    expected = control.status()
-    native = old.path.read_bytes() if not retired else None
+    _, old, control, _ = inactive_generation(tmp_path)
     database_path = old.path.parent / ROOT_CATALOGUE
     with closing(sqlite3.connect(database_path)) as database, database:
-        entries = database.execute("SELECT * FROM entries ORDER BY scope_key").fetchall()
-        database.execute("ALTER TABLE meta RENAME TO old_meta")
-        database.execute(
-            "CREATE TABLE meta(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,"
-            "max_ledgers INTEGER NOT NULL,max_bytes INTEGER NOT NULL)"
-        )
-        database.execute("INSERT INTO meta SELECT id,revision,max_ledgers,max_bytes FROM old_meta")
-        database.execute("DROP TABLE old_meta")
-        database.execute("PRAGMA user_version=1")
-    observed = control.status()
-    assert observed.pop("logical_bytes") == sum(
-        path.stat().st_size for path in old.path.parent.iterdir()
-    )
-    expected.pop("logical_bytes")
-    assert observed == expected
-    with closing(sqlite3.connect(database_path)) as database, database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 2
-        assert database.execute("SELECT * FROM entries ORDER BY scope_key").fetchall() == entries
-        assert database.execute("SELECT policy_name FROM meta").fetchone()[0] == "grants.json"
-    if retired:
-        with pytest.raises(WakeLedgerError, match="archived"):
-            old.summary()
-    else:
-        assert old.path.read_bytes() == native
-        assert old.summary()["unresolved_failures"] == 1
+        database.execute(f"PRAGMA user_version={version}")
+    catalogue, native = database_path.read_bytes(), old.path.read_bytes()
+    for refused in (control.status, old.summary):
+        with pytest.raises(WakeLedgerError) as error:
+            refused()
+        assert str(error.value) == f"unsupported wake root catalogue version {version}"
+    assert (database_path.read_bytes(), old.path.read_bytes()) == (catalogue, native)

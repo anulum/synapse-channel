@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — durable incomplete stream recovery tests
-"""Qualify atomic deadlines, migration, replay, bounded state and crash recovery."""
+"""Qualify atomic deadlines, backfill, replay, bounded state and crash recovery."""
 
 from __future__ import annotations
 
@@ -225,36 +225,6 @@ def test_revision_exhaustion_rolls_back_deadlines_and_cursor(tmp_path: Path) -> 
     with pytest.raises(WakeLedgerError, match="revision budget"):
         outbox.observe_recovery_page(0, page(1, stream(1, terminal=True)), now=100)
     assert outbox.recovery_cursor() == 0
-
-
-def test_schema_two_upgrade_preserves_legacy_cursor_receipts_and_pending_work(
-    tmp_path: Path,
-) -> None:
-    outbox = ledger(tmp_path)
-    outbox.observe_page(0, 4, sources=("messages",))
-    attempt = outbox.acquire(100)
-    assert attempt is not None
-    assert outbox.finish(attempt, 101, "rejected", http_status=401)
-    with closing(sqlite3.connect(outbox.path)) as database, database:
-        database.execute("PRAGMA user_version=2")
-        before = database.execute("SELECT * FROM deliveries").fetchall()
-    assert outbox.recovery_cursor() == 0
-    assert outbox.scan_cursor() == 4 and outbox.summary()["unresolved_failures"] == 1
-    with closing(sqlite3.connect(outbox.path)) as database, database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 4
-        assert database.execute("SELECT * FROM deliveries").fetchall() == before
-
-
-def test_failed_scope_verification_rolls_back_schema_two_upgrade(tmp_path: Path) -> None:
-    outbox = ledger(tmp_path)
-    outbox.recovery_cursor()
-    with closing(sqlite3.connect(outbox.path)) as database, database:
-        database.execute("PRAGMA user_version=2")
-        database.execute("UPDATE meta SET hub='foreign'")
-    with pytest.raises(WakeLedgerError, match="identity changed"):
-        outbox.recovery_cursor()
-    with closing(sqlite3.connect(outbox.path)) as database, database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
 def test_real_process_exit_retains_expiry_and_pending_hint_without_native_ack(

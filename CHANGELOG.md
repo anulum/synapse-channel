@@ -248,7 +248,11 @@ execution evidence when carrying a release claim forward.
   for the same inode, outside the private root, so the owner-only directory
   does not hold every way those bytes can be read or replaced. The refusal
   says the file has N hard links and an owner-only policy file must have
-  exactly one link.
+  exactly one link. The storage starts at its first shipped layout: ledger
+  version 4 and root catalogue version 2, the numbers the development builds
+  already wrote. A ledger or catalogue with any other version is refused, and
+  the refusal names the version it found. Nothing is upgraded from an earlier
+  layout, because none shipped.
 
 - A local `synapse pid-monitor` run counts each observed process: birth,
   owner, executable path, CPU seconds, memory, swap, GPU memory when

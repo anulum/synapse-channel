@@ -16,7 +16,7 @@ from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, cast
+from typing import Literal, cast
 
 from synapse_channel.core.secure_path import apply_owner_only_file, assert_owner_only_file_path
 from synapse_channel.durable_dir import sync_directory
@@ -25,7 +25,9 @@ from synapse_channel.mcp.wake_limits import (
     MAX_ROOT_LEDGER_SLOTS,
     MAX_WAKE_DATABASE_BYTES,
     ROOT_CATALOGUE,
+    ROOT_CATALOGUE_VERSION,
     ROOT_TRANSACTION_HEADROOM,
+    RootInventory,
     RootLimits,
 )
 from synapse_channel.mcp.wake_pointer import (
@@ -35,9 +37,6 @@ from synapse_channel.mcp.wake_pointer import (
     validate_policy_name,
 )
 from synapse_channel.mcp.wake_sqlite import configure_wake_sqlite
-
-if TYPE_CHECKING:
-    from synapse_channel.mcp.wake_root import RootInventory
 
 RootPhase = Literal["creating", "active", "archiving", "retired"]
 _APPLICATION_ID = 0x53575231
@@ -143,6 +142,28 @@ def _prepare(path: Path, *, allow_create: bool) -> bool:
     return fresh
 
 
+def _check_layout(db: sqlite3.Connection) -> None:
+    """Refuse a stored catalogue of another application, or of another version by name."""
+    if db.execute("PRAGMA application_id").fetchone()[0] != _APPLICATION_ID:
+        raise WakeLedgerError("unsupported wake root catalogue")
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    if version != ROOT_CATALOGUE_VERSION:
+        raise WakeLedgerError(f"unsupported wake root catalogue version {version}")
+
+
+def _create(db: sqlite3.Connection) -> None:
+    """Write this layout and the default limits into a new catalogue."""
+    for statement in _SCHEMA:
+        db.execute(statement)
+    defaults = RootLimits()
+    db.execute(
+        "INSERT INTO meta(id,revision,max_ledgers,max_bytes) VALUES(1,0,?,?)",
+        (defaults.max_ledgers, defaults.max_bytes),
+    )
+    db.execute(f"PRAGMA application_id={_APPLICATION_ID}")
+    db.execute(f"PRAGMA user_version={ROOT_CATALOGUE_VERSION}")
+
+
 @contextmanager
 def root_catalogue(root: Path, *, allow_create: bool = False) -> Iterator[RootCatalogue]:
     """Use a bounded FULL/DELETE transaction while the caller holds the root OS lock."""
@@ -150,27 +171,13 @@ def root_catalogue(root: Path, *, allow_create: bool = False) -> Iterator[RootCa
     fresh = _prepare(path, allow_create=allow_create)
     with closing(sqlite3.connect(path, timeout=0.1)) as db:
         db.row_factory = sqlite3.Row
-        if not fresh and (
-            db.execute("PRAGMA application_id").fetchone()[0] != _APPLICATION_ID
-            or db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2)
-        ):
-            raise WakeLedgerError("unsupported wake root catalogue")
+        if not fresh:
+            _check_layout(db)
         configure_wake_sqlite(db)
         with db:
             db.execute("BEGIN IMMEDIATE")
             if fresh:
-                for statement in _SCHEMA:
-                    db.execute(statement)
-                defaults = RootLimits()
-                db.execute(
-                    "INSERT INTO meta(id,revision,max_ledgers,max_bytes) VALUES(1,0,?,?)",
-                    (defaults.max_ledgers, defaults.max_bytes),
-                )
-                db.execute(f"PRAGMA application_id={_APPLICATION_ID}")
-                db.execute("PRAGMA user_version=2")
-            elif db.execute("PRAGMA user_version").fetchone()[0] == 1:
-                db.execute("ALTER TABLE meta ADD COLUMN policy_name TEXT NOT NULL DEFAULT ''")
-                db.execute("PRAGMA user_version=2")
+                _create(db)
             _verify(db)
             yield RootCatalogue(db, root)
             _verify(db)

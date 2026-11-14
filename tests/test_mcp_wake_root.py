@@ -414,20 +414,23 @@ def test_recreating_only_the_lock_retains_existing_catalogue_and_pending_work(
     assert (root / ROOT_CATALOGUE).read_bytes() == catalogue_before
 
 
-def test_legacy_schema_three_without_root_metadata_upgrades_without_losing_pending_work(
-    tmp_path: Path,
+@pytest.mark.parametrize("version", [0, 1, 2, 3, 5, -1])
+def test_a_ledger_of_another_version_without_root_metadata_is_refused_by_name(
+    tmp_path: Path, version: int
 ) -> None:
     root = tmp_path / "state"
     entry = ledger(root)
     entry.observe_page(0, 7, sources=("tasks",))
     with closing(sqlite3.connect(entry.path)) as database, database:
-        database.execute("PRAGMA user_version=3")
+        database.execute(f"PRAGMA user_version={version}")
     (root / ROOT_CATALOGUE).unlink()
     (root / ROOT_LOCK).unlink()
-    assert entry.summary()["pending_sources"] == 2
-    assert entry.scan_cursor() == 7
-    with closing(sqlite3.connect(entry.path)) as database, database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 4
+    before = entry.path.read_bytes()
+    with pytest.raises(WakeLedgerError) as error:
+        entry.summary()
+    assert str(error.value) == f"unsupported wake ledger schema version {version}"
+    assert not (root / ROOT_CATALOGUE).exists()
+    assert entry.path.read_bytes() == before
 
 
 def test_catalogue_journal_is_included_in_bounded_root_inventory(tmp_path: Path) -> None:

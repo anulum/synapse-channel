@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 
 from synapse_channel.advisory_lock import locked
@@ -31,24 +30,13 @@ from synapse_channel.mcp.wake_limits import (
     ROOT_INITIALIZED_LOCK_BYTES,
     ROOT_LOCK,
     WAKE_DATABASE_APPLICATION_ID,
+    WAKE_LEDGER_VERSION,
+    RootInventory,
 )
 from synapse_channel.mcp.wake_pointer import WakeLedgerError, WakeScope
 from synapse_channel.mcp.wake_root_catalogue import root_catalogue
 
 _LEDGER_FILE = re.compile(r"([0-9a-f]{64})\.sqlite3(-journal)?")
-
-
-@dataclass(frozen=True)
-class RootInventory:
-    """Keep a bounded metadata-only inventory without reading notification bodies."""
-
-    sizes: Mapping[str, int]
-    keys: frozenset[str]
-
-    @property
-    def logical_bytes(self) -> int:
-        """Return actual logical file bytes, separately from reserved write headroom."""
-        return sum(self.sizes.values())
 
 
 def _file_budget(name: str) -> int:
@@ -105,7 +93,11 @@ def _prepare_lock(root: Path) -> Path:
 
 
 def _verify_first_root(root: Path, inventory: RootInventory) -> None:
-    """Refuse missing catalogue metadata beside an already root-fenced native database."""
+    """Refuse a wake ledger found where no catalogue metadata exists yet.
+
+    Every ledger is created after its root is initialized, so one found here
+    has lost its catalogue; a ledger of another version is refused by name.
+    """
     if ROOT_CATALOGUE in inventory.sizes:
         return
     for key in inventory.keys:
@@ -121,8 +113,10 @@ def _verify_first_root(root: Path, inventory: RootInventory) -> None:
             len(header) >= 72
             and header[:16] == b"SQLite format 3" + bytes([0])
             and int.from_bytes(header[68:72], "big") == WAKE_DATABASE_APPLICATION_ID
-            and int.from_bytes(header[60:64], "big") >= 4
         ):
+            version = int.from_bytes(header[60:64], "big", signed=True)
+            if version != WAKE_LEDGER_VERSION:
+                raise WakeLedgerError(f"unsupported wake ledger schema version {version}")
             raise WakeLedgerError("wake root catalogue metadata is missing")
 
 

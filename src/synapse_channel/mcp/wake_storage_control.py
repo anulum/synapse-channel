@@ -19,9 +19,14 @@ from pathlib import Path
 from synapse_channel.core.secure_path import read_owner_only_file_bytes
 from synapse_channel.mcp.http_config import HttpAuthConfig, load_http_auth_config
 from synapse_channel.mcp.wake_admission import WakeAdmission
-from synapse_channel.mcp.wake_limits import WAKE_DATABASE_APPLICATION_ID, RootLimits
+from synapse_channel.mcp.wake_limits import (
+    WAKE_DATABASE_APPLICATION_ID,
+    WAKE_LEDGER_VERSION,
+    RootInventory,
+    RootLimits,
+)
 from synapse_channel.mcp.wake_pointer import MAX_WAKE_INTEGER, WakeLedgerError, wake_scope_key
-from synapse_channel.mcp.wake_root import RootInventory, locked_wake_root, scan_wake_root
+from synapse_channel.mcp.wake_root import locked_wake_root, scan_wake_root
 from synapse_channel.mcp.wake_root_archive import (
     ArchiveSnapshot,
     archive_destination,
@@ -69,7 +74,7 @@ def _native_summary(path: Path) -> dict[str, int] | None:
             rows = db.execute("SELECT pending FROM meta LIMIT 2").fetchall()
             if len(rows) != 1 or type(rows[0][0]) is not int or not 0 <= rows[0][0] <= 7:
                 return None
-            if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4):
+            if db.execute("PRAGMA user_version").fetchone()[0] != WAKE_LEDGER_VERSION:
                 return None
             counts = dict(
                 db.execute("SELECT state,count(*) FROM deliveries GROUP BY state LIMIT 6")

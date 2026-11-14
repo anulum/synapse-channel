@@ -21,7 +21,7 @@ from synapse_channel.mcp.wake_limits import (
     MAX_WAKE_DATABASE_BYTES as MAX_WAKE_DATABASE_BYTES,
 )
 from synapse_channel.mcp.wake_limits import MAX_WAKE_RECEIPTS as MAX_WAKE_RECEIPTS
-from synapse_channel.mcp.wake_limits import WAKE_DATABASE_APPLICATION_ID
+from synapse_channel.mcp.wake_limits import WAKE_DATABASE_APPLICATION_ID, WAKE_LEDGER_VERSION
 from synapse_channel.mcp.wake_pointer import (
     MAX_WAKE_BODY_BYTES,
     MAX_WAKE_INTEGER,
@@ -94,34 +94,27 @@ def _verify(connection: sqlite3.Connection, scope: WakeScope) -> None:
         raise WakeLedgerError("invalid wake ledger receipt population")
 
 
-def _configure(connection: sqlite3.Connection, *, fresh: bool) -> int:
-    """Require the supported schema and bound page, temporary and journal behavior."""
-    version: int = 0 if fresh else connection.execute("PRAGMA user_version").fetchone()[0]
-    if not fresh and (
-        connection.execute("PRAGMA application_id").fetchone()[0] != _APPLICATION_ID
-        or version not in (1, 2, 3, 4)
-    ):
-        raise WakeLedgerError("unsupported wake ledger schema")
+def _configure(connection: sqlite3.Connection, *, fresh: bool) -> None:
+    """Require this layout's version and bound page, temporary and journal behavior.
+
+    A stored ledger with any other version is refused with that version named.
+    """
+    if not fresh:
+        if connection.execute("PRAGMA application_id").fetchone()[0] != _APPLICATION_ID:
+            raise WakeLedgerError("unsupported wake ledger schema")
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if version != WAKE_LEDGER_VERSION:
+            raise WakeLedgerError(f"unsupported wake ledger schema version {version}")
     configure_wake_sqlite(connection)
-    return version
 
 
-def _migrate(connection: sqlite3.Connection, scope: WakeScope, version: int) -> None:
-    """Retain prior observer data while fencing writers that do not honor root admission."""
-    if version == 0:
-        for statement in _SCHEMA:
-            connection.execute(statement)
-        connection.execute("INSERT INTO meta(scope,hub) VALUES (?,?)", (scope.key, scope.hub_id))
-        connection.execute(f"PRAGMA application_id={_APPLICATION_ID}")
-    elif version == 1:
-        for field in (
-            "cycle_base INTEGER NOT NULL DEFAULT 0",
-            "control_action TEXT NOT NULL DEFAULT ''",
-            "control_at INTEGER NOT NULL DEFAULT 0",
-        ):
-            connection.execute("ALTER TABLE deliveries ADD COLUMN " + field)
-    if version != 4:
-        connection.execute("PRAGMA user_version=4")
+def _create(connection: sqlite3.Connection, scope: WakeScope) -> None:
+    """Write this layout into a new, empty ledger inside the caller's transaction."""
+    for statement in _SCHEMA:
+        connection.execute(statement)
+    connection.execute("INSERT INTO meta(scope,hub) VALUES (?,?)", (scope.key, scope.hub_id))
+    connection.execute(f"PRAGMA application_id={_APPLICATION_ID}")
+    connection.execute(f"PRAGMA user_version={WAKE_LEDGER_VERSION}")
 
 
 @contextmanager
@@ -130,18 +123,19 @@ def wake_database(path: Path, scope: WakeScope) -> Iterator[sqlite3.Connection]:
 
     FULL/DELETE commits retain process-restart custody. The root lock serializes
     cooperating writers and reserves catalogue/rollback headroom before mutation;
-    it is not an OS quota or a hardware power-loss qualification. Old binaries
-    must be stopped before upgrading or archiving a root.
+    it is not an OS quota or a hardware power-loss qualification. A writer that
+    does not take the root lock must be stopped before a root is archived.
     """
     try:
         with admit_wake_database(path, scope):
             fresh = _prepare(path)
             with closing(sqlite3.connect(path, timeout=0.1)) as connection:
                 connection.row_factory = sqlite3.Row
-                version = _configure(connection, fresh=fresh)
+                _configure(connection, fresh=fresh)
                 with connection:
                     connection.execute("BEGIN IMMEDIATE")
-                    _migrate(connection, scope, version)
+                    if fresh:
+                        _create(connection, scope)
                     _verify(connection, scope)
                     yield connection
                     _verify(connection, scope)

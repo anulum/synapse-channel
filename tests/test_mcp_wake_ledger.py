@@ -24,6 +24,7 @@ import pytest
 from synapse_channel.core.secure_path import assert_owner_only_file_path
 from synapse_channel.mcp.wake_database import MAX_WAKE_DATABASE_BYTES, MAX_WAKE_RECEIPTS
 from synapse_channel.mcp.wake_ledger import WAKE_MAX_ATTEMPTS, WakeLedger
+from synapse_channel.mcp.wake_limits import WAKE_DATABASE_APPLICATION_ID, WAKE_LEDGER_VERSION
 from synapse_channel.mcp.wake_pointer import (
     MAX_WAKE_BODY_BYTES,
     MAX_WAKE_INTEGER,
@@ -244,6 +245,38 @@ def test_foreign_or_corrupt_file_refuses_without_echo(tmp_path: Path, contents: 
     with pytest.raises(WakeLedgerError) as error:
         ledger.summary()
     assert "private-canary" not in str(error.value)
+
+
+def test_the_one_layout_is_written_with_its_version_and_read_back(tmp_path: Path) -> None:
+    """A new ledger carries the one supported version, and a new instance reads it as is."""
+    ledger = _ledger(tmp_path)
+    first = _first(ledger)
+    with closing(sqlite3.connect(ledger.path)) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == WAKE_LEDGER_VERSION
+        assert connection.execute("PRAGMA application_id").fetchone()[0] == (
+            WAKE_DATABASE_APPLICATION_ID
+        )
+    restored = _ledger(tmp_path)
+    assert restored.summary() == ledger.summary()
+    assert restored.position("messages") == 7
+    again = restored.acquire(first.deadline)
+    assert again is not None and (again.delivery_id, again.body) == (first.delivery_id, first.body)
+
+
+@pytest.mark.parametrize("version", [0, 1, 2, 3, 5, -1])
+def test_a_stored_ledger_of_another_version_is_refused_by_name_and_kept(
+    tmp_path: Path, version: int
+) -> None:
+    """No other layout shipped, so a file of another version is refused, never migrated."""
+    ledger = _ledger(tmp_path)
+    _first(ledger)
+    with closing(sqlite3.connect(ledger.path)) as connection, connection:
+        connection.execute(f"PRAGMA user_version={version}")
+    before = ledger.path.read_bytes()
+    with pytest.raises(WakeLedgerError) as error:
+        ledger.summary()
+    assert str(error.value) == f"unsupported wake ledger schema version {version}"
+    assert ledger.path.read_bytes() == before
 
 
 def test_owner_privacy_and_file_budget_are_real(tmp_path: Path) -> None:
