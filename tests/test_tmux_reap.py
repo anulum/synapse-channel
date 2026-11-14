@@ -121,6 +121,40 @@ def _wait_until_the_server_is_gone(
         time.sleep(0.05)
 
 
+def _hangup_is_ignored(pid: int) -> bool:
+    """SIGHUP is signal 1, the low bit of the ignored-signal mask."""
+    try:
+        status = Path(f"/proc/{pid}/status").read_text()
+    except OSError:
+        return False
+    mask = next(line.split()[1] for line in status.splitlines() if line.startswith("SigIgn:"))
+    return int(mask, 16) & 1 == 1
+
+
+def _wait_until_the_proof_program_ignores_hangup(pid: int) -> None:
+    """Wait until ``pid`` is the program that ignores SIGHUP, not the fork that starts it.
+
+    ``new-session`` returns when the server has forked the pane. That child is
+    still the server's own process, with the default SIGHUP disposition, until
+    it execs the shell and the shell execs the proof program. Closing the
+    pane's terminal in that window delivers SIGHUP and the child exits. The
+    proof is the program that has taken its place: it ignores SIGHUP and does
+    not write to the terminal the server revokes on the way out.
+    """
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            command = Path(f"/proc/{pid}/comm").read_text().strip()
+        except OSError:
+            command = ""
+        if command == "sleep" and _hangup_is_ignored(pid):
+            return
+        assert time.monotonic() < deadline, (
+            f"pane program {pid} ({command or 'gone'}) is not ignoring SIGHUP"
+        )
+        time.sleep(0.01)
+
+
 def _stat_line(pid: int, state: str, session: int, started: int) -> str:
     """A procfs stat line with a command name holding spaces and parentheses."""
     rest = [state, "1", str(pid), str(session), *["0"] * 15, str(started), "0"]
@@ -163,11 +197,16 @@ def test_a_pane_program_that_ignores_sighup_is_stopped_with_the_server(rig: Rig)
 def test_kill_server_alone_leaves_the_sighup_proof_program_running(rig: Rig) -> None:
     """The gap the helper closes: ``kill-server`` only hangs up on the panes.
 
-    The read waits until that server has exited. A fixed pause can look while
-    the server is still leaving and miss a program that is still running.
+    The new-session client can return while the pane is still the forked
+    server child. That child has the default SIGHUP disposition, so the
+    hangup from the closing terminal ends it. The read waits until the proof
+    program has replaced that child, then until the server has exited. A
+    fixed pause can look while the server is still leaving and miss a program
+    that is still running.
     """
     rig.start("client", HUP_PROOF)
     (survivor,) = _wait_for(rig.sessions, 1)
+    _wait_until_the_proof_program_ignores_hangup(survivor)
     subprocess.run([*rig.base, "kill-server"], capture_output=True, check=False, timeout=10)
     assert _wait_until_the_server_is_gone(rig.base, rig.sessions, survivor) == [survivor]
     assert all(socket.exists() for socket in rig.sockets)
