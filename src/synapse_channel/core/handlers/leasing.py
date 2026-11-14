@@ -62,6 +62,7 @@ from synapse_channel.core.path_identity import (
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.receipts import (
+    RELEASE_RECEIPT_NOTE_KIND,
     ReleaseReceipt,
     format_release_receipt_note,
     release_receipt_has_evidence,
@@ -768,7 +769,7 @@ async def _record_release_receipt_progress(hub: LeasingContext, receipt: Release
     ok, result = hub.blackboard.post_progress(
         task_id=str(receipt["task_id"]),
         author=str(receipt["owner"]),
-        kind="assessment",
+        kind=RELEASE_RECEIPT_NOTE_KIND,
         text=format_release_receipt_note(receipt),
     )
     if not ok or isinstance(result, str):

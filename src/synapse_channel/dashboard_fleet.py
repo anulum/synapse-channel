@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
+from synapse_channel.core.receipts import is_release_receipt_note
 from synapse_channel.dashboard_task_graph import (
     TaskDependencyGraph,
     build_task_dependency_graph,
@@ -348,14 +349,16 @@ def _fleet_tasks(board: Mapping[str, object]) -> FleetTasks:
 
 
 def _release_receipts(board: Mapping[str, object]) -> list[JsonDict]:
-    """Return release receipt notes from board progress."""
+    """Return the board's release receipts: exactly the notes the release path writes.
+
+    :func:`~synapse_channel.core.receipts.is_release_receipt_note` recognises them by
+    their writer's marker. An ordinary ``assessment`` note is not a receipt.
+    """
     receipts: list[JsonDict] = []
     for note in _as_mappings(board.get("progress")):
-        text = str(note.get("text", ""))
-        if str(note.get("kind", "")) != "assessment" and not text.lower().startswith(
-            "release receipt:"
-        ):
+        if not is_release_receipt_note(note):
             continue
+        text = str(note.get("text", ""))
         receipts.append(
             {
                 "task_id": str(note.get("task_id", "")),

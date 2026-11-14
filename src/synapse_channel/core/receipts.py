@@ -9,7 +9,8 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from collections.abc import Mapping
+from typing import Final, TypedDict
 
 UNVERIFIED_EVIDENCE_REASON = "fresh evidence present but unverified"
 """The closing reason of an ``unverified`` verdict: evidence was declared, not executed.
@@ -17,6 +18,12 @@ UNVERIFIED_EVIDENCE_REASON = "fresh evidence present but unverified"
 :mod:`~synapse_channel.core.release_verification` replaces exactly this reason
 once it has run the release checks itself, so both modules share this constant.
 """
+
+RELEASE_RECEIPT_PREFIX: Final = "release receipt:"
+"""The marker the release path sets: every receipt note's text starts with it."""
+
+RELEASE_RECEIPT_NOTE_KIND: Final = "assessment"
+"""The progress-note kind the release path writes a receipt under."""
 
 MAX_RELEASE_RECEIPT_ITEMS = 50
 """Maximum number of values retained for any repeated receipt field."""
@@ -257,4 +264,28 @@ def format_release_receipt_note(receipt: ReleaseReceipt) -> str:
         sections.append(f"freshness_seconds={receipt['freshness_seconds']}")
     sections.append(f"epistemic_status={receipt['epistemic_status']}")
     sections.append(f"epistemic_reasons={', '.join(receipt['epistemic_reasons'])}")
-    return "release receipt: " + "; ".join(sections)
+    return f"{RELEASE_RECEIPT_PREFIX} " + "; ".join(sections)
+
+
+def is_release_receipt_note(note: Mapping[str, object]) -> bool:
+    """Return whether a progress note is a release receipt, as the release path writes one.
+
+    The hub writes a receipt note only for a release that carries evidence
+    (``core/handlers/leasing.py`` and ``core/handlers/leasing_drafts.py``): a
+    :data:`RELEASE_RECEIPT_NOTE_KIND` note whose text, from
+    :func:`format_release_receipt_note`, starts with :data:`RELEASE_RECEIPT_PREFIX`.
+    Any other assessment is not a receipt, and neither is the marker under another kind.
+
+    Parameters
+    ----------
+    note : Mapping[str, object]
+        One board progress note (``kind`` and ``text``).
+
+    Returns
+    -------
+    bool
+        ``True`` exactly for the notes the release path writes.
+    """
+    return note.get("kind") == RELEASE_RECEIPT_NOTE_KIND and str(note.get("text", "")).startswith(
+        RELEASE_RECEIPT_PREFIX
+    )

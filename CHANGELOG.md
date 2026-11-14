@@ -462,6 +462,12 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- The dashboard's release receipts are only the notes the release path writes. `fleet.receipts`
+  kept every `assessment` progress note (4,709 of 5,000 notes on one live hub), and the
+  security posture's receipts row counted them as release receipt rows. A receipt is now recognised by
+  its writer's marker, the `assessment` note whose text starts with `release receipt:`
+  (`core.receipts.is_release_receipt_note`). The writers and every reader of that marker now
+  share one definition.
 - A native MCP session removes its lock files on a clean exit, while it still
   holds them. A crash leaves them. The next session removes at most 64
   abandoned lock files that nobody holds and that are older than 24 hours,

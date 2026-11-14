@@ -26,9 +26,7 @@ from synapse_channel.core.delivery_receipts import (
 )
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import StoredEvent
-
-RELEASE_RECEIPT_PREFIX = "release receipt:"
-"""Progress-note prefix used by release evidence receipts."""
+from synapse_channel.core.receipts import RELEASE_RECEIPT_PREFIX
 
 RECEIPT_PROGRESS_KINDS = frozenset(
     {

@@ -18,6 +18,7 @@ from synapse_channel.core.ledger import ProgressNote
 from synapse_channel.core.notification_events import NOTIFICATION_FIELD, notification_metadata
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.receipts import (
+    RELEASE_RECEIPT_NOTE_KIND,
     build_release_receipt,
     format_release_receipt_note,
     release_receipt_has_evidence,
@@ -169,7 +170,7 @@ def prepare_release(
         note = ProgressNote(
             task_id=task_id,
             author=sender,
-            kind="assessment",
+            kind=RELEASE_RECEIPT_NOTE_KIND,
             text=format_release_receipt_note(receipt),
         )
         prepared_progress[:] = [note]

@@ -929,7 +929,10 @@ pre-send refusal and exit `3` uncertain outcome instead of displaying success.
 
 Add receipt fields when the release is also the closeout record. The hub echoes
 the receipt on `release_granted`; if any evidence field is present, it records the
-same receipt as an `assessment` progress note on the board. Use `--receipt-json`
+same receipt as an `assessment` progress note on the board, whose text starts with
+`release receipt:`. That note, and only that note, is a release receipt to the
+dashboard (`fleet.receipts`) and its security posture; an ordinary `assessment`
+note is not. Use `--receipt-json`
 when another tool should consume the hub-confirmed receipt:
 
 ```bash

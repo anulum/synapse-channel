@@ -32,6 +32,7 @@ from synapse_channel.core.compaction import CompactionResult
 from synapse_channel.core.event_row_recovery import CorruptEventRow
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.receipts import RELEASE_RECEIPT_PREFIX
 
 REPORT_FILE_MODE = 0o600
 """Filesystem mode used for archive reports because they may contain local evidence."""
@@ -45,9 +46,6 @@ TIMELINE_EXCLUDED_KINDS = frozenset(
     }
 )
 """Event kinds hidden from the human timeline section."""
-
-RELEASE_RECEIPT_PREFIX = "release receipt:"
-"""Prefix used by receipt-bearing board assessment notes."""
 
 
 @dataclass(frozen=True)
