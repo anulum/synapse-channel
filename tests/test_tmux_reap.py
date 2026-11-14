@@ -90,6 +90,37 @@ def _wait_for(sessions: dict[int, int | None], count: int) -> list[int]:
     return found
 
 
+def _wait_until_the_server_is_gone(
+    base: tuple[str, ...], sessions: dict[int, int | None], survivor: int
+) -> list[int]:
+    """Return the pane programs once the private server has exited.
+
+    The ``kill-server`` client can return while the server is still hanging up
+    on the pane, and one read in that window misses a program that is still
+    alive. The bound matches ``_wait_for``. A survivor that has exited ends the
+    wait: the same process does not come back.
+    """
+    deadline = time.monotonic() + 5
+    while True:
+        listed = subprocess.run(
+            [*base, "list-sessions"],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        found = processes_in_sessions(sessions)
+        if listed.returncode != 0 and survivor in found:
+            return found
+        try:
+            os.kill(survivor, 0)
+        except ProcessLookupError:
+            return found
+        assert time.monotonic() < deadline, (
+            f"the private tmux server is still running or {survivor} is missing from {found}"
+        )
+        time.sleep(0.05)
+
+
 def _stat_line(pid: int, state: str, session: int, started: int) -> str:
     """A procfs stat line with a command name holding spaces and parentheses."""
     rest = [state, "1", str(pid), str(session), *["0"] * 15, str(started), "0"]
@@ -130,13 +161,19 @@ def test_a_pane_program_that_ignores_sighup_is_stopped_with_the_server(rig: Rig)
 
 
 def test_kill_server_alone_leaves_the_sighup_proof_program_running(rig: Rig) -> None:
-    """The gap the helper closes: ``kill-server`` only hangs up on the panes."""
+    """The gap the helper closes: ``kill-server`` only hangs up on the panes.
+
+    The read waits until that server has exited. A fixed pause can look while
+    the server is still leaving and miss a program that is still running.
+    """
     rig.start("client", HUP_PROOF)
     (survivor,) = _wait_for(rig.sessions, 1)
     subprocess.run([*rig.base, "kill-server"], capture_output=True, check=False, timeout=10)
-    time.sleep(0.3)
-    assert processes_in_sessions(rig.sessions) == [survivor]
+    assert _wait_until_the_server_is_gone(rig.base, rig.sessions, survivor) == [survivor]
     assert all(socket.exists() for socket in rig.sockets)
+    # pid_max is not a live pid. A process that has exited ends the wait at once.
+    absent = int(Path("/proc/sys/kernel/pid_max").read_text())
+    assert _wait_until_the_server_is_gone(rig.base, rig.sessions, absent) == [survivor]
 
 
 def test_a_server_that_is_not_running_is_a_no_op(rig: Rig) -> None:
