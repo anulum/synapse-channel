@@ -100,14 +100,68 @@ def test_origin_roundtrip_and_project_qualification() -> None:
     assert AssignmentOrigin.from_value(origin.encode()) == origin
     assert AssignmentOrigin.from_value(None) is None
     assert scoped_owner("ALPHA/task", "ALPHA/worker", "ALPHA")
+    assert scoped_owner("ALPHA/t", "ALPHA/worker", "")
+    assert scoped_owner("BETA/t", "ALPHA/worker", "ALPHA")
+    assert scoped_owner("HARBOUR-101", "harbour/api", "harbour")
     for owner, project, task_id in [
         ("worker", "ALPHA", "ALPHA/t"),
-        ("ALPHA/worker", "", "ALPHA/t"),
-        ("ALPHA/worker", "ALPHA", "BETA/t"),
         (" ALPHA/worker", " ALPHA", " ALPHA/t"),
         ("ALPHA/", "ALPHA", "ALPHA/t"),
+        ("harbour/api", "", "HARBOUR-101"),
+        ("other/api", "harbour", "harbour/work"),
+        ("A/" + "x" * 255, "", "A/t"),
     ]:
         assert not scoped_owner(task_id, owner, project)
+
+
+def test_unqualified_task_is_pending_for_its_project_seat() -> None:
+    """A project field scopes historical work even when the task name is bare."""
+    board = Blackboard()
+    board.restore_task(
+        task(
+            "HARBOUR-101",
+            project="harbour",
+            suggested_owner="harbour/api",
+            created_by="harbour/planner",
+        )
+    )
+    assert board.tasks["HARBOUR-101"].project == "harbour"
+    assert board.pending_assignments.rows("harbour/api", limit=10)[0][0] == "HARBOUR-101"
+    assert not board.pending_assignments.rows("harbour/planner", limit=10)
+    assert board.owned_tasks.entries["HARBOUR-101"].project == ""
+    assert ("harbour/api", "harbour") not in board.owned_tasks.buckets
+    page = read_pending_work(
+        board, SynapseState(), PendingQuery("harbour/api", ""), hub_id="hub", now=10
+    )
+    items = page["items"]
+    assert page["available"] is True and isinstance(items, list) and len(items) == 1
+    assert isinstance(items[0], dict) and items[0]["kind"] == "tasks"
+    assert "HARBOUR-101" not in str(page)
+    board.restore_task(task("ALPHA/legacy", project=""))
+    assert board.pending_assignments.rows("ALPHA/worker", limit=10)[0][0] == "ALPHA/legacy"
+    board.restore_task(
+        task(
+            "OTHER/work",
+            project="harbour",
+            suggested_owner="harbour/api",
+            created_by="harbour/planner",
+        )
+    )
+    assert "OTHER/work" in board.pending_assignments.entries
+    board.restore_task(
+        task(
+            "harbour/work",
+            project="harbour",
+            suggested_owner="other/api",
+            created_by="harbour/planner",
+        )
+    )
+    assert "harbour/work" not in board.pending_assignments.entries
+    state = SynapseState()
+    state.restore_claim(claim(task_id="HARBOUR-101", owner="harbour/api"), legacy_handoff=True)
+    assert not state.pending_handoffs.entries
+    state.restore_claim(claim(), legacy_handoff=True)
+    assert state.pending_handoffs.rows("ALPHA/worker", limit=10)
 
 
 def test_board_preserves_historical_origin_across_status_and_atomic_publication() -> None:

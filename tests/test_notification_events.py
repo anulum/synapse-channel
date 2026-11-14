@@ -9,6 +9,11 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
+from typing import Any
+
 import pytest
 
 from synapse_channel.core.notification_events import (
@@ -74,6 +79,9 @@ def test_assignment_metadata_is_content_free_and_exact() -> None:
         ("ALPHA/operator", "ALPHA/bot", {"task_id": None}),
         ("ALPHA/operator", "ALPHA/bot", {"task_id": "BETA/work"}),
         ("ALPHA/operator", "ALPHA/bot", {"task_id": "ALPHA/work", "project": "BETA"}),
+        ("harbour/planner", "harbour/api", {"task_id": "HARBOUR-101", "project": None}),
+        ("harbour/planner", "other/api", {"task_id": "harbour/work", "project": "harbour"}),
+        ("harbour/planner", "harbour/api", {"task_id": "HARBOUR-101", "project": ""}),
     ],
 )
 def test_ineligible_assignment_never_gets_routing_metadata(
@@ -126,6 +134,71 @@ def test_handoff_and_direct_messages_select_only_exact_identity() -> None:
     ]
     for fields in refused:
         assert event_activity("chat", fields, "ALPHA/bot") is None
+
+
+def test_project_field_points_an_unqualified_task_and_wins_a_mismatch() -> None:
+    """The task's project is the scope; a missing project keeps the name prefix."""
+    payload: dict[str, object] = {
+        "task_id": "HARBOUR-101",
+        "project": "harbour",
+        "title": "private task text",
+        "suggested_owner": "harbour/api",
+        "status": "open",
+    }
+    pointer = task_notification(payload, "harbour/planner", "")
+    assert pointer == {
+        "version": 1,
+        "kind": "tasks",
+        "actor": "harbour/planner",
+        "recipient": "harbour/api",
+    }
+    event = {**payload, NOTIFICATION_FIELD: pointer}
+    assert event_activity("ledger_task", event, "harbour/api") == "tasks"
+    assert event_activity("ledger_task", event, "lighthouse/docs") is None
+    chat = {"sender": "harbour/planner", "target": "harbour/api"}
+    assert event_activity("chat", chat, "harbour/api") == "messages"
+    named = notification_metadata("tasks", "ALPHA/operator", "ALPHA/bot", {"task_id": "ALPHA/work"})
+    assert named == notification_metadata(
+        "tasks", "ALPHA/operator", "ALPHA/bot", {"task_id": "ALPHA/work", "project": ""}
+    )
+    assert named is not None and named["recipient"] == "ALPHA/bot"
+    mismatch = notification_metadata(
+        "tasks",
+        "harbour/planner",
+        "harbour/api",
+        {"task_id": "OTHER/work", "project": "harbour"},
+    )
+    assert mismatch is not None and mismatch["recipient"] == "harbour/api"
+
+
+def _fleet_names() -> Any:
+    """Load the demonstration fleet's name map without starting a hub."""
+    script = Path(__file__).resolve().parents[1] / "clients" / "cockpit" / "e2e" / "demo_fleet.py"
+    spec = importlib.util.spec_from_file_location("notification_demo_fleet_names", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_demonstration_fleet_plan_points_at_its_project_seat() -> None:
+    """Both spellings of the fleet's bare plan point at that project's seat."""
+    fleet = _fleet_names()
+    for rename in (str, fleet.long_name):
+        owner = rename("harbour/api")
+        pointer = notification_metadata(
+            "tasks",
+            rename("harbour/planner"),
+            owner,
+            {"task_id": rename("HARBOUR-101"), "project": rename("harbour")},
+        )
+        assert pointer == {
+            "version": 1,
+            "kind": "tasks",
+            "actor": rename("harbour/planner"),
+            "recipient": owner,
+        }
 
 
 @pytest.mark.parametrize("frame_type", ["open", "chunk", "done", "abort"])

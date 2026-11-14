@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Literal
 
+from synapse_channel.core.pending_index import scoped_owner
 from synapse_channel.core.streaming import CHUNK, OPEN, STREAM_FRAME_KIND
 
 NOTIFICATION_FIELD = "_notification"
@@ -40,21 +41,20 @@ def notification_metadata(
     dict[str, object] or None
         Bounded routing metadata, or no notification for self, unqualified or
         foreign-project work. The metadata contains no task text or checkpoint.
+        Scope is :func:`scoped_owner`: the task's project field when the record
+        carries one, otherwise the name prefix.
     """
-    project, separator, suffix = recipient.partition("/")
     task = payload.get("task_id")
+    recorded = payload.get("project", "")
     if (
         not actor
         or len(actor) > 256
         or actor == recipient
         or len(recipient) > 256
         or recipient.strip() != recipient
-        or not separator
-        or not project
-        or not suffix
         or not isinstance(task, str)
-        or not task.startswith(project + "/")
-        or payload.get("project", "") not in ("", project)
+        or not isinstance(recorded, str)
+        or not scoped_owner(task, recipient, recorded)
     ):
         return None
     return {"version": 1, "kind": kind, "actor": actor, "recipient": recipient}

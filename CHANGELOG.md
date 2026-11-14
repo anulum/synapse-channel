@@ -468,6 +468,15 @@ execution evidence when carrying a release claim forward.
   its writer's marker, the `assessment` note whose text starts with `release receipt:`
   (`core.receipts.is_release_receipt_note`). The writers and every reader of that marker now
   share one definition.
+
+- An assignment pointer and a historical pending item follow the task record's
+  project when the record carries one. A task named `HARBOUR-101` in project
+  `harbour` can now be pointed at `harbour/api`. A record with no project keeps
+  the name-prefix rule, and a project that disagrees with the name prefix
+  follows the field. A claim still has no project field, so its name prefix is
+  unchanged. Owned-work and inbox pages do not use this rule. See
+  `docs/protocol.md`.
+
 - A native MCP session removes its lock files on a clean exit, while it still
   holds them. A crash leaves them. The next session removes at most 64
   abandoned lock files that nobody holds and that are older than 24 hours,

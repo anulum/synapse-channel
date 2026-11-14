@@ -19,6 +19,7 @@ from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hu
 from synapse_channel.core.acl import MAILBOX, MESSAGE, AclPolicy, AclRule
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.notification_events import NOTIFICATION_FIELD
+from synapse_channel.core.owned_work import OwnedQuery
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 
@@ -266,5 +267,79 @@ async def test_activity_uses_exact_mailbox_acl_without_global_recall(tmp_path: P
                 assert "acl" in str(denied).lower() and "activity_page" not in denied
             finally:
                 await close_agents(worker, outsider)
+    finally:
+        store.close()
+
+
+async def _correlated(handle: AgentHandle, **fields: Any) -> dict[str, Any]:
+    """Send one history request and return the frame that carries its id."""
+    request_id = uuid.uuid4().hex
+    await handle.agent.send_message(
+        MessageType.HISTORY_REQUEST, target="System", request_id=request_id, **fields
+    )
+    frame: dict[str, Any] = await handle.recorder.wait_for(
+        lambda item: item.get("request_id") == request_id
+    )
+    return frame
+
+
+async def test_unqualified_task_reaches_its_project_seat(tmp_path: Path) -> None:
+    """A bare task name follows its project through the public client."""
+    store = EventStore(tmp_path / "hub.db")
+    hub = SynapseHub(journal=store, hub_id="harbour-hub", anti_rollback_checkpoint=False)
+    try:
+        async with running_hub(hub) as (_, uri):
+            planner = await connect_agent("harbour/planner", uri)
+            worker = await connect_agent("harbour/api", uri)
+            try:
+                await planner.agent.post_task(
+                    "HARBOUR-101",
+                    "private plan text",
+                    suggested_owner="harbour/api",
+                    project="harbour",
+                )
+                await fence(planner)
+                page = await query(worker)
+                assert page["available"] is True
+                assert [item["kind"] for item in page["items"]] == ["tasks"]
+                assert "private" not in str(page) and "HARBOUR-101" not in str(page)
+                pending = await _correlated(
+                    worker,
+                    pending_query={
+                        "version": 1,
+                        "identity": "harbour/api",
+                        "hub_id": "",
+                        "limit": 10,
+                    },
+                )
+                assert pending["pending_work"]["available"] is True
+                assert pending["pending_work"]["items"] == []
+                harbour = OwnedQuery("harbour/api", project="harbour")
+                scoped = await _correlated(worker, owned_work_query=harbour.encode())
+                assert scoped["owned_work"]["available"] is True
+                assert scoped["owned_work"]["items"] == []
+                whole = await _correlated(
+                    worker, owned_work_query=OwnedQuery("harbour/api").encode()
+                )
+                assert len(whole["owned_work"]["items"]) == 1
+                await planner.agent.chat("harbour note", target="harbour/api")
+                await fence(planner)
+                activity = await query(worker)
+                assert [item["kind"] for item in activity["items"]] == ["tasks", "messages"]
+                inbox = await _correlated(
+                    worker,
+                    inbox_query={
+                        "version": 1,
+                        "identity": "harbour/api",
+                        "hub_id": "",
+                        "since_seq": 0,
+                        "limit": 10,
+                    },
+                )
+                assert [message["payload"] for message in inbox["inbox_page"]["messages"]] == [
+                    "harbour note"
+                ]
+            finally:
+                await close_agents(planner, worker)
     finally:
         store.close()

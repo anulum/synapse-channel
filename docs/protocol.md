@@ -1319,7 +1319,10 @@ assignment notification. Handoffs carry the authenticated prior
 owner and actual recipient in their native event. The reserved _notification
 field also appears on eligible live task/handoff frames; it is excluded from
 public task snapshots. Clients cannot supply or override this server metadata.
-The task or claim ID must belong to the recipient's project namespace.
+When the task record carries a project, that field is the recipient's
+namespace, even where the task name uses another prefix. A record without a
+project, including a claim, still requires the task or claim id to belong to
+the recipient's project namespace.
 
 Only exact-directed chat is eligible; broadcasts, lists, aliases, own echoes
 and private-channel messages are omitted. Stream open/chunk frames advance the

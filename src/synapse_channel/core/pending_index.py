@@ -19,17 +19,21 @@ def assignment_key(kind: str, task_id: str, owner: str, anchor: int) -> str:
 
 
 def scoped_owner(task_id: str, owner: str, project: str) -> bool:
-    """Require an exact project seat and a task in the same explicit namespace."""
+    """Require a project seat, using the task's own project when the record has one.
+
+    A non-empty ``project`` is that field and is the scope: the owner must be
+    ``project/seat``. The task name may use another prefix; the field wins.
+
+    An empty ``project`` means the record carries no project. The name-prefix
+    rule remains: the owner is ``prefix/seat`` and the task name begins with
+    ``prefix/``.
+    """
     prefix, separator, suffix = owner.partition("/")
-    return bool(
-        separator
-        and prefix
-        and suffix
-        and len(owner) <= 256
-        and owner.strip() == owner
-        and project == prefix
-        and task_id.startswith(prefix + "/")
-    )
+    if not (separator and prefix and suffix and len(owner) <= 256 and owner.strip() == owner):
+        return False
+    if project:
+        return prefix == project
+    return task_id.startswith(prefix + "/")
 
 
 class PendingRecipientIndex:

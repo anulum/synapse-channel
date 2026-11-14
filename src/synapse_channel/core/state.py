@@ -240,10 +240,11 @@ class SynapseState:
         key = assignment_key(
             "handoffs", claim.task_id, claim.owner, claim.ownership_epoch or claim.epoch
         )
+        # A claim record has no project field, so the name prefix stays the scope.
         if (
             legacy_handoff
             and claim.status not in ("done", "failed")
-            and scoped_owner(claim.task_id, claim.owner, claim.owner.partition("/")[0])
+            and scoped_owner(claim.task_id, claim.owner, "")
         ):
             self.pending_handoffs.set(claim.task_id, claim.owner, key)
         else:
