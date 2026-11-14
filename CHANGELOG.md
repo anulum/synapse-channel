@@ -393,6 +393,10 @@ execution evidence when carrying a release claim forward.
   two must be the same length; a mixed pair is refused. The declaration records
   `object_format` (`sha1` or `sha256`). An existing 40-hex intent keeps its
   canonical digest. See `docs/integrator-contract.md`.
+- A finished task set back by an actor other than its owner notifies that
+  owner with the same assignment pointer a new assignment produces. The owner
+  setting their own task back, and any change that does not leave a finished
+  status, stay silent. See `docs/protocol.md`.
 
 ### Fixed
 

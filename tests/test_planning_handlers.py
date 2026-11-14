@@ -29,6 +29,7 @@ class _FakeTask:
         self.task_id = task_id
         self.suggested_owner = ""
         self.assignment_origin = None
+        self.status = "open"
 
     def as_dict(self) -> dict[str, Any]:
         return {"id": self.task_id}

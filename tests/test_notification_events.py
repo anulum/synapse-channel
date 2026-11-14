@@ -38,6 +38,23 @@ def test_assignment_metadata_is_content_free_and_exact() -> None:
     assert event_activity("ledger_task", event, "ALPHA/bot") == "tasks"
     assert event_activity("ledger_task", event, "ALPHA/other") is None
     assert task_notification(task, "ALPHA/operator", "ALPHA/bot") is None
+    returned = task_notification(task, "ALPHA/operator", "ALPHA/bot", previous_status="done")
+    assert returned == pointer
+    assert (
+        task_notification(task, "ALPHA/operator", "ALPHA/bot", previous_status="cancelled")
+        == returned
+    )
+    assert task_notification(task, "ALPHA/bot", "ALPHA/bot", previous_status="done") is None
+    assert task_notification(task, "ALPHA/operator", "ALPHA/bot", previous_status="open") is None
+    assert (
+        task_notification(
+            {**task, "status": "cancelled"},
+            "ALPHA/operator",
+            "ALPHA/bot",
+            previous_status="done",
+        )
+        is None
+    )
     assert task_notification({**task, "status": "done"}, "ALPHA/operator", "") is None
     assert task_notification({**task, "status": "cancelled"}, "ALPHA/operator", "") is None
     assert task_notification({**task, "suggested_owner": None}, "ALPHA/operator", "") is None

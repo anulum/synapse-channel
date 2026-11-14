@@ -61,14 +61,42 @@ def notification_metadata(
 
 
 def task_notification(
-    payload: Mapping[str, object], actor: str, previous_owner: str
+    payload: Mapping[str, object],
+    actor: str,
+    previous_owner: str,
+    *,
+    previous_status: str = "",
 ) -> dict[str, object] | None:
-    """Notify only a new external suggested owner on a nonterminal plan task."""
+    """Notify a new external owner, or the same owner when someone else returns work.
+
+    Parameters
+    ----------
+    payload : collections.abc.Mapping
+        Native task snapshot after the mutation.
+    actor, previous_owner : str
+        Authenticated actor and the suggested owner before this mutation.
+    previous_status : str, optional
+        Planning status before this mutation. Leaving ``done`` or ``cancelled``
+        by an actor other than the owner is work that came back.
+
+    Returns
+    -------
+    dict[str, object] or None
+        The assignment pointer a new external assignment produces, or no
+        notification when the owner is unchanged for any other reason, the task
+        stays terminal, or the recipient is not an external project seat.
+    """
     recipient = payload.get("suggested_owner")
+    status = payload.get("status")
+    returned = (
+        previous_status in ("done", "cancelled")
+        and status not in ("done", "cancelled")
+        and actor != recipient
+    )
     if (
         not isinstance(recipient, str)
-        or recipient == previous_owner
-        or payload.get("status") in ("done", "cancelled")
+        or (recipient == previous_owner and not returned)
+        or status in ("done", "cancelled")
     ):
         return None
     return notification_metadata("tasks", actor, recipient, payload)

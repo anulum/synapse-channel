@@ -1942,7 +1942,7 @@ an installed protected runtime or revocation fencing.
 | Classes | 1443 |
 | Wire message types | 122 |
 | CLI subcommands | 309 |
-| Test functions | 14205 |
+| Test functions | 14206 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 99 |
 | GitHub Actions workflows | 29 |

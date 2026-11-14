@@ -26,19 +26,26 @@ class TaskEventRecorder:
     """Capture prior assignment inside the mutation and persist its routing event."""
 
     def __init__(self, actor: str, parent: TaskCausalParent | None) -> None:
-        """Keep authenticated actor, validated causal parent and pre-write owner."""
+        """Keep authenticated actor, causal parent, and the owner and status before the write."""
         self.actor = actor
         self.parent = parent
         self.previous_owner = ""
+        self.previous_status = ""
 
     def capture_owner(self, board: Blackboard, task_id: str) -> None:
-        """Read only the actor-owned candidate board before changing its task."""
+        """Read the owner and status on the candidate board before changing its task."""
         task = board.tasks.get(task_id)
         self.previous_owner = task.suggested_owner if task is not None else ""
+        self.previous_status = task.status if task is not None else ""
 
     def record(self, store: EventStore, task: LedgerTask) -> None:
         """Preserve the historical journal call when no new metadata is present."""
-        notification = task_notification(task.as_dict(), self.actor, self.previous_owner)
+        notification = task_notification(
+            task.as_dict(),
+            self.actor,
+            self.previous_owner,
+            previous_status=self.previous_status,
+        )
         if notification is not None:
             record_ledger_task(store, task, causal_parent=self.parent, notification=notification)
         elif self.parent is not None:
@@ -59,7 +66,12 @@ class TaskEventRecorder:
         if not ok or task is None:
             return None
         snapshot = task.as_dict()
-        notification = task_notification(snapshot, self.actor, self.previous_owner)
+        notification = task_notification(
+            snapshot,
+            self.actor,
+            self.previous_owner,
+            previous_status=self.previous_status,
+        )
         response = hub.system(message, msg_type=msg_type, task=snapshot)
         if notification is not None:
             response[NOTIFICATION_FIELD] = notification

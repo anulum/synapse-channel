@@ -1299,9 +1299,11 @@ before sending the reply, including after early termination. A corrupt or
 quarantined candidate row refuses the page instead of silently advancing.
 
 A new external suggested owner on a nonterminal task produces trusted
-assignment metadata in the same durable task event. Status changes, repeating
-the same owner, self-assignment, terminal tasks and foreign-project assignments
-produce no assignment notification. Handoffs carry the authenticated prior
+assignment metadata in the same durable task event. Work set back from a
+finished status by an actor other than its owner produces that same
+notification for the owner. Any other status change, repeating the same owner,
+self-assignment, terminal tasks and foreign-project assignments produce no
+assignment notification. Handoffs carry the authenticated prior
 owner and actual recipient in their native event. The reserved _notification
 field also appears on eligible live task/handoff frames; it is excluded from
 public task snapshots. Clients cannot supply or override this server metadata.
