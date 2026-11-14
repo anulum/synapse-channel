@@ -13,12 +13,12 @@ import importlib.util
 import json
 import runpy
 import sys
+import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from types import ModuleType
 
 import pytest
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL_PATH = ROOT / "tools" / "vendor_cockpit_build.py"

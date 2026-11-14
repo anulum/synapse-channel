@@ -14,10 +14,10 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
-import tomllib
 
 from synapse_channel import cli
 from synapse_channel.codex_mcp_package import (

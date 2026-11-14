@@ -22,14 +22,13 @@ import os
 import shutil
 import sys
 import sysconfig
+import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import EntryPoint, PackageNotFoundError, distribution
 from pathlib import Path
 from types import ModuleType
 from typing import Any
-
-import tomllib
 
 DEFAULT_DISTRIBUTION = "synapse-channel"
 

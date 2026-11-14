@@ -12,11 +12,11 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+import tomllib
 from enum import Enum
 from pathlib import Path
 
 import pytest
-import tomllib
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -140,6 +140,8 @@ def test_every_string_enum_of_the_package_is_in_the_table() -> None:
 
 
 def test_python_floor_matches_packaging_and_type_checking_contracts() -> None:
+    root = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert root["tool"]["ruff"]["target-version"] == "py311"
     for relative in ("pyproject.toml", "integrations/github-app/pyproject.toml"):
         data = tomllib.loads((_ROOT / relative).read_text(encoding="utf-8"))
         assert data["project"]["requires-python"] == ">=3.11"

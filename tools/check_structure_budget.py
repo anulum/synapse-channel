@@ -33,11 +33,10 @@ import argparse
 import datetime
 import json
 import subprocess
+import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 from tools.structure_measures import MEASURES, Figures, measure_roots
 from tools.structure_revision import measure_revision

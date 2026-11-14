@@ -205,8 +205,8 @@ synapse_channel = [
 
 [tool.ruff]
 line-length = 100
-# Runtime and mypy require 3.11; retain the established syntax/style baseline.
-target-version = "py310"
+# Runtime, the type checker and the linter share the 3.11 floor.
+target-version = "py311"
 src = ["src", "tests", "benchmarks"]
 extend-exclude = ["legacy"]
 

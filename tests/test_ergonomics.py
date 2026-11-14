@@ -9,11 +9,11 @@
 from __future__ import annotations
 
 import os
+import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-import tomllib
 
 import synapse_channel.ack as ack_module
 from synapse_channel import ergonomics

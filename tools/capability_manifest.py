@@ -29,10 +29,9 @@ import json
 import os
 import subprocess  # nosec B404
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 #: Git environment overrides a hook inherits (``git push``/``git commit`` set these).
 #: They take precedence over ``git -C <dir>`` and would make a subprocess resolve the

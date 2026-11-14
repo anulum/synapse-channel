@@ -14,12 +14,11 @@ import json
 import os
 import re
 import subprocess  # nosec B404
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
-
-import tomllib
 
 from synapse_channel.core.errors import SynapseError
 

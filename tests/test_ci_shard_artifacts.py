@@ -1085,6 +1085,7 @@ def test_platform_coverage_is_named_once_with_its_directory(
 def test_ci_joins_the_hosted_windows_part_to_the_unchanged_complete_gate() -> None:
     """The Windows job packs a win32 part, and test-complete counts it at 99.36 percent."""
     import tomllib
+
     import yaml
 
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())

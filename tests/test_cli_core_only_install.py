@@ -22,10 +22,9 @@ import json
 import re
 import subprocess
 import sys
+import tomllib
 from importlib.metadata import packages_distributions
 from pathlib import Path
-
-import tomllib
 
 import synapse_channel
 from synapse_channel.effect_suite.record import NEEDS_CRYPTOGRAPHY

@@ -16,7 +16,6 @@ bounded, race-aware filesystem boundary.
 from __future__ import annotations
 
 import json
-
 import tomllib
 
 from synapse_channel.cli_claim_hook_common import (

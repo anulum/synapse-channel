@@ -33,12 +33,11 @@ import os
 import shutil
 import subprocess  # nosec B404
 import sys
+import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
-
-import tomllib
 
 from synapse_channel.claude_plugin_install import inspect_plugin
 from synapse_channel.cli_claim_hook_common import resolve_synapse_binary

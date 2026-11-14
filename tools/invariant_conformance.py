@@ -15,10 +15,9 @@ import os
 import re
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO_ROOT / "tools" / "invariant_conformance.toml"

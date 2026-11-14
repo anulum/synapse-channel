@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
+import tomllib
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-import tomllib
 
 from synapse_channel import commit as commit_command
 from synapse_channel.ergonomics import Identity

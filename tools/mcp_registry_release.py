@@ -18,14 +18,13 @@ publishing or authenticating.
 from __future__ import annotations
 
 import json
+import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from http.client import HTTPConnection, HTTPException, HTTPSConnection
 from pathlib import Path
 from typing import Literal, cast
 from urllib.parse import quote, urlencode, urlsplit
-
-import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_NAME = "io.github.anulum/synapse-channel"

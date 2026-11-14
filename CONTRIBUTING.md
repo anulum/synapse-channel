@@ -16,11 +16,9 @@ development environment and the standards a change must meet to be merged.
 ## Python support and tooling
 
 The package and contributor environments require Python 3.11 or newer. Mypy
-checks the supported Python 3.11 floor. Ruff retains its established py310
-syntax and style target so a runtime support change does not require unrelated
-source modernisation. That conservative style target does not provide Python
-3.10 runtime support; package metadata and CI define the supported runtime.
-Ruff rules and the complete coverage gate remain unchanged.
+and Ruff check that same floor. The linter target does not extend runtime
+support below the package metadata. Ruff rules and the complete coverage gate
+remain unchanged.
 
 ## Getting started
 

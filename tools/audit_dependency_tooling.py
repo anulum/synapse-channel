@@ -20,11 +20,10 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-
-import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PREFLIGHT = REPO_ROOT / "tools" / "preflight.sh"

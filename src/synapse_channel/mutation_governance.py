@@ -22,11 +22,10 @@ import shlex
 import shutil
 import stat
 import subprocess  # nosec B404
+import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
-
-import tomllib
 
 from synapse_channel.claude_plugin_install import plugin_path
 from synapse_channel.kimi_hook_config_file import (

@@ -9,12 +9,12 @@
 from __future__ import annotations
 
 import asyncio
+import tomllib
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
-import tomllib
 
 from hub_e2e_helpers import connect_agent, free_port, running_hub
 from synapse_channel import ack

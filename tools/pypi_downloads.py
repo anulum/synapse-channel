@@ -30,13 +30,12 @@ import json
 import math
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 PYPISTATS_OVERALL = "https://pypistats.org/api/packages/{package}/overall"
 """The pypistats endpoint returning the full available per-day download series."""

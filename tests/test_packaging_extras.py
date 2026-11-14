@@ -25,13 +25,13 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
 import trace
 import venv
 from pathlib import Path
 from typing import Any
 
 import pytest
-import tomllib
 from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 
