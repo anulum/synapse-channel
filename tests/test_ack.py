@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 import tomllib
 
-from hub_e2e_helpers import _free_port, connect_agent, running_hub
+from hub_e2e_helpers import connect_agent, free_port, running_hub
 from synapse_channel import ack
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
@@ -253,7 +253,7 @@ async def test_ack_task_returns_one_when_hub_unreachable(
         evidence=("pytest",),
         artifacts=(),
         note="",
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         ready_timeout=0.1,
     )
 

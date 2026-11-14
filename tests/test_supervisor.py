@@ -15,7 +15,7 @@ from typing import Any, cast
 
 import pytest
 
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
 from synapse_channel.client.supervisor import SupervisorWorker, detect_stalls
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
@@ -291,7 +291,7 @@ async def test_supervise_loop_sleeps_after_one_cycle(monkeypatch: pytest.MonkeyP
 
 
 async def test_run_completes_when_connection_finishes() -> None:
-    worker = SupervisorWorker(uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
+    worker = SupervisorWorker(uri=f"ws://127.0.0.1:{free_port()}", ready_timeout=0.1)
     await worker.run()
 
 
@@ -316,7 +316,7 @@ async def test_run_with_ready_short_connection_does_not_warn(
 
 
 async def test_run_warns_on_handshake_timeout(capsys: pytest.CaptureFixture[str]) -> None:
-    worker = SupervisorWorker(uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
+    worker = SupervisorWorker(uri=f"ws://127.0.0.1:{free_port()}", ready_timeout=0.1)
     await worker.run()
     assert "handshake timeout" in capsys.readouterr().out
 

@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli, cli_locking
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
@@ -258,7 +258,7 @@ async def test_release_selects_matching_task(capsys: pytest.CaptureFixture[str])
 
 async def test_release_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
     code = await cli_locking._release(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="USER",
         task_id="t",
         ready_timeout=0.1,
@@ -278,7 +278,7 @@ async def test_release_denies_missing_claim(capsys: pytest.CaptureFixture[str]) 
 
 def test_cmd_release_dispatches_real_command(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="USER",
         task_id="t",
         token=None,
@@ -346,7 +346,7 @@ async def test_release_rejects_a_malformed_receipt_file(
     receipt = tmp_path / "receipt.json"
     receipt.write_text(json.dumps({"task_id": "OTHER"}), encoding="utf-8")
     code = await cli_locking._release(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="alice",
         task_id="T1",
         receipt=str(receipt),

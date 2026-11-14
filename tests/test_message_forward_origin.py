@@ -27,7 +27,7 @@ import pytest
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.asyncio.server import ServerConnection, serve
 
-from hub_e2e_helpers import _await_listening, _free_port, read_until_type, running_hub
+from hub_e2e_helpers import _await_listening, free_port, read_until_type, running_hub
 from message_forward_peer_helpers import error_frame, result_frame, scripted_peer
 from synapse_channel.core.handlers.messaging import ChatRouting
 from synapse_channel.core.hub import SynapseHub
@@ -46,7 +46,7 @@ _READ_LIMIT = 60
 
 @contextlib.asynccontextmanager
 async def _served(hub: SynapseHub) -> AsyncIterator[str]:
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port))
     await _await_listening(port)
     try:
@@ -91,7 +91,7 @@ async def _receipt(websocket: ClientConnection) -> dict[str, Any]:
 
 
 def _unreachable() -> MessageForwardPeer:
-    return MessageForwardPeer(uri=f"ws://localhost:{_free_port()}")
+    return MessageForwardPeer(uri=f"ws://localhost:{free_port()}")
 
 
 def test_retry_delay_doubles_and_is_capped() -> None:
@@ -321,7 +321,7 @@ async def test_a_retry_loop_that_dies_stops_the_hub_loudly(tmp_path: Path) -> No
 
     store = EventStore(tmp_path / "hub.db")
     hub = SynapseHub(hub_id="workstation", journal=store, message_peers={"laptop": _unreachable()})
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port))
     await _await_listening(port)
     store.close()
@@ -335,7 +335,7 @@ async def test_sigterm_stops_the_hub_and_its_retry_loop_cleanly() -> None:
     import signal
 
     hub = SynapseHub(hub_id="workstation", message_peers={"laptop": _unreachable()})
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port))
     await _await_listening(port)
     os.kill(os.getpid(), signal.SIGTERM)

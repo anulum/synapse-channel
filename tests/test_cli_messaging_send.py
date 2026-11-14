@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 from websockets.asyncio.server import ServerConnection, serve
 
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli_messaging, cli_messaging_send
 from synapse_channel.cli import main as cli_main
 from synapse_channel.client.agent import SynapseAgent
@@ -75,7 +75,7 @@ async def _scripted_verdict_hub(
             await websocket.close(4013, "identity pin mismatch")
             return
 
-    port = _free_port()
+    port = free_port()
     server = await serve(hub, "localhost", port)
 
     async def stop() -> None:
@@ -235,7 +235,7 @@ async def test_send_skips_wait_when_zero() -> None:
 
 async def test_send_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
     code = await cli_messaging._send(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="USER",
         target="all",
         message="ping",
@@ -299,7 +299,7 @@ async def test_send_reports_name_conflict_instead_of_dropping_silently(
 
 def test_cmd_send_dispatches_real_command(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="USER",
         target="all",
         message="hi",
@@ -804,7 +804,7 @@ async def test_send_require_recipient_fails_without_hub_receipt(
         async for message in websocket:
             await _answer_who(websocket, message)
 
-    port = _free_port()
+    port = free_port()
     server = await serve(receiptless_hub, "localhost", port)
     try:
         code = await cli_messaging._send(
@@ -832,7 +832,7 @@ async def test_default_directed_receipt_reports_unknown_for_an_older_hub(
         async for message in websocket:
             await _answer_who(websocket, message)
 
-    port = _free_port()
+    port = free_port()
     server = await serve(receiptless_hub, "localhost", port)
     try:
         code = await cli_messaging._send(

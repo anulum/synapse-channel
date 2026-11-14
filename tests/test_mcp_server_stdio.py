@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from hub_e2e_helpers import _free_port, running_hub
+from hub_e2e_helpers import free_port, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.mcp.server import SynapseHubBridge, serve_stdio
 
@@ -25,7 +25,7 @@ class RecordingStdioServer:
 
 async def test_serve_stdio_unreachable_hub() -> None:
     rc = await serve_stdio(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         ready_timeout=0.1,
         server_builder=lambda _bridge: RecordingStdioServer(),
     )

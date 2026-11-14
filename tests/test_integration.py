@@ -19,7 +19,7 @@ from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
 
 
-def _free_port() -> int:
+def free_port() -> int:
     """Reserve and release an ephemeral localhost port."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(("localhost", 0))
@@ -82,7 +82,7 @@ class Recorder:
 
 
 async def test_hub_and_clients_full_roundtrip() -> None:
-    port = _free_port()
+    port = free_port()
     hub = SynapseHub(hub_id="syn-itest")
     server = asyncio.create_task(hub.serve("localhost", port))
     uri = f"ws://localhost:{port}"
@@ -144,7 +144,7 @@ async def test_hub_and_clients_full_roundtrip() -> None:
 
 
 async def test_duplicate_name_is_rejected_end_to_end() -> None:
-    port = _free_port()
+    port = free_port()
     hub = SynapseHub()
     server = asyncio.create_task(hub.serve("localhost", port))
     uri = f"ws://localhost:{port}"
@@ -180,7 +180,7 @@ async def test_duplicate_name_is_rejected_end_to_end() -> None:
 
 
 async def test_file_scope_overlap_is_rejected_end_to_end() -> None:
-    port = _free_port()
+    port = free_port()
     hub = SynapseHub()
     server = asyncio.create_task(hub.serve("localhost", port))
     uri = f"ws://localhost:{port}"
@@ -224,7 +224,7 @@ async def test_file_scope_overlap_is_rejected_end_to_end() -> None:
 
 
 async def test_reconnect_resume_catches_up_end_to_end() -> None:
-    port = _free_port()
+    port = free_port()
     hub = SynapseHub()
     server = asyncio.create_task(hub.serve("localhost", port))
     uri = f"ws://localhost:{port}"
@@ -254,7 +254,7 @@ async def test_reconnect_resume_catches_up_end_to_end() -> None:
 
 
 async def test_metrics_and_health_endpoints_end_to_end() -> None:
-    port = _free_port()
+    port = free_port()
     hub = SynapseHub(hub_id="syn-metrics", enable_metrics=True)
     server = asyncio.create_task(hub.serve("localhost", port))
     uri = f"ws://localhost:{port}"
@@ -291,7 +291,7 @@ async def test_metrics_and_health_endpoints_end_to_end() -> None:
 
 
 async def test_circular_wait_is_refused_end_to_end() -> None:
-    port = _free_port()
+    port = free_port()
     hub = SynapseHub()
     server = asyncio.create_task(hub.serve("localhost", port))
     uri = f"ws://localhost:{port}"

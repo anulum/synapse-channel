@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 from websockets.exceptions import ConnectionClosedOK
 
-from hub_e2e_helpers import _await_listening, _free_port, read_until_type, running_hub
+from hub_e2e_helpers import _await_listening, free_port, read_until_type, running_hub
 from synapse_channel.core.frame_signature_gate import KEY_UNTRUSTED, FrameSignatureGate
 from synapse_channel.core.frame_signing import FrameSigningSessions
 from synapse_channel.core.handlers.delivery_modes import expire_due_deliveries
@@ -119,7 +119,7 @@ async def test_a_delivery_sweep_whose_store_fails_stops_the_hub_loudly(tmp_path:
     """A deadline sweep must not stop quietly: a store failure ends ``serve`` with its error."""
     store = EventStore(tmp_path / "hub.db")
     hub = SynapseHub(journal=store, hub_id="hub-1")
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port))
     await _await_listening(port)
     store.close()

@@ -17,7 +17,7 @@ from typing import Any, cast
 
 import pytest
 
-from a2a_server_helpers import RecordingAgent, _free_port
+from a2a_server_helpers import RecordingAgent, free_port
 from synapse_channel.a2a_conformance import conformance_rows
 from synapse_channel.a2a_grpc import (
     A2AGrpcClient,
@@ -36,7 +36,7 @@ pytestmark = pytest.mark.skipif(not grpc_available(), reason="grpcio not install
 async def test_native_grpc_exchange_preserves_operation_observation(tmp_path: Path) -> None:
     """The shipped JSON gRPC subset preserves outcomes across a real hub and peer reply."""
     async with live_bridge(tmp_path / "state.json") as (bridge, worker, http_port):
-        port, token = _free_port(), secrets.token_urlsafe(24)
+        port, token = free_port(), secrets.token_urlsafe(24)
         server, thread = start_grpc_in_background(
             bridge, host="127.0.0.1", port=port, policy=A2AGrpcPolicy(bearer_token=token)
         )
@@ -82,7 +82,7 @@ def test_grpc_send_message_and_get_task() -> None:
         target="WORKER",
         store=A2ATaskStore(),
     )
-    port = _free_port()
+    port = free_port()
     server, _thread = start_grpc_in_background(bridge, host="127.0.0.1", port=port)
     time.sleep(0.05)
     try:
@@ -116,7 +116,7 @@ def test_grpc_get_unknown_task_returns_not_found() -> None:
         target="WORKER",
         store=A2ATaskStore(),
     )
-    port = _free_port()
+    port = free_port()
     server, _thread = start_grpc_in_background(bridge, host="127.0.0.1", port=port)
     time.sleep(0.05)
     try:
@@ -143,7 +143,7 @@ def test_grpc_policy_requires_bearer_before_any_bridge_effect() -> None:
         target="WORKER",
         store=A2ATaskStore(),
     )
-    port = _free_port()
+    port = free_port()
     server, _thread = start_grpc_in_background(
         bridge,
         host="127.0.0.1",

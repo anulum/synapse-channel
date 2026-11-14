@@ -40,7 +40,7 @@ AUTHORITY = "a2a.example.test"
 TARGET = "credential-worker"
 
 
-def _free_port() -> int:
+def free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
@@ -49,7 +49,7 @@ def _free_port() -> int:
 @contextmanager
 def _serving(bridge: A2ABridge) -> Iterator[int]:
     """Serve ``bridge`` with the product HTTP server on a free loopback port."""
-    port = _free_port()
+    port = free_port()
     server = make_a2a_http_server(bridge=bridge, host="127.0.0.1", port=port)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

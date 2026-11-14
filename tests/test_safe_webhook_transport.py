@@ -126,7 +126,7 @@ def test_open_pinned_socket_falls_back_to_the_next_address() -> None:
 
 
 def test_open_pinned_socket_raises_when_no_address_is_reachable() -> None:
-    port = _free_port()
+    port = free_port()
     with pytest.raises(OSError):
         transport._open_pinned_socket(["127.0.0.2", "127.0.0.3"], port, 2.0)
 
@@ -562,7 +562,7 @@ class _Receiver:
     def __init__(self, *, certfile: Path | None = None, keyfile: Path | None = None) -> None:
         self.paths: list[str] = []
         self.methods: list[str] = []
-        self.port = _free_port()
+        self.port = free_port()
         self._scheme = "https" if certfile is not None else "http"
         owner = self
 
@@ -622,7 +622,7 @@ class _Redirect:
         self.always_redirect = always_redirect
         self.block_body_until_followed = block_body_until_followed
         self.followed = threading.Event()
-        self.port = _free_port()
+        self.port = free_port()
         self.paths: list[str] = []
         self.methods: list[str] = []
         self.sensitive_header_names: list[set[str]] = []
@@ -692,7 +692,7 @@ class _Redirect:
         self._thread.join(timeout=2.0)
 
 
-def _free_port() -> int:
+def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])

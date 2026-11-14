@@ -22,7 +22,7 @@ import pytest
 
 from _platform_caps import requires_sealed_launch
 from _portable_exec import install_posix_tool
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli, cli_doctor
 from synapse_channel.client.diagnostics import Diagnosis
 from synapse_channel.core.hub import SynapseHub
@@ -161,7 +161,7 @@ async def test_diagnose_unreachable_fails() -> None:
     code, lines, diagnoses = await cli_doctor._diagnose(
         feed_tail_reader=lambda _env: [],
         cursor_names_reader=lambda _env: [],
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         project="demorepo",
         agent_id=None,
         token=None,
@@ -631,7 +631,7 @@ def test_doctor_mcp_policy_prints_the_posture(capsys: pytest.CaptureFixture[str]
 def test_main_routes_to_doctor(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    port = _free_port()
+    port = free_port()
     assert cli.main(["doctor", "--uri", f"ws://127.0.0.1:{port}", "--project", "repo"]) == 1
     assert "did not answer" in capsys.readouterr().out
 

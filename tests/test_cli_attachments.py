@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives import serialization
 
 from cli_processes_helpers import _hub_ns
 from cli_processes_hub_helpers import _close_runner
-from hub_e2e_helpers import _await_listening, _free_port
+from hub_e2e_helpers import _await_listening, free_port
 from multihub_tls_helpers import certificate_authority, issue_identity
 from synapse_channel import cli_processes
 from synapse_channel.cli import build_parser
@@ -135,7 +135,7 @@ async def test_cli_recipient_policy_serves_the_governed_source_over_real_tls(
     auth.chmod(0o600)
     root = source.store.root
     source.store.close()
-    port = _free_port()
+    port = free_port()
     command = [
         str(Path(sys.executable).parent / "synapse"),
         "hub",

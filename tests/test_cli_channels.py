@@ -286,10 +286,10 @@ async def test_channel_cli_reports_no_reply_from_silent_hub(
 
 
 async def test_channel_cli_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
-    from hub_e2e_helpers import _free_port
+    from hub_e2e_helpers import free_port
 
     code = await cli_channels._run_channel_command(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="alice",
         token=None,
         command="list",

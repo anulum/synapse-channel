@@ -13,7 +13,7 @@ import json
 import pytest
 
 from http_server_helpers import LocalHttpResponder, keep_failure, unclosed_resources
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 from synapse_channel.client.chat_backends import (
     OpenAIChatClient,
     RuleBasedClient,
@@ -133,7 +133,7 @@ def test_generate_raises_on_connection_error() -> None:
     client = OpenAIChatClient(
         api_key="k",
         model="m",
-        base_url=f"http://127.0.0.1:{_free_port()}/v1",
+        base_url=f"http://127.0.0.1:{free_port()}/v1",
         timeout_seconds=3.0,
     )
     with pytest.raises(RuntimeError, match="connection error"):

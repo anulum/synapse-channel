@@ -35,7 +35,7 @@ from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
 
-def _free_port() -> int:
+def free_port() -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(("127.0.0.1", 0))
     port = int(sock.getsockname()[1])
@@ -82,7 +82,7 @@ def _running_server(
     max_concurrent_requests: int = DEFAULT_MAX_CONCURRENT_A2A_REQUESTS,
     request_read_timeout_seconds: float = DEFAULT_A2A_REQUEST_READ_TIMEOUT_SECONDS,
 ) -> Any:
-    port = _free_port()
+    port = free_port()
     server = make_a2a_http_server(
         bridge=bridge,
         host="127.0.0.1",

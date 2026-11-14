@@ -22,7 +22,7 @@ from typing import Any, cast
 
 import pytest
 
-from a2a_server_helpers import RecordingAgent, _free_port
+from a2a_server_helpers import RecordingAgent, free_port
 from synapse_channel.a2a_grpc import (
     METHOD_SEND,
     A2AGrpcClient,
@@ -195,7 +195,7 @@ def test_grpc_tls_and_mtls_profiles_fail_closed_and_accept_trusted_clients(
     )
     policy = A2AGrpcPolicy(bearer_token="profile-token")
 
-    tls_port = _free_port()
+    tls_port = free_port()
     tls_credentials = build_grpc_server_credentials(
         certfile=server_cert,
         keyfile=server_key,
@@ -230,7 +230,7 @@ def test_grpc_tls_and_mtls_profiles_fail_closed_and_accept_trusted_clients(
     finally:
         tls_server.stop(grace=None)
 
-    mtls_port = _free_port()
+    mtls_port = free_port()
     mtls_credentials = build_grpc_server_credentials(
         certfile=server_cert,
         keyfile=server_key,
@@ -351,7 +351,7 @@ def test_grpc_requires_bounded_deadline_and_rejects_oversized_input() -> None:
         target="WORKER",
         store=A2ATaskStore(),
     )
-    port = _free_port()
+    port = free_port()
     policy = A2AGrpcPolicy(
         max_receive_message_bytes=256,
         max_rpc_seconds=1.0,
@@ -427,7 +427,7 @@ def test_grpc_response_limit_and_duplicate_bearer_fail_before_disclosure() -> No
             return {"id": task_id, "secret": "s" * 512}
 
     bridge = LargeBridge()
-    port = _free_port()
+    port = free_port()
     server, _thread = start_grpc_in_background(
         bridge,
         host="127.0.0.1",
@@ -501,7 +501,7 @@ def test_grpc_admission_recovers_and_internal_errors_are_value_free() -> None:
             raise RuntimeError("/private/path bearer-value")
 
     bridge = BlockingBridge()
-    port = _free_port()
+    port = free_port()
     server, _thread = start_grpc_in_background(
         bridge,
         host="127.0.0.1",
@@ -577,7 +577,7 @@ def test_grpc_admission_recovers_after_client_deadline_expiry() -> None:
         store=A2ATaskStore(),
         submit=runtime.run,
     )
-    port = _free_port()
+    port = free_port()
     try:
         runtime._thread.start()
         server, _thread = start_grpc_in_background(

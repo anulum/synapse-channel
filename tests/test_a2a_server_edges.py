@@ -17,7 +17,7 @@ from urllib.error import URLError
 import pytest
 
 from a2a_server_helpers import RecordingAgent
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 from synapse_channel.a2a_http import make_a2a_http_server, parse_push_config_path
 from synapse_channel.a2a_push import http_push_deliverer
 from synapse_channel.a2a_server import A2ABridge, SynapseAgentRuntime
@@ -58,7 +58,7 @@ def test_http_push_deliverer_blocks_loopback_http_target() -> None:
 def test_make_a2a_http_server_serves_agent_card_over_real_http() -> None:
     import http.client
 
-    port = _free_port()
+    port = free_port()
     bridge = _bridge(allowed_authorities=(f"127.0.0.1:{port}",))
     server = make_a2a_http_server(bridge=bridge, host="127.0.0.1", port=port)
     thread = threading.Thread(target=server.serve_forever, daemon=True)

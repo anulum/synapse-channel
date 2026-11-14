@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from a2a_server_helpers import RecordingAgent, _default_bridge, _free_port
+from a2a_server_helpers import RecordingAgent, _default_bridge, free_port
 from synapse_channel.a2a_http import make_a2a_http_server
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
@@ -118,7 +118,7 @@ def test_mtls_client_cert_required_and_accepted(tmp_path: Path) -> None:
     context = build_mutual_tls_server_ssl_context(
         certfile=server_cert, keyfile=server_key, client_ca_file=ca
     )
-    port = _free_port()
+    port = free_port()
     bridge = A2ABridge(
         agent=RecordingAgent(),
         agent_card=_default_bridge().agent_card,

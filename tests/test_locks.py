@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.ergonomics import Identity
 from synapse_channel.locks import (
@@ -204,7 +204,7 @@ async def test_syn_locks_queries_real_hub(capsys: pytest.CaptureFixture[str]) ->
 
 
 async def test_syn_locks_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
-    code = await query_locks(_identity(), uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
+    code = await query_locks(_identity(), uri=f"ws://127.0.0.1:{free_port()}", ready_timeout=0.1)
 
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
@@ -214,8 +214,7 @@ def test_main_sync_wrapper_runs_async_query_for_ergonomics(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert (
-        main(_identity(), ["--uri", f"ws://127.0.0.1:{_free_port()}", "--ready-timeout", "0.1"])
-        == 1
+        main(_identity(), ["--uri", f"ws://127.0.0.1:{free_port()}", "--ready-timeout", "0.1"]) == 1
     )
     assert "Could not reach hub" in capsys.readouterr().out
 

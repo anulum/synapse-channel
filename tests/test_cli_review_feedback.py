@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from websockets.asyncio.server import ServerConnection, serve
 
-from hub_e2e_helpers import _free_port, connect_agent, running_hub
+from hub_e2e_helpers import connect_agent, free_port, running_hub
 from synapse_channel import cli_review_feedback
 from synapse_channel.core.approvals import APPROVAL_NOTE_KIND, format_approval_note
 from synapse_channel.core.hub import SynapseHub
@@ -795,7 +795,7 @@ async def test_delivery_without_a_hub_receipt_is_not_delivered() -> None:
             if frame.get("type") == MessageType.WHO_REQUEST:
                 await websocket.send(json.dumps({"type": MessageType.WHO_SNAPSHOT}))
 
-    port = _free_port()
+    port = free_port()
     server = await serve(receiptless_hub, "localhost", port)
     try:
         delivered = await cli_review_feedback._deliver(
@@ -834,7 +834,7 @@ async def test_delivery_receipt_reports_the_hub_result() -> None:
                     )
                 )
 
-    port = _free_port()
+    port = free_port()
     server = await serve(receipt_hub, "localhost", port)
     try:
         delivered = await cli_review_feedback._deliver(

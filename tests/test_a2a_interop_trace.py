@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from a2a_server_helpers import RecordingAgent, _default_bridge, _free_port
+from a2a_server_helpers import RecordingAgent, _default_bridge, free_port
 from synapse_channel import a2a_interop_trace as interop_module
 from synapse_channel import cli
 from synapse_channel.a2a_conformance import conformance_rows
@@ -41,7 +41,7 @@ from test_a2a_https_interop import _write_server_tls_pair
 
 
 def _serve_bridge(bridge: A2ABridge) -> tuple[ThreadingHTTPServer, int, threading.Thread]:
-    port = _free_port()
+    port = free_port()
     bridge.allowed_authorities = (f"127.0.0.1:{port}",)
     bridge.agent_card["supportedInterfaces"][0]["url"] = f"http://127.0.0.1:{port}"
     server = make_a2a_http_server(bridge=bridge, host="127.0.0.1", port=port)

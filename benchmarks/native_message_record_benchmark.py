@@ -167,7 +167,8 @@ def measure_parse(count: int, text_bytes: int) -> dict[str, Any]:
     }
 
 
-def _free_port() -> int:
+def free_port() -> int:
+    """Return a free IPv4 loopback TCP port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
         return int(probe.getsockname()[1])
@@ -221,7 +222,7 @@ async def _record_through(
 
     Returns the per-record round-trip latencies and the whole span, in seconds.
     """
-    port = _free_port()
+    port = free_port()
     serving = asyncio.create_task(hub.serve("127.0.0.1", port))
     latencies: list[float] = []
     try:

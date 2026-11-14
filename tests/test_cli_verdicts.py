@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel.cli import build_parser, main
 from synapse_channel.cli_hub_config import build_cli_hub_config
 from synapse_channel.cli_verdicts import post_record
@@ -162,7 +162,7 @@ async def test_cli_refusals_before_any_hub_contact(
     assert "lowercase hexadecimal" in capsys.readouterr().err
     assert await _cli("verdict", "status", str(tmp_path / "absent.db")) == 2
     assert "missing event store" in capsys.readouterr().err
-    unreachable = f"ws://127.0.0.1:{_free_port()}"
+    unreachable = f"ws://127.0.0.1:{free_port()}"
     body = format_correction(CorrectionRecord("LAB", RAW, RAW_FIXED, "x"))
     assert (
         await post_record(

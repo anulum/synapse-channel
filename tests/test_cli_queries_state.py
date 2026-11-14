@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli, cli_queries
 from synapse_channel.claim_state import fetch_state_snapshot
 from synapse_channel.core.hub import SynapseHub
@@ -161,7 +161,7 @@ async def test_state_lists_all_without_owner(capsys: pytest.CaptureFixture[str])
 
 async def test_state_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
     assert (
-        await cli_queries._state(uri=f"ws://127.0.0.1:{_free_port()}", name="U", ready_timeout=0.1)
+        await cli_queries._state(uri=f"ws://127.0.0.1:{free_port()}", name="U", ready_timeout=0.1)
         == 1
     )
     assert "Could not reach hub" in capsys.readouterr().out
@@ -187,7 +187,7 @@ async def test_state_query_fails_when_no_matching_snapshot() -> None:
 
 def test_cmd_state_dispatches_real_query() -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="U",
         owner=None,
         token=None,

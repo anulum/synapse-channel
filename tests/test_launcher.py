@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 from http_server_helpers import LocalHttpResponder
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 from synapse_channel.client.launcher import (
     FAST_MODEL_PREFERENCES,
     REASON_MODEL_PREFERENCES,
@@ -101,7 +101,7 @@ def test_detect_model_none_when_empty() -> None:
 
 
 def test_detect_model_none_on_error() -> None:
-    assert detect_model(["x"], base_url=f"http://127.0.0.1:{_free_port()}") is None
+    assert detect_model(["x"], base_url=f"http://127.0.0.1:{free_port()}") is None
 
 
 # --- command builders --------------------------------------------------------

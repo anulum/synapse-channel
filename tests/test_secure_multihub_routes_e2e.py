@@ -24,7 +24,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from websockets.asyncio.client import connect
 
-from hub_e2e_helpers import _await_listening, _free_port, read_until_type, send_json
+from hub_e2e_helpers import _await_listening, free_port, read_until_type, send_json
 from multihub_tls_helpers import TLSIdentity as _Identity
 from multihub_tls_helpers import certificate_authority as _certificate_authority
 from multihub_tls_helpers import issue_identity as _issue_identity
@@ -157,7 +157,7 @@ async def _running_secure_hub(
         keyfile=material.server.key,
         client_ca_file=material.ca,
     )
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port, ssl_context=context))
     try:
         await _await_listening(port)

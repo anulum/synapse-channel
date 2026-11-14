@@ -21,7 +21,7 @@ from websockets.exceptions import ConnectionClosed
 
 from hub_e2e_helpers import (
     _await_listening,
-    _free_port,
+    free_port,
     http_get,
     read_json,
     read_until_type,
@@ -196,7 +196,7 @@ class StopControlledHub(SynapseHub):
 
 async def test_serve_stop_event_closes_active_socket_and_unregisters() -> None:
     hub = StopControlledHub(shutdown_close_timeout=0.2)
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port))
     try:
         await _await_listening(port)
@@ -228,7 +228,7 @@ async def test_claim_before_shutdown_replays_from_journal(tmp_path: Path) -> Non
         hub_id="syn-test",
         shutdown_close_timeout=0.2,
     )
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port))
     try:
         await _await_listening(port)

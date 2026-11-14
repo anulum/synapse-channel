@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.asyncio.client import connect
 
-from hub_e2e_helpers import _await_listening, _free_port, read_until_type, running_hub
+from hub_e2e_helpers import _await_listening, free_port, read_until_type, running_hub
 from multihub_tls_helpers import certificate_authority, issue_identity
 from synapse_channel.core.acl import ATTACHMENT_READ, AclPolicy, AclRule
 from synapse_channel.core.attachment_serving import AttachmentServingPolicy
@@ -443,7 +443,7 @@ async def test_real_mtls_certificate_binds_recipient_and_checks_revocation(
         clock=time.time,
     )
     context = build_server_ssl_context(certfile=server.cert, keyfile=server.key, client_ca_file=ca)
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(source.hub.serve("localhost", port, ssl_context=context))
     try:
         await _await_listening(port)
@@ -541,7 +541,7 @@ async def test_pinned_source_tls_is_verified_before_registration(
     ca_key, ca_cert = certificate_authority("attachment-source-pin-ca")
     server = issue_identity(tmp_path, "pinned-server", ca_key=ca_key, ca_cert=ca_cert, server=True)
     context = build_server_ssl_context(certfile=server.cert, keyfile=server.key)
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(source.hub.serve("localhost", port, ssl_context=context))
     try:
         await _await_listening(port)

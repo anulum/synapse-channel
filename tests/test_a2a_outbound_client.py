@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from a2a_server_helpers import RecordingAgent, _default_bridge, _free_port
+from a2a_server_helpers import RecordingAgent, _default_bridge, free_port
 from synapse_channel import a2a_client as a2a_client_module
 from synapse_channel import cli, cli_a2a_client
 from synapse_channel.a2a_client import (
@@ -39,7 +39,7 @@ from synapse_channel.a2a_store import A2ATaskStore
 
 
 def _serve(bridge: A2ABridge) -> tuple[ThreadingHTTPServer, int]:
-    port = _free_port()
+    port = free_port()
     bridge.allowed_authorities = (f"127.0.0.1:{port}",)
     interfaces = bridge.agent_card.get("supportedInterfaces")
     if isinstance(interfaces, list) and interfaces and isinstance(interfaces[0], dict):

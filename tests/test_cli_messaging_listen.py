@@ -15,7 +15,7 @@ from typing import Any, cast
 
 import pytest
 
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli_messaging
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.core.auth import TokenAuthenticator
@@ -78,7 +78,7 @@ async def test_listen_neutralises_terminal_controls(capsys: pytest.CaptureFixtur
 
 def test_cmd_listen_dispatches_real_command(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="USER",
         token=None,
         for_name=None,
@@ -154,7 +154,7 @@ async def test_listen_reports_an_unreadable_decryption_key(
 
     missing = Path(str(tmp_path)) / "absent.key"
     code = await cli_messaging._listen(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="LISTENER",
         decrypt_key_file=str(missing),
     )

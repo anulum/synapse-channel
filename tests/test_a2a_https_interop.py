@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from a2a_server_helpers import RecordingAgent, _default_bridge, _free_port
+from a2a_server_helpers import RecordingAgent, _default_bridge, free_port
 from synapse_channel.a2a_client import A2AOutboundClient
 from synapse_channel.a2a_http import A2AHTTPServer, make_a2a_http_server
 from synapse_channel.a2a_interop_trace import RECEIPT_SCHEMA, run_local_interop_trace
@@ -64,7 +64,7 @@ def _write_server_tls_pair(tmp_path: Path) -> tuple[Path, Path]:
 def _serve_https(
     bridge: A2ABridge, certfile: Path, keyfile: Path
 ) -> tuple[A2AHTTPServer, int, threading.Thread]:
-    port = _free_port()
+    port = free_port()
     bridge.allowed_authorities = (f"127.0.0.1:{port}",)
     interfaces = bridge.agent_card.get("supportedInterfaces")
     if isinstance(interfaces, list) and interfaces and isinstance(interfaces[0], dict):

@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.error import HTTPError
 
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 
 
 @contextlib.contextmanager
@@ -118,7 +118,7 @@ class LocalHttpResponder:
         self.content_type = content_type
         self.response_headers = response_headers or {}
         self.requests: list[RecordedHttpRequest] = []
-        self.port = _free_port()
+        self.port = free_port()
         owner = self
 
         class Handler(BaseHTTPRequestHandler):

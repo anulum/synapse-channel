@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 from synapse_channel import cli, cli_processes
 from synapse_channel.client.launcher import plan_team
 
@@ -64,7 +64,7 @@ def test_cmd_team_threads_arguments_to_launcher() -> None:
 
 def test_cmd_supervisor_runs_real_unreachable_path() -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="SUPERVISOR",
         idle_seconds=300.0,
         interval=30.0,
@@ -76,7 +76,7 @@ def test_cmd_supervisor_runs_real_unreachable_path() -> None:
 
 def test_cmd_supervisor_handles_interrupt(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="SUPERVISOR",
         idle_seconds=300.0,
         interval=30.0,

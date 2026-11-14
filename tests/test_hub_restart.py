@@ -66,7 +66,7 @@ def _user_manager_available() -> bool:
     return completed.returncode == 0 and bool(completed.stdout.strip())
 
 
-def _free_port() -> int:
+def free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         return int(probe.getsockname()[1])
@@ -184,7 +184,7 @@ class OwnedFleet:
 def fleet(tmp_path: Path) -> Iterator[OwnedFleet]:
     if not _user_manager_available():
         pytest.skip("no systemd user manager answers here")
-    owned = OwnedFleet(tag=uuid.uuid4().hex[:10], port=_free_port(), workdir=tmp_path)
+    owned = OwnedFleet(tag=uuid.uuid4().hex[:10], port=free_port(), workdir=tmp_path)
     try:
         yield owned
     finally:
@@ -416,7 +416,7 @@ def test_the_probe_reports_an_absent_hub_and_a_refusing_hub_without_raising(
 def test_the_probe_reports_a_hub_that_welcomes_and_then_closes(tmp_path: Path) -> None:
     # A hub can accept a client, welcome it and close at once, for example on
     # an identity pin mismatch. The question then fails while it is sent.
-    port = _free_port()
+    port = free_port()
     script = tmp_path / "closing_hub.py"
     script.write_text(
         "import asyncio, json, sys\n"

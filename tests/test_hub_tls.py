@@ -19,7 +19,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from websockets.asyncio.client import connect
 
-from hub_e2e_helpers import _await_listening, _free_port, read_until_type
+from hub_e2e_helpers import _await_listening, free_port, read_until_type
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.tls import (
     HubTLSConfigError,
@@ -94,7 +94,7 @@ async def test_hub_serves_real_wss_connection(tmp_path: Path) -> None:
     client_context.verify_mode = ssl.CERT_NONE
 
     hub = SynapseHub(hub_id="syn-wss")
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
     try:
         await _await_listening(port)

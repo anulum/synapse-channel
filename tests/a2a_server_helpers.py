@@ -76,7 +76,7 @@ class BridgeRef:
     bridge: A2ABridge
 
 
-def _free_port() -> int:
+def free_port() -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(("127.0.0.1", 0))
     port = int(sock.getsockname()[1])
@@ -163,7 +163,7 @@ class HandlerHarness:
             # Some legacy tests replace ``handler.bridge`` after construction.
             # Keep the real HTTP harness explicit and bounded in that setup too.
             self.handler.bridge.allowed_authorities = ("example.test",)
-        port = _free_port()
+        port = free_port()
         # The product's own server class, so that a route test meets the same
         # edge a deployment has: admission bound, read deadline and orderly close.
         server = make_a2a_http_server(bridge=self.handler.bridge, host="127.0.0.1", port=port)

@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 from typing import Any
 
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 from synapse_channel.mcp.server import DEFAULT_REQUEST_TIMEOUT
 
 
@@ -30,7 +30,7 @@ def mcp_namespace(**overrides: Any) -> argparse.Namespace:
         The arguments, as the parser would hand them to the handler.
     """
     base: dict[str, Any] = {
-        "uri": f"ws://localhost:{_free_port()}",
+        "uri": f"ws://localhost:{free_port()}",
         "name": "bridge",
         "token": None,
         "token_file": None,

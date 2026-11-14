@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from _platform_caps import requires_posix_mode_bits
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli, cli_a2a
 from synapse_channel.a2a_conformance import SPEC_VERSION
 from synapse_channel.a2a_server import SynapseAgentRuntime
@@ -175,7 +175,7 @@ async def test_a2a_card_reports_unreachable_hub(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     rc = await cli_a2a._a2a_card(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="A2A-TEST",
         endpoint_url="https://example.test/a2a/v1",
         ready_timeout=0.1,
@@ -221,7 +221,7 @@ async def test_fetch_manifest_returns_live_manifest() -> None:
 
 async def test_fetch_manifest_returns_none_when_hub_never_becomes_ready() -> None:
     manifest = await cli_a2a._fetch_manifest(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="A2A-BOOT",
         token=None,
         ready_timeout=0.1,
@@ -742,7 +742,7 @@ def test_cmd_a2a_serve_bounds_the_real_runtime_and_stops_it_when_the_hub_is_abse
         created.append(runtime)
         return runtime
 
-    port = _free_port()
+    port = free_port()
     ns = cli.build_parser().parse_args(
         [
             "a2a-serve",

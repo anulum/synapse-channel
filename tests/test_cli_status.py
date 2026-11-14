@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli, cli_status
 from synapse_channel.cli_status import (
     HubStatus,
@@ -153,9 +153,7 @@ async def test_query_status_counts_online_agents_excluding_probe() -> None:
 
 
 async def test_query_status_reports_unreachable_hub() -> None:
-    status = await query_status(
-        uri=f"ws://127.0.0.1:{_free_port()}", name="USER", ready_timeout=0.1
-    )
+    status = await query_status(uri=f"ws://127.0.0.1:{free_port()}", name="USER", ready_timeout=0.1)
     assert status == HubStatus(
         reachable=False,
         roster_available=False,
@@ -197,7 +195,7 @@ def test_cmd_status_prints_offline_and_exits_nonzero(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     code = cli_status._cmd_status(
-        _namespace(uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
+        _namespace(uri=f"ws://127.0.0.1:{free_port()}", ready_timeout=0.1)
     )
     assert code == 1
     assert capsys.readouterr().out.strip() == "synapse ○ offline"
@@ -205,7 +203,7 @@ def test_cmd_status_prints_offline_and_exits_nonzero(
 
 def test_cmd_status_plain_offline_is_ascii(capsys: pytest.CaptureFixture[str]) -> None:
     code = cli_status._cmd_status(
-        _namespace(uri=f"ws://127.0.0.1:{_free_port()}", plain=True, ready_timeout=0.1)
+        _namespace(uri=f"ws://127.0.0.1:{free_port()}", plain=True, ready_timeout=0.1)
     )
     assert code == 1
     assert capsys.readouterr().out.strip() == "synapse offline"
@@ -346,7 +344,7 @@ def test_cmd_status_json_offline_reports_unreachable(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     code = cli_status._cmd_status(
-        _namespace(uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1, as_json=True)
+        _namespace(uri=f"ws://127.0.0.1:{free_port()}", ready_timeout=0.1, as_json=True)
     )
     assert code == 1
     payload = json.loads(capsys.readouterr().out)
@@ -471,7 +469,7 @@ def test_watch_offline_appends_lines_and_exits_one() -> None:
     out = _FakeTty(tty=False)
     code = asyncio.run(
         cli_status.watch_status(
-            uri=f"ws://127.0.0.1:{_free_port()}",
+            uri=f"ws://127.0.0.1:{free_port()}",
             ready_timeout=0.05,
             interval=0.01,
             count=2,
@@ -488,7 +486,7 @@ def test_watch_json_emits_ndjson() -> None:
     out = _FakeTty(tty=False)
     code = asyncio.run(
         cli_status.watch_status(
-            uri=f"ws://127.0.0.1:{_free_port()}",
+            uri=f"ws://127.0.0.1:{free_port()}",
             ready_timeout=0.05,
             interval=0.01,
             count=2,
@@ -506,7 +504,7 @@ def test_watch_tty_rewrites_in_place_and_restores_the_newline() -> None:
     out = _FakeTty(tty=True)
     asyncio.run(
         cli_status.watch_status(
-            uri=f"ws://127.0.0.1:{_free_port()}",
+            uri=f"ws://127.0.0.1:{free_port()}",
             ready_timeout=0.05,
             interval=0.01,
             count=2,
@@ -547,7 +545,7 @@ def test_cmd_status_watch_dispatches_and_bounds_refreshes(
 ) -> None:
     code = cli_status._cmd_status(
         _namespace(
-            uri=f"ws://127.0.0.1:{_free_port()}",
+            uri=f"ws://127.0.0.1:{free_port()}",
             ready_timeout=0.05,
             watch=True,
             count=2,

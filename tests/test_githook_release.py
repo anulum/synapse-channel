@@ -21,7 +21,7 @@ from websockets.asyncio.server import ServerConnection, serve
 
 from claim_outcome_helpers import ClaimProxy, claim_proxy
 from cli_e2e_helpers import git_repo, git_run
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel.cli_locking import _lock
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.protocol import MessageType
@@ -259,7 +259,7 @@ async def test_unknown_repository_identity_returns_before_the_hub(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A runner that is not a repository exits 0 without opening a hub connection."""
-    port = _free_port()
+    port = free_port()
     rc = await run_git_release(
         uri=f"ws://localhost:{port}",
         name="me",

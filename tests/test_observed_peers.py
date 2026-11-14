@@ -193,7 +193,7 @@ async def test_pinned_observed_peer_pulls_a_self_signed_tls_hub(tmp_path: Path) 
     """
     import subprocess
 
-    from hub_e2e_helpers import _await_listening, _free_port
+    from hub_e2e_helpers import _await_listening, free_port
     from synapse_channel.core.hub import SynapseHub
     from synapse_channel.core.persistence import EventStore
     from synapse_channel.core.tls import build_server_ssl_context, certificate_sha256_pin
@@ -225,7 +225,7 @@ async def test_pinned_observed_peer_pulls_a_self_signed_tls_hub(tmp_path: Path) 
     )
     store = EventStore(tmp_path / "events.db")
     hub = SynapseHub(hub_id="syn-pinned", journal=store)
-    port = _free_port()
+    port = free_port()
     server_context = build_server_ssl_context(certfile=certfile, keyfile=keyfile)
     task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
     try:

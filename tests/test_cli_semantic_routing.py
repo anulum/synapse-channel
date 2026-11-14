@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli, cli_semantic_routing
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
@@ -181,7 +181,7 @@ async def test_route_task_reports_missing_task(capsys: pytest.CaptureFixture[str
 
 async def test_route_task_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
     code = await cli_semantic_routing._route_task(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="ROUTER",
         task_id="ROUTE-1",
         ready_timeout=0.1,
@@ -193,7 +193,7 @@ async def test_route_task_reports_unreachable_hub(capsys: pytest.CaptureFixture[
 
 def test_cmd_route_task_dispatches_real_query() -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="ROUTER",
         token=None,
         ready_timeout=0.1,

@@ -160,7 +160,7 @@ def test_webhook_delivery_pins_the_validated_address_and_rejects_rebinding(
 class _WebhookReceiver:
     def __init__(self, *, certfile: Path | None = None, keyfile: Path | None = None) -> None:
         self.requests: list[dict[str, Any]] = []
-        self.port = _free_port()
+        self.port = free_port()
         self._scheme = "https" if certfile is not None else "http"
         owner = self
 
@@ -219,7 +219,7 @@ class _RedirectProxy:
         keyfile: Path | None = None,
     ) -> None:
         self.location = location
-        self.port = _free_port()
+        self.port = free_port()
         self.requests: list[dict[str, str]] = []
         self.sensitive_header_names: list[set[str]] = []
         self._scheme = "https" if certfile is not None else "http"
@@ -266,7 +266,7 @@ class _RedirectProxy:
         self._thread.join(timeout=2.0)
 
 
-def _free_port() -> int:
+def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])

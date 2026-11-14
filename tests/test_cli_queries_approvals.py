@@ -12,7 +12,7 @@ import argparse
 
 import pytest
 
-from hub_e2e_helpers import _free_port, running_hub
+from hub_e2e_helpers import free_port, running_hub
 from synapse_channel import cli_queries
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.operator_relay import RELAY_RELEASE
@@ -61,7 +61,7 @@ async def test_approvals_states_an_empty_ledger_plainly(
 async def test_approvals_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
     assert (
         await cli_queries._approvals(
-            uri=f"ws://127.0.0.1:{_free_port()}", name="U", ready_timeout=0.1
+            uri=f"ws://127.0.0.1:{free_port()}", name="U", ready_timeout=0.1
         )
         == 1
     )
@@ -70,7 +70,7 @@ async def test_approvals_reports_unreachable(capsys: pytest.CaptureFixture[str])
 
 def test_cmd_approvals_dispatches_real_query() -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="U",
         token=None,
         ready_timeout=0.1,

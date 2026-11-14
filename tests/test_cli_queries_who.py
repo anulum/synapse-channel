@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli, cli_queries
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.client.agent_dispatch import MessageCallback
@@ -175,7 +175,7 @@ async def test_who_me_reports_a_pane_bridge_as_the_live_waiter(
 
 
 async def test_who_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
-    code = await cli_queries._who(uri=f"ws://127.0.0.1:{_free_port()}", name="U", ready_timeout=0.1)
+    code = await cli_queries._who(uri=f"ws://127.0.0.1:{free_port()}", name="U", ready_timeout=0.1)
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
 
@@ -198,7 +198,7 @@ async def test_query_hub_refuses_success_when_no_matching_snapshot() -> None:
 
 def test_cmd_who_dispatches_real_query() -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="U",
         project=None,
         me=False,

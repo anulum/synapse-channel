@@ -17,7 +17,7 @@ import pytest
 
 from claim_outcome_helpers import ClaimProxy, claim_proxy
 from cli_e2e_helpers import git_repo, git_run
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel.git.gitclaim import run_git_claim
 from synapse_channel.git.githook import run_git_release
 from synapse_channel.git.semantic_scope import semantic_scope_path
@@ -37,7 +37,7 @@ async def test_unreachable_hub_from_a_real_repository_never_blocks(
 ) -> None:
     """The hook resolves the real repository, finds no hub, reports it and exits 0."""
     monkeypatch.chdir(_committed_repo(tmp_path))
-    uri = f"ws://127.0.0.1:{_free_port()}"
+    uri = f"ws://127.0.0.1:{free_port()}"
     assert await run_git_release(uri=uri, name="me", trigger="commit", ready_timeout=0.2) == 0
     assert f"[me] Could not reach hub at {uri}." in capsys.readouterr().out
 

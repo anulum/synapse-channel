@@ -14,7 +14,7 @@ import contextlib
 import pytest
 
 from client_helpers import connected_recording_agent, wait_for_recorded_count
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 from synapse_channel.client.agent import SynapseAgent
 
 
@@ -61,7 +61,7 @@ async def test_wait_until_ready_times_out() -> None:
 
 
 def test_start_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
-    agent = SynapseAgent("A", uri=f"ws://127.0.0.1:{_free_port()}", verbose=True)
+    agent = SynapseAgent("A", uri=f"ws://127.0.0.1:{free_port()}", verbose=True)
 
     agent.start()
 
@@ -70,7 +70,7 @@ def test_start_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> No
 
 
 def test_start_unreachable_hub_quiet(capsys: pytest.CaptureFixture[str]) -> None:
-    agent = SynapseAgent("A", uri=f"ws://127.0.0.1:{_free_port()}", verbose=False)
+    agent = SynapseAgent("A", uri=f"ws://127.0.0.1:{free_port()}", verbose=False)
 
     agent.start()
 

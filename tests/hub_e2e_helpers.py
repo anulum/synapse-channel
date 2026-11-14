@@ -44,7 +44,7 @@ _MULTIHUB_NAMESPACE = "SYNAPSE-CHANNEL"
 _MULTIHUB_KEY_ID = "test-follower-key"
 
 
-def _free_port() -> int:
+def free_port() -> int:
     """Return a loopback port free on IPv4 and, where IPv6 exists, on ``::1`` too.
 
     A hub bound to ``localhost`` listens on both families. A port that is free on

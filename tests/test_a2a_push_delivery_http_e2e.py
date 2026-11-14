@@ -16,7 +16,7 @@ from typing import Any
 from urllib.error import URLError
 
 from a2a_server_helpers import RecordingAgent
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 from synapse_channel.a2a_http import make_a2a_http_server
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
@@ -46,7 +46,7 @@ def _request_json(
 def test_real_http_failure_keeps_task_and_evidence_survives_restart(tmp_path: Path) -> None:
     """A real protected route exposes dead-letter evidence after task acceptance."""
     state_file = tmp_path / "a2a-state.json"
-    port = _free_port()
+    port = free_port()
     attempts = 0
 
     def fail(_delivery: dict[str, Any]) -> None:

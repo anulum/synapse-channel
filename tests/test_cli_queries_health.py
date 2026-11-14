@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from hub_e2e_helpers import _free_port, running_hub
+from hub_e2e_helpers import free_port, running_hub
 from synapse_channel import cli_queries
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
@@ -33,7 +33,7 @@ async def test_health_ok_when_ready() -> None:
 
 async def test_health_fail_when_unreachable() -> None:
     code = await cli_queries._health(
-        uri=f"ws://127.0.0.1:{_free_port()}", name="H", ready_timeout=0.1
+        uri=f"ws://127.0.0.1:{free_port()}", name="H", ready_timeout=0.1
     )
     assert code == 1
 
@@ -44,7 +44,7 @@ async def test_drop_message_is_noop() -> None:
 
 def test_cmd_health_dispatches_real_probe() -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}", name="H", token=None, ready_timeout=0.1
+        uri=f"ws://127.0.0.1:{free_port()}", name="H", token=None, ready_timeout=0.1
     )
     assert cli_queries._cmd_health(ns) == 1
 
@@ -94,7 +94,7 @@ async def test_health_signs_its_registration_for_an_identity_bound_hub(tmp_path:
 
 def _health_args(**overrides: object) -> argparse.Namespace:
     values: dict[str, object] = {
-        "uri": f"ws://127.0.0.1:{_free_port()}",
+        "uri": f"ws://127.0.0.1:{free_port()}",
         "name": "HEALTH",
         "token": None,
         "ready_timeout": 0.1,

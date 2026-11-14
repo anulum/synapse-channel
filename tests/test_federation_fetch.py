@@ -19,7 +19,7 @@ from typing import Any, cast
 import pytest
 from websockets.exceptions import ConnectionClosed
 
-from hub_e2e_helpers import _await_listening, _free_port, running_hub
+from hub_e2e_helpers import _await_listening, free_port, running_hub
 from synapse_channel.core.federation import FederationPeer, ScopeGrant
 from synapse_channel.core.federation_fetch import (
     FederationFetchError,
@@ -290,7 +290,7 @@ async def test_pinned_fetch_accepts_a_self_signed_wss_peer(tmp_path: Path) -> No
     server_context = build_server_ssl_context(certfile=certfile, keyfile=keyfile)
     pin = certificate_sha256_pin(certfile)
     hub = SynapseHub(hub_id="syn-pinned", federation_offer_path=offer)
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
     try:
         await _await_listening(port)
@@ -313,7 +313,7 @@ async def test_pinned_fetch_rejects_a_mismatched_certificate_pin(tmp_path: Path)
     certfile, keyfile = _write_self_signed_cert(tmp_path)
     server_context = build_server_ssl_context(certfile=certfile, keyfile=keyfile)
     hub = SynapseHub(hub_id="syn-pinned", federation_offer_path=offer)
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
     try:
         await _await_listening(port)

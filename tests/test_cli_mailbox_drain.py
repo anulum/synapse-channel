@@ -57,7 +57,7 @@ def _run(args: Any, **kwargs: Any) -> tuple[int, list[str]]:
     return code, lines
 
 
-def _free_port() -> int:
+def free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         return int(probe.getsockname()[1])
@@ -173,7 +173,7 @@ async def test_a_refused_mailbox_is_reported_and_the_drain_goes_on(tmp_path: Pat
 def test_an_unreachable_hub_gives_no_verdict(tmp_path: Path) -> None:
     db = tmp_path / "hub.db"
     _store(db)
-    uri = f"ws://127.0.0.1:{_free_port()}"
+    uri = f"ws://127.0.0.1:{free_port()}"
     args = _args(
         db, "--name", "P/boss", "--close", "--execute", "--uri", uri, "--ready-timeout", "0.3"
     )

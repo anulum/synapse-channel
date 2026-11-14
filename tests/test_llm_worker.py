@@ -19,7 +19,7 @@ from contextlib import contextmanager
 import pytest
 
 from http_server_helpers import LocalHttpResponder
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
 from synapse_channel.client.chat_backends import OpenAIChatClient, RuleBasedClient
 from synapse_channel.client.llm_worker import (
     DEFAULT_OLLAMA_BASE_URL,
@@ -355,12 +355,12 @@ async def test_worker_loop_processes_queued_message() -> None:
 
 
 async def test_run_completes_when_connection_finishes() -> None:
-    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
+    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{free_port()}", ready_timeout=0.1)
     await worker.run()
 
 
 async def test_run_warns_on_handshake_timeout(capsys: pytest.CaptureFixture[str]) -> None:
-    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
+    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{free_port()}", ready_timeout=0.1)
     await worker.run()
     assert "handshake timeout" in capsys.readouterr().out
 
@@ -406,7 +406,7 @@ async def test_run_advertises_capability_card_when_ready() -> None:
 async def test_run_skips_advertise_on_handshake_timeout(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
+    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{free_port()}", ready_timeout=0.1)
     await worker.run()
     assert "handshake timeout" in capsys.readouterr().out
 
@@ -415,7 +415,7 @@ async def test_run_cancels_the_worker_loop_when_the_connection_ends(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The surviving task is cancelled the moment its sibling completes."""
-    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
+    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{free_port()}", ready_timeout=0.1)
 
     started = asyncio.Event()
     cancelled = asyncio.Event()

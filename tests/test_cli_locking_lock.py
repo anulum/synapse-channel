@@ -18,7 +18,7 @@ import pytest
 
 from cli_e2e_helpers import git_repo, run_cli
 from cli_lock_release_helpers import release_reply_proxy
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli, cli_locking
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
@@ -231,7 +231,7 @@ async def test_lock_fails_fast_when_held(capsys: pytest.CaptureFixture[str]) -> 
 
 async def test_lock_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
     code = await cli_locking._lock(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="X",
         task_id="g",
         command=["x"],
@@ -273,7 +273,7 @@ async def test_lock_times_out_while_held(capsys: pytest.CaptureFixture[str]) -> 
 
 def test_cmd_lock_dispatches_real_command(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="X",
         task_id="g",
         command=["x"],

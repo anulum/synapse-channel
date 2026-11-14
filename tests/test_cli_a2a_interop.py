@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from a2a_server_helpers import _default_bridge, _free_port
+from a2a_server_helpers import _default_bridge, free_port
 from synapse_channel import cli, cli_a2a_interop
 from synapse_channel.a2a_http import make_a2a_http_server
 from synapse_channel.a2a_interop_trace import RECEIPT_SCHEMA
@@ -29,7 +29,7 @@ from synapse_channel.a2a_server import A2ABridge
 def live_bridge() -> Iterator[tuple[A2ABridge, int]]:
     """Run the production A2A HTTP handler on a disposable loopback port."""
     bridge = _default_bridge()
-    server = make_a2a_http_server(bridge=bridge, host="127.0.0.1", port=_free_port())
+    server = make_a2a_http_server(bridge=bridge, host="127.0.0.1", port=free_port())
     bridge.allowed_authorities = (f"127.0.0.1:{server.server_port}",)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

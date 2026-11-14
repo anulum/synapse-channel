@@ -22,7 +22,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosedError, InvalidStatus
 from websockets.frames import Close
 
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel.client.agent import (
     DEFAULT_HUB_URI,
     HUB_URI_ENV_VAR,
@@ -365,13 +365,13 @@ async def test_connect_stops_when_running_cleared_by_callback() -> None:
 
 
 async def test_connect_handles_connection_refused(capsys: pytest.CaptureFixture[str]) -> None:
-    agent = SynapseAgent("A", uri=f"ws://localhost:{_free_port()}", verbose=True)
+    agent = SynapseAgent("A", uri=f"ws://localhost:{free_port()}", verbose=True)
     await agent.connect()
     assert "could not connect" in capsys.readouterr().out
 
 
 async def test_connect_refused_quiet(capsys: pytest.CaptureFixture[str]) -> None:
-    agent = SynapseAgent("A", uri=f"ws://localhost:{_free_port()}", verbose=False)
+    agent = SynapseAgent("A", uri=f"ws://localhost:{free_port()}", verbose=False)
     await agent.connect()
     assert capsys.readouterr().out == ""
 
@@ -417,9 +417,7 @@ async def test_verbose_agent_reports_a_refused_connection(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A verbose agent prints the is-the-hub-running hint on a dead port."""
-    agent = SynapseAgent(
-        "LONELY", _noop_handler, uri=f"ws://127.0.0.1:{_free_port()}", verbose=True
-    )
+    agent = SynapseAgent("LONELY", _noop_handler, uri=f"ws://127.0.0.1:{free_port()}", verbose=True)
     await agent.connect()
     out = capsys.readouterr().out
     assert "could not connect. Is the hub running?" in out
@@ -606,7 +604,7 @@ async def test_overlapping_connect_is_refused_while_a_session_is_live() -> None:
 
 
 async def test_a_refused_attempt_leaves_the_agent_reusable_for_a_live_hub() -> None:
-    port = _free_port()
+    port = free_port()
     agent = SynapseAgent(
         "lifecycle/retry", uri=f"ws://127.0.0.1:{port}", verbose=False, machine_identity=False
     )

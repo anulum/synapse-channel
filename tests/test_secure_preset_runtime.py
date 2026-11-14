@@ -271,7 +271,7 @@ _E2E_HMAC_SECRET = "shared-hmac-secret"
 _E2E_CHAT = "secure preset end-to-end proof"
 
 
-def _free_port() -> int:
+def free_port() -> int:
     """Reserve an ephemeral port for the end-to-end hub."""
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -413,7 +413,7 @@ def test_cmd_hub_secure_serves_a_real_wss_identity_client_end_to_end(
     )
     key_path.chmod(0o600)
     trust_path = _write_identity_trust_for(tmp_path, private_key, key_id="e2e", sender=_E2E_AGENT)
-    port = _free_port()
+    port = free_port()
     db_path = tmp_path / "secure-e2e-hub.db"
     args = _secure_args(
         tmp_path,

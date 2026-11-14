@@ -12,7 +12,7 @@ import argparse
 
 import pytest
 
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli_queries
 from synapse_channel.core.hub import SynapseHub
 
@@ -53,7 +53,7 @@ async def test_dead_letters_states_an_empty_ledger_plainly(
 async def test_dead_letters_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
     assert (
         await cli_queries._dead_letters(
-            uri=f"ws://127.0.0.1:{_free_port()}", name="U", ready_timeout=0.1
+            uri=f"ws://127.0.0.1:{free_port()}", name="U", ready_timeout=0.1
         )
         == 1
     )
@@ -62,7 +62,7 @@ async def test_dead_letters_reports_unreachable(capsys: pytest.CaptureFixture[st
 
 def test_cmd_dead_letters_dispatches_real_query() -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="U",
         token=None,
         ready_timeout=0.1,

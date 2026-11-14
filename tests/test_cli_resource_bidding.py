@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli, cli_resource_bidding
 from synapse_channel.core.hub import SynapseHub
 
@@ -133,7 +133,7 @@ async def test_resource_bids_reports_unreachable_hub(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     code = await cli_resource_bidding._resource_bids(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="BIDDER",
         task_id="TRAIN",
         ready_timeout=0.1,
@@ -145,7 +145,7 @@ async def test_resource_bids_reports_unreachable_hub(
 
 def test_cmd_resource_bids_dispatches_real_query() -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="BIDDER",
         task_id="TRAIN",
         token=None,

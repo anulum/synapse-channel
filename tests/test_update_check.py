@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from http_server_helpers import LocalHttpResponder
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 from synapse_channel import update_check as uc
 
 
@@ -79,7 +79,7 @@ def test_fetch_latest_success() -> None:
 
 
 def test_fetch_latest_network_error() -> None:
-    assert uc._fetch_latest(url=f"http://127.0.0.1:{_free_port()}") is None
+    assert uc._fetch_latest(url=f"http://127.0.0.1:{free_port()}") is None
 
 
 def test_fetch_latest_bad_json() -> None:

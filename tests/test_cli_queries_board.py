@@ -12,7 +12,7 @@ import argparse
 
 import pytest
 
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli_queries
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
@@ -89,7 +89,7 @@ async def test_board_prints_snapshot(capsys: pytest.CaptureFixture[str]) -> None
 
 async def test_board_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
     code = await cli_queries._board(
-        uri=f"ws://127.0.0.1:{_free_port()}", name="USER", ready_timeout=0.1
+        uri=f"ws://127.0.0.1:{free_port()}", name="USER", ready_timeout=0.1
     )
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
@@ -113,7 +113,7 @@ async def test_board_query_fails_when_no_matching_snapshot() -> None:
 
 def test_cmd_board_dispatches_real_query() -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}", name="USER", token=None, ready_timeout=0.1
+        uri=f"ws://127.0.0.1:{free_port()}", name="USER", token=None, ready_timeout=0.1
     )
     assert cli_queries._cmd_board(ns) == 1
 

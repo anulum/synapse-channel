@@ -31,7 +31,7 @@ import pytest
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
-from hub_e2e_helpers import _free_port, read_until_type
+from hub_e2e_helpers import free_port, read_until_type
 from multihub_tls_helpers import TLSIdentity, certificate_authority, issue_identity
 from synapse_channel.core.federation import FederationBundle, FederationPeer
 from synapse_channel.core.hub import SynapseHub
@@ -242,7 +242,7 @@ async def _two_hubs(
         )
         stores["laptop"]._conn.commit()
     for attempt in range(1, _BIND_ATTEMPTS + 1):
-        ws_port, lp_port = _free_port(), _free_port()
+        ws_port, lp_port = free_port(), free_port()
         workstation = _build_hub(
             material,
             stores["workstation"],
@@ -1025,8 +1025,8 @@ async def test_a_port_held_by_another_listener_fails_the_bind_not_readiness(
     """Another listener on the chosen port cannot stand in for the hub's own bind."""
     material = _material(tmp_path)
     store = EventStore(tmp_path / "laptop.db")
-    hub = _build_hub(material, store, name="laptop", remote="workstation", remote_port=_free_port())
-    port = _free_port()
+    hub = _build_hub(material, store, name="laptop", remote="workstation", remote_port=free_port())
+    port = free_port()
     try:
         with _listening(port), pytest.raises(OSError) as failure:
             await _serve(hub, material, port)
@@ -1040,14 +1040,14 @@ async def test_the_pair_moves_to_new_ports_when_a_chosen_port_is_taken(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A port lost before the bind gives both hubs a fresh pair instead of failing the test."""
-    free_port = _free_port
-    taken = free_port()
+    choose_port = free_port
+    taken = choose_port()
     chosen = [taken]
 
     def taken_first() -> int:
-        return chosen.pop() if chosen else free_port()
+        return chosen.pop() if chosen else choose_port()
 
-    monkeypatch.setitem(globals(), "_free_port", taken_first)
+    monkeypatch.setitem(globals(), "free_port", taken_first)
     with _listening(taken):
         async with _two_hubs(tmp_path) as pair:
             ports = {int(uri.rsplit(":", 1)[1]) for uri in (pair.ws_uri, pair.lp_uri)}

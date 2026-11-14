@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from _platform_caps import requires_proc
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli_messaging
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
@@ -84,7 +84,7 @@ async def test_wait_neutralises_terminal_controls(capsys: pytest.CaptureFixture[
 
 async def test_wait_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
     code = await cli_messaging._wait(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="B",
         for_name="B",
         timeout=1.0,
@@ -108,7 +108,7 @@ async def test_wait_times_out_with_nothing() -> None:
 
 def test_cmd_wait_dispatches_with_for_default(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="X",
         for_name=None,
         timeout=0.0,
@@ -459,7 +459,7 @@ def test_cmd_wait_dispatches_with_roles(capsys: pytest.CaptureFixture[str]) -> N
     # Role flags are normalised (blanks dropped) and threaded through; an
     # unreachable hub still returns 1 but exercises the role-parsing path.
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="X",
         for_name=None,
         timeout=0.0,
@@ -545,7 +545,7 @@ def test_cmd_wait_derives_rx_name_for_bare_identity(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="CEO",
         for_name=None,
         timeout=0.0,
@@ -560,7 +560,7 @@ def test_cmd_wait_derives_rx_name_for_bare_identity(
 
 def test_cmd_wait_keeps_distinct_connect_name(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="CEO-rx",
         for_name="CEO",
         timeout=0.0,

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import socket
 
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 
 
 def _ipv6_loopback_available() -> bool:
@@ -23,11 +23,11 @@ def _ipv6_loopback_available() -> bool:
     return True
 
 
-def test_free_port_binds_on_both_loopback_families() -> None:
+def test_returned_port_binds_on_both_loopback_families() -> None:
     """Every returned port can be bound at once on 127.0.0.1 and, when present, on ::1."""
     dual = _ipv6_loopback_available()
     for _ in range(25):
-        port = _free_port()
+        port = free_port()
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as ipv4:
             ipv4.bind(("127.0.0.1", port))
             if dual:

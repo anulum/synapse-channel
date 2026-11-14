@@ -38,7 +38,7 @@ def assert_package_outside(package_file: str, forbidden_root: Path) -> None:
         raise RuntimeError(f"synapse_channel imported from forbidden source root: {package_path}")
 
 
-def _free_port() -> int:
+def free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
@@ -95,7 +95,7 @@ async def _read_until_type(websocket: Any, expected: str) -> dict[str, Any]:
 
 async def run_smoke() -> dict[str, object]:
     """Run one live hub, WebSocket registration, state query, and HTTP probe smoke."""
-    port = _free_port()
+    port = free_port()
     hub = SynapseHub(hub_id="websockets-compat", enable_metrics=True)
     server = asyncio.create_task(hub.serve("127.0.0.1", port))
     try:

@@ -16,7 +16,7 @@ import pytest
 
 from claim_outcome_helpers import ClaimProxy, claim_proxy
 from cli_e2e_helpers import git_repo, run_cli
-from hub_e2e_helpers import _free_port, running_hub
+from hub_e2e_helpers import free_port, running_hub
 from synapse_channel.git.gitclaim import run_git_claim
 
 
@@ -182,7 +182,7 @@ async def test_canonical_scope_failure_uses_fixed_refusal_text(
 def test_git_claim_reports_an_unreachable_hub(tmp_path: Path) -> None:
     """An absent hub is refused before a claim can be granted."""
     repo = git_repo(tmp_path / "repo")
-    uri = f"ws://127.0.0.1:{_free_port()}"
+    uri = f"ws://127.0.0.1:{free_port()}"
     result = run_cli(
         "git-claim",
         "T",

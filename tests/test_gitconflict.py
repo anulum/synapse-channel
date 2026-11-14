@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.protocol import MessageType
@@ -298,7 +298,7 @@ async def test_run_conflicts_none(capsys: pytest.CaptureFixture[str]) -> None:
 
 async def test_run_conflicts_unreachable() -> None:
     rc = await run_conflicts(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="U",
         runner=lambda _a: "",
         ready_timeout=0.1,

@@ -29,7 +29,7 @@ from websockets.exceptions import (
     WebSocketException,
 )
 
-from hub_e2e_helpers import _await_listening, _free_port, read_until_type, running_hub, send_json
+from hub_e2e_helpers import _await_listening, free_port, read_until_type, running_hub, send_json
 from synapse_channel.core.clock_skew import ClockSkew
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.multihub_federation import MultiHubAuthorisation
@@ -601,7 +601,7 @@ async def test_pinned_pull_accepts_a_self_signed_wss_peer(tmp_path: Path) -> Non
         journal=store,
         multihub_serving_policy=_serving_policy(pin, der, ("follower",)),
     )
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
     try:
         await _await_listening(port)
@@ -645,7 +645,7 @@ async def test_pinned_pull_presents_client_identity_to_optional_ca_policy(tmp_pa
         journal=store,
         multihub_serving_policy=_serving_policy(client_pin, client_der, ("follower",)),
     )
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
     try:
         await _await_listening(port)
@@ -686,7 +686,7 @@ async def test_pinned_pull_rejects_a_mismatched_certificate_pin(tmp_path: Path) 
         journal=store,
         multihub_serving_policy=_serving_policy(pin, der, ("follower",)),
     )
-    port = _free_port()
+    port = free_port()
     task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
     try:
         await _await_listening(port)

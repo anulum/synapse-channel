@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 from message_forward_peer_helpers import error_frame, result_frame, scripted_peer
 from multihub_tls_helpers import certificate_authority, issue_identity
 from synapse_channel.core.message_forward_transport import (
@@ -139,7 +139,7 @@ async def test_frames_before_the_result_are_skipped() -> None:
 
 async def test_an_unreachable_peer_is_a_transport_failure() -> None:
     """A refused connection is retryable, not a verdict."""
-    port = _free_port()
+    port = free_port()
     with pytest.raises(MessageForwardTransportError, match="failed"):
         await forward_message(
             _request(), peer=MessageForwardPeer(uri=f"ws://localhost:{port}"), local_id="edge"

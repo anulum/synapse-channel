@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from hub_e2e_helpers import _free_port, running_hub
+from hub_e2e_helpers import free_port, running_hub
 from synapse_channel import cli, cli_tasks
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.auth import TokenAuthenticator
@@ -247,7 +247,7 @@ async def test_task_action_returns_one_when_hub_unreachable(
         await agent.post_task("BUILD", title="Compile")
 
     code = await cli_tasks._task_action(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="P",
         token=None,
         confirm_type=MessageType.LEDGER_TASK_POSTED,

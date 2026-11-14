@@ -17,7 +17,7 @@ from typing import Any
 
 from websockets.asyncio.server import ServerConnection, serve
 
-from hub_e2e_helpers import _free_port
+from hub_e2e_helpers import free_port
 from synapse_channel.client.agent import SynapseAgent
 
 
@@ -54,7 +54,7 @@ async def connected_recording_agent(
                 await websocket.send(json.dumps({"type": "welcome", "hub_id": "recording-hub"}))
                 ready.set()
 
-    port = _free_port()
+    port = free_port()
     server = await serve(handler, "localhost", port)
     agent = SynapseAgent(
         name,

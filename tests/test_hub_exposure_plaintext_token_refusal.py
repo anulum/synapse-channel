@@ -139,7 +139,7 @@ def test_guard_stays_silent_with_token_behind_tls(
     assert caplog.records == []
 
 
-def _free_port() -> int:
+def free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         return int(probe.getsockname()[1])
@@ -166,7 +166,7 @@ async def test_serve_refuses_plaintext_token_bind_off_loopback() -> None:
         authenticator=TokenAuthenticator(["s3cret"]),
     )
     with pytest.raises(InsecureBindError, match="plaintext ws://"):
-        await hub.serve("0.0.0.0", _free_port())
+        await hub.serve("0.0.0.0", free_port())
 
 
 async def test_serve_keeps_loopback_bind_silent(
@@ -177,5 +177,5 @@ async def test_serve_keeps_loopback_bind_silent(
         authenticator=TokenAuthenticator(["s3cret"]),
     )
     with caplog.at_level("WARNING", logger="synapse.hub"):
-        await _serve_briefly(hub, "localhost", _free_port())
+        await _serve_briefly(hub, "localhost", free_port())
     assert caplog.records == []

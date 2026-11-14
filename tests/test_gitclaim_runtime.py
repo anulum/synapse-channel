@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from cli_e2e_helpers import git_repo, git_run
-from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
@@ -217,7 +217,7 @@ async def test_run_git_claim_unreachable_hub(
 ) -> None:
     _claim_repo(tmp_path, monkeypatch)
     rc = await run_git_claim(
-        uri=f"ws://127.0.0.1:{_free_port()}",
+        uri=f"ws://127.0.0.1:{free_port()}",
         name="me",
         task_id="T1",
         paths=[],

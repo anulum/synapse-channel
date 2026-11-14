@@ -18,9 +18,9 @@ import pytest
 from hub_e2e_helpers import (
     AgentHandle,
     Recorder,
-    _free_port,
     close_agents,
     connect_agent,
+    free_port,
     running_hub,
 )
 from synapse_channel import cli_queries
@@ -77,7 +77,7 @@ async def test_manifest_prints_snapshot(capsys: pytest.CaptureFixture[str]) -> N
 
 async def test_manifest_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
     code = await cli_queries._manifest(
-        uri=f"ws://127.0.0.1:{_free_port()}", name="USER", ready_timeout=0.1
+        uri=f"ws://127.0.0.1:{free_port()}", name="USER", ready_timeout=0.1
     )
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
@@ -157,6 +157,6 @@ async def test_signed_worker_card_verifies_on_real_hub(tmp_path: Path) -> None:
 
 def test_cmd_manifest_dispatches_real_query() -> None:
     ns = argparse.Namespace(
-        uri=f"ws://127.0.0.1:{_free_port()}", name="USER", token=None, ready_timeout=0.1
+        uri=f"ws://127.0.0.1:{free_port()}", name="USER", token=None, ready_timeout=0.1
     )
     assert cli_queries._cmd_manifest(ns) == 1
