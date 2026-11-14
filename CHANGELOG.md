@@ -29,7 +29,10 @@ execution evidence when carrying a release claim forward.
   digest, `--intent-sha256` plans again and composes the intent locally. A changed plan, file or
   identity is refused before the hub is asked, and so is a run the local grants do not cover, which
   never consumes the approval. The run starts only inside the one attempt the hub opens, and its
-  outcome is published on the task, which ends the attempt. The local grants file stays required,
+  outcome is published on the task, which ends the attempt. A repeat of an operation id that
+  already started never runs again: the outcome its journal recorded is published instead
+  (`unknown` for a start without an outcome), and the report says `already_started: true`.
+  The local grants file stays required,
   and the report names both authorities. Only a row that changes one file goes through: `execute`,
   `extend`, `approve` and read-only rows are refused with the reason. A run's report now says whether
   the hub governed it (`hub_governed`). `synapse operation declare` and `synapse operation attempt`

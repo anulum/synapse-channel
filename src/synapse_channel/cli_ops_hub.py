@@ -49,8 +49,10 @@ from synapse_channel.operations.runner import (
     Verifier,
     authorised,
     execute,
+    inquire,
     load_grants,
 )
+from synapse_channel.operations.runner_journal import RunJournalError, run_state
 
 HUB_AUTHORITY = "hub_attempt"
 """How a run's report names the hub's attempt beside the local grants file."""
@@ -303,16 +305,29 @@ def run_attempt(
     return _run_inside(args, run, verifier, answer, journal=journal, status=status)
 
 
-def _run_inside(
-    args: argparse.Namespace,
-    run: RunPlan,
-    verifier: Verifier | None,
-    answer: dict[str, Any],
-    *,
-    journal: Path,
-    status: Callable[[RunReport], int],
-) -> int:
-    """Run inside the open attempt, publish the outcome, and print the one report."""
+def _recorded(journal: Path, operation_id: str, verifier: Verifier | None) -> RunReport | None:
+    """Return what the journal holds for an operation id that already started, or ``None``.
+
+    A start without an outcome reads as ``unknown``, as ``synapse ops inquire``
+    reports it; a damaged record is ``unknown`` too, because something started.
+    """
+    try:
+        if run_state(journal, operation_id)[0] == "absent":
+            return None
+        return inquire(journal, operation_id, verifier=verifier)
+    except RunJournalError:
+        return RunReport(operation_id, "unknown", "the run's journal record cannot be read")
+
+
+def _execute(
+    args: argparse.Namespace, run: RunPlan, verifier: Verifier | None, journal: Path
+) -> tuple[RunReport, str, bool]:
+    """Run the plan, or report what already happened to its operation id.
+
+    Returns the report, the refusal when nothing ran and nothing had started
+    (its outcome is then ``not_started``), and whether the operation id had
+    already started, in which case nothing runs again.
+    """
     try:
         report = execute(
             run,
@@ -324,18 +339,42 @@ def _run_inside(
             verifier=verifier,
         )
     except (OperationRunRefused, ValueError) as exc:
-        report = RunReport(
+        recorded = _recorded(journal, args.operation_id, verifier)
+        if recorded is not None:
+            return recorded, "", True
+        refused = RunReport(
             args.operation_id, "not_started", f"refused after the attempt opened: {exc}"
         )
-        published = _publish(args, report)
-        _print({"attempt": answer, "refused": str(exc), "outcome_published": published})
-        return 2
+        return refused, str(exc), False
+    return report, "", False
+
+
+def _run_inside(
+    args: argparse.Namespace,
+    run: RunPlan,
+    verifier: Verifier | None,
+    answer: dict[str, Any],
+    *,
+    journal: Path,
+    status: Callable[[RunReport], int],
+) -> int:
+    """Run inside the open attempt, publish the outcome, and print the one report.
+
+    An operation id that already started is never run again: the outcome its
+    journal recorded is published instead, so the hub is never told
+    ``not_started`` about a run that did start.
+    """
+    report, refused, already_started = _execute(args, run, verifier, journal)
     published = _publish(args, report)
+    if refused:
+        _print({"attempt": answer, "refused": refused, "outcome_published": published})
+        return 2
     _print(
         {
             **report.to_json(),
             "authority": f"{report.authority}; {HUB_AUTHORITY}:{answer['attempt_id']}",
             "hub_governed": True,
+            "already_started": already_started,
             "attempt": answer,
             "outcome_published": published,
         }

@@ -35,6 +35,7 @@ from synapse_channel.operations.runner import (
     RunReport,
     plan,
 )
+from synapse_channel.operations.runner_journal import SCHEMA, run_directory
 from test_operations_runner import World
 
 DEADLINE = int(time.time()) + 86_400
@@ -293,6 +294,73 @@ def test_a_refusal_after_the_attempt_opened_publishes_not_started(
     assert late["refused"] == "the program was replaced since planning"
     outcome = hub.requests[-1][2]["report"]
     assert (outcome["state"], outcome["external_effect"]) == ("not_started", "not_started")
+    assert world.invocations() == []
+
+
+_TAKEN = {"type": MessageType.OPERATION_RECORD_RESULT, "status": "accepted"}
+
+
+def _published(hub: ScriptedHub) -> list[str]:
+    """Return the state of every outcome published to the hub, in order."""
+    return [
+        fields["report"]["state"]
+        for _actor, _type, fields in hub.requests
+        if fields.get("record") == "outcome"
+    ]
+
+
+def test_a_repeat_after_a_lost_outcome_publishes_the_recorded_outcome_and_runs_nothing(
+    world: World,
+    hub: ScriptedHub,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The documented recovery repeats the same key; the hub is told what the journal holds."""
+    monkeypatch.setenv("VENDOR_CONFIG", str(world.config.parent / "missing" / "config.json"))
+    command = _command(
+        world, *_hub("--intent-sha256", _approved_digest(world), "--idem-key", "k-1")
+    )
+    hub.answers = [_OPENED, None, _OPENED, _TAKEN]
+
+    assert main(command) == 3
+    first = _output(capsys)
+    assert (first["state"], first["already_started"]) == ("confirmed_failed", False)
+    assert main(command) == 1
+    repeat = _output(capsys)
+    assert (repeat["state"], repeat["already_started"]) == ("confirmed_failed", True)
+    assert repeat["outcome_published"] == {"status": "accepted", "reason": ""}
+    assert _published(hub) == ["confirmed_failed", "confirmed_failed"]
+    assert world.invocations() == ["setting set mode strict"]
+
+
+@pytest.mark.parametrize(
+    ("record", "observation"),
+    [
+        ("start", "start_without_outcome"),
+        ("damaged", "the run's journal record cannot be read"),
+    ],
+)
+def test_a_start_without_an_outcome_or_a_damaged_record_is_published_as_unknown(
+    world: World,
+    hub: ScriptedHub,
+    capsys: pytest.CaptureFixture[str],
+    record: str,
+    observation: str,
+) -> None:
+    """Something started, so the hub hears ``unknown``, never ``not_started``."""
+    directory = run_directory(world.journal, "op-1")
+    directory.mkdir(parents=True)
+    start = {"schema": SCHEMA, "operation_id": "op-1"} if record == "start" else None
+    (directory / "start.json").write_text(
+        json.dumps(start) if start is not None else "{", encoding="utf-8"
+    )
+    hub.answers = [_OPENED, _TAKEN]
+
+    assert main(_command(world, *_hub("--intent-sha256", _approved_digest(world)))) == 3
+    report = _output(capsys)
+    assert (report["state"], report["observation"]) == ("unknown", observation)
+    assert report["already_started"] is True
+    assert _published(hub) == ["unknown"]
     assert world.invocations() == []
 
 

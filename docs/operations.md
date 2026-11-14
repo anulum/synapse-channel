@@ -354,7 +354,11 @@ approval on the hub is not a named person's consent. A report says
 `--intent-sha256`, exit 1 with an `attempt` object means that the attempt did not
 open. Exit 3 can also mean that the hub did not take the outcome: the attempt
 then stays open until the outcome is published (`synapse operation outcome`) or
-the attempt is sealed.
+the attempt is sealed. Repeating the call with the same `--idem-key` never runs
+an operation id that already started: the outcome its journal recorded is
+published instead (`unknown` for a start without an outcome, as
+`synapse ops inquire` reads it), the report says `already_started: true`, and
+the exit status is that outcome's.
 
 **Interrupted and lost runs.** A run killed after its start (the runner
 crashed, the machine stopped) has a start without an outcome. A run whose
