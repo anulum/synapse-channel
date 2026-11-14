@@ -63,7 +63,24 @@ _MODULES = frozenset(
         "native_provenance.py",
     }
 )
-_APP_SUFFIXES = frozenset({".py", ".json", ".css", ".js", ".woff2", ".md", ".license"})
+# The packaged cockpit build (dashboard_assets/cockpit/, written by
+# tools/vendor_cockpit_build.py) adds its entry page, icons, web manifest and the
+# WOFF fallbacks of its two font families to the reviewed package resources.
+_APP_SUFFIXES = frozenset(
+    {
+        ".py",
+        ".json",
+        ".css",
+        ".js",
+        ".woff2",
+        ".md",
+        ".license",
+        ".html",
+        ".png",
+        ".webmanifest",
+        ".woff",
+    }
+)
 _DEPENDENCY_SUFFIXES = frozenset({".py", ".pyi", ".c", ".so"})
 
 # This exact literal is copied into the operator's reviewable command. The
