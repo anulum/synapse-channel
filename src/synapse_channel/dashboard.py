@@ -1063,6 +1063,95 @@ def _bind_local_files(
     handler.scope_groups = load_scope_groups(scope_groups_file) if scope_groups_file else None
 
 
+def _optional_path(value: str | Path | None) -> Path | None:
+    """Return ``value`` as a path, or ``None`` when the start did not name one."""
+    return Path(value) if value is not None else None
+
+
+def _resolve_access(
+    *,
+    name: str,
+    dashboard_token: str | None,
+    dashboard_access_file: str | Path | None,
+    operator: bool,
+    operator_name: str | None,
+) -> tuple[DashboardAccessPolicy, str | None, bool]:
+    """Return the start's access policy, its effective bearer and whether that bearer was generated.
+
+    An access file carries each principal, so it stands alone: no bearer and no
+    global operator name beside it, and no bearer of the start's own. Without
+    one, a single bearer, given or generated, guards the reads and, when armed,
+    the operator's writes, which are attributed to ``operator:<name>`` unless an
+    operator name is given.
+
+    Raises
+    ------
+    ValueError
+        When an access file is combined with a bearer or an operator name, or
+        cannot be used.
+    """
+    if dashboard_access_file is not None:
+        if dashboard_token is not None:
+            raise ValueError("--dashboard-access-file cannot be combined with --dashboard-token")
+        if operator_name is not None:
+            raise ValueError("--dashboard-access-file carries each operator identity")
+        policy = load_dashboard_access_policy(dashboard_access_file, operator_armed=operator)
+        return policy, None, False
+    effective, generated, protects_reads = _resolve_dashboard_token(dashboard_token=dashboard_token)
+    policy = compatibility_access_policy(
+        dashboard_token=effective,
+        token_protects_reads=protects_reads,
+        operator_armed=operator,
+        operator_name=(operator_name if operator_name else f"operator:{name}"),
+    )
+    return policy, effective, generated
+
+
+def _bind_host_monitor(
+    handler: type[_DashboardHandler],
+    *,
+    pids: tuple[int, ...],
+    tmux_socket: str | None,
+    context_root: str | Path | None,
+) -> None:
+    """Scope the handler's host observation to the start's processes, tmux socket and context root.
+
+    Raises
+    ------
+    ValueError
+        When more than 256 process ids are given, or one is not a positive integer.
+    """
+    if len(pids) > 256 or any(type(pid) is not int or pid <= 0 for pid in pids):
+        raise ValueError("host monitor accepts at most 256 positive PIDs")
+    handler.host_session_monitor.pids = pids
+    handler.host_session_monitor.tmux_socket = tmux_socket
+    handler.host_session_monitor.context_root = (
+        Path(context_root).resolve() if context_root is not None else None
+    )
+
+
+def _serve(
+    handler: type[_DashboardHandler],
+    host: str,
+    port: int,
+    *,
+    dashboard_token: str | None,
+    dashboard_token_generated: bool,
+) -> DashboardServer:
+    """Bind the HTTP server, serve it on a daemon thread and return the handle to it."""
+    server = PromptBindThreadingHTTPServer((host, int(port)), handler)
+    thread = threading.Thread(target=server.serve_forever, name="synapse-dashboard", daemon=True)
+    thread.start()
+    return DashboardServer(
+        server=server,
+        thread=thread,
+        dashboard_token=dashboard_token,
+        dashboard_token_generated=dashboard_token_generated,
+        heavy_feed_cache=handler.heavy_feed_cache,
+        state_feed_cache=handler.state_feed_cache,
+    )
+
+
 def start_dashboard_server(
     *,
     host: str,
@@ -1172,27 +1261,13 @@ def start_dashboard_server(
     validate_dashboard_bind(host, allow_non_loopback=allow_non_loopback)
     # Surface a malformed operator-approved host at startup, not per request.
     allowed_host_authorities(host, int(port), tuple(allow_hosts))
-    if dashboard_access_file is not None:
-        if dashboard_token is not None:
-            raise ValueError("--dashboard-access-file cannot be combined with --dashboard-token")
-        if operator_name is not None:
-            raise ValueError("--dashboard-access-file carries each operator identity")
-        access_policy = load_dashboard_access_policy(
-            dashboard_access_file,
-            operator_armed=operator,
-        )
-        effective_dashboard_token = None
-        dashboard_token_generated = False
-    else:
-        effective_dashboard_token, dashboard_token_generated, token_protects_reads = (
-            _resolve_dashboard_token(dashboard_token=dashboard_token)
-        )
-        access_policy = compatibility_access_policy(
-            dashboard_token=effective_dashboard_token,
-            token_protects_reads=token_protects_reads,
-            operator_armed=operator,
-            operator_name=(operator_name if operator_name else f"operator:{name}"),
-        )
+    access_policy, effective_dashboard_token, dashboard_token_generated = _resolve_access(
+        name=name,
+        dashboard_token=dashboard_token,
+        dashboard_access_file=dashboard_access_file,
+        operator=operator,
+        operator_name=operator_name,
+    )
     handler = _handler_class(
         uri=uri,
         name=name,
@@ -1200,15 +1275,13 @@ def start_dashboard_server(
         ready_timeout=ready_timeout,
         response_timeout=response_timeout,
         refresh_seconds=max(1, int(refresh_seconds)),
-        a2a_state_file=Path(a2a_state_file) if a2a_state_file is not None else None,
+        a2a_state_file=_optional_path(a2a_state_file),
         access_policy=access_policy,
-        reliability_db=Path(reliability_db) if reliability_db is not None else None,
-        reliability_db_key_file=(
-            Path(reliability_db_key_file) if reliability_db_key_file is not None else None
-        ),
-        attention_store=Path(attention_store) if attention_store is not None else None,
-        federation_store=Path(federation_store) if federation_store is not None else None,
-        cockpit_dist=Path(cockpit_dist) if cockpit_dist is not None else None,
+        reliability_db=_optional_path(reliability_db),
+        reliability_db_key_file=_optional_path(reliability_db_key_file),
+        attention_store=_optional_path(attention_store),
+        federation_store=_optional_path(federation_store),
+        cockpit_dist=_optional_path(cockpit_dist),
         operator_rate_limiter=WriteRateLimiter(
             max_calls=OPERATOR_RATE_MAX, window_seconds=OPERATOR_RATE_WINDOW_SECONDS
         ),
@@ -1225,23 +1298,16 @@ def start_dashboard_server(
         host_sessions_access_file=host_sessions_access_file,
         scope_groups_file=scope_groups_file,
     )
-    if len(host_session_pids) > 256 or any(
-        type(pid) is not int or pid <= 0 for pid in host_session_pids
-    ):
-        raise ValueError("host monitor accepts at most 256 positive PIDs")
-    handler.host_session_monitor.pids = host_session_pids
-    handler.host_session_monitor.tmux_socket = host_session_tmux_socket
-    handler.host_session_monitor.context_root = (
-        Path(host_session_context_root).resolve() if host_session_context_root is not None else None
+    _bind_host_monitor(
+        handler,
+        pids=host_session_pids,
+        tmux_socket=host_session_tmux_socket,
+        context_root=host_session_context_root,
     )
-    server = PromptBindThreadingHTTPServer((host, int(port)), handler)
-    thread = threading.Thread(target=server.serve_forever, name="synapse-dashboard", daemon=True)
-    thread.start()
-    return DashboardServer(
-        server=server,
-        thread=thread,
+    return _serve(
+        handler,
+        host,
+        port,
         dashboard_token=effective_dashboard_token,
         dashboard_token_generated=dashboard_token_generated,
-        heavy_feed_cache=handler.heavy_feed_cache,
-        state_feed_cache=handler.state_feed_cache,
     )

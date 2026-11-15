@@ -177,7 +177,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/state.py::SynapseState.handoff" = 72
 "src/synapse_channel/core/team_secure.py::apply_team_secure_hub_profile" = 64
 "src/synapse_channel/core/workflow_run.py::run_workflow" = 73
-"src/synapse_channel/dashboard.py::start_dashboard_server" = 76
 "src/synapse_channel/dashboard_cockpit.py::render_cockpit_html" = 75
 "src/synapse_channel/dashboard_security_posture.py::build_security_posture" = 81
 "src/synapse_channel/dashboard_studio_command.py::render_studio_command_html" = 125
