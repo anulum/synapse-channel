@@ -239,9 +239,9 @@ class TestReplayCapacityEnvelope:
 class TestFrozenContracts:
     def test_posture_is_frozen(self) -> None:
         with pytest.raises((AttributeError, TypeError)):
-            HubExposurePosture().off_loopback_bind = True  # type: ignore[misc]
+            HubExposurePosture().off_loopback_bind = True  # type: ignore[misc] # probe
 
     def test_decision_is_frozen(self) -> None:
         decision = decide_auto_rate_policy(HubExposurePosture(), DISABLED)
         with pytest.raises((AttributeError, TypeError)):
-            decision.auto_enabled = True  # type: ignore[misc]
+            decision.auto_enabled = True  # type: ignore[misc] # frozen probe
