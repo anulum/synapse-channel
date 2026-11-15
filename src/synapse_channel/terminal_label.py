@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass, replace
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from synapse_channel.core.errors import SynapseError
@@ -60,6 +61,12 @@ _RECEIVER_SUFFIXES = ("-presence", "-pane-rx", "-rx", "-tx")
 
 _FAMILY_PREFIX_MAX = 4
 """A first word of at most this many letters is kept whole in a derived abbreviation."""
+
+
+def _stored_text(values: Mapping[str, str | bool], name: str, default: str) -> str:
+    """Return one stored text field, or ``default`` when the value is not text."""
+    found = values.get(name, default)
+    return found if isinstance(found, str) else default
 
 
 class ProfileError(SynapseError, ValueError):
@@ -105,7 +112,22 @@ class TerminalDetails:
                 values[name] = value is True
             elif isinstance(value, str) and value.strip():
                 values[name] = value
-        return replace(known, **values)  # type: ignore[arg-type]
+        derived = values.get("abbreviation_derived", known.abbreviation_derived)
+        return cls(
+            group=_stored_text(values, "group", known.group),
+            abbreviation=_stored_text(values, "abbreviation", known.abbreviation),
+            abbreviation_derived=(
+                derived if isinstance(derived, bool) else known.abbreviation_derived
+            ),
+            project=_stored_text(values, "project", known.project),
+            focus=_stored_text(values, "focus", known.focus),
+            vendor=_stored_text(values, "vendor", known.vendor),
+            model=_stored_text(values, "model", known.model),
+            seat=_stored_text(values, "seat", known.seat),
+            session_name=_stored_text(values, "session_name", known.session_name),
+            native_session=_stored_text(values, "native_session", known.native_session),
+            terminal_identity=_stored_text(values, "terminal_identity", known.terminal_identity),
+        )
 
 
 @dataclass(frozen=True, slots=True)
