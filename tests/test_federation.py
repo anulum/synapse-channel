@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from typing import TypedDict, Unpack
+
 from synapse_channel.core.acl import BOARD, CLAIM, MESSAGE, RELEASE, Target
 from synapse_channel.core.federation import (
     AUTHORISED,
@@ -25,22 +27,35 @@ from synapse_channel.core.federation import (
 )
 
 
-def _peer(**overrides: object) -> FederationPeer:
-    base: dict[str, object] = {
-        "domain_id": "acme",
-        "namespaces": frozenset({"acme/shared"}),
-        "certificate_pins": frozenset({"sha256:aa"}),
-        "signing_key_ids": frozenset({"key-1"}),
-        "scope_grants": (
-            ScopeGrant("read_board", "acme/shared"),
-            ScopeGrant("post_chat", "acme/shared"),
-            ScopeGrant("read_board", "acme/other"),
+class _PeerOverride(TypedDict, total=False):
+    """Fields a federation test may replace on one peer."""
+
+    domain_id: str
+    certificate_pins: frozenset[str]
+    signing_key_ids: frozenset[str]
+    scope_grants: tuple[ScopeGrant, ...]
+    expires_at: float | None
+    revoked: bool
+
+
+def _peer(**overrides: Unpack[_PeerOverride]) -> FederationPeer:
+    """Return one peer with the named fields replaced."""
+    return FederationPeer(
+        domain_id=overrides.get("domain_id", "acme"),
+        namespaces=frozenset({"acme/shared"}),
+        certificate_pins=overrides.get("certificate_pins", frozenset({"sha256:aa"})),
+        signing_key_ids=overrides.get("signing_key_ids", frozenset({"key-1"})),
+        scope_grants=overrides.get(
+            "scope_grants",
+            (
+                ScopeGrant("read_board", "acme/shared"),
+                ScopeGrant("post_chat", "acme/shared"),
+                ScopeGrant("read_board", "acme/other"),
+            ),
         ),
-        "expires_at": None,
-        "revoked": False,
-    }
-    base.update(overrides)
-    return FederationPeer(**base)  # type: ignore[arg-type]
+        expires_at=overrides.get("expires_at"),
+        revoked=overrides.get("revoked", False),
+    )
 
 
 def _ok_bundle() -> FederationBundle:
