@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any, TypedDict, Unpack
 
 import pytest
 
@@ -25,16 +26,38 @@ from synapse_channel.core.multihub_equivocation import (
 from synapse_channel.core.multihub_merge import HubEvent
 
 
-def _event(**changes: object) -> HubEvent:
+class _EventOverride(TypedDict, total=False):
+    """Fields an equivocation test may replace on one event."""
+
+    hub_id: str
+    seq: int
+    ts: float
+    kind: str
+    payload: Mapping[str, Any]
+
+
+def _event(**changes: Unpack[_EventOverride]) -> HubEvent:
+    """Return one hub event with the named fields replaced."""
+    return HubEvent(
+        hub_id=changes.get("hub_id", "peer-a"),
+        seq=changes.get("seq", 7),
+        ts=changes.get("ts", 12.5),
+        kind=changes.get("kind", "ledger_task"),
+        payload=changes.get("payload", {"nested": {"ok": True}, "items": [None, 2, 3.5, "x"]}),
+    )
+
+
+def _malformed_event(**changes: object) -> HubEvent:
+    """Return an event whose fields are the wrong shape on purpose."""
     values: dict[str, object] = {
         "hub_id": "peer-a",
         "seq": 7,
         "ts": 12.5,
         "kind": "ledger_task",
-        "payload": {"nested": {"ok": True}, "items": [None, 2, 3.5, "x"]},
+        "payload": {"nested": {"ok": True}},
     }
     values.update(changes)
-    return HubEvent(**values)  # type: ignore[arg-type]
+    return HubEvent(**values)  # type: ignore[arg-type] # the mapping is the wrong shape on purpose
 
 
 def test_fingerprint_is_stable_across_mapping_insertion_order() -> None:
@@ -55,7 +78,7 @@ def test_fingerprint_is_stable_across_mapping_insertion_order() -> None:
         {"payload": {"nested": {"ok": False}}},
     ],
 )
-def test_fingerprint_binds_every_security_relevant_field(changed: dict[str, object]) -> None:
+def test_fingerprint_binds_every_security_relevant_field(changed: _EventOverride) -> None:
     assert event_fingerprint(_event()) != event_fingerprint(_event(**changed))
 
 
@@ -104,7 +127,7 @@ def test_fingerprint_rejects_noncanonical_event_shapes(
     changes: dict[str, object], message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        event_fingerprint(_event(**changes))
+        event_fingerprint(_malformed_event(**changes))
 
 
 def test_quarantine_shape_and_error_never_carry_event_payloads() -> None:
@@ -142,13 +165,13 @@ def test_recursive_and_invalid_unicode_payloads_fail_closed() -> None:
     recursive: dict[str, object] = {}
     recursive["self"] = recursive
     with pytest.raises(ValueError, match="cannot be fingerprinted"):
-        event_fingerprint(_event(payload=recursive))
+        event_fingerprint(_malformed_event(payload=recursive))
     with pytest.raises(ValueError, match="cannot be fingerprinted"):
         event_fingerprint(_event(payload={"bad": "\ud800"}))
 
 
 @pytest.mark.parametrize("changes", [{"hub_id": "\ud800"}, {"kind": "\ud800"}])
-def test_invalid_unicode_identity_fields_fail_closed(changes: dict[str, object]) -> None:
+def test_invalid_unicode_identity_fields_fail_closed(changes: _EventOverride) -> None:
     with pytest.raises(ValueError, match="identity must be valid UTF-8"):
         event_fingerprint(_event(**changes))
 
