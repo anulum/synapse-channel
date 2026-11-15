@@ -430,7 +430,7 @@ def _force_utf8_console() -> None:
             continue
         try:
             reconfigure(encoding="utf-8", errors="backslashreplace")
-        except (ValueError, OSError):  # pragma: no cover - stream-specific refusal
+        except (ValueError, OSError):
             pass
 
 
