@@ -132,15 +132,25 @@ def _result(
     return subprocess.CompletedProcess(list(args), code, stdout, stderr)
 
 
-def _config(tmp_path: Path, **overrides: object) -> AgentTmuxConfig:
-    base: dict[str, object] = {
-        "identity": "SYNAPSE-CHANNEL/codex-main",
-        "session": "synapse-codex-main",
-        "cwd": tmp_path,
-        "registry_dir": tmp_path / "registry",
-    }
-    base.update(overrides)
-    return AgentTmuxConfig(**base)  # type: ignore[arg-type]
+def _config(
+    tmp_path: Path,
+    *,
+    agent_command: tuple[str, ...] = ("codex",),
+    pane_probe_interval: float = AgentTmuxConfig.pane_probe_interval,
+    token: str | None = None,
+    token_file: Path | None = None,
+) -> AgentTmuxConfig:
+    """Return one tmux wake target with the named fields replaced."""
+    return AgentTmuxConfig(
+        identity="SYNAPSE-CHANNEL/codex-main",
+        session="synapse-codex-main",
+        cwd=tmp_path,
+        registry_dir=tmp_path / "registry",
+        agent_command=agent_command,
+        pane_probe_interval=pane_probe_interval,
+        token=token,
+        token_file=token_file,
+    )
 
 
 def test_config_preserves_historical_positional_field_order(tmp_path: Path) -> None:
