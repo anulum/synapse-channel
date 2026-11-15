@@ -256,9 +256,10 @@ class _PinnedHTTPHandler(urllib.request.HTTPHandler):
         def build(host: str, *, timeout: float) -> _PinnedHTTPConnection:
             return _PinnedHTTPConnection(host, allow_local=self._allow_local, timeout=timeout)
 
-        # do_open's typeshed stub types the factory as a class; urllib accepts any
-        # connection factory callable, so the argument type is deliberately widened.
-        return self.do_open(build, req)  # type: ignore[arg-type]
+        return self.do_open(
+            build,  # type: ignore[arg-type] # urllib types the factory as a class
+            req,
+        )
 
 
 class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
@@ -277,9 +278,11 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
                 host, allow_local=self._allow_local, timeout=timeout, context=context
             )
 
-        # do_open's typeshed stub types the factory as a class; urllib accepts any
-        # connection factory callable, so the argument type is deliberately widened.
-        return self.do_open(build, req, context=self._ssl_context)  # type: ignore[arg-type]
+        return self.do_open(
+            build,  # type: ignore[arg-type] # urllib types the factory as a class
+            req,
+            context=self._ssl_context,
+        )
 
 
 class _SafePinnedRedirectHandler(urllib.request.HTTPRedirectHandler):
