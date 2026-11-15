@@ -23,12 +23,12 @@ class InboxIdentity(Protocol):
     @property
     def project(self) -> str:
         """Return the project segment of the identity."""
-        ...  # pragma: no cover - structural typing declaration
+        ...
 
     @property
     def identity(self) -> str:
         """Return the full exact identity."""
-        ...  # pragma: no cover - structural typing declaration
+        ...
 
 
 CliDispatcher = Callable[[list[str]], int]

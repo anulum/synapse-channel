@@ -102,37 +102,27 @@ class FederationPeerProbe:
 class _Socket(Protocol):
     """Minimal websocket surface used by the federation probe."""
 
-    async def send(self, message: str) -> None:  # pragma: no cover
-        """Send one text frame to the peer."""
-        ...
+    async def send(self, message: str) -> None: ...
 
-    async def recv(self) -> str | bytes:  # pragma: no cover
-        """Receive the next frame from the peer."""
-        ...
+    async def recv(self) -> str | bytes: ...
 
 
 class _Connector(Protocol):
     """Open a peer websocket connection."""
 
-    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]:  # pragma: no cover
-        """Open a connection to ``uri``."""
-        ...
+    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]: ...
 
 
 class _ExtraInfoTransport(Protocol):
     """Transport metadata surface used to inspect TLS certificates."""
 
-    def get_extra_info(self, name: str, default: object = None) -> object:  # pragma: no cover
-        """Return transport metadata by name."""
-        ...
+    def get_extra_info(self, name: str, default: object = None) -> object: ...
 
 
 class _PeerCertificate(Protocol):
     """TLS object surface exposing the peer certificate bytes."""
 
-    def getpeercert(self, binary_form: bool = False) -> object:  # pragma: no cover
-        """Return the peer certificate."""
-        ...
+    def getpeercert(self, binary_form: bool = False) -> object: ...
 
 
 class _Certificate(Protocol):

@@ -57,11 +57,11 @@ class SpendTransportTimeoutError(SpendTransportError):
 class SpendSocket(Protocol):
     """The connection surface one request uses: send a frame, receive frames."""
 
-    async def send(self, message: str) -> None:  # pragma: no cover
+    async def send(self, message: str) -> None:
         """Send one text frame to the owner."""
         ...
 
-    async def recv(self) -> str | bytes:  # pragma: no cover
+    async def recv(self) -> str | bytes:
         """Receive the next frame from the owner."""
         ...
 

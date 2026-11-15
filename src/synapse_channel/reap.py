@@ -53,17 +53,17 @@ class ReapIdentity(Protocol):
     @property
     def project(self) -> str:
         """Project that the waiter listens for."""
-        ...  # pragma: no cover
+        ...
 
     @property
     def identity(self) -> str:
         """Full sender identity represented by the pidfile."""
-        ...  # pragma: no cover
+        ...
 
     @property
     def waiter_name(self) -> str:
         """Distinct ``-rx`` waiter identity."""
-        ...  # pragma: no cover
+        ...
 
 
 class ReapStatus(Enum):

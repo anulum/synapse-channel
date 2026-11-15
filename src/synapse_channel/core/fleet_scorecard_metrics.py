@@ -66,32 +66,32 @@ class BenchmarkRun(Protocol):
     """
 
     @property
-    def run_id(self) -> int:  # pragma: no cover - structural
+    def run_id(self) -> int:
         """Return the monotonically increasing store row id."""
         ...
 
     @property
-    def started_at(self) -> float:  # pragma: no cover - structural
+    def started_at(self) -> float:
         """Return the run start timestamp."""
         ...
 
     @property
-    def package_version(self) -> str:  # pragma: no cover - structural
+    def package_version(self) -> str:
         """Return the measured package version."""
         ...
 
     @property
-    def cpu_model(self) -> str:  # pragma: no cover - structural
+    def cpu_model(self) -> str:
         """Return the host CPU model."""
         ...
 
     @property
-    def governor(self) -> str:  # pragma: no cover - structural
+    def governor(self) -> str:
         """Return the host frequency governor."""
         ...
 
     @property
-    def metrics(self) -> dict[str, dict[str, float]]:  # pragma: no cover - structural
+    def metrics(self) -> dict[str, dict[str, float]]:
         """Return probe-to-metric numeric values."""
         ...
 

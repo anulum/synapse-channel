@@ -67,29 +67,21 @@ class FederationFetchError(SynapseError, RuntimeError):
 class _Socket(Protocol):
     """The minimal connection surface a fetch uses: send a frame, receive frames."""
 
-    async def send(self, message: str) -> None:  # pragma: no cover
-        """Send one text frame to the peer."""
-        ...
+    async def send(self, message: str) -> None: ...
 
-    async def recv(self) -> str | bytes:  # pragma: no cover
-        """Receive the next frame from the peer."""
-        ...
+    async def recv(self) -> str | bytes: ...
 
 
 class _Connector(Protocol):
     """Opens a peer connection as an async context manager yielding a :class:`_Socket`."""
 
-    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]:  # pragma: no cover
-        """Open a connection to ``uri``."""
-        ...
+    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]: ...
 
 
 class _ExtraInfoTransport(Protocol):
     """Transport surface needed to inspect the live TLS object."""
 
-    def get_extra_info(self, name: str, default: object = None) -> object:  # pragma: no cover
-        """Return transport metadata by name."""
-        ...
+    def get_extra_info(self, name: str, default: object = None) -> object: ...
 
 
 class _PinnedSocket(_Socket, Protocol):

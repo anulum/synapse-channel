@@ -108,7 +108,7 @@ class DeadLetterForwarder(Protocol):
         uri: str,
         local_id: str,
         token: str | None = None,
-    ) -> None:  # pragma: no cover - structural
+    ) -> None:
         """Transmit ``notice`` to the owning hub at ``uri``."""
         ...
 

@@ -185,6 +185,13 @@ def test_resolve_observed_pins_matches_specs_and_refuses_strays() -> None:
         resolve_observed_pins([("east", "sha256:aa"), ("east", "sha256:bb")], specs)
 
 
+async def test_an_unimplemented_observed_fetcher_does_not_fetch() -> None:
+    """The protocol stub fetches nothing. A real fetcher supplies the batch."""
+
+    fetcher = cast(ObservedFetcher, object())
+    assert await ObservedFetcher.__call__(fetcher, 0) is None
+
+
 async def test_pinned_observed_peer_pulls_a_self_signed_tls_hub(tmp_path: Path) -> None:
     """The pinned observed pull works end to end against a real self-signed TLS hub.
 

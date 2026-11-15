@@ -124,7 +124,7 @@ class ObservedFetcher(Protocol):
 
     async def __call__(self, after_seq: int) -> Sequence[StoredEvent]:
         """Fetch events after ``after_seq``."""
-        ...  # pragma: no cover - protocol body has no runtime path
+        ...
 
 
 ObservedFetcherFactory = Callable[[ObservedPeerSpec], ObservedFetcher]

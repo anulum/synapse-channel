@@ -7,10 +7,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import cast
+
 import pytest
 
 from synapse_channel.core.dead_letter_forwarding import (
     FORWARDING_FIELD,
+    DeadLetterForwarder,
     DeadLetterForwardError,
     DeadLetterForwardingWireError,
     ForwardingNotice,
@@ -114,3 +118,14 @@ def test_incoming_notice_names_the_peer_target_and_count_but_no_body() -> None:
     # The operator line is still a pointer: it never reconstructs a message body.
     for leaky in ("payload", "body", "secret"):
         assert leaky not in text
+
+
+async def test_an_unimplemented_forwarder_does_not_transmit() -> None:
+    """The protocol stub transmits nothing. A deployment supplies the transport."""
+
+    notice = forwarding_notice(
+        "OWNED/reader", 1, origin_hub_id="syn-edge", owner_hub_id="syn-owner"
+    )
+    forwarder = cast(DeadLetterForwarder, object())
+    transmit = cast(Callable[..., Awaitable[object]], DeadLetterForwarder.__call__)
+    assert await transmit(forwarder, notice, uri="ws://owner", local_id="origin") is None

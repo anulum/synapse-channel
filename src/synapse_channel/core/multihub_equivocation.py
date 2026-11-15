@@ -28,27 +28,27 @@ class FingerprintableHubEvent(Protocol):
     @property
     def hub_id(self) -> str:
         """Authoring hub identity."""
-        ...  # pragma: no cover - structural typing declaration
+        ...
 
     @property
     def seq(self) -> int:
         """Authoring hub sequence."""
-        ...  # pragma: no cover - structural typing declaration
+        ...
 
     @property
     def ts(self) -> float:
         """Exact event timestamp."""
-        ...  # pragma: no cover - structural typing declaration
+        ...
 
     @property
     def kind(self) -> str:
         """Event kind."""
-        ...  # pragma: no cover - structural typing declaration
+        ...
 
     @property
     def payload(self) -> Mapping[str, Any]:
         """Complete JSON-shaped event payload."""
-        ...  # pragma: no cover - structural typing declaration
+        ...
 
 
 class MultiHubIntegrityError(SynapseError):

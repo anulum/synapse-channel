@@ -37,11 +37,11 @@ class MessageCounter(Protocol):
     """Counts messages sealed under a key: read the running total, advance it by one."""
 
     @property
-    def count(self) -> int:  # pragma: no cover - structural
+    def count(self) -> int:
         """The number of messages sealed so far."""
         ...
 
-    def increment(self) -> int:  # pragma: no cover - structural
+    def increment(self) -> int:
         """Advance the count by one and return the new total."""
         ...
 

@@ -345,17 +345,13 @@ def certificate_sha256_pin_from_der(der: bytes) -> str:
 class _ExtraInfoTransport(Protocol):
     """Transport surface needed to inspect the live TLS object."""
 
-    def get_extra_info(self, name: str, default: object = None) -> object:  # pragma: no cover
-        """Return transport metadata by name."""
-        ...
+    def get_extra_info(self, name: str, default: object = None) -> object: ...
 
 
 class _PeerCertificate(Protocol):
     """TLS object surface that exposes the peer certificate bytes."""
 
-    def getpeercert(self, binary_form: bool = False) -> object:  # pragma: no cover
-        """Return the peer certificate."""
-        ...
+    def getpeercert(self, binary_form: bool = False) -> object: ...
 
 
 def pin_trust_client_context() -> ssl.SSLContext:

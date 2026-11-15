@@ -49,12 +49,12 @@ class AckIdentity(Protocol):
     """
 
     @property
-    def project(self) -> str:  # pragma: no cover
+    def project(self) -> str:
         """Return the bare project name."""
         ...
 
     @property
-    def identity(self) -> str:  # pragma: no cover
+    def identity(self) -> str:
         """Return the full sender identity."""
         ...
 

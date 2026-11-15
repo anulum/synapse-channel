@@ -45,8 +45,7 @@ class BoundedReadError(SynapseError, ValueError):
 class _Readable(Protocol):
     """The minimal response surface the bounded reader needs."""
 
-    def read(self, amount: int, /) -> bytes:  # pragma: no cover
-        ...
+    def read(self, amount: int, /) -> bytes: ...
 
 
 def read_bounded(

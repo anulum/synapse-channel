@@ -33,12 +33,12 @@ class IdentityLike(Protocol):
     @property
     def project(self) -> str:
         """Resolved project name."""
-        ...  # pragma: no cover
+        ...
 
     @property
     def identity(self) -> str:
         """Resolved full identity name."""
-        ...  # pragma: no cover
+        ...
 
 
 AsyncCommandRunner = Callable[[Sequence[str]], Awaitable[int]]

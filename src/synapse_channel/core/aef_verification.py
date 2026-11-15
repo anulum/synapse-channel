@@ -172,7 +172,7 @@ class AefReplayIndex(Protocol):
         self, log_id: str, seq: int, receipt_id: str
     ) -> AefVerdictCode | None:
         """Classify and record one validated identity as one atomic operation."""
-        ...  # pragma: no cover - structural typing declaration
+        ...
 
 
 class AefInclusionVerdict(MemberText, StrEnum):

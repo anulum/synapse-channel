@@ -51,17 +51,13 @@ PING_INTERVAL = 20.0
 class _Socket(Protocol):
     """The minimal connection surface a forward uses: send one frame."""
 
-    async def send(self, message: str) -> None:  # pragma: no cover - structural
-        """Send one text frame to the peer."""
-        ...
+    async def send(self, message: str) -> None: ...
 
 
 class _Connector(Protocol):
     """Opens a peer connection as an async context manager yielding a :class:`_Socket`."""
 
-    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]:  # pragma: no cover
-        """Open a connection to ``uri``."""
-        ...
+    def __call__(self, uri: str) -> AbstractAsyncContextManager[_Socket]: ...
 
 
 def _default_connector(uri: str) -> AbstractAsyncContextManager[_Socket]:

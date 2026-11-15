@@ -38,12 +38,12 @@ class LockIdentity(Protocol):
     @property
     def project(self) -> str:
         """Project used as the default lease filter."""
-        ...  # pragma: no cover
+        ...
 
     @property
     def identity(self) -> str:
         """Full query identity used to name the short-lived hub connection."""
-        ...  # pragma: no cover
+        ...
 
 
 @dataclass(frozen=True)
