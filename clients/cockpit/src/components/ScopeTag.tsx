@@ -36,6 +36,8 @@ export function ScopeProvider({ scope, travelling, children }: ScopeProviderProp
 interface ScopeTagProps {
   /** Whether this panel's data takes the scope; a panel that does not shows the whole hub. */
   readonly scoped?: boolean;
+  /** Whether the snapshot fills this panel; in a peer scope only such a panel shows the peer. */
+  readonly snapshot?: boolean;
   /** Whether this panel shows the rebuilt past state while the cockpit travels in time. */
   readonly replayed?: boolean;
   /** A statement of what in the panel the scope narrows, when not all of it. */
@@ -46,13 +48,31 @@ interface ScopeTagProps {
  * Name, in a panel's header, the part of the fleet the panel shows while a
  * scope is active. A panel whose feed the scope does not narrow, and a panel
  * that shows a past state rebuilt from the log, says that it shows the whole
- * hub, so no panel looks narrowed when it is not.
+ * hub, so no panel looks narrowed when it is not. In a peer scope, a panel the
+ * snapshot fills says it is advisory and observed from that hub; every other
+ * panel says it is not observed.
  */
-export function ScopeTag({ scoped = true, replayed = false, note }: ScopeTagProps): JSX.Element | null {
+export function ScopeTag({
+  scoped = true,
+  snapshot = false,
+  replayed = false,
+  note,
+}: ScopeTagProps): JSX.Element | null {
   const scope = useContext(ScopeContext);
   const travelling = useContext(ReplayContext);
   const { t } = useCockpitI18n();
   if (scope.kind === "all") return null;
+  if (scope.kind === "peer") {
+    return snapshot ? (
+      <span className="panel__sub panel__scope panel__scope--peer" title={t("scope.peerTitle")}>
+        {t("scope.peerTag", { hub: scope.hub })}
+      </span>
+    ) : (
+      <span className="panel__sub panel__scope panel__scope--whole" title={t("scope.peerFeedTitle")}>
+        {t("scope.peerFeedTag")}
+      </span>
+    );
+  }
   if (!scoped || (replayed && travelling)) {
     return (
       <span className="panel__sub panel__scope panel__scope--whole" title={t("scope.unscopedTitle")}>

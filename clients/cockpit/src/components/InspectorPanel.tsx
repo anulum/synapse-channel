@@ -34,6 +34,7 @@ import type { CockpitEvent } from "../types";
 import { AttentionQueue } from "./AttentionQueue";
 import type { CausalityPrefill } from "./CausalityView";
 import { DataCoverage } from "./DataCoverage";
+import { PeerInspectorBody, usePeerHub } from "./PeerScope";
 import { SignalLog } from "./SignalLog";
 
 const AuditView = lazy(async () => ({ default: (await import("./AuditView")).AuditView }));
@@ -92,6 +93,8 @@ export interface InspectorPanelProps {
 /** Render exactly one inspector panel while preserving deferred chunk boundaries. */
 export function InspectorPanel(props: InspectorPanelProps): JSX.Element {
   const { t } = useCockpitI18n();
+  const peerHub = usePeerHub();
+  if (peerHub !== null && props.tab !== "topology") return <PeerInspectorBody tab={props.tab} hub={peerHub} />;
   const {
     tab, events, provenance = "derived", coverage, attention = [], attentionFeed, connected = false,
     onInspectAgent, onInspectTask, onFleetSelectionChange, window = null, onClearWindow,

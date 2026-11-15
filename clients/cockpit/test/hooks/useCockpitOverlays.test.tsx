@@ -173,4 +173,37 @@ describe("useCockpitOverlays", () => {
     expect(result.current.paletteOpen).toBe(false);
     commandButton.remove();
   });
+
+  it("carries no write in a peer scope, opens no composer and announces no access change", () => {
+    const { result, rerender } = renderHook(
+      ({ writable }: { writable: boolean }) =>
+        useCockpitOverlays({
+          blocked: false,
+          authBlocked: false,
+          capabilities: OPERATOR,
+          writable,
+          accessChangedMessage: "access changed",
+          agents: ["alpha/one"],
+          tasks: ["TASK-1"],
+          setSelection: vi.fn(),
+          setFocus: vi.fn(),
+          toggleTheme: vi.fn(),
+          toggleDensity: vi.fn(),
+          toggleTravel: vi.fn(),
+        }),
+      { initialProps: { writable: true } },
+    );
+    act(() => result.current.messagePeer("alpha/one"));
+    expect(result.current.paletteCompose).toEqual({ to: "alpha/one", nonce: 1 });
+    const writing = result.current.commands.length;
+
+    rerender({ writable: false });
+    expect(result.current.paletteCompose).toBeNull();
+    expect(result.current.commands.length).toBeLessThan(writing);
+    expect(result.current.accessNotice).toBe("");
+    act(() => result.current.closePalette());
+    act(() => result.current.messagePeer("alpha/one"));
+    expect(result.current.paletteOpen).toBe(false);
+    expect(result.current.paletteCompose).toBeNull();
+  });
 });

@@ -12,6 +12,7 @@ import {
   WHOLE_HUB,
   appendQuery,
   parseScope,
+  peerScopes,
   sameScope,
   scopeFromSearch,
   scopeOptions,
@@ -22,6 +23,7 @@ import {
 
 const ALPHA = { kind: "project", namespace: "ALPHA" } as const;
 const NONE = { kind: "none" } as const;
+const EAST = { kind: "peer", hub: "east" } as const;
 
 describe("parseScope", () => {
   it("reads the three forms the dashboard serves", () => {
@@ -29,6 +31,7 @@ describe("parseScope", () => {
     expect(parseScope("none")).toEqual(NONE);
     expect(parseScope("project:ALPHA")).toEqual(ALPHA);
     expect(parseScope("project:with space")).toEqual({ kind: "project", namespace: "with space" });
+    expect(parseScope("peer:east")).toEqual(EAST);
   });
 
   it.each([
@@ -40,6 +43,9 @@ describe("parseScope", () => {
     `project:${"x".repeat(257)}`,
     "project:tab\there",
     "project:non breaking",
+    "peer:",
+    "peer:a/b",
+    "group:infra",
   ])("falls back to the whole hub for %j", (value) => {
     expect(parseScope(value)).toEqual(WHOLE_HUB);
   });
@@ -52,7 +58,7 @@ describe("parseScope", () => {
 
 describe("the URL", () => {
   it("round-trips every scope and keeps the other keys", () => {
-    for (const scope of [WHOLE_HUB, NONE, ALPHA]) {
+    for (const scope of [WHOLE_HUB, NONE, ALPHA, EAST]) {
       const search = scopeToSearch(scope, "?panel=fleet&agent=ALPHA%2Fone");
       expect(scopeFromSearch(search)).toEqual(scope);
       expect(new URLSearchParams(search).get("panel")).toBe("fleet");
@@ -76,7 +82,8 @@ describe("scoped requests", () => {
   });
 
   it("names each scope as the dashboard reads it and compares scopes by it", () => {
-    expect([WHOLE_HUB, NONE, ALPHA].map(scopeText)).toEqual(["all", "none", "project:ALPHA"]);
+    expect([WHOLE_HUB, NONE, ALPHA, EAST].map(scopeText)).toEqual(["all", "none", "project:ALPHA", "peer:east"]);
+    expect(withScope("/snapshot.json", EAST)).toBe("/snapshot.json?scope=peer%3Aeast");
     expect(sameScope(ALPHA, { kind: "project", namespace: "ALPHA" })).toBe(true);
     expect(sameScope(ALPHA, NONE)).toBe(false);
   });
@@ -106,6 +113,20 @@ describe("scopeOptions", () => {
   it("keeps the current scope as a choice when the hub no longer has it", () => {
     const gone = { kind: "project", namespace: "GONE" } as const;
     expect(scopeOptions(counts, gone).at(-1)).toEqual({ scope: gone, tasks: 0, agents: 0 });
+  });
+
+  it("keeps a peer out of the local choices and lists the observed hubs on their own", () => {
+    const withPeers = { ...counts, peers: ["east", "west"] };
+    expect(scopeOptions(withPeers, EAST).map((option) => scopeText(option.scope))).toEqual([
+      "all",
+      "none",
+      "project:ALPHA",
+      "project:BETA",
+    ]);
+    expect(peerScopes(withPeers, WHOLE_HUB)).toEqual([EAST, { kind: "peer", hub: "west" }]);
+    expect(peerScopes(withPeers, EAST)).toEqual([EAST, { kind: "peer", hub: "west" }]);
+    expect(peerScopes(counts, { kind: "peer", hub: "gone" })).toEqual([{ kind: "peer", hub: "gone" }]);
+    expect(peerScopes(null, ALPHA)).toEqual([]);
   });
 
   it("offers zero counts before the first snapshot", () => {

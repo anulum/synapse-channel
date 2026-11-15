@@ -89,8 +89,14 @@ export async function stop(started: Started | undefined): Promise<void> {
   await started.exited;
 }
 
-/** Start the private hub and dashboard and return the cockpit's address. */
-export async function startHarness(): Promise<{ readonly harness: Started; readonly url: string }> {
+/**
+ * Start the private hub and dashboard and return the cockpit's address. With
+ * `observedPeer`, the dashboard also observes a second real hub
+ * (`e2e/peer_hub.py`), which a peer scope shows.
+ */
+export async function startHarness(
+  options: { readonly observedPeer?: boolean } = {},
+): Promise<{ readonly harness: Started; readonly url: string }> {
   const harness = await start("e2e/dashboard_harness.py", [], {
     ...process.env,
     PYTHONUNBUFFERED: "1",
@@ -98,6 +104,7 @@ export async function startHarness(): Promise<{ readonly harness: Started; reado
     SYNAPSE_COCKPIT_E2E_HUB_PORT: hubPort,
     // The demonstration fleet records its own finding; the gate's seeded ones stay out.
     SYNAPSE_COCKPIT_E2E_SEED_FINDINGS: "0",
+    SYNAPSE_COCKPIT_E2E_OBSERVED_PEER: options.observedPeer === true ? "1" : "0",
   });
   const url = /ready at (\S+)/u.exec(harness.line)?.[1];
   if (!url) {

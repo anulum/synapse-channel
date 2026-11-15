@@ -28,6 +28,7 @@ import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { ReplayWorkbench } from "./components/ReplayWorkbench";
 import { RiskRail } from "./components/RiskRail";
 import { RoleBadge } from "./components/RoleBadge";
+import { PeerBand, PeerFeedPanel } from "./components/PeerScope";
 import { ScopePicker } from "./components/ScopePicker";
 import { ScopeProvider } from "./components/ScopeTag";
 import { SelectionBar } from "./components/SelectionBar";
@@ -82,13 +83,15 @@ export function App(): JSX.Element {
   const access = useDashboardAccess(authBlocked, auth.revision);
   const shellBlocked = authBlocked || access.phase === "loading";
   const { scope, setScope } = useCockpitScope();
+  // A peer scope shows an observed hub: read only, no feed of this hub, no time travel.
+  const peerHub = scope.kind === "peer" ? scope.hub : null;
   const feeds = useCockpitFeeds(shellBlocked, auth.revision, scope);
   const preferences = useCockpitPreferences();
   const [brush, setBrush] = useState<TimeWindow | null>(null);
   const [mobileSegment, setMobileSegment] = useState<MobileSegment>("signals");
   const [hostSessionsOpen, setHostSessionsOpen] = useState(false);
   const replay = useCockpitReplay({
-    blocked: shellBlocked,
+    blocked: shellBlocked || peerHub !== null,
     replay: workspace.replay,
     maximumSequence: feeds.coverage.maxSeq,
     setReplay,
@@ -105,6 +108,7 @@ export function App(): JSX.Element {
     blocked: shellBlocked,
     authBlocked,
     capabilities,
+    writable: peerHub === null,
     accessChangedMessage: t("app.accessChanged"),
     agents: view.roster.map((entry) => entry.agent),
     tasks: view.liveBoard.map((task) => task.taskId),
@@ -198,6 +202,7 @@ export function App(): JSX.Element {
           onClearFocus={() => preferences.setFocus("")}
           onClearWindow={onClearWindow}
         />
+        <PeerBand peer={feeds.snap.snapshot?.peer ?? null} />
         <PanelBoundary name="Activity spine">
           <ActivitySpine
             key={feeds.provenance === "hub" ? "hub" : "derived"}
@@ -207,27 +212,31 @@ export function App(): JSX.Element {
             workspaceSelection={workspace.selection}
           />
         </PanelBoundary>
-        <PanelBoundary name="Federation">
-          <FederationRow
-            state={feeds.federation}
-            hubVersion={feeds.snap.snapshot?.hub_version ?? ""}
-            configEpoch={feeds.snap.snapshot?.config_epoch ?? ""}
-          />
-        </PanelBoundary>
-        <ReplayWorkbench
-          replay={workspace.replay}
-          slotA={replay.slotA}
-          slotB={replay.slotB}
-          events={feeds.log}
-          onReplayChange={setReplay}
-          onReplayReplace={replaceReplay}
-          onSelectEvent={(sequence) =>
-            setPanelSelection("log", { kind: "event", seq: sequence })
-          }
-          onSelectTask={(taskId) =>
-            setPanelSelection("causality", { kind: "task", id: taskId })
-          }
-        />
+        {peerHub === null && (
+          <>
+            <PanelBoundary name="Federation">
+              <FederationRow
+                state={feeds.federation}
+                hubVersion={feeds.snap.snapshot?.hub_version ?? ""}
+                configEpoch={feeds.snap.snapshot?.config_epoch ?? ""}
+              />
+            </PanelBoundary>
+            <ReplayWorkbench
+              replay={workspace.replay}
+              slotA={replay.slotA}
+              slotB={replay.slotB}
+              events={feeds.log}
+              onReplayChange={setReplay}
+              onReplayReplace={replaceReplay}
+              onSelectEvent={(sequence) =>
+                setPanelSelection("log", { kind: "event", seq: sequence })
+              }
+              onSelectTask={(taskId) =>
+                setPanelSelection("causality", { kind: "task", id: taskId })
+              }
+            />
+          </>
+        )}
         <MobileNav active={mobileSegment} onSelect={setMobileSegment} />
         <div className={`deck deck--seg-${mobileSegment}`} role="main">
           <div className="deck__stack deck__stack--roster">
@@ -238,7 +247,11 @@ export function App(): JSX.Element {
                   <button type="button" aria-pressed={hostSessionsOpen} onClick={() => setHostSessionsOpen(true)}>{t("host.title")}</button>
                 </nav>
                 {hostSessionsOpen ? <PanelBoundary name={t("host.title")}>
-                  <HostSessions revision={auth.revision} />
+                  {peerHub === null ? (
+                    <HostSessions revision={auth.revision} />
+                  ) : (
+                    <PeerFeedPanel label={t("host.title")} title={t("host.title")} hub={peerHub} />
+                  )}
                 </PanelBoundary> : <PanelBoundary name="Fleet roster">
                 <FleetRoster
                   roster={view.roster}
@@ -252,7 +265,11 @@ export function App(): JSX.Element {
             </div>
             <div className="seg seg--reliability">
               <PanelBoundary name="Reliability">
-                <ReliabilityPanel state={feeds.reliability} />
+                {peerHub === null ? (
+                  <ReliabilityPanel state={feeds.reliability} />
+                ) : (
+                  <PeerFeedPanel label="Reliability evidence" title="Reliability" hub={peerHub} />
+                )}
               </PanelBoundary>
             </div>
           </div>
@@ -305,7 +322,7 @@ export function App(): JSX.Element {
                   conflicts={view.conflicts}
                   liveAgentCount={feeds.snap.snapshot?.fleet.agents.live.length ?? 0}
                   agents={view.roster.map((entry) => entry.agent)}
-                  canMessagePeer={capabilities.message_send}
+                  canMessagePeer={capabilities.message_send && peerHub === null}
                   onMessagePeer={overlays.messagePeer}
                   connected={view.connected}
                   federation={feeds.federation}
@@ -366,7 +383,11 @@ export function App(): JSX.Element {
             </div>
             <div className="seg seg--signals">
               <PanelBoundary name="Findings">
-                <FindingsStream state={feeds.findings} />
+                {peerHub === null ? (
+                  <FindingsStream state={feeds.findings} />
+                ) : (
+                  <PeerFeedPanel label="Findings stream" title="Findings" hub={peerHub} />
+                )}
               </PanelBoundary>
             </div>
           </div>

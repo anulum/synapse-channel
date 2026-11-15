@@ -117,6 +117,25 @@ export interface CockpitFeeds {
 }
 
 /**
+ * In a peer scope, poll the observed hub's snapshot alone. The live stream's
+ * feed channels and every feed are this hub's, so none is opened: no local row
+ * is ever shown as the peer's.
+ */
+function pollPeerSnapshot(
+  scope: CockpitScope,
+  setSnap: (state: SnapshotState) => void,
+  setTransportState: (state: LiveConnectionState) => void,
+): () => void {
+  const store = createSnapshotStore({ url: withScope("/snapshot.json", scope) });
+  const unsubscribe = store.subscribe(setSnap);
+  setTransportState({ status: "fallback", attempt: 0, detail: null });
+  return () => {
+    unsubscribe();
+    store.stop();
+  };
+}
+
+/**
  * Own the multiplexed stream and its bounded polling fallback for one credential revision.
  *
  * Locking stops all requests and clears every last-good value. Unlocking creates
@@ -129,7 +148,8 @@ export function useCockpitFeeds(
   scope: CockpitScope = WHOLE_HUB,
 ): CockpitFeeds {
   const scopeKey = scopeText(scope);
-  const auxiliary = useCockpitAuxiliaryFeeds(blocked, credentialRevision, scope);
+  // A peer scope shows the observed hub's snapshot alone; this hub's feeds stay closed.
+  const auxiliary = useCockpitAuxiliaryFeeds(blocked || scope.kind === "peer", credentialRevision, scope);
   const [snap, setSnap] = useState<SnapshotState>(INITIAL_SNAPSHOT);
   const [kpis, setKpis] = useState<readonly Kpi[]>([]);
   const [log, setLog] = useState<readonly CockpitEvent[]>([]);
@@ -149,7 +169,7 @@ export function useCockpitFeeds(
 
   useEffect(() => {
     setAttention(INITIAL_ATTENTION);
-    if (blocked) return;
+    if (blocked || parseScope(scopeKey).kind === "peer") return;
     const store = createAttentionStore({ url: withScope("/attention.json", parseScope(scopeKey)) });
     const unsubscribe = store.subscribe(setAttention);
     return () => {
@@ -170,6 +190,7 @@ export function useCockpitFeeds(
     setTransportState({ status: "connecting", attempt: 0, detail: null });
     previous.current = ZERO_HEADLINE_METRICS;
     if (blocked) return;
+    if (requestScope.kind === "peer") return pollPeerSnapshot(requestScope, setSnap, setTransportState);
 
     const routed = new Set<(event: CockpitEvent) => void>();
     setSpineSource({

@@ -37,6 +37,8 @@ function snapshotOf(options: {
     bounds: null,
     headline: null,
     scope: null,
+    advisory: false,
+    peer: null,
     hub_version: "",
     config_epoch: "",
     online_agents: [],

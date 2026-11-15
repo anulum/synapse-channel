@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from peer_hub import observed_peer_hub
 from websockets.asyncio.client import connect
 
 from synapse_channel.core.approvals import format_approval_note
@@ -27,11 +28,14 @@ from synapse_channel.core.finding_records import Finding
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind, record_finding, record_operator_relay
 from synapse_channel.core.persistence import EventStore
-from synapse_channel.dashboard import start_dashboard_server
+from synapse_channel.dashboard import DashboardServer, start_dashboard_server
+from synapse_channel.observed_peers import ObservedPeerSpec
 
 HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 18765
 DEFAULT_HUB_PORT = 18766
+DASHBOARD_NAME = "cockpit-e2e-dashboard"
+"""The dashboard's identity on the hub; it pulls an observed peer's log as ``<name>-observed``."""
 
 SEEDED_FINDINGS = (
     {
@@ -121,27 +125,29 @@ def _access_policy(root: Path, tokens: dict[str, str]) -> Path:
     return policy_path
 
 
-async def _serve() -> None:
-    """Run the real hub and read-gated operator dashboard until terminated."""
-    dashboard_port = _port_from_env("SYNAPSE_COCKPIT_E2E_DASHBOARD_PORT", DEFAULT_DASHBOARD_PORT)
-    hub_port = _port_from_env("SYNAPSE_COCKPIT_E2E_HUB_PORT", DEFAULT_HUB_PORT)
-    tokens = {
-        "viewer": os.environ.get("SYNAPSE_COCKPIT_E2E_VIEWER_TOKEN", ""),
-        "operator": os.environ.get("SYNAPSE_COCKPIT_E2E_TOKEN", ""),
-        "admin": os.environ.get("SYNAPSE_COCKPIT_E2E_ADMIN_TOKEN", ""),
-    }
-    dist = Path(
-        os.environ.get(
-            "SYNAPSE_COCKPIT_E2E_DIST", str(Path(__file__).resolve().parents[1] / "dist")
-        )
+def _attention_store(journal: EventStore, scratch: Path) -> Path:
+    """Project the journal's attention evidence into the dashboard's store, and return it."""
+    attention_store = scratch / "attention" / "queue.db"
+    observed_at = time.time()
+    sync_evidence(
+        attention_store,
+        source="hub",
+        evidence=project_hub_attention(journal.iter_events(), now=observed_at),
+        now=observed_at,
     )
-    if not (dist / "index.html").is_file():
-        raise FileNotFoundError("build the cockpit before running the browser gate")
+    return attention_store
 
-    scratch = TemporaryDirectory(prefix="synapse-cockpit-e2e-")
-    access_file = _access_policy(Path(scratch.name), tokens)
-    event_db = Path(scratch.name) / "hub.db"
-    journal = EventStore(event_db)
+
+def _seed_journal(journal: EventStore, scratch: Path) -> Path:
+    """Journal the gate's audit, approval and finding evidence, and return the attention store.
+
+    Parameters
+    ----------
+    journal : EventStore
+        The hub's journal, written before the hub serves it.
+    scratch : pathlib.Path
+        The harness's scratch folder, where the attention store is written.
+    """
     record_operator_relay(
         journal,
         {
@@ -177,36 +183,70 @@ async def _serve() -> None:
             # The record the hub journals: parsed, then stamped with an attested origin.
             finding = Finding.from_dict(seeded).attested(by="cockpit-e2e/reviewer", at=time.time())
             record_finding(journal, finding.as_dict())
-    attention_store = Path(scratch.name) / "attention" / "queue.db"
-    observed_at = time.time()
-    sync_evidence(
-        attention_store,
-        source="hub",
-        evidence=project_hub_attention(journal.iter_events(), now=observed_at),
-        now=observed_at,
+    return _attention_store(journal, scratch)
+
+
+def _dashboard(
+    hub_uri: str,
+    port: int,
+    scratch: Path,
+    dist: Path,
+    observed: tuple[ObservedPeerSpec, ...],
+    access_file: Path,
+) -> DashboardServer:
+    """Start the read-gated operator dashboard on the hub, observing ``observed``."""
+    return start_dashboard_server(
+        host=HOST,
+        port=port,
+        uri=hub_uri,
+        name=DASHBOARD_NAME,
+        token=None,
+        ready_timeout=2.0,
+        response_timeout=2.0,
+        refresh_seconds=1,
+        allow_non_loopback=False,
+        dashboard_access_file=access_file,
+        cockpit_dist=dist,
+        reliability_db=scratch / "hub.db",
+        attention_store=scratch / "attention" / "queue.db",
+        operator=True,
+        observed_peers=observed,
+        observed_timeout=2.0,
     )
+
+
+async def _serve() -> None:
+    """Run the real hub and read-gated operator dashboard until terminated."""
+    dashboard_port = _port_from_env("SYNAPSE_COCKPIT_E2E_DASHBOARD_PORT", DEFAULT_DASHBOARD_PORT)
+    hub_port = _port_from_env("SYNAPSE_COCKPIT_E2E_HUB_PORT", DEFAULT_HUB_PORT)
+    tokens = {
+        "viewer": os.environ.get("SYNAPSE_COCKPIT_E2E_VIEWER_TOKEN", ""),
+        "operator": os.environ.get("SYNAPSE_COCKPIT_E2E_TOKEN", ""),
+        "admin": os.environ.get("SYNAPSE_COCKPIT_E2E_ADMIN_TOKEN", ""),
+    }
+    dist = Path(
+        os.environ.get(
+            "SYNAPSE_COCKPIT_E2E_DIST", str(Path(__file__).resolve().parents[1] / "dist")
+        )
+    )
+    if not (dist / "index.html").is_file():
+        raise FileNotFoundError("build the cockpit before running the browser gate")
+
+    scratch = TemporaryDirectory(prefix="synapse-cockpit-e2e-")
+    scratch_path = Path(scratch.name)
+    access_file = _access_policy(scratch_path, tokens)
+    journal = EventStore(scratch_path / "hub.db")
+    _seed_journal(journal, scratch_path)
     hub = SynapseHub(hub_id="cockpit-e2e", journal=journal)
     hub_task = asyncio.create_task(hub.serve(HOST, hub_port))
     dashboard = None
+    peers = contextlib.AsyncExitStack()
     try:
         hub_uri = f"ws://{HOST}:{hub_port}"
         await _await_hub(hub_uri)
-        dashboard = start_dashboard_server(
-            host=HOST,
-            port=dashboard_port,
-            uri=hub_uri,
-            name="cockpit-e2e-dashboard",
-            token=None,
-            ready_timeout=2.0,
-            response_timeout=2.0,
-            refresh_seconds=1,
-            allow_non_loopback=False,
-            dashboard_access_file=access_file,
-            cockpit_dist=dist,
-            reliability_db=event_db,
-            attention_store=attention_store,
-            operator=True,
-        )
+        observer = f"{DASHBOARD_NAME}-observed"
+        observed = await peers.enter_async_context(observed_peer_hub(scratch_path, HOST, observer))
+        dashboard = _dashboard(hub_uri, dashboard_port, scratch_path, dist, observed, access_file)
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
         for signum in (signal.SIGINT, signal.SIGTERM):
@@ -217,6 +257,7 @@ async def _serve() -> None:
     finally:
         if dashboard is not None:
             dashboard.close()
+        await peers.aclose()
         hub_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await hub_task

@@ -51,7 +51,7 @@ function TopologyViewComponent({
     <section className="panel" aria-label="Fleet topology">
       <div className="panel__head">
         <span>Topology</span>
-        <ScopeTag replayed />
+        <ScopeTag snapshot replayed />
         <span className="panel__count">{layout.claims.length}</span>
         <span className="panel__sub">
           {layout.idleAgents > 0

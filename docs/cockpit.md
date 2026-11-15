@@ -508,6 +508,31 @@ project's records only. A scope is a lens, not an access boundary: it grants
 nothing and hides nothing the hub sends this principal. The rules that place
 each record in a scope are in the [CLI reference](cli.md).
 
+### Look at an observed peer hub
+
+A dashboard started with `--observed-peer HUB=URI` lists each observed hub in
+the selector, after the namespaces, under **Observed hubs (advisory)**.
+Choosing one, `scope=peer:<HUB>`, shows that hub's folded state alone: its
+board, its claims and the claim owners it saw. Nothing of this hub enters the
+view, and the view grants nothing:
+
+- a band under the HUD says the deck is advisory and observed from that hub,
+  whether the last pull reached it, its cursor and lag, and that writes are off;
+- the claims, board, topology, roster and risk rail say
+  `advisory · observed from <HUB>`;
+- the panels this hub's feeds fill (signal log, findings, attention, fleet
+  views, metrics, audit, causality, reliability, host sessions) say
+  `not observed` and show why instead of this hub's rows; the cockpit pulls
+  none of them in a peer scope, nor the live stream, and polls the peer's
+  snapshot alone;
+- every write control is absent, whatever role this principal holds; this is
+  the scope's view, not an access change, so no access notice appears;
+- time travel and the federation row are hidden, because both read this hub.
+
+A hub this dashboard does not observe, and one whose last pull failed, show no
+row and say why. Choosing any other scope restores this hub's view and its
+feeds. The Fleet mirror (`/fleet-observed.json`) is not offered as a scope.
+
 ## Inspect fleet communication
 
 Open the **fleet** inspector tab and choose one of five views:

@@ -83,7 +83,7 @@ function RiskRailView({
     <section className="panel" aria-label="Risk rail">
       <div className="panel__head">
         <span>Risk rail</span>
-        <ScopeTag />
+        <ScopeTag snapshot />
         {risk !== null && (
           <span className={`risk-verdict risk-verdict--${risk.level}`}>
             {LEVEL_GLYPH[risk.level]} {risk.level}

@@ -14,6 +14,7 @@ import type {
   FleetSection,
   FleetSnapshot,
   Headline,
+  PeerBlock,
   RiskSignal,
   RiskView,
   ScopeNamespace,
@@ -331,7 +332,34 @@ export function parseScopeSummary(value: unknown): ScopeSummary | null {
     if (parsed === null) return null;
     namespaces.push(parsed);
   }
-  return { ...(counts as Omit<ScopeSummary, "scope" | "applied" | "namespaces">), scope, applied, namespaces };
+  // A dashboard older than peer scopes sends no list; that is no peer, not a malformed block.
+  const peers = block["peers"] ?? [];
+  if (!Array.isArray(peers) || !peers.every((peer) => typeof peer === "string")) return null;
+  return {
+    ...(counts as Omit<ScopeSummary, "scope" | "applied" | "namespaces" | "peers">),
+    scope,
+    applied,
+    namespaces,
+    peers,
+  };
+}
+
+/** Shape the `peer` block of a peer scope's document; anything malformed is none. */
+export function parsePeerBlock(value: unknown): PeerBlock | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const block = value as Record<string, unknown>;
+  const hubId = block["hub_id"];
+  const observed = block["observed"];
+  const reachable = block["reachable"];
+  if (typeof hubId !== "string" || typeof observed !== "boolean" || typeof reachable !== "boolean") return null;
+  return {
+    hubId,
+    observed,
+    reachable,
+    cursor: wholeCount(block["cursor"]),
+    lag: wholeCount(block["lag"]),
+    error: typeof block["error"] === "string" ? block["error"] : "",
+  };
 }
 
 /**
@@ -355,5 +383,7 @@ export function parseSnapshot(raw: unknown): FleetSnapshot | null {
     bounds: parseBounds(payload["bounds"]),
     headline: parseHeadline(payload["headline"]),
     scope: parseScopeSummary(payload["scope"]),
+    advisory: payload["advisory"] === true,
+    peer: parsePeerBlock(payload["peer"]),
   };
 }

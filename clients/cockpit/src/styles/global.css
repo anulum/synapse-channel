@@ -5235,6 +5235,41 @@ body {
   font-style: italic;
 }
 
+/* A peer scope: the observed hub's state, advisory and read only. The band and
+   tags use the warning text token, which reads as text in both themes. */
+.panel__scope--peer {
+  color: var(--sev-warn-text);
+}
+
+.hud__scope--peer .hud__scope-select {
+  border-style: dashed;
+}
+
+.peer-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  padding: var(--sp-1) var(--sp-4);
+  border-bottom: 1px dashed var(--warn);
+  background: var(--panel);
+  color: var(--sev-warn-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.peer-band__status {
+  color: var(--ink);
+}
+
+.peer-band--down .peer-band__status {
+  color: var(--sev-crit-text);
+}
+
+.peer-notice {
+  font-style: italic;
+}
+
 /* ---------- compact density ---------- */
 :root[data-density="compact"] {
   --fs-micro: 9px;

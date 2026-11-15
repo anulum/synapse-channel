@@ -21,6 +21,8 @@ function snapshot(epoch: string, risk: "green" | "red" = "green"): FleetSnapshot
     bounds: null,
     headline: null,
     scope: null,
+    advisory: false,
+    peer: null,
     online_agents: [],
     agent_roles: {},
     hub_version: "",

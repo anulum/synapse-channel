@@ -16,6 +16,7 @@ import {
   lostWriteCapability,
   NO_DASHBOARD_CAPABILITIES,
   parseDashboardAccess,
+  readOnlyCapabilities,
   UNAVAILABLE_DASHBOARD_ACCESS,
   type DashboardCapabilities,
 } from "../src/lib/access";
@@ -114,4 +115,10 @@ it("detects each write removal but ignores read loss, grants, and stable access"
   expect(lostWriteCapability(VIEWER, OPERATOR)).toBe(false);
   expect(lostWriteCapability(VIEWER, { ...VIEWER, read: false })).toBe(false);
   expect(lostWriteCapability(OPERATOR, OPERATOR)).toBe(false);
+});
+
+it("takes every write away for a peer scope and keeps the read", () => {
+  expect(readOnlyCapabilities(OPERATOR)).toEqual(VIEWER);
+  expect(readOnlyCapabilities(VIEWER)).toEqual(VIEWER);
+  expect(readOnlyCapabilities({ ...VIEWER, read: false }).read).toBe(false);
 });

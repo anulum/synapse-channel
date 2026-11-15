@@ -150,7 +150,7 @@ function TaskBoardView({
     <section className="panel" aria-label="Task board">
       <div className="panel__head">
         <span>Board</span>
-        <ScopeTag replayed />
+        <ScopeTag snapshot replayed />
         <span
           className="panel__count"
           title={capped ? "The hub capped this reply; the full board is larger." : undefined}

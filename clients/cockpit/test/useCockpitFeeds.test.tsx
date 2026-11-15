@@ -15,6 +15,7 @@ import {
   LIVE_TRANSPORT_FALLBACK_MS,
   useCockpitFeeds,
 } from "../src/hooks/useCockpitFeeds";
+import type { CockpitScope } from "../src/lib/scope";
 
 afterEach(() => {
   cleanup();
@@ -345,5 +346,47 @@ describe("useCockpitFeeds startup", () => {
     await waitFor(() =>
       expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/health-anomalies.json"))).toBe(true),
     );
+  });
+});
+
+function ScopedProbe({ scope }: { readonly scope: CockpitScope }): React.JSX.Element {
+  const feeds = useCockpitFeeds(false, 0, scope);
+  return (
+    <>
+      <output aria-label="transport probe">{feeds.transport.status}</output>
+      <output aria-label="peer probe">{feeds.snap.snapshot?.peer?.hubId ?? ""}</output>
+    </>
+  );
+}
+
+describe("useCockpitFeeds in a peer scope", () => {
+  it("polls the peer's snapshot alone and opens no feed of this hub until the scope is left", async () => {
+    vi.useFakeTimers();
+    const peer = { hub_id: "east", observed: true, reachable: true, cursor: 3, lag: 0, error: "" };
+    const fetcher = vi.fn<typeof fetch>((input) =>
+      Promise.resolve(
+        urlOf(input).startsWith("/snapshot.json")
+          ? new Response(JSON.stringify({ advisory: true, peer }))
+          : new Response("absent", { status: 404 }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    const { rerender } = render(<ScopedProbe scope={{ kind: "peer", hub: "east" }} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUXILIARY_FEED_START_FALLBACK_MS + LIVE_TRANSPORT_FALLBACK_MS);
+    });
+
+    expect(new Set(fetcher.mock.calls.map(([input]) => urlOf(input)))).toEqual(
+      new Set(["/snapshot.json?scope=peer%3Aeast"]),
+    );
+    expect(screen.getByLabelText("peer probe").textContent).toBe("east");
+    expect(screen.getByLabelText("transport probe").textContent).toBe("fallback");
+
+    rerender(<ScopedProbe scope={{ kind: "all" }} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(fetcher.mock.calls.some(([input]) => urlOf(input) === "/live.ndjson")).toBe(true);
   });
 });

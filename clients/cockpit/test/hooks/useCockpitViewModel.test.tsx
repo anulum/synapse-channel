@@ -29,6 +29,8 @@ const SNAPSHOT: FleetSnapshot = {
   bounds: null,
   headline: null,
   scope: null,
+  advisory: false,
+  peer: null,
   online_agents: ["alpha/one"],
   agent_roles: { "alpha/one": ["worker"] },
   hub_version: "1.0.0",

@@ -257,6 +257,23 @@ export interface ScopeSummary {
   readonly claimsInScope: number;
   readonly claimsTotal: number;
   readonly namespaces: readonly ScopeNamespace[];
+  /** The observed peer hubs, each a scope of its own; empty when none is observed. */
+  readonly peers: readonly string[];
+}
+
+/** What the dashboard knows of the observed peer hub a peer scope shows. */
+export interface PeerBlock {
+  readonly hubId: string;
+  /** Whether the dashboard observes that hub at all. */
+  readonly observed: boolean;
+  /** Whether the last pull reached it. */
+  readonly reachable: boolean;
+  /** The highest event sequence folded from it; null when not reached. */
+  readonly cursor: number | null;
+  /** How many of its events the fold is behind; null when the hub does not say. */
+  readonly lag: number | null;
+  /** Why the pull failed or the hub is not observed; empty otherwise. */
+  readonly error: string;
 }
 
 export interface FleetSnapshot {
@@ -278,4 +295,8 @@ export interface FleetSnapshot {
   readonly headline: Headline | null;
   /** The scope block; null when the dashboard served none or it is malformed. */
   readonly scope: ScopeSummary | null;
+  /** Whether the document shows an observed peer hub: advisory, never this hub's own work. */
+  readonly advisory: boolean;
+  /** The observed peer's pull in a peer scope; null for this hub's own document. */
+  readonly peer: PeerBlock | null;
 }

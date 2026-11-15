@@ -11,6 +11,7 @@ import type { JSX } from "react";
 import { useCockpitI18n } from "../context/CockpitI18n";
 import {
   parseScope,
+  peerScopes,
   scopeOptions,
   scopeText,
   type CockpitScope,
@@ -28,7 +29,9 @@ interface ScopePickerProps {
 /**
  * Choose the part of the fleet the cockpit shows: the whole hub, the work
  * without a project, or one namespace, each with its task and agent counts.
- * The counts are the hub's, so a choice never reads as a bare zero.
+ * The counts are the hub's, so a choice never reads as a bare zero. The
+ * observed peer hubs follow under their own heading: each shows that hub's
+ * folded state, advisory and read-only.
  */
 export function ScopePicker({ scope, counts, onChange }: ScopePickerProps): JSX.Element {
   const { t } = useCockpitI18n();
@@ -38,8 +41,10 @@ export function ScopePicker({ scope, counts, onChange }: ScopePickerProps): JSX.
     if (option.scope.kind === "none") return t("hud.scopeNone", values);
     return t("hud.scopeProject", { ...values, namespace: option.scope.namespace });
   };
+  const peers = peerScopes(counts, scope);
+  const marked = scope.kind === "all" ? "" : scope.kind === "peer" ? " hud__scope--on hud__scope--peer" : " hud__scope--on";
   return (
-    <span className={`hud__scope${scope.kind === "all" ? "" : " hud__scope--on"}`} title={t("hud.scopeTitle")}>
+    <span className={`hud__scope${marked}`} title={t("hud.scopeTitle")}>
       <select
         className="hud__scope-select"
         aria-label={t("hud.scopeLabel")}
@@ -51,6 +56,15 @@ export function ScopePicker({ scope, counts, onChange }: ScopePickerProps): JSX.
             {label(option)}
           </option>
         ))}
+        {peers.length > 0 && (
+          <optgroup label={t("hud.scopePeers")}>
+            {peers.map((peer) => (
+              <option key={scopeText(peer)} value={scopeText(peer)}>
+                {t("hud.scopePeer", { hub: peer.hub })}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
     </span>
   );

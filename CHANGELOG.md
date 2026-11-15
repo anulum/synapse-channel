@@ -91,6 +91,13 @@ start to finish and makes the cockpit the dashboard's front door.
   lag and clock skew. An unobserved or unreachable hub gives an empty document that says why. Every
   `scope` block lists the observed hubs (`peers`). The feeds answer a peer scope with the local
   hub's rows and say the scope was not applied.
+- The cockpit offers each observed peer hub as a scope, under its own heading in the scope
+  selector. A peer scope shows that hub's board, claims and claim owners alone. A band under the HUD
+  says the deck is advisory, observed from that hub, whether its last pull reached it, and that
+  writes are off; the panels the snapshot fills say `advisory · observed from <hub>`, and the
+  panels this hub's feeds fill say `not observed` instead of showing this hub's rows. In a peer scope
+  the cockpit polls the peer's snapshot alone, opens no feed or live stream of this hub, shows no
+  write control and hides time travel. Leaving the scope restores this hub's view.
 - The wheel carries the cockpit's production build, without source maps (about
   1.3 MB), in `synapse_channel/dashboard_assets/cockpit/`, with
   `THIRD_PARTY_NOTICES.md`: every npm package whose code the build carries, with

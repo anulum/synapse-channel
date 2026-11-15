@@ -128,6 +128,14 @@ export function capabilitiesOf(access: DashboardAccessState): DashboardCapabilit
   return access.descriptor?.capabilities ?? NO_DASHBOARD_CAPABILITIES;
 }
 
+/**
+ * Return `capabilities` without any write: the view a peer scope allows. A peer
+ * scope shows an observed hub's state, so nothing done from it may change work.
+ */
+export function readOnlyCapabilities(capabilities: DashboardCapabilities): DashboardCapabilities {
+  return { ...capabilities, message_send: false, task_declare: false, task_update: false };
+}
+
 /** Detect removal of any currently shipped write control. */
 export function lostWriteCapability(
   previous: DashboardCapabilities,

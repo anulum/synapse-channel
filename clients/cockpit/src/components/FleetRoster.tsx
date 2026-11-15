@@ -161,7 +161,7 @@ function FleetRosterView({
     <section className="panel" aria-label="Fleet roster">
       <div className="panel__head">
         <span>Fleet roster</span>
-        <ScopeTag />
+        <ScopeTag snapshot />
         <span className="panel__count">{live}</span>
         {waiters > 0 && <span className="panel__sub">{`${waiters} waiting`}</span>}
         {presenceHolders > 0 && (

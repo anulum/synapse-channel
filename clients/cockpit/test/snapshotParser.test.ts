@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseBounds,
   parseHeadline,
+  parsePeerBlock,
   parseScopeSummary,
   parseSnapshot,
 } from "../src/lib/snapshotParser";
@@ -306,9 +307,11 @@ describe("parseScopeSummary", () => {
         { namespace: "ALPHA", tasks: 2, agents: 1 },
         { namespace: "BETA", tasks: 3, agents: 2 },
       ],
+      peers: [],
     });
     expect(parseSnapshot({ scope: SCOPE_WIRE })?.scope?.namespaces).toHaveLength(2);
     expect(parseSnapshot({})?.scope).toBeNull();
+    expect(parseScopeSummary({ ...SCOPE_WIRE, peers: ["east", "west"] })?.peers).toEqual(["east", "west"]);
   });
 
   it.each([
@@ -320,7 +323,46 @@ describe("parseScopeSummary", () => {
     ["a namespace that is no object", { ...SCOPE_WIRE, namespaces: [null] }],
     ["an empty namespace", { ...SCOPE_WIRE, namespaces: [{ namespace: "", tasks: 1, agents: 0 }] }],
     ["a namespace with a bad count", { ...SCOPE_WIRE, namespaces: [{ namespace: "A", tasks: 1.5, agents: 0 }] }],
+    ["peers that are no list", { ...SCOPE_WIRE, peers: "east" }],
+    ["a peer that is no name", { ...SCOPE_WIRE, peers: ["east", 2] }],
   ])("refuses a block with %s", (_label, value) => {
     expect(parseScopeSummary(value)).toBeNull();
+  });
+});
+
+describe("a peer scope's document", () => {
+  const PEER_WIRE = {
+    hub_id: "east",
+    observed: true,
+    reachable: true,
+    cursor: 6,
+    log_end_seq: 9,
+    lag: 3,
+    clock_skew_seconds: -1.5,
+    observed_agents: ["EAST/api"],
+    board_conflicts: 0,
+    error: "",
+  };
+
+  it("reads the advisory mark and the peer's pull", () => {
+    const parsed = parseSnapshot({ advisory: true, peer: PEER_WIRE });
+    expect(parsed?.advisory).toBe(true);
+    expect(parsed?.peer).toEqual({ hubId: "east", observed: true, reachable: true, cursor: 6, lag: 3, error: "" });
+    expect(parsePeerBlock({ ...PEER_WIRE, cursor: null, lag: null, error: 1 })).toEqual({
+      hubId: "east",
+      observed: true,
+      reachable: true,
+      cursor: null,
+      lag: null,
+      error: "",
+    });
+  });
+
+  it("reads this hub's own document as no peer, and a malformed block as none", () => {
+    expect(parseSnapshot({ advisory: "yes" })?.advisory).toBe(false);
+    expect(parseSnapshot({})?.peer).toBeNull();
+    for (const value of [null, [], { ...PEER_WIRE, hub_id: 1 }, { ...PEER_WIRE, observed: "no" }, { ...PEER_WIRE, reachable: 0 }]) {
+      expect(parsePeerBlock(value)).toBeNull();
+    }
   });
 });

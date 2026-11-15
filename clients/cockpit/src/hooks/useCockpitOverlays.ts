@@ -10,7 +10,7 @@ import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { DashboardCapabilities } from "../lib/access";
-import { lostWriteCapability } from "../lib/access";
+import { lostWriteCapability, readOnlyCapabilities } from "../lib/access";
 import { buildCommands, type Command } from "../lib/palette";
 import type { CockpitSelection } from "../lib/workspace";
 
@@ -33,6 +33,11 @@ interface OverlayOptions {
   readonly blocked: boolean;
   readonly authBlocked: boolean;
   readonly capabilities: DashboardCapabilities;
+  /**
+   * False in a peer scope: commands carry no write and no composer opens. The
+   * scope took the writes away, not the access, so nothing is announced.
+   */
+  readonly writable?: boolean;
   readonly accessChangedMessage: string;
   readonly agents: readonly string[];
   readonly tasks: readonly string[];
@@ -74,6 +79,7 @@ export function useCockpitOverlays({
   blocked,
   authBlocked,
   capabilities,
+  writable = true,
   accessChangedMessage,
   agents,
   tasks,
@@ -151,10 +157,18 @@ export function useCockpitOverlays({
 
   const closeInspection = useCallback(() => setInspected(null), []);
 
-  const messagePeer = useCallback((identity: string) => {
-    setPaletteCompose((current) => ({ to: identity, nonce: (current?.nonce ?? 0) + 1 }));
-    setPaletteOpen(true);
-  }, []);
+  useEffect(() => {
+    if (!writable) setPaletteCompose(null);
+  }, [writable]);
+
+  const messagePeer = useCallback(
+    (identity: string) => {
+      if (!writable) return;
+      setPaletteCompose((current) => ({ to: identity, nonce: (current?.nonce ?? 0) + 1 }));
+      setPaletteOpen(true);
+    },
+    [writable],
+  );
 
   const openPalette = useCallback(() => {
     setPaletteCompose(null);
@@ -195,8 +209,8 @@ export function useCockpitOverlays({
   }, []);
 
   const commands = useMemo(
-    () => buildCommands(agents, tasks, capabilities),
-    [agents, capabilities, tasks],
+    () => buildCommands(agents, tasks, writable ? capabilities : readOnlyCapabilities(capabilities)),
+    [agents, capabilities, tasks, writable],
   );
 
   const runCommand = useCallback((command: Command) => {
