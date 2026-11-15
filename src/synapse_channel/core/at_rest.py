@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from synapse_channel.core.at_rest_counter import InMemoryMessageCounter, MessageCounter
 
-if TYPE_CHECKING:  # pragma: no cover - typing-only import, never required at runtime.
+if TYPE_CHECKING:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 ENVELOPE_MAGIC = b"SYNAR\x01\x00\x00"
@@ -198,7 +198,7 @@ def require_aes_gcm() -> _AESGCMFactory:
     """
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    except ImportError as exc:  # pragma: no cover - exercised via a patched import in tests.
+    except ImportError as exc:
         raise RuntimeError(
             "at-rest encryption requires the optional 'cryptography' dependency; "
             "install it with: pip install synapse-channel[encryption]"
@@ -494,7 +494,7 @@ def _require_key_wrap() -> tuple[Any, Any, type[Exception]]:
             aes_key_unwrap,
             aes_key_wrap,
         )
-    except ImportError as exc:  # pragma: no cover - exercised via a patched import in tests.
+    except ImportError as exc:
         raise RuntimeError(
             "at-rest key wrapping requires the optional 'cryptography' dependency; "
             "install it with: pip install synapse-channel[encryption]"

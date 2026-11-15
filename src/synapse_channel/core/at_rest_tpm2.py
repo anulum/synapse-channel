@@ -98,7 +98,7 @@ def require_tpm2() -> Any:
     _prepare_tpm2_cryptography_compat()
     try:
         import tpm2_pytss
-    except ImportError as exc:  # pragma: no cover - exercised via a patched import in tests.
+    except ImportError as exc:
         raise RuntimeError(
             "the TPM 2.0 at-rest key backend requires the optional 'tpm2-pytss' dependency; "
             "install it with: pip install synapse-channel[tpm2]"

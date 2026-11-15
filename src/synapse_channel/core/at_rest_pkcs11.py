@@ -61,7 +61,7 @@ def require_pkcs11() -> Any:
     """
     try:
         import pkcs11
-    except ImportError as exc:  # pragma: no cover - exercised via a patched import in tests.
+    except ImportError as exc:
         raise RuntimeError(
             "the PKCS#11 at-rest key backend requires the optional 'python-pkcs11' dependency; "
             "install it with: pip install synapse-channel[pkcs11]"

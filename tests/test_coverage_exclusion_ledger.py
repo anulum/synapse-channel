@@ -87,16 +87,6 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/cli_lock_supervision.py": (1, "validated-helper-boundary"),
     "src/synapse_channel/cli_relay.py": (1, "env-defensive"),
     "src/synapse_channel/core/aef_verification.py": (2, "validated-helper-boundary"),
-    # Line 45 is the TYPE_CHECKING import: it never runs on either platform.
-    # Line 771 is the inner non-regular check. The public check already
-    # refused that file, so no real stat reaches the inner branch.
-    # at_rest_escrow.py lines 77 and 243 never run on either platform.
-    # A zero GF(2^8) inverse needs two shares with the same x, and a short
-    # set of distinct indices needs a duplicate. Both are refused first.
-    "src/synapse_channel/core/at_rest.py": (3, "optional-import + typing-only"),
-    "src/synapse_channel/core/at_rest_cloud_hsm.py": (1, "optional-import"),
-    "src/synapse_channel/core/at_rest_pkcs11.py": (1, "optional-import"),
-    "src/synapse_channel/core/at_rest_tpm2.py": (1, "optional-import"),
     "src/synapse_channel/core/mcp_config_launch.py": (3, "optional-import + env-defensive"),
     "src/synapse_channel/core/payload_crypto.py": (1, "optional-import"),
     "src/synapse_channel/core/secure_path.py": (3, "platform-native"),

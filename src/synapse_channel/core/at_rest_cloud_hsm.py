@@ -230,7 +230,7 @@ def require_boto3() -> Any:
     """
     try:
         import boto3
-    except ImportError as exc:  # pragma: no cover - exercised via a patched import in tests.
+    except ImportError as exc:
         raise RuntimeError(
             "the AWS KMS cloud-HSM backend requires the optional 'boto3' dependency; "
             "install it with: pip install synapse-channel[cloud-hsm]"
