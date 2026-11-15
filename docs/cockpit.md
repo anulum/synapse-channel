@@ -587,7 +587,9 @@ state.
   `?scope=none` for work and names without a project, on `/snapshot.json`,
   `/studio.json` and the live stream). A scope is a lens, not an access
   boundary: it grants nothing and hides nothing the hub sends this principal.
-  Its rules and its `scope` block are in the [CLI reference](cli.md).
+  Its rules and its `scope` block are in the [CLI reference](cli.md). The
+  event, receipt, finding, wait and attention feeds take the same scope and
+  keep its rows; every other feed says that it was not scoped.
 
 The risk rail separates server-provided risk, dead letters, local fleet-health
 counts, waits, pending approvals, and client-side repetition heuristics. The

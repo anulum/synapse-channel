@@ -46,11 +46,14 @@ from synapse_channel.dashboard_bind import (
     _resolve_dashboard_token,
     validate_dashboard_bind,
 )
+from synapse_channel.dashboard_feed_scope import feed_scope, scoped_feed
 from synapse_channel.dashboard_feed_serving import (
+    OPTIONAL_SURFACES,
     FeedResponse,
     capability_summary,
     configured_flags,
     json_response,
+    plain_response,
     serve_causality,
     serve_cockpit_dist,
     serve_events,
@@ -515,6 +518,9 @@ _STORE_FEEDS: Final[dict[str, Callable[[Path | None], FeedResponse]]] = {
 }
 """Event-store feeds that take no query."""
 
+_FEED_PATHS: Final = frozenset(surface.path for surface in OPTIONAL_SURFACES)
+"""Every optional feed; each answers a request's ``scope``."""
+
 OPERATOR_RATE_MAX: Final = 30
 """Operator write actions permitted within :data:`OPERATOR_RATE_WINDOW_SECONDS`."""
 
@@ -784,6 +790,24 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         )
 
     def _feed_response(self, path: str, query: str) -> FeedResponse | None:
+        """Compute a feed's answer under the request's ``scope``, or ``None`` for no feed.
+
+        A malformed scope is refused with 400 before the feed is built. The
+        scope keeps the rows of the five event-backed feeds that belong to it,
+        and every other feed says that it was not applied
+        (:mod:`synapse_channel.dashboard_feed_scope`).
+        """
+        if path not in _FEED_PATHS:
+            return self._unscoped_feed_response(path, query)
+        try:
+            scope = feed_scope(query)
+        except ValueError as exc:
+            return plain_response(HTTPStatus.BAD_REQUEST, str(exc))
+        return scoped_feed(
+            path, self._unscoped_feed_response(path, query), scope, self.reliability_db
+        )
+
+    def _unscoped_feed_response(self, path: str, query: str) -> FeedResponse | None:
         """Compute the read-side feed response for ``path``, or ``None``.
 
         ``None`` means the path is not a feed route and the caller falls

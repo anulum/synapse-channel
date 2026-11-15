@@ -522,6 +522,26 @@ namespace present with its task and agent counts (`namespaces`). Any other
 classic page always shows the whole hub. The counts are of what the hub sent: a
 hub started with `--board-task-cap` sends only part of its board.
 
+The same `scope` works on the feeds. Five of them keep only the rows of the scope:
+
+| Feed | A row belongs by |
+| --- | --- |
+| `/events.json` | its `actor`, as the hub words it, or the task its payload names |
+| `/receipts.json` | its `actor`, or its `subject` when that is a task |
+| `/findings.json` | the identity the hub attested for it (`verified_at_source.by`) |
+| `/waits.json` | its task only (its `who` is an owner or a creator) |
+| `/attention.json` | its `subject`, when that is a task |
+
+A task's scope is the `project` field the durable log declared for it, so these
+feeds need `--feeds-db`; without it, `/attention.json` keeps its rows and says
+so. The scope filters the page the cursor read: `next_cursor` does not change,
+and a scoped page can hold fewer rows than `limit`. A row that names neither an
+identity nor a task stays in `all` only. Each scoped answer carries a `scope`
+block with `applied: true`, `rows_in_page` and `rows_in_scope`; a feed's own
+row count (`receipt_count`, `wait_count`) follows its scoped rows. Every other
+feed answers a scoped request with its unscoped body and `scope.applied: false`.
+A malformed `scope` is refused with 400 on every feed, before the feed is built.
+
 Every snapshot also carries a `headline` block: the dashboard's counters
 (`agents_live`, `claims_active`, `tasks_blocked` with its parts
 `tasks_blocked_marked` and `tasks_blocked_waiting`, `tasks_closed`,

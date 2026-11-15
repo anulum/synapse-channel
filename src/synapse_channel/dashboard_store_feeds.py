@@ -65,7 +65,7 @@ from synapse_channel.core.federation_store import load_store
 from synapse_channel.core.federation_wire import bundle_fingerprint
 from synapse_channel.core.fleet_health import local_fleet_health_to_json, run_local_fleet_health
 from synapse_channel.core.journal import EventKind, replay
-from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
+from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES, Blackboard
 from synapse_channel.core.merkle import proof_to_json, run_proof
 from synapse_channel.core.multihub_wire import LogSnapshot, encode_log_snapshot
 from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -272,22 +272,8 @@ def build_state_at_feed(db_path: str | Path, *, seq: int) -> dict[str, object]:
     }
 
 
-def build_waits_feed(db_path: str | Path) -> dict[str, object]:
-    """Report the coordination gates the plan is currently waiting on.
-
-    Reconstructs the board from the durable log and lists the pending gates: each
-    non-terminal task whose declared dependencies have not all reached a terminal
-    status, with **who** is waiting (the task's suggested owner, or whoever
-    declared it), **on** which dependency ids it is blocked, and **since** when it
-    was declared. This is the "what is the fleet stuck behind" panel — the gates
-    an operator clears by finishing a prerequisite.
-
-    Store-derived and deterministic like every store feed: the same log rebuilds
-    the same gates, dependency satisfaction is judged from the log's own recorded
-    task statuses, and it answers with the hub down. Honest scope: live socket
-    waiters (a client's ``-rx`` connection parked on the bus) are transient hub
-    state, never journalled, so they are omitted — this is the *coordination*
-    gates the durable plan can prove, not who currently holds a socket open.
+def _store_board(db_path: str | Path) -> tuple[Blackboard, int]:
+    """Rebuild the board from the durable log as of its last event; return it and that sequence.
 
     Raises
     ------
@@ -311,7 +297,25 @@ def build_waits_feed(db_path: str | Path) -> dict[str, object]:
         )
     finally:
         store.close()
-    board = result.blackboard
+    return result.blackboard, log_end_seq
+
+
+def store_task_projects(db_path: str | Path) -> dict[str, str]:
+    """Return each task the durable log declared, with its ``project`` field (empty for none).
+
+    A dashboard scope places a feed row that names a task by this field only.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist.
+    """
+    board, _ = _store_board(db_path)
+    return {task.task_id: task.project for task in board.tasks.values()}
+
+
+def _pending_gates(board: Blackboard) -> list[dict[str, object]]:
+    """Return each non-terminal task blocked on a dependency, by task id, as a wait row."""
     waits: list[dict[str, object]] = []
     for task in sorted(board.tasks.values(), key=lambda item: item.task_id):
         if task.status in TERMINAL_LEDGER_STATUSES:
@@ -329,6 +333,33 @@ def build_waits_feed(db_path: str | Path) -> dict[str, object]:
                 "status": task.status,
             }
         )
+    return waits
+
+
+def build_waits_feed(db_path: str | Path) -> dict[str, object]:
+    """Report the coordination gates the plan is currently waiting on.
+
+    Reconstructs the board from the durable log and lists the pending gates: each
+    non-terminal task whose declared dependencies have not all reached a terminal
+    status, with **who** is waiting (the task's suggested owner, or whoever
+    declared it), **on** which dependency ids it is blocked, and **since** when it
+    was declared. This is the "what is the fleet stuck behind" panel — the gates
+    an operator clears by finishing a prerequisite.
+
+    Store-derived and deterministic like every store feed: the same log rebuilds
+    the same gates, dependency satisfaction is judged from the log's own recorded
+    task statuses, and it answers with the hub down. Honest scope: live socket
+    waiters (a client's ``-rx`` connection parked on the bus) are transient hub
+    state, never journalled, so they are omitted — this is the *coordination*
+    gates the durable plan can prove, not who currently holds a socket open.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist.
+    """
+    board, log_end_seq = _store_board(db_path)
+    waits = _pending_gates(board)
     return {
         "present": True,
         "waits": waits,

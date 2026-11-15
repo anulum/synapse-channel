@@ -69,6 +69,13 @@ start to finish and makes the cockpit the dashboard's front door.
   Nothing is inferred. The fleet, risk and headline sections are computed in the scope, and a
   `scope` block gives the scoped and hub-wide counts and every namespace present. A scope is a lens,
   not an access boundary. Any other value is refused with 400.
+- The dashboard's feeds take the same `scope`. `/events.json`, `/receipts.json`, `/findings.json`,
+  `/waits.json` and `/attention.json` keep only the rows of the scope: a row belongs by the
+  namespace of the identity it names, or by the `project` field the durable log declared for the
+  task it names. A wait belongs by its task only. The scope filters the page the cursor read, and
+  a `scope` block counts the rows in the page and in the scope. Every other feed answers a scoped
+  request with its unscoped body and says the scope was not applied. A malformed scope is refused
+  with 400 before the feed is built.
 - The wheel carries the cockpit's production build, without source maps (about
   1.3 MB), in `synapse_channel/dashboard_assets/cockpit/`, with
   `THIRD_PARTY_NOTICES.md`: every npm package whose code the build carries, with
