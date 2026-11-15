@@ -188,7 +188,7 @@ def build_scenario_artifact(kind: ScenarioKind) -> JsonMap:
     elif kind is ScenarioKind.ARTIFACT_DATA:
         parts = [{"data": dict(TCK_DATA_ARTIFACT_BODY)}]
         name = "TCK data artifact"
-    else:  # pragma: no cover - exhaustive enum
+    else:
         raise ValueError(f"unsupported scenario: {kind!r}")
     return {
         "artifactId": f"tck-{kind.value}-{uuid.uuid4().hex[:12]}",

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import base64
+from typing import cast
 
 import pytest
 
@@ -124,3 +125,9 @@ def test_completed_task_carries_artifact_and_terminal_state() -> None:
 def test_message_response_cannot_build_artifact() -> None:
     with pytest.raises(ValueError, match="MESSAGE_RESPONSE"):
         build_scenario_artifact(ScenarioKind.MESSAGE_RESPONSE)
+
+
+def test_an_unknown_scenario_value_is_refused() -> None:
+    """A value outside the scenario enumeration is refused before an artifact is built."""
+    with pytest.raises(ValueError, match="unsupported scenario"):
+        build_scenario_artifact(cast(ScenarioKind, "not-a-scenario"))
