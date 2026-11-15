@@ -11,9 +11,12 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 from typing import NoReturn
+
+import pytest
 
 from synapse_channel.core.protocol import MAX_JSON_DEPTH
 
@@ -71,7 +74,9 @@ def test_fuzz_one_input_rejects_an_oversized_integer_without_crashing() -> None:
     assert harness.run_seed_corpus([payload]).crashed == 0
 
 
-def test_seed_corpus_counts_unexpected_decoder_crashes(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_seed_corpus_counts_unexpected_decoder_crashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     harness = _load_harness()
 
     def fail_decode(_data: bytes) -> NoReturn:
@@ -87,7 +92,9 @@ def test_seed_corpus_counts_unexpected_decoder_crashes(monkeypatch) -> None:  # 
     assert results.crashed == 1
 
 
-def test_main_smoke_mode_reports_seed_corpus_status(capsys) -> None:  # type: ignore[no-untyped-def]
+def test_main_smoke_mode_reports_seed_corpus_status(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     harness = _load_harness()
 
     assert harness.main(["--smoke"]) == 0
@@ -97,7 +104,9 @@ def test_main_smoke_mode_reports_seed_corpus_status(capsys) -> None:  # type: ig
     assert "crashed=0" in captured.out
 
 
-def test_main_without_atheris_prints_install_hint(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_main_without_atheris_prints_install_hint(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     harness = _load_harness()
     monkeypatch.delitem(sys.modules, "atheris", raising=False)
 
@@ -107,20 +116,20 @@ def test_main_without_atheris_prints_install_hint(capsys, monkeypatch) -> None: 
     assert "Atheris is not installed" in captured.err
 
 
-def test_main_starts_atheris_when_available(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_main_starts_atheris_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
     harness = _load_harness()
     fake_atheris = ModuleType("atheris")
     calls: list[str] = []
 
-    def setup(argv: list[str], callback) -> None:  # type: ignore[no-untyped-def]
+    def setup(argv: list[str], callback: Callable[[bytes], object]) -> None:
         calls.append(f"setup:{argv[0]}")
         callback(b"{}")
 
     def fuzz() -> None:
         calls.append("fuzz")
 
-    fake_atheris.Setup = setup  # type: ignore[attr-defined]
-    fake_atheris.Fuzz = fuzz  # type: ignore[attr-defined]
+    fake_atheris.Setup = setup  # type: ignore[attr-defined] # ModuleType has no Setup
+    fake_atheris.Fuzz = fuzz  # type: ignore[attr-defined] # ModuleType has no Fuzz
     monkeypatch.setitem(sys.modules, "atheris", fake_atheris)
 
     assert harness.main(["--", "-runs=1"]) == 0
