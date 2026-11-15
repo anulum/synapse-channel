@@ -55,6 +55,28 @@ def test_a_seat_holding_a_claim_with_nobody_listening_is_active_not_listening() 
     ]
 
 
+def test_an_observed_peer_s_seats_claim_no_listening_or_working_state() -> None:
+    """A peer's log names its seats; nothing here shows whether a socket receives their messages."""
+    state = {
+        "active_claims": [
+            {"owner": "EAST/api", "claimed_at": NOW - 60, "lease_expires_at": NOW + 60},
+            {"owner": "EAST/old", "claimed_at": NOW - 86_400, "lease_expires_at": NOW - 3600},
+        ]
+    }
+    board = {"progress": [{"task_id": "E1", "author": "EAST/docs", "posted_at": NOW - 30}]}
+
+    observed = build_seats([], state, board, now=NOW, observed=True)
+    local = build_seats([], state, board, now=NOW)
+
+    assert _states(observed) == dict.fromkeys(("EAST/api", "EAST/docs", "EAST/old"), "observed")
+    assert _states(local) == {
+        "EAST/api": "active, not listening",
+        "EAST/docs": "active, not listening",
+        "EAST/old": "silent",
+    }
+    assert [row["evidence"] for row in observed] == [row["evidence"] for row in local]
+
+
 def test_who_is_listening() -> None:
     rows = build_seats(
         ["S/library", "S/terminal-rx", "S/pane-pane-rx", "S/both", "S/both-rx"], {}, {}, now=NOW

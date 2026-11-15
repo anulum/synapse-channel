@@ -45,6 +45,7 @@ describe("deriveRoster", () => {
           seat("alpha/aster", "listening"),
           seat("beta/briar", "active, not listening"),
           seat("gamma/cedar", "silent"),
+          seat("east/api", "observed"),
           seat("", "silent"),
           seat("delta/dune", "offline"),
         ],
@@ -57,6 +58,7 @@ describe("deriveRoster", () => {
         ["alpha/aster", "listening"],
         ["beta/briar", "active, not listening"],
         ["gamma/cedar", "silent"],
+        ["east/api", "observed"],
       ]),
     );
   });

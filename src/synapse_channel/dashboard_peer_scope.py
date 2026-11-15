@@ -80,6 +80,7 @@ def peer_snapshot(snapshot: DashboardSnapshot, hub_id: str) -> DashboardSnapshot
         observed_peers=(),
         agent_liveness={},
         wake_capabilities={},
+        observed_from=hub_id,
     )
 
 

@@ -145,7 +145,7 @@ function parseTaskGraph(value: unknown): TaskGraphSection {
   };
 }
 
-const SEAT_STATES: ReadonlySet<string> = new Set(["listening", "active, not listening", "silent"]);
+const SEAT_STATES: ReadonlySet<string> = new Set(["listening", "active, not listening", "silent", "observed"]);
 
 /** One seat row; null when it lacks an identity or a known state. */
 function parseSeat(value: unknown): SeatRow | null {

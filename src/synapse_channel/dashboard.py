@@ -229,6 +229,11 @@ class DashboardSnapshot:
         The ``who`` snapshot's ``wake_capabilities``: the capability each online
         name declared. The fleet and seat projections read it to leave presence
         holders out; the document carries only their count (``headline``).
+    observed_from : str
+        The observed peer hub this snapshot shows (:mod:`synapse_channel.dashboard_peer_scope`);
+        empty for this hub's own. The seat projection reads it, so a peer's seats
+        claim no listening state; the document leaves it out, because a peer's
+        document says so in its ``advisory`` and ``peer`` blocks.
     """
 
     online_agents: list[str]
@@ -242,6 +247,7 @@ class DashboardSnapshot:
     observed_peers: tuple[ObservedPeerSnapshot, ...] = ()
     agent_liveness: dict[str, Any] = field(default_factory=dict)
     wake_capabilities: dict[str, Any] = field(default_factory=dict)
+    observed_from: str = ""
 
     def to_dict(self, *, a2a_state_file: str | Path | None = None) -> dict[str, Any]:
         """Return a JSON-serialisable dictionary for HTTP responses.
@@ -256,6 +262,8 @@ class DashboardSnapshot:
         # Each seat row carries its own part of the hub's proof (fleet.seats[].reaction).
         del payload["agent_liveness"]
         del payload["wake_capabilities"]
+        # A peer's document says so in its own ``advisory`` and ``peer`` blocks.
+        del payload["observed_from"]
         payload["observed_peers"] = observed_peers_to_dict(self.observed_peers)
         payload.update(
             derived_views(self, payload["observed_peers"], a2a_state_file=a2a_state_file)

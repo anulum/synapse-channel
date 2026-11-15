@@ -171,6 +171,12 @@ describe("DetailDrawer", () => {
     expect(screen.queryByText("offline")).toBeNull();
   });
 
+  it("states an observed peer's seat as observed, neither well nor as a warning", () => {
+    const entry = { ...AGENT.entry!, seat: "observed" as const };
+    render(<DetailDrawer agent={{ ...AGENT, entry }} onClose={() => {}} onFilterLog={() => {}} />);
+    expect(screen.getByText("observed").className).toBe("drawer__fact");
+  });
+
   it("states a deaf seat with its last reaction on the hub's clock, or that none was seen", () => {
     const at = 1_783_000_000;
     const heard = { ...AGENT.entry!, deaf: { lastReactionAt: at } };

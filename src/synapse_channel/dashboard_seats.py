@@ -20,6 +20,10 @@ in practice the owner of a listed claim whose lease has run out and whose stamp
 is older than the window. A note older than the window names no seat. No seat is
 called offline: a socket that is gone says nothing about the work.
 
+A seat of an observed peer hub is ``observed``: the peer's event log shows its
+claims or notes, and nothing here can say whether a socket receives its messages,
+so no listening or working state is claimed for it.
+
 ``last_seen`` is not evidence: the hub stamps it on keepalive heartbeats, so it
 proves a socket, not work.
 """
@@ -45,8 +49,9 @@ SEAT_ACTIVE_WINDOW_SECONDS = 900.0
 LISTENING = "listening"
 ACTIVE_NOT_LISTENING = "active, not listening"
 SILENT = "silent"
-SEAT_STATES = (LISTENING, ACTIVE_NOT_LISTENING, SILENT)
-"""Every seat state, in the order a roster ranks them."""
+OBSERVED = "observed"
+SEAT_STATES = (LISTENING, ACTIVE_NOT_LISTENING, SILENT, OBSERVED)
+"""Every seat state, in the order a roster ranks them; ``observed`` only in a peer's document."""
 
 
 def _records(value: object) -> list[Mapping[str, Any]]:
@@ -113,6 +118,13 @@ def _reaction(info: object) -> dict[str, Any]:
     }
 
 
+def _state(*, listening: bool, active: bool, observed: bool) -> str:
+    """Return a seat's state; an observed peer's seat is ``observed``, whatever its record shows."""
+    if observed:
+        return OBSERVED
+    return LISTENING if listening else ACTIVE_NOT_LISTENING if active else SILENT
+
+
 def _seat_identities(
     online: set[str],
     state: Mapping[str, Any],
@@ -138,6 +150,8 @@ def _seat_row(
     online: set[str],
     evidence: Mapping[str, tuple[str, float | None]],
     judged: Mapping[str, Any],
+    *,
+    observed: bool,
 ) -> dict[str, Any]:
     """Return one seat's row: whether a socket listens, its evidence, state and judgement."""
     listening = bool({identity, waiter_name(identity), pane_waiter_name(identity)} & online)
@@ -149,7 +163,7 @@ def _seat_row(
         "active": active,
         "evidence": kind,
         "evidence_at": at,
-        "state": LISTENING if listening else ACTIVE_NOT_LISTENING if active else SILENT,
+        "state": _state(listening=listening, active=active, observed=observed),
         "reaction": _reaction(judged.get(identity)),
     }
 
@@ -162,6 +176,7 @@ def build_seats(
     now: float,
     liveness: Mapping[str, Any] | None = None,
     wake_capabilities: Mapping[str, object] | None = None,
+    observed: bool = False,
 ) -> list[dict[str, Any]]:
     """Return one row per seat the snapshot names, sorted by identity.
 
@@ -182,6 +197,10 @@ def build_seats(
         The ``who`` snapshot's ``wake_capabilities``. A connected presence holder
         (:func:`~synapse_channel.core.waiter_identity.presence_holders`) adds no
         seat; ``None`` or empty when the hub reports none.
+    observed : bool, optional
+        Whether the snapshot is an observed peer hub's fold. Every seat is then
+        ``observed``: the peer's log names it, and no socket here can show
+        whether it listens.
 
     Returns
     -------
@@ -195,4 +214,4 @@ def build_seats(
     judged = liveness or {}
     evidence = _evidence(state, board, now)
     identities = _seat_identities(online, state, evidence, wake_capabilities)
-    return [_seat_row(identity, online, evidence, judged) for identity in identities]
+    return [_seat_row(seat, online, evidence, judged, observed=observed) for seat in identities]

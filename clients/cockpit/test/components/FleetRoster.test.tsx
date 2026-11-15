@@ -135,6 +135,16 @@ describe("FleetRoster", () => {
     expect(document.querySelector(".roster-row--holding")).not.toBeNull();
   });
 
+  it("marks an observed hub's seat as observed, without a warning", () => {
+    render(<FleetRoster roster={[entry("east/api", { status: "holding", seat: "observed" })]} waiters={0} />);
+    const tag = screen.getByText("observed");
+    expect(tag.className).toBe("roster-row__tag");
+    expect(tag.getAttribute("title")).toBe(
+      "Named in the observed hub's log: whether a socket receives its messages is not known from here.",
+    );
+    expect(screen.queryByText("active, not listening")).toBeNull();
+  });
+
   it("opens the agent drawer on click only when inspection is wired", async () => {
     const onInspect = vi.fn();
     render(<FleetRoster roster={[entry("quantum/claude")]} waiters={0} onInspect={onInspect} />);

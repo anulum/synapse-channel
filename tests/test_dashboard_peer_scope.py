@@ -88,6 +88,21 @@ def test_the_peer_document_holds_the_peer_alone_and_says_advisory() -> None:
     assert document["board"]["progress"] == [{"task_id": "E1", "text": "started"}]
 
 
+def test_a_peer_s_seats_are_observed_and_counted_in_no_local_seat_state() -> None:
+    document = scoped_document(_with_peer(_east()), EAST)
+    local = scoped_document(_with_peer(_east()), parse_scope([]))
+
+    assert {seat["identity"]: seat["state"] for seat in document["fleet"]["seats"]} == {
+        "EAST/api": "observed"
+    }
+    seats = {
+        key: document["headline"][key] for key in document["headline"] if key.startswith("seats_")
+    }
+    assert seats and set(seats.values()) == {0}
+    assert "observed_from" not in document and "observed_from" not in local
+    assert "observed" not in {seat["state"] for seat in local["fleet"]["seats"]}
+
+
 def test_the_peer_block_states_its_pull_and_the_scope_block_its_counts() -> None:
     document = scoped_document(_with_peer(_east()), EAST)
 

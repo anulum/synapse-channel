@@ -127,8 +127,12 @@ export interface TaskGraphSection {
 }
 
 /** The derived fleet section the cockpit reads directly. */
-/** What the hub knows about a seat: never "offline" (`dashboard_seats.py`). */
-export type SeatState = "listening" | "active, not listening" | "silent";
+/**
+ * What the hub knows about a seat: never "offline" (`dashboard_seats.py`).
+ * "observed" is a peer hub's seat: its log names it, and nothing here shows
+ * whether it listens.
+ */
+export type SeatState = "listening" | "active, not listening" | "silent" | "observed";
 
 /** The hub's judgement on whether a seat reacts; every field null where it made none. */
 export interface SeatReaction {

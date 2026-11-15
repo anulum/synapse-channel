@@ -35,6 +35,7 @@ const DEAF_TITLE =
 const SEAT_TITLE: Record<Exclude<SeatState, "listening">, string> = {
   "active, not listening": "Working by the record (a held claim, or a claim or note in the last 15 minutes) with no socket receiving its messages.",
   silent: "Nothing recent in the record and no socket receiving its messages.",
+  observed: "Named in the observed hub's log: whether a socket receives its messages is not known from here.",
 };
 
 const STATUS_WORD: Record<RowStatus, string> = {
@@ -109,7 +110,7 @@ function RosterRow({ entry, onInspect, selected }: RosterRowProps): JSX.Element 
         ))}
         {entry.seat !== "listening" && (
           <span
-            className={`roster-row__tag${entry.seat === "silent" ? "" : " roster-row__tag--warn"}`}
+            className={`roster-row__tag${entry.seat === "active, not listening" ? " roster-row__tag--warn" : ""}`}
             title={SEAT_TITLE[entry.seat]}
           >
             {entry.seat}

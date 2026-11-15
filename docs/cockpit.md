@@ -338,7 +338,10 @@ and listens through a waiter that has stopped. **silent** is a seat with
 neither: in practice the owner of a listed claim whose lease has run out and
 whose stamp is older than the window. The seats are the connected identities (a
 waiter stands for its owner), the owners of listed claims and the authors of
-notes inside the window; a note older than the window names no seat.
+notes inside the window; a note older than the window names no seat. In a peer
+scope every seat is **observed**: the peer's log names it, and nothing here can
+show whether a socket receives its messages, so no other state is claimed and
+the headline's seat counters count none of them.
 `last_seen` is not used: the hub stamps it on keepalive heartbeats, so it
 proves a socket, not work.
 

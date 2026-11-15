@@ -61,6 +61,9 @@ async function expectPeerDeck(page: Page, fleet: Fleet): Promise<void> {
   for (const task of ["EAST-1", "EAST-2"]) await expect(region(page, "Task board")).toContainText(task);
   for (const task of fleet.tasks) await expect(region(page, "Task board")).not.toContainText(task);
   await expect(region(page, "File-scope claims")).toContainText("EAST-1");
+  // The peer's log names its claim owner; nothing here shows whether it listens.
+  await expect(region(page, "Fleet roster").getByText("observed", { exact: true })).toBeVisible();
+  await expect(region(page, "Fleet roster")).not.toContainText("active, not listening");
   for (const name of ["Task board", "File-scope claims", "Fleet roster", "Risk rail"]) {
     await expect(region(page, name).getByText(`advisory · observed from ${PEER}`, { exact: true })).toBeVisible();
   }

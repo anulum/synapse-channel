@@ -154,6 +154,9 @@ def _assert_peer(east: dict[str, Any]) -> None:
     )
     assert peer["cursor"] > 0 and peer["lag"] == 0 and peer["error"] == ""
     assert east["scope"]["peers"] == ["east", "gone"] and east["online_agents"] == []
+    assert [(seat["identity"], seat["state"]) for seat in east["fleet"]["seats"]] == [
+        ("EAST/api", "observed")
+    ]
 
 
 def _assert_live_and_studio(answers: dict[str, tuple[int, bytes]], east: dict[str, Any]) -> None:

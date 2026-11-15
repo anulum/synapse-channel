@@ -98,6 +98,10 @@ start to finish and makes the cockpit the dashboard's front door.
   panels this hub's feeds fill say `not observed` instead of showing this hub's rows. In a peer scope
   the cockpit polls the peer's snapshot alone, opens no feed or live stream of this hub, shows no
   write control and hides time travel. Leaving the scope restores this hub's view.
+- In a peer scope every seat is `observed`: the peer's log names the seat, and nothing on this hub
+  can show whether a socket receives its messages, so the seat projection no longer calls a peer's
+  claim owner "active, not listening". The roster, the agent drawer and Studio show the state as it
+  is, and the headline's seat counters count none of them.
 - The wheel carries the cockpit's production build, without source maps (about
   1.3 MB), in `synapse_channel/dashboard_assets/cockpit/`, with
   `THIRD_PARTY_NOTICES.md`: every npm package whose code the build carries, with

@@ -64,6 +64,7 @@ def derived_views(
         now=float(hub_time) if isinstance(hub_time, int | float) else time.time(),
         liveness=snapshot.agent_liveness,
         wake_capabilities=snapshot.wake_capabilities,
+        observed=snapshot.observed_from != "",
     )
     risk = build_risk_view(fleet).to_dict()
     risk["guidance"] = build_risk_guidance(

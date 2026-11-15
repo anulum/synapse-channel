@@ -12,7 +12,13 @@ import { useEffect, useRef } from "react";
 import type { AgentDetail, TaskDetail } from "../lib/detail";
 import { COLOUR_OF } from "../lib/events";
 import { Ident } from "./Ident";
-import type { CockpitEvent } from "../types";
+import type { CockpitEvent, SeatState } from "../types";
+
+/** A seat fact's tone: listening reads well, an observed peer's seat is neither, the rest warn. */
+function seatFactClass(seat: SeatState | undefined): string {
+  if (seat === "listening") return "drawer__fact drawer__fact--ok";
+  return seat === "observed" ? "drawer__fact" : "drawer__fact drawer__fact--warn";
+}
 
 function timeOf(ts: number): string {
   return new Date(ts * 1000).toLocaleTimeString([], {
@@ -136,7 +142,7 @@ export function DetailDrawer({ agent, task, onClose, onFilterLog, onTrace }: Det
         {agent !== undefined && (
           <div className="drawer__body">
             <div className="drawer__facts">
-              <span className={`drawer__fact${agent.entry?.seat === "listening" ? " drawer__fact--ok" : " drawer__fact--warn"}`}>
+              <span className={seatFactClass(agent.entry?.seat)}>
                 {agent.entry === null ? "not in roster" : agent.entry.seat}
               </span>
               {agent.entry?.deaf != null && (
