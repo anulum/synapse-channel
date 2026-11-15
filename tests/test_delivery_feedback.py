@@ -76,7 +76,7 @@ class _FakeHub:
 
 
 def _as_hub(hub: _FakeHub) -> SynapseHub:
-    """Present the structural fake as a concrete hub without a type: ignore."""
+    """Present the structural fake as the hub the handler expects."""
     return cast("SynapseHub", hub)
 
 
