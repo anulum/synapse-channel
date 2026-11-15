@@ -30,7 +30,7 @@ import pytest
 try:
     import fcntl
 except ImportError:  # pragma: no cover - non-POSIX platform boundary.
-    fcntl = None  # type: ignore[assignment]
+    fcntl = None  # type: ignore[assignment] # ImportError binds None, not the module
 
 SEALED_LAUNCH_AVAILABLE = (
     os.name == "posix"
