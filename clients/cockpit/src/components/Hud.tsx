@@ -24,8 +24,11 @@ interface HudProps {
   readonly live: boolean;
   /** Freshness stamp, e.g. the last event's wall-clock time. */
   readonly stamp: string;
-  /** Primary transport posture; polling fallback remains explicit. */
-  readonly transport?: LiveConnectionStatus;
+  /**
+   * Primary transport posture; polling fallback remains explicit. "observed" is a
+   * peer scope, which polls the observed hub's snapshot by design, not as a fallback.
+   */
+  readonly transport?: HudTransport;
   /** Drill-down: clicking a KPI filters the signal log to its event kinds. */
   readonly onSelect?: ((label: string) => void) | undefined;
   /** The active palette, for the toggle's label. */
@@ -74,8 +77,12 @@ function deltaText(delta: number): string {
   return "• 0";
 }
 
-function transportKey(status: LiveConnectionStatus): MessageKey {
+/** What the head-up display shows as the transport: the live stream's state, or a peer scope's polling. */
+export type HudTransport = LiveConnectionStatus | "observed";
+
+function transportKey(status: HudTransport): MessageKey {
   if (status === "live") return "hud.transport.live";
+  if (status === "observed") return "hud.transport.observed";
   if (status === "unsupported" || status === "fallback") return "hud.transport.fallback";
   if (status === "gap") return "hud.transport.gap";
   return `hud.transport.${status}`;

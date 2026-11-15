@@ -269,7 +269,8 @@ The top strip answers whether the page is current before it shows detail:
 
 - **live / stale** and the timestamp state when data last arrived;
 - the current transport posture: **stream**, **reconnecting**, **gap
-  detected**, or **poll fallback**;
+  detected**, or **poll fallback**, and **observed · polled** in a peer scope,
+  which polls the observed hub's snapshot by design;
 - headline fleet counters with deltas;
 - the current browser role and capability posture;
 - an identity focus lens that narrows claims and tasks;

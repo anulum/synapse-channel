@@ -102,6 +102,8 @@ start to finish and makes the cockpit the dashboard's front door.
   can show whether a socket receives its messages, so the seat projection no longer calls a peer's
   claim owner "active, not listening". The roster, the agent drawer and Studio show the state as it
   is, and the headline's seat counters count none of them.
+- In a peer scope the HUD shows the transport as `observed · polled`: the cockpit polls the observed
+  hub's snapshot by design, and no longer calls it a `poll fallback`.
 - The wheel carries the cockpit's production build, without source maps (about
   1.3 MB), in `synapse_channel/dashboard_assets/cockpit/`, with
   `THIRD_PARTY_NOTICES.md`: every npm package whose code the build carries, with

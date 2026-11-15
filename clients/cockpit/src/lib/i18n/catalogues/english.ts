@@ -113,6 +113,7 @@ export const ENGLISH = {
   "hud.transport": "Live transport: {status}",
   "hud.transport.live": "stream",
   "hud.transport.fallback": "poll fallback",
+  "hud.transport.observed": "observed · polled",
   "hud.transport.gap": "gap detected",
   "hud.transport.connecting": "connecting",
   "hud.transport.reconnecting": "reconnecting",

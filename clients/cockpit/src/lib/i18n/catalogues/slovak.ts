@@ -115,6 +115,7 @@ export const SLOVAK: Catalogue = {
   "hud.transport": "Živý transport: {status}",
   "hud.transport.live": "stream",
   "hud.transport.fallback": "poll fallback",
+  "hud.transport.observed": "observed · polled",
   "hud.transport.gap": "gap detected",
   "hud.transport.connecting": "connecting",
   "hud.transport.reconnecting": "reconnecting",

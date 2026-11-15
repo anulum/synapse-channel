@@ -53,6 +53,8 @@ async function enterPeer(page: Page, origin: string): Promise<void> {
   await expect(page).toHaveURL(/[?&]scope=peer%3Aeast-harbour(?:&|$)/u);
   const band = page.locator(".peer-band");
   await expect(band).toContainText(`Advisory: observed from ${PEER}.`);
+  // The peer's snapshot is polled by design; the head-up display does not call it a fallback.
+  await expect(page.getByRole("banner").getByLabel("Live transport: observed · polled")).toBeVisible();
   await expect(band).toContainText(/reached · cursor \d+ · lag 0/u, { timeout: 20_000 });
 }
 

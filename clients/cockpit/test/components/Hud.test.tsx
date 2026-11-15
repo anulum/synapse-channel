@@ -43,9 +43,12 @@ describe("Hud", () => {
     ["unsupported", "poll fallback"],
     ["gap", "gap detected"],
     ["reconnecting", "reconnecting"],
+    ["observed", "observed · polled"],
   ] as const)("shows the %s transport posture as evidence", (transport, label) => {
     render(<Hud kpis={[]} live={transport === "live"} stamp="—" transport={transport} />);
-    expect(screen.getByLabelText(`Live transport: ${label}`).textContent).toBe(label);
+    const posture = screen.getByLabelText(`Live transport: ${label}`);
+    expect(posture.textContent).toBe(label);
+    expect(posture.className).toBe(`beacon__transport beacon__transport--${transport}`);
   });
 
   it("drills a KPI down into the log filter only when a handler exists", async () => {

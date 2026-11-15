@@ -167,7 +167,7 @@ export function App(): JSX.Element {
           kpis={feeds.kpis}
           live={feeds.snap.status === "live"}
           stamp={feeds.stamp}
-          transport={feeds.transport.status}
+          transport={peerHub === null ? feeds.transport.status : "observed"}
           onSelect={onSelectKpi}
           theme={preferences.theme}
           onToggleTheme={preferences.toggleTheme}
