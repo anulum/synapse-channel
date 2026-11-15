@@ -37,22 +37,29 @@ from synapse_channel.participants.session_telemetry import SessionMetrics
 
 
 def _seed_session_metric(
-    store: EventStore, *, author: str, session: str, ts: float, **metrics: object
+    store: EventStore,
+    *,
+    author: str,
+    session: str,
+    ts: float,
+    turns: int = 2,
+    input_tokens: int = 100,
+    cost_usd: float = 0.1,
 ) -> None:
     """Append one cumulative ``session_metric`` progress note to the store."""
-    base: dict[str, object] = {
-        "turns": 2,
-        "errors": 0,
-        "abstentions": 0,
-        "input_tokens": 100,
-        "output_tokens": 20,
-        "cost_usd": 0.1,
-        "total_latency_seconds": 2.0,
-        "max_rate_limit_utilisation": None,
-        "last_input_tokens": 60,
-    }
-    base.update(metrics)
-    note = format_session_metric_note(SessionMetrics(**base))  # type: ignore[arg-type]
+    note = format_session_metric_note(
+        SessionMetrics(
+            turns=turns,
+            errors=0,
+            abstentions=0,
+            input_tokens=input_tokens,
+            output_tokens=20,
+            cost_usd=cost_usd,
+            total_latency_seconds=2.0,
+            max_rate_limit_utilisation=None,
+            last_input_tokens=60,
+        )
+    )
     store.append(
         EventKind.LEDGER_PROGRESS,
         {"kind": SESSION_METRIC_NOTE_KIND, "text": note, "author": author, "task_id": session},
