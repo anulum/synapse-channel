@@ -2205,6 +2205,7 @@ commercial build of the public core.
 
 <p align="center">
   <a href="https://anulum.github.io/synapse-channel/commercial/"><img src="https://img.shields.io/badge/View_plans_%26_contact-commercial-0a7d3c?style=for-the-badge" alt="View plans and buy a commercial licence"></a>
+  <a href="https://startupscores.com/open-source/synapse-channel"><img src="https://startupscores.com/badge/synapse-channel.svg?style=shield&amp;v=combo&amp;theme=dark" alt="SYNAPSE CHANNEL on StartupScores" /></a>
 </p>
 
 Current plans and purchase contact are on the **[commercial information page](https://anulum.github.io/synapse-channel/commercial/)**. For enterprise, OEM, academic, non-profit, managed-hosting, or co-ownership terms, write to [protoscience@anulum.li](mailto:protoscience@anulum.li) with the evaluation details listed in [`docs/commercial.md`](docs/commercial.md). The full terms are in [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md).
