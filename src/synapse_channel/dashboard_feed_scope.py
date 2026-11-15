@@ -18,6 +18,10 @@ by the namespace of the identity it names, or by the ``project`` field of the
 task it names, as the durable log declared it. Nothing is inferred from a
 creator, an owner or a title, and a row that names neither stays in ``all``
 only. A scope is a lens, not an access boundary.
+
+A ``peer:<hub id>`` scope shows an observed hub's snapshot; its feeds are not
+observed. Every feed answers a peer scope with the local hub's body and says that
+the scope was not applied, so no local row is ever shown as the peer's.
 """
 
 from __future__ import annotations
@@ -36,6 +40,9 @@ from synapse_channel.dashboard_scope import WHOLE_HUB, DashboardScope, parse_sco
 from synapse_channel.dashboard_store_feeds import store_task_projects
 
 _LOGGER = logging.getLogger(__name__)
+
+PEER_FEED_REASON = "a peer scope narrows the snapshot only; this feed is the local hub's"
+"""Why a feed answers a ``peer:<hub id>`` scope with the local hub's rows."""
 
 Place = Callable[[Mapping[str, Any]], tuple[str, str]]
 """Return the identity and the task a feed row names; empty when it names none."""
@@ -151,6 +158,9 @@ def scoped_feed(
     document = json.loads(response.body)
     if not isinstance(document, dict):
         return response
+    if scope.kind == "peer":
+        block = {"scope": scope.text, "applied": False, "reason": PEER_FEED_REASON}
+        return json_response({**document, "scope": block})
     feed = FILTERED_FEEDS.get(path)
     if feed is None:
         return json_response({**document, "scope": {"scope": scope.text, "applied": False}})

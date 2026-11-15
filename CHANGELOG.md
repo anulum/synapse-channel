@@ -83,6 +83,14 @@ start to finish and makes the cockpit the dashboard's front door.
   snapshot, the live stream and the five scoped feeds. While a scope is active, each panel's header
   names it. A panel that shows the whole hub says so: one whose feed the scope does not narrow, and
   the claims, board and topology while time travel shows a past state rebuilt from the log.
+- A dashboard started with `--observed-peer HUB=URI` serves each observed hub as a scope of its
+  own, `scope=peer:<HUB>`, on `/snapshot.json`, `/studio.json` and the live stream. The document has
+  the same shape and holds that hub's folded state alone: its observed board as the tasks, its
+  observed claims as the active claims, no online agents. The document and every task and claim row
+  say `advisory`, and a `peer` block states whether the hub is observed and was reached, its cursor,
+  lag and clock skew. An unobserved or unreachable hub gives an empty document that says why. Every
+  `scope` block lists the observed hubs (`peers`). The feeds answer a peer scope with the local
+  hub's rows and say the scope was not applied.
 - The wheel carries the cockpit's production build, without source maps (about
   1.3 MB), in `synapse_channel/dashboard_assets/cockpit/`, with
   `THIRD_PARTY_NOTICES.md`: every npm package whose code the build carries, with

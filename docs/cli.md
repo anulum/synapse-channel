@@ -517,10 +517,33 @@ scope's whole board. A `scope` block states the scope and whether it applied,
 the scoped and hub-wide counts (`tasks_in_scope`, `tasks_total`,
 `tasks_without_project`, `agents_in_scope`, `agents_total`,
 `agents_without_namespace`, `claims_in_scope`, `claims_total`), and every
-namespace present with its task and agent counts (`namespaces`). Any other
-`scope` value is refused with 400, and the refusal names the allowed forms. The
-classic page always shows the whole hub. The counts are of what the hub sent: a
+namespace present with its task and agent counts (`namespaces`), and the ids of
+the observed peer hubs (`peers`). Any other `scope` value is refused with 400,
+and the refusal names the allowed forms. The classic page always shows the
+whole hub. The counts are of what the hub sent: a
 hub started with `--board-task-cap` sends only part of its board.
+
+A dashboard started with `--observed-peer HUB=URI` also serves each observed
+hub as a scope of its own, `scope=peer:<HUB>`, from the log it pulls on every
+snapshot. The document has the same shape and holds that hub's folded state
+alone, never mixed with the local board:
+
+- the observed board's records are the tasks, the observed claims the active
+  claims, and the observed progress notes the progress;
+- there are no online agents, because an event log is not a roster; the claim
+  owners it saw are listed as `peer.observed_agents`;
+- the document says `"advisory": true`, and so does every task and claim row,
+  with `observed_from` naming the hub;
+- a `peer` block states whether the hub is observed and was reached, its
+  `cursor`, `log_end_seq`, `lag`, `clock_skew_seconds`, its count of
+  unresolved board conflicts, and the pull's `error`.
+
+A hub id that no `--observed-peer` names, and a hub whose pull failed, give an
+empty document whose `peer` block says why; neither shows a row from an
+earlier pull. The local A2A bridge state stays out of a peer's document. The
+Studio projection of a peer scope (`/studio.json?scope=peer:<HUB>`) also says
+`"advisory": true` and carries the `peer` block. A peer scope grants nothing and
+carries no write: the hub that owns the work is the only authority for it.
 
 The same `scope` works on the feeds. Five of them keep only the rows of the scope:
 
@@ -541,7 +564,9 @@ block with `applied: true`, `rows_in_page` and `rows_in_scope`; a feed's own
 row count (`receipt_count`, `wait_count`) follows its scoped rows. Every other
 feed answers a scoped request with its unscoped body and `scope.applied: false`.
 A malformed `scope` is refused with 400 on every feed, before the feed is built.
-The live stream's feed channels take the stream's `scope` the same way:
+A peer's feeds are not observed: every feed answers `scope=peer:<HUB>` with the
+local hub's body, `scope.applied: false` and the reason, so no local row is
+shown as the peer's. The live stream's feed channels take the stream's `scope` the same way:
 `/live.ndjson?scope=project:<namespace>` carries the scoped events and receipts,
 and an operator-actions channel that says it was not scoped.
 

@@ -91,7 +91,7 @@ def test_a_malformed_scope_is_refused_before_any_collection(
     status, _, body = _get(server, f"{path}?{query}")
 
     assert status == 400
-    assert b"all, none or project:<namespace>" in body
+    assert b"all, none, project:<namespace> or peer:<hub id>" in body
 
 
 def test_the_studio_projection_is_built_in_the_scope(server: DashboardServer) -> None:
@@ -119,5 +119,5 @@ def test_the_live_channel_sends_the_same_scoped_document(
     assert snapshot_fingerprint(snapshot["data"]) == snapshot_fingerprint(page)
     assert snapshot["data"]["scope"] == page["scope"]
     assert snapshot["data"]["board"]["tasks"] == page["board"]["tasks"]
-    refused, _, detail = _get(server, "/live.ndjson?cycles=1&scope=peer%3Ahub-2")
-    assert refused == 400 and b"all, none or project:<namespace>" in detail
+    refused, _, detail = _get(server, "/live.ndjson?cycles=1&scope=group%3Ainfra")
+    assert refused == 400 and b"all, none, project:<namespace> or peer:<hub id>" in detail

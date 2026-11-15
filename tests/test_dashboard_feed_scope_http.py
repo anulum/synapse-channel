@@ -55,7 +55,7 @@ def test_a_malformed_scope_is_refused_before_the_feed_is_built(tmp_path: Path) -
     )
 
     assert refused[0] == 400
-    assert refused[1] == "scope must be all, none or project:<namespace>\n"
+    assert refused[1] == "scope must be all, none, project:<namespace> or peer:<hub id>\n"
     assert capabilities[0] == 200
 
 

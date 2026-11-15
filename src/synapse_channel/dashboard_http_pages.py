@@ -20,11 +20,11 @@ anything here runs.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
 
 from synapse_channel.dashboard_cockpit import (
@@ -47,7 +47,7 @@ from synapse_channel.dashboard_studio_command import (
 from synapse_channel.dashboard_studio_command import (
     render_studio_command_html as render_studio_command_html,
 )
-from synapse_channel.studio_snapshot import STUDIO_SNAPSHOT_PATH
+from synapse_channel.studio_snapshot import STUDIO_SNAPSHOT_PATH, build_scoped_studio_snapshot
 from synapse_channel.studio_snapshot import build_studio_snapshot as build_studio_snapshot
 
 if TYPE_CHECKING:
@@ -162,6 +162,47 @@ def _matches(if_none_match: str | None, etag: str) -> bool:
     )
 
 
+def _collect(ports: SnapshotPageBindings, write: TaggedResponseWriter) -> DashboardSnapshot | None:
+    """Return the hub's snapshot, or write why it could not be collected and return ``None``."""
+    try:
+        return ports.fetch()
+    except TimeoutError:
+        write(
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            b"snapshot busy or collection deadline exceeded; retry later\n",
+            content_type="text/plain",
+        )
+    except ports.unavailable_error as exc:
+        write(HTTPStatus.SERVICE_UNAVAILABLE, f"{exc}\n".encode(), content_type="text/plain")
+    return None
+
+
+def _write_snapshot_json(
+    document: dict[str, Any], write: TaggedResponseWriter, if_none_match: str | None
+) -> None:
+    """Write ``document`` with its weak tag, or ``304`` when the client already holds it."""
+    etag = f'W/"{snapshot_fingerprint(document)}"'
+    if _matches(if_none_match, etag):
+        write(
+            HTTPStatus.NOT_MODIFIED,
+            b"",
+            content_type="application/json",
+            extra_headers=(("ETag", etag),),
+        )
+        return
+    body = json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    write(HTTPStatus.OK, body, content_type="application/json", extra_headers=(("ETag", etag),))
+
+
+def _write_json(document: Mapping[str, Any], write: TaggedResponseWriter) -> None:
+    """Write ``document`` as an untagged JSON body."""
+    write(
+        HTTPStatus.OK,
+        json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
+        content_type="application/json",
+    )
+
+
 def serve_snapshot_page(
     path: str,
     ports: SnapshotPageBindings,
@@ -197,43 +238,18 @@ def serve_snapshot_page(
     except ValueError as exc:
         write(HTTPStatus.BAD_REQUEST, f"{exc}\n".encode(), content_type="text/plain")
         return
-    try:
-        snapshot = ports.fetch()
-    except TimeoutError:
-        write(
-            HTTPStatus.SERVICE_UNAVAILABLE,
-            b"snapshot busy or collection deadline exceeded; retry later\n",
-            content_type="text/plain",
-        )
-        return
-    except ports.unavailable_error as exc:
-        write(HTTPStatus.SERVICE_UNAVAILABLE, f"{exc}\n".encode(), content_type="text/plain")
+    snapshot = _collect(ports, write)
+    if snapshot is None:
         return
     if path == "/snapshot.json":
         document = scoped_document(
             snapshot, scope, a2a_state_file=ports.a2a_state_file, closed=closed_values == ["1"]
         )
-        etag = f'W/"{snapshot_fingerprint(document)}"'
-        if _matches(if_none_match, etag):
-            write(
-                HTTPStatus.NOT_MODIFIED,
-                b"",
-                content_type="application/json",
-                extra_headers=(("ETag", etag),),
-            )
-            return
-        body = json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        write(HTTPStatus.OK, body, content_type="application/json", extra_headers=(("ETag", etag),))
+        _write_snapshot_json(document, write, if_none_match)
         return
     if path == STUDIO_SNAPSHOT_PATH:
-        studio = build_studio_snapshot(
-            scoped_document(snapshot, scope, a2a_state_file=ports.a2a_state_file)
-        )
-        write(
-            HTTPStatus.OK,
-            json.dumps(studio, ensure_ascii=False, sort_keys=True).encode("utf-8"),
-            content_type="application/json",
-        )
+        document = scoped_document(snapshot, scope, a2a_state_file=ports.a2a_state_file)
+        _write_json(build_scoped_studio_snapshot(document), write)
         return
     # /classic and /index.html retain server-side hub snapshot HTML (pre-Studio cockpit).
     write(HTTPStatus.OK, ports.html(snapshot).encode("utf-8"), content_type="text/html")

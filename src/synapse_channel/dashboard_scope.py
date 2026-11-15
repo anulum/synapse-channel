@@ -21,6 +21,10 @@ principal. Membership has one rule per record and is never inferred:
 * a progress note belongs to its task's scope, and so do the release receipts
   derived from it.
 
+A ``peer:<hub id>`` scope is of another kind: it shows an observed peer hub's
+folded state alone, marked advisory (:mod:`synapse_channel.dashboard_peer_scope`),
+and no local record belongs to it.
+
 The scope is applied before the fleet, risk and headline views are computed, so
 every counter of a scoped document is a count in that scope. The ``scope`` block
 states the hub-wide totals beside the scoped ones, and lists every namespace
@@ -36,14 +40,15 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.dashboard_bounds import bound_snapshot
+from synapse_channel.dashboard_peer_scope import peer_block, peer_snapshot
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from synapse_channel.dashboard import DashboardSnapshot
 
-ScopeKind = Literal["all", "none", "project"]
-SCOPE_FORMS = "all, none or project:<namespace>"
+ScopeKind = Literal["all", "none", "project", "peer"]
+SCOPE_FORMS = "all, none, project:<namespace> or peer:<hub id>"
 """The forms a ``scope`` query value may take, as a refusal names them."""
 
 _MAX_NAMESPACE = 256
@@ -51,28 +56,33 @@ _MAX_NAMESPACE = 256
 
 @dataclass(frozen=True, slots=True)
 class DashboardScope:
-    """One scope of the dashboard: the whole hub, one namespace, or no namespace.
+    """One scope of the dashboard: the whole hub, one namespace, no namespace, or a peer hub.
 
     Parameters
     ----------
-    kind : {"all", "none", "project"}
-        Which part of the fleet the scope keeps.
+    kind : {"all", "none", "project", "peer"}
+        Which part of the fleet the scope keeps; ``peer`` shows an observed hub instead.
     namespace : str, optional
         The namespace of a ``project`` scope; empty for the other kinds.
+    peer : str, optional
+        The hub id of a ``peer`` scope; empty for the other kinds.
     """
 
     kind: ScopeKind
     namespace: str = ""
+    peer: str = ""
 
     @property
     def text(self) -> str:
-        """Return the scope as its query value: ``all``, ``none`` or ``project:<ns>``."""
-        return f"project:{self.namespace}" if self.kind == "project" else self.kind
+        """Return the scope as its query value, for example ``project:<ns>`` or ``peer:<id>``."""
+        if self.kind == "project":
+            return f"project:{self.namespace}"
+        return f"peer:{self.peer}" if self.kind == "peer" else self.kind
 
     def holds(self, namespace: str) -> bool:
-        """Return whether a record of ``namespace`` (empty for none) belongs here."""
-        if self.kind == "all":
-            return True
+        """Return whether a local record of ``namespace`` (empty for none) belongs here."""
+        if self.kind in ("all", "peer"):
+            return self.kind == "all"
         return namespace == self.namespace if self.kind == "project" else not namespace
 
 
@@ -92,7 +102,8 @@ def parse_scope(values: list[str]) -> DashboardScope:
     ------
     ValueError
         For more than one value, an unknown form, or an empty, overlong,
-        non-printable or slash-bearing namespace; the message names the forms.
+        non-printable or slash-bearing namespace or hub id; the message names
+        the forms.
     """
     if not values:
         return WHOLE_HUB
@@ -101,15 +112,17 @@ def parse_scope(values: list[str]) -> DashboardScope:
     value = values[0]
     if value in ("all", "none"):
         return DashboardScope("all" if value == "all" else "none")
-    namespace = value.removeprefix("project:")
+    kind, _, name = value.partition(":")
     if (
-        namespace == value
-        or not 0 < len(namespace) <= _MAX_NAMESPACE
-        or "/" in namespace
-        or not namespace.isprintable()
+        kind not in ("project", "peer")
+        or not 0 < len(name) <= _MAX_NAMESPACE
+        or "/" in name
+        or not name.isprintable()
     ):
         raise ValueError(f"scope must be {SCOPE_FORMS}")
-    return DashboardScope("project", namespace)
+    if kind == "project":
+        return DashboardScope("project", namespace=name)
+    return DashboardScope("peer", peer=name)
 
 
 def _records(value: object) -> list[dict[str, Any]]:
@@ -207,7 +220,10 @@ def _namespaces(tasks: Iterable[Mapping[str, Any]], agents: Iterable[str]) -> li
 def scope_summary(
     whole: DashboardSnapshot, scoped: DashboardSnapshot, scope: DashboardScope
 ) -> dict[str, Any]:
-    """Return the ``scope`` block: the scope, its counts beside the hub's, and the namespaces.
+    """Return the ``scope`` block: the scope, its counts beside the hub's, the namespaces and peers.
+
+    A peer scope's counts are the peer's, beside this hub's totals, and the block
+    says ``advisory``.
 
     Parameters
     ----------
@@ -222,6 +238,7 @@ def scope_summary(
     return {
         "scope": scope.text,
         "applied": scope.kind != "all",
+        "advisory": scope.kind == "peer",
         "tasks_in_scope": len(_records(scoped.board.get("tasks"))),
         "tasks_total": len(all_tasks),
         "tasks_without_project": sum(1 for task in all_tasks if not _task_namespace(task)),
@@ -231,6 +248,7 @@ def scope_summary(
         "claims_in_scope": len(_records(scoped.state.get("active_claims"))),
         "claims_total": len(_records(whole.state.get("active_claims"))),
         "namespaces": _namespaces(all_tasks, whole.online_agents),
+        "peers": [peer.hub_id for peer in whole.observed_peers],
     }
 
 
@@ -242,6 +260,9 @@ def scoped_document(
     closed: bool = False,
 ) -> dict[str, Any]:
     """Return the bounded document of ``snapshot`` in ``scope``, with its ``scope`` block.
+
+    A peer scope's document is the observed peer's alone, marked ``advisory``, with a
+    ``peer`` block that says whether the hub is observed and was reached.
 
     ``/snapshot.json``, the live channel and the Studio projection all build their
     document here, so the same scope gives the same bytes on each.
@@ -257,7 +278,14 @@ def scoped_document(
     closed : bool, optional
         Keep closed tasks as well (``?closed=1``).
     """
-    scoped = scope_snapshot(snapshot, scope)
-    document = bound_snapshot(scoped.to_dict(a2a_state_file=a2a_state_file), closed=closed)
+    if scope.kind == "peer":
+        # The local A2A bridge is not the peer's; its state stays out of a peer's document.
+        scoped = peer_snapshot(snapshot, scope.peer)
+        document = bound_snapshot(scoped.to_dict(), closed=closed)
+        document["advisory"] = True
+        document["peer"] = peer_block(snapshot, scope.peer)
+    else:
+        scoped = scope_snapshot(snapshot, scope)
+        document = bound_snapshot(scoped.to_dict(a2a_state_file=a2a_state_file), closed=closed)
     document["scope"] = scope_summary(snapshot, scoped, scope)
     return document

@@ -135,6 +135,26 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_scoped_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
+    """Project a scoped dashboard document for Studio, keeping a peer scope's advisory marks.
+
+    A ``peer:<hub id>`` document shows an observed hub, not this one; its projection
+    says ``advisory`` and carries the ``peer`` block, so no reader takes the observed
+    rows for this hub's. Every other scope's projection is
+    :func:`build_studio_snapshot`'s, unchanged.
+
+    Parameters
+    ----------
+    dashboard : Mapping[str, Any]
+        The document :func:`synapse_channel.dashboard_scope.scoped_document` built.
+    """
+    projection = build_studio_snapshot(dashboard)
+    if dashboard.get("advisory") is True:
+        projection["advisory"] = True
+        projection["peer"] = dict(_mapping(dashboard.get("peer")))
+    return projection
+
+
 _SAMPLE_DASHBOARD: dict[str, Any] = {
     "fleet": {
         "agents": {

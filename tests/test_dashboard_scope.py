@@ -51,7 +51,8 @@ def test_each_scope_holds_exactly_its_namespaces(scope: DashboardScope, held: se
     [
         ["all", "none"],
         ["group:infra"],
-        ["peer:hub-2"],
+        ["peer:"],
+        ["peer:hub/2"],
         ["project:"],
         ["project:ALPHA/worker"],
         ["project:ALPHA\x00"],
@@ -61,9 +62,9 @@ def test_each_scope_holds_exactly_its_namespaces(scope: DashboardScope, held: se
     ],
 )
 def test_an_unknown_or_malformed_scope_is_refused_with_the_allowed_forms(values: list[str]) -> None:
-    with pytest.raises(ValueError, match="all, none or project:<namespace>"):
+    with pytest.raises(ValueError, match="all, none, project:<namespace> or peer:<hub id>"):
         parse_scope(values)
-    assert SCOPE_FORMS == "all, none or project:<namespace>"
+    assert SCOPE_FORMS == "all, none, project:<namespace> or peer:<hub id>"
 
 
 def test_the_longest_namespace_is_accepted() -> None:
@@ -118,6 +119,7 @@ def test_the_summary_counts_the_scope_beside_the_hub_and_lists_every_namespace()
     assert summary == {
         "scope": "project:ALPHA",
         "applied": True,
+        "advisory": False,
         "tasks_in_scope": 2,
         "tasks_total": 5,
         "tasks_without_project": 2,
@@ -131,6 +133,7 @@ def test_the_summary_counts_the_scope_beside_the_hub_and_lists_every_namespace()
             {"namespace": "BETA", "tasks": 1, "agents": 1},
             {"namespace": "user", "tasks": 0, "agents": 1},
         ],
+        "peers": [],
     }
 
 
