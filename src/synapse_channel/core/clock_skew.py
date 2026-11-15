@@ -48,7 +48,7 @@ def finite_timestamp(value: object) -> float | None:
     if isinstance(value, bool):
         return None
     try:
-        timestamp = float(value)  # type: ignore[arg-type]
+        timestamp = float(value)  # type: ignore[arg-type] # stub rejects object
     except (TypeError, ValueError):
         return None
     return timestamp if math.isfinite(timestamp) else None
