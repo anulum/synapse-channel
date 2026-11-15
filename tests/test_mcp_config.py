@@ -81,10 +81,10 @@ def test_server_spec_defensively_freezes_nested_policy() -> None:
     spec = McpServerSpec(
         name="immutable",
         command="/bin/false",
-        args=["--flag"],  # type: ignore[arg-type]
+        args=["--flag"],  # type: ignore[arg-type] # list frozen into a tuple
         env=source_env,
-        inherit_env=["LANG"],  # type: ignore[arg-type]
-        allowed_tools={"echo"},  # type: ignore[arg-type]
+        inherit_env=["LANG"],  # type: ignore[arg-type] # list frozen into a tuple
+        allowed_tools={"echo"},  # type: ignore[arg-type] # set frozen into a frozenset
     )
     source_env["LANG"] = "tampered"
 
@@ -93,7 +93,7 @@ def test_server_spec_defensively_freezes_nested_policy() -> None:
     assert spec.inherit_env == ("LANG",)
     assert spec.allowed_tools == frozenset({"echo"})
     with pytest.raises(TypeError):
-        spec.env["INJECTED"] = "yes"  # type: ignore[index]
+        spec.env["INJECTED"] = "yes"  # type: ignore[index] # frozen mapping rejects assignment
 
 
 @pytest.mark.parametrize(
