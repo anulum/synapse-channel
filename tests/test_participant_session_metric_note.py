@@ -15,6 +15,8 @@ defaults and rejects a non-session-metric body.
 
 from __future__ import annotations
 
+from typing import TypedDict, Unpack
+
 import pytest
 
 from synapse_channel.participants.session_metric_note import (
@@ -25,20 +27,28 @@ from synapse_channel.participants.session_metric_note import (
 from synapse_channel.participants.session_telemetry import SessionMetrics
 
 
-def _metrics(**overrides: object) -> SessionMetrics:
-    base: dict[str, object] = {
-        "turns": 4,
-        "errors": 1,
-        "abstentions": 1,
-        "input_tokens": 1200,
-        "output_tokens": 340,
-        "cost_usd": 0.25,
-        "total_latency_seconds": 8.5,
-        "max_rate_limit_utilisation": 0.6,
-        "last_input_tokens": 410,
-    }
-    base.update(overrides)
-    return SessionMetrics(**base)  # type: ignore[arg-type]
+class _MetricOverride(TypedDict, total=False):
+    """Fields a session-metric test may replace on one snapshot."""
+
+    errors: int
+    cost_usd: float
+    total_latency_seconds: float
+    max_rate_limit_utilisation: float | None
+
+
+def _metrics(**overrides: Unpack[_MetricOverride]) -> SessionMetrics:
+    """Return one session snapshot with the named fields replaced."""
+    return SessionMetrics(
+        turns=4,
+        errors=overrides.get("errors", 1),
+        abstentions=1,
+        input_tokens=1200,
+        output_tokens=340,
+        cost_usd=overrides.get("cost_usd", 0.25),
+        total_latency_seconds=overrides.get("total_latency_seconds", 8.5),
+        max_rate_limit_utilisation=overrides.get("max_rate_limit_utilisation", 0.6),
+        last_input_tokens=410,
+    )
 
 
 def test_snapshot_round_trips_through_the_body() -> None:
