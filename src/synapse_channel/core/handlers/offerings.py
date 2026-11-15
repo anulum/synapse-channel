@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl import BOARD
-from synapse_channel.core.atomic_operations import OperationDraft
+from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
 from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.journal import EventKind, record_resource
 from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, MessageType
@@ -181,6 +181,15 @@ def _resource_persister(
     return persist
 
 
+def _resource_offer_body(
+    execution: AtomicExecution | None, draft: OperationDraft | None
+) -> dict[str, Any] | None:
+    """Return the offer body from an execution, or from a prepared draft."""
+    if execution is not None:
+        return execution.response
+    return draft.response  # type: ignore[union-attr] # None return is not narrowed here
+
+
 async def handle_resource(
     hub: OfferingsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
@@ -266,9 +275,8 @@ async def handle_resource(
             ),
         )
         return
-    offered = (
-        execution.response if execution is not None else prepare((key, offer)).response  # type: ignore[union-attr]
-    )
+    draft = None if execution is not None else prepare((key, offer))
+    offered = _resource_offer_body(execution, draft)
     assert offered is not None
     if execution is None:
         hub.remember(data, offered)
