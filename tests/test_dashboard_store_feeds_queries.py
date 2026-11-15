@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TypedDict, Unpack
 
 import pytest
 
@@ -265,21 +266,28 @@ class TestMetricsFeed:
         assert build_metrics_feed(db) == build_metrics_feed(db)
 
 
-def _replayable_claim(**overrides: object) -> TaskClaim:
-    base: dict[str, object] = {
-        "task_id": "T1",
-        "owner": "alice",
-        "note": "",
-        "claimed_at": 1000.0,
-        "lease_expires_at": 1_000_000_000_000.0,
-        "status": "claimed",
-        "data_ref": "",
-        "worktree": "w",
-        "paths": (),
-        "epoch": 1,
-    }
-    base.update(overrides)
-    return TaskClaim(**base)  # type: ignore[arg-type]
+class _ClaimOverride(TypedDict, total=False):
+    """Fields a feed test may replace on one claim."""
+
+    task_id: str
+    owner: str
+    lease_expires_at: float
+
+
+def _replayable_claim(**overrides: Unpack[_ClaimOverride]) -> TaskClaim:
+    """Return one claim with the named fields replaced."""
+    return TaskClaim(
+        task_id=overrides.get("task_id", "T1"),
+        owner=overrides.get("owner", "alice"),
+        note="",
+        claimed_at=1000.0,
+        lease_expires_at=overrides.get("lease_expires_at", 1_000_000_000_000.0),
+        status="claimed",
+        data_ref="",
+        worktree="w",
+        paths=(),
+        epoch=1,
+    )
 
 
 def _task_ids(document: dict[str, object]) -> list[str]:
