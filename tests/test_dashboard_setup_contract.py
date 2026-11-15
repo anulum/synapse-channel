@@ -96,9 +96,9 @@ def test_setup_posture_and_requests_are_immutable() -> None:
     posture = SetupPosture(True, True, False, True, True)
     request = SetupPlanRequest(REQUEST_ID, "local-ephemeral")
     with pytest.raises(FrozenInstanceError):
-        posture.feature_armed = False  # type: ignore[misc]
+        posture.feature_armed = False  # type: ignore[misc] # frozen probe
     with pytest.raises(FrozenInstanceError):
-        request.profile = "local-durable-existing"  # type: ignore[misc]
+        request.profile = "local-durable-existing"  # type: ignore[misc] # frozen probe
 
 
 def test_plan_request_accepts_only_the_exact_schema() -> None:
