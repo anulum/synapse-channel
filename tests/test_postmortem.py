@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import TypedDict, Unpack, cast
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
@@ -22,22 +22,33 @@ from synapse_channel.core.postmortem import (
 from synapse_channel.core.state import TaskClaim
 
 
-def _claim(**overrides: object) -> TaskClaim:
-    base: dict[str, object] = {
-        "task_id": "T1",
-        "owner": "alpha",
-        "note": "initial claim",
-        "claimed_at": 10.0,
-        "lease_expires_at": 120.0,
-        "status": "claimed",
-        "data_ref": "",
-        "worktree": "repo",
-        "paths": ("src/auth.py",),
-        "epoch": 1,
-        "checkpoint": "",
-    }
-    base.update(overrides)
-    return TaskClaim(**base)  # type: ignore[arg-type]
+class _ClaimOverride(TypedDict, total=False):
+    """Fields a postmortem test may replace on one claim."""
+
+    task_id: str
+    owner: str
+    note: str
+    claimed_at: float
+    status: str
+    data_ref: str
+    paths: tuple[str, ...]
+    epoch: int
+
+
+def _claim(**overrides: Unpack[_ClaimOverride]) -> TaskClaim:
+    """Return one claim with the named fields replaced."""
+    return TaskClaim(
+        task_id=overrides.get("task_id", "T1"),
+        owner=overrides.get("owner", "alpha"),
+        note=overrides.get("note", "initial claim"),
+        claimed_at=overrides.get("claimed_at", 10.0),
+        lease_expires_at=120.0,
+        status=overrides.get("status", "claimed"),
+        data_ref=overrides.get("data_ref", ""),
+        worktree="repo",
+        paths=overrides.get("paths", ("src/auth.py",)),
+        epoch=overrides.get("epoch", 1),
+    )
 
 
 def _seed_postmortem_store(path: Path) -> None:
