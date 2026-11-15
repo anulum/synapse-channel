@@ -187,7 +187,11 @@ def _cmd_policy_check(args: argparse.Namespace) -> int:
     except PolicyError as exc:
         print(f"policy-check error: {exc}")
         return 2
-    decisions = evaluate_policy(receipt, config, subject=args.task)  # type: ignore[arg-type]
+    decisions = evaluate_policy(
+        receipt,  # type: ignore[arg-type] # JSON is not a ReleaseReceipt
+        config,
+        subject=args.task,
+    )
     signature_check: MerkleSignatureCheck | None = None
     if args.merkle_db:
         try:
