@@ -35,20 +35,27 @@ from synapse_channel.participants.session_metric_report import (
 from synapse_channel.participants.session_telemetry import SessionMetrics
 
 
-def _body(**overrides: object) -> str:
-    base: dict[str, object] = {
-        "turns": 2,
-        "errors": 0,
-        "abstentions": 0,
-        "input_tokens": 100,
-        "output_tokens": 20,
-        "cost_usd": 0.1,
-        "total_latency_seconds": 2.0,
-        "max_rate_limit_utilisation": None,
-        "last_input_tokens": 60,
-    }
-    base.update(overrides)
-    return format_session_metric_note(SessionMetrics(**base))  # type: ignore[arg-type]
+def _body(
+    *,
+    turns: int = 2,
+    errors: int = 0,
+    total_latency_seconds: float = 2.0,
+    max_rate_limit_utilisation: float | None = None,
+) -> str:
+    """Return one session-metric note with the named fields replaced."""
+    return format_session_metric_note(
+        SessionMetrics(
+            turns=turns,
+            errors=errors,
+            abstentions=0,
+            input_tokens=100,
+            output_tokens=20,
+            cost_usd=0.1,
+            total_latency_seconds=total_latency_seconds,
+            max_rate_limit_utilisation=max_rate_limit_utilisation,
+            last_input_tokens=60,
+        )
+    )
 
 
 def _event(
