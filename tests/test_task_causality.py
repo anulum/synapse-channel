@@ -88,6 +88,6 @@ def test_direct_constructor_rejects_non_string_fields() -> None:
     with pytest.raises(ValueError, match="causal_parent must be an object"):
         TaskCausalParent.from_value(None)
     with pytest.raises(ValueError, match="hub_id must be a string"):
-        TaskCausalParent(4, 1, "a" * 64)  # type: ignore[arg-type]
+        TaskCausalParent(4, 1, "a" * 64)  # type: ignore[arg-type] # hub_id is not a string
     with pytest.raises(ValueError, match="event_fingerprint must be a string"):
-        TaskCausalParent("hub", 1, 4)  # type: ignore[arg-type]
+        TaskCausalParent("hub", 1, 4)  # type: ignore[arg-type] # fingerprint is not a string
