@@ -203,7 +203,10 @@ file exclusively and refuses an existing report before starting the provider.
 If anything else changes the report during the launch, the launcher refuses its
 next update with `worker outcome record changed; inquire before continuing`,
 exits 2 and leaves the changed bytes in place. On POSIX this includes a write
-through a descriptor opened just before one of the launcher's own updates.
+through a descriptor opened just before one of the launcher's own updates. A
+publish interrupted after its own replace has landed still owns those bytes:
+the interrupt propagates, and the next update continues. A different record in
+that window is refused and left in place.
 
 ```bash
 synapse worker-session --identity MY-PROJECT/worker \

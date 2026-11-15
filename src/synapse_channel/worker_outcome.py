@@ -71,6 +71,7 @@ class WorkerObservation:
         )
         self.returncode: int | None = None
         self.published: bytes | None = None
+        self._own_bytes_landed = False
         # Descriptors of every report inode this launch published, with the bytes written
         # to each: a writer that opened the path before a replace lands in a detached
         # inode, which only these descriptors can still see. A launch publishes a handful
@@ -136,6 +137,11 @@ class WorkerObservation:
         with ``ValueError`` and the changed bytes stay at the path. A write that races
         a replace and lands in the detached inode is put back at the path, so the next
         update refuses it exactly as if it had landed a moment later.
+
+        Bytes this publish has just replaced into the path are its own, including
+        when an interrupt arrives after the replace and before ``published`` is
+        updated. That update proceeds and the interrupt propagates. A different
+        record in the same window is still refused.
         """
         if self.path is None:
             return
@@ -153,18 +159,25 @@ class WorkerObservation:
             "returncode": self.returncode,
         }
         data = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
-        if self.published is None:
-            self._hold(self._create(data), data)
-        else:
-            self._restore_raced_write()
-            previous = read_owner_only_file_bytes(
-                self.path, purpose="worker outcome", max_bytes=MAX_REPORT_BYTES
-            )
-            if previous != self.published:
-                self.close()
-                raise ValueError("worker outcome record changed; inquire before continuing")
-            self._hold(self._replace(data), data)
-        self.published = data
+        self._own_bytes_landed = False
+        try:
+            if self.published is None:
+                self._hold(self._create(data), data)
+            else:
+                self._restore_raced_write()
+                previous = read_owner_only_file_bytes(
+                    self.path, purpose="worker outcome", max_bytes=MAX_REPORT_BYTES
+                )
+                if previous != self.published and previous != data:
+                    self.close()
+                    raise ValueError("worker outcome record changed; inquire before continuing")
+                if previous != data:
+                    self._hold(self._replace(data), data)
+            self._accept_own_record(data)
+        except BaseException:
+            if self._own_bytes_landed and self._record_equals(data):
+                self.published = data
+            raise
 
     def close(self) -> None:
         """Release the held report descriptors once no further update will follow."""
@@ -189,24 +202,55 @@ class WorkerObservation:
         return _kept(descriptor)
 
     def _replace(self, data: bytes) -> int | None:
-        """Atomically replace the record; keep the new inode's descriptor on POSIX."""
+        """Atomically replace the record; keep the new inode's descriptor on POSIX.
+
+        An interrupt after the replace has landed keeps that descriptor and the
+        record. A replace that did not land still closes its temporary.
+        """
         assert self.path is not None
         descriptor, temporary = tempfile.mkstemp(prefix=".worker-outcome-", dir=self.path.parent)
         temporary_path = Path(temporary)
-        open_descriptor = True
+        descriptor_open = True
+        replaced = False
+        kept: int | None = None
         try:
             assert_owner_only_file_path(temporary_path, purpose="worker outcome")
             _write_durably(descriptor, data)
             kept = _kept(descriptor)
-            open_descriptor = kept is not None
+            descriptor_open = kept is not None
             os.replace(temporary_path, self.path)
+            replaced = True
+            self._own_bytes_landed = True
+            sync_directory(self.path.parent)
+            return kept
         except BaseException:
-            if open_descriptor:
+            landed = replaced or (not temporary_path.exists() and self._record_equals(data))
+            if landed:
+                self._own_bytes_landed = True
+                if descriptor_open:
+                    self._hold(descriptor, data)
+                raise
+            if descriptor_open:
                 os.close(descriptor)
             temporary_path.unlink(missing_ok=True)
             raise
-        sync_directory(self.path.parent)
-        return kept
+
+    def _accept_own_record(self, data: bytes) -> None:
+        """Remember ``data`` when the path still holds exactly those bytes."""
+        if self.path is not None and not self._record_equals(data):
+            self.close()
+            raise ValueError("worker outcome record changed; inquire before continuing")
+        self.published = data
+
+    def _record_equals(self, data: bytes) -> bool:
+        """Return whether the report path exists and holds exactly ``data``."""
+        assert self.path is not None
+        if not self.path.is_file():
+            return False
+        current = read_owner_only_file_bytes(
+            self.path, purpose="worker outcome", max_bytes=MAX_REPORT_BYTES
+        )
+        return current == data
 
     def _hold(self, descriptor: int | None, data: bytes) -> None:
         """Track the inode now at the path alongside every inode it replaced."""

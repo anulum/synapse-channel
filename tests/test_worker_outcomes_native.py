@@ -452,7 +452,12 @@ def test_real_publication_failure_recovery_is_unknown_without_relaunch(tmp_path:
 
 
 def test_real_interrupted_wait_confirms_only_the_direct_child_stop(tmp_path: Path) -> None:
-    """An actual pending interrupt and native child wait preserve its earlier effect."""
+    """An actual pending interrupt and native child wait preserve its earlier effect.
+
+    The child stays in the wait long enough for the interrupt to be pending
+    before it exits. It does not wait for the parent's provider-started
+    record: an interrupt during that publish still owns the bytes it replaced.
+    """
     env = private_environment(tmp_path)
     report, effect = tmp_path / "private" / "outcome.json", tmp_path / "effect"
     ready = threading.Event()
@@ -480,7 +485,7 @@ def test_real_interrupted_wait_confirms_only_the_direct_child_stop(tmp_path: Pat
                     sys.executable,
                     "-c",
                     "import pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text('effect'); "
-                    "time.sleep(0.5)",
+                    "time.sleep(8)",
                     str(effect),
                 ],
                 environ=env,

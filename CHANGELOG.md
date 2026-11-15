@@ -516,6 +516,13 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- An outcome publish interrupted after its own replace no longer treats that
+  record as someone else's. The bytes just replaced into the report stay the
+  launch's, the interrupt propagates, and a later update can record that the
+  wait was interrupted. A different record written in that window is still
+  refused and left in place. On POSIX the replaced inode stays watched, so a
+  write into an earlier inode is still put back and refused.
+
 - The JetBrains editor acceptance types its prompt only after the IDE reports the agent session
   ready: the chat's replay controller in the IDE log, `session/new` and its successful response in
   the ACP trace, and the started client session with the agent's command list. It used to type the
