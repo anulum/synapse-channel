@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TypedDict, Unpack
 
 import pytest
 
@@ -27,23 +28,33 @@ from synapse_channel.core.reproduce import (
 from synapse_channel.core.state import TaskClaim
 
 
-def _claim(**overrides: object) -> dict[str, object]:
-    base: dict[str, object] = {
-        "task_id": "T1",
-        "owner": "alice",
-        "note": "start",
-        "claimed_at": 10.0,
-        "lease_expires_at": 100.0,
-        "status": "claimed",
-        "data_ref": "",
-        "worktree": "repo",
-        "paths": ("src/auth.py",),
-        "epoch": 1,
-        "version": 0,
-        "checkpoint": "",
-    }
-    base.update(overrides)
-    return TaskClaim(**base).as_dict()  # type: ignore[arg-type]
+class _ClaimOverride(TypedDict, total=False):
+    """Fields a reproduction test may replace on one claim."""
+
+    task_id: str
+    owner: str
+    status: str
+    version: int
+    checkpoint: str
+
+
+def _claim(**overrides: Unpack[_ClaimOverride]) -> dict[str, object]:
+    """Return one claim mapping with the named fields replaced."""
+    claim = TaskClaim(
+        task_id=overrides.get("task_id", "T1"),
+        owner=overrides.get("owner", "alice"),
+        note="start",
+        claimed_at=10.0,
+        lease_expires_at=100.0,
+        status=overrides.get("status", "claimed"),
+        data_ref="",
+        worktree="repo",
+        paths=("src/auth.py",),
+        epoch=1,
+        version=overrides.get("version", 0),
+        checkpoint=overrides.get("checkpoint", ""),
+    )
+    return dict(claim.as_dict())
 
 
 def _live_events() -> tuple[StoredEvent, ...]:
