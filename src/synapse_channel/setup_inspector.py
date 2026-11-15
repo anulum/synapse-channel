@@ -211,7 +211,7 @@ async def inspect_setup(
             token=environment.get("SYNAPSE_TOKEN") or None,
             env=environment,
         )
-    except Exception:  # noqa: BLE001 - inspection converts all probe failures to stable evidence
+    except Exception:  # inspection converts all probe failures to stable evidence
         diagnoses = []
 
     checks.extend(

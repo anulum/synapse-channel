@@ -47,10 +47,15 @@ def _softhsm_module() -> str | None:
 def _pkcs11_available() -> bool:
     """Return whether python-pkcs11, a SoftHSM2 module, and softhsm2-util are all present."""
     try:
-        import pkcs11  # noqa: F401
+        import pkcs11
     except ImportError:
         return False
-    return _softhsm_module() is not None and shutil.which("softhsm2-util") is not None
+    # Importing the module is the availability check; keep the binding in the result.
+    return (
+        pkcs11 is not None
+        and _softhsm_module() is not None
+        and shutil.which("softhsm2-util") is not None
+    )
 
 
 # The backend needs a live PKCS#11 token. CI installs python-pkcs11 + softhsm2 so these run and
@@ -79,7 +84,7 @@ def softhsm_token(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str
     )
     previous = os.environ.get("SOFTHSM2_CONF")
     os.environ["SOFTHSM2_CONF"] = str(conf)
-    subprocess.run(  # noqa: S603 - fixed argv, no shell, test-only token setup
+    subprocess.run(  # fixed argv, no shell, test-only token setup
         [
             "softhsm2-util",
             "--init-token",

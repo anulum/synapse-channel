@@ -98,7 +98,7 @@ def require_project_csv_target(package: str, csv_path: Path) -> None:
 def _http_get(url: str) -> bytes:
     """Fetch a URL and return its body as bytes (the default network fetcher)."""
     # The caller always forms this URL from the fixed HTTPS pypistats endpoint.
-    with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT) as response:  # noqa: S310  # nosec B310
+    with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT) as response:  # nosec B310
         body: bytes = response.read()
         return body
 

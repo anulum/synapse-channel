@@ -128,7 +128,7 @@ def apply_sqlcipher_key(conn: Any, key: bytes) -> None:
     conn.execute(f'PRAGMA key = "{literal}"')
     try:
         conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
-    except Exception as exc:  # noqa: BLE001 — driver raises DatabaseError variants
+    except Exception as exc:  # driver raises DatabaseError variants
         raise SqlCipherKeyError(
             "SQLCipher key rejected (wrong key or not an encrypted store)"
         ) from exc

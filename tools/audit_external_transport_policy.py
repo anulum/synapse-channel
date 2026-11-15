@@ -7,7 +7,6 @@
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — read-only external transport effective-policy contract
 # Policy prose stays one literal per dimension so JSON and grep evidence stay exact.
-# ruff: noqa: E501
 """Enumerate and validate the security policy of every shipped external edge.
 
 This is an evidence projection, not another configuration framework. It cannot

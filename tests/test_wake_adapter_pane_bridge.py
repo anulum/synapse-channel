@@ -85,7 +85,7 @@ class Pane:
         )
 
     def run(self, *args: str) -> str:
-        done = subprocess.run(  # noqa: S603 - the test's own tmux wrapper
+        done = subprocess.run(  # the test's own tmux wrapper
             [str(self.tmux), *args], capture_output=True, text=True, check=False
         )
         return done.stdout

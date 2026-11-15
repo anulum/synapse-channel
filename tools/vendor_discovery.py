@@ -25,7 +25,7 @@ from urllib.request import Request, urlopen
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools import vendor_host_inspection as host_inspection  # noqa: E402
+from tools import vendor_host_inspection as host_inspection
 
 InspectionError = host_inspection.InspectionError
 RepositoryMissing = host_inspection.RepositoryMissing

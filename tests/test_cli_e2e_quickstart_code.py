@@ -81,7 +81,7 @@ def test_quickstart_coordinate_from_code_snippet_runs_against_a_hub(
     extra_args = ("--require-fencing-epoch",) if require_fencing else ()
     with isolated_hub(tmp_path, extra_args=extra_args) as hub:
         runnable = snippet.replace(_DEFAULT_URI, hub.uri)
-        completed = subprocess.run(  # noqa: S603 - fixed interpreter, doc snippet
+        completed = subprocess.run(  # fixed interpreter, doc snippet
             [sys.executable, "-c", runnable],
             capture_output=True,
             text=True,

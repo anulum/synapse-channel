@@ -148,7 +148,7 @@ def _ask(
     """Ask one adapter; whatever is not a clear answer is uncertain."""
     try:
         outcome = adapter.wake(target, wake_id, prompt, seconds)
-    except Exception as exc:  # noqa: BLE001 - the effect may have happened before the error
+    except Exception as exc:  # the effect may have happened before the error
         return WakeOutcome(UNCERTAIN, "", f"the adapter raised {type(exc).__name__}")
     if not isinstance(outcome, WakeOutcome) or outcome.state not in STATES:
         return WakeOutcome(UNCERTAIN, "", "the adapter gave no known state")

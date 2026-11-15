@@ -270,7 +270,7 @@ def _wake_once(root: Path, tmux: str, index: int) -> tuple[bool, float]:
         deadline = time.monotonic() + 3.0
         idle = False
         while not idle and time.monotonic() < deadline:
-            capture = subprocess.run(  # noqa: S603 - fixed argv on an owned session
+            capture = subprocess.run(  # fixed argv on an owned session
                 [tmux, "capture-pane", "-p", "-t", config.session],
                 capture_output=True,
                 text=True,
@@ -282,7 +282,7 @@ def _wake_once(root: Path, tmux: str, index: int) -> tuple[bool, float]:
         result = inject_wake(config)
         return idle and result.injected, time.perf_counter() - start
     finally:
-        subprocess.run(  # noqa: S603 - fixed argv on an owned session
+        subprocess.run(  # fixed argv on an owned session
             [tmux, "kill-session", "-t", config.session],
             capture_output=True,
             text=True,

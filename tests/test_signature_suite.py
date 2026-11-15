@@ -305,7 +305,7 @@ def test_a_backend_that_rejects_ml_dsa_still_imports_the_cli(tmp_path: Path) -> 
     )
     import subprocess
 
-    completed = subprocess.run(  # noqa: S603 - this interpreter, a script the test wrote
+    completed = subprocess.run(  # this interpreter, a script the test wrote
         [sys.executable, str(script)], capture_output=True, text=True, timeout=120, check=False
     )
     assert completed.returncode == 0, completed.stderr

@@ -136,7 +136,7 @@ def _digest(path: Path) -> str:
 def _run_tests(tests: Sequence[str], cwd: Path, timeout: float) -> tuple[str, str]:
     """Run the change's tests; return ``(result, observation)``."""
     try:
-        completed = subprocess.run(  # noqa: S603  # nosec B603 # explicit argv, no shell
+        completed = subprocess.run(  # nosec B603 # explicit argv, no shell
             list(tests), cwd=cwd, timeout=timeout, capture_output=True, check=False
         )
     except subprocess.TimeoutExpired:
@@ -215,7 +215,7 @@ def verify_file_change(
 
 def _git(repo: Path, *args: str, timeout: float) -> subprocess.CompletedProcess[str]:
     environment = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
-    return subprocess.run(  # noqa: S603  # nosec B603 B607 # fixed git argv, no shell
+    return subprocess.run(  # nosec B603 B607 # fixed git argv, no shell
         ["git", "-C", str(repo), *args],
         capture_output=True,
         text=True,

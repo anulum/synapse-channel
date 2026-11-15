@@ -103,7 +103,7 @@ def _capture_pane(session: str) -> str:
     mid-word at the 80-column boundary.
     """
     assert _TMUX is not None
-    proc = subprocess.run(  # noqa: S603 - fixed tmux args, test-only
+    proc = subprocess.run(  # fixed tmux args, test-only
         [_TMUX, "capture-pane", "-t", session, "-p", "-J"],
         capture_output=True,
         text=True,
@@ -125,7 +125,7 @@ def _wait_for_idle_fixture(session: str) -> str:
 def _kill_session(session: str) -> None:
     """Tear down ``session`` if it still exists, ignoring absence."""
     assert _TMUX is not None
-    subprocess.run(  # noqa: S603 - fixed tmux args, test-only
+    subprocess.run(  # fixed tmux args, test-only
         [_TMUX, "kill-session", "-t", session],
         capture_output=True,
         text=True,
@@ -605,7 +605,7 @@ def test_agent_tmux_wait_ignores_priority_broadcast_before_exact_wake(tmp_path: 
             "--uri",
             hub.uri,
         ]
-        waiter = subprocess.Popen(  # noqa: S603 - candidate CLI, test-only
+        waiter = subprocess.Popen(  # candidate CLI, test-only
             [
                 sys.executable,
                 "-u",
@@ -701,14 +701,14 @@ def test_agent_tmux_wait_submits_a_persisted_staged_prompt_without_repasting(
 
         prompt = build_wake_prompt(_IDENTITY)
         buffer_name = f"synapse-e2e-staged-{uuid.uuid4().hex[:8]}"
-        set_buffer = subprocess.run(  # noqa: S603 - fixed tmux args, test-only
+        set_buffer = subprocess.run(  # fixed tmux args, test-only
             [_TMUX, "set-buffer", "-b", buffer_name, "--", prompt],
             capture_output=True,
             text=True,
             check=False,
         )
         assert set_buffer.returncode == 0, set_buffer.stderr
-        paste_buffer = subprocess.run(  # noqa: S603 - fixed tmux args, test-only
+        paste_buffer = subprocess.run(  # fixed tmux args, test-only
             [_TMUX, "paste-buffer", "-b", buffer_name, "-d", "-p", "-t", session],
             capture_output=True,
             text=True,
@@ -811,7 +811,7 @@ def test_agent_tmux_submits_the_wake_in_a_real_opencode_mini_composer(tmp_path: 
         started = run_cli("agent-tmux", "start", *common, env=cli_env)
         assert started.ok(), started.output
         assert _TMUX is not None
-        subprocess.run(  # noqa: S603 - fixed args, resize only this owned native test
+        subprocess.run(  # fixed args, resize only this owned native test
             [_TMUX, "resize-window", "-t", session, "-x", "80", "-y", "24"],
             check=True,
             capture_output=True,
@@ -965,7 +965,7 @@ def _start_long_bridge(
     provider, submissions = _recording_provider(tmp_path)
     runtime = tmp_path / "runtime"
     runtime.mkdir(mode=0o700, exist_ok=True)
-    bridge = subprocess.Popen(  # noqa: S603 - candidate CLI, test-only
+    bridge = subprocess.Popen(  # candidate CLI, test-only
         [
             sys.executable,
             "-u",

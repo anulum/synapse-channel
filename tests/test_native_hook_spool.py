@@ -754,7 +754,7 @@ def test_a_creator_and_a_move_wait_while_another_process_holds_the_creation_lock
     directory = tmp_path / "spool"
     record = _record(tmp_path)
     spool(directory, native_session=_SESSION, call_id=_CALL, record=record)
-    holder = subprocess.Popen(  # noqa: S603 - this interpreter, a fixed script
+    holder = subprocess.Popen(  # this interpreter, a fixed script
         [sys.executable, "-c", _HOLD_LOCK, str(directory / SPOOL_LOCK)],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,

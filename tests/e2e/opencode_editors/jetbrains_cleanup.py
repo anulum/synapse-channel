@@ -58,11 +58,11 @@ def capture_evidence_and_terminate(
     if not screenshot.exists():
         try:
             capture_screenshot(screenshot)
-        except Exception as exc:  # noqa: BLE001 - cleanup must continue
+        except Exception as exc:  # cleanup must continue
             failures.append(exc)
     try:
         terminate_isolated_process_group(process)
-    except Exception as exc:  # noqa: BLE001 - aggregate both cleanup failures
+    except Exception as exc:  # aggregate both cleanup failures
         failures.append(exc)
 
     if not failures:

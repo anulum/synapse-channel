@@ -185,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         mode = "w" if args.force else "x"
-        with open(  # noqa: PTH123 - opener controls permissions and symlink handling.
+        with open(  # opener controls permissions and symlink handling.
             out_path,
             mode,
             encoding="utf-8",

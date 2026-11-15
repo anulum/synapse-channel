@@ -22,7 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_ROOT))
 
-from synapse_channel.git import semantic_claims, semantic_diff  # noqa: E402
+from synapse_channel.git import semantic_claims, semantic_diff
 
 
 @dataclass(frozen=True)

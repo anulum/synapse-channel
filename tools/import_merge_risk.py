@@ -30,7 +30,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from tools import test_ownership_map  # noqa: E402
+from tools import test_ownership_map
 
 PACKAGE_NAME = "synapse_channel"
 DEFAULT_SOURCE_ROOT = Path("src") / PACKAGE_NAME

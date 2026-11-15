@@ -21,11 +21,11 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.opencode_compatibility_workflow_contract import (  # noqa: E402
+from tools.opencode_compatibility_workflow_contract import (
     CompatibilityWorkflowError,
     assert_compatibility_workflow_contract,
 )
-from tools.opencode_editor_workflow_contract import (  # noqa: E402
+from tools.opencode_editor_workflow_contract import (
     EditorWorkflowError,
     assert_editor_workflow_contract,
 )

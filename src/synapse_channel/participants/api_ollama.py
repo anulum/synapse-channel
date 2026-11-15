@@ -68,10 +68,10 @@ def _default_poster(url: str, body: bytes, *, timeout: float) -> bytes:
         msg = f"ollama endpoint must be an http(s) URL, got {url!r}"
         raise ValueError(msg)
     # Scheme guarded to http(s) above; this POSTs to an operator-configured model endpoint.
-    request = urllib.request.Request(  # noqa: S310
+    request = urllib.request.Request(
         url, data=body, headers={"Content-Type": "application/json"}, method="POST"
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310  # nosec B310
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
         return read_bounded(response, purpose="ollama API response")
 
 

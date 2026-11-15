@@ -18,8 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_ROOT))
 
-from synapse_channel.git import generated_dependency_claims as _impl  # noqa: E402
-from synapse_channel.git.generated_dependency_claims import (  # noqa: E402,F401
+from synapse_channel.git import generated_dependency_claims as _impl
+from synapse_channel.git.generated_dependency_claims import (
     CAPABILITY_DEPENDENCIES,
     CAPABILITY_REQUIRED_DEPENDENCIES,
     DEFAULT_RULES,
@@ -32,6 +32,26 @@ from synapse_channel.git.generated_dependency_claims import (  # noqa: E402,F401
     render_claim_args,
     render_human,
     select_records,
+)
+
+# Callers import these names from the checkout wrapper.
+__all__ = (
+    "CAPABILITY_DEPENDENCIES",
+    "CAPABILITY_REQUIRED_DEPENDENCIES",
+    "CliArgs",
+    "DEFAULT_RULES",
+    "DependencyRecord",
+    "GeneratedRule",
+    "REPO_ROOT",
+    "SRC_ROOT",
+    "build_dependency_map",
+    "check_records",
+    "main",
+    "parse_args",
+    "records_to_json",
+    "render_claim_args",
+    "render_human",
+    "select_records",
 )
 
 _normalise_requested_path = _impl._normalise_requested_path

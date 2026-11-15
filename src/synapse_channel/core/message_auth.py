@@ -392,7 +392,7 @@ class MessageReplayCache:
                     now=now_float,
                     mode=self.sequence_floor_mode,
                 )
-            except Exception:  # noqa: BLE001 — driver faults must fail closed
+            except Exception:  # driver faults must fail closed
                 # Fail closed: SQLCipher and third-party DB-API drivers do not
                 # necessarily inherit sqlite3.Error. No durable-path fault may
                 # admit an authenticated frame.

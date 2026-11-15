@@ -155,7 +155,7 @@ def _pending_bridge(
     payload = json.loads(registry.read_text(encoding="utf-8"))
     payload["pending_wake"] = True
     registry.write_text(json.dumps(payload), encoding="utf-8")
-    bridge = subprocess.Popen(  # noqa: S603 - candidate CLI, test-only
+    bridge = subprocess.Popen(  # candidate CLI, test-only
         [
             sys.executable,
             "-u",

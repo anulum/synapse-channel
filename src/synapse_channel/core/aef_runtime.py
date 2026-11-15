@@ -103,7 +103,7 @@ def run_aef_outbox_worker(
     while not stop.is_set():
         try:
             drain_aef_database(config)
-        except Exception as exc:  # noqa: BLE001 — worker must retain pending truth
+        except Exception as exc:  # worker must retain pending truth
             if on_error is not None:
                 on_error(exc)
             else:

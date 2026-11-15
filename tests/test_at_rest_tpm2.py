@@ -56,7 +56,7 @@ def test_tpm2_import_is_clean_under_cryptography_deprecation_error() -> None:
         "from synapse_channel.core.at_rest_tpm2 import require_tpm2; "
         "require_tpm2(); print('tpm2 import clean')"
     )
-    proc = subprocess.run(  # noqa: S603 - current interpreter and fixed test script.
+    proc = subprocess.run(  # current interpreter and fixed test script.
         [
             sys.executable,
             "-W",
@@ -114,13 +114,13 @@ def swtpm_tcti(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     denies swtpm state dirs on the working volume, and ``/tmp`` is always permitted.
     """
     state = tmp_path_factory.mktemp("swtpm-state")
-    subprocess.run(  # noqa: S603 - fixed argv, no shell, test-only TPM setup
+    subprocess.run(  # fixed argv, no shell, test-only TPM setup
         ["swtpm_setup", "--tpm2", "--tpmstate", str(state), "--overwrite"],
         check=True,
         capture_output=True,
     )
     server_port, ctrl_port = _free_adjacent_tcp_ports()
-    proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, test-only TPM socket
+    proc = subprocess.Popen(  # fixed argv, no shell, test-only TPM socket
         [
             "swtpm",
             "socket",

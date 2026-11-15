@@ -383,7 +383,7 @@ def _start_disposable_hub(
     executable = Path(sys.executable).with_name("synapse")
     isolated_home = database.parent / "home"
     isolated_home.mkdir(mode=0o700, exist_ok=True)
-    return subprocess.Popen(  # noqa: S603 - fixed local test executable and argv
+    return subprocess.Popen(  # fixed local test executable and argv
         [
             sys.executable,
             "-c",
@@ -451,7 +451,7 @@ async def test_systemd_adapter_real_canary_consumption_and_restart_replay(
     port, first_hub = await _start_ready_disposable_hub(database=database)
     uri = f"ws://127.0.0.1:{port}"
     target = {"uri": uri, "project": "DEMO", "identity": "DEMO/verified"}
-    protected = subprocess.Popen(  # noqa: S603 - fixed interpreter and inert sleep script
+    protected = subprocess.Popen(  # fixed interpreter and inert sleep script
         [sys.executable, "-c", "import time; time.sleep(60)"],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,

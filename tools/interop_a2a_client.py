@@ -85,7 +85,7 @@ async def _send(client: Any, marker: str, steps: _Steps) -> str:
             if event.HasField("task"):
                 task_id = event.task.id
             last = event
-    except Exception as exc:  # noqa: BLE001 - any client failure fails the step
+    except Exception as exc:  # any client failure fails the step
         steps.fail("message-sent", "message:send", type(exc).__name__)
         return ""
     if not task_id:
@@ -115,7 +115,7 @@ async def _task_steps(client: Any, task_id: str, steps: _Steps) -> str:
         if cancelled.status.state != a2a_pb2.TASK_STATE_CANCELED:
             return steps.fail(name, route, "not-cancelled")
         steps.ok(name, route, ["id"], _fields(cancelled))
-    except Exception as exc:  # noqa: BLE001 - any client failure fails the step
+    except Exception as exc:  # any client failure fails the step
         return steps.fail(name, route, type(exc).__name__)
     return ""
 
@@ -177,7 +177,7 @@ async def journey(url: str, bearer: str, marker: str, steps: _Steps) -> str:
                 )
             )
             client = await factory.create_from_url(url)
-        except Exception as exc:  # noqa: BLE001 - any client failure fails the step
+        except Exception as exc:  # any client failure fails the step
             return steps.fail("card-resolved", "GET agent card", type(exc).__name__)
         steps.ok("card-resolved", "GET agent card", [], [])
         task_id = await _send(client, marker, steps)

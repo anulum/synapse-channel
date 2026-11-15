@@ -76,7 +76,7 @@ def _is_newer(latest: str, current: str) -> bool:
 def _fetch_latest(url: str = PYPI_URL, *, timeout: float = _HTTP_TIMEOUT) -> str | None:
     """Return PyPI's latest version for the package, or ``None`` on any failure."""
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310  # nosec B310
+        with urllib.request.urlopen(url, timeout=timeout) as response:  # nosec B310
             payload = json.loads(response.read().decode("utf-8"))
         version = payload["info"]["version"]
     except (OSError, ValueError, KeyError, TypeError):

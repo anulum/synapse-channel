@@ -168,12 +168,12 @@ def test_an_unusable_spool_refuses_flush_and_does_not_fail_the_sent_hook(tmp_pat
         unavailable = blocked / "spool"
     options = ["--spool-dir", str(unavailable), "--register-dir", str(tmp_path / "seats")]
     command = [sys.executable, "-B", "-m", "synapse_channel.cli", "native-hook"]
-    refused = subprocess.run(  # noqa: S603 - this interpreter and fixed CLI arguments
+    refused = subprocess.run(  # this interpreter and fixed CLI arguments
         [*command, "flush", *options], capture_output=True, text=True, timeout=3, check=False
     )
     assert refused.returncode == 1 and refused.stdout == ""
     assert refused.stderr == "synapse native-hook: cannot access the spool directory\n"
-    hook = subprocess.run(  # noqa: S603 - this interpreter and fixed CLI arguments
+    hook = subprocess.run(  # this interpreter and fixed CLI arguments
         [*command, "claude", *options],
         input=_hook().decode(),
         capture_output=True,
@@ -334,7 +334,7 @@ def _token_access(path: Path, *, owner_only: bool) -> None:
     if os.name == "nt":
         tool = Path(os.environ["SYSTEMROOT"]) / "System32" / "icacls.exe"
         operation = ["/remove:g", "*S-1-1-0"] if owner_only else ["/grant:r", "*S-1-1-0:R"]
-        subprocess.run(  # noqa: S603 - system ACL tool and an owned fixture path
+        subprocess.run(  # system ACL tool and an owned fixture path
             [str(tool), str(path), *operation],
             check=True,
             capture_output=True,

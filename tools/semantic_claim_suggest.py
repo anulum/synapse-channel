@@ -17,8 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_ROOT))
 
-from synapse_channel.git import semantic_claim_suggest as _impl  # noqa: E402
-from synapse_channel.git.semantic_claim_suggest import (  # noqa: E402,F401
+from synapse_channel.git import semantic_claim_suggest as _impl
+from synapse_channel.git.semantic_claim_suggest import (
     CliArgs,
     SuggestedPath,
     parse_args,
@@ -26,6 +26,21 @@ from synapse_channel.git.semantic_claim_suggest import (  # noqa: E402,F401
     render_human,
     render_json,
     suggest_paths,
+)
+
+# Callers import these names from the checkout wrapper.
+__all__ = (
+    "CliArgs",
+    "DEFAULT_LIMIT",
+    "REPO_ROOT",
+    "SRC_ROOT",
+    "SuggestedPath",
+    "main",
+    "parse_args",
+    "render_draft_claim",
+    "render_human",
+    "render_json",
+    "suggest_paths",
 )
 
 _impl.REPO_ROOT = REPO_ROOT

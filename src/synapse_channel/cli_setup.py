@@ -163,7 +163,7 @@ def _cmd_inspect(
                 agent_id=args.id,
             )
         )
-    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+    except Exception:  # keep the CLI error contract bounded
         _print_document(
             setup_error_document(command="inspect", profile=args.profile, code="inspection_failed"),
             as_json=args.json,
@@ -203,7 +203,7 @@ def _cmd_plan(
             )
         )
         document = build_setup_plan(profile, inspection)
-    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+    except Exception:  # keep the CLI error contract bounded
         _print_document(
             setup_error_document(command="plan", profile=args.profile, code="planning_failed"),
             as_json=args.json,
@@ -233,7 +233,7 @@ def _cmd_authorize(args: argparse.Namespace) -> int:
             as_json=args.json,
         )
         return 2
-    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+    except Exception:  # keep the CLI error contract bounded
         _print_document(
             setup_error_document(
                 command="authorize",
@@ -289,7 +289,7 @@ def _cmd_apply(
             as_json=args.json,
         )
         return 2
-    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+    except Exception:  # keep the CLI error contract bounded
         _print_document(
             setup_error_document(
                 command="apply",
@@ -350,7 +350,7 @@ def _cmd_verification_plan(
             as_json=args.json,
         )
         return 2
-    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+    except Exception:  # keep the CLI error contract bounded
         _print_document(
             setup_error_document(
                 command="verification-plan",
@@ -386,7 +386,7 @@ def _cmd_authorize_verification(args: argparse.Namespace) -> int:
             as_json=args.json,
         )
         return 2
-    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+    except Exception:  # keep the CLI error contract bounded
         _print_document(
             setup_error_document(
                 command="authorize-verification",
@@ -434,7 +434,7 @@ def _cmd_verify(
                 as_json=args.json,
             )
         return 2
-    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+    except Exception:  # keep the CLI error contract bounded
         _print_document(
             setup_error_document(
                 command="verify",

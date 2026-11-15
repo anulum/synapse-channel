@@ -44,7 +44,7 @@ PATH = "src/durable.py"
 def _hub_process(tmp_path: Path) -> Iterator[tuple[subprocess.Popen[str], str]]:
     """Start ``synapse hub`` on the test database; always reap the process."""
     port = free_port()
-    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+    proc = subprocess.Popen(  # fixed interpreter, test-only
         [
             *_CLI,
             "hub",

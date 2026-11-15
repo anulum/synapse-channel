@@ -201,7 +201,7 @@ def parse_manifest(text: str) -> tuple[Contract, ...]:
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
     """Run one read-only git command in ``repo`` without a shell."""
-    return subprocess.run(  # noqa: S603  # nosec B603 B607 # fixed git argv, no shell
+    return subprocess.run(  # nosec B603 B607 # fixed git argv, no shell
         ["git", "-C", str(repo), *args],
         capture_output=True,
         check=False,

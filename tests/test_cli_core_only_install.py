@@ -83,7 +83,7 @@ def test_the_cli_starts_and_refuses_cleanly_without_any_runtime_extra(tmp_path: 
     key, trust = tmp_path / "pq.key", tmp_path / "pq.trust"
     records = tmp_path / "records"
 
-    completed = subprocess.run(  # noqa: S603 - this interpreter, a script the test wrote
+    completed = subprocess.run(  # this interpreter, a script the test wrote
         [sys.executable, "-c", _SCRIPT, json.dumps(blocked), str(key), str(trust), str(records)],
         capture_output=True,
         text=True,

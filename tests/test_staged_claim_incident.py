@@ -29,7 +29,7 @@ RELEASE_PATHS = (
 
 
 def _git(repo: Path, *args: str) -> str:
-    result = subprocess.run(  # noqa: S603, S607 - fixed test-only Git invocation
+    result = subprocess.run(  # fixed test-only Git invocation
         ["git", *args], cwd=repo, check=True, capture_output=True, text=True
     )
     return result.stdout.strip()

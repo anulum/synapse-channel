@@ -99,7 +99,7 @@ def _commit() -> str:
     if sha:
         return sha
     # A fixed git query.
-    return subprocess.run(  # noqa: S603, S607  # nosec B603 B607
+    return subprocess.run(  # nosec B603 B607
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
     ).stdout.strip()
 

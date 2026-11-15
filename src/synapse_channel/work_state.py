@@ -109,7 +109,7 @@ def repository_commit(repo: Path) -> str:
     WorkStateError
         If ``repo`` is not a git repository with a commit.
     """
-    done = subprocess.run(  # noqa: S603  # nosec B603 B607 # fixed git argv, no shell
+    done = subprocess.run(  # nosec B603 B607 # fixed git argv, no shell
         ["git", "-C", str(repo), "rev-parse", "--verify", "HEAD^{commit}"],
         capture_output=True,
         text=True,

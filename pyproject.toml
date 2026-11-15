@@ -224,6 +224,16 @@ convention = "numpy"
 "docs/assets/*" = ["E402"]
 # Dev tooling scripts are not part of the documented API surface.
 "tools/*" = ["D"]
+# These checkout wrappers insert the package root before the first project import,
+# so import order cannot apply to that import.
+"tools/generated_dependency_claims.py" = ["E402"]
+"tools/import_merge_risk.py" = ["E402"]
+"tools/semantic_claim_suggest.py" = ["E402"]
+"tools/semantic_claims.py" = ["E402"]
+"tools/semantic_diff_claims.py" = ["E402"]
+"tools/test_ownership_map.py" = ["E402"]
+# Policy prose stays one literal per dimension, so the line-length rule cannot apply.
+"tools/audit_external_transport_policy.py" = ["E501"]
 
 [tool.mypy]
 strict = true

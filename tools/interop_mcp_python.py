@@ -115,7 +115,7 @@ async def _call(
         result = await session.call_tool(
             tool, arguments, meta=cast("RequestParamsMeta | None", meta)
         )
-    except Exception as exc:  # noqa: BLE001 - any client failure fails the step
+    except Exception as exc:  # any client failure fails the step
         raise steps.failed(name, route, type(exc).__name__) from None
     if not expect(result.is_error, _result_text(result)):
         raise steps.failed(name, route, "unexpected-result")
@@ -143,7 +143,7 @@ async def _open(steps: Steps, session: ClientSession, name: str) -> None:
         await session.initialize()
         tools = await session.list_tools()
         resources = await session.list_resources()
-    except Exception as exc:  # noqa: BLE001 - any client failure fails the step
+    except Exception as exc:  # any client failure fails the step
         raise steps.failed(name, "initialize", type(exc).__name__) from None
     names = {tool.name for tool in tools.tools}
     if not {"synapse_claim", "synapse_release", "synapse_send"} <= names:
@@ -204,7 +204,7 @@ async def journey(
     )
     try:
         board = await first.read_resource("synapse://board")
-    except Exception as exc:  # noqa: BLE001 - any client failure fails the step
+    except Exception as exc:  # any client failure fails the step
         raise steps.failed("board-read", "resources/read", type(exc).__name__) from None
     if not board.contents:
         raise steps.failed("board-read", "resources/read", "empty")
@@ -314,7 +314,7 @@ async def _python_sessions(
             provisioned, http_url, audience_ok=control != "surface-disabled"
         ) as (first, second):
             return await _guarded(steps, first, second, HTTP)
-    except Exception as exc:  # noqa: BLE001 - a session that cannot open fails its first step
+    except Exception as exc:  # a session that cannot open fails its first step
         steps.records.append(StepRecord("session-open", "connect", type(exc).__name__))
         return "session-open"
 

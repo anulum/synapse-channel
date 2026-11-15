@@ -81,7 +81,7 @@ def free_port() -> int:
 
 def git_run(repo: Path, *args: str) -> None:
     """Run a git command inside ``repo``, raising on failure."""
-    subprocess.run(  # noqa: S603, S607 - fixed git args, test-only
+    subprocess.run(  # fixed git args, test-only
         ["git", *args], cwd=repo, check=True, capture_output=True, text=True
     )
 
@@ -168,7 +168,7 @@ def run_cli(
             argv = [*argv[:cut], "--uri", uri, *argv[cut:]]
         else:
             argv += ["--uri", uri]
-    completed = subprocess.run(  # noqa: S603 - fixed interpreter, test-only
+    completed = subprocess.run(  # fixed interpreter, test-only
         [*_CLI, *argv],
         capture_output=True,
         text=True,
@@ -215,7 +215,7 @@ def isolated_hub(
     port = free_port()
     db_path = tmp_path / "e2e-hub.db"
     identity_pins = tmp_path / "e2e-identity-pins.json"
-    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+    proc = subprocess.Popen(  # fixed interpreter, test-only
         [
             *_CLI,
             "hub",
@@ -332,7 +332,7 @@ def isolated_a2a_serve(
     port = free_port()
     base = f"http://127.0.0.1:{port}"
     origin_args = [part for origin in allowed_origins for part in ("--allow-origin", origin)]
-    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+    proc = subprocess.Popen(  # fixed interpreter, test-only
         [
             *_CLI,
             "a2a-serve",
@@ -374,7 +374,7 @@ def isolated_worker(
     ``rule`` provider is offline and deterministic — it acknowledges without
     reaching any network — so the journey needs no model credentials.
     """
-    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+    proc = subprocess.Popen(  # fixed interpreter, test-only
         [*_CLI, "worker", "--provider", provider, "--name", name, "--uri", hub_uri],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -407,7 +407,7 @@ def isolated_supervisor(
     left in progress is re-offered within a second, keeping the journey fast and
     deterministic. Blocks until the supervisor registers on the hub.
     """
-    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+    proc = subprocess.Popen(  # fixed interpreter, test-only
         [
             *_CLI,
             "supervisor",
@@ -455,7 +455,7 @@ def isolated_team(*, no_workers: bool = True, ready_timeout: float = 10.0) -> It
     if no_workers:
         argv.append("--no-workers")
     with tempfile.TemporaryDirectory(prefix="synapse-team-e2e-") as home:
-        proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+        proc = subprocess.Popen(  # fixed interpreter, test-only
             argv,
             # Nobody reads the launcher's output here, so it must not go to a pipe
             # that a chatty hub or worker could fill.
@@ -517,7 +517,7 @@ def isolated_dashboard(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[
     """
     port = free_port()
     token = "e2e-dashboard-token"  # nosec B105 - fixed loopback test bearer, not a secret
-    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+    proc = subprocess.Popen(  # fixed interpreter, test-only
         [
             *_CLI,
             "dashboard",

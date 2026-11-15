@@ -257,7 +257,7 @@ def test_a_process_that_dies_between_the_effect_and_its_mark_leaves_an_uncertain
 ) -> None:
     """A real process is killed after its wake; the next relay must not wake again."""
     effects = tmp_path / "effects"
-    died = subprocess.run(  # noqa: S603 - this interpreter, a fixed script
+    died = subprocess.run(  # this interpreter, a fixed script
         [sys.executable, "-c", _DIE_AFTER_THE_EFFECT, str(tmp_path / "marks"), str(effects), SEAT],
         check=False,
         timeout=60,
@@ -322,7 +322,7 @@ def test_a_relay_waits_while_another_process_is_at_work_for_the_seat(tmp_path: P
     lock = tmp_path / "marks" / wake_marks.seat_key(SEAT) / ".lock"
     with locked(lock, blocking=False) as free:
         assert free
-    holder = subprocess.Popen(  # noqa: S603 - this interpreter, a fixed script
+    holder = subprocess.Popen(  # this interpreter, a fixed script
         [sys.executable, "-c", _HOLD_LOCK, str(lock)],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,

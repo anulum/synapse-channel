@@ -670,7 +670,7 @@ def test_module_console_entry_prints_help() -> None:
         os.pathsep
     )
     env["SYNAPSE_NO_UPDATE_CHECK"] = "1"
-    completed = subprocess.run(  # noqa: S603 - fixed interpreter and module argv
+    completed = subprocess.run(  # fixed interpreter and module argv
         [sys.executable, "-m", "synapse_channel.cli", "--help"],
         cwd=root,
         env=env,

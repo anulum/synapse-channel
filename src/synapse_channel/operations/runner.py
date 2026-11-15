@@ -391,7 +391,7 @@ def _run_bounded(argv: tuple[str, ...], timeout: float) -> _Captured:
     run outlives it.
     """
     try:
-        process = subprocess.Popen(  # noqa: S603  # nosec B603 # admitted argv, no shell
+        process = subprocess.Popen(  # nosec B603 # admitted argv, no shell
             list(argv),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,

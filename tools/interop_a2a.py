@@ -84,7 +84,7 @@ def _client_half(client_python: Path, url: str, bearer: Path, steps: Steps) -> t
     """Run the client script; return ``(failed_step, client_version, task_id)``."""
     # A fixed command: the client environment's interpreter and the client script.
     try:
-        completed = subprocess.run(  # noqa: S603  # nosec B603
+        completed = subprocess.run(  # nosec B603
             [str(client_python), "-I", str(_CLIENT_SCRIPT), url, str(bearer), MARKER],
             capture_output=True,
             text=True,

@@ -283,7 +283,7 @@ def test_real_generated_provider_configs_and_precommit_gate_are_detected(
 """,
         encoding="utf-8",
     )
-    installed = subprocess.run(  # noqa: S603 - configured real tool and isolated repo
+    installed = subprocess.run(  # configured real tool and isolated repo
         [str(_PRE_COMMIT_BIN), "install", "--config", str(precommit_config)],
         cwd=repo,
         capture_output=True,

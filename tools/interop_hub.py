@@ -113,7 +113,7 @@ def running(
     """
     with log.open("xb") as output:
         # A fixed command: this interpreter running the shipped Synapse CLI.
-        process = subprocess.Popen(  # noqa: S603  # nosec B603
+        process = subprocess.Popen(  # nosec B603
             command,
             stdin=subprocess.DEVNULL,
             stdout=output,

@@ -139,5 +139,5 @@ def run_hook(
             max_attempts=max_attempts,
             now=now,
         )
-    except Exception:  # noqa: BLE001 - a hook must never fail the send it follows
+    except Exception:  # a hook must never fail the send it follows
         return None

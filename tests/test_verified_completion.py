@@ -185,7 +185,7 @@ def test_module_entry_prints_help() -> None:
     env["PYTHONPATH"] = os.pathsep.join([str(_ROOT / "src"), env.get("PYTHONPATH", "")]).rstrip(
         os.pathsep
     )
-    completed = subprocess.run(  # noqa: S603 - fixed interpreter and module path
+    completed = subprocess.run(  # fixed interpreter and module path
         [sys.executable, str(_PATH), "--help"],
         cwd=_ROOT,
         env=env,

@@ -148,7 +148,7 @@ def reconcile_startup_aef(ctx: HubStartup) -> None:
     if ctx.aef is not None:
         try:
             settled = ctx.factories.drain_aef(ctx.aef)
-        except Exception as exc:  # noqa: BLE001 — existing startup boundary fails closed
+        except Exception as exc:  # existing startup boundary fails closed
             print(f"synapse hub: AEF startup reconciliation failed: {exc}", file=sys.stderr)
             raise HubStartupRefused() from None
         print(
@@ -179,7 +179,7 @@ def open_message_replay_store(ctx: HubStartup) -> None:
                     per_message_auth_replay_store=replay_store,
                 ),
             )
-        except Exception as exc:  # noqa: BLE001 — existing startup boundary fails closed
+        except Exception as exc:  # existing startup boundary fails closed
             print(f"synapse hub: cannot open message-auth replay ledger: {exc}", file=sys.stderr)
             raise HubStartupRefused() from None
         print(

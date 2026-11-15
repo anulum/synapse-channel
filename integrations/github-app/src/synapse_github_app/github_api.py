@@ -150,7 +150,7 @@ class GitHubApi:
         try:
             response = cast(
                 _ReadableResponse,
-                self._opener.open(outbound, timeout=self._timeout_seconds),  # noqa: S310
+                self._opener.open(outbound, timeout=self._timeout_seconds),
             )
             try:
                 declared = response.headers.get("Content-Length")

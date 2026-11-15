@@ -18,8 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_ROOT))
 
-from synapse_channel.git import test_ownership_map as _impl  # noqa: E402
-from synapse_channel.git.test_ownership_map import (  # noqa: E402,F401
+from synapse_channel.git import test_ownership_map as _impl
+from synapse_channel.git.test_ownership_map import (
     CliArgs,
     ImportedModule,
     OwnershipRecord,
