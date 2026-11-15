@@ -129,6 +129,11 @@ interfaces, maturity, and release commitments.
   [authenticated private HTTPS](docs/mcp-http.md) and a fail-closed outbound MCP client
   path, while the hub and core install remain MCP-agnostic. See the
   [MCP guide](docs/mcp.md).
+- History read queries answered only to the identity they name, an inbox page
+  and an owned-work listing on the MCP stdio bridge, and remote MCP mutations
+  that carry their operation identifier as a tool argument, with lease fences
+  that survive the adapter's restarts. See the [MCP guide](docs/mcp.md) and
+  the [protocol](docs/protocol.md).
 - An **A2A Agent Card and HTTP+JSON bridge** with a published local support
   matrix and reproducible validation receipts. This is partial validation, not
   external A2A certification. See
@@ -170,8 +175,20 @@ interfaces, maturity, and release commitments.
 - Catalogue operations run end to end with `synapse ops run`, along one
   checked path: the exact target and executable fingerprint, the qualification
   gate of the named profile, the operator's grants read again just before the
-  run, then an outcome record and an optional result verification. See
+  run, then an outcome record and an optional result verification. With
+  `--hub` (opt-in) a run also goes through the hub's governed operations: a
+  declaration with an intent built from the plan, an approval by another
+  identity, one attempt, and the published outcome. See
   [operations](docs/operations.md).
+- Attempts and seals for declared operations: `synapse operation declare
+  --intent` fixes an authorisation intent before the effect,
+  `synapse operation attempt` asks the hub to open an attempt for that exact
+  intent, `synapse operation seal` ends an attempt whose executor fell silent,
+  and `synapse verify-result git` reads an attempt's marker. See
+  [execution outcomes](docs/execution-outcomes.md).
+- Version 0.1 of the effect-safety suite: `synapse effect-suite run` runs
+  cases 1 to 4 in twenty-one variants against this package's own stack. See
+  [effect suite](docs/effect-suite.md).
 - Evidence that leaves the hub: `synapse export` writes a hub store's journal
   and AEF receipts as plain JSON Lines with a manifest. Signed tree heads
   (`synapse aef sth`) tell a complete export from a cut-off or rolled-back
@@ -190,6 +207,11 @@ interfaces, maturity, and release commitments.
   [build identity](docs/build-identity.md). A generated
   [guarantee register](docs/guarantee-register.md) shows, for each
   capability, the last stage it has reached, checked against the tree.
+- The cockpit as the dashboard's front door, built into the wheel.
+  `/capabilities.json` lists each optional surface and whether this start
+  serves it, `/findings.json` serves the findings agents recorded with the
+  hub, and a `scope` narrows the fleet to one project's part. See
+  [cockpit](docs/cockpit.md).
 - A dashboard and Studio projection for live claims, tasks, conflicts, security
   posture, receipts, governed operator actions, and observed peer state. See
   [Studio](docs/studio.md).
@@ -263,28 +285,10 @@ contracts and external evidence mature:
 
 ## On `main`, not yet released
 
-These changes are on the `main` branch and in no release yet. The
-"Unreleased" section of the [changelog](CHANGELOG.md) records them; they are
-shipped only when a release carries them.
-
-- The cockpit as the dashboard's front door, built into the wheel.
-  `/capabilities.json` lists each optional surface and whether this start
-  serves it, and `/findings.json` serves the findings agents recorded with the
-  hub. See [cockpit](docs/cockpit.md).
-- Attempts and seals for declared operations: `synapse operation declare
-  --intent` fixes an authorisation intent before the effect,
-  `synapse operation attempt` asks the hub to open an attempt for that exact
-  intent, `synapse operation seal` ends an attempt whose executor fell silent,
-  and `synapse verify-result git` reads an attempt's marker. See
-  [execution outcomes](docs/execution-outcomes.md).
-- Version 0.1 of the effect-safety suite: `synapse effect-suite run` runs
-  cases 1 to 4 in twenty-one variants against this package's own stack. See
-  [effect suite](docs/effect-suite.md).
-- History read queries answered only to the identity they name; an inbox page
-  and an owned-work listing on the MCP stdio bridge; and remote MCP mutations
-  that carry their operation identifier as a tool argument, with lease fences
-  that survive the adapter's restarts. See the [MCP guide](docs/mcp.md) and
-  the [protocol](docs/protocol.md).
+Changes that reach the `main` branch after a release are listed here, in no
+release yet, until a release carries them. The "Unreleased" section of the
+[changelog](CHANGELOG.md) records them. At 0.99.52 nothing on `main` is
+outside a release.
 
 ## Active pre-1.0 priorities
 

@@ -124,23 +124,26 @@ def test_roadmap_release_range_commands_exist_in_the_production_parser() -> None
     } <= _options("hub")
 
 
-def test_roadmap_names_unreleased_work_only_as_unreleased() -> None:
-    """Work that is on main but in no release appears only in its own section."""
+def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
+    """Work a release carries is shipped; the unreleased section keeps only its rule."""
     text = " ".join(_roadmap().split())
     shipped, rest = text.split("## On `main`, not yet released", 1)
     unreleased = rest.split("## Active pre-1.0 priorities", 1)[0]
 
-    for unreleased_surface in (
+    for released_in_0_99_52 in (
         "`synapse operation attempt`",
         "`synapse operation seal`",
         "`synapse operation declare --intent`",
         "`synapse effect-suite run`",
         "`/capabilities.json`",
         "`/findings.json`",
+        "`--hub`",
+        "`scope`",
     ):
-        assert unreleased_surface in unreleased, unreleased_surface
-        assert unreleased_surface not in shipped, unreleased_surface
+        assert released_in_0_99_52 in shipped, released_in_0_99_52
+        assert released_in_0_99_52 not in unreleased, released_in_0_99_52
     assert "in no release yet" in unreleased
+    assert "At 0.99.52 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:

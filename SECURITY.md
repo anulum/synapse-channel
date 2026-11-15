@@ -721,8 +721,8 @@ worth stating plainly:
   provenance bundle. A valid attestation binds bytes to the named repository,
   workflow, and source ref; it is not a semantic safety review. It also does not
   enable GitHub's separate owner-controlled immutable-release setting.
-- **Reproducible wheel and source archive.** From the first release after
-  0.99.51 the tag workflow builds the wheel and the source archive with one
+- **Reproducible wheel and source archive.** From 0.99.52 the tag workflow
+  builds the wheel and the source archive with one
   recipe, `tools/build_release_payload.py`, and a second runner builds the same
   tag again with that recipe; the payload is signed and published only when the
   two builds match file for file. The recipe exports the tagged commit under

@@ -18,6 +18,31 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.52] - 2026-11-15
+
+Core 0.99.52 takes an effect through the hub's governed operations from
+start to finish and makes the cockpit the dashboard's front door.
+
+- **Governed operations.** An operation can be declared with an authorisation
+  intent. One approval by another identity admits one attempt, which the hub
+  opens. An attempt whose executor fell silent can be sealed, and an attempt
+  marker in Git tells whether its effect landed. `synapse ops run --hub` takes
+  a catalogue operation through that path, and version 0.1 of the
+  effect-safety suite runs twenty-one variants against this package's own
+  stack.
+- **The dashboard and the cockpit.** The wheel carries the cockpit's
+  production build, and the dashboard opens on it. The dashboard says what it
+  serves and serves recorded findings. It bounds its fleet snapshot, says what
+  is known about each seat, shows the hub's own words for every event, and
+  serves one project's part of the fleet.
+- **The release payload** is built with one recipe and signed only when a
+  second runner rebuilds the same bytes.
+- **The MCP bridge** gains an inbox page and an owned-work listing, and the
+  remote adapter keeps its lease fences across restarts.
+- **The notification outbox's storage** ships at its first layout; no
+  command starts it yet.
+- **CI** counts the lines only Windows runs in the complete coverage gate.
+
 ### Added
 
 - `synapse ops run --hub` runs a catalogue operation through the hub's governed operations, opt-in.
