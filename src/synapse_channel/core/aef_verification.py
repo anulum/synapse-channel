@@ -25,7 +25,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Protocol, TypeGuard
+from typing import Protocol, TypeGuard, cast
 
 from synapse_channel.core.aef_canonical import AefCanonicalizationError, canonical_json
 from synapse_channel.core.aef_domain import AEF_RECEIPT_DOMAIN, AEF_STH_DOMAIN, AefDomain
@@ -433,12 +433,9 @@ def _verify_document_signature(
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-    envelope = document.get("signature")
-    if not isinstance(envelope, Mapping) or envelope.get("domain") != str(expected_domain):
-        return False  # pragma: no cover - public boundaries validate this first
-    value = envelope.get("value")
-    if not isinstance(value, str):
-        return False  # pragma: no cover - public boundaries validate this first
+    # Callers reject a missing, non-object, or wrong-domain signature first.
+    envelope = cast(Mapping[str, object], document["signature"])
+    value = cast(str, envelope["value"])
     unsigned = dict(document)
     unsigned_envelope = dict(envelope)
     unsigned_envelope.pop("value", None)
