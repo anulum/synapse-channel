@@ -31,34 +31,43 @@ from synapse_channel.core.receipt_signing import (
 )
 
 
-def _result(**overrides: object) -> DeliberationResult:
-    base: dict[str, object] = {
-        "deliberation_id": "land-e23dcd5-2026-07-16",
-        "pattern": "land_council",
-        "project": "SYNAPSE-CHANNEL",
-        "thesis": "land the 2448 residual",
-        "resolution": "PASS",
-        "actions": ("non-force FF",),
-        "gate_checks": (GateCheck("G7_seal", "sealed", "receipt:abc"),),
-        "concluded_at": "2026-07-16T01:43:00+02:00",
-    }
-    base.update(overrides)
-    return DeliberationResult(**base)  # type: ignore[arg-type]
+def _result(
+    *,
+    deliberation_id: str = "land-e23dcd5-2026-07-16",
+    pattern: str = "land_council",
+    thesis: str = "land the 2448 residual",
+    resolution: str = "PASS",
+) -> DeliberationResult:
+    """Return one deliberation result with the named fields replaced."""
+    return DeliberationResult(
+        deliberation_id=deliberation_id,
+        pattern=pattern,
+        project="SYNAPSE-CHANNEL",
+        thesis=thesis,
+        resolution=resolution,
+        actions=("non-force FF",),
+        gate_checks=(GateCheck("G7_seal", "sealed", "receipt:abc"),),
+        concluded_at="2026-07-16T01:43:00+02:00",
+    )
 
 
-def _package(**overrides: object) -> ExportPackage:
-    # ``result`` travels in the overrides bag so a dynamic ``**{field: value}``
-    # unpack cannot collide with a typed positional parameter under strict mypy.
-    result = overrides.pop("result", None)
-    if not isinstance(result, DeliberationResult):
-        result = _result()
-    base: dict[str, object] = {
-        "license_tag": "oss-ok",
-        "retention_class": "standard",
-        "source": ".coordination/…",
-    }
-    base.update(overrides)
-    return build_export_package(result, **base)  # type: ignore[arg-type]
+def _package(
+    *,
+    result: DeliberationResult | None = None,
+    license_tag: str = "oss-ok",
+    retention_class: str = "standard",
+    train_eligible: bool = False,
+    redaction_status: str = "none",
+) -> ExportPackage:
+    """Return one export package with the named fields replaced."""
+    return build_export_package(
+        _result() if result is None else result,
+        license_tag=license_tag,
+        retention_class=retention_class,
+        train_eligible=train_eligible,
+        source=".coordination/…",
+        redaction_status=redaction_status,
+    )
 
 
 @pytest.fixture
@@ -115,7 +124,14 @@ class TestDeliberationResult:
     )
     def test_malformed_result_is_refused(self, field: str, value: str, match: str) -> None:
         with pytest.raises(DeliberationError, match=match):
-            _result(**{field: value})
+            if field == "deliberation_id":
+                _result(deliberation_id=value)
+            elif field == "pattern":
+                _result(pattern=value)
+            elif field == "thesis":
+                _result(thesis=value)
+            else:
+                _result(resolution=value)
 
     @pytest.mark.parametrize("pattern", ["land_council", "audit_council", "research_council"])
     def test_every_known_pattern_is_accepted(self, pattern: str) -> None:
@@ -131,9 +147,11 @@ class TestExportPackage:
         ],
     )
     def test_malformed_tags_are_refused(self, field: str, value: str, match: str) -> None:
-        overrides: dict[str, object] = {field: value}
         with pytest.raises(DeliberationError, match=match):
-            _package(**overrides)
+            if field == "license_tag":
+                _package(license_tag=value)
+            else:
+                _package(retention_class=value)
 
     def test_train_eligible_fails_closed_without_passing_redaction(self) -> None:
         package = _package(train_eligible=True, redaction_status="none")
