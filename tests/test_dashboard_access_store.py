@@ -73,10 +73,12 @@ def test_loads_viewer_operator_admin_with_relative_private_token_files(tmp_path:
         "operator",
         "admin",
     ]
-    assert policy.resolve_credential(f"Bearer {'v' * 32}").capabilities.read is True  # type: ignore[union-attr]
-    assert policy.resolve_credential(f"Bearer {'o' * 40}").operator_name == (  # type: ignore[union-attr]
-        "operator:studio/ops-a"
-    )
+    viewer = policy.resolve_credential(f"Bearer {'v' * 32}")
+    assert viewer is not None
+    assert viewer.capabilities.read is True
+    operator = policy.resolve_credential(f"Bearer {'o' * 40}")
+    assert operator is not None
+    assert operator.operator_name == "operator:studio/ops-a"
     assert "o" * 40 not in repr(policy)
 
 
