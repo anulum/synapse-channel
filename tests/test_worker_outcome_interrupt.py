@@ -23,7 +23,9 @@ _REFUSAL = "^worker outcome record changed; inquire before continuing$"
 
 
 def _descriptors() -> set[str]:
-    return set(os.listdir("/proc/self/fd"))
+    """Names of open descriptors. ``/dev/fd`` is present on Linux and macOS."""
+
+    return set(os.listdir("/dev/fd"))
 
 
 def _interrupt_at(monkeypatch: pytest.MonkeyPatch, where: str) -> None:
