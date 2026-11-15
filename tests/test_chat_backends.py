@@ -32,7 +32,7 @@ def test_sanitize_truncates_to_max_len() -> None:
 
 
 def test_sanitize_coerces_non_string() -> None:
-    assert sanitize_text(123) == "123"  # type: ignore[arg-type]
+    assert sanitize_text(123) == "123"  # type: ignore[arg-type] # stub types this value as str
 
 
 # --- RuleBasedClient ---------------------------------------------------------
