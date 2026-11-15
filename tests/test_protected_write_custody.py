@@ -34,7 +34,7 @@ def test_custody_is_an_immutable_snapshot_not_a_live_claim_alias() -> None:
     assert witness.version == 0
     assert witness.paths == ("src",)
     with pytest.raises(FrozenInstanceError):
-        witness.owner = "other"  # type: ignore[misc]
+        witness.owner = "other"  # type: ignore[misc] # frozen probe
 
 
 @pytest.mark.parametrize("owner", ["author", "other"])
