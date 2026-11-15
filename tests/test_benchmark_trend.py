@@ -27,25 +27,35 @@ from synapse_channel.benchmark.trend import (
 )
 
 
-def _context(**overrides: object) -> HostContext:
-    fields: dict[str, object] = {
-        "package_version": "0.91.0",
-        "python": "3.12.3",
-        "platform": "Linux-test",
-        "cpu_model": "Test CPU 9000",
-        "cpu_count": 8,
-        "governor": "performance",
-        "load_before": (0.5, 0.4, 0.3),
-        "load_after": (0.6, 0.5, 0.4),
-        "isolation": NON_ISOLATED_LABEL,
-        "started_at": 1000.0,
-    }
-    fields.update(overrides)
-    return HostContext(**fields)  # type: ignore[arg-type]
+def _context(
+    *,
+    package_version: str = "0.91.0",
+    cpu_model: str = "Test CPU 9000",
+    governor: str = "performance",
+    started_at: float = 1000.0,
+) -> HostContext:
+    """Return one host context with the named fields replaced."""
+    return HostContext(
+        package_version=package_version,
+        python="3.12.3",
+        platform="Linux-test",
+        cpu_model=cpu_model,
+        cpu_count=8,
+        governor=governor,
+        load_before=(0.5, 0.4, 0.3),
+        load_after=(0.6, 0.5, 0.4),
+        isolation=NON_ISOLATED_LABEL,
+        started_at=started_at,
+    )
 
 
 def _scorecard(
-    events_per_second: float, *, started_at: float = 1000.0, **context_overrides: object
+    events_per_second: float,
+    *,
+    started_at: float = 1000.0,
+    package_version: str = "0.91.0",
+    cpu_model: str = "Test CPU 9000",
+    governor: str = "performance",
 ) -> Scorecard:
     result = ProbeResult(
         name="event-store-append",
@@ -54,7 +64,13 @@ def _scorecard(
         metrics={"events_per_second": events_per_second, "p95_ms": 2.5},
     )
     return Scorecard(
-        context=_context(started_at=started_at, **context_overrides), results=(result,)
+        context=_context(
+            started_at=started_at,
+            package_version=package_version,
+            cpu_model=cpu_model,
+            governor=governor,
+        ),
+        results=(result,),
     )
 
 
