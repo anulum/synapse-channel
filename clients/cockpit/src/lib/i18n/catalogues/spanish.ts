@@ -86,6 +86,8 @@ export const SPANISH: Catalogue = {
   "scope.wholeHub": "hub completo",
   "scope.unscopedTitle": "Este panel lee un flujo que el ámbito no limita; muestra el hub completo.",
   "scope.auditTitle": "Los recibos se limitan al ámbito; las acciones del operador muestran el hub completo.",
+  "hud.scopeGroups": "Grupos declarados",
+  "hud.scopeGroup": "{group} · {tasks} tareas · {agents} agentes",
   "hud.scopePeers": "Hubs observados (solo orientativo)",
   "hud.scopePeer": "observado: {hub}",
   "scope.peerTag": "orientativo · observado desde {hub}",

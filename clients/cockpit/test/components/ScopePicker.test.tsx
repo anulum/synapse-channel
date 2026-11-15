@@ -46,6 +46,19 @@ describe("ScopePicker", () => {
     expect(onChange).toHaveBeenCalledWith(ALPHA);
   });
 
+  it("lists the declared groups under their own heading, each with its counts", async () => {
+    const onChange = vi.fn();
+    const groups = [{ group: "ships", tasks: 5, agents: 3 }];
+    render(<ScopePicker scope={WHOLE_HUB} counts={{ ...COUNTS, groups }} onChange={onChange} />);
+    const select = screen.getByRole("combobox", { name: "Scope: one project's part of the fleet" });
+    const heading = select.querySelector("optgroup");
+
+    expect(heading?.getAttribute("label")).toBe("Declared groups");
+    expect(heading?.textContent).toBe("ships · 5 tasks · 3 agents");
+    await userEvent.selectOptions(select, "group:ships");
+    expect(onChange).toHaveBeenCalledWith({ kind: "group", name: "ships" });
+  });
+
   it("marks an active scope and renders in the head-up display's slot", () => {
     render(
       <Hud

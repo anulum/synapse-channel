@@ -498,3 +498,55 @@ def test_cmd_dashboard_serves_the_packaged_cockpit_unless_another_build_is_named
     assert started == [PACKAGED_COCKPIT, tmp_path, None]
     last = capsys.readouterr().out.split("studio command:")[-2].splitlines()[-1]
     assert last == "studio (command centre): http://127.0.0.1:8765/"
+
+
+def test_cmd_dashboard_refuses_an_unusable_groups_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A groups file of another shape exits 2 with the reason, before any server starts."""
+    from synapse_channel import cli_dashboard
+
+    def served(_: float) -> None:
+        # A start that does not refuse reaches the serving loop: fail at once, never serve.
+        raise AssertionError("the dashboard started on an unusable groups file")
+
+    monkeypatch.setattr("synapse_channel.cli_dashboard.time.sleep", served)
+    groups = tmp_path / "groups.json"
+    groups.write_text('{"version": 1, "groups": {"a/b": ["x"]}}')
+    groups.chmod(0o600)
+    args = cli.build_parser().parse_args(
+        ["dashboard", "--port", "0", "--scope-groups", str(groups)]
+    )
+
+    assert args.scope_groups_file == groups
+    assert cli_dashboard._cmd_dashboard(args) == 2
+    assert "--scope-groups: a group name must be" in capsys.readouterr().out
+
+
+def test_cmd_dashboard_announces_attention_and_no_missing_groups_when_both_are_given(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A start with the attention store and a groups file names neither as missing."""
+    server = _FakeDashboardServer(token=None, generated=False)
+    from synapse_channel import cli_dashboard
+
+    monkeypatch.setattr(cli_dashboard, "start_dashboard_server", lambda **_: server)
+
+    def interrupt(_: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("synapse_channel.cli_dashboard.time.sleep", interrupt)
+    args = cast(
+        "argparse.Namespace",
+        _dashboard_args(
+            attention_store=Path("./attention.json"), scope_groups_file=Path("./groups.json")
+        ),
+    )
+
+    assert int(args.func(args)) == 0
+    out = capsys.readouterr().out
+    assert "attention JSON: http://127.0.0.1:8765/attention.json" in out
+    assert "not served without --attention-store" not in out
+    assert "group scopes" not in out
+    assert "not served without --feeds-db:" in out
+    assert server.closed

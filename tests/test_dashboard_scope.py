@@ -23,6 +23,7 @@ from synapse_channel.dashboard_scope import (
     scope_summary,
     scoped_document,
 )
+from synapse_channel.dashboard_scope_groups import parse_scope_groups
 
 
 def test_a_request_without_a_scope_asks_for_the_whole_hub() -> None:
@@ -50,7 +51,8 @@ def test_each_scope_holds_exactly_its_namespaces(scope: DashboardScope, held: se
     "values",
     [
         ["all", "none"],
-        ["group:infra"],
+        ["group:"],
+        ["group:a/b"],
         ["peer:"],
         ["peer:hub/2"],
         ["project:"],
@@ -62,9 +64,11 @@ def test_each_scope_holds_exactly_its_namespaces(scope: DashboardScope, held: se
     ],
 )
 def test_an_unknown_or_malformed_scope_is_refused_with_the_allowed_forms(values: list[str]) -> None:
-    with pytest.raises(ValueError, match="all, none, project:<namespace> or peer:<hub id>"):
+    with pytest.raises(
+        ValueError, match="all, none, project:<namespace>, group:<name> or peer:<hub id>"
+    ):
         parse_scope(values)
-    assert SCOPE_FORMS == "all, none, project:<namespace> or peer:<hub id>"
+    assert SCOPE_FORMS == "all, none, project:<namespace>, group:<name> or peer:<hub id>"
 
 
 def test_the_longest_namespace_is_accepted() -> None:
@@ -133,6 +137,7 @@ def test_the_summary_counts_the_scope_beside_the_hub_and_lists_every_namespace()
             {"namespace": "BETA", "tasks": 1, "agents": 1},
             {"namespace": "user", "tasks": 0, "agents": 1},
         ],
+        "groups": [],
         "peers": [],
     }
 
@@ -164,3 +169,66 @@ def test_the_scoped_document_is_bounded_carries_the_block_and_never_grows() -> N
     ):
         narrowed = scoped_document(scope_fleet(), scope)
         assert len(json.dumps(narrowed, sort_keys=True)) <= len(json.dumps(whole, sort_keys=True))
+
+
+GROUPS = parse_scope_groups(
+    json.dumps({"version": 1, "groups": {"pair": ["ALPHA", "BETA"], "beta": ["BETA"]}})
+)
+
+
+def test_a_group_scope_holds_the_union_of_its_namespaces_and_says_its_name() -> None:
+    pair = parse_scope(["group:pair"], GROUPS)
+
+    assert pair == DashboardScope("group", group="pair", members=frozenset({"ALPHA", "BETA"}))
+    assert pair.text == "group:pair"
+    assert {namespace for namespace in ("ALPHA", "BETA", "user", "") if pair.holds(namespace)} == {
+        "ALPHA",
+        "BETA",
+    }
+    # A namespace may be in two groups: each group is its own view.
+    assert parse_scope(["group:beta"], GROUPS).holds("BETA")
+
+
+def test_the_declared_groups_do_not_change_what_a_scope_is() -> None:
+    assert parse_scope([], GROUPS) == WHOLE_HUB
+    assert parse_scope([], GROUPS).declared is GROUPS
+    assert parse_scope(["project:ALPHA"], GROUPS) == DashboardScope("project", "ALPHA")
+    assert parse_scope(["none"], GROUPS).declared is GROUPS
+
+
+def test_a_group_scope_without_a_groups_file_is_refused_naming_the_flag() -> None:
+    with pytest.raises(ValueError, match="start the dashboard with --scope-groups"):
+        parse_scope(["group:pair"])
+    with pytest.raises(ValueError, match="declares no group of that name"):
+        parse_scope(["group:infra"], GROUPS)
+
+
+def test_a_group_scope_keeps_every_record_of_its_namespaces() -> None:
+    whole = scope_fleet()
+    pair = parse_scope(["group:pair"], GROUPS)
+    scoped = scope_snapshot(whole, pair)
+
+    assert [task["task_id"] for task in scoped.board["tasks"]] == ["A1", "A2", "B1"]
+    assert scoped.online_agents == ["ALPHA/worker", "ALPHA/reviewer", "BETA/worker"]
+    assert [claim["owner"] for claim in scoped.state["active_claims"]] == [
+        "ALPHA/worker",
+        "user/terminal-1",
+    ]
+
+
+def test_the_summary_lists_every_declared_group_with_its_counts() -> None:
+    whole = scope_fleet()
+    pair = parse_scope(["group:pair"], GROUPS)
+    summary = scope_summary(whole, scope_snapshot(whole, pair), pair)
+
+    assert (summary["scope"], summary["applied"], summary["tasks_in_scope"]) == (
+        "group:pair",
+        True,
+        3,
+    )
+    assert summary["groups"] == [
+        {"group": "beta", "namespaces": ["BETA"], "tasks": 1, "agents": 1},
+        {"group": "pair", "namespaces": ["ALPHA", "BETA"], "tasks": 3, "agents": 3},
+    ]
+    document = scoped_document(whole, pair)
+    assert document["scope"]["groups"] == summary["groups"]

@@ -22,6 +22,7 @@ from synapse_channel.dashboard_feed_serving import (
     configured_flags,
     packaged_cockpit_dist,
 )
+from synapse_channel.dashboard_scope_groups import SCOPE_GROUPS_FLAG
 from synapse_channel.observed_peers import (
     parse_observed_peer,
     parse_observed_pin,
@@ -40,6 +41,49 @@ _STORE_FEED_LINES: tuple[tuple[str, str], ...] = (
 """The event-store feeds announced at start when ``--feeds-db`` is given."""
 
 
+def _start(args: argparse.Namespace, cockpit_dist: Path | None) -> DashboardServer:
+    """Start the dashboard server from the command line's options.
+
+    Raises
+    ------
+    ValueError
+        When an option, a policy file or the groups file cannot be used.
+    """
+    return start_dashboard_server(
+        host=args.host,
+        port=args.port,
+        uri=args.uri,
+        name=args.name,
+        token=args.token,
+        ready_timeout=args.ready_timeout,
+        response_timeout=args.response_timeout,
+        refresh_seconds=args.refresh_seconds,
+        allow_non_loopback=args.allow_non_loopback,
+        a2a_state_file=args.a2a_state_file,
+        dashboard_token=args.dashboard_token,
+        dashboard_access_file=args.dashboard_access_file,
+        host_sessions_access_file=getattr(args, "host_sessions_access_file", None),
+        fleet_observed_file=getattr(args, "fleet_observed_file", None),
+        fleet_observed_access_file=getattr(args, "fleet_observed_access_file", None),
+        scope_groups_file=getattr(args, "scope_groups_file", None),
+        host_session_context_root=getattr(args, "host_sessions_context_root", None),
+        reliability_db=args.reliability_db,
+        reliability_db_key_file=getattr(args, "feeds_db_key_file", None),
+        attention_store=args.attention_store,
+        federation_store=args.federation_store,
+        cockpit_dist=cockpit_dist,
+        operator=args.operator,
+        operator_name=args.operator_name,
+        observed_peers=tuple(args.observed_peers),
+        observed_token=args.observed_token,
+        observed_timeout=args.observed_timeout,
+        observed_pins=resolve_observed_pins(
+            getattr(args, "observed_pins", ()), tuple(args.observed_peers)
+        ),
+        allow_hosts=tuple(args.dashboard_allow_host),
+    )
+
+
 def _cmd_dashboard(args: argparse.Namespace) -> int:
     """Serve the local dashboard with optional explicitly armed operator relays.
 
@@ -48,38 +92,7 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
     """
     cockpit_dist = args.cockpit_dist if args.cockpit_dist is not None else packaged_cockpit_dist()
     try:
-        server = start_dashboard_server(
-            host=args.host,
-            port=args.port,
-            uri=args.uri,
-            name=args.name,
-            token=args.token,
-            ready_timeout=args.ready_timeout,
-            response_timeout=args.response_timeout,
-            refresh_seconds=args.refresh_seconds,
-            allow_non_loopback=args.allow_non_loopback,
-            a2a_state_file=args.a2a_state_file,
-            dashboard_token=args.dashboard_token,
-            dashboard_access_file=args.dashboard_access_file,
-            host_sessions_access_file=getattr(args, "host_sessions_access_file", None),
-            fleet_observed_file=getattr(args, "fleet_observed_file", None),
-            fleet_observed_access_file=getattr(args, "fleet_observed_access_file", None),
-            host_session_context_root=getattr(args, "host_sessions_context_root", None),
-            reliability_db=args.reliability_db,
-            reliability_db_key_file=getattr(args, "feeds_db_key_file", None),
-            attention_store=args.attention_store,
-            federation_store=args.federation_store,
-            cockpit_dist=cockpit_dist,
-            operator=args.operator,
-            operator_name=args.operator_name,
-            observed_peers=tuple(args.observed_peers),
-            observed_token=args.observed_token,
-            observed_timeout=args.observed_timeout,
-            observed_pins=resolve_observed_pins(
-                getattr(args, "observed_pins", ()), tuple(args.observed_peers)
-            ),
-            allow_hosts=tuple(args.dashboard_allow_host),
-        )
+        server = _start(args, cockpit_dist)
     except ValueError as exc:
         print(str(exc))
         return 2
@@ -93,6 +106,28 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
         return 0
     finally:
         server.close()
+
+
+def _given_flags(args: argparse.Namespace) -> frozenset[str]:
+    """Return the optional flags the command line gave, from the stores and files it names."""
+    return configured_flags(
+        feeds_db=args.reliability_db,
+        federation_store=args.federation_store,
+        attention_store=args.attention_store,
+        scope_groups=getattr(args, "scope_groups_file", None),
+    )
+
+
+def _announce_missing(given: frozenset[str]) -> None:
+    """Print, per flag the start was not given, what it would serve."""
+    missing: dict[str, list[str]] = {}
+    for surface in OPTIONAL_SURFACES:
+        if surface.flag not in given:
+            missing.setdefault(surface.flag, []).append(surface.name)
+    for flag, names in missing.items():
+        print(f"not served without {flag}: {', '.join(names)}")
+    if SCOPE_GROUPS_FLAG not in given:
+        print(f"not served without {SCOPE_GROUPS_FLAG}: group scopes")
 
 
 def _announce(args: argparse.Namespace, server: DashboardServer, cockpit_dist: Path | None) -> bool:
@@ -130,17 +165,7 @@ def _announce(args: argparse.Namespace, server: DashboardServer, cockpit_dist: P
     if args.federation_store is not None:
         print("federation JSON: " + server.url("/federation.json"))
     print("capabilities JSON: " + server.url("/capabilities.json"))
-    given = configured_flags(
-        feeds_db=args.reliability_db,
-        federation_store=args.federation_store,
-        attention_store=args.attention_store,
-    )
-    missing: dict[str, list[str]] = {}
-    for surface in OPTIONAL_SURFACES:
-        if surface.flag not in given:
-            missing.setdefault(surface.flag, []).append(surface.name)
-    for flag, names in missing.items():
-        print(f"not served without {flag}: {', '.join(names)}")
+    _announce_missing(_given_flags(args))
     if args.dashboard_access_file is not None:
         print(f"dashboard access policy: {args.dashboard_access_file}")
     if bearer is not None:
@@ -151,12 +176,8 @@ def _announce(args: argparse.Namespace, server: DashboardServer, cockpit_dist: P
     return True
 
 
-def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the ``dashboard`` subcommand."""
-    dashboard = subparsers.add_parser(
-        "dashboard",
-        help="Serve a local dashboard, read-only by default with opt-in operator relays.",
-    )
+def _add_hub_arguments(dashboard: argparse.ArgumentParser) -> None:
+    """Add the hub, the bind address and the timing options."""
     dashboard.add_argument("--uri", default=default_hub_uri())
     dashboard.add_argument("--name", default="DASHBOARD")
     dashboard.add_argument("--host", default="127.0.0.1", help="HTTP bind host.")
@@ -195,7 +216,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )
     dashboard.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
-    add_dashboard_access_arguments(dashboard)
+
+
+def _add_local_file_arguments(dashboard: argparse.ArgumentParser) -> None:
+    """Add the owner-only Fleet mirror and host session files."""
     dashboard.add_argument(
         "--fleet-observed-file", type=Path, help="Opt-in versioned Fleet mirror export (read-only)."
     )
@@ -213,6 +237,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=Path,
         help="Allowed context pathname root; does not grant context disclosure.",
     )
+
+
+def _add_feed_store_arguments(dashboard: argparse.ArgumentParser) -> None:
+    """Add the A2A state and the event store with its key."""
     dashboard.add_argument(
         "--a2a-state-file",
         type=Path,
@@ -245,6 +273,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "encrypted (same material as synapse hub --db-key-file)."
         ),
     )
+
+
+def _add_operator_store_arguments(dashboard: argparse.ArgumentParser) -> None:
+    """Add the federation and attention stores."""
     dashboard.add_argument(
         "--federation-store",
         type=Path,
@@ -261,6 +293,20 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         help="Explicit owner-local attention queue for authenticated /attention.json.",
     )
+
+
+def _add_view_arguments(dashboard: argparse.ArgumentParser) -> None:
+    """Add the declared scope groups and the cockpit build."""
+    dashboard.add_argument(
+        SCOPE_GROUPS_FLAG,
+        dest="scope_groups_file",
+        type=Path,
+        default=None,
+        help=(
+            "Owner-only JSON file naming groups of namespaces, each a scope=group:<name> of "
+            "the snapshot, the live stream and the event-backed feeds."
+        ),
+    )
     dashboard.add_argument(
         "--cockpit-dist",
         type=Path,
@@ -271,6 +317,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "unrecognised suffixes are refused."
         ),
     )
+
+
+def _add_observed_peer_arguments(dashboard: argparse.ArgumentParser) -> None:
+    """Add the observed peer hubs and their trust."""
     dashboard.add_argument(
         "--observed-peer",
         action="append",
@@ -306,4 +356,19 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=10.0,
         help="Seconds to wait for each observed peer pull.",
     )
+
+
+def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register the ``dashboard`` subcommand."""
+    dashboard = subparsers.add_parser(
+        "dashboard",
+        help="Serve a local dashboard, read-only by default with opt-in operator relays.",
+    )
+    _add_hub_arguments(dashboard)
+    add_dashboard_access_arguments(dashboard)
+    _add_local_file_arguments(dashboard)
+    _add_feed_store_arguments(dashboard)
+    _add_operator_store_arguments(dashboard)
+    _add_view_arguments(dashboard)
+    _add_observed_peer_arguments(dashboard)
     dashboard.set_defaults(func=_cmd_dashboard)

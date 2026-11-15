@@ -33,6 +33,7 @@ from synapse_channel.dashboard_postmortem_feed import (
     MAX_POSTMORTEM_TASK_ID_LENGTH,
     build_postmortem_feed,
 )
+from synapse_channel.dashboard_scope_groups import SCOPE_GROUPS_FLAG
 from synapse_channel.dashboard_store_feeds import (
     DEFAULT_EVENTS_LIMIT,
     DEFAULT_FINDINGS_LIMIT,
@@ -159,19 +160,29 @@ def absent_surface(name: str) -> FeedResponse:
 
 
 def configured_flags(
-    *, feeds_db: object, federation_store: object, attention_store: object
+    *,
+    feeds_db: object,
+    federation_store: object,
+    attention_store: object,
+    scope_groups: object = None,
 ) -> frozenset[str]:
-    """Return the optional-surface flags a start was given, from the stores it names."""
+    """Return the optional flags a start was given, from the stores and files it names."""
     stores = {
         "--feeds-db": feeds_db,
         "--federation-store": federation_store,
         "--attention-store": attention_store,
+        SCOPE_GROUPS_FLAG: scope_groups,
     }
     return frozenset(flag for flag, store in stores.items() if store is not None)
 
 
 def capability_summary(configured_flags: frozenset[str]) -> dict[str, object]:
-    """Return what this start serves: each optional surface, whether it is on, and its flag."""
+    """Return what this start serves: each optional surface, whether it is on, and its flag.
+
+    The declared groups are not a surface of their own: they add ``group:<name>``
+    scopes to the snapshot and the feeds, so ``scope_groups`` says whether this start
+    declares them and which flag would.
+    """
     surfaces = [
         {
             "name": surface.name,
@@ -185,6 +196,10 @@ def capability_summary(configured_flags: frozenset[str]) -> dict[str, object]:
         "surfaces": surfaces,
         "configured": sum(1 for surface in surfaces if surface["configured"]),
         "total": len(surfaces),
+        "scope_groups": {
+            "flag": SCOPE_GROUPS_FLAG,
+            "configured": SCOPE_GROUPS_FLAG in configured_flags,
+        },
     }
 
 

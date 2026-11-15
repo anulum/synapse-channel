@@ -7,8 +7,8 @@
 // SYNAPSE CHANNEL — the cockpit's scope: one project's part of the fleet, in the URL and each request
 
 /**
- * A scope narrows what the cockpit shows to one project, or to the work and
- * names without one. It is a lens, not an access boundary: the hub decides what
+ * A scope narrows what the cockpit shows to one project, to one group of
+ * projects the dashboard declares, or to the work and names without one. It is a lens, not an access boundary: the hub decides what
  * this principal sees, and the scope only narrows the view. The dashboard
  * applies it to the snapshot, the live stream and the event-backed feeds.
  *
@@ -19,6 +19,7 @@ export type CockpitScope =
   | { readonly kind: "all" }
   | { readonly kind: "none" }
   | { readonly kind: "project"; readonly namespace: string }
+  | { readonly kind: "group"; readonly name: string }
   | { readonly kind: "peer"; readonly hub: string };
 
 /** A scope of this hub's own records. */
@@ -46,7 +47,7 @@ function validName(name: string): boolean {
 
 /**
  * Read one scope value as the dashboard reads it: `all`, `none`,
- * `project:<namespace>` or `peer:<hub id>`, where the name is printable, at
+ * `project:<namespace>`, `group:<name>` or `peer:<hub id>`, where the name is printable, at
  * most 256 characters and holds no slash. Any other value is the whole hub, as
  * an unknown value of every other workspace key is its default.
  */
@@ -58,12 +59,14 @@ export function parseScope(value: string | null): CockpitScope {
   const name = value.slice(separator + 1);
   if (!validName(name)) return WHOLE_HUB;
   if (kind === "project") return { kind: "project", namespace: name };
+  if (kind === "group") return { kind: "group", name };
   return kind === "peer" ? { kind: "peer", hub: name } : WHOLE_HUB;
 }
 
 /** Return the scope as the dashboard's query value, for example `project:<namespace>` or `peer:<hub>`. */
 export function scopeText(scope: CockpitScope): string {
   if (scope.kind === "project") return `project:${scope.namespace}`;
+  if (scope.kind === "group") return `group:${scope.name}`;
   return scope.kind === "peer" ? `peer:${scope.hub}` : scope.kind;
 }
 
@@ -116,6 +119,8 @@ export interface ScopeCounts {
   readonly tasksWithoutProject: number;
   readonly agentsWithoutNamespace: number;
   readonly namespaces: readonly { readonly namespace: string; readonly tasks: number; readonly agents: number }[];
+  /** The groups the dashboard declares; absent from a dashboard older than declared groups. */
+  readonly groups?: readonly { readonly group: string; readonly tasks: number; readonly agents: number }[];
   /** The observed peer hubs; absent from a dashboard older than peer scopes. */
   readonly peers?: readonly string[];
 }
@@ -142,7 +147,7 @@ export function scopeOptions(counts: ScopeCounts | null, current: CockpitScope):
       agents: row.agents,
     });
   }
-  if (current.kind !== "peer" && !options.some((option) => sameScope(option.scope, current))) {
+  if (current.kind !== "peer" && current.kind !== "group" && !options.some((option) => sameScope(option.scope, current))) {
     options.push({ scope: current, tasks: 0, agents: 0 });
   }
   return options;
@@ -156,4 +161,21 @@ export function peerScopes(counts: ScopeCounts | null, current: CockpitScope): P
   const peers: PeerScope[] = (counts?.peers ?? []).map((hub) => ({ kind: "peer", hub }));
   if (current.kind === "peer" && !peers.some((peer) => sameScope(peer, current))) peers.push(current);
   return peers;
+}
+
+/**
+ * Return the groups the dashboard declares as scopes, with their counts, in the
+ * order the dashboard names them; the current group stays a choice, with zero
+ * counts, when the dashboard no longer declares it.
+ */
+export function groupOptions(counts: ScopeCounts | null, current: CockpitScope): ScopeOption[] {
+  const options: ScopeOption[] = (counts?.groups ?? []).map((row) => ({
+    scope: { kind: "group", name: row.group },
+    tasks: row.tasks,
+    agents: row.agents,
+  }));
+  if (current.kind === "group" && !options.some((option) => sameScope(option.scope, current))) {
+    options.push({ scope: current, tasks: 0, agents: 0 });
+  }
+  return options;
 }

@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   WHOLE_HUB,
   appendQuery,
+  groupOptions,
   parseScope,
   peerScopes,
   sameScope,
@@ -24,6 +25,7 @@ import {
 const ALPHA = { kind: "project", namespace: "ALPHA" } as const;
 const NONE = { kind: "none" } as const;
 const EAST = { kind: "peer", hub: "east" } as const;
+const SHIPS = { kind: "group", name: "ships" } as const;
 
 describe("parseScope", () => {
   it("reads the three forms the dashboard serves", () => {
@@ -32,6 +34,8 @@ describe("parseScope", () => {
     expect(parseScope("project:ALPHA")).toEqual(ALPHA);
     expect(parseScope("project:with space")).toEqual({ kind: "project", namespace: "with space" });
     expect(parseScope("peer:east")).toEqual(EAST);
+    expect(parseScope("group:ships")).toEqual(SHIPS);
+    expect(scopeText(SHIPS)).toBe("group:ships");
   });
 
   it.each([
@@ -45,7 +49,9 @@ describe("parseScope", () => {
     "project:non breaking",
     "peer:",
     "peer:a/b",
-    "group:infra",
+    "group:",
+    "group:a/b",
+    "elsewhere:ALPHA",
   ])("falls back to the whole hub for %j", (value) => {
     expect(parseScope(value)).toEqual(WHOLE_HUB);
   });
@@ -58,7 +64,7 @@ describe("parseScope", () => {
 
 describe("the URL", () => {
   it("round-trips every scope and keeps the other keys", () => {
-    for (const scope of [WHOLE_HUB, NONE, ALPHA, EAST]) {
+    for (const scope of [WHOLE_HUB, NONE, ALPHA, SHIPS, EAST]) {
       const search = scopeToSearch(scope, "?panel=fleet&agent=ALPHA%2Fone");
       expect(scopeFromSearch(search)).toEqual(scope);
       expect(new URLSearchParams(search).get("panel")).toBe("fleet");
@@ -127,6 +133,26 @@ describe("scopeOptions", () => {
     expect(peerScopes(withPeers, EAST)).toEqual([EAST, { kind: "peer", hub: "west" }]);
     expect(peerScopes(counts, { kind: "peer", hub: "gone" })).toEqual([{ kind: "peer", hub: "gone" }]);
     expect(peerScopes(null, ALPHA)).toEqual([]);
+  });
+
+  it("lists the declared groups on their own and keeps the current one", () => {
+    const withGroups = {
+      ...counts,
+      groups: [
+        { group: "ships", tasks: 5, agents: 3 },
+        { group: "beta", tasks: 3, agents: 2 },
+      ],
+    };
+    expect(groupOptions(withGroups, WHOLE_HUB)).toEqual([
+      { scope: SHIPS, tasks: 5, agents: 3 },
+      { scope: { kind: "group", name: "beta" }, tasks: 3, agents: 2 },
+    ]);
+    // A group never falls into the local choices, even when it is the current scope.
+    expect(scopeOptions(withGroups, SHIPS)).toHaveLength(4);
+    expect(groupOptions(withGroups, SHIPS)).toHaveLength(2);
+    const gone = { kind: "group", name: "gone" } as const;
+    expect(groupOptions(counts, gone)).toEqual([{ scope: gone, tasks: 0, agents: 0 }]);
+    expect(groupOptions(null, ALPHA)).toEqual([]);
   });
 
   it("offers zero counts before the first snapshot", () => {

@@ -21,6 +21,10 @@ principal. Membership has one rule per record and is never inferred:
 * a progress note belongs to its task's scope, and so do the release receipts
   derived from it.
 
+A ``group:<name>`` scope keeps the records of every namespace of one group the
+dashboard declares in its owner-only groups file
+(:mod:`synapse_channel.dashboard_scope_groups`); a namespace may be in two groups.
+
 A ``peer:<hub id>`` scope is of another kind: it shows an observed peer hub's
 folded state alone, marked advisory (:mod:`synapse_channel.dashboard_peer_scope`),
 and no local record belongs to it.
@@ -28,27 +32,28 @@ and no local record belongs to it.
 The scope is applied before the fleet, risk and headline views are computed, so
 every counter of a scoped document is a count in that scope. The ``scope`` block
 states the hub-wide totals beside the scoped ones, and lists every namespace
-present with its counts.
+present and every declared group with its counts.
 """
 
 from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal
 
 from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.dashboard_bounds import bound_snapshot
 from synapse_channel.dashboard_peer_scope import peer_block, peer_snapshot
+from synapse_channel.dashboard_scope_groups import SCOPE_GROUPS_FLAG, ScopeGroups
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from synapse_channel.dashboard import DashboardSnapshot
 
-ScopeKind = Literal["all", "none", "project", "peer"]
-SCOPE_FORMS = "all, none, project:<namespace> or peer:<hub id>"
+ScopeKind = Literal["all", "none", "project", "group", "peer"]
+SCOPE_FORMS = "all, none, project:<namespace>, group:<name> or peer:<hub id>"
 """The forms a ``scope`` query value may take, as a refusal names them."""
 
 _MAX_NAMESPACE = 256
@@ -56,33 +61,47 @@ _MAX_NAMESPACE = 256
 
 @dataclass(frozen=True, slots=True)
 class DashboardScope:
-    """One scope of the dashboard: the whole hub, one namespace, no namespace, or a peer hub.
+    """One scope of the dashboard: the whole hub, one namespace, a declared group, none, or a peer.
 
     Parameters
     ----------
-    kind : {"all", "none", "project", "peer"}
+    kind : {"all", "none", "project", "group", "peer"}
         Which part of the fleet the scope keeps; ``peer`` shows an observed hub instead.
     namespace : str, optional
         The namespace of a ``project`` scope; empty for the other kinds.
     peer : str, optional
         The hub id of a ``peer`` scope; empty for the other kinds.
+    group : str, optional
+        The name of a ``group`` scope; empty for the other kinds.
+    members : frozenset[str], optional
+        The namespaces a ``group`` scope keeps; empty for the other kinds.
+    declared : ScopeGroups or None, optional
+        The groups the dashboard declares, which the ``scope`` block lists; not part
+        of what the scope keeps, so two scopes compare by their kind and names alone.
     """
 
     kind: ScopeKind
     namespace: str = ""
     peer: str = ""
+    group: str = ""
+    members: frozenset[str] = frozenset()
+    declared: ScopeGroups | None = field(default=None, compare=False)
 
     @property
     def text(self) -> str:
         """Return the scope as its query value, for example ``project:<ns>`` or ``peer:<id>``."""
         if self.kind == "project":
             return f"project:{self.namespace}"
+        if self.kind == "group":
+            return f"group:{self.group}"
         return f"peer:{self.peer}" if self.kind == "peer" else self.kind
 
     def holds(self, namespace: str) -> bool:
         """Return whether a local record of ``namespace`` (empty for none) belongs here."""
         if self.kind in ("all", "peer"):
             return self.kind == "all"
+        if self.kind == "group":
+            return namespace in self.members
         return namespace == self.namespace if self.kind == "project" else not namespace
 
 
@@ -90,39 +109,63 @@ WHOLE_HUB = DashboardScope("all")
 """The default scope: every record the hub sends, as before scopes existed."""
 
 
-def parse_scope(values: list[str]) -> DashboardScope:
+def _group_scope(name: str, groups: ScopeGroups | None) -> DashboardScope:
+    """Return the scope of the declared group ``name``.
+
+    Raises
+    ------
+    ValueError
+        When the dashboard declares no groups (the message names the flag) or no
+        group of that name.
+    """
+    if groups is None:
+        raise ValueError(
+            f"group scopes need a groups file: start the dashboard with {SCOPE_GROUPS_FLAG}"
+        )
+    members = groups.members(name)
+    if members is None:
+        raise ValueError("this dashboard declares no group of that name")
+    return DashboardScope("group", group=name, members=members, declared=groups)
+
+
+def parse_scope(values: list[str], groups: ScopeGroups | None = None) -> DashboardScope:
     """Return the scope one request asks for; no value asks for the whole hub.
 
     Parameters
     ----------
     values : list[str]
         Every ``scope`` value of the request's query.
+    groups : ScopeGroups or None, optional
+        The groups the dashboard declares (``--scope-groups``); ``None`` when it
+        declares none, and then a ``group:`` scope is refused.
 
     Raises
     ------
     ValueError
-        For more than one value, an unknown form, or an empty, overlong,
-        non-printable or slash-bearing namespace or hub id; the message names
-        the forms.
+        For more than one value, an unknown form, an empty, overlong, non-printable
+        or slash-bearing name, or a group the dashboard does not declare; the
+        message names the forms or the flag.
     """
     if not values:
-        return WHOLE_HUB
+        return WHOLE_HUB if groups is None else DashboardScope("all", declared=groups)
     if len(values) != 1:
         raise ValueError(f"scope accepts one value: {SCOPE_FORMS}")
     value = values[0]
     if value in ("all", "none"):
-        return DashboardScope("all" if value == "all" else "none")
+        return DashboardScope("all" if value == "all" else "none", declared=groups)
     kind, _, name = value.partition(":")
     if (
-        kind not in ("project", "peer")
+        kind not in ("project", "group", "peer")
         or not 0 < len(name) <= _MAX_NAMESPACE
         or "/" in name
         or not name.isprintable()
     ):
         raise ValueError(f"scope must be {SCOPE_FORMS}")
+    if kind == "group":
+        return _group_scope(name, groups)
     if kind == "project":
-        return DashboardScope("project", namespace=name)
-    return DashboardScope("peer", peer=name)
+        return DashboardScope("project", namespace=name, declared=groups)
+    return DashboardScope("peer", peer=name, declared=groups)
 
 
 def _records(value: object) -> list[dict[str, Any]]:
@@ -217,10 +260,35 @@ def _namespaces(tasks: Iterable[Mapping[str, Any]], agents: Iterable[str]) -> li
     ]
 
 
+def _groups(
+    declared: ScopeGroups | None, tasks: Iterable[Mapping[str, Any]], agents: Iterable[str]
+) -> list[dict[str, Any]]:
+    """Return every declared group with its namespaces and its task and agent counts."""
+    if declared is None:
+        return []
+    task_namespaces = [_task_namespace(task) for task in tasks]
+    agent_namespaces = [project_of(name) for name in agents]
+    rows = []
+    for name in declared.names():
+        members = declared.members(name) or frozenset()
+        rows.append(
+            {
+                "group": name,
+                "namespaces": sorted(members),
+                "tasks": sum(1 for namespace in task_namespaces if namespace in members),
+                "agents": sum(1 for namespace in agent_namespaces if namespace in members),
+            }
+        )
+    return rows
+
+
 def scope_summary(
     whole: DashboardSnapshot, scoped: DashboardSnapshot, scope: DashboardScope
 ) -> dict[str, Any]:
-    """Return the ``scope`` block: the scope, its counts beside the hub's, the namespaces and peers.
+    """Return the ``scope`` block: the scope, its counts beside the hub's, and what can be scoped.
+
+    What can be scoped is every namespace present, every declared group and every
+    observed peer.
 
     A peer scope's counts are the peer's, beside this hub's totals, and the block
     says ``advisory``.
@@ -248,6 +316,7 @@ def scope_summary(
         "claims_in_scope": len(_records(scoped.state.get("active_claims"))),
         "claims_total": len(_records(whole.state.get("active_claims"))),
         "namespaces": _namespaces(all_tasks, whole.online_agents),
+        "groups": _groups(scope.declared, all_tasks, whole.online_agents),
         "peers": [peer.hub_id for peer in whole.observed_peers],
     }
 

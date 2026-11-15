@@ -512,6 +512,28 @@ Membership has one rule per record and is never inferred:
 - a progress note, and the receipts derived from it, belong to their task's
   scope.
 
+A dashboard started with `--scope-groups FILE` also offers `scope=group:<name>`:
+the union of the namespaces one declared group names, by the same rules. Core
+keeps no record of groups. The file is the operator's, owner-only JSON:
+
+```json
+{"version": 1, "groups": {"ships": ["harbour", "lighthouse"]}}
+```
+
+It may declare 1 to 256 groups of 1 to 256 namespaces each. A group or
+namespace name has 1 to 256 printable characters and no slash. A namespace may
+be in two groups. The start refuses, naming the flag, a file that:
+
+- is not owner-only, or has a second hard link;
+- is larger than 64 KiB;
+- is not that shape, repeats a key, or holds an empty group or a namespace twice
+  in one group.
+
+Without the flag, `scope=group:<name>` is refused with 400 naming it, and a name
+the file does not declare is refused too. The `scope` block lists each declared
+group in `groups`, with its namespaces and its task and agent counts.
+`/capabilities.json` says in `scope_groups` whether this start declares groups.
+
 In a scope, the `fleet`, `risk` and `headline` sections are computed from the
 scope's whole board. A `scope` block states the scope and whether it applied,
 the scoped and hub-wide counts (`tasks_in_scope`, `tasks_total`,

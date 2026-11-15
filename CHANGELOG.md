@@ -45,6 +45,15 @@ start to finish and makes the cockpit the dashboard's front door.
 
 ### Added
 
+- `synapse dashboard --scope-groups FILE` declares groups of namespaces, each a scope of its own:
+  `scope=group:<name>` narrows the snapshot, the Studio projection, the live stream and the five
+  event-backed feeds to the union of the namespaces the group names. Core keeps no record of groups,
+  so the file is the operator's: owner-only JSON (`{"version": 1, "groups": {"ships": ["harbour",
+  "lighthouse"]}}`), refused at start, naming the flag, when it is not owner-only, has a second hard
+  link, is over 64 KiB or is not that shape. A namespace may be in two groups. Without the flag a
+  `group:` scope is refused with 400 naming it. The `scope` block lists the declared groups with their
+  counts, `/capabilities.json` says whether a start declares them, and the cockpit's scope selector
+  offers them under "Declared groups". See `docs/cli.md`.
 - `synapse ops run --hub` runs a catalogue operation through the hub's governed operations, opt-in.
   `--declare` plans the row and declares the operation on the seat's claimed task, with an
   authorisation intent built from the plan by `synapse_channel.operations.hub_intent`: the tool and

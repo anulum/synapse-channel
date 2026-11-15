@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from synapse_channel.dashboard import DashboardSnapshot
     from synapse_channel.dashboard_feed_serving import FeedResponse
     from synapse_channel.dashboard_http_pages import ResponseWriter
+    from synapse_channel.dashboard_scope_groups import ScopeGroups
 
     class FrameSender(Protocol):
         """Encode one existing live-transport frame through the owning stream."""
@@ -95,6 +96,9 @@ class LiveStreamBindings:
         Optional existing read-side A2A projection input.
     start, write, flush, refuse
         Owner callbacks for headers, bytes, flush and pre-stream HTTP refusal.
+    scope_groups
+        The groups the dashboard declares, which a ``group:`` scope names; ``None``
+        when the start named no groups file.
     """
 
     fetch: Callable[[], DashboardSnapshot]
@@ -106,6 +110,7 @@ class LiveStreamBindings:
     write: Callable[[bytes], object]
     flush: Callable[[], None]
     refuse: ResponseWriter
+    scope_groups: ScopeGroups | None = None
 
 
 def _frame_sender(ports: LiveStreamBindings, frames: LiveFrameSequence) -> FrameSender:
@@ -192,7 +197,7 @@ def serve_dashboard_live(query: str, ports: LiveStreamBindings) -> None:
     """
     try:
         cycle_limit, scope_values = parse_live_query(query)
-        scope = parse_scope(scope_values)
+        scope = parse_scope(scope_values, ports.scope_groups)
     except ValueError as exc:
         ports.refuse(HTTPStatus.BAD_REQUEST, f"{exc}\n".encode(), content_type="text/plain")
         return

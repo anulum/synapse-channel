@@ -86,6 +86,8 @@ export const FRENCH: Catalogue = {
   "scope.wholeHub": "hub entier",
   "scope.unscopedTitle": "Ce panneau lit un flux que le périmètre ne restreint pas ; il montre le hub entier.",
   "scope.auditTitle": "Les reçus sont limités au périmètre ; les actions d’opérateur montrent le hub entier.",
+  "hud.scopeGroups": "Groupes déclarés",
+  "hud.scopeGroup": "{group} · {tasks} tâches · {agents} agents",
   "hud.scopePeers": "Hubs observés (à titre indicatif)",
   "hud.scopePeer": "observé : {hub}",
   "scope.peerTag": "indicatif · observé depuis {hub}",

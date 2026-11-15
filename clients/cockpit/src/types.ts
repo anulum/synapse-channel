@@ -244,6 +244,14 @@ export interface ScopeNamespace {
   readonly agents: number;
 }
 
+/** One group of namespaces the dashboard declares, with the counts of its part of the fleet. */
+export interface ScopeGroup {
+  readonly group: string;
+  readonly namespaces: readonly string[];
+  readonly tasks: number;
+  readonly agents: number;
+}
+
 /**
  * The snapshot's `scope` block: the scope it was narrowed to, its counts beside
  * the whole hub's, and every namespace present. A scope is a lens, not an
@@ -261,6 +269,8 @@ export interface ScopeSummary {
   readonly claimsInScope: number;
   readonly claimsTotal: number;
   readonly namespaces: readonly ScopeNamespace[];
+  /** The groups the dashboard declares (`--scope-groups`); empty when it declares none. */
+  readonly groups: readonly ScopeGroup[];
   /** The observed peer hubs, each a scope of its own; empty when none is observed. */
   readonly peers: readonly string[];
 }

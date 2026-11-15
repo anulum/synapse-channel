@@ -103,6 +103,12 @@ def test_configured_flags_name_only_the_stores_given() -> None:
     ) == {"--feeds-db", "--attention-store"}
     summary = capability_summary(frozenset({"--federation-store"}))
     assert summary["configured"] == 1
+    assert summary["scope_groups"] == {"flag": "--scope-groups", "configured": False}
+    assert configured_flags(
+        feeds_db=None, federation_store=None, attention_store=None, scope_groups=Path("g.json")
+    ) == {"--scope-groups"}
+    # The groups are a scope of the snapshot, not a surface: they never count as a served feed.
+    assert capability_summary(frozenset({"--scope-groups"}))["configured"] == 0
 
 
 def test_a_bare_start_names_every_missing_surface_by_its_flag(
@@ -118,3 +124,4 @@ def test_a_bare_start_names_every_missing_surface_by_its_flag(
     assert f"not served without --feeds-db: {store_feeds}" in lines
     assert "not served without --federation-store: federation" in lines
     assert "not served without --attention-store: attention" in lines
+    assert "not served without --scope-groups: group scopes" in lines

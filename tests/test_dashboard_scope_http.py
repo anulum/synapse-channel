@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -83,7 +84,7 @@ def test_the_none_scope_and_the_union_rule_for_claims(server: DashboardServer) -
     assert [claim["owner"] for claim in beta["state"]["active_claims"]] == ["user/terminal-1"]
 
 
-@pytest.mark.parametrize("query", ["scope=group:infra", "scope=project:", "scope=all&scope=none"])
+@pytest.mark.parametrize("query", ["scope=group:", "scope=project:", "scope=all&scope=none"])
 @pytest.mark.parametrize("path", ["/snapshot.json", "/studio.json"])
 def test_a_malformed_scope_is_refused_before_any_collection(
     server: DashboardServer, path: str, query: str
@@ -91,7 +92,7 @@ def test_a_malformed_scope_is_refused_before_any_collection(
     status, _, body = _get(server, f"{path}?{query}")
 
     assert status == 400
-    assert b"all, none, project:<namespace> or peer:<hub id>" in body
+    assert b"all, none, project:<namespace>, group:<name> or peer:<hub id>" in body
 
 
 def test_the_studio_projection_is_built_in_the_scope(server: DashboardServer) -> None:
@@ -120,4 +121,73 @@ def test_the_live_channel_sends_the_same_scoped_document(
     assert snapshot["data"]["scope"] == page["scope"]
     assert snapshot["data"]["board"]["tasks"] == page["board"]["tasks"]
     refused, _, detail = _get(server, "/live.ndjson?cycles=1&scope=group%3Ainfra")
-    assert refused == 400 and b"all, none, project:<namespace> or peer:<hub id>" in detail
+    assert refused == 400 and b"start the dashboard with --scope-groups" in detail
+
+
+GROUPS = {"version": 1, "groups": {"pair": ["ALPHA", "BETA"], "beta": ["BETA"]}}
+
+
+@pytest.fixture
+def grouped(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[DashboardServer]:
+    monkeypatch.setattr(dashboard_module, "fetch_dashboard_snapshot", _fetch)
+    groups = tmp_path / "groups.json"
+    groups.write_text(json.dumps(GROUPS))
+    groups.chmod(0o600)
+    running = _feeds_server(dashboard_token=TOKEN, scope_groups_file=groups)
+    try:
+        yield running
+    finally:
+        running.close()
+
+
+@pytest.mark.parametrize("path", ["/snapshot.json", "/studio.json"])
+def test_a_group_scope_without_a_groups_file_is_refused_naming_the_flag(
+    server: DashboardServer, path: str
+) -> None:
+    status, _, body = _get(server, f"{path}?scope=group%3Apair")
+
+    assert status == 400
+    assert body == b"group scopes need a groups file: start the dashboard with --scope-groups\n"
+
+
+def test_a_declared_group_scope_serves_the_union_of_its_namespaces(
+    grouped: DashboardServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    _, body = _snapshot(grouped, "group:pair")
+    document = json.loads(body)
+    status, _, studio = _get(grouped, "/studio.json?scope=group%3Apair")
+    _, _, stream = _get(grouped, "/live.ndjson?cycles=1&scope=group%3Apair")
+    live = next(
+        frame
+        for frame in map(json.loads, stream.splitlines())
+        if frame.get("channel") == "snapshot"
+    )
+
+    assert [task["task_id"] for task in document["board"]["tasks"]] == ["A1", "B1"]
+    assert (document["scope"]["scope"], document["scope"]["tasks_in_scope"]) == ("group:pair", 3)
+    assert [group["group"] for group in document["scope"]["groups"]] == ["beta", "pair"]
+    assert status == 200 and json.loads(studio)["scope"]["scope"] == "group:pair"
+    assert snapshot_fingerprint(live["data"]) == snapshot_fingerprint(document)
+    unknown, _, detail = _get(grouped, "/snapshot.json?scope=group%3Ainfra")
+    assert (unknown, detail) == (400, b"this dashboard declares no group of that name\n")
+
+
+def test_the_capabilities_say_whether_groups_are_declared(
+    server: DashboardServer, grouped: DashboardServer
+) -> None:
+    bare = json.loads(_get(server, "/capabilities.json")[2])
+    declared = json.loads(_get(grouped, "/capabilities.json")[2])
+
+    assert bare["scope_groups"] == {"flag": "--scope-groups", "configured": False}
+    assert declared["scope_groups"] == {"flag": "--scope-groups", "configured": True}
+    assert declared["total"] == bare["total"]
+
+
+def test_a_start_with_an_unusable_groups_file_is_refused(tmp_path: Path) -> None:
+    groups = tmp_path / "groups.json"
+    groups.write_text(json.dumps({"version": 1, "groups": {"empty": []}}))
+    groups.chmod(0o600)
+
+    with pytest.raises(ValueError, match="--scope-groups: group 'empty' needs a list"):
+        _feeds_server(scope_groups_file=groups)

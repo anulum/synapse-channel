@@ -86,6 +86,8 @@ export const SLOVAK: Catalogue = {
   "scope.wholeHub": "celý hub",
   "scope.unscopedTitle": "Tento panel číta feed, ktorý rozsah nezužuje; ukazuje celý hub.",
   "scope.auditTitle": "Potvrdenia sú zúžené na rozsah; zásahy operátora ukazujú celý hub.",
+  "hud.scopeGroups": "Deklarované skupiny",
+  "hud.scopeGroup": "{group} · úlohy {tasks} · agenti {agents}",
   "hud.scopePeers": "Pozorované huby (len informatívne)",
   "hud.scopePeer": "pozorovaný: {hub}",
   "scope.peerTag": "informatívne · pozorované z {hub}",

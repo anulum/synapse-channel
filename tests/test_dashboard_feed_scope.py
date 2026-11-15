@@ -184,5 +184,7 @@ def test_a_store_that_cannot_place_tasks_fails_visibly(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("query", ["scope=project:a/b", "scope=project:", "scope=all&scope=none"])
 def test_a_malformed_scope_is_refused_with_the_allowed_forms(query: str) -> None:
-    with pytest.raises(ValueError, match="all, none, project:<namespace> or peer:<hub id>"):
+    with pytest.raises(
+        ValueError, match="all, none, project:<namespace>, group:<name> or peer:<hub id>"
+    ):
         feed_scope(query)

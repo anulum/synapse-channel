@@ -37,6 +37,7 @@ from urllib.parse import parse_qs
 from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.dashboard_feed_serving import FeedResponse, json_response, plain_response
 from synapse_channel.dashboard_scope import WHOLE_HUB, DashboardScope, parse_scope
+from synapse_channel.dashboard_scope_groups import ScopeGroups
 from synapse_channel.dashboard_store_feeds import store_task_projects
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,15 +92,17 @@ FILTERED_FEEDS: dict[str, tuple[str, Place, str]] = {
 """Each filtered feed's rows key, how a row is placed, and the count kept equal to its rows."""
 
 
-def feed_scope(query: str) -> DashboardScope:
+def feed_scope(query: str, groups: ScopeGroups | None = None) -> DashboardScope:
     """Return the scope a feed request asks for; no ``scope`` asks for the whole hub.
+
+    ``groups`` are the groups the dashboard declares, which a ``group:`` scope names.
 
     Raises
     ------
     ValueError
         For a malformed scope, with the allowed forms in the message.
     """
-    return parse_scope(parse_qs(query, keep_blank_values=True).get("scope", []))
+    return parse_scope(parse_qs(query, keep_blank_values=True).get("scope", []), groups)
 
 
 def _holds(scope: DashboardScope, who: str, task: str, projects: Mapping[str, str]) -> bool:

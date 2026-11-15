@@ -17,6 +17,7 @@ import type {
   PeerBlock,
   RiskSignal,
   RiskView,
+  ScopeGroup,
   ScopeNamespace,
   ScopeSummary,
   SeatRow,
@@ -311,6 +312,26 @@ function parseScopeNamespace(value: unknown): ScopeNamespace | null {
   return { namespace, tasks, agents };
 }
 
+function parseScopeGroup(value: unknown): ScopeGroup | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const group = row["group"];
+  const namespaces = row["namespaces"];
+  const tasks = wholeCount(row["tasks"]);
+  const agents = wholeCount(row["agents"]);
+  if (
+    typeof group !== "string" ||
+    group === "" ||
+    !Array.isArray(namespaces) ||
+    !namespaces.every((namespace) => typeof namespace === "string") ||
+    tasks === null ||
+    agents === null
+  ) {
+    return null;
+  }
+  return { group, namespaces, tasks, agents };
+}
+
 /** Read the snapshot's `scope` block; null when absent or any field is malformed. */
 export function parseScopeSummary(value: unknown): ScopeSummary | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
@@ -335,11 +356,21 @@ export function parseScopeSummary(value: unknown): ScopeSummary | null {
   // A dashboard older than peer scopes sends no list; that is no peer, not a malformed block.
   const peers = block["peers"] ?? [];
   if (!Array.isArray(peers) || !peers.every((peer) => typeof peer === "string")) return null;
+  // A dashboard older than declared groups sends no list; that is no group, not a malformed block.
+  const rawGroups = block["groups"] ?? [];
+  if (!Array.isArray(rawGroups)) return null;
+  const groups: ScopeGroup[] = [];
+  for (const entry of rawGroups as unknown[]) {
+    const parsed = parseScopeGroup(entry);
+    if (parsed === null) return null;
+    groups.push(parsed);
+  }
   return {
-    ...(counts as Omit<ScopeSummary, "scope" | "applied" | "namespaces" | "peers">),
+    ...(counts as Omit<ScopeSummary, "scope" | "applied" | "namespaces" | "groups" | "peers">),
     scope,
     applied,
     namespaces,
+    groups,
     peers,
   };
 }

@@ -180,6 +180,34 @@ async function expectReplayShowsWholeHub(page: Page): Promise<void> {
   await expect(page).toHaveURL(/[?&]scope=project%3Aharbour(?:&|$)/u);
 }
 
+/** A declared group is a scope of its own: the union of its projects, named on each panel. */
+async function expectDeclaredGroup(page: Page, fleet: Fleet): Promise<void> {
+  const harbour = project(fleet, "HARBOUR", "harbour");
+  const lighthouse = project(fleet, "LIGHT", "lighthouse");
+  const select = page.getByRole("banner").getByRole("combobox", { name: SCOPE_LABEL });
+  const groups = select.locator("optgroup", { has: page.locator('option[value="group:ships"]') });
+  await expect(groups).toHaveAttribute("label", "Declared groups");
+  await expect(groups.locator("option")).toHaveText([
+    `ships · ${harbour.tasks.length + lighthouse.tasks.length} tasks · ` +
+      `${harbour.agents.length + lighthouse.agents.length} agents`,
+  ]);
+  await select.selectOption("group:ships");
+  await expect(page).toHaveURL(/[?&]scope=group%3Aships(?:&|$)/u);
+  const board = page.getByRole("region", { name: "Task board", exact: true });
+  await expect(board.getByText("scope: group:ships", { exact: true })).toBeVisible();
+  for (const task of [...harbour.open, ...lighthouse.open]) await expect(board).toContainText(task);
+  for (const agent of [...harbour.agents, ...lighthouse.agents]) {
+    await expect(
+      page.getByRole("region", { name: "Fleet roster", exact: true }).getByRole("button", {
+        name: rosterInspectName(agent),
+        exact: true,
+      }),
+    ).toBeVisible();
+  }
+  await page.reload();
+  await expect(select).toHaveValue("group:ships");
+}
+
 test("a scope chosen in the header narrows the cockpit, survives a reload and is named by each panel", async ({
   page,
 }) => {
@@ -187,7 +215,7 @@ test("a scope chosen in the header narrows the cockpit, survives a reload and is
   let harness: Started | undefined;
   let fleet: Fleet | undefined;
   try {
-    const started = await startHarness();
+    const started = await startHarness({ scopeGroups: true });
     harness = started.harness;
     fleet = await startFleet();
     await page.addInitScript({ content: axe.source });
@@ -206,6 +234,7 @@ test("a scope chosen in the header narrows the cockpit, survives a reload and is
     await page.setViewportSize({ width: 1440, height: 900 });
     await expectBackAndForward(page);
     await expectReplayShowsWholeHub(page);
+    await expectDeclaredGroup(page, fleet);
   } finally {
     await stop(fleet?.started);
     await stop(harness);

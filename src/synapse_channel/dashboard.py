@@ -166,6 +166,7 @@ from synapse_channel.dashboard_operator_writes import (
 )
 from synapse_channel.dashboard_postmortem_feed import POSTMORTEM_PATH
 from synapse_channel.dashboard_render import render_dashboard_html
+from synapse_channel.dashboard_scope_groups import ScopeGroups, load_scope_groups
 from synapse_channel.dashboard_store_feeds import event_store_key
 from synapse_channel.dashboard_views import derived_views
 from synapse_channel.observed_peers import (
@@ -590,6 +591,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     host_sessions_access_file: ClassVar[Path | None] = None
     fleet_observed_file: ClassVar[Path | None] = None
     fleet_observed_access_file: ClassVar[Path | None] = None
+    scope_groups: ClassVar[ScopeGroups | None] = None
     host_session_monitor: ClassVar[HostSessionMonitor]
 
     def _reject_foreign_host(self) -> bool:
@@ -721,6 +723,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                     a2a_state_file=self.a2a_state_file,
                 ),
                 a2a_state_file=self.a2a_state_file,
+                scope_groups=self.scope_groups,
             ),
             write=self._write,
             query=urlsplit(self.path).query,
@@ -795,6 +798,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             feeds_db=self.reliability_db,
             federation_store=self.federation_store,
             attention_store=self.attention_store,
+            scope_groups=self.scope_groups,
         )
 
     def _feed_response(self, path: str, query: str) -> FeedResponse | None:
@@ -808,7 +812,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if path not in _FEED_PATHS:
             return self._unscoped_feed_response(path, query)
         try:
-            scope = feed_scope(query)
+            scope = feed_scope(query, self.scope_groups)
         except ValueError as exc:
             return plain_response(HTTPStatus.BAD_REQUEST, str(exc))
         return scoped_feed(
@@ -886,6 +890,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                     ("operator_actions", OPERATOR_ACTIONS_PATH),
                 ),
                 a2a_state_file=self.a2a_state_file,
+                scope_groups=self.scope_groups,
                 start=self._start_live_transport,
                 write=self.wfile.write,
                 flush=self.wfile.flush,
@@ -1026,6 +1031,38 @@ def _handler_class(
     return BoundDashboardHandler
 
 
+def _bind_local_files(
+    handler: type[_DashboardHandler],
+    *,
+    fleet_observed_file: str | Path | None,
+    fleet_observed_access_file: str | Path | None,
+    host_sessions_access_file: str | Path | None,
+    scope_groups_file: str | Path | None,
+) -> None:
+    """Bind the start's owner-only local files to its handler, refusing any the start cannot use.
+
+    Raises
+    ------
+    ValueError
+        When the Fleet export and its access file are not given together, or a
+        policy or groups file is unavailable, unsafe or malformed.
+    """
+    if bool(fleet_observed_file) != bool(fleet_observed_access_file):
+        raise ValueError("Fleet export and access file must be supplied together")
+    handler.fleet_observed_file = Path(fleet_observed_file) if fleet_observed_file else None
+    handler.fleet_observed_access_file = (
+        Path(fleet_observed_access_file) if fleet_observed_access_file else None
+    )
+    if handler.fleet_observed_access_file is not None:
+        load_mirror_grants(handler.fleet_observed_access_file)
+    handler.host_sessions_access_file = (
+        Path(host_sessions_access_file) if host_sessions_access_file else None
+    )
+    if handler.host_sessions_access_file is not None:
+        load_host_grants(handler.host_sessions_access_file)
+    handler.scope_groups = load_scope_groups(scope_groups_file) if scope_groups_file else None
+
+
 def start_dashboard_server(
     *,
     host: str,
@@ -1043,6 +1080,7 @@ def start_dashboard_server(
     host_sessions_access_file: str | Path | None = None,
     fleet_observed_file: str | Path | None = None,
     fleet_observed_access_file: str | Path | None = None,
+    scope_groups_file: str | Path | None = None,
     host_session_pids: tuple[int, ...] = (),
     host_session_tmux_socket: str | None = None,
     host_session_context_root: str | Path | None = None,
@@ -1093,6 +1131,9 @@ def start_dashboard_server(
     fleet_observed_file, fleet_observed_access_file : str, pathlib.Path, or None, optional
         Optional versioned Fleet export and explicit observer policy; both are
         required together. No Fleet package or journal reader is imported.
+    scope_groups_file : str, pathlib.Path, or None, optional
+        Owner-only groups of namespaces a ``group:<name>`` scope may name
+        (:mod:`synapse_channel.dashboard_scope_groups`); read and checked once here.
     host_session_pids : tuple of int, optional
         Explicit process scope for host observation; empty discovers candidates.
     host_session_context_root : str, pathlib.Path, or None, optional
@@ -1177,19 +1218,13 @@ def start_dashboard_server(
         observed_pins=observed_pins,
         allow_hosts=tuple(allow_hosts),
     )
-    if bool(fleet_observed_file) != bool(fleet_observed_access_file):
-        raise ValueError("Fleet export and access file must be supplied together")
-    handler.fleet_observed_file = Path(fleet_observed_file) if fleet_observed_file else None
-    handler.fleet_observed_access_file = (
-        Path(fleet_observed_access_file) if fleet_observed_access_file else None
+    _bind_local_files(
+        handler,
+        fleet_observed_file=fleet_observed_file,
+        fleet_observed_access_file=fleet_observed_access_file,
+        host_sessions_access_file=host_sessions_access_file,
+        scope_groups_file=scope_groups_file,
     )
-    if handler.fleet_observed_access_file is not None:
-        load_mirror_grants(handler.fleet_observed_access_file)
-    handler.host_sessions_access_file = (
-        Path(host_sessions_access_file) if host_sessions_access_file else None
-    )
-    if handler.host_sessions_access_file is not None:
-        load_host_grants(handler.host_sessions_access_file)
     if len(host_session_pids) > 256 or any(
         type(pid) is not int or pid <= 0 for pid in host_session_pids
     ):

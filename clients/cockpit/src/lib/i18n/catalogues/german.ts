@@ -86,6 +86,8 @@ export const GERMAN: Catalogue = {
   "scope.wholeHub": "ganzer Hub",
   "scope.unscopedTitle": "Dieses Panel liest einen Feed, den der Bereich nicht eingrenzt; es zeigt den ganzen Hub.",
   "scope.auditTitle": "Belege sind auf den Bereich eingegrenzt; Operator-Aktionen zeigen den ganzen Hub.",
+  "hud.scopeGroups": "Deklarierte Gruppen",
+  "hud.scopeGroup": "{group} · {tasks} Aufgaben · {agents} Agenten",
   "hud.scopePeers": "Beobachtete Hubs (nur beratend)",
   "hud.scopePeer": "beobachtet: {hub}",
   "scope.peerTag": "beratend · beobachtet von {hub}",

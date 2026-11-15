@@ -10,6 +10,7 @@ import type { JSX } from "react";
 
 import { useCockpitI18n } from "../context/CockpitI18n";
 import {
+  groupOptions,
   parseScope,
   peerScopes,
   scopeOptions,
@@ -29,9 +30,9 @@ interface ScopePickerProps {
 /**
  * Choose the part of the fleet the cockpit shows: the whole hub, the work
  * without a project, or one namespace, each with its task and agent counts.
- * The counts are the hub's, so a choice never reads as a bare zero. The
- * observed peer hubs follow under their own heading: each shows that hub's
- * folded state, advisory and read-only.
+ * The counts are the hub's, so a choice never reads as a bare zero. The groups
+ * the dashboard declares follow under their own heading, then the observed
+ * peer hubs: each of those shows that hub's folded state, advisory and read-only.
  */
 export function ScopePicker({ scope, counts, onChange }: ScopePickerProps): JSX.Element {
   const { t } = useCockpitI18n();
@@ -39,8 +40,10 @@ export function ScopePicker({ scope, counts, onChange }: ScopePickerProps): JSX.
     const values = { tasks: option.tasks, agents: option.agents };
     if (option.scope.kind === "all") return t("hud.scopeAll", values);
     if (option.scope.kind === "none") return t("hud.scopeNone", values);
+    if (option.scope.kind === "group") return t("hud.scopeGroup", { ...values, group: option.scope.name });
     return t("hud.scopeProject", { ...values, namespace: option.scope.namespace });
   };
+  const groups = groupOptions(counts, scope);
   const peers = peerScopes(counts, scope);
   const marked = scope.kind === "all" ? "" : scope.kind === "peer" ? " hud__scope--on hud__scope--peer" : " hud__scope--on";
   return (
@@ -56,6 +59,15 @@ export function ScopePicker({ scope, counts, onChange }: ScopePickerProps): JSX.
             {label(option)}
           </option>
         ))}
+        {groups.length > 0 && (
+          <optgroup label={t("hud.scopeGroups")}>
+            {groups.map((option) => (
+              <option key={scopeText(option.scope)} value={scopeText(option.scope)}>
+                {label(option)}
+              </option>
+            ))}
+          </optgroup>
+        )}
         {peers.length > 0 && (
           <optgroup label={t("hud.scopePeers")}>
             {peers.map((peer) => (

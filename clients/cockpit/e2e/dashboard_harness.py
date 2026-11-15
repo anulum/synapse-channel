@@ -186,6 +186,16 @@ def _seed_journal(journal: EventStore, scratch: Path) -> Path:
     return _attention_store(journal, scratch)
 
 
+def _scope_groups(scratch: Path) -> Path | None:
+    """Write the owner-only groups file the scope journey declares, when it asks for one."""
+    if os.environ.get("SYNAPSE_COCKPIT_E2E_SCOPE_GROUPS") != "1":
+        return None
+    path = scratch / "scope-groups.json"
+    path.write_text(json.dumps({"version": 1, "groups": {"ships": ["harbour", "lighthouse"]}}))
+    path.chmod(0o600)
+    return path
+
+
 def _dashboard(
     hub_uri: str,
     port: int,
@@ -209,6 +219,7 @@ def _dashboard(
         cockpit_dist=dist,
         reliability_db=scratch / "hub.db",
         attention_store=scratch / "attention" / "queue.db",
+        scope_groups_file=_scope_groups(scratch),
         operator=True,
         observed_peers=observed,
         observed_timeout=2.0,

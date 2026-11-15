@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from typing import Protocol
 
     from synapse_channel.dashboard import DashboardSnapshot
+    from synapse_channel.dashboard_scope_groups import ScopeGroups
 
     class ResponseWriter(Protocol):
         """Write a prepared response through the owner's hardened HTTP boundary."""
@@ -89,12 +90,16 @@ class SnapshotPageBindings:
         Late-bound owner renderer, preserving facade overrides.
     a2a_state_file
         Existing optional A2A read-side state source.
+    scope_groups
+        The groups the dashboard declares, which a ``group:`` scope names; ``None``
+        when the start named no groups file.
     """
 
     fetch: Callable[[], DashboardSnapshot]
     unavailable_error: type[Exception]
     html: Callable[[DashboardSnapshot], str]
     a2a_state_file: Path | None
+    scope_groups: ScopeGroups | None = None
 
 
 def serve_page_shell(
@@ -234,7 +239,7 @@ def serve_snapshot_page(
         write(HTTPStatus.BAD_REQUEST, b"closed must be 0 or 1\n", content_type="text/plain")
         return
     try:
-        scope = parse_scope(parameters.get("scope", []))
+        scope = parse_scope(parameters.get("scope", []), ports.scope_groups)
     except ValueError as exc:
         write(HTTPStatus.BAD_REQUEST, f"{exc}\n".encode(), content_type="text/plain")
         return

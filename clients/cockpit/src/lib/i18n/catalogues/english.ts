@@ -84,6 +84,8 @@ export const ENGLISH = {
   "scope.wholeHub": "whole hub",
   "scope.unscopedTitle": "This panel reads a feed the scope does not narrow; it shows the whole hub.",
   "scope.auditTitle": "Receipts are narrowed to the scope; operator actions show the whole hub.",
+  "hud.scopeGroups": "Declared groups",
+  "hud.scopeGroup": "{group} · {tasks} tasks · {agents} agents",
   "hud.scopePeers": "Observed hubs (advisory)",
   "hud.scopePeer": "observed: {hub}",
   "scope.peerTag": "advisory · observed from {hub}",

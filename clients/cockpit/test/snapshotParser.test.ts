@@ -307,11 +307,14 @@ describe("parseScopeSummary", () => {
         { namespace: "ALPHA", tasks: 2, agents: 1 },
         { namespace: "BETA", tasks: 3, agents: 2 },
       ],
+      groups: [],
       peers: [],
     });
     expect(parseSnapshot({ scope: SCOPE_WIRE })?.scope?.namespaces).toHaveLength(2);
     expect(parseSnapshot({})?.scope).toBeNull();
     expect(parseScopeSummary({ ...SCOPE_WIRE, peers: ["east", "west"] })?.peers).toEqual(["east", "west"]);
+    const ships = { group: "ships", namespaces: ["ALPHA", "BETA"], tasks: 5, agents: 3 };
+    expect(parseScopeSummary({ ...SCOPE_WIRE, groups: [ships] })?.groups).toEqual([ships]);
   });
 
   it.each([
@@ -325,6 +328,13 @@ describe("parseScopeSummary", () => {
     ["a namespace with a bad count", { ...SCOPE_WIRE, namespaces: [{ namespace: "A", tasks: 1.5, agents: 0 }] }],
     ["peers that are no list", { ...SCOPE_WIRE, peers: "east" }],
     ["a peer that is no name", { ...SCOPE_WIRE, peers: ["east", 2] }],
+    ["groups that are no list", { ...SCOPE_WIRE, groups: {} }],
+    ["a group that is no object", { ...SCOPE_WIRE, groups: [null] }],
+    ["a group without a name", { ...SCOPE_WIRE, groups: [{ group: "", namespaces: [], tasks: 0, agents: 0 }] }],
+    ["a group with a bad namespace", { ...SCOPE_WIRE, groups: [{ group: "g", namespaces: [1], tasks: 0, agents: 0 }] }],
+    ["a group with no namespace list", { ...SCOPE_WIRE, groups: [{ group: "g", namespaces: "A", tasks: 0, agents: 0 }] }],
+    ["a group with a bad count", { ...SCOPE_WIRE, groups: [{ group: "g", namespaces: [], tasks: -1, agents: 0 }] }],
+    ["a group with a bad agent count", { ...SCOPE_WIRE, groups: [{ group: "g", namespaces: [], tasks: 0, agents: 0.5 }] }],
   ])("refuses a block with %s", (_label, value) => {
     expect(parseScopeSummary(value)).toBeNull();
   });

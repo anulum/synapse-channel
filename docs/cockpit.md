@@ -39,6 +39,7 @@ synapse dashboard --port 8765
 # not served without --feeds-db: reliability, events, metrics, state-at, merkle-proof, health-anomalies, causality, findings, sessions, waits, operator-actions, receipts, postmortem
 # not served without --federation-store: federation
 # not served without --attention-store: attention
+# not served without --scope-groups: group scopes
 # dashboard bearer: ~/.local/state/synapse/dashboard/bearer.token (written for this start; a restart writes a new one)
 ```
 
@@ -490,6 +491,10 @@ the hub's task and agent counts for it, closed tasks included, so a choice
 never reads as a bare zero. Choosing a scope writes `scope=project:<namespace>`
 or `scope=none` to the address; the whole hub leaves no `scope` field. Reloading
 the page, copying the address, and browser Back and Forward restore the scope.
+A dashboard started with `--scope-groups FILE` (see the
+[CLI reference](cli.md)) lists its declared groups under **Declared groups**,
+each with its counts. Choosing one writes `scope=group:<name>`, and the cockpit
+shows the records of every namespace the group names.
 
 While a scope is active, the selector is marked, and the cockpit asks the
 dashboard for the scope on the snapshot, the live stream and the five feeds
@@ -650,7 +655,8 @@ state.
   loading them, so the board states "N closed not loaded"; the exact counts by
   status are in the snapshot's `bounds` block. `/snapshot.json?closed=1`
   returns the closed tasks as well.
-- Narrow the fleet to one project with a scope (`?scope=project:<namespace>`, or
+- Narrow the fleet to one project with a scope (`?scope=project:<namespace>`,
+  `?scope=group:<name>` for a group the dashboard declares, or
   `?scope=none` for work and names without a project, on `/snapshot.json`,
   `/studio.json` and the live stream). A scope is a lens, not an access
   boundary: it grants nothing and hides nothing the hub sends this principal.

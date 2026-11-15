@@ -61,6 +61,7 @@ def _feeds_server(
     federation_store: Path | None = None,
     cockpit_dist: Path | None = None,
     dashboard_token: str | None = None,
+    scope_groups_file: Path | None = None,
 ) -> DashboardServer:
     """Start a dashboard with store feeds against an unreachable hub."""
     from synapse_channel.dashboard import start_dashboard_server
@@ -79,4 +80,5 @@ def _feeds_server(
         reliability_db=reliability_db,
         federation_store=federation_store,
         cockpit_dist=cockpit_dist,
+        scope_groups_file=scope_groups_file,
     )
