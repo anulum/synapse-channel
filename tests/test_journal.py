@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict, Unpack
 
 import pytest
 
@@ -55,21 +55,45 @@ def test_replay_result_preserves_the_legacy_positional_constructor() -> None:
     assert result.relay_approvals.pending_count == 0
 
 
-def _claim(**overrides: object) -> TaskClaim:
-    base: dict[str, object] = {
-        "task_id": "T1",
-        "owner": "A",
-        "note": "n",
-        "claimed_at": 1000.0,
-        "lease_expires_at": 5000.0,
-        "status": "claimed",
-        "data_ref": "",
-        "worktree": "wt",
-        "paths": ("src",),
-        "epoch": 3,
-    }
-    base.update(overrides)
-    return TaskClaim(**base)  # type: ignore[arg-type]
+class _ClaimOverride(TypedDict, total=False):
+    """Fields a journal test may replace on one claim."""
+
+    task_id: str
+    owner: str
+    note: str
+    claimed_at: float
+    lease_expires_at: float
+    quota_principal: str
+    status: str
+    data_ref: str
+    worktree: str
+    paths: tuple[str, ...]
+    path_identity: ClaimScopeIdentity | None
+    epoch: int
+    version: int
+    checkpoint: str
+    git: GitContext | None
+
+
+def _claim(**overrides: Unpack[_ClaimOverride]) -> TaskClaim:
+    """Return one claim with the named fields replaced."""
+    return TaskClaim(
+        task_id=overrides.get("task_id", "T1"),
+        owner=overrides.get("owner", "A"),
+        note=overrides.get("note", "n"),
+        claimed_at=overrides.get("claimed_at", 1000.0),
+        lease_expires_at=overrides.get("lease_expires_at", 5000.0),
+        quota_principal=overrides.get("quota_principal", ""),
+        status=overrides.get("status", "claimed"),
+        data_ref=overrides.get("data_ref", ""),
+        worktree=overrides.get("worktree", "wt"),
+        paths=overrides.get("paths", ("src",)),
+        path_identity=overrides.get("path_identity"),
+        epoch=overrides.get("epoch", 3),
+        version=overrides.get("version", 0),
+        checkpoint=overrides.get("checkpoint", ""),
+        git=overrides.get("git"),
+    )
 
 
 def test_record_claim_writes_claim_kind(tmp_path: Path) -> None:
