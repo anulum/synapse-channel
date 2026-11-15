@@ -25,6 +25,7 @@ from synapse_channel.dashboard_live_transport import (
     LiveTransportCursor,
     decode_feed_response,
     parse_diagnostic_cycles,
+    parse_live_query,
     snapshot_fingerprint,
 )
 
@@ -108,6 +109,16 @@ def test_feed_response_preserves_live_absent_and_error_states() -> None:
         assert decode_feed_response(broken) == ("error", None, "feed returned invalid JSON")
 
 
+def test_the_live_query_carries_an_optional_cycles_bound_and_scope_values() -> None:
+    """The scope values are passed on unparsed; anything else is refused."""
+    assert parse_live_query("") == (None, [])
+    assert parse_live_query("scope=project%3AALPHA") == (None, ["project:ALPHA"])
+    assert parse_live_query("cycles=2&scope=none&scope=all") == (2, ["none", "all"])
+    for query in ("other=1", "scope=all&other=1", "cycles=0&scope=all"):
+        with pytest.raises(ValueError):
+            parse_live_query(query)
+
+
 def test_diagnostic_cycles_are_bounded_and_strict() -> None:
     assert parse_diagnostic_cycles("") is None
     assert parse_diagnostic_cycles("cycles=1") == 1
@@ -121,6 +132,8 @@ def test_diagnostic_cycles_are_bounded_and_strict() -> None:
         "cycles=1.5",
         "cycles=1&cycles=2",
         "cycles=1&other=2",
+        "scope=all",
+        "cycles=1&scope=none",
     ):
         with pytest.raises(ValueError):
             parse_diagnostic_cycles(query)

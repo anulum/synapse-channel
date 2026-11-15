@@ -130,6 +130,8 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
             "signals": signals,
             "safe_next_work": _list(risk.get("safe_next_work")),
         },
+        # The scope the projection was built in, with the hub-wide counts beside it.
+        "scope": dict(_mapping(dashboard.get("scope"))),
     }
 
 

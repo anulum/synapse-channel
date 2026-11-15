@@ -172,18 +172,42 @@ def snapshot_fingerprint(document: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def parse_live_query(query: str) -> tuple[int | None, list[str]]:
+    """Parse the live stream's optional ``cycles`` bound and its ``scope`` values.
+
+    An absent ``cycles`` means an open-ended production stream; an absent
+    ``scope`` means the whole hub. Any other parameter, and a duplicated, empty,
+    non-decimal, zero or over-large ``cycles``, fail closed with ``ValueError``.
+    The ``scope`` values are returned unparsed for
+    :func:`synapse_channel.dashboard_scope.parse_scope`.
+    """
+    if not query:
+        return None, []
+    parsed = parse_qs(query, keep_blank_values=True, strict_parsing=True)
+    if not set(parsed) <= {"cycles", "scope"}:
+        raise ValueError("live stream accepts only the cycles and scope parameters")
+    cycles = _parse_cycles(parsed["cycles"]) if "cycles" in parsed else None
+    return cycles, parsed.get("scope", [])
+
+
 def parse_diagnostic_cycles(query: str) -> int | None:
     """Parse an optional bounded ``cycles`` query used by diagnostics and tests.
 
     An absent query means an open-ended production stream. Unknown, duplicated,
-    empty, non-decimal, zero, or over-large values fail closed with ``ValueError``.
+    empty, non-decimal, zero, or over-large values fail closed with ``ValueError``,
+    and so does a ``scope``, which only :func:`parse_live_query` accepts.
     """
-    if not query:
-        return None
-    parsed = parse_qs(query, keep_blank_values=True, strict_parsing=True)
-    if set(parsed) != {"cycles"} or len(parsed["cycles"]) != 1:
+    cycles, scope = parse_live_query(query)
+    if scope:
+        raise ValueError("diagnostic cycles accept only one cycles parameter")
+    return cycles
+
+
+def _parse_cycles(values: list[str]) -> int:
+    """Return the one bounded ``cycles`` value, or fail closed."""
+    if len(values) != 1:
         raise ValueError("live stream accepts only one cycles parameter")
-    raw = parsed["cycles"][0]
+    raw = values[0]
     if not raw.isdecimal():
         raise ValueError("live stream cycles must be a positive decimal integer")
     cycles = int(raw)

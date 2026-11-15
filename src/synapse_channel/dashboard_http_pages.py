@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs
 
-from synapse_channel.dashboard_bounds import bound_snapshot
 from synapse_channel.dashboard_cockpit import (
     COCKPIT_ASSETS as COCKPIT_ASSETS,
 )
@@ -35,6 +34,7 @@ from synapse_channel.dashboard_cockpit import (
     load_cockpit_asset_bytes as load_cockpit_asset_bytes,
 )
 from synapse_channel.dashboard_live_transport import snapshot_fingerprint
+from synapse_channel.dashboard_scope import parse_scope, scoped_document
 from synapse_channel.dashboard_studio import (
     STUDIO_REFERENCE_PATH as STUDIO_REFERENCE_PATH,
 )
@@ -181,13 +181,21 @@ def serve_snapshot_page(
     write
         Owner response writer retaining the original status and media type.
     query
-        The request's query; ``closed=1`` adds closed tasks to ``/snapshot.json``.
+        The request's query; ``closed=1`` adds closed tasks to ``/snapshot.json``, and
+        ``scope`` narrows ``/snapshot.json`` and the Studio snapshot
+        (:mod:`synapse_channel.dashboard_scope`).
     if_none_match
         The request's ``If-None-Match`` header, if any.
     """
-    closed_values = parse_qs(query, keep_blank_values=True).get("closed", ["0"])
+    parameters = parse_qs(query, keep_blank_values=True)
+    closed_values = parameters.get("closed", ["0"])
     if path == "/snapshot.json" and closed_values not in (["0"], ["1"]):
         write(HTTPStatus.BAD_REQUEST, b"closed must be 0 or 1\n", content_type="text/plain")
+        return
+    try:
+        scope = parse_scope(parameters.get("scope", []))
+    except ValueError as exc:
+        write(HTTPStatus.BAD_REQUEST, f"{exc}\n".encode(), content_type="text/plain")
         return
     try:
         snapshot = ports.fetch()
@@ -202,8 +210,8 @@ def serve_snapshot_page(
         write(HTTPStatus.SERVICE_UNAVAILABLE, f"{exc}\n".encode(), content_type="text/plain")
         return
     if path == "/snapshot.json":
-        document = bound_snapshot(
-            snapshot.to_dict(a2a_state_file=ports.a2a_state_file), closed=closed_values == ["1"]
+        document = scoped_document(
+            snapshot, scope, a2a_state_file=ports.a2a_state_file, closed=closed_values == ["1"]
         )
         etag = f'W/"{snapshot_fingerprint(document)}"'
         if _matches(if_none_match, etag):
@@ -219,7 +227,7 @@ def serve_snapshot_page(
         return
     if path == STUDIO_SNAPSHOT_PATH:
         studio = build_studio_snapshot(
-            bound_snapshot(snapshot.to_dict(a2a_state_file=ports.a2a_state_file))
+            scoped_document(snapshot, scope, a2a_state_file=ports.a2a_state_file)
         )
         write(
             HTTPStatus.OK,

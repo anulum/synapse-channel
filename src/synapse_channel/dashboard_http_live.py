@@ -17,7 +17,6 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from synapse_channel.dashboard_bounds import bound_snapshot
 from synapse_channel.dashboard_live_transport import (
     LIVE_TRANSPORT_CHANNELS as LIVE_TRANSPORT_CHANNELS,
 )
@@ -40,8 +39,12 @@ from synapse_channel.dashboard_live_transport import (
     parse_diagnostic_cycles as parse_diagnostic_cycles,
 )
 from synapse_channel.dashboard_live_transport import (
+    parse_live_query,
+)
+from synapse_channel.dashboard_live_transport import (
     snapshot_fingerprint as snapshot_fingerprint,
 )
+from synapse_channel.dashboard_scope import DashboardScope, parse_scope, scoped_document
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -105,15 +108,15 @@ class LiveStreamBindings:
 
 
 def _send_snapshot(
-    ports: LiveStreamBindings, send: FrameSender, previous: str | None
+    ports: LiveStreamBindings, send: FrameSender, previous: str | None, scope: DashboardScope
 ) -> str | None:
-    """Publish an actual snapshot change or its original error/unchanged status."""
+    """Publish an actual change of the scoped snapshot, or its error/unchanged status."""
     try:
         snapshot = ports.fetch()
     except (ports.unavailable_error, TimeoutError) as exc:
         send("channel", channel="snapshot", status="error", detail=str(exc))
         return previous
-    document = bound_snapshot(snapshot.to_dict(a2a_state_file=ports.a2a_state_file))
+    document = scoped_document(snapshot, scope, a2a_state_file=ports.a2a_state_file)
     fingerprint = snapshot_fingerprint(document)
     if fingerprint == previous:
         send("channel", channel="snapshot", status="unchanged")
@@ -142,12 +145,14 @@ def serve_dashboard_live(query: str, ports: LiveStreamBindings) -> None:
     Parameters
     ----------
     query
-        Admitted query string whose diagnostic cycle limit is parsed unchanged.
+        Admitted query string: an optional diagnostic cycle limit and an optional
+        ``scope`` (:mod:`synapse_channel.dashboard_scope`) for the snapshot channel.
     ports
         Existing response, snapshot and durable-feed owners for this request.
     """
     try:
-        cycle_limit = parse_diagnostic_cycles(query)
+        cycle_limit, scope_values = parse_live_query(query)
+        scope = parse_scope(scope_values)
     except ValueError as exc:
         ports.refuse(HTTPStatus.BAD_REQUEST, f"{exc}\n".encode(), content_type="text/plain")
         return
@@ -184,7 +189,7 @@ def serve_dashboard_live(query: str, ports: LiveStreamBindings) -> None:
         cycles = 0
         while cycle_limit is None or cycles < cycle_limit:
             cycles += 1
-            previous = _send_snapshot(ports, send, previous)
+            previous = _send_snapshot(ports, send, previous, scope)
             _send_feeds(ports, send, cursors)
             if cycle_limit is None or cycles < cycle_limit:
                 time.sleep(2.0)

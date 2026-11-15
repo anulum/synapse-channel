@@ -497,6 +497,31 @@ change. `/snapshot.json?closed=1` adds the closed tasks; any other `closed`
 value is refused with 400. With `--feeds-db`, the journalled progress notes
 remain readable as `ledger_progress` events through `/events.json`.
 
+A `scope` narrows `/snapshot.json`, `/studio.json` and the live stream
+(`/live.ndjson?scope=…`) to one project: `scope=project:<namespace>`,
+`scope=none`, or `scope=all`, the default. A scope is a lens, not an access
+boundary: it grants nothing and hides nothing the hub sends this principal.
+Membership has one rule per record and is never inferred:
+
+- a task belongs to the project its `project` field names, and a task without
+  one belongs to `none`;
+- an online agent, its roles and its liveness belong to its name's namespace,
+  the part before the first `/`, and a bare name belongs to `none`;
+- a claim belongs to its owner's namespace, and also to the scope of the board
+  task it names, so a task in scope never looks unclaimed;
+- a progress note, and the receipts derived from it, belong to their task's
+  scope.
+
+In a scope, the `fleet`, `risk` and `headline` sections are computed from the
+scope's whole board. A `scope` block states the scope and whether it applied,
+the scoped and hub-wide counts (`tasks_in_scope`, `tasks_total`,
+`tasks_without_project`, `agents_in_scope`, `agents_total`,
+`agents_without_namespace`, `claims_in_scope`, `claims_total`), and every
+namespace present with its task and agent counts (`namespaces`). Any other
+`scope` value is refused with 400, and the refusal names the allowed forms. The
+classic page always shows the whole hub. The counts are of what the hub sent: a
+hub started with `--board-task-cap` sends only part of its board.
+
 Every snapshot also carries a `headline` block: the dashboard's counters
 (`agents_live`, `claims_active`, `tasks_blocked` with its parts
 `tasks_blocked_marked` and `tasks_blocked_waiting`, `tasks_closed`,

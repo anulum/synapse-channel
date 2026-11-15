@@ -37,6 +37,13 @@ execution evidence when carrying a release claim forward.
   `extend`, `approve` and read-only rows are refused with the reason. A run's report now says whether
   the hub governed it (`hub_governed`). `synapse operation declare` and `synapse operation attempt`
   share the one hub request the new path uses; their output is unchanged.
+- The dashboard serves a scope: `scope=project:<namespace>`, `scope=none` or `scope=all` on
+  `/snapshot.json`, `/studio.json` and the live stream narrows the fleet to one project, or to the
+  work and names that have none. A task belongs to its `project` field, an agent to its name's
+  namespace, a claim to its owner's namespace and to its task's scope, a progress note to its task.
+  Nothing is inferred. The fleet, risk and headline sections are computed in the scope, and a
+  `scope` block gives the scoped and hub-wide counts and every namespace present. A scope is a lens,
+  not an access boundary. Any other value is refused with 400.
 - The wheel carries the cockpit's production build, without source maps (about
   1.3 MB), in `synapse_channel/dashboard_assets/cockpit/`, with
   `THIRD_PARTY_NOTICES.md`: every npm package whose code the build carries, with

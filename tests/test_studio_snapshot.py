@@ -89,7 +89,10 @@ def test_projection_foregrounds_the_verdict_and_sections() -> None:
         "security_posture",
         "observed_fleet",
         "risk",
+        "scope",
     }
+    # A payload without a scope block projects an empty one; the server always sends one.
+    assert studio["scope"] == {}
     assert studio["observed_fleet"]["configured"] is False
     assert studio["headline"]["peers_total"] == 0
     assert studio["agents"]["live"] == ["A/claude-1", "B/codex-2"]
