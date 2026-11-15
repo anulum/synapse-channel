@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from typing import TypedDict, Unpack
+
 import pytest
 
 from synapse_channel.core.acl import (
@@ -50,10 +52,29 @@ _MANIFEST = CapabilityManifest(
 )
 
 
-def _request(**overrides: object) -> SandboxRequest:
-    base: dict[str, object] = {"tool_id": "formatter", "content_digest": _DIGEST}
-    base.update(overrides)
-    return SandboxRequest(**base)  # type: ignore[arg-type]
+class _RequestOverride(TypedDict, total=False):
+    """Fields a sandbox test may replace on one request."""
+
+    tool_id: str
+    content_digest: str
+    filesystem: tuple[tuple[str, bool], ...]
+    network: tuple[tuple[str, int], ...]
+    memory_bytes: int
+    fuel: int
+    wall_clock_ms: int
+
+
+def _request(**overrides: Unpack[_RequestOverride]) -> SandboxRequest:
+    """Return one sandbox request with the named fields replaced."""
+    return SandboxRequest(
+        tool_id=overrides.get("tool_id", "formatter"),
+        content_digest=overrides.get("content_digest", _DIGEST),
+        filesystem=overrides.get("filesystem", ()),
+        network=overrides.get("network", ()),
+        memory_bytes=overrides.get("memory_bytes", 0),
+        fuel=overrides.get("fuel", 0),
+        wall_clock_ms=overrides.get("wall_clock_ms", 0),
+    )
 
 
 def test_perms_reflects_write_flag() -> None:
