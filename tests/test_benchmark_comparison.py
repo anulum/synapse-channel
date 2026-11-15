@@ -32,33 +32,59 @@ from synapse_channel.benchmark.scorecard import (
 )
 
 
-def _context(**overrides: object) -> HostContext:
-    fields: dict[str, object] = {
-        "package_version": "0.90.0",
-        "python": "3.12.3",
-        "platform": "Linux-test",
-        "cpu_model": "Test CPU 9000",
-        "cpu_count": 8,
-        "governor": "performance",
-        "load_before": (0.5, 0.4, 0.3),
-        "load_after": (0.6, 0.5, 0.4),
-        "isolation": NON_ISOLATED_LABEL,
-        "started_at": 1000.0,
-    }
-    fields.update(overrides)
-    return HostContext(**fields)  # type: ignore[arg-type]
+def _context(
+    *,
+    package_version: str = "0.90.0",
+    cpu_model: str = "Test CPU 9000",
+    governor: str = "performance",
+) -> HostContext:
+    """Return one host context with the named fields replaced."""
+    return HostContext(
+        package_version=package_version,
+        python="3.12.3",
+        platform="Linux-test",
+        cpu_model=cpu_model,
+        cpu_count=8,
+        governor=governor,
+        load_before=(0.5, 0.4, 0.3),
+        load_after=(0.6, 0.5, 0.4),
+        isolation=NON_ISOLATED_LABEL,
+        started_at=1000.0,
+    )
 
 
 def _result(name: str, metrics: dict[str, float]) -> ProbeResult:
     return ProbeResult(name=name, iterations=10, duration_seconds=0.1, metrics=metrics)
 
 
-def _scorecard(*results: ProbeResult, **context_overrides: object) -> Scorecard:
-    return Scorecard(context=_context(**context_overrides), results=tuple(results))
+def _scorecard(
+    *results: ProbeResult,
+    package_version: str = "0.90.0",
+    cpu_model: str = "Test CPU 9000",
+    governor: str = "performance",
+) -> Scorecard:
+    return Scorecard(
+        context=_context(package_version=package_version, cpu_model=cpu_model, governor=governor),
+        results=tuple(results),
+    )
 
 
-def _baseline_document(*results: ProbeResult, **context_overrides: object) -> dict[str, object]:
-    return dict(scorecard_to_json(_scorecard(*results, **context_overrides)))
+def _baseline_document(
+    *results: ProbeResult,
+    package_version: str = "0.90.0",
+    cpu_model: str = "Test CPU 9000",
+    governor: str = "performance",
+) -> dict[str, object]:
+    return dict(
+        scorecard_to_json(
+            _scorecard(
+                *results,
+                package_version=package_version,
+                cpu_model=cpu_model,
+                governor=governor,
+            )
+        )
+    )
 
 
 # --- direction classification -------------------------------------------------
