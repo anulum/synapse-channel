@@ -21,6 +21,53 @@ interface SelectionBarProps {
   readonly onClearWindow: () => void;
 }
 
+/** The brushed window as the chip shows it, from its first edge to its last. */
+function windowRange(window: TimeWindow): string {
+  return `${windowEdgeLabel(window.fromTs)}–${windowEdgeLabel(window.toTs)}`;
+}
+
+interface ContextChipProps {
+  /** What the chip holds: a selection's kind, "focus" or "window". */
+  readonly kind: string;
+  /** The held value as the chip shows it. */
+  readonly value: string;
+  /** What pressing the chip does, in words, after its visible text. */
+  readonly action: string;
+  readonly selected?: boolean;
+  readonly onClear: () => void;
+}
+
+/**
+ * One chip of the active context. Its name starts with the words it shows (its
+ * kind, then its value) and ends with what pressing it does, so a speech user
+ * can say what they see (WCAG 2.5.3). The space keeps the two words apart for
+ * readers of the text; the chip's flex layout does not draw it.
+ */
+function ContextChip({ kind, value, action, selected = false, onClear }: ContextChipProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      className={selected ? "selection-chip selection-chip--selected" : "selection-chip"}
+      onClick={onClear}
+      aria-label={`${kind} ${value}: ${action}`}
+    >
+      <span>{kind}</span>{" "}
+      <strong>{value}</strong>
+      <i aria-hidden="true">×</i>
+    </button>
+  );
+}
+
+/** The one control that clears every active chip at once. */
+function ClearAll({ onClear }: { readonly onClear: () => void }): JSX.Element {
+  return (
+    <button type="button" className="selection-bar__clear" onClick={onClear}>
+      clear all
+    </button>
+  );
+}
+
+/** The active context's chips, and one control that clears them all. */
 export function SelectionBar({
   selection,
   focus,
@@ -37,54 +84,34 @@ export function SelectionBar({
       <span className="selection-bar__label">active context</span>
       <div className="selection-bar__chips">
         {selection !== null && (
-          <button
-            type="button"
-            className="selection-chip selection-chip--selected"
-            onClick={onClearSelection}
-            aria-label={`Clear selected ${selection.kind} ${selectionLabel(selection)}`}
-          >
-            <span>{selection.kind}</span>
-            <strong>{selectionLabel(selection)}</strong>
-            <i aria-hidden="true">×</i>
-          </button>
+          <ContextChip
+            kind={selection.kind}
+            value={selectionLabel(selection)}
+            action="clear the selection"
+            selected
+            onClear={onClearSelection}
+          />
         )}
         {focus !== "" && (
-          <button
-            type="button"
-            className="selection-chip"
-            onClick={onClearFocus}
-            aria-label={`Clear focus filter ${focus}`}
-          >
-            <span>focus</span>
-            <strong>{focus}</strong>
-            <i aria-hidden="true">×</i>
-          </button>
+          <ContextChip kind="focus" value={focus} action="clear the focus filter" onClear={onClearFocus} />
         )}
         {window !== null && (
-          <button
-            type="button"
-            className="selection-chip"
-            onClick={onClearWindow}
-            aria-label="Clear brushed time window"
-          >
-            <span>window</span>
-            <strong>{`${windowEdgeLabel(window.fromTs)}–${windowEdgeLabel(window.toTs)}`}</strong>
-            <i aria-hidden="true">×</i>
-          </button>
+          <ContextChip
+            kind="window"
+            value={windowRange(window)}
+            action="clear the brushed time window"
+            onClear={onClearWindow}
+          />
         )}
       </div>
       {count > 1 && (
-        <button
-          type="button"
-          className="selection-bar__clear"
-          onClick={() => {
+        <ClearAll
+          onClear={() => {
             if (selection !== null) onClearSelection();
             if (focus !== "") onClearFocus();
             if (window !== null) onClearWindow();
           }}
-        >
-          clear all
-        </button>
+        />
       )}
     </section>
   );

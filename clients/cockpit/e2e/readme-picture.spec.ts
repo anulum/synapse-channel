@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
+import { rosterInspectName } from "../src/lib/roster";
 
 import { startFleet, startHarness, stop, type Fleet, type Started } from "./fleetHarness";
 
@@ -56,7 +57,7 @@ test("the README picture shows a working fleet in the built cockpit", async ({ p
       await expect(region(name)).toBeVisible();
     }
     for (const participant of participants) {
-      await expect(region("Fleet roster").getByRole("button", { name: `Inspect agent ${participant}`, exact: true }))
+      await expect(region("Fleet roster").getByRole("button", { name: rosterInspectName(participant), exact: true }))
         .toBeVisible();
     }
     // The participants connect through the client library and run no waiter: the

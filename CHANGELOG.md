@@ -590,6 +590,18 @@ start to finish and makes the cockpit the dashboard's front door.
   refused and left in place. On POSIX the replaced inode stays watched, so a
   write into an earlier inode is still put back and refused.
 
+- The cockpit roster's inspect button is named by what its row shows. For an identity with a project,
+  the row draws the last segment over the project (`api` over `harbour`), and the button was named
+  "Inspect agent harbour/api", so speech input could not use the visible words and axe reported
+  `label-content-name-mismatch` (WCAG 2.5.3) for every such row. The name now starts with the visible
+  words and ends with the whole identity (`api harbour: inspect agent harbour/api`; a bare name reads
+  `cockpit-e2e-dashboard: inspect agent`), and the visible text keeps the two words apart. The context
+  bar's chips had the same defect: the focus chip showed "focus" and the identity and was named "Clear
+  focus filter …", and so did the selection and time-window chips. Each chip is now named by what it
+  shows, then by what pressing it does (`focus api: clear the focus filter`), and its kind label uses
+  the muted ink: the faint ink measured 2.99:1 as text on the dark panel. The active focus lens
+  input's text now uses the warning text colour: the amber fill measured 4.47:1 as text on the light
+  theme.
 - The JetBrains editor acceptance types its prompt only after the IDE reports the agent session
   ready: the chat's replay controller in the IDE log, `session/new` and its successful response in
   the ACP trace, and the started client session with the agent's command list. It used to type the

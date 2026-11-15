@@ -48,6 +48,30 @@ export interface RosterEntry {
   readonly roles: readonly string[];
 }
 
+/** The part of an identity a roster row draws large: its last segment. */
+export function rosterName(agent: string): string {
+  const slash = agent.lastIndexOf("/");
+  return slash === -1 ? agent : agent.slice(slash + 1);
+}
+
+/** The project a roster row draws under the name: the identity's first segment, or "" for a bare name. */
+export function rosterProject(agent: string): string {
+  const slash = agent.indexOf("/");
+  return slash === -1 ? "" : agent.slice(0, slash);
+}
+
+/**
+ * The accessible name of a roster row's inspect button. It starts with the
+ * row's visible text in reading order (the name, then the project), so a speech
+ * user can say what they see (WCAG 2.5.3), and it names the whole identity
+ * whenever the visible text leaves a part of it out.
+ */
+export function rosterInspectName(agent: string): string {
+  const project = rosterProject(agent);
+  const shown = project === "" ? rosterName(agent) : `${rosterName(agent)} ${project}`;
+  return shown === agent ? `${shown}: inspect agent` : `${shown}: inspect agent ${agent}`;
+}
+
 function conflictOwners(snapshot: FleetSnapshot): ReadonlySet<string> {
   const owners = new Set<string>();
   for (const conflict of snapshot.fleet.branch_conflicts) {

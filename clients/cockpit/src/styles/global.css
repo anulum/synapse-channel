@@ -91,7 +91,8 @@ body {
 }
 
 .selection-chip span {
-  color: var(--dim);
+  /* The muted ink: the faint ink measured 2.99:1 as text on the panel. */
+  color: var(--muted);
   font-size: var(--fs-micro);
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -5202,7 +5203,8 @@ body {
 
 .hud__focus--on .hud__focus-input {
   border-color: var(--warn);
-  color: var(--warn);
+  /* The text token: the amber fill falls below 4.5:1 as text on the light background. */
+  color: var(--sev-warn-text);
 }
 
 .hud__scope {

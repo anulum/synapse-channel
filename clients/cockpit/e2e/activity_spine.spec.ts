@@ -31,11 +31,11 @@ test("the production spine brushes by keyboard and pointer without hiding its te
 
   await spine.focus();
   await spine.press("ArrowLeft");
-  await expect(page.getByRole("button", { name: "Clear brushed time window" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /: clear the brushed time window$/u })).toBeVisible();
   await spine.press("]");
   await expect(signalLog).toBeVisible();
   await spine.press("Escape");
-  await expect(page.getByRole("button", { name: "Clear brushed time window" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /: clear the brushed time window$/u })).toHaveCount(0);
 
   const bounds = await spine.boundingBox();
   expect(bounds).not.toBeNull();
@@ -44,6 +44,6 @@ test("the production spine brushes by keyboard and pointer without hiding its te
   await page.mouse.down();
   await page.mouse.move(bounds.x + bounds.width * 0.7, bounds.y + bounds.height * 0.5);
   await page.mouse.up();
-  await expect(page.getByRole("button", { name: "Clear brushed time window" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /: clear the brushed time window$/u })).toBeVisible();
   expect(pageErrors).toEqual([]);
 });

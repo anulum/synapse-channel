@@ -41,8 +41,11 @@ describe("FleetRoster", () => {
   it("inspects through a native button with Enter and Space", async () => {
     const inspect = vi.fn();
     render(<FleetRoster roster={[entry("project/worker")]} waiters={0} onInspect={inspect} />);
-    const button = screen.getByRole("button", { name: "Inspect agent project/worker" });
+    const button = screen.getByRole("button", { name: "worker project: inspect agent project/worker" });
     expect(button.tagName).toBe("BUTTON");
+    // The visible text is two words, the name then the project, and the accessible
+    // name starts with them, so a speech user can say what the row shows.
+    expect(button.textContent).toBe("worker project");
     expect(button.getAttribute("aria-haspopup")).toBe("dialog");
     button.focus();
     await userEvent.keyboard("{Enter} ");

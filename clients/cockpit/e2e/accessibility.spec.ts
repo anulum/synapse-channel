@@ -86,6 +86,32 @@ test("the built live deck has zero axe violations in both themes and viewports",
     }
   }
 
+  // An active focus lens draws its input in the warning colour; that text must
+  // still read at 4.5:1 in both themes.
+  await page.setViewportSize(viewports[0]);
+  await page.getByLabel("Focus the claims and board on one identity").fill("cockpit-e2e-dashboard");
+  await expect(page.locator(".hud__focus--on")).toBeVisible();
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    for (const theme of ["dark", "light"] as const) {
+      const current = await page.locator("html").getAttribute("data-theme");
+      if ((current === "light" ? "light" : "dark") !== theme) {
+        await page.getByRole("button", { name: /Switch to (?:dark|light) theme/u }).click();
+      }
+      await waitForThemeTransition(page);
+      const result = await page.evaluate(async () =>
+        (window as unknown as AxeWindow).axe.run(document),
+      );
+      expect(
+        result.violations,
+        `focus lens ${viewport.name}/${theme}: ${JSON.stringify(result.violations)}`,
+      ).toEqual([]);
+    }
+  }
+  await page.setViewportSize(viewports[0]);
+  await page.getByRole("button", { name: "Clear the focus lens" }).click();
+  await expect(page.locator(".hud__focus--on")).toHaveCount(0);
+
   await page.setViewportSize(viewports[0]);
   await page.getByRole("tab", { name: "incident" }).click();
   await page.getByLabel("Incident title").fill("Accessibility incident review");

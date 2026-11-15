@@ -7,6 +7,7 @@
 // SYNAPSE CHANNEL — one counter vocabulary across the cockpit, Studio and the snapshot
 
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { rosterInspectName } from "../src/lib/roster";
 
 import { hubPort, start, startFleet, startHarness, stop, type Fleet, type Started } from "./fleetHarness";
 
@@ -70,7 +71,7 @@ test("the HUD, the board, Studio and the snapshot show one number per counter", 
     expect(await kpi(page, "red risk signals")).toBe(snapshot["risk_signals_red"]);
     const roster = page.getByRole("region", { name: "Fleet roster", exact: true });
     await expect(roster.getByText("presence holders: 1", { exact: true })).toBeVisible();
-    await expect(roster.getByRole("button", { name: "Inspect agent E2E-presence" })).toHaveCount(0);
+    await expect(roster.getByRole("button", { name: rosterInspectName("E2E-presence"), exact: true })).toHaveCount(0);
     const board = page.getByRole("region", { name: "Task board", exact: true });
     await expect(board.getByText(`${snapshot["tasks_blocked"]} blocked`, { exact: true })).toBeVisible();
 

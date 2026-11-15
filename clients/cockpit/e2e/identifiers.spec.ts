@@ -8,6 +8,7 @@
 
 import { writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { rosterInspectName } from "../src/lib/roster";
 
 import { startFleet, startHarness, stop, type Fleet, type Started } from "./fleetHarness";
 
@@ -67,7 +68,7 @@ async function logOverhang(page: Page): Promise<number> {
 async function rosterEnd(page: Page, participant: string): Promise<string> {
   const name = page
     .getByRole("region", { name: "Fleet roster", exact: true })
-    .getByRole("button", { name: `Inspect agent ${participant}`, exact: true })
+    .getByRole("button", { name: rosterInspectName(participant), exact: true })
     .locator(".ident");
   await expect(name).toBeVisible();
   return (await name.locator(".ident__tail").textContent()) ?? "";
@@ -99,7 +100,7 @@ test("identifiers keep their ends at three widths and a phone shows state first"
     expect(api.slice(0, -4)).toBe(web.slice(0, -4));
     const region = (name: string) => page.getByRole("region", { name, exact: true });
     for (const participant of participants) {
-      await expect(region("Fleet roster").getByRole("button", { name: `Inspect agent ${participant}`, exact: true }))
+      await expect(region("Fleet roster").getByRole("button", { name: rosterInspectName(participant), exact: true }))
         .toBeVisible();
     }
     for (const task of open) await expect(region("Task board")).toContainText(task);
@@ -181,7 +182,7 @@ test("identifiers keep their ends at three widths and a phone shows state first"
     });
     await test.step("keyboard focus shows the whole value; the drawer's title copies it", async () => {
       await page.setViewportSize({ width: 1280, height: 900 });
-      const inspect = region("Fleet roster").getByRole("button", { name: `Inspect agent ${api}`, exact: true });
+      const inspect = region("Fleet roster").getByRole("button", { name: rosterInspectName(api), exact: true });
       const head = inspect.locator(".ident__head");
       expect(await head.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
       await page.keyboard.press("Tab");

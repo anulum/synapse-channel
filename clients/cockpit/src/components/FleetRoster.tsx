@@ -12,7 +12,7 @@ import { memo } from "react";
 import { Ident } from "./Ident";
 
 import { useCockpitI18n } from "../context/CockpitI18n";
-import type { RosterEntry, RowStatus } from "../lib/roster";
+import { rosterInspectName, rosterName, rosterProject, type RosterEntry, type RowStatus } from "../lib/roster";
 import type { SeatState } from "../types";
 import { identityMatchesSelection } from "../lib/selection";
 import type { CockpitSelection } from "../lib/workspace";
@@ -48,14 +48,68 @@ const STATUS_WORD: Record<RowStatus, string> = {
 /** How many held paths a row shows before collapsing the tail into a count. */
 const PATHS_SHOWN = 3;
 
-function lastSegment(name: string): string {
-  const slash = name.lastIndexOf("/");
-  return slash === -1 ? name : name.slice(slash + 1);
+/** The identity as a row draws it: the last segment large, the project under it. */
+function RosterIdentity({ agent }: { readonly agent: string }): JSX.Element {
+  const team = rosterProject(agent);
+  // The space keeps the name and the project two words for readers of the text;
+  // the column layout does not draw it.
+  return <>
+    <Ident className="roster-row__name" value={rosterName(agent)} />
+    {team !== "" && <>{" "}<span className="roster-row__project">{team}</span></>}
+  </>;
 }
 
-function project(name: string): string {
-  const slash = name.indexOf("/");
-  return slash === -1 ? "" : name.slice(0, slash);
+/** The row's claim count, roles, seat state and the hub's deaf judgement. */
+function RosterMeta({ entry }: { readonly entry: RosterEntry }): JSX.Element {
+  const claimCount = entry.activeClaims.length + entry.staleClaims.length;
+  return (
+    <span className="roster-row__meta">
+      {claimCount > 0 ? (
+        <span className="roster-row__count">{`${claimCount} claim${claimCount === 1 ? "" : "s"}`}</span>
+      ) : (
+        <span className="roster-row__count roster-row__count--none">no claims</span>
+      )}
+      {entry.roles.map((role) => (
+        <span
+          key={role}
+          className="roster-row__tag roster-row__tag--role"
+          title={`answers to the role '${role}'`}
+        >
+          {role}
+        </span>
+      ))}
+      {entry.seat !== "listening" && (
+        <span
+          className={`roster-row__tag${entry.seat === "active, not listening" ? " roster-row__tag--warn" : ""}`}
+          title={SEAT_TITLE[entry.seat]}
+        >
+          {entry.seat}
+        </span>
+      )}
+      {entry.deaf !== null && (
+        <span className="roster-row__tag roster-row__tag--warn" title={DEAF_TITLE}>
+          deaf
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** The paths the identity holds, the first few by name and the rest as a count. */
+function RosterPaths({ paths }: { readonly paths: readonly string[] }): JSX.Element | null {
+  if (paths.length === 0) return null;
+  const shown = paths.slice(0, PATHS_SHOWN);
+  const overflow = paths.length - shown.length;
+  return (
+    <ul className="roster-row__paths">
+      {shown.map((path) => (
+        <li key={path} className="roster-row__path" title={path}>
+          {path}
+        </li>
+      ))}
+      {overflow > 0 && <li className="roster-row__path roster-row__path--more">{`+${overflow} more`}</li>}
+    </ul>
+  );
 }
 
 interface RosterRowProps {
@@ -66,15 +120,7 @@ interface RosterRowProps {
 }
 
 function RosterRow({ entry, onInspect, selected }: RosterRowProps): JSX.Element {
-  const held = entry.paths.length;
-  const shown = entry.paths.slice(0, PATHS_SHOWN);
-  const overflow = held - shown.length;
-  const claimCount = entry.activeClaims.length + entry.staleClaims.length;
-  const identity = <>
-    <Ident className="roster-row__name" value={lastSegment(entry.agent)} />
-    {project(entry.agent) !== "" && <span className="roster-row__project">{project(entry.agent)}</span>}
-  </>;
-
+  const identity = <RosterIdentity agent={entry.agent} />;
   return (
     <li
       className={`roster-row roster-row--${entry.status}${entry.seat === "listening" ? "" : " roster-row--not-listening"}${onInspect !== undefined ? " roster-row--link" : ""}${selected ? " context-match" : ""}`}
@@ -88,50 +134,13 @@ function RosterRow({ entry, onInspect, selected }: RosterRowProps): JSX.Element 
         <button
           type="button"
           className="roster-row__id roster-row__inspect"
-          aria-label={`Inspect agent ${entry.agent}`}
+          aria-label={rosterInspectName(entry.agent)}
           aria-haspopup="dialog"
           onClick={() => onInspect(entry.agent)}
         >{identity}</button>
       )}
-      <span className="roster-row__meta">
-        {claimCount > 0 ? (
-          <span className="roster-row__count">{`${claimCount} claim${claimCount === 1 ? "" : "s"}`}</span>
-        ) : (
-          <span className="roster-row__count roster-row__count--none">no claims</span>
-        )}
-        {entry.roles.map((role) => (
-          <span
-            key={role}
-            className="roster-row__tag roster-row__tag--role"
-            title={`answers to the role '${role}'`}
-          >
-            {role}
-          </span>
-        ))}
-        {entry.seat !== "listening" && (
-          <span
-            className={`roster-row__tag${entry.seat === "active, not listening" ? " roster-row__tag--warn" : ""}`}
-            title={SEAT_TITLE[entry.seat]}
-          >
-            {entry.seat}
-          </span>
-        )}
-        {entry.deaf !== null && (
-          <span className="roster-row__tag roster-row__tag--warn" title={DEAF_TITLE}>
-            deaf
-          </span>
-        )}
-      </span>
-      {held > 0 && (
-        <ul className="roster-row__paths">
-          {shown.map((path) => (
-            <li key={path} className="roster-row__path" title={path}>
-              {path}
-            </li>
-          ))}
-          {overflow > 0 && <li className="roster-row__path roster-row__path--more">{`+${overflow} more`}</li>}
-        </ul>
-      )}
+      <RosterMeta entry={entry} />
+      <RosterPaths paths={entry.paths} />
     </li>
   );
 }

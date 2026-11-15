@@ -465,7 +465,8 @@ claim that the server log is complete or that a specific event was dropped.
 The context bar directly below the HUD shows the active investigation state.
 It can contain a shared selection, the identity focus lens, and a brushed time
 window. Remove one chip to widen only that dimension, or use **clear all** to
-return to the unfiltered retained view in one step.
+return to the unfiltered retained view in one step. Each chip is named by what
+it shows, then by what pressing it does (`focus api: clear the focus filter`).
 
 The shared selection supports agents, projects, tasks, directed routes, and
 durable hub-event sequences. It follows the same entity across the activity
@@ -635,7 +636,10 @@ state.
 
 - Click a roster identity to open its claims, paths, unread dead-letter facts,
   and recent events. Its tag states the seat: none when listening,
-  "active, not listening" or "silent" otherwise (see "Seat states").
+  "active, not listening" or "silent" otherwise (see "Seat states"). The
+  button is named by what the row shows, then the whole identity
+  (`api harbour: inspect agent harbour/api`), so speech input can name it by
+  the words on screen.
 - Click a task card to inspect its owner, dependencies, readiness, claims, and
   history.
 - Use drawer actions to filter the log or trace task causality.

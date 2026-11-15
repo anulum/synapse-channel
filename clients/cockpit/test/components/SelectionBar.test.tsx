@@ -45,7 +45,16 @@ describe("SelectionBar", () => {
     expect(screen.getByText("alpha → beta")).toBeTruthy();
     expect(screen.getByText("SYNAPSE-CHANNEL/alpha")).toBeTruthy();
     expect(screen.getByRole("region").getAttribute("aria-label")).toContain("selection and filters");
-    await userEvent.click(screen.getByRole("button", { name: "Clear selected route alpha → beta" }));
+    // Each chip is named by the words it shows, then by what pressing it does (WCAG 2.5.3).
+    const selected = screen.getByRole("button", { name: "route alpha → beta: clear the selection" });
+    expect(selected.textContent).toBe("route alpha → beta×");
+    const focused = screen.getByRole("button", {
+      name: "focus SYNAPSE-CHANNEL/alpha: clear the focus filter",
+    });
+    expect(focused.textContent).toBe("focus SYNAPSE-CHANNEL/alpha×");
+    const brushed = screen.getByRole("button", { name: /^window \S+–\S+: clear the brushed time window$/u });
+    expect(brushed.textContent?.startsWith("window ")).toBe(true);
+    await userEvent.click(selected);
     expect(onClearSelection).toHaveBeenCalledOnce();
   });
 

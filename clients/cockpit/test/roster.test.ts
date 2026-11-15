@@ -7,7 +7,7 @@
 // SYNAPSE_CHANNEL — fleet roster derivation tests
 
 import { describe, expect, it } from "vitest";
-import { deriveRoster } from "../src/lib/roster";
+import { deriveRoster, rosterInspectName, rosterName, rosterProject } from "../src/lib/roster";
 import { parseSnapshot } from "../src/lib/snapshot";
 import type { FleetSnapshot } from "../src/types";
 
@@ -257,6 +257,26 @@ describe("deriveRoster", () => {
     const rows = deriveRoster(snapshot);
     expect(rows[0]?.seat).toBe("listening");
     expect(rows[0]?.status).toBe("holding");
+  });
+});
+
+describe("roster identity", () => {
+  it("splits an identity into the name drawn large and the project under it", () => {
+    expect([rosterName("harbour/api"), rosterProject("harbour/api")]).toEqual(["api", "harbour"]);
+    expect([rosterName("harbour/team/api"), rosterProject("harbour/team/api")]).toEqual(["api", "harbour"]);
+    expect([rosterName("cockpit-e2e-dashboard"), rosterProject("cockpit-e2e-dashboard")]).toEqual([
+      "cockpit-e2e-dashboard",
+      "",
+    ]);
+  });
+
+  it("names the inspect button with the row's visible text first, then the whole identity", () => {
+    // The row shows "api" over "harbour": the name starts with those words (WCAG 2.5.3).
+    expect(rosterInspectName("harbour/api")).toBe("api harbour: inspect agent harbour/api");
+    // Two identities that draw the same words stay apart by the whole identity.
+    expect(rosterInspectName("harbour/team/api")).toBe("api harbour: inspect agent harbour/team/api");
+    // A bare name is its own visible text and is not said twice.
+    expect(rosterInspectName("cockpit-e2e-dashboard")).toBe("cockpit-e2e-dashboard: inspect agent");
   });
 });
 

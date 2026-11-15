@@ -8,6 +8,7 @@
 
 import { expect, test } from "@playwright/test";
 import axe from "axe-core";
+import { rosterInspectName } from "../src/lib/roster";
 
 for (const width of [1440, 390]) {
   test(`roster inspection supports keyboard and modal focus at ${width}px`, async ({ page }) => {
@@ -20,7 +21,7 @@ for (const width of [1440, 390]) {
     await page.getByRole("button", { name: "unlock cockpit" }).click();
     if (width === 390) await page.getByRole("button", { name: "roster", exact: true }).click();
     const roster = page.getByRole("region", { name: "Fleet roster" });
-    const inspect = roster.getByRole("button", { name: "Inspect agent cockpit-e2e-dashboard", exact: true });
+    const inspect = roster.getByRole("button", { name: rosterInspectName("cockpit-e2e-dashboard"), exact: true });
     await expect(inspect).toBeVisible();
     await roster.locator(".panel__body").focus();
     await page.keyboard.press("Tab");

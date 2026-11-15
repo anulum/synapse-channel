@@ -8,6 +8,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
+import { rosterInspectName } from "../src/lib/roster";
 
 import { startFleet, startHarness, stop, type Fleet, type Started } from "./fleetHarness";
 
@@ -64,11 +65,11 @@ async function expectNarrowed(page: Page, kept: Project, left: Project): Promise
   for (const task of kept.open) await expect(region("Task board")).toContainText(task);
   for (const task of left.open) await expect(region("Task board")).not.toContainText(task);
   for (const agent of kept.agents) {
-    await expect(region("Fleet roster").getByRole("button", { name: `Inspect agent ${agent}`, exact: true }))
+    await expect(region("Fleet roster").getByRole("button", { name: rosterInspectName(agent), exact: true }))
       .toBeVisible();
   }
   for (const agent of left.agents) {
-    await expect(region("Fleet roster").getByRole("button", { name: `Inspect agent ${agent}`, exact: true }))
+    await expect(region("Fleet roster").getByRole("button", { name: rosterInspectName(agent), exact: true }))
       .toHaveCount(0);
   }
   await expect(region("Task board").getByText("scope: project:harbour", { exact: true })).toBeVisible();
@@ -114,9 +115,11 @@ async function checkView(page: Page, width: number, theme: "dark" | "light"): Pr
   expect(placed.inside).toBe(true);
   expect(placed.pageWidth).toBeLessThanOrEqual(width);
   // The audit covers what the scope adds: the header with its selector and every
-  // panel's scope tag. The whole deck's audit is the accessibility journey's.
+  // panel's scope tag. It also covers the roster, whose namespaced rows the
+  // accessibility journey's bare-named harness never draws. The whole deck's
+  // audit is the accessibility journey's.
   const result = await page.evaluate(async () =>
-    (window as unknown as AxeWindow).axe.run({ include: [["header"], [".panel__scope"]] }),
+    (window as unknown as AxeWindow).axe.run({ include: [["header"], [".panel__scope"], [".roster"]] }),
   );
   expect(result.violations, `${width}/${theme}: ${JSON.stringify(result.violations)}`).toEqual([]);
   const shot = await page.screenshot({ animations: "disabled" });
