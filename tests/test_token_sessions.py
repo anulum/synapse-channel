@@ -65,6 +65,18 @@ def _write(path: Path, *entries: tuple[Any, ...]) -> tuple[Path, list[float]]:
     return path, ends
 
 
+# A short validity is written only once the hub serves, so a slow hub start
+# cannot use it up; only the connection runs inside it. Its end is a whole
+# second, which leaves between two and three seconds after the write.
+SHORT_SECONDS = 3
+
+
+def _open_set(tmp_path: Path) -> Path:
+    """Write a set whose one token never ends, for the hub to start on."""
+    path, _ = _write(tmp_path / "tokens.json", ("open", "s-open", None))
+    return path
+
+
 def _expired_rows(journal: EventStore) -> list[dict[str, Any]]:
     return [
         event.payload
@@ -81,11 +93,12 @@ async def _until(condition: Any, seconds: float = 8.0) -> None:
 
 
 async def test_by_default_a_session_outlives_its_token_and_is_recorded(tmp_path: Path) -> None:
-    path, (end,) = _write(tmp_path / "tokens.json", ("short", "s-short", 2))
+    path = _open_set(tmp_path)
     journal = EventStore(tmp_path / "hub.db")
     try:
         hub = SynapseHub(journal=journal, authenticator=TokenSetAuthenticator(path))
         async with running_hub(hub) as (_, uri):
+            _, (end,) = _write(path, ("short", "s-short", SHORT_SECONDS))
             async with connect(uri) as websocket:
                 await send_json(websocket, sender="A", type="heartbeat", token="s-short")
                 await read_until_type(websocket, "welcome")
@@ -103,12 +116,13 @@ async def test_by_default_a_session_outlives_its_token_and_is_recorded(tmp_path:
 
 
 async def test_the_hub_can_close_a_session_when_its_token_expires(tmp_path: Path) -> None:
-    path, (end,) = _write(tmp_path / "tokens.json", ("short", "s-short", 2))
+    path = _open_set(tmp_path)
     journal = EventStore(tmp_path / "hub.db")
     try:
         authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True)
         hub = SynapseHub(journal=journal, authenticator=authenticator)
         async with running_hub(hub) as (_, uri):
+            _, (end,) = _write(path, ("short", "s-short", SHORT_SECONDS))
             async with connect(uri) as websocket:
                 await send_json(websocket, sender="A", type="heartbeat", token="s-short")
                 await read_until_type(websocket, "welcome")
@@ -158,9 +172,7 @@ async def test_an_early_timer_never_closes_a_session_before_its_token_ends(
 async def test_a_session_that_ends_first_leaves_no_timer_and_no_row(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    path, (end,) = _write(
-        tmp_path / "tokens.json", ("short", "s-short", 2), ("open", "s-open", None)
-    )
+    path = _open_set(tmp_path)
     journal = EventStore(tmp_path / "hub.db")
     try:
         authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True)
@@ -168,6 +180,7 @@ async def test_a_session_that_ends_first_leaves_no_timer_and_no_row(
         sessions = hub._ingress._token_sessions
         assert sessions is not None
         async with running_hub(hub) as (_, uri):
+            _, (end,) = _write(path, ("short", "s-short", SHORT_SECONDS), ("open", "s-open", None))
             async with connect(uri) as websocket:
                 await send_json(websocket, sender="A", type="heartbeat", token="s-short")
                 await read_until_type(websocket, "welcome")
@@ -187,9 +200,10 @@ async def test_a_session_that_ends_first_leaves_no_timer_and_no_row(
 
 
 async def test_closing_without_a_journal_still_closes(tmp_path: Path) -> None:
-    path, _ = _write(tmp_path / "tokens.json", ("short", "s-short", 2))
+    path = _open_set(tmp_path)
     authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True)
     async with running_hub(SynapseHub(authenticator=authenticator)) as (_, uri):
+        _write(path, ("short", "s-short", SHORT_SECONDS))
         async with connect(uri) as websocket:
             await send_json(websocket, sender="A", type="heartbeat", token="s-short")
             await read_until_type(websocket, "welcome")
@@ -290,16 +304,17 @@ async def test_closing_mode_follows_a_moved_end_and_an_unbound_agent(tmp_path: P
 
 
 async def test_a_later_end_and_a_rejected_file_keep_the_session(tmp_path: Path) -> None:
-    path, _ = _write(tmp_path / "tokens.json", ("tok", "s-tok", 2))
+    path = _open_set(tmp_path)
     authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True)
     async with running_hub(SynapseHub(authenticator=authenticator)) as (_, uri):
+        _, (first_end,) = _write(path, ("tok", "s-tok", SHORT_SECONDS))
         websocket = await _session(uri, "A", "s-tok")
         try:
             _, (end,) = _write(path, ("tok", "s-tok", 600))
             await _until(lambda: authenticator.entries[0].not_after == end)
             path.write_text("{broken")
             await _until(lambda: authenticator.stale_reason is not None)
-            await asyncio.sleep(3)
+            await _until(lambda: time.time() >= first_end + 1)
             await asyncio.wait_for(await websocket.ping(), timeout=5)
         finally:
             await websocket.close()
