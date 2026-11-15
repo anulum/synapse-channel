@@ -173,7 +173,7 @@ def _json(server: DashboardServer, path: str) -> dict[str, Any]:
     request = Request(
         server.url(path), headers={"Authorization": f"Bearer {TOKEN}", "Connection": "close"}
     )
-    with urlopen(request, timeout=10) as response:  # nosec B310 - owned loopback server
+    with urlopen(request, timeout=10) as response:
         document = json.loads(response.read())
     assert isinstance(document, dict)
     return document

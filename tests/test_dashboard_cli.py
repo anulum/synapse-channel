@@ -146,18 +146,18 @@ def test_dashboard_parser_wires_principal_access_policy() -> None:
 
 def test_dashboard_refuses_non_loopback_without_override() -> None:
     with pytest.raises(ValueError, match="loopback"):
-        validate_dashboard_bind("0.0.0.0", allow_non_loopback=False)  # nosec B104
+        validate_dashboard_bind("0.0.0.0", allow_non_loopback=False)
     with pytest.raises(ValueError, match="loopback"):
         validate_dashboard_bind("dashboard.example.invalid", allow_non_loopback=False)
 
-    validate_dashboard_bind("0.0.0.0", allow_non_loopback=True)  # nosec B104
+    validate_dashboard_bind("0.0.0.0", allow_non_loopback=True)
 
 
 def test_dashboard_non_loopback_gets_generated_dashboard_token() -> None:
     from synapse_channel.dashboard import start_dashboard_server
 
     server = start_dashboard_server(
-        host="0.0.0.0",  # nosec B104
+        host="0.0.0.0",
         port=0,
         uri="ws://127.0.0.1:1",
         name="SYNAPSE-CHANNEL/dashboard",

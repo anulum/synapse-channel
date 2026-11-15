@@ -23,7 +23,7 @@ def page(server: DashboardServer, path: str) -> tuple[int, dict[str, str], str]:
     request = Request(
         server.url(path), headers={"Authorization": f"Bearer {server.dashboard_token}"}
     )
-    with urlopen(request, timeout=3.0) as response:  # nosec B310 - owned loopback server
+    with urlopen(request, timeout=3.0) as response:
         return response.status, dict(response.headers), response.read().decode()
 
 

@@ -98,7 +98,7 @@ def _request(
         method = "POST"
     request = Request(server.url(path), data=data, headers=headers, method=method)
     try:
-        with urlopen(request, timeout=3) as response:  # nosec B310
+        with urlopen(request, timeout=3) as response:
             return response.status, dict(response.headers.items()), response.read().decode()
     except HTTPError as exc:
         return exc.code, dict(exc.headers.items()), exc.read().decode()

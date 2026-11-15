@@ -94,7 +94,7 @@ def _get(
         headers["If-None-Match"] = etag
     request = Request(server.url(path), headers=headers)
     try:
-        with urlopen(request, timeout=5) as response:  # nosec B310 - owned loopback server
+        with urlopen(request, timeout=5) as response:
             return response.status, dict(response.headers), response.read()
     except HTTPError as exc:
         return exc.code, dict(exc.headers), exc.read()

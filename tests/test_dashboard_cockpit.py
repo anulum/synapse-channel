@@ -112,7 +112,7 @@ def test_dashboard_serves_a_binary_studio_font_with_the_exact_type() -> None:
             server.url("/fonts/inter-latin.woff2"),
             headers={"Authorization": f"Bearer {server.dashboard_token}"},
         )
-        with urlopen(request, timeout=3) as response:  # nosec B310
+        with urlopen(request, timeout=3) as response:
             status = response.status
             content_type = response.headers.get_content_type()
             body = response.read()

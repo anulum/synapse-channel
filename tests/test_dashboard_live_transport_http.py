@@ -65,7 +65,7 @@ def test_live_transport_streams_one_authenticated_multiplexed_cycle(
         headers={"Authorization": f"Bearer {token}", "Connection": "close"},
     )
     try:
-        with urlopen(request, timeout=3) as response:  # nosec B310
+        with urlopen(request, timeout=3) as response:
             content_type = response.headers.get_content_type()
             buffering = response.headers.get("X-Accel-Buffering")
             frames = [json.loads(line) for line in response]
@@ -123,7 +123,7 @@ def test_live_transport_closes_cleanly_when_the_reader_disconnects(
         headers={"Authorization": f"Bearer {token}", "Connection": "close"},
     )
     try:
-        response = urlopen(request, timeout=3)  # nosec B310
+        response = urlopen(request, timeout=3)
         first = json.loads(response.readline())
         response.close()
     except HTTPError as exc:  # pragma: no cover - assertion aid

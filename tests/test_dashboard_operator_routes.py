@@ -45,7 +45,7 @@ def _http_post(
     data = body.encode("utf-8") if isinstance(body, str) else body
     request = Request(url, data=data, headers=headers, method="POST")
     try:
-        with urlopen(request, timeout=3) as response:  # nosec B310
+        with urlopen(request, timeout=3) as response:
             return (
                 response.status,
                 response.headers.get_content_type(),

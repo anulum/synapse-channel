@@ -59,7 +59,7 @@ def _get_status(url: str, *, authorization: str | None = None) -> int:
     if authorization is not None:
         headers["Authorization"] = authorization
     try:
-        with urlopen(Request(url, headers=headers), timeout=3) as response:  # nosec B310
+        with urlopen(Request(url, headers=headers), timeout=3) as response:
             return int(response.status)
     except HTTPError as exc:
         return int(exc.code)
@@ -71,7 +71,7 @@ def _post_status(url: str, *, authorization: str | None = None) -> int:
         headers["Authorization"] = authorization
     body = json.dumps({"to": "x", "text": "hi"}).encode("utf-8")
     try:
-        with urlopen(Request(url, data=body, headers=headers, method="POST"), timeout=3) as resp:  # nosec B310
+        with urlopen(Request(url, data=body, headers=headers, method="POST"), timeout=3) as resp:
             return int(resp.status)
     except HTTPError as exc:
         return int(exc.code)

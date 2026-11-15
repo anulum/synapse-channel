@@ -29,7 +29,7 @@ def test_loopback_and_bind_authorities_are_always_admitted() -> None:
 
 def test_wildcard_bind_host_contributes_no_bind_authority() -> None:
     """A ``0.0.0.0`` bind is a dead authority, so only loopback is derived."""
-    allowed = allowed_host_authorities("0.0.0.0", 9000)  # nosec B104
+    allowed = allowed_host_authorities("0.0.0.0", 9000)
     assert "0.0.0.0:9000" not in allowed
     assert "0.0.0.0" not in allowed
     assert "localhost:9000" in allowed

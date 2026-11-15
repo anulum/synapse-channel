@@ -158,7 +158,7 @@ def test_wildcard_bind_without_extras_defers_to_the_read_token() -> None:
     reaches authentication and is answered 401, not the guard's 403.
     """
     started = start_dashboard_server(
-        host="0.0.0.0",  # nosec B104
+        host="0.0.0.0",
         port=0,
         uri="ws://127.0.0.1:1",
         name="SYNAPSE-CHANNEL/dashboard",
@@ -184,7 +184,7 @@ def test_wildcard_bind_with_extras_enforces_the_boundary() -> None:
     while an unlisted host is refused by the guard (403).
     """
     started = start_dashboard_server(
-        host="0.0.0.0",  # nosec B104
+        host="0.0.0.0",
         port=0,
         uri="ws://127.0.0.1:1",
         name="SYNAPSE-CHANNEL/dashboard",

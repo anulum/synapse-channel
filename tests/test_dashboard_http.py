@@ -502,7 +502,7 @@ async def test_dashboard_http_server_rejects_unknown_paths() -> None:
 def _response_headers(url: str) -> dict[str, str]:
     """Return the response headers for ``url``, whatever the HTTP status."""
     try:
-        with urlopen(Request(url, headers={"Connection": "close"}), timeout=3) as response:  # nosec B310
+        with urlopen(Request(url, headers={"Connection": "close"}), timeout=3) as response:
             return {k: v for k, v in response.headers.items()}
     except HTTPError as exc:
         return {k: v for k, v in exc.headers.items()}
