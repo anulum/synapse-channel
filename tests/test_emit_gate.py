@@ -248,7 +248,7 @@ def test_decision_is_immutable() -> None:
     decision = admit(_finding())
     assert isinstance(decision, Decision)
     try:
-        decision.verdict = "x"  # type: ignore[misc]
+        decision.verdict = "x"  # type: ignore[misc] # frozen verdict is the probe
     except AttributeError:
         return
     raise AssertionError("Decision must be frozen")
