@@ -270,7 +270,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_service_templates.py": (2, "platform-guard"),
     "tests/test_session_capability_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_setup_executor.py": (3, "platform-guard"),
-    "tests/test_setup_verifier.py": (6, "platform-guard"),
+    "tests/test_setup_verifier.py": (9, "platform-guard"),
     "tests/test_shared_host_regression.py": (1, "platform-guard"),
     "tests/test_shell_integration.py": (1, "optional-dep-guard"),
     # The positive liveness control reads Linux /proc.

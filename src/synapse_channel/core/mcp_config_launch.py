@@ -213,6 +213,14 @@ def _executable_by_current_user(info: os.stat_result) -> bool:
     return bool(mode & stat.S_IXOTH)
 
 
+def _apply_executable_seals(snapshot: int) -> None:
+    """Make one executable snapshot execute-only and immutable."""
+    os.fchmod(snapshot, 0o500)
+    os.lseek(snapshot, 0, os.SEEK_SET)
+    seals = _fcntl.F_SEAL_WRITE | _fcntl.F_SEAL_GROW | _fcntl.F_SEAL_SHRINK | _fcntl.F_SEAL_SEAL
+    _fcntl.fcntl(snapshot, _fcntl.F_ADD_SEALS, seals)
+
+
 def _sealed_executable_snapshot(
     descriptor: int, info: os.stat_result, *, server: str
 ) -> tuple[int, str]:
@@ -257,10 +265,7 @@ def _sealed_executable_snapshot(
         )
         if before_identity != after_identity:
             raise McpConfigError(f"MCP server {server!r}: executable changed while snapshotting")
-        os.fchmod(snapshot, 0o500)
-        os.lseek(snapshot, 0, os.SEEK_SET)
-        seals = _fcntl.F_SEAL_WRITE | _fcntl.F_SEAL_GROW | _fcntl.F_SEAL_SHRINK | _fcntl.F_SEAL_SEAL
-        _fcntl.fcntl(snapshot, _fcntl.F_ADD_SEALS, seals)
+        _apply_executable_seals(snapshot)
     except BaseException:
         os.close(snapshot)
         raise

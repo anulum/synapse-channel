@@ -1068,80 +1068,107 @@ def test_replay_ignores_an_unrelated_frame_and_refuses_changed_evidence(tmp_path
     assert database.read_bytes() == before
 
 
-@pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux setup verification")
-def test_verify_refuses_unsafe_lock_clock_home_and_receipt_write(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _prepared_verification(tmp_path: Path) -> tuple[dict[str, object], dict[str, object], Path]:
+    """Return a verification plan, its authorization, and a prepared home."""
     _plan, _authorization, _receipt, verification_plan, verification_authorization = (
         setup_documents()
     )
-    digest = cast(str, verification_plan["verification_plan_digest"])
-    base: dict[str, object] = {
-        "confirm_digest": digest,
-        "env": {"HOME": str(tmp_path / "home")},
-        "ledger_directory": tmp_path / "ledger",
-        "adapter": RecordingAdapter(),
-        "inspection_runner": inspection_runner(inspection(waiter="pass", hub_pid=9876)),
-        "probe": lambda _pid: True,
-    }
-    (tmp_path / "home").mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    return verification_plan, verification_authorization, home
+
+
+def _refuse_verification(
+    verification_plan: dict[str, object],
+    verification_authorization: dict[str, object],
+    *,
+    home: Path,
+    ledger_directory: Path,
+    wall_clock: Callable[[], float],
+    env_home: str | None = None,
+) -> None:
+    """Run one verification that the caller expects to refuse."""
+    asyncio.run(
+        verify_setup(
+            verification_plan,
+            verification_authorization,
+            confirm_digest=cast(str, verification_plan["verification_plan_digest"]),
+            env={"HOME": str(home) if env_home is None else env_home},
+            ledger_directory=ledger_directory,
+            adapter=RecordingAdapter(),
+            inspection_runner=inspection_runner(inspection(waiter="pass", hub_pid=9876)),
+            probe=lambda _pid: True,
+            wall_clock=wall_clock,
+        )
+    )
+
+
+@pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux setup verification")
+def test_verify_refuses_a_clock_that_is_not_a_finite_instant(tmp_path: Path) -> None:
+    """A non-finite or negative clock refuses the verification target."""
+    plan, authorization, home = _prepared_verification(tmp_path)
     for clock in (lambda: float("nan"), lambda: -1.0):
         with pytest.raises(SetupVerificationError, match="verification_target_changed"):
-            asyncio.run(
-                verify_setup(
-                    verification_plan,
-                    verification_authorization,
-                    wall_clock=clock,
-                    **base,  # type: ignore[arg-type]
-                )
+            _refuse_verification(
+                plan,
+                authorization,
+                home=home,
+                ledger_directory=tmp_path / "ledger",
+                wall_clock=clock,
             )
 
-    relative = {**base, "env": {"HOME": "relative"}}
+
+@pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux setup verification")
+def test_verify_refuses_a_relative_home(tmp_path: Path) -> None:
+    """A relative home directory refuses the verification target."""
+    plan, authorization, home = _prepared_verification(tmp_path)
     with pytest.raises(SetupVerificationError, match="verification_target_changed"):
-        asyncio.run(
-            verify_setup(
-                verification_plan,
-                verification_authorization,
-                wall_clock=lambda: 201.0,
-                **relative,  # type: ignore[arg-type]
-            )
+        _refuse_verification(
+            plan,
+            authorization,
+            home=home,
+            ledger_directory=tmp_path / "ledger",
+            wall_clock=lambda: 201.0,
+            env_home="relative",
         )
 
+
+@pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux setup verification")
+def test_verify_refuses_a_lock_that_is_not_a_regular_file(tmp_path: Path) -> None:
+    """A symlink or fifo in place of the verification lock is refused."""
+    plan, authorization, home = _prepared_verification(tmp_path)
     ledger = tmp_path / "lock-ledger"
     ledger.mkdir(mode=0o700)
     victim = tmp_path / "victim"
     victim.touch()
     (ledger / "setup-verify.lock").symlink_to(victim)
-    locked = {**base, "ledger_directory": ledger}
     with pytest.raises(SetupVerificationError, match="verification_lock_unavailable"):
-        asyncio.run(
-            verify_setup(
-                verification_plan,
-                verification_authorization,
-                wall_clock=lambda: 201.0,
-                **locked,  # type: ignore[arg-type]
-            )
+        _refuse_verification(
+            plan,
+            authorization,
+            home=home,
+            ledger_directory=ledger,
+            wall_clock=lambda: 201.0,
         )
 
     fifo_ledger = tmp_path / "fifo-lock"
     fifo_ledger.mkdir(mode=0o700)
     os.mkfifo(fifo_ledger / "setup-verify.lock", 0o600)
     with pytest.raises(SetupVerificationError, match="verification_lock_unavailable"):
-        asyncio.run(
-            verify_setup(
-                verification_plan,
-                verification_authorization,
-                confirm_digest=digest,
-                env={"HOME": str(tmp_path / "home")},
-                ledger_directory=fifo_ledger,
-                adapter=RecordingAdapter(),
-                inspection_runner=inspection_runner(inspection(waiter="pass", hub_pid=9876)),
-                probe=lambda _pid: True,
-                wall_clock=lambda: 201.0,
-            )
+        _refuse_verification(
+            plan,
+            authorization,
+            home=home,
+            ledger_directory=fifo_ledger,
+            wall_clock=lambda: 201.0,
         )
 
+
+@pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux setup verification")
+def test_verify_refuses_a_receipt_that_cannot_be_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A receipt that cannot be created is returned to the caller unwritten."""
     receipt = tmp_path / "receipt.json"
     monkeypatch.setattr(
         "synapse_channel.setup_verifier.tempfile.mkstemp",
