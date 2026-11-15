@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from typing import TypedDict, Unpack
+
 import pytest
 
 from synapse_channel.core.federation import FederationPeer, ScopeGrant
@@ -18,18 +20,32 @@ from synapse_channel.core.federation_rotation import (
 )
 
 
-def _peer(**over: object) -> FederationPeer:
-    base: dict[str, object] = {
-        "domain_id": "acme",
-        "namespaces": frozenset({"acme/shared"}),
-        "certificate_pins": frozenset({"sha256:aa"}),
-        "signing_key_ids": frozenset({"key-1"}),
-        "scope_grants": (ScopeGrant(verb="read_board", namespace="acme/shared"),),
-        "expires_at": 1000.0,
-        "revoked": False,
-    }
-    base.update(over)
-    return FederationPeer(**base)  # type: ignore[arg-type]
+class _PeerOverride(TypedDict, total=False):
+    """Fields a rotation test may replace on one peer."""
+
+    domain_id: str
+    namespaces: frozenset[str]
+    certificate_pins: frozenset[str]
+    signing_key_ids: frozenset[str]
+    scope_grants: tuple[ScopeGrant, ...]
+    expires_at: float | None
+    revoked: bool
+
+
+def _peer(**overrides: Unpack[_PeerOverride]) -> FederationPeer:
+    """Return one peer with the named fields replaced."""
+    return FederationPeer(
+        domain_id=overrides.get("domain_id", "acme"),
+        namespaces=overrides.get("namespaces", frozenset({"acme/shared"})),
+        certificate_pins=overrides.get("certificate_pins", frozenset({"sha256:aa"})),
+        signing_key_ids=overrides.get("signing_key_ids", frozenset({"key-1"})),
+        scope_grants=overrides.get(
+            "scope_grants",
+            (ScopeGrant(verb="read_board", namespace="acme/shared"),),
+        ),
+        expires_at=overrides.get("expires_at", 1000.0),
+        revoked=overrides.get("revoked", False),
+    )
 
 
 def test_rotate_bumps_the_expiry_to_now_plus_lifetime() -> None:
