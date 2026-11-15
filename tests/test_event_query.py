@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, Unpack, cast
 
 import pytest
 
@@ -20,22 +20,34 @@ from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.state import TaskClaim
 
 
-def _claim(**overrides: object) -> TaskClaim:
-    base: dict[str, object] = {
-        "task_id": "T1",
-        "owner": "alpha",
-        "note": "initial",
-        "claimed_at": 10.0,
-        "lease_expires_at": 999.0,
-        "status": "claimed",
-        "data_ref": "",
-        "worktree": "repo",
-        "paths": ("src/auth.py",),
-        "epoch": 1,
-        "checkpoint": "",
-    }
-    base.update(overrides)
-    return TaskClaim(**base)  # type: ignore[arg-type]
+class _ClaimOverride(TypedDict, total=False):
+    """Fields an event-query test may replace on one claim."""
+
+    task_id: str
+    owner: str
+    note: str
+    claimed_at: float
+    status: str
+    data_ref: str
+    worktree: str
+    paths: tuple[str, ...]
+    epoch: int
+
+
+def _claim(**overrides: Unpack[_ClaimOverride]) -> TaskClaim:
+    """Return one claim with the named fields replaced."""
+    return TaskClaim(
+        task_id=overrides.get("task_id", "T1"),
+        owner=overrides.get("owner", "alpha"),
+        note=overrides.get("note", "initial"),
+        claimed_at=overrides.get("claimed_at", 10.0),
+        lease_expires_at=999.0,
+        status=overrides.get("status", "claimed"),
+        data_ref=overrides.get("data_ref", ""),
+        worktree=overrides.get("worktree", "repo"),
+        paths=overrides.get("paths", ("src/auth.py",)),
+        epoch=overrides.get("epoch", 1),
+    )
 
 
 def _seed_store(path: Path) -> None:
