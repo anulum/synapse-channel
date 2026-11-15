@@ -21,6 +21,7 @@ on:
       - "tools/vendor_cockpit_build.py"
       - "pyproject.toml"
       - ".github/requirements/requirements.txt"
+      - ".github/requirements/requirements-dev.txt"
       - ".github/workflows/clients-cockpit.yml"
   pull_request:
     paths:
@@ -35,6 +36,7 @@ on:
       - "tools/vendor_cockpit_build.py"
       - "pyproject.toml"
       - ".github/requirements/requirements.txt"
+      - ".github/requirements/requirements-dev.txt"
       - ".github/workflows/clients-cockpit.yml"
   workflow_dispatch:
 
@@ -59,7 +61,9 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - run: python -m pip install --require-hashes -r .github/requirements/requirements.txt
+      # The browser harness serves an observed peer hub with a test certificate, as the Python suite does,
+      # so it installs the same hash-locked development set (a superset of the runtime lock).
+      - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
       - run: python -m pip install -e . --no-deps
       - run: npm ci
         working-directory: clients/cockpit
