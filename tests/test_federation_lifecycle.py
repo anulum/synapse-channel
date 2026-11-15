@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from typing import TypedDict, Unpack
+
 from synapse_channel.core.federation import FederationPeer
 from synapse_channel.core.federation_lifecycle import (
     SECONDS_PER_DAY,
@@ -27,17 +29,25 @@ def _record(peer: FederationPeer, *, imported_at: float = 0.0) -> FederationReco
     )
 
 
-def _peer(**overrides: object) -> FederationPeer:
-    base: dict[str, object] = {
-        "domain_id": "acme",
-        "namespaces": frozenset({"acme/shared"}),
-        "certificate_pins": frozenset({"sha256:aa"}),
-        "signing_key_ids": frozenset({"key-1"}),
-        "expires_at": None,
-        "revoked": False,
-    }
-    base.update(overrides)
-    return FederationPeer(**base)  # type: ignore[arg-type]
+class _PeerOverride(TypedDict, total=False):
+    """Fields a lifecycle test may replace on one peer."""
+
+    certificate_pins: frozenset[str]
+    signing_key_ids: frozenset[str]
+    expires_at: float | None
+    revoked: bool
+
+
+def _peer(**overrides: Unpack[_PeerOverride]) -> FederationPeer:
+    """Return one peer with the named fields replaced."""
+    return FederationPeer(
+        domain_id="acme",
+        namespaces=frozenset({"acme/shared"}),
+        certificate_pins=overrides.get("certificate_pins", frozenset({"sha256:aa"})),
+        signing_key_ids=overrides.get("signing_key_ids", frozenset({"key-1"})),
+        expires_at=overrides.get("expires_at"),
+        revoked=overrides.get("revoked", False),
+    )
 
 
 def test_active_lifecycle_reports_no_expiry_and_steady_material() -> None:
