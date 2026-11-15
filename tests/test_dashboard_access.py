@@ -13,16 +13,18 @@ import pytest
 
 from synapse_channel.dashboard_access import (
     DashboardAccessPolicy,
+    DashboardCapability,
     DashboardCredential,
     DashboardPrincipal,
+    DashboardRole,
     capabilities_for_role,
     compatibility_access_policy,
 )
 
 
 @pytest.mark.parametrize("role", ["viewer", "operator", "admin"])
-def test_capability_matrix_never_invents_admin_actions(role: str) -> None:
-    capabilities = capabilities_for_role(role, operator_armed=True)  # type: ignore[arg-type]
+def test_capability_matrix_never_invents_admin_actions(role: DashboardRole) -> None:
+    capabilities = capabilities_for_role(role, operator_armed=True)
     assert capabilities.read is True
     expected = role != "viewer"
     assert capabilities.message_send is expected
@@ -34,8 +36,14 @@ def test_capability_matrix_never_invents_admin_actions(role: str) -> None:
         "task_declare": expected,
         "task_update": expected,
     }
-    for name, allowed in capabilities.as_dict().items():
-        assert capabilities.allows(name) is allowed  # type: ignore[arg-type]
+    names: tuple[DashboardCapability, ...] = (
+        "read",
+        "message_send",
+        "task_declare",
+        "task_update",
+    )
+    for name in names:
+        assert capabilities.allows(name) is capabilities.as_dict()[name]
 
 
 def test_unarmed_roles_are_read_only() -> None:
@@ -103,7 +111,9 @@ def test_legacy_caller_token_maps_to_viewer_or_operator() -> None:
         operator_name="operator:DASH",
     )
     assert viewer.resolve_read(None) is None
-    assert viewer.resolve_read(f"Bearer {'v' * 32}").role == "viewer"  # type: ignore[union-attr]
+    matched = viewer.resolve_read(f"Bearer {'v' * 32}")
+    assert matched is not None
+    assert matched.role == "viewer"
 
     operator = compatibility_access_policy(
         dashboard_token="o" * 32,
@@ -124,28 +134,47 @@ def test_legacy_generated_operator_token_keeps_reads_open() -> None:
         operator_armed=True,
         operator_name="operator:DASH",
     )
-    assert policy.resolve_read(None).role == "viewer"  # type: ignore[union-attr]
-    assert policy.resolve_read(f"Bearer {'s' * 32}").role == "operator"  # type: ignore[union-attr]
+    open_reader = policy.resolve_read(None)
+    assert open_reader is not None
+    assert open_reader.role == "viewer"
+    armed = policy.resolve_read(f"Bearer {'s' * 32}")
+    assert armed is not None
+    assert armed.role == "operator"
+
+
+def _refused_policy(
+    *,
+    dashboard_token: str | None,
+    token_protects_reads: bool,
+    operator_armed: bool,
+) -> DashboardAccessPolicy:
+    return compatibility_access_policy(
+        dashboard_token=dashboard_token,
+        token_protects_reads=token_protects_reads,
+        operator_armed=operator_armed,
+        operator_name="operator:DASH",
+    )
 
 
 @pytest.mark.parametrize(
-    "changes",
+    ("dashboard_token", "token_protects_reads", "operator_armed"),
     [
-        {"dashboard_token": ""},
-        {"token_protects_reads": True},
-        {"operator_armed": True},
+        ("", False, False),
+        (None, True, False),
+        (None, False, True),
     ],
 )
-def test_impossible_compatibility_postures_are_refused(changes: dict[str, object]) -> None:
-    values: dict[str, object] = {
-        "dashboard_token": None,
-        "token_protects_reads": False,
-        "operator_armed": False,
-        "operator_name": "operator:DASH",
-    }
-    values.update(changes)
+def test_impossible_compatibility_postures_are_refused(
+    dashboard_token: str | None,
+    token_protects_reads: bool,
+    operator_armed: bool,
+) -> None:
     with pytest.raises(ValueError):
-        compatibility_access_policy(**values)  # type: ignore[arg-type]
+        _refused_policy(
+            dashboard_token=dashboard_token,
+            token_protects_reads=token_protects_reads,
+            operator_armed=operator_armed,
+        )
 
 
 def test_empty_credential_bytes_are_refused() -> None:
