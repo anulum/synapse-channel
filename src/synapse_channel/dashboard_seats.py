@@ -113,6 +113,47 @@ def _reaction(info: object) -> dict[str, Any]:
     }
 
 
+def _seat_identities(
+    online: set[str],
+    state: Mapping[str, Any],
+    evidence: Mapping[str, tuple[str, float | None]],
+    wake_capabilities: Mapping[str, object] | None,
+) -> list[str]:
+    """Return every identity the snapshot names as a seat, sorted, the empty one left out.
+
+    A seat is connected (a waiter stands for its owner), owns a listed claim, or has
+    evidence (a note inside the window). An older note names no seat: the board keeps
+    every author it ever had. A connected presence holder is not a seat by that
+    connection: it declared that it never acts on what it receives.
+    """
+    owners = {str(claim.get("owner") or "") for claim in _records(state.get("active_claims"))}
+    holders = presence_holders(online, wake_capabilities)
+    seats = {waiter_owner(name) if is_waiter(name) else name for name in online - holders}
+    seats |= owners | set(evidence)
+    return sorted(seat for seat in seats if seat)
+
+
+def _seat_row(
+    identity: str,
+    online: set[str],
+    evidence: Mapping[str, tuple[str, float | None]],
+    judged: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return one seat's row: whether a socket listens, its evidence, state and judgement."""
+    listening = bool({identity, waiter_name(identity), pane_waiter_name(identity)} & online)
+    kind, at = evidence.get(identity, (None, None))
+    active = kind is not None
+    return {
+        "identity": identity,
+        "listening": listening,
+        "active": active,
+        "evidence": kind,
+        "evidence_at": at,
+        "state": LISTENING if listening else ACTIVE_NOT_LISTENING if active else SILENT,
+        "reaction": _reaction(judged.get(identity)),
+    }
+
+
 def build_seats(
     online_agents: Sequence[str],
     state: Mapping[str, Any],
@@ -153,28 +194,5 @@ def build_seats(
     online = {str(name) for name in online_agents}
     judged = liveness or {}
     evidence = _evidence(state, board, now)
-    # A seat is connected (a waiter stands for its owner), owns a listed claim, or has
-    # evidence (a note inside the window). An older note names no seat: the board keeps
-    # every author it ever had. A connected presence holder is not a seat by that
-    # connection: it declared that it never acts on what it receives.
-    owners = {str(claim.get("owner") or "") for claim in _records(state.get("active_claims"))}
-    holders = presence_holders(online, wake_capabilities)
-    seats = {waiter_owner(name) if is_waiter(name) else name for name in online - holders}
-    seats |= owners | set(evidence)
-    rows: list[dict[str, Any]] = []
-    for identity in sorted(seat for seat in seats if seat):
-        listening = bool({identity, waiter_name(identity), pane_waiter_name(identity)} & online)
-        kind, at = evidence.get(identity, (None, None))
-        active = kind is not None
-        rows.append(
-            {
-                "identity": identity,
-                "listening": listening,
-                "active": active,
-                "evidence": kind,
-                "evidence_at": at,
-                "state": LISTENING if listening else ACTIVE_NOT_LISTENING if active else SILENT,
-                "reaction": _reaction(judged.get(identity)),
-            }
-        )
-    return rows
+    identities = _seat_identities(online, state, evidence, wake_capabilities)
+    return [_seat_row(identity, online, evidence, judged) for identity in identities]
