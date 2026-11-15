@@ -226,7 +226,7 @@ def _ensure_directory(root: Path, parts: tuple[str, ...], *, created: list[Path]
     try:
         descriptor = os.open(root, flags)
         root_info = os.fstat(descriptor)
-        if root_info.st_uid != os.geteuid():  # pragma: no cover - foreign UID needs privilege
+        if root_info.st_uid != os.geteuid():
             raise _EffectFailure
         cursor = root
         for component in parts:
@@ -278,13 +278,13 @@ def _read_snapshot(
                 or opened.st_size > _MAX_UNIT_BYTES
                 or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)
             ):
-                raise _EffectFailure  # pragma: no cover - same OS-level race
+                raise _EffectFailure
             content = os.read(descriptor, _MAX_UNIT_BYTES + 1)
-            if len(content) > _MAX_UNIT_BYTES:  # pragma: no cover - concurrent growth race
+            if len(content) > _MAX_UNIT_BYTES:
                 raise _EffectFailure
         finally:
             os.close(descriptor)
-    except OSError as exc:  # pragma: no cover - leaf replacement race after lstat
+    except OSError as exc:
         raise _EffectFailure from exc
     return _UnitSnapshot(
         effect_id,
@@ -308,12 +308,12 @@ def _atomic_write(
     current: tuple[int, int] | None
     try:
         info = path.lstat()
-        if not stat.S_ISREG(info.st_mode):  # pragma: no cover - leaf replacement race
+        if not stat.S_ISREG(info.st_mode):
             raise _EffectFailure
         current = (info.st_dev, info.st_ino)
     except FileNotFoundError:
         current = None
-    if current != expected:  # pragma: no cover - inode replacement race after snapshot
+    if current != expected:
         raise _EffectFailure
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
@@ -422,7 +422,7 @@ def _host_lock(directory: Path) -> Iterator[None]:
     except SetupExecutionError:
         os.close(descriptor)
         raise
-    except (ImportError, OSError) as exc:  # pragma: no cover - post-open platform/FS failure
+    except (ImportError, OSError) as exc:
         os.close(descriptor)
         raise SetupExecutionError("application_lock_unavailable") from exc
     try:

@@ -1328,3 +1328,198 @@ def test_apply_recovers_when_protected_pid_disappears_after_inert_reservation(
     assert receipt["protected_processes"] == [
         {"pid": os.getppid(), "before_alive": True, "after_alive": False}
     ]
+
+
+def _pending_receipt(tmp_path: Path, nonce: str, *, home: Path) -> dict[str, object]:
+    systemctl = _manager(tmp_path)
+    inspection = _inspection(systemctl, {"waiter": "fail"})
+    plan = build_setup_plan(_profile(), inspection)
+    return _run_apply(
+        plan,
+        _authorization(plan, nonce=nonce),
+        inspection=inspection,
+        home=home,
+        ledger=tmp_path / "ledger",
+    )
+
+
+def _arm_unit(home: Path) -> Path:
+    unit = _unit_directory(home) / "synapse-arm@.service"
+    unit.write_text("[Service]\nExecStart=/bin/true\n", encoding="utf-8")
+    unit.chmod(0o600)
+    return unit
+
+
+def _stat_copy(
+    info: os.stat_result, *, inode: int | None = None, mode: int | None = None
+) -> os.stat_result:
+    values = list(info)[: info.n_sequence_fields]
+    if mode is not None:
+        values[0] = mode
+    if inode is not None:
+        values[1] = inode
+    return os.stat_result(tuple(values))
+
+
+def _descriptor_path(fd: int) -> str:
+    try:
+        return os.readlink(f"/proc/self/fd/{fd}")
+    except OSError:
+        return ""
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root owns the directories it opens")
+def test_apply_recovers_when_home_belongs_to_another_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A root-owned home is refused before any directory is created."""
+    created: list[str] = []
+    real_mkdir = os.mkdir
+
+    def mkdir(path: str | Path, mode: int = 0o777, *, dir_fd: int | None = None) -> None:
+        if dir_fd is not None:
+            created.append(str(path))
+            real_mkdir(path, mode, dir_fd=dir_fd)
+            return
+        real_mkdir(path, mode)
+
+    monkeypatch.setattr(os, "mkdir", mkdir)
+    receipt = _pending_receipt(tmp_path, f"{NONCE}_foreign_home", home=Path("/"))
+    assert receipt["outcome"] == "recovered"
+    assert receipt["effects"] == []
+    assert created == []
+
+
+def test_apply_recovers_when_a_unit_inode_changes_after_it_is_opened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Replacing a unit between its directory entry and the open descriptor is recovered."""
+    home = tmp_path / "home"
+    unit = _arm_unit(home)
+    original = unit.read_bytes()
+    real_fstat = os.fstat
+
+    def fstat(fd: int) -> os.stat_result:
+        info = real_fstat(fd)
+        if _descriptor_path(fd).endswith("synapse-arm@.service"):
+            return _stat_copy(info, inode=info.st_ino + 1)
+        return info
+
+    monkeypatch.setattr(os, "fstat", fstat)
+    receipt = _pending_receipt(tmp_path, f"{NONCE}_unit_inode", home=home)
+    assert receipt["outcome"] == "recovered"
+    assert unit.read_bytes() == original
+
+
+def test_apply_recovers_when_a_unit_grows_while_it_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A unit that grows past the snapshot limit during the read is left unchanged."""
+    home = tmp_path / "home"
+    unit = _arm_unit(home)
+    original = unit.read_bytes()
+    real_read = os.read
+
+    def read(fd: int, size: int) -> bytes:
+        if _descriptor_path(fd).endswith("synapse-arm@.service"):
+            return b"x" * (1_048_576 + 1)
+        return real_read(fd, size)
+
+    monkeypatch.setattr(os, "read", read)
+    receipt = _pending_receipt(tmp_path, f"{NONCE}_unit_growth", home=home)
+    assert receipt["outcome"] == "recovered"
+    assert unit.read_bytes() == original
+
+
+def test_apply_recovers_when_a_unit_disappears_after_its_directory_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A unit removed after its directory entry was checked is not installed."""
+    home = tmp_path / "home"
+    unit = _arm_unit(home)
+    real_open = os.open
+
+    def open_path(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        if dir_fd is None and str(path).endswith("synapse-arm@.service"):
+            raise FileNotFoundError(path)
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", open_path)
+    receipt = _pending_receipt(tmp_path, f"{NONCE}_unit_disappeared", home=home)
+    assert receipt["outcome"] == "recovered"
+    assert unit.read_text(encoding="utf-8").startswith("[Service]")
+
+
+def test_apply_recovers_when_a_unit_is_no_longer_regular_at_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A unit that stops being a regular file before installation is left unchanged."""
+    home = tmp_path / "home"
+    unit = _arm_unit(home)
+    original = unit.read_bytes()
+    seen = 0
+    real_lstat = Path.lstat
+
+    def lstat(self: Path) -> os.stat_result:
+        nonlocal seen
+        info = real_lstat(self)
+        if self.name != "synapse-arm@.service":
+            return info
+        seen += 1
+        if seen == 1:
+            return info
+        return _stat_copy(info, mode=stat.S_IFDIR | 0o700)
+
+    monkeypatch.setattr(Path, "lstat", lstat)
+    receipt = _pending_receipt(tmp_path, f"{NONCE}_unit_not_regular", home=home)
+    assert receipt["outcome"] == "recovered"
+    assert unit.read_bytes() == original
+
+
+def test_apply_recovers_when_a_unit_inode_changes_before_installation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A unit replaced between the snapshot and the install is not overwritten."""
+    home = tmp_path / "home"
+    unit = _arm_unit(home)
+    original = unit.read_bytes()
+    seen = 0
+    real_lstat = Path.lstat
+
+    def lstat(self: Path) -> os.stat_result:
+        nonlocal seen
+        info = real_lstat(self)
+        if self.name != "synapse-arm@.service":
+            return info
+        seen += 1
+        if seen == 1:
+            return info
+        return _stat_copy(info, inode=info.st_ino + 1)
+
+    monkeypatch.setattr(Path, "lstat", lstat)
+    receipt = _pending_receipt(tmp_path, f"{NONCE}_unit_replaced", home=home)
+    assert receipt["outcome"] == "recovered"
+    assert unit.read_bytes() == original
+
+
+def test_apply_refuses_when_the_host_lock_mode_cannot_be_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host lock whose mode cannot be set is refused before any unit is written."""
+    home = tmp_path / "home"
+    home.mkdir()
+    real_fchmod = os.fchmod
+
+    def fchmod(fd: int, mode: int) -> None:
+        if _descriptor_path(fd).endswith("setup-apply.lock"):
+            raise OSError("mode refused")
+        real_fchmod(fd, mode)
+
+    monkeypatch.setattr(os, "fchmod", fchmod)
+    with pytest.raises(SetupExecutionError, match="application_lock_unavailable"):
+        _pending_receipt(tmp_path, f"{NONCE}_lock_mode", home=home)
+    assert not (home / ".config").exists()

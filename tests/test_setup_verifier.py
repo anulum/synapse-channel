@@ -1124,6 +1124,24 @@ def test_verify_refuses_unsafe_lock_clock_home_and_receipt_write(
             )
         )
 
+    fifo_ledger = tmp_path / "fifo-lock"
+    fifo_ledger.mkdir(mode=0o700)
+    os.mkfifo(fifo_ledger / "setup-verify.lock", 0o600)
+    with pytest.raises(SetupVerificationError, match="verification_lock_unavailable"):
+        asyncio.run(
+            verify_setup(
+                verification_plan,
+                verification_authorization,
+                confirm_digest=digest,
+                env={"HOME": str(tmp_path / "home")},
+                ledger_directory=fifo_ledger,
+                adapter=RecordingAdapter(),
+                inspection_runner=inspection_runner(inspection(waiter="pass", hub_pid=9876)),
+                probe=lambda _pid: True,
+                wall_clock=lambda: 201.0,
+            )
+        )
+
     receipt = tmp_path / "receipt.json"
     monkeypatch.setattr(
         "synapse_channel.setup_verifier.tempfile.mkstemp",

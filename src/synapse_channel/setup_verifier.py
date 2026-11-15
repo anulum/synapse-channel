@@ -538,9 +538,7 @@ def _host_lock(directory: Path) -> Any:
         descriptor = os.open(path, flags, 0o600)
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
-            raise OSError(  # pragma: no cover - post-open platform/FS invariant
-                "unsafe verification lock"
-            )
+            raise OSError("unsafe verification lock")
         os.fchmod(descriptor, 0o600)
         import fcntl
 

@@ -480,6 +480,27 @@ def test_malformed_ledger_records_are_rejected_through_public_reopen(
     _assert_code("authorization_ledger_unavailable", caught.value)
 
 
+def test_opening_succeeds_when_a_sidecar_disappears(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sidecar removed before its mode is set does not fail the ledger open."""
+    real_chmod = os.chmod
+
+    def chmod(path: str | os.PathLike[str], mode: int, *, follow_symlinks: bool = True) -> None:
+        if os.fsdecode(path).endswith("-wal"):
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+        real_chmod(path, mode, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(os, "chmod", chmod)
+    directory = tmp_path / "ledger"
+    with SetupAuthorizationLedger(directory) as ledger:
+        mode = stat.S_IMODE(ledger.path.stat().st_mode)
+    assert mode == 0o600
+
+
 def test_nonregular_database_is_refused(
     tmp_path: Path,
 ) -> None:

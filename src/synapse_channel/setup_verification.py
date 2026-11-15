@@ -151,14 +151,10 @@ def _load_document(path: str | Path, *, code: SetupErrorCode) -> dict[str, objec
                 or opened.st_size > MAX_PLAN_BYTES
                 or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)
             ):
-                raise SetupVerificationError(  # pragma: no cover - lstat/open replacement race
-                    code
-                )
+                raise SetupVerificationError(code)
             payload = os.read(descriptor, MAX_PLAN_BYTES + 1)
             if len(payload) > MAX_PLAN_BYTES:
-                raise SetupVerificationError(  # pragma: no cover - post-fstat growth race
-                    code
-                )
+                raise SetupVerificationError(code)
         finally:
             os.close(descriptor)
         value = json.loads(
@@ -573,16 +569,12 @@ class SetupVerificationLedger:
             try:
                 info = os.fstat(descriptor)
                 if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
-                    raise OSError(  # pragma: no cover - post-open platform/FS invariant
-                        "unsafe verification ledger leaf"
-                    )
+                    raise OSError("unsafe verification ledger leaf")
                 os.fchmod(descriptor, 0o600)
                 self._connection = sqlite3.connect(path, timeout=0.0, isolation_level=None)
                 current = os.lstat(path)
                 if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
-                    raise OSError(  # pragma: no cover - open/connect replacement race
-                        "verification ledger leaf changed during open"
-                    )
+                    raise OSError("verification ledger leaf changed during open")
             finally:
                 os.close(descriptor)
             self._connection.execute("PRAGMA journal_mode=WAL")

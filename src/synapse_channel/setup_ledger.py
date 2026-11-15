@@ -386,5 +386,5 @@ def _restrict_file(path: Path, *, required: bool = False) -> None:
         return
     try:
         os.chmod(path, 0o600, follow_symlinks=False)
-    except FileNotFoundError:  # pragma: no cover - optional SQLite sidecar deletion race
+    except FileNotFoundError:
         return

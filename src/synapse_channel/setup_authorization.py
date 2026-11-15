@@ -169,7 +169,7 @@ def _load_json_document(path: str | Path, *, code: SetupErrorCode) -> dict[str, 
                 chunks.append(chunk)
                 remaining -= len(chunk)
             payload = b"".join(chunks)
-            if len(payload) > MAX_PLAN_BYTES:  # pragma: no cover - concurrent post-fstat growth
+            if len(payload) > MAX_PLAN_BYTES:
                 raise SetupAuthorizationError(code)
         finally:
             os.close(descriptor)

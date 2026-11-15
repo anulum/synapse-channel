@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import os
 from copy import deepcopy
 from pathlib import Path
 
@@ -276,6 +277,19 @@ def test_authorization_refuses_invalid_clock_range() -> None:
             clock=lambda: float("inf"),
         )
     _assert_code("invalid_expiry", caught.value)
+
+
+def test_plan_loader_refuses_bytes_that_appear_after_the_measured_size(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plan that grows after its size was measured is refused."""
+    path = tmp_path / "plan.json"
+    path.write_bytes(b"{}")
+    monkeypatch.setattr(os, "read", lambda _fd, _size: b"x" * (MAX_PLAN_BYTES + 1))
+    with pytest.raises(SetupAuthorizationError) as caught:
+        load_setup_plan(path)
+    _assert_code("invalid_plan", caught.value)
+    assert caught.value.__cause__ is None
 
 
 def test_plan_loader_reads_one_regular_bounded_file(tmp_path: Path) -> None:

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 from collections.abc import Callable
@@ -18,7 +19,7 @@ from typing import cast
 
 import pytest
 
-from synapse_channel.setup_authorization import build_setup_authorization
+from synapse_channel.setup_authorization import MAX_PLAN_BYTES, build_setup_authorization
 from synapse_channel.setup_contract import document_digest, setup_schema
 from synapse_channel.setup_planner import build_setup_plan
 from synapse_channel.setup_profiles import SetupProfile, get_setup_profile
@@ -491,6 +492,57 @@ def stat_mode(path: Path) -> int:
     return path.stat().st_mode & 0o777
 
 
+def test_plan_loader_refuses_a_leaf_replaced_before_it_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plan replaced between its directory entry and the opened descriptor is refused."""
+    path = tmp_path / "plan.json"
+    path.write_bytes(b"{}")
+    real_fstat = os.fstat
+
+    def fstat(fd: int) -> os.stat_result:
+        info = real_fstat(fd)
+        values = list(info)[: info.n_sequence_fields]
+        values[1] = info.st_ino + 1
+        return os.stat_result(tuple(values))
+
+    monkeypatch.setattr(os, "fstat", fstat)
+    with pytest.raises(SetupVerificationError, match="invalid_verification_plan"):
+        load_verification_plan(path)
+
+
+def test_plan_loader_refuses_bytes_that_appear_after_the_measured_size(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plan that grows after its size was measured is refused."""
+    path = tmp_path / "plan.json"
+    path.write_bytes(b"{}")
+    monkeypatch.setattr(os, "read", lambda _fd, _size: b"x" * (MAX_PLAN_BYTES + 1))
+    with pytest.raises(SetupVerificationError, match="invalid_verification_plan") as caught:
+        load_verification_plan(path)
+    assert caught.value.__cause__ is None
+
+
+def test_ledger_refuses_a_leaf_replaced_while_the_database_opens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A database replaced between open and the following stat is refused."""
+    real_lstat = os.lstat
+
+    def lstat(path: str | os.PathLike[str], *, dir_fd: int | None = None) -> os.stat_result:
+        info = real_lstat(path) if dir_fd is None else real_lstat(path, dir_fd=dir_fd)
+        if not os.fsdecode(path).endswith("setup-verification-v1.sqlite3"):
+            return info
+        values = list(info)[: info.n_sequence_fields]
+        values[1] = info.st_ino + 1
+        return os.stat_result(tuple(values))
+
+    monkeypatch.setattr(os, "lstat", lstat)
+    with pytest.raises(SetupVerificationError, match="verification_ledger_unavailable"):
+        with SetupVerificationLedger(tmp_path / "replaced"):
+            pass
+
+
 def test_ledger_refuses_unsafe_directory_and_leaf(tmp_path: Path) -> None:
     actual = tmp_path / "actual"
     actual.mkdir(mode=0o700)
@@ -505,6 +557,13 @@ def test_ledger_refuses_unsafe_directory_and_leaf(tmp_path: Path) -> None:
     (safe / "setup-verification-v1.sqlite3").mkdir()
     with pytest.raises(SetupVerificationError, match="verification_ledger_unavailable"):
         with SetupVerificationLedger(safe):
+            pass
+
+    fifo = tmp_path / "fifo"
+    fifo.mkdir(mode=0o700)
+    os.mkfifo(fifo / "setup-verification-v1.sqlite3", 0o600)
+    with pytest.raises(SetupVerificationError, match="verification_ledger_unavailable"):
+        with SetupVerificationLedger(fifo):
             pass
 
 

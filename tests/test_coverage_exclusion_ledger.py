@@ -79,12 +79,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: Every ``pragma: no cover`` in source or the finite probe, with exact counts and classes.
 PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
-    "src/synapse_channel/core/mcp_config_launch.py": (2, "env-defensive"),
-    "src/synapse_channel/setup_authorization.py": (1, "env-defensive"),
-    "src/synapse_channel/setup_executor.py": (7, "env-defensive"),
-    "src/synapse_channel/setup_ledger.py": (1, "env-defensive"),
-    "src/synapse_channel/setup_verification.py": (4, "env-defensive"),
-    "src/synapse_channel/setup_verifier.py": (1, "env-defensive"),
     "tools/protected_runtime_probe/instrumentation_launch.py": (
         2,
         "collector-header + collector-boundary + fixed-target-exit",
@@ -275,7 +269,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_service_status.py": (1, "platform-guard"),
     "tests/test_service_templates.py": (2, "platform-guard"),
     "tests/test_session_capability_sqlcipher.py": (1, "optional-dep-guard"),
-    "tests/test_setup_executor.py": (2, "platform-guard"),
+    "tests/test_setup_executor.py": (3, "platform-guard"),
     "tests/test_setup_verifier.py": (6, "platform-guard"),
     "tests/test_shared_host_regression.py": (1, "platform-guard"),
     "tests/test_shell_integration.py": (1, "optional-dep-guard"),
