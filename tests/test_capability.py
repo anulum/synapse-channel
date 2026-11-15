@@ -67,8 +67,10 @@ def test_re_advertise_refreshes_card() -> None:
     registry = CapabilityRegistry()
     registry.advertise("A", description="old", now=1.0)
     registry.advertise("A", description="new", now=2.0)
-    assert registry.get("A").description == "new"  # type: ignore[union-attr]
-    assert registry.get("A").advertised_at == 2.0  # type: ignore[union-attr]
+    card = registry.get("A")
+    assert card is not None
+    assert card.description == "new"
+    assert card.advertised_at == 2.0
 
 
 def test_get_and_forget() -> None:
