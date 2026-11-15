@@ -79,12 +79,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: Every ``pragma: no cover`` in source or the finite probe, with exact counts and classes.
 PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
-    "src/synapse_channel/a2a_http.py": (1, "blocking-wrapper"),
-    # Lease renewal: register_owner and the exchange absorb connection errors.
-    "src/synapse_channel/cli_lock_supervision.py": (1, "validated-helper-boundary"),
-    "src/synapse_channel/cli_relay.py": (1, "env-defensive"),
     "src/synapse_channel/core/mcp_config_launch.py": (2, "env-defensive"),
-    "src/synapse_channel/ergonomics.py": (1, "entrypoint"),
     "src/synapse_channel/setup_authorization.py": (1, "env-defensive"),
     "src/synapse_channel/setup_executor.py": (7, "env-defensive"),
     "src/synapse_channel/setup_ledger.py": (1, "env-defensive"),

@@ -54,7 +54,7 @@ def _default_operator() -> str:
     """
     try:
         return getpass.getuser()
-    except Exception:  # pragma: no cover - getuser only fails on an unusual host environment.
+    except Exception:
         return "operator"
 
 

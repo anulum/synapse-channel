@@ -626,3 +626,45 @@ async def test_renewal_still_open_at_the_deadline_is_unknown(
             command.cancel()
             await asyncio.gather(command, return_exceptions=True)
         journal.close()
+
+
+async def test_a_renewal_connection_error_stops_the_owned_command(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A connection error while renewing stops the command and names the error."""
+    from synapse_channel.cli_lock_release import LockRelease
+    from synapse_channel.cli_lock_supervision import supervise_locked_command
+
+    started = asyncio.Event()
+
+    async def runner(_command: list[str]) -> int:
+        started.set()
+        await asyncio.Event().wait()
+        return 0
+
+    def factory(*_args: object, **_kwargs: object) -> SynapseAgent:
+        raise OSError("connection reset")
+
+    profile = LockRelease(
+        uri="ws://127.0.0.1:9",
+        name="owner",
+        task_id="task-1",
+        initial_epoch=1,
+        token=None,
+        agent_factory=factory,
+        ready_timeout=1.0,
+        reply_timeout=1.0,
+    )
+    loop = asyncio.get_running_loop()
+    code = await supervise_locked_command(
+        ["true"],
+        runner,
+        profile,
+        hub_id="hub",
+        session="session",
+        duration=9.0,
+        acquired_at=loop.time(),
+    )
+    assert started.is_set()
+    assert code == 3
+    assert "renewal connection failed (OSError)" in capsys.readouterr().err

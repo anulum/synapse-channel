@@ -242,9 +242,7 @@ def serve_a2a_http(
     max_concurrent_requests: int = DEFAULT_MAX_CONCURRENT_A2A_REQUESTS,
     request_read_timeout_seconds: float = DEFAULT_A2A_REQUEST_READ_TIMEOUT_SECONDS,
     ssl_context: ssl.SSLContext | None = None,
-) -> (
-    None
-):  # pragma: no cover - blocking process wrapper; server factory is covered by real HTTP tests.
+) -> None:
     """Run a blocking A2A HTTP or HTTPS server.
 
     Parameters

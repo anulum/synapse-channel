@@ -30,6 +30,7 @@ from synapse_channel.a2a_http import (
     DEFAULT_MAX_CONCURRENT_A2A_REQUESTS,
     A2AHTTPServer,
     make_a2a_http_server,
+    serve_a2a_http,
 )
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
@@ -617,3 +618,25 @@ def test_admission_survives_a_worker_that_cannot_start_and_non_socket_requests(
         left.close()
         right.close()
         server.server_close()
+
+
+def test_blocking_server_closes_after_the_serve_loop_stops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The blocking entry closes the listening socket after the serve loop stops."""
+    events: list[str] = []
+    real_close = A2AHTTPServer.server_close
+
+    def serve_forever(self: A2AHTTPServer) -> None:
+        events.append("serve")
+        raise RuntimeError("serve loop stopped")
+
+    def server_close(self: A2AHTTPServer) -> None:
+        events.append("close")
+        real_close(self)
+
+    monkeypatch.setattr(A2AHTTPServer, "serve_forever", serve_forever)
+    monkeypatch.setattr(A2AHTTPServer, "server_close", server_close)
+    with pytest.raises(RuntimeError, match="serve loop stopped"):
+        serve_a2a_http(bridge=_bridge(), host="127.0.0.1", port=0)
+    assert events == ["serve", "close"]

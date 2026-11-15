@@ -247,6 +247,21 @@ def test_relay_defaults_the_operator_to_the_os_user(monkeypatch: pytest.MonkeyPa
     assert captured["request"].operator == "logged-in-user"
 
 
+def test_relay_uses_a_literal_operator_when_the_login_name_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A relay with no resolvable login name still names an operator."""
+
+    def unavailable() -> str:
+        raise OSError("no login name")
+
+    monkeypatch.setattr(getpass, "getuser", unavailable)
+    captured: dict[str, Any] = {}
+    code = cli_relay._cmd_relay(_args(), relayer=_relayer(_applied(), captured=captured))
+    assert code == 0
+    assert captured["request"].operator == "operator"
+
+
 def test_relay_action_choice_is_validated_by_the_parser() -> None:
     with pytest.raises(SystemExit):
         cli.build_parser().parse_args(

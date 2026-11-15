@@ -1377,3 +1377,17 @@ async def test_poisoned_shell_says_as_the_local_identity_against_a_live_hub() ->
             assert chat["payload"] == "pa-proof"
             assert chat["sender"] == "PROJ-LOCAL"
             assert chat["sender"] != "user/terminal-14753"
+
+
+def test_module_entry_exits_when_no_verb_is_given(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Running the module as a program without a verb exits with the help status."""
+    import importlib.util
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["syn"])
+    spec = importlib.util.spec_from_file_location("__main__", ergonomics.__file__)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    with pytest.raises(SystemExit) as caught:
+        spec.loader.exec_module(module)
+    assert caught.value.code == 2

@@ -208,9 +208,7 @@ async def supervise_locked_command(
                 )
             except TimeoutError:
                 return 3, "no renewal answer before the lease deadline"
-            # register_owner and the exchange absorb connection errors, so only a
-            # future change below them could let one through; it still stops safely.
-            except OSError as exc:  # pragma: no cover - callees absorb connection errors
+            except OSError as exc:
                 return 3, f"the renewal connection failed ({type(exc).__name__})"
             if code:
                 return code, reason
