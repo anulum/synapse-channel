@@ -470,6 +470,6 @@ def _invalid_tag_type() -> type[Exception]:
     """Return the optional cryptography InvalidTag class."""
     try:
         from cryptography.exceptions import InvalidTag
-    except ImportError:  # pragma: no cover - cryptography absence is covered via require_aes_gcm.
+    except ImportError:
         return ValueError
     return InvalidTag

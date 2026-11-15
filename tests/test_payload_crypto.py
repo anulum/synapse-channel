@@ -198,6 +198,49 @@ def test_payload_decryption_rejects_wrong_key_and_invalid_utf8() -> None:
     assert "valid UTF-8" in _error(lambda: decrypt_payload(invalid_utf8, key, context=context))
 
 
+def test_a_missing_tag_class_does_not_relabel_a_cipher_loader_failure() -> None:
+    """A missing cipher-exceptions module leaves the loader error visible."""
+    import importlib.abc
+    import importlib.machinery
+    import sys
+    from types import ModuleType
+
+    class _RefuseExceptions(importlib.abc.MetaPathFinder):
+        def find_spec(
+            self,
+            fullname: str,
+            path: object = None,
+            target: ModuleType | None = None,
+        ) -> importlib.machinery.ModuleSpec | None:
+            if fullname == "cryptography.exceptions":
+                raise ImportError(fullname)
+            return None
+
+    key = b"k" * 32
+    context = PayloadContext(message_type=MessageType.CHAT, sender="alice")
+    envelope = encrypt_payload("secret", key, key_id="k", recipients=[], context=context)
+
+    def missing_cipher(_key: bytes) -> object:
+        raise RuntimeError("cipher missing")
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        "synapse_channel.core.payload_crypto.require_aes_gcm",
+        lambda: missing_cipher,
+    )
+    saved = sys.modules.pop("cryptography.exceptions", None)
+    finder = _RefuseExceptions()
+    sys.meta_path.insert(0, finder)
+    try:
+        with pytest.raises(RuntimeError, match="cipher missing"):
+            decrypt_payload(envelope, key, context=context)
+    finally:
+        sys.meta_path.remove(finder)
+        monkeypatch.undo()
+        if saved is not None:
+            sys.modules["cryptography.exceptions"] = saved
+
+
 def _error(operation: Callable[[], object]) -> str:
     """Run ``operation`` and return its ``PayloadCryptoError`` text."""
     with pytest.raises(PayloadCryptoError) as exc_info:

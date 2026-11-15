@@ -118,7 +118,7 @@ def _require_grpc() -> Any:
         import importlib
 
         return importlib.import_module("grpc")
-    except ImportError as exc:  # pragma: no cover - exercised via availability helper
+    except ImportError as exc:
         raise RuntimeError(
             "gRPC A2A binding requires grpcio; install with "
             "pip install 'synapse-channel[a2a-grpc]' or pip install grpcio"
