@@ -18,7 +18,7 @@ from __future__ import annotations
 
 try:
     import fcntl as _fcntl
-except ImportError:  # pragma: no cover - non-POSIX platform boundary.
+except ImportError:
     _fcntl = None  # type: ignore[assignment]
 
 import hashlib

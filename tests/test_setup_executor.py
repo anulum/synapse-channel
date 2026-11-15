@@ -359,6 +359,29 @@ def test_apply_on_unsupported_host_is_inert(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
+def test_apply_refuses_a_reported_non_linux_platform(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host that reports itself as Darwin is refused before any file is written."""
+    monkeypatch.setattr("synapse_channel.setup_executor.platform.system", lambda: "Darwin")
+    inspection = _inspection(Path("/usr/bin/true"), {"waiter": "fail"})
+    plan = build_setup_plan(_profile(), inspection)
+    authorization = _authorization(plan)
+    with pytest.raises(SetupExecutionError, match="application_platform_unsupported"):
+        asyncio.run(
+            apply_setup(
+                plan,
+                authorization,
+                confirm_digest=cast(str, plan["plan_digest"]),
+                env={"HOME": str(tmp_path / "home")},
+                ledger_directory=tmp_path / "ledger",
+                receipt_path=tmp_path / "receipt.json",
+                clock=lambda: 101.0,
+            )
+        )
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_apply_executes_both_allowlisted_effects_and_replay_is_inert(tmp_path: Path) -> None:
     jsonschema = pytest.importorskip("jsonschema")
     systemctl = _manager(tmp_path)

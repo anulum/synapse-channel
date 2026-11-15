@@ -714,7 +714,7 @@ async def verify_setup(
         verification_authorization,
         now=started_at,
     )
-    if platform.system() != "Linux":  # pragma: no cover - platform-specific adapter refusal
+    if platform.system() != "Linux":
         raise SetupVerificationError("application_platform_unsupported")
     if receipt_path is not None:
         _validate_receipt_path(Path(receipt_path))

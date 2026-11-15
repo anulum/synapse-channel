@@ -608,7 +608,7 @@ def _windows_current_user_sid() -> str:
         return _windows_current_user_sid_whoami()
 
 
-def _windows_current_user_sid_whoami() -> str:  # pragma: no cover - platform-native Win32
+def _windows_current_user_sid_whoami() -> str:
     """Resolve the current user SID via fixed ``whoami /user`` argv (no shell)."""
     try:
         # ``/fo`` is whoami's format switch (not a misspelling of "of"); split
@@ -638,7 +638,7 @@ def _windows_current_user_sid_whoami() -> str:  # pragma: no cover - platform-na
     raise SecurePathError(f"whoami output had no SID: {line[0]!r}")
 
 
-def _windows_current_user_sid_native() -> str:  # pragma: no cover - platform-native Win32
+def _windows_current_user_sid_native() -> str:
     """Read the process token user SID via ``advapi32`` with full prototypes."""
     import ctypes
     from ctypes import wintypes
@@ -775,7 +775,7 @@ def _windows_apply_owner_only(path: Path, *, directory: bool) -> None:
 
 def _windows_read_owner_and_aces(
     path: Path, *, purpose: str
-) -> tuple[str, bool, tuple[WindowsAce, ...]]:  # pragma: no cover - platform-native Win32
+) -> tuple[str, bool, tuple[WindowsAce, ...]]:
     """Return ``(owner_sid, dacl_present, aces)`` via ``GetNamedSecurityInfoW``."""
     import ctypes
     from ctypes import wintypes

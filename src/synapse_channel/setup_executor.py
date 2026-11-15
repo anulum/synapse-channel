@@ -577,7 +577,7 @@ async def apply_setup(
         now=started_at,
     )
     generation = cast(dict[str, str], validated_plan["generation"])
-    if platform.system() != "Linux":  # pragma: no cover - platform-specific adapter refusal
+    if platform.system() != "Linux":
         raise SetupExecutionError("application_platform_unsupported")
     if receipt_path is not None:
         _validate_receipt_path(Path(receipt_path))
