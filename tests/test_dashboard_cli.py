@@ -58,7 +58,7 @@ def _run_dispatcher(
 
     monkeypatch.setattr("synapse_channel.cli_dashboard.time.sleep", interrupt)
     args = _dashboard_args()
-    handler = args.func  # type: ignore[attr-defined]
+    handler = args.func  # type: ignore[attr-defined] # added by set_defaults
     return int(handler(args))
 
 
@@ -122,7 +122,7 @@ def test_dashboard_dispatcher_forwards_allow_hosts(monkeypatch: pytest.MonkeyPat
         lambda _: (_ for _ in ()).throw(KeyboardInterrupt()),
     )
     args = _dashboard_args(dashboard_allow_host=["dash.internal"])
-    handler = args.func  # type: ignore[attr-defined]
+    handler = args.func  # type: ignore[attr-defined] # added by set_defaults
 
     assert int(handler(args)) == 0
     assert captured["allow_hosts"] == ("dash.internal",)
@@ -305,7 +305,7 @@ def test_cmd_dashboard_rejects_an_invalid_bind(
 
     monkeypatch.setattr(cli_dashboard, "start_dashboard_server", refuse)
     args = _dashboard_args()
-    handler = args.func  # type: ignore[attr-defined]
+    handler = args.func  # type: ignore[attr-defined] # added by set_defaults
     assert int(handler(args)) == 2
     assert "refusing non-loopback bind" in capsys.readouterr().out
 
@@ -342,7 +342,7 @@ def test_cmd_dashboard_announces_the_reliability_url(
 
     monkeypatch.setattr("synapse_channel.cli_dashboard.time.sleep", interrupt)
     args = _dashboard_args(reliability_db=Path("./hub.db"))
-    handler = args.func  # type: ignore[attr-defined]
+    handler = args.func  # type: ignore[attr-defined] # added by set_defaults
 
     assert int(handler(args)) == 0
     out = capsys.readouterr().out
@@ -414,7 +414,7 @@ def test_cmd_dashboard_announces_every_configured_feed(
         federation_store=Path("./federation.json"),
         cockpit_dist=Path("./dist"),
     )
-    handler = args.func  # type: ignore[attr-defined]
+    handler = args.func  # type: ignore[attr-defined] # added by set_defaults
 
     assert int(handler(args)) == 0
     out = capsys.readouterr().out
@@ -439,7 +439,7 @@ def test_cmd_dashboard_announces_operator_write_routes(
 
     monkeypatch.setattr("synapse_channel.cli_dashboard.time.sleep", interrupt)
     args = _dashboard_args(operator=True)
-    handler = args.func  # type: ignore[attr-defined]
+    handler = args.func  # type: ignore[attr-defined] # added by set_defaults
 
     assert int(handler(args)) == 0
     out = capsys.readouterr().out
