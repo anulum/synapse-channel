@@ -11,6 +11,7 @@ import { memo } from "react";
 
 import type { FindingRow, FindingsState } from "../lib/findings";
 import { Ident } from "./Ident";
+import { ScopeTag } from "./ScopeTag";
 
 /** Wall-clock HH:MM:SS for a finding's recorded time, or a dash without one. */
 function timeOf(row: FindingRow): string {
@@ -60,6 +61,7 @@ function FindingsStreamView({ state }: FindingsStreamProps): JSX.Element {
     <section className="panel" aria-label="Findings stream">
       <div className="panel__head">
         <span>Findings</span>
+        <ScopeTag />
         <span
           className="panel__count"
           title={total > rows.length ? "The newest findings; older ones stay in the log." : undefined}

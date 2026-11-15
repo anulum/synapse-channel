@@ -28,6 +28,8 @@ import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { ReplayWorkbench } from "./components/ReplayWorkbench";
 import { RiskRail } from "./components/RiskRail";
 import { RoleBadge } from "./components/RoleBadge";
+import { ScopePicker } from "./components/ScopePicker";
+import { ScopeProvider } from "./components/ScopeTag";
 import { SelectionBar } from "./components/SelectionBar";
 import { SetupAssistant } from "./components/SetupAssistant";
 import { TaskBoard } from "./components/TaskBoard";
@@ -37,6 +39,7 @@ import { useCockpitFeeds } from "./hooks/useCockpitFeeds";
 import { useCockpitOverlays } from "./hooks/useCockpitOverlays";
 import { useCockpitPreferences } from "./hooks/useCockpitPreferences";
 import { useCockpitReplay } from "./hooks/useCockpitReplay";
+import { useCockpitScope } from "./hooks/useCockpitScope";
 import { useCockpitToasts } from "./hooks/useCockpitToasts";
 import { useCockpitViewModel } from "./hooks/useCockpitViewModel";
 import { useCockpitWorkspace } from "./hooks/useCockpitWorkspace";
@@ -78,7 +81,8 @@ export function App(): JSX.Element {
   const authBlocked = auth.phase === "locked";
   const access = useDashboardAccess(authBlocked, auth.revision);
   const shellBlocked = authBlocked || access.phase === "loading";
-  const feeds = useCockpitFeeds(shellBlocked, auth.revision);
+  const { scope, setScope } = useCockpitScope();
+  const feeds = useCockpitFeeds(shellBlocked, auth.revision, scope);
   const preferences = useCockpitPreferences();
   const [brush, setBrush] = useState<TimeWindow | null>(null);
   const [mobileSegment, setMobileSegment] = useState<MobileSegment>("signals");
@@ -150,299 +154,304 @@ export function App(): JSX.Element {
   }
 
   return (
-    <div className="shell">
-      <span className="visually-hidden" role="status" aria-live="polite">
-        {overlays.accessNotice}
-      </span>
-      <Hud
-        kpis={feeds.kpis}
-        live={feeds.snap.status === "live"}
-        stamp={feeds.stamp}
-        transport={feeds.transport.status}
-        onSelect={onSelectKpi}
-        theme={preferences.theme}
-        onToggleTheme={preferences.toggleTheme}
-        focus={preferences.focus}
-        onFocusChange={preferences.setFocus}
-        rosterNames={view.roster.map((entry) => entry.agent)}
-        density={preferences.density}
-        onToggleDensity={preferences.toggleDensity}
-        accessControl={
-          <RoleBadge
-            access={access}
-            onChangeAccess={() =>
-              lockCockpit("Paste another dashboard bearer to change access.")
-            }
+    <ScopeProvider scope={scope} travelling={replay.travelling}>
+      <div className="shell">
+        <span className="visually-hidden" role="status" aria-live="polite">
+          {overlays.accessNotice}
+        </span>
+        <Hud
+          kpis={feeds.kpis}
+          live={feeds.snap.status === "live"}
+          stamp={feeds.stamp}
+          transport={feeds.transport.status}
+          onSelect={onSelectKpi}
+          theme={preferences.theme}
+          onToggleTheme={preferences.toggleTheme}
+          focus={preferences.focus}
+          onFocusChange={preferences.setFocus}
+          rosterNames={view.roster.map((entry) => entry.agent)}
+          density={preferences.density}
+          onToggleDensity={preferences.toggleDensity}
+          scopeControl={
+            <ScopePicker scope={scope} counts={feeds.snap.snapshot?.scope ?? null} onChange={setScope} />
+          }
+          accessControl={
+            <RoleBadge
+              access={access}
+              onChangeAccess={() =>
+                lockCockpit("Paste another dashboard bearer to change access.")
+              }
+            />
+          }
+          commandTriggerRef={overlays.commandTrigger}
+          onOpenPalette={overlays.openPalette}
+          guideTriggerRef={overlays.guideTrigger}
+          onOpenGuide={overlays.openGuide}
+          setupTriggerRef={overlays.setupTrigger}
+          onOpenSetup={overlays.openSetup}
+        />
+        <SelectionBar
+          selection={workspace.selection}
+          focus={preferences.focus}
+          window={brush}
+          onClearSelection={() => setSelection(null)}
+          onClearFocus={() => preferences.setFocus("")}
+          onClearWindow={onClearWindow}
+        />
+        <PanelBoundary name="Activity spine">
+          <ActivitySpine
+            key={feeds.provenance === "hub" ? "hub" : "derived"}
+            source={feeds.spineSource}
+            onBrush={setBrush}
+            brush={brush}
+            workspaceSelection={workspace.selection}
           />
-        }
-        commandTriggerRef={overlays.commandTrigger}
-        onOpenPalette={overlays.openPalette}
-        guideTriggerRef={overlays.guideTrigger}
-        onOpenGuide={overlays.openGuide}
-        setupTriggerRef={overlays.setupTrigger}
-        onOpenSetup={overlays.openSetup}
-      />
-      <SelectionBar
-        selection={workspace.selection}
-        focus={preferences.focus}
-        window={brush}
-        onClearSelection={() => setSelection(null)}
-        onClearFocus={() => preferences.setFocus("")}
-        onClearWindow={onClearWindow}
-      />
-      <PanelBoundary name="Activity spine">
-        <ActivitySpine
-          key={feeds.provenance === "hub" ? "hub" : "derived"}
-          source={feeds.spineSource}
-          onBrush={setBrush}
-          brush={brush}
-          workspaceSelection={workspace.selection}
+        </PanelBoundary>
+        <PanelBoundary name="Federation">
+          <FederationRow
+            state={feeds.federation}
+            hubVersion={feeds.snap.snapshot?.hub_version ?? ""}
+            configEpoch={feeds.snap.snapshot?.config_epoch ?? ""}
+          />
+        </PanelBoundary>
+        <ReplayWorkbench
+          replay={workspace.replay}
+          slotA={replay.slotA}
+          slotB={replay.slotB}
+          events={feeds.log}
+          onReplayChange={setReplay}
+          onReplayReplace={replaceReplay}
+          onSelectEvent={(sequence) =>
+            setPanelSelection("log", { kind: "event", seq: sequence })
+          }
+          onSelectTask={(taskId) =>
+            setPanelSelection("causality", { kind: "task", id: taskId })
+          }
         />
-      </PanelBoundary>
-      <PanelBoundary name="Federation">
-        <FederationRow
-          state={feeds.federation}
-          hubVersion={feeds.snap.snapshot?.hub_version ?? ""}
-          configEpoch={feeds.snap.snapshot?.config_epoch ?? ""}
-        />
-      </PanelBoundary>
-      <ReplayWorkbench
-        replay={workspace.replay}
-        slotA={replay.slotA}
-        slotB={replay.slotB}
-        events={feeds.log}
-        onReplayChange={setReplay}
-        onReplayReplace={replaceReplay}
-        onSelectEvent={(sequence) =>
-          setPanelSelection("log", { kind: "event", seq: sequence })
-        }
-        onSelectTask={(taskId) =>
-          setPanelSelection("causality", { kind: "task", id: taskId })
-        }
-      />
-      <MobileNav active={mobileSegment} onSelect={setMobileSegment} />
-      <div className={`deck deck--seg-${mobileSegment}`} role="main">
-        <div className="deck__stack deck__stack--roster">
-          <div className="seg seg--roster">
-            <div className="roster-workspace">
-              <nav className="roster-workspace__switch" aria-label={t("host.switch")}>
-                <button type="button" aria-pressed={!hostSessionsOpen} onClick={() => setHostSessionsOpen(false)}>{t("host.roster")}</button>
-                <button type="button" aria-pressed={hostSessionsOpen} onClick={() => setHostSessionsOpen(true)}>{t("host.title")}</button>
-              </nav>
-              {hostSessionsOpen ? <PanelBoundary name={t("host.title")}>
-                <HostSessions revision={auth.revision} />
-              </PanelBoundary> : <PanelBoundary name="Fleet roster">
-              <FleetRoster
-                roster={view.roster}
-                waiters={view.waiters}
-                presenceHolders={view.presenceHolders}
-                selection={workspace.selection}
-                onInspect={overlays.inspectAgent}
-              />
-              </PanelBoundary>}
+        <MobileNav active={mobileSegment} onSelect={setMobileSegment} />
+        <div className={`deck deck--seg-${mobileSegment}`} role="main">
+          <div className="deck__stack deck__stack--roster">
+            <div className="seg seg--roster">
+              <div className="roster-workspace">
+                <nav className="roster-workspace__switch" aria-label={t("host.switch")}>
+                  <button type="button" aria-pressed={!hostSessionsOpen} onClick={() => setHostSessionsOpen(false)}>{t("host.roster")}</button>
+                  <button type="button" aria-pressed={hostSessionsOpen} onClick={() => setHostSessionsOpen(true)}>{t("host.title")}</button>
+                </nav>
+                {hostSessionsOpen ? <PanelBoundary name={t("host.title")}>
+                  <HostSessions revision={auth.revision} />
+                </PanelBoundary> : <PanelBoundary name="Fleet roster">
+                <FleetRoster
+                  roster={view.roster}
+                  waiters={view.waiters}
+                  presenceHolders={view.presenceHolders}
+                  selection={workspace.selection}
+                  onInspect={overlays.inspectAgent}
+                />
+                </PanelBoundary>}
+              </div>
+            </div>
+            <div className="seg seg--reliability">
+              <PanelBoundary name="Reliability">
+                <ReliabilityPanel state={feeds.reliability} />
+              </PanelBoundary>
             </div>
           </div>
-          <div className="seg seg--reliability">
-            <PanelBoundary name="Reliability">
-              <ReliabilityPanel state={feeds.reliability} />
-            </PanelBoundary>
+          <div className="deck__stack">
+            <div className="seg seg--claims">
+              <PanelBoundary name="Claims">
+                <ClaimsBoard
+                  claims={view.lensedClaims}
+                  conflicts={view.conflicts}
+                  connected={view.connected}
+                  lens={preferences.focus}
+                  selection={workspace.selection}
+                />
+              </PanelBoundary>
+            </div>
+            <div className="seg seg--signals">
+              <PanelBoundary name="Inspector">
+                <InspectorTabs
+                  tab={workspace.panel}
+                  onTabChange={setPanel}
+                  fleetView={workspace.fleetView}
+                  onFleetViewChange={setFleetView}
+                  fleetSelection={fleetSelectionOf(workspace.selection)}
+                  onFleetSelectionChange={setFleetSelection}
+                  communicationFilter={{
+                    query: workspace.communicationQuery,
+                    health: workspace.communicationHealth,
+                  }}
+                  onCommunicationFilterChange={setCommunicationFilter}
+                  selection={workspace.selection}
+                  onSelectionChange={(selection) => {
+                    if (selection?.kind === "task") {
+                      setPanelSelection("causality", selection);
+                    } else {
+                      setSelection(selection);
+                    }
+                  }}
+                  attention={view.attention}
+                  attentionFeed={feeds.attention}
+                  onInspectAgent={overlays.inspectAgent}
+                  onInspectTask={overlays.inspectTask}
+                  events={feeds.log}
+                  window={brush}
+                  onClearWindow={onClearWindow}
+                  provenance={feeds.provenance === "hub" ? "hub" : "derived"}
+                  coverage={feeds.coverage}
+                  query={preferences.logQuery}
+                  onQueryChange={preferences.setLogQuery}
+                  claims={view.claims}
+                  conflicts={view.conflicts}
+                  liveAgentCount={feeds.snap.snapshot?.fleet.agents.live.length ?? 0}
+                  agents={view.roster.map((entry) => entry.agent)}
+                  canMessagePeer={capabilities.message_send}
+                  onMessagePeer={overlays.messagePeer}
+                  connected={view.connected}
+                  federation={feeds.federation}
+                  metrics={feeds.metrics}
+                  sessions={feeds.sessions}
+                  receipts={feeds.receipts}
+                  operatorActions={feeds.operatorActions}
+                  onOpenEvent={(sequence) =>
+                    setPanelSelection("log", { kind: "event", seq: sequence })
+                  }
+                  traceRequest={overlays.traceRequest}
+                  incidentStep={workspace.incidentStep}
+                  onIncidentStepChange={setIncidentStep}
+                  incidentStorageKey={`synapse-cockpit-incident-v1:${access.descriptor?.principal ?? "unavailable"}`}
+                  replay={workspace.replay}
+                  hubVersion={feeds.snap.snapshot?.hub_version ?? ""}
+                  configEpoch={feeds.snap.snapshot?.config_epoch ?? ""}
+                  onOpenIncidentEvidence={(selection) => {
+                    if (selection.kind === "task") {
+                      setPanelSelection("causality", selection);
+                    } else if (selection.kind === "event") {
+                      setPanelSelection("log", selection);
+                    } else {
+                      setPanelSelection("fleet", selection);
+                    }
+                  }}
+                />
+              </PanelBoundary>
+            </div>
           </div>
-        </div>
-        <div className="deck__stack">
-          <div className="seg seg--claims">
-            <PanelBoundary name="Claims">
-              <ClaimsBoard
-                claims={view.lensedClaims}
-                conflicts={view.conflicts}
+          <div className="seg seg--board">
+            <PanelBoundary name="Board">
+              <TaskBoard
+                tasks={view.lensedBoard}
                 connected={view.connected}
+                truncation={
+                  replay.travelling ? undefined : boardTruncation(feeds.snap.snapshot)
+                }
+                onInspect={overlays.inspectTask}
                 lens={preferences.focus}
                 selection={workspace.selection}
               />
             </PanelBoundary>
           </div>
-          <div className="seg seg--signals">
-            <PanelBoundary name="Inspector">
-              <InspectorTabs
-                tab={workspace.panel}
-                onTabChange={setPanel}
-                fleetView={workspace.fleetView}
-                onFleetViewChange={setFleetView}
-                fleetSelection={fleetSelectionOf(workspace.selection)}
-                onFleetSelectionChange={setFleetSelection}
-                communicationFilter={{
-                  query: workspace.communicationQuery,
-                  health: workspace.communicationHealth,
-                }}
-                onCommunicationFilterChange={setCommunicationFilter}
-                selection={workspace.selection}
-                onSelectionChange={(selection) => {
-                  if (selection?.kind === "task") {
-                    setPanelSelection("causality", selection);
-                  } else {
-                    setSelection(selection);
-                  }
-                }}
-                attention={view.attention}
-                attentionFeed={feeds.attention}
-                onInspectAgent={overlays.inspectAgent}
-                onInspectTask={overlays.inspectTask}
-                events={feeds.log}
-                window={brush}
-                onClearWindow={onClearWindow}
-                provenance={feeds.provenance === "hub" ? "hub" : "derived"}
-                coverage={feeds.coverage}
-                query={preferences.logQuery}
-                onQueryChange={preferences.setLogQuery}
-                claims={view.claims}
-                conflicts={view.conflicts}
-                liveAgentCount={feeds.snap.snapshot?.fleet.agents.live.length ?? 0}
-                agents={view.roster.map((entry) => entry.agent)}
-                canMessagePeer={capabilities.message_send}
-                onMessagePeer={overlays.messagePeer}
-                connected={view.connected}
-                federation={feeds.federation}
-                metrics={feeds.metrics}
-                sessions={feeds.sessions}
-                receipts={feeds.receipts}
-                operatorActions={feeds.operatorActions}
-                onOpenEvent={(sequence) =>
-                  setPanelSelection("log", { kind: "event", seq: sequence })
-                }
-                traceRequest={overlays.traceRequest}
-                incidentStep={workspace.incidentStep}
-                onIncidentStepChange={setIncidentStep}
-                incidentStorageKey={`synapse-cockpit-incident-v1:${access.descriptor?.principal ?? "unavailable"}`}
-                replay={workspace.replay}
-                hubVersion={feeds.snap.snapshot?.hub_version ?? ""}
-                configEpoch={feeds.snap.snapshot?.config_epoch ?? ""}
-                onOpenIncidentEvidence={(selection) => {
-                  if (selection.kind === "task") {
-                    setPanelSelection("causality", selection);
-                  } else if (selection.kind === "event") {
-                    setPanelSelection("log", selection);
-                  } else {
-                    setPanelSelection("fleet", selection);
-                  }
-                }}
-              />
-            </PanelBoundary>
+          <div className="deck__stack deck__stack--rail">
+            <div className="seg seg--signals">
+              <PanelBoundary name="Risk rail">
+                <RiskRail
+                  risk={feeds.snap.snapshot?.risk ?? null}
+                  anomalies={view.anomalies}
+                  deadLetters={view.deadLetters}
+                  waits={feeds.waits}
+                  anomalyReport={feeds.anomalyReport}
+                  approvals={view.approvals}
+                  selection={workspace.selection}
+                />
+              </PanelBoundary>
+            </div>
+            <div className="seg seg--signals">
+              <PanelBoundary name="Findings">
+                <FindingsStream state={feeds.findings} />
+              </PanelBoundary>
+            </div>
           </div>
         </div>
-        <div className="seg seg--board">
-          <PanelBoundary name="Board">
-            <TaskBoard
-              tasks={view.lensedBoard}
-              connected={view.connected}
-              truncation={
-                replay.travelling ? undefined : boardTruncation(feeds.snap.snapshot)
-              }
-              onInspect={overlays.inspectTask}
-              lens={preferences.focus}
-              selection={workspace.selection}
-            />
-          </PanelBoundary>
-        </div>
-        <div className="deck__stack deck__stack--rail">
-          <div className="seg seg--signals">
-            <PanelBoundary name="Risk rail">
-              <RiskRail
-                risk={feeds.snap.snapshot?.risk ?? null}
-                anomalies={view.anomalies}
-                deadLetters={view.deadLetters}
-                waits={feeds.waits}
-                anomalyReport={feeds.anomalyReport}
-                approvals={view.approvals}
-                selection={workspace.selection}
-              />
-            </PanelBoundary>
-          </div>
-          <div className="seg seg--signals">
-            <PanelBoundary name="Findings">
-              <FindingsStream state={feeds.findings} />
-            </PanelBoundary>
-          </div>
-        </div>
+        <InstallChip />
+        <Palette
+          open={overlays.paletteOpen}
+          commands={overlays.commands}
+          compose={overlays.paletteCompose}
+          onClose={overlays.closePalette}
+          onRun={overlays.runCommand}
+        />
+        <GuideDrawer
+          open={overlays.guideOpen}
+          activePanel={workspace.panel}
+          onClose={overlays.closeGuide}
+          onOpenSetup={overlays.openSetup}
+        />
+        <SetupAssistant
+          open={overlays.setupOpen}
+          onClose={overlays.closeSetup}
+          evidence={{
+            access: access.phase,
+            snapshot: feeds.snap.status,
+            transport: feeds.transport.status,
+            optionalFeeds: [
+              feeds.reliability.status,
+              feeds.federation.status,
+              feeds.metrics.status,
+              feeds.sessions.status,
+              feeds.waits.status,
+              feeds.anomalyReport.status,
+              feeds.receipts.status,
+              feeds.operatorActions.status,
+            ],
+            served: served.data,
+            loopbackOrigin: isLoopbackHostname(location.hostname),
+          }}
+        />
+        <ToastStack
+          toasts={toastController.toasts}
+          onDismiss={toastController.dismiss}
+        />
+        <DetailDrawer
+          agent={
+            overlays.inspected?.kind === "agent" &&
+            workspace.selection?.kind === "agent" &&
+            workspace.selection.id === overlays.inspected.id
+              ? agentDetail(
+                overlays.inspected.id,
+                view.roster,
+                view.claims,
+                view.deadLetters,
+                feeds.log,
+              )
+              : undefined
+          }
+          task={
+            overlays.inspected?.kind === "task" &&
+            workspace.selection?.kind === "task" &&
+            workspace.selection.id === overlays.inspected.id
+              ? taskDetail(
+                overlays.inspected.id,
+                view.board,
+                view.claims,
+                feeds.log,
+              )
+              : undefined
+          }
+          onClose={overlays.closeInspection}
+          onFilterLog={(text) => {
+            preferences.setLogQuery({
+              text,
+              kinds: null,
+              order: "newest",
+              view: "flat",
+            });
+            overlays.closeInspection();
+          }}
+          onTrace={(taskId) => {
+            overlays.requestTrace(taskId);
+            overlays.closeInspection();
+          }}
+        />
       </div>
-      <InstallChip />
-      <Palette
-        open={overlays.paletteOpen}
-        commands={overlays.commands}
-        compose={overlays.paletteCompose}
-        onClose={overlays.closePalette}
-        onRun={overlays.runCommand}
-      />
-      <GuideDrawer
-        open={overlays.guideOpen}
-        activePanel={workspace.panel}
-        onClose={overlays.closeGuide}
-        onOpenSetup={overlays.openSetup}
-      />
-      <SetupAssistant
-        open={overlays.setupOpen}
-        onClose={overlays.closeSetup}
-        evidence={{
-          access: access.phase,
-          snapshot: feeds.snap.status,
-          transport: feeds.transport.status,
-          optionalFeeds: [
-            feeds.reliability.status,
-            feeds.federation.status,
-            feeds.metrics.status,
-            feeds.sessions.status,
-            feeds.waits.status,
-            feeds.anomalyReport.status,
-            feeds.receipts.status,
-            feeds.operatorActions.status,
-          ],
-          served: served.data,
-          loopbackOrigin: isLoopbackHostname(location.hostname),
-        }}
-      />
-      <ToastStack
-        toasts={toastController.toasts}
-        onDismiss={toastController.dismiss}
-      />
-      <DetailDrawer
-        agent={
-          overlays.inspected?.kind === "agent" &&
-          workspace.selection?.kind === "agent" &&
-          workspace.selection.id === overlays.inspected.id
-            ? agentDetail(
-              overlays.inspected.id,
-              view.roster,
-              view.claims,
-              view.deadLetters,
-              feeds.log,
-            )
-            : undefined
-        }
-        task={
-          overlays.inspected?.kind === "task" &&
-          workspace.selection?.kind === "task" &&
-          workspace.selection.id === overlays.inspected.id
-            ? taskDetail(
-              overlays.inspected.id,
-              view.board,
-              view.claims,
-              feeds.log,
-            )
-            : undefined
-        }
-        onClose={overlays.closeInspection}
-        onFilterLog={(text) => {
-          preferences.setLogQuery({
-            text,
-            kinds: null,
-            order: "newest",
-            view: "flat",
-          });
-          overlays.closeInspection();
-        }}
-        onTrace={(taskId) => {
-          overlays.requestTrace(taskId);
-          overlays.closeInspection();
-        }}
-      />
-    </div>
+    </ScopeProvider>
   );
 }

@@ -233,6 +233,32 @@ export interface Headline {
   readonly presenceHolders: number;
 }
 
+/** One namespace present on the hub, with its task and agent counts. */
+export interface ScopeNamespace {
+  readonly namespace: string;
+  readonly tasks: number;
+  readonly agents: number;
+}
+
+/**
+ * The snapshot's `scope` block: the scope it was narrowed to, its counts beside
+ * the whole hub's, and every namespace present. A scope is a lens, not an
+ * access boundary.
+ */
+export interface ScopeSummary {
+  readonly scope: string;
+  readonly applied: boolean;
+  readonly tasksInScope: number;
+  readonly tasksTotal: number;
+  readonly tasksWithoutProject: number;
+  readonly agentsInScope: number;
+  readonly agentsTotal: number;
+  readonly agentsWithoutNamespace: number;
+  readonly claimsInScope: number;
+  readonly claimsTotal: number;
+  readonly namespaces: readonly ScopeNamespace[];
+}
+
 export interface FleetSnapshot {
   readonly online_agents: readonly string[];
   /** Roles each agent answers to, {} when the hub (or dashboard) predates them. */
@@ -250,4 +276,6 @@ export interface FleetSnapshot {
   readonly bounds: SnapshotBounds | null;
   /** The headline block; null when the dashboard served none. */
   readonly headline: Headline | null;
+  /** The scope block; null when the dashboard served none or it is malformed. */
+  readonly scope: ScopeSummary | null;
 }

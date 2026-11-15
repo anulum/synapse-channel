@@ -15,6 +15,7 @@ import {
   type ReceiptRow,
 } from "./auditFeedParser";
 import type { EndpointFeed, FeedState } from "./feed";
+import { appendQuery } from "./scope";
 
 /** Receipt polling state; an error may retain last-good rows. */
 export type ReceiptsState = FeedState<readonly ReceiptRow[]>;
@@ -87,7 +88,7 @@ function createCursorFeed<T extends { readonly seq: number }>(
   const poll = async (): Promise<void> => {
     controller = new AbortController();
     try {
-      const response = await fetcher(`${options.url}?since=${cursor}&limit=${pageLimit}`, {
+      const response = await fetcher(appendQuery(options.url, `since=${cursor}&limit=${pageLimit}`), {
         signal: controller.signal,
       });
       if (response.status === 404) {

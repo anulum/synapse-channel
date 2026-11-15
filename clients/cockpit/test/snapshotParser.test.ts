@@ -8,7 +8,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { parseBounds, parseHeadline, parseSnapshot } from "../src/lib/snapshotParser";
+import {
+  parseBounds,
+  parseHeadline,
+  parseScopeSummary,
+  parseSnapshot,
+} from "../src/lib/snapshotParser";
 
 describe("parseSnapshot", () => {
   it("rejects non-object payloads", () => {
@@ -264,5 +269,58 @@ describe("fleet seats", () => {
       },
     ]);
     expect(parseSnapshot({})?.fleet.seats).toEqual([]);
+  });
+});
+
+const SCOPE_WIRE = {
+  scope: "project:ALPHA",
+  applied: true,
+  tasks_in_scope: 2,
+  tasks_total: 7,
+  tasks_without_project: 2,
+  agents_in_scope: 1,
+  agents_total: 4,
+  agents_without_namespace: 1,
+  claims_in_scope: 1,
+  claims_total: 3,
+  namespaces: [
+    { namespace: "ALPHA", tasks: 2, agents: 1 },
+    { namespace: "BETA", tasks: 3, agents: 2 },
+  ],
+};
+
+describe("parseScopeSummary", () => {
+  it("reads the scope, its counts beside the hub's, and every namespace", () => {
+    expect(parseScopeSummary(SCOPE_WIRE)).toEqual({
+      scope: "project:ALPHA",
+      applied: true,
+      tasksInScope: 2,
+      tasksTotal: 7,
+      tasksWithoutProject: 2,
+      agentsInScope: 1,
+      agentsTotal: 4,
+      agentsWithoutNamespace: 1,
+      claimsInScope: 1,
+      claimsTotal: 3,
+      namespaces: [
+        { namespace: "ALPHA", tasks: 2, agents: 1 },
+        { namespace: "BETA", tasks: 3, agents: 2 },
+      ],
+    });
+    expect(parseSnapshot({ scope: SCOPE_WIRE })?.scope?.namespaces).toHaveLength(2);
+    expect(parseSnapshot({})?.scope).toBeNull();
+  });
+
+  it.each([
+    ["not an object", []],
+    ["no scope", { ...SCOPE_WIRE, scope: 1 }],
+    ["no applied", { ...SCOPE_WIRE, applied: "yes" }],
+    ["no namespaces", { ...SCOPE_WIRE, namespaces: {} }],
+    ["a bad count", { ...SCOPE_WIRE, tasks_total: -1 }],
+    ["a namespace that is no object", { ...SCOPE_WIRE, namespaces: [null] }],
+    ["an empty namespace", { ...SCOPE_WIRE, namespaces: [{ namespace: "", tasks: 1, agents: 0 }] }],
+    ["a namespace with a bad count", { ...SCOPE_WIRE, namespaces: [{ namespace: "A", tasks: 1.5, agents: 0 }] }],
+  ])("refuses a block with %s", (_label, value) => {
+    expect(parseScopeSummary(value)).toBeNull();
   });
 });

@@ -16,6 +16,8 @@ import type {
   Headline,
   RiskSignal,
   RiskView,
+  ScopeNamespace,
+  ScopeSummary,
   SeatRow,
   SeatState,
   SnapshotBounds,
@@ -285,6 +287,53 @@ export function parseHeadline(value: unknown): Headline | null {
   return counts as Headline;
 }
 
+const SCOPE_COUNTS = [
+  ["tasks_in_scope", "tasksInScope"],
+  ["tasks_total", "tasksTotal"],
+  ["tasks_without_project", "tasksWithoutProject"],
+  ["agents_in_scope", "agentsInScope"],
+  ["agents_total", "agentsTotal"],
+  ["agents_without_namespace", "agentsWithoutNamespace"],
+  ["claims_in_scope", "claimsInScope"],
+  ["claims_total", "claimsTotal"],
+] as const satisfies readonly (readonly [string, keyof ScopeSummary])[];
+
+function parseScopeNamespace(value: unknown): ScopeNamespace | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const tasks = wholeCount(row["tasks"]);
+  const agents = wholeCount(row["agents"]);
+  const namespace = row["namespace"];
+  if (typeof namespace !== "string" || namespace === "" || tasks === null || agents === null) {
+    return null;
+  }
+  return { namespace, tasks, agents };
+}
+
+/** Read the snapshot's `scope` block; null when absent or any field is malformed. */
+export function parseScopeSummary(value: unknown): ScopeSummary | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const block = value as Record<string, unknown>;
+  const scope = block["scope"];
+  const applied = block["applied"];
+  if (typeof scope !== "string" || typeof applied !== "boolean" || !Array.isArray(block["namespaces"])) {
+    return null;
+  }
+  const counts: Partial<Record<keyof ScopeSummary, number>> = {};
+  for (const [wire, field] of SCOPE_COUNTS) {
+    const count = wholeCount(block[wire]);
+    if (count === null) return null;
+    counts[field] = count;
+  }
+  const namespaces: ScopeNamespace[] = [];
+  for (const entry of block["namespaces"] as unknown[]) {
+    const parsed = parseScopeNamespace(entry);
+    if (parsed === null) return null;
+    namespaces.push(parsed);
+  }
+  return { ...(counts as Omit<ScopeSummary, "scope" | "applied" | "namespaces">), scope, applied, namespaces };
+}
+
 /**
  * Shape an untrusted `/snapshot.json` payload into a {@link FleetSnapshot}.
  * Returns `null` only when the payload is not an object at all; any partial
@@ -305,5 +354,6 @@ export function parseSnapshot(raw: unknown): FleetSnapshot | null {
     risk: parseRisk(payload["risk"]),
     bounds: parseBounds(payload["bounds"]),
     headline: parseHeadline(payload["headline"]),
+    scope: parseScopeSummary(payload["scope"]),
   };
 }

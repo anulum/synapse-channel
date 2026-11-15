@@ -27,6 +27,7 @@ import type { FindingsState } from "../lib/findings";
 import type { HealthAnomaliesState } from "../lib/healthAnomalies";
 import type { MetricsState } from "../lib/metrics";
 import {
+  LIVE_TRANSPORT_URL,
   createLiveTransport,
   type LiveChannelFrame,
   type LiveConnectionState,
@@ -45,6 +46,7 @@ import {
   projectSnapshotFrame,
 } from "../lib/cockpitLiveFrames";
 import type { ReliabilityState } from "../lib/reliability";
+import { WHOLE_HUB, parseScope, scopeText, withScope, type CockpitScope } from "../lib/scope";
 import type { SessionsState } from "../lib/sessions";
 import {
   createSnapshotStore,
@@ -121,8 +123,13 @@ export interface CockpitFeeds {
  * a fresh generation, preventing a late response from the rejected credential
  * from repopulating the presentation.
  */
-export function useCockpitFeeds(blocked: boolean, credentialRevision: number): CockpitFeeds {
-  const auxiliary = useCockpitAuxiliaryFeeds(blocked, credentialRevision);
+export function useCockpitFeeds(
+  blocked: boolean,
+  credentialRevision: number,
+  scope: CockpitScope = WHOLE_HUB,
+): CockpitFeeds {
+  const scopeKey = scopeText(scope);
+  const auxiliary = useCockpitAuxiliaryFeeds(blocked, credentialRevision, scope);
   const [snap, setSnap] = useState<SnapshotState>(INITIAL_SNAPSHOT);
   const [kpis, setKpis] = useState<readonly Kpi[]>([]);
   const [log, setLog] = useState<readonly CockpitEvent[]>([]);
@@ -143,15 +150,16 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
   useEffect(() => {
     setAttention(INITIAL_ATTENTION);
     if (blocked) return;
-    const store = createAttentionStore();
+    const store = createAttentionStore({ url: withScope("/attention.json", parseScope(scopeKey)) });
     const unsubscribe = store.subscribe(setAttention);
     return () => {
       unsubscribe();
       store.stop();
     };
-  }, [blocked, credentialRevision]);
+  }, [blocked, credentialRevision, scopeKey]);
 
   useEffect(() => {
+    const requestScope = parseScope(scopeKey);
     setSnap(INITIAL_SNAPSHOT);
     setKpis([]);
     setLog([]);
@@ -218,9 +226,9 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     let stopPollingFallback: (() => void) | undefined;
     const startPollingFallback = (): void => {
       if (!effectActive || stopPollingFallback !== undefined) return;
-      const snapshotStore = createSnapshotStore();
+      const snapshotStore = createSnapshotStore({ url: withScope("/snapshot.json", requestScope) });
       const fallbackDerived = createSnapshotEventSource(snapshotStore);
-      const tail = createEventsTailSource();
+      const tail = createEventsTailSource({ url: withScope("/events.json", requestScope) });
       const unsubscribeSnapshots = snapshotStore.subscribe(setSnap);
       const unsubscribeFallbackDerived = fallbackDerived.subscribe((event) => {
         if (active === "derived") push(event);
@@ -236,7 +244,7 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
       const startFallbackAudits = (): void => {
         if (receiptsStore !== undefined) return;
         if (fallbackAuditTimer !== undefined) clearTimeout(fallbackAuditTimer);
-        receiptsStore = createReceiptsStore();
+        receiptsStore = createReceiptsStore({ url: withScope("/receipts.json", requestScope) });
         operatorActionsStore = createOperatorActionsStore();
         unsubscribeReceipts = receiptsStore.subscribe(setReceipts);
         unsubscribeOperatorActions = operatorActionsStore.subscribe(setOperatorActions);
@@ -322,7 +330,7 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
       setOperatorActions((current) => projectOperatorActionsFrame(current, frame));
     };
 
-    const transport = createLiveTransport();
+    const transport = createLiveTransport({ url: withScope(LIVE_TRANSPORT_URL, requestScope) });
     const unsubscribeFrames = transport.subscribeFrames((frame) => {
       confirmLiveTransport();
       if (frame.channel === "snapshot") applySnapshotFrame(frame);
@@ -367,7 +375,7 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
       derived.stop();
       streamSnapshotStore.stop();
     };
-  }, [auxiliary.start, blocked, credentialRevision]);
+  }, [auxiliary.start, blocked, credentialRevision, scopeKey]);
 
   useEffect(() => {
     const next = headlineMetricsOf(snap, log, nowMs);

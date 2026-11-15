@@ -12,6 +12,7 @@ import { memo } from "react";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
 import type { FederationState } from "../lib/federation";
 import { layoutFederation, layoutTopology, ROW_PITCH } from "../lib/topology";
+import { ScopeTag } from "./ScopeTag";
 
 /** Horizontal positions of the two columns in the SVG's 640-unit width. */
 const AGENT_X = 200;
@@ -50,6 +51,7 @@ function TopologyViewComponent({
     <section className="panel" aria-label="Fleet topology">
       <div className="panel__head">
         <span>Topology</span>
+        <ScopeTag replayed />
         <span className="panel__count">{layout.claims.length}</span>
         <span className="panel__sub">
           {layout.idleAgents > 0

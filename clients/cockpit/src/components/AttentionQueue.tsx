@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 
 import { mergeStoredAttention, type AttentionAction, type AttentionItem, type AttentionLevel } from "../lib/attention";
 import type { AttentionFeedState } from "../lib/attentionFeed";
+import { ScopeTag } from "./ScopeTag";
 
 type AttentionFilter = "all" | AttentionLevel;
 
@@ -75,6 +76,7 @@ export function AttentionQueue({
       <div className="panel__head attention__head">
         <span>Attention queue</span>
         <span className="panel__sub">explicit evidence · deterministic order</span>
+        <ScopeTag />
       </div>
       <div className="attention__toolbar" role="group" aria-label="Filter attention queue">
         {(["all", "critical", "warning", "info"] as const).map((candidate) => {

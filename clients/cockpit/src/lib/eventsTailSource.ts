@@ -10,6 +10,7 @@ import type { CockpitEvent } from "../types";
 import { authenticatedFetch } from "./auth";
 import { mapStoredEvent } from "./eventProjection";
 import { parseTail, type ParsedEventsTail, type StoredEvent } from "./eventTailParser";
+import { appendQuery } from "./scope";
 
 /** Where the spine's events come from right now. */
 export type SpineProvenance = "connecting" | "hub" | "absent" | "error";
@@ -94,7 +95,8 @@ export function createEventsTailSource(options: EventsTailOptions = {}): EventsT
   ): Promise<FetchedPage> => {
     controller = new AbortController();
     const historyQuery = includeHistory ? "&history=1" : "";
-    const response = await fetcher(`${url}?since=${since}&limit=${pageLimit}${historyQuery}`, {
+    const query = `since=${since}&limit=${pageLimit}${historyQuery}`;
+    const response = await fetcher(appendQuery(url, query), {
       signal: controller.signal,
     });
     if (response.status === 404) return "absent";

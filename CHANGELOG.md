@@ -75,7 +75,14 @@ start to finish and makes the cockpit the dashboard's front door.
   task it names. A wait belongs by its task only. The scope filters the page the cursor read, and
   a `scope` block counts the rows in the page and in the scope. Every other feed answers a scoped
   request with its unscoped body and says the scope was not applied. A malformed scope is refused
-  with 400 before the feed is built.
+  with 400 before the feed is built. The live stream's events and receipts channels take the
+  stream's scope the same way, and its operator-actions channel says it was not scoped.
+- The cockpit has a scope selector in its header: the whole hub, the work without a project, or one
+  namespace, each with the hub's task and agent counts. The choice is kept in the address
+  (`?scope=`), so a reload, a copied address and Back and Forward restore it, and it is sent on the
+  snapshot, the live stream and the five scoped feeds. While a scope is active, each panel's header
+  names it. A panel that shows the whole hub says so: one whose feed the scope does not narrow, and
+  the claims, board and topology while time travel shows a past state rebuilt from the log.
 - The wheel carries the cockpit's production build, without source maps (about
   1.3 MB), in `synapse_channel/dashboard_assets/cockpit/`, with
   `THIRD_PARTY_NOTICES.md`: every npm package whose code the build carries, with

@@ -541,6 +541,9 @@ block with `applied: true`, `rows_in_page` and `rows_in_scope`; a feed's own
 row count (`receipt_count`, `wait_count`) follows its scoped rows. Every other
 feed answers a scoped request with its unscoped body and `scope.applied: false`.
 A malformed `scope` is refused with 400 on every feed, before the feed is built.
+The live stream's feed channels take the stream's `scope` the same way:
+`/live.ndjson?scope=project:<namespace>` carries the scoped events and receipts,
+and an operator-actions channel that says it was not scoped.
 
 Every snapshot also carries a `headline` block: the dashboard's counters
 (`agents_live`, `claims_active`, `tasks_blocked` with its parts

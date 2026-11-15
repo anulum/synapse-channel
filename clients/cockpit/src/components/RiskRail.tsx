@@ -19,6 +19,7 @@ import { identityMatchesSelection, subjectMatchesSelection } from "../lib/select
 import { Ident } from "./Ident";
 import type { CockpitSelection } from "../lib/workspace";
 import type { RiskView } from "../types";
+import { ScopeTag } from "./ScopeTag";
 
 function deadLetterTime(ts: number | null): string {
   if (ts === null) return "—";
@@ -82,6 +83,7 @@ function RiskRailView({
     <section className="panel" aria-label="Risk rail">
       <div className="panel__head">
         <span>Risk rail</span>
+        <ScopeTag />
         {risk !== null && (
           <span className={`risk-verdict risk-verdict--${risk.level}`}>
             {LEVEL_GLYPH[risk.level]} {risk.level}

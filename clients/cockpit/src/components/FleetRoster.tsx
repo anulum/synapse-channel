@@ -16,6 +16,7 @@ import type { RosterEntry, RowStatus } from "../lib/roster";
 import type { SeatState } from "../types";
 import { identityMatchesSelection } from "../lib/selection";
 import type { CockpitSelection } from "../lib/workspace";
+import { ScopeTag } from "./ScopeTag";
 
 /** Glyph per status — redundant with colour and row order, never colour alone. */
 const STATUS_GLYPH: Record<RowStatus, string> = {
@@ -160,6 +161,7 @@ function FleetRosterView({
     <section className="panel" aria-label="Fleet roster">
       <div className="panel__head">
         <span>Fleet roster</span>
+        <ScopeTag />
         <span className="panel__count">{live}</span>
         {waiters > 0 && <span className="panel__sub">{`${waiters} waiting`}</span>}
         {presenceHolders > 0 && (

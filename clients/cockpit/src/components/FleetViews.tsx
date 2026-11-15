@@ -50,6 +50,7 @@ import {
   FleetProjectDetail,
 } from "./FleetConversationDetail";
 import { ProjectFlowView, TimelineView } from "./FleetVisualModes";
+import { ScopeTag } from "./ScopeTag";
 
 interface FleetViewsProps {
   readonly view: FleetView;
@@ -177,6 +178,7 @@ function FleetViewsComponent({
           <span className={failed > 0 ? "fleet-views__alert" : ""}>
             {t("fleet.summary.troubledLinks", { count: failed })}
           </span>
+          <ScopeTag />
         </div>
       </div>
       <div className="fleet-filters" aria-label={t("fleet.filters.aria")}>

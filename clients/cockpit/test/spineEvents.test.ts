@@ -36,6 +36,7 @@ function snapshotOf(overrides: SnapshotOverrides = {}): FleetSnapshot {
   return {
     bounds: overrides.bounds ?? null,
     headline: null,
+    scope: null,
     hub_version: "",
     config_epoch: "",
     online_agents: [...(overrides.live ?? [])],

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 from synapse_channel.dashboard_live_transport import (
     LIVE_TRANSPORT_CHANNELS as LIVE_TRANSPORT_CHANNELS,
@@ -107,6 +108,33 @@ class LiveStreamBindings:
     refuse: ResponseWriter
 
 
+def _frame_sender(ports: LiveStreamBindings, frames: LiveFrameSequence) -> FrameSender:
+    """Return the sender that encodes one frame of this stream, writes it and flushes it."""
+
+    def send(
+        kind: str,
+        *,
+        channel: str | None = None,
+        status: str | None = None,
+        data: object | None = None,
+        detail: str | None = None,
+    ) -> None:
+        """Write and flush one complete NDJSON frame."""
+        ports.write(
+            frames.encode(
+                kind,
+                sent_at=int(time.time() * 1000),
+                channel=channel,
+                status=status,
+                data=data,
+                detail=detail,
+            )
+        )
+        ports.flush()
+
+    return send
+
+
 def _send_snapshot(
     ports: LiveStreamBindings, send: FrameSender, previous: str | None, scope: DashboardScope
 ) -> str | None:
@@ -126,10 +154,21 @@ def _send_snapshot(
     return previous
 
 
-def _send_feeds(ports: LiveStreamBindings, send: FrameSender, cursors: LiveTransportCursor) -> None:
-    """Emit each original durable delta and advance only its successful cursor."""
+def _send_feeds(
+    ports: LiveStreamBindings,
+    send: FrameSender,
+    cursors: LiveTransportCursor,
+    scope: DashboardScope,
+) -> None:
+    """Emit each durable delta under ``scope`` and advance only its successful cursor.
+
+    The scope reaches each feed as it would on the feed's own route, so an
+    event-backed channel keeps the scope's rows and every other says it was not
+    scoped (:mod:`synapse_channel.dashboard_feed_scope`).
+    """
+    scoped = "" if scope.kind == "all" else "&" + urlencode({"scope": scope.text})
     for channel, path in ports.feed_specs():
-        response = ports.feed(path, cursors.query(channel))
+        response = ports.feed(path, cursors.query(channel) + scoped)
         if response is None:
             send("channel", channel=channel, status="absent", detail="feed unavailable")
             continue
@@ -146,7 +185,8 @@ def serve_dashboard_live(query: str, ports: LiveStreamBindings) -> None:
     ----------
     query
         Admitted query string: an optional diagnostic cycle limit and an optional
-        ``scope`` (:mod:`synapse_channel.dashboard_scope`) for the snapshot channel.
+        ``scope`` (:mod:`synapse_channel.dashboard_scope`) for the snapshot and
+        the event-backed feed channels.
     ports
         Existing response, snapshot and durable-feed owners for this request.
     """
@@ -157,29 +197,9 @@ def serve_dashboard_live(query: str, ports: LiveStreamBindings) -> None:
         ports.refuse(HTTPStatus.BAD_REQUEST, f"{exc}\n".encode(), content_type="text/plain")
         return
     ports.start()
-    frames, cursors = LiveFrameSequence(uuid.uuid4().hex), LiveTransportCursor()
+    send = _frame_sender(ports, LiveFrameSequence(uuid.uuid4().hex))
+    cursors = LiveTransportCursor()
     previous: str | None = None
-
-    def send(
-        kind: str,
-        *,
-        channel: str | None = None,
-        status: str | None = None,
-        data: object | None = None,
-        detail: str | None = None,
-    ) -> None:
-        ports.write(
-            frames.encode(
-                kind,
-                sent_at=int(time.time() * 1000),
-                channel=channel,
-                status=status,
-                data=data,
-                detail=detail,
-            )
-        )
-        ports.flush()
-
     try:
         send(
             "hello",
@@ -190,7 +210,7 @@ def serve_dashboard_live(query: str, ports: LiveStreamBindings) -> None:
         while cycle_limit is None or cycles < cycle_limit:
             cycles += 1
             previous = _send_snapshot(ports, send, previous, scope)
-            _send_feeds(ports, send, cursors)
+            _send_feeds(ports, send, cursors, scope)
             if cycle_limit is None or cycles < cycle_limit:
                 time.sleep(2.0)
         send("close", status="complete", detail="bounded diagnostic stream complete")

@@ -10,6 +10,7 @@ import { useCockpitI18n } from "../context/CockpitI18n";
 import { authenticatedFetch } from "../lib/auth";
 import type { MessageKey } from "../lib/i18n";
 import { parseHostObservation, type HostObservation } from "../lib/hostSessions";
+import { ScopeTag } from "./ScopeTag";
 import "./HostSessions.css";
 
 type Status = "loading" | "live" | "unsupported" | "locked" | "incompatible" | "unavailable" | "stale";
@@ -138,6 +139,7 @@ export function HostSessions({ revision }: { readonly revision: number }): JSX.E
     [row.identity, row.project, row.pid, row.command_name, row.pane].join(" ").toLowerCase().includes(query.toLowerCase())) ?? [];
   return <section className="host-sessions panel" aria-label={t("host.title")}>
     <h2>{t("host.title")}</h2>
+    <ScopeTag scoped={false} />
     <p role="status">{t(messages[visible.status])}</p>
     {observation !== null && <>
       <p>{t("host.observed", { time: new Date(observation.observed_at * 1000).toLocaleTimeString(locale), status: observation.process_status })}

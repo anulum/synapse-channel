@@ -22,6 +22,7 @@ import {
   toggleBucket,
   type BoardQuery,
 } from "../lib/boardFilter";
+import { ScopeTag } from "./ScopeTag";
 
 /** Bucket chips in triage order. */
 const BUCKET_ORDER: readonly BoardBucket[] = ["blocked", "ready", "open", "done"];
@@ -149,6 +150,7 @@ function TaskBoardView({
     <section className="panel" aria-label="Task board">
       <div className="panel__head">
         <span>Board</span>
+        <ScopeTag replayed />
         <span
           className="panel__count"
           title={capped ? "The hub capped this reply; the full board is larger." : undefined}

@@ -42,6 +42,8 @@ interface HudProps {
   readonly density?: "cozy" | "compact";
   /** Density toggle; the control renders only when provided. */
   readonly onToggleDensity?: (() => void) | undefined;
+  /** The scope selector, supplied by the shell. */
+  readonly scopeControl?: ReactNode;
   /** Server-authored role orientation, supplied by the shell. */
   readonly accessControl?: ReactNode;
   readonly commandTriggerRef?: Ref<HTMLButtonElement>;
@@ -79,7 +81,7 @@ function transportKey(status: LiveConnectionStatus): MessageKey {
   return `hud.transport.${status}`;
 }
 
-export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, theme = "dark", onToggleTheme, focus = "", onFocusChange, rosterNames = [], density = "cozy", onToggleDensity, accessControl, commandTriggerRef, onOpenPalette, guideTriggerRef, onOpenGuide, setupTriggerRef, onOpenSetup }: HudProps): JSX.Element {
+export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, theme = "dark", onToggleTheme, focus = "", onFocusChange, rosterNames = [], density = "cozy", onToggleDensity, scopeControl, accessControl, commandTriggerRef, onOpenPalette, guideTriggerRef, onOpenGuide, setupTriggerRef, onOpenSetup }: HudProps): JSX.Element {
   const { locale, setLocale, t } = useCockpitI18n();
   const translatedKpi = (label: string): string => {
     const key = KPI_KEYS[label];
@@ -172,6 +174,7 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
             <option value="fr">FR</option>
           </select>
         </label>
+        {scopeControl}
         {onFocusChange !== undefined && (
           <span className={`hud__focus${focus !== "" ? " hud__focus--on" : ""}`}>
             <input

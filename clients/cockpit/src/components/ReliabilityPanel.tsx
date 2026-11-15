@@ -10,6 +10,7 @@ import type { JSX } from "react";
 import { memo } from "react";
 
 import { orderOwners, type ReliabilityFinding, type ReliabilityState } from "../lib/reliability";
+import { ScopeTag } from "./ScopeTag";
 
 /** Glyph per finding kind — redundant with colour, never colour alone. */
 const KIND_GLYPH: Record<string, string> = {
@@ -81,6 +82,7 @@ function ReliabilityPanelView({ state }: ReliabilityPanelProps): JSX.Element {
     <section className="panel" aria-label="Reliability evidence">
       <div className="panel__head">
         <span>Reliability</span>
+        <ScopeTag scoped={false} />
         {report !== null && <span className="panel__count">{findings.length}</span>}
         <span className="panel__sub">{report?.note !== "" && report !== null ? report.note : "evidence"}</span>
       </div>

@@ -181,3 +181,46 @@ def test_a_client_that_left_ends_the_stream_quietly_on_every_platform() -> None:
 
     # The greeting went out; a later frame met the closed connection and ended the stream.
     assert 1 <= len(written) < 4
+
+
+def test_feed_channels_carry_the_streams_scope_encoded_and_the_whole_hub_none(
+    tmp_path: Path,
+) -> None:
+    """Each feed is asked under the stream's scope, encoded; each frame is flushed at once."""
+    snapshot = DashboardSnapshot(online_agents=[], state={}, board={}, manifest=[])
+    asked: list[str] = []
+    flushes: list[int] = []
+
+    def feed(_path: str, query: str) -> None:
+        """Record the query a feed channel is read with and report the feed absent."""
+        asked.append(query)
+
+    def refuse(status: HTTPStatus, body: bytes, *, content_type: str) -> None:
+        """Fail at once: both streams are admitted."""
+        raise AssertionError(status)
+
+    framed: list[int] = []
+    for query in ("cycles=1&scope=project%3AR%26D", "cycles=1"):
+        path = tmp_path / "stream.ndjson"
+        with path.open("wb") as output:
+            serve_dashboard_live(
+                query,
+                LiveStreamBindings(
+                    fetch=lambda: snapshot,
+                    unavailable_error=DashboardUnavailable,
+                    feed=feed,
+                    feed_specs=lambda: (("events", "/events.json"),),
+                    a2a_state_file=None,
+                    start=lambda: None,
+                    write=output.write,
+                    flush=lambda: flushes.append(1),
+                    refuse=refuse,
+                ),
+            )
+        framed.append(len(path.read_text().splitlines()))
+
+    assert asked == [
+        "since=latest&limit=250&history=1&scope=project%3AR%26D",
+        "since=latest&limit=250&history=1",
+    ]
+    assert len(flushes) == sum(framed) == 8

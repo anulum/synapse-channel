@@ -273,6 +273,8 @@ The top strip answers whether the page is current before it shows detail:
 - headline fleet counters with deltas;
 - the current browser role and capability posture;
 - an identity focus lens that narrows claims and tasks;
+- a scope selector that narrows the cockpit to one project (see
+  [Narrow the cockpit to one project](#narrow-the-cockpit-to-one-project));
 - compact/cozy density and dark/light theme controls;
 - the command palette, contextual guide, local setup assistant, and
   interface-language controls.
@@ -474,6 +476,38 @@ reloading it, or using browser Back and Forward restores that selection. The
 focus lens and time-window chips remain distinct filters, so clearing a shared
 selection does not silently discard either filter.
 
+## Narrow the cockpit to one project
+
+The **scope** selector in the HUD narrows the cockpit to one project's part of
+the fleet. It offers the whole hub, the work and names without a project
+(**no project**), and each namespace the snapshot reports. Each choice shows
+the hub's task and agent counts for it, closed tasks included, so a choice
+never reads as a bare zero. Choosing a scope writes `scope=project:<namespace>`
+or `scope=none` to the address; the whole hub leaves no `scope` field. Reloading
+the page, copying the address, and browser Back and Forward restore the scope.
+
+While a scope is active, the selector is marked, and the cockpit asks the
+dashboard for the scope on the snapshot, the live stream and the five feeds
+that take it: events, receipts, findings, waits and attention. Each panel's
+header then states what the panel shows:
+
+- `scope: project:<namespace>` on a panel whose data the scope narrows: the
+  signal log, claims, findings, topology, fleet roster, task board, risk rail,
+  attention queue and fleet views;
+- `scope: whole hub` on a panel whose feed the scope does not narrow:
+  reliability, metrics, causality and host sessions;
+- `scope: whole hub` on claims, task board and topology while time travel shows
+  a past state, because the reconstruction is not narrowed; the replay
+  workbench says the same;
+- the audit panel narrows its receipts and keeps operator actions whole, and
+  its tag's title says so.
+
+A scope is not the shared selection's `project` field. A selection highlights
+one project's records among all of them; a scope asks the dashboard for that
+project's records only. A scope is a lens, not an access boundary: it grants
+nothing and hides nothing the hub sends this principal. The rules that place
+each record in a scope are in the [CLI reference](cli.md).
+
 ## Inspect fleet communication
 
 Open the **fleet** inspector tab and choose one of five views:
@@ -589,7 +623,9 @@ state.
   boundary: it grants nothing and hides nothing the hub sends this principal.
   Its rules and its `scope` block are in the [CLI reference](cli.md). The
   event, receipt, finding, wait and attention feeds take the same scope and
-  keep its rows; every other feed says that it was not scoped.
+  keep its rows; every other feed says that it was not scoped. The HUD's
+  scope selector sets it for the whole cockpit (see
+  [Narrow the cockpit to one project](#narrow-the-cockpit-to-one-project)).
 
 The risk rail separates server-provided risk, dead letters, local fleet-health
 counts, waits, pending approvals, and client-side repetition heuristics. The

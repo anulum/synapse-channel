@@ -87,6 +87,26 @@ describe("createEventsTailSource", () => {
     source.stop();
   });
 
+  it("keeps a scoped address's own query and adds the cursor after it", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ events: [], next_cursor: 0, history_included: true })));
+    const source = createEventsTailSource({
+      url: "/events.json?scope=project%3AALPHA",
+      fetcher,
+      pollMs: 1000,
+      historyLimit: 3,
+    });
+    source.subscribe(() => undefined);
+
+    await vi.advanceTimersByTimeAsync(10);
+    source.stop();
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      "/events.json?scope=project%3AALPHA&since=latest&limit=3&history=1",
+    );
+  });
+
   it("suppresses one-response history when a mode listener stops the source", async () => {
     vi.useFakeTimers();
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(

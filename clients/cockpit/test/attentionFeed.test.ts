@@ -90,4 +90,17 @@ describe("parseAttentionReport", () => {
     unsubscribe();
     feed.stop();
   });
+
+  it("polls the dashboard's own attention route when no address is given", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      version: 1, state: "quiet", remaining: 0, snoozed_count: 0, alerts: [],
+    })));
+    const feed = createAttentionStore({ fetcher });
+    const states: string[] = [];
+    const unsubscribe = feed.subscribe((state) => states.push(state.status));
+    await vi.waitFor(() => expect(states.at(-1)).toBe("live"));
+    expect(fetcher.mock.calls[0]?.[0]).toBe("/attention.json");
+    unsubscribe();
+    feed.stop();
+  });
 });

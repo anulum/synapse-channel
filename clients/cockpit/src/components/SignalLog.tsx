@@ -18,6 +18,7 @@ import type { CockpitSelection } from "../lib/workspace";
 import { useSignalLogWorkspace } from "../hooks/useSignalLogWorkspace";
 import type { CockpitEvent } from "../types";
 import { SignalLogRows } from "./SignalLogRows";
+import { ScopeTag } from "./ScopeTag";
 
 function rateLabel(rate: number | null): string {
   return rate === null ? "—" : `${rate.toFixed(1)}/min`;
@@ -128,6 +129,7 @@ function SignalLogView({
     <section className="panel" aria-label="Signal log">
       <div className="panel__head">
         <span>Signal log</span>
+        <ScopeTag />
         <span className="panel__count">{shown.length}</span>
         {postMortem !== null ? (
           <span className="panel__sub">

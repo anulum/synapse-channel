@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from dashboard_feed_scope_store import seed_scoped_store
 from dashboard_helpers import _authorized_get, _feeds_server
 
@@ -62,3 +64,25 @@ def test_an_absent_feed_stays_absent_under_a_scope() -> None:
 
     assert status == 404
     assert "--attention-store" in body
+
+
+def test_the_live_streams_feed_channels_take_its_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    db = tmp_path / "hub.db"
+    seed_scoped_store(db)
+
+    ((status, stream),) = _get_all(db, "/live.ndjson?cycles=1&scope=project%3AALPHA")
+    frames = {
+        frame.get("channel"): frame
+        for frame in (json.loads(line) for line in stream.splitlines())
+        if frame.get("kind") == "channel"
+    }
+
+    assert status == 200
+    events = frames["events"]["data"]
+    assert [event["seq"] for event in events["events"]] == [1, 2, 8]
+    assert events["scope"]["applied"] is True
+    unscoped = frames["operator_actions"]["data"]["scope"]
+    assert unscoped == {"scope": "project:ALPHA", "applied": False}

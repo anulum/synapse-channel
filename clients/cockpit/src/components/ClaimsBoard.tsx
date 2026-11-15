@@ -11,6 +11,7 @@ import { formatCountdown, type BranchConflictView, type ClaimView } from "../lib
 import { claimMatchesSelection } from "../lib/selection";
 import { Ident } from "./Ident";
 import type { CockpitSelection } from "../lib/workspace";
+import { ScopeTag } from "./ScopeTag";
 
 /** Glyph per urgency — redundant with colour and order, never colour alone. */
 const URGENCY_GLYPH: Record<ClaimView["urgency"], string> = {
@@ -122,6 +123,7 @@ export function ClaimsBoard({
     <section className="panel" aria-label="File-scope claims">
       <div className="panel__head">
         <span>Claims</span>
+        <ScopeTag replayed />
         <span className="panel__count">{claims.length}</span>
         {lens !== "" && <span className="panel__sub panel__sub--warn">{`lens: ${lens}`}</span>}
         {staleCount > 0 && <span className="panel__sub panel__sub--warn">{staleCount} stale</span>}

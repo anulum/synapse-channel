@@ -16,6 +16,7 @@ import type {
 import { auditEvidenceAt } from "../lib/auditEvidence";
 import type { CockpitSelection } from "../lib/workspace";
 import { AuditEvidenceDrawer } from "./AuditEvidenceDrawer";
+import { ScopeTag } from "./ScopeTag";
 
 const ROWS_SHOWN = 40;
 
@@ -151,6 +152,7 @@ export function AuditView({
       <h2 className="visually-hidden">Audit evidence</h2>
       <div className="panel__head">
         <span>Audit</span>
+        <ScopeTag note="scope.auditTitle" />
         <span className="panel__count">{receiptRows.length + actionRows.length}</span>
         <span className="panel__sub">
           durable store · receipts {stateLabel(receipts)} · actions {stateLabel(operatorActions)}

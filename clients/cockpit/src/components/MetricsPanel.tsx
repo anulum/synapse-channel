@@ -11,6 +11,7 @@ import { memo } from "react";
 
 import { orderKindCounts, type MetricsState, type MetricsWindow } from "../lib/metrics";
 import type { SessionsState } from "../lib/sessions";
+import { ScopeTag } from "./ScopeTag";
 
 /** Kind → semantic colour class, matching the spine's palette discipline. */
 function kindClass(kind: string): string {
@@ -87,6 +88,7 @@ function MetricsPanelView({ state, sessions }: MetricsPanelProps): JSX.Element {
     <section className="panel" aria-label="Log metrics">
       <div className="panel__head">
         <span>Metrics</span>
+        <ScopeTag scoped={false} />
         {metrics !== null && <span className="panel__count">{metrics.log.totalEvents}</span>}
         <span className="panel__sub">store-attested log pulse</span>
       </div>

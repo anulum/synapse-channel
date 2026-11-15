@@ -18,6 +18,7 @@ import { createMetricsStore, type MetricsState } from "../lib/metrics";
 import { createReliabilityStore, type ReliabilityState } from "../lib/reliability";
 import { createSessionsStore, type SessionsState } from "../lib/sessions";
 import { createWaitsStore, type WaitsState } from "../lib/waits";
+import { WHOLE_HUB, parseScope, scopeText, withScope, type CockpitScope } from "../lib/scope";
 
 const CONNECTING = { data: null, status: "connecting", fetchedAt: null, error: null } as const;
 
@@ -50,7 +51,9 @@ export interface CockpitAuxiliaryFeeds {
 export function useCockpitAuxiliaryFeeds(
   blocked: boolean,
   credentialRevision: number,
+  scope: CockpitScope = WHOLE_HUB,
 ): CockpitAuxiliaryFeeds {
+  const scopeKey = scopeText(scope);
   const [reliability, setReliability] = useState<ReliabilityState>(CONNECTING);
   const [federation, setFederation] = useState<FederationState>(CONNECTING);
   const [metrics, setMetrics] = useState<MetricsState>(CONNECTING);
@@ -71,6 +74,7 @@ export function useCockpitAuxiliaryFeeds(
     setFindings(CONNECTING);
     startRef.current = null;
     if (blocked) return;
+    const active = parseScope(scopeKey);
 
     let stopFeeds: (() => void) | undefined;
     let startFallback: ReturnType<typeof setTimeout>;
@@ -81,8 +85,8 @@ export function useCockpitAuxiliaryFeeds(
       const federationStore = createFederationStore();
       const metricsStore = createMetricsStore();
       const sessionsStore = createSessionsStore();
-      const waitsStore = createWaitsStore();
-      const findingsStore = createFindingsStore();
+      const waitsStore = createWaitsStore({ url: withScope("/waits.json", active) });
+      const findingsStore = createFindingsStore({ url: withScope("/findings.json", active) });
       const unsubscribeFederation = federationStore.subscribe(setFederation);
       const unsubscribeMetrics = metricsStore.subscribe(setMetrics);
       const unsubscribeSessions = sessionsStore.subscribe(setSessions);
@@ -128,7 +132,7 @@ export function useCockpitAuxiliaryFeeds(
       clearTimeout(startFallback);
       stopFeeds?.();
     };
-  }, [blocked, credentialRevision]);
+  }, [blocked, credentialRevision, scopeKey]);
 
   return { reliability, federation, metrics, sessions, waits, anomalyReport, findings, start };
 }

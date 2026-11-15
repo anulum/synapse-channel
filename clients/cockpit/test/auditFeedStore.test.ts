@@ -92,6 +92,16 @@ describe("bounded audit stores", () => {
     actions.stop();
   });
 
+  it("keeps a scoped address's own query and adds the cursor after it", async () => {
+    const receiptFetch = vi.fn<typeof fetch>().mockResolvedValue(page("receipts", [], 0));
+    const states: ReceiptsState[] = [];
+    const receipts = createReceiptsStore({ url: "/receipts.json?scope=none", fetcher: receiptFetch });
+    receipts.subscribe((state) => states.push(state));
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe("live"));
+    receipts.stop();
+    expect(receiptFetch.mock.calls[0]?.[0]).toBe("/receipts.json?scope=none&since=0&limit=50");
+  });
+
   it("advances by server sequence, de-duplicates rows, and caps retained history", async () => {
     vi.useFakeTimers();
     const fetcher = vi

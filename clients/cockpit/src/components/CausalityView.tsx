@@ -15,6 +15,7 @@ import {
   type CausalityTrace,
   type TraceResult,
 } from "../lib/causality";
+import { ScopeTag } from "./ScopeTag";
 
 /** A subject pushed in from another panel; the nonce re-fires equal subjects. */
 export interface CausalityPrefill {
@@ -114,6 +115,7 @@ export function CausalityView({ prefill = null }: CausalityViewProps): JSX.Eleme
     <section className="panel" aria-label="Causality inspector">
       <div className="panel__head">
         <span>Causality</span>
+        <ScopeTag scoped={false} />
         <span className="panel__sub">recorded relations only</span>
       </div>
       <div className="panel__body">

@@ -12,6 +12,7 @@ import { diffReplayStates } from "../lib/replayDiff";
 import type { FleetStateAt } from "../lib/stateAt";
 import type { ReplayState } from "../lib/workspace";
 import type { CockpitEvent } from "../types";
+import { ScopeTag } from "./ScopeTag";
 import { TimeTravelBar } from "./TimeTravelBar";
 
 export interface ReplaySlot {
@@ -116,6 +117,7 @@ export function ReplayWorkbench({
       <TimeTravelBar mode={replay.mode} label={modeLabel} onModeChange={changeMode} />
       {replay.mode !== "live" && (
         <div className="replay__body">
+          <ScopeTag scoped={false} />
           <div className="replay__positions">
             {replay.mode === "compare" && (
               <label className="replay__position">
