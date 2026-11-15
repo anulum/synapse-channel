@@ -62,9 +62,7 @@ def _config_runner(
 def test_release_identity_is_frozen() -> None:
     identity = ReleaseIdentity(uri="ws://h", name="proj/seat", token="s")
     with pytest.raises(dataclasses.FrozenInstanceError):
-        # Reason: assigning to a frozen field is the immutability we assert here;
-        # mypy correctly rejects it, so the ignore keeps the deliberate probe.
-        identity.name = "other"  # type: ignore[misc]
+        identity.name = "other"  # type: ignore[misc] # frozen assignment is the probe
 
 
 def test_resolves_full_worktree_identity(tmp_path: Path) -> None:
