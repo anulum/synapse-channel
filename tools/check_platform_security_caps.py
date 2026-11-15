@@ -19,7 +19,7 @@ from types import ModuleType
 try:
     import fcntl
 except ImportError:  # pragma: no cover - non-POSIX platform boundary.
-    fcntl = None  # type: ignore[assignment]
+    fcntl = None  # type: ignore[assignment] # ImportError binds None, not the module
 
 REQUIRED_SEAL_CONSTANTS = (
     "F_ADD_SEALS",
