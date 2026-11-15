@@ -329,6 +329,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_tmux_reap.py": (1, "platform-guard"),
     "tests/test_tmux_server.py": (2, "platform-guard"),
     "tests/test_worker_session.py": (2, "platform-guard"),
+    # Only POSIX keeps the replaced inode open for the interrupt watch.
+    "tests/test_worker_outcome_interrupt.py": (1, "platform-guard"),
     # A descriptor that outlives a rename over its path exists only on POSIX.
     "tests/test_worker_outcome_publication.py": (1, "platform-guard"),
     # Windows owner-only DACL, and a sharing violation after the descriptor is closed.

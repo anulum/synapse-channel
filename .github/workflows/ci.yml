@@ -430,6 +430,7 @@ jobs:
           tests/test_wake_adapter_codex_queue.py
           tests/test_wake_adapter_codex_queue_windows.py
           tests/test_wake_relay.py
+          tests/test_worker_outcome_interrupt.py
           tests/test_worker_outcome_publication.py
           tests/test_worker_outcomes_native.py
       - name: Bind the successful Windows part into its artifact
