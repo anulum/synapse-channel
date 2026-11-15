@@ -81,7 +81,9 @@ def test_repack_is_byte_reproducible_and_normalizes_metadata(tmp_path: Path) -> 
     with tarfile.open(first_output, mode="r:gz") as archive:
         members_by_name = {member.name: member for member in archive.getmembers()}
         assert list(members_by_name) == ["package", "package/a.txt", "package/b.txt"]
-        assert archive.extractfile("package/a.txt").read() == b"alpha"  # type: ignore[union-attr]
+        extracted = archive.extractfile("package/a.txt")
+        assert extracted is not None
+        assert extracted.read() == b"alpha"
         for member in members_by_name.values():
             assert (member.uid, member.gid, member.uname, member.gname, member.mtime) == (
                 0,
