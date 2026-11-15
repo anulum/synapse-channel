@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TypedDict, Unpack
 
 import pytest
 
@@ -24,22 +25,31 @@ from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import TaskClaim
 
 
-def _claim(**overrides: object) -> dict[str, object]:
-    base: dict[str, object] = {
-        "task_id": "T1",
-        "owner": "alpha",
-        "note": "n",
-        "claimed_at": 10.0,
-        "lease_expires_at": 999.0,
-        "status": "claimed",
-        "data_ref": "",
-        "worktree": "repo",
-        "paths": ("src/auth.py",),
-        "epoch": 1,
-        "checkpoint": "",
-    }
-    base.update(overrides)
-    return TaskClaim(**base).as_dict()  # type: ignore[arg-type]
+class _ClaimOverride(TypedDict, total=False):
+    """Fields a scaling test may replace on one claim."""
+
+    task_id: str
+    owner: str
+    status: str
+    paths: tuple[str, ...]
+    epoch: int
+
+
+def _claim(**overrides: Unpack[_ClaimOverride]) -> dict[str, object]:
+    """Return one claim mapping with the named fields replaced."""
+    claim = TaskClaim(
+        task_id=overrides.get("task_id", "T1"),
+        owner=overrides.get("owner", "alpha"),
+        note="n",
+        claimed_at=10.0,
+        lease_expires_at=999.0,
+        status=overrides.get("status", "claimed"),
+        data_ref="",
+        worktree="repo",
+        paths=overrides.get("paths", ("src/auth.py",)),
+        epoch=overrides.get("epoch", 1),
+    )
+    return dict(claim.as_dict())
 
 
 def _seed(path: Path) -> None:
