@@ -19,7 +19,7 @@ from __future__ import annotations
 try:
     import fcntl as _fcntl
 except ImportError:
-    _fcntl = None  # type: ignore[assignment]
+    _fcntl = None  # type: ignore[assignment] # ImportError binds None, not the module
 
 import hashlib
 import hmac
