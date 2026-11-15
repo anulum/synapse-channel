@@ -30,7 +30,9 @@ from synapse_channel.core.hub import SynapseHub
 # --- parser ------------------------------------------------------------------
 
 
-def test_parser_doctor_defaults() -> None:
+def test_parser_doctor_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    # SYNAPSE_URI overrides the default hub address; this test reads the built-in one.
+    monkeypatch.delenv("SYNAPSE_URI", raising=False)
     args = cli.build_parser().parse_args(["doctor"])
     assert args.func is cli_doctor._cmd_doctor
     assert args.uri.endswith(":8876")

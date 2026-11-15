@@ -55,7 +55,11 @@ async def connected_bridge(
         await asyncio.gather(task, return_exceptions=True)
 
 
-async def test_real_native_page_commits_all_sources_and_reopens_outbox(tmp_path: Path) -> None:
+async def test_real_native_page_commits_all_sources_and_reopens_outbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The bridge reads a local feed here, which only the default inbox source allows.
+    monkeypatch.delenv("SYN_INBOX_SOURCE", raising=False)
     store = EventStore(tmp_path / "hub.db")
     hub = SynapseHub(journal=store, hub_id="mcp-activity", anti_rollback_checkpoint=False)
     feed, local_cursor = tmp_path / "feed.ndjson", tmp_path / "feed.cursor"
