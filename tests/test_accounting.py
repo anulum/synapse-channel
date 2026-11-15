@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -77,20 +78,20 @@ def test_format_usage_note_minimal_and_full() -> None:
 
 
 @pytest.mark.parametrize(
-    "kwargs",
+    "note",
     [
-        {"model": ""},
-        {"model": "   "},
-        {"model": "two words"},
-        {"model": "m", "calls": -1},
-        {"model": "m", "input_tokens": -5},
-        {"model": "m", "output_tokens": -5},
-        {"model": "m", "cost": -0.01},
+        lambda: format_usage_note(model=""),
+        lambda: format_usage_note(model="   "),
+        lambda: format_usage_note(model="two words"),
+        lambda: format_usage_note(model="m", calls=-1),
+        lambda: format_usage_note(model="m", input_tokens=-5),
+        lambda: format_usage_note(model="m", output_tokens=-5),
+        lambda: format_usage_note(model="m", cost=-0.01),
     ],
 )
-def test_format_usage_note_rejects_bad_input(kwargs: dict[str, object]) -> None:
+def test_format_usage_note_rejects_bad_input(note: Callable[[], str]) -> None:
     with pytest.raises(ValueError):
-        format_usage_note(**kwargs)  # type: ignore[arg-type]
+        note()
 
 
 # ---------- parse_usage_note ----------
