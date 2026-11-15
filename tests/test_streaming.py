@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 from synapse_channel.core.streaming import (
@@ -33,17 +35,17 @@ def test_stream_bounds_defaults_are_positive() -> None:
 
 
 @pytest.mark.parametrize(
-    "kwargs",
+    "bounds",
     [
-        {"max_chunks": 0},
-        {"max_chunk_bytes": 0},
-        {"max_total_bytes": -1},
-        {"ttl_seconds": 0.0},
+        lambda: StreamBounds(max_chunks=0),
+        lambda: StreamBounds(max_chunk_bytes=0),
+        lambda: StreamBounds(max_total_bytes=-1),
+        lambda: StreamBounds(ttl_seconds=0.0),
     ],
 )
-def test_stream_bounds_reject_non_positive(kwargs: dict[str, float]) -> None:
+def test_stream_bounds_reject_non_positive(bounds: Callable[[], StreamBounds]) -> None:
     with pytest.raises(StreamError):
-        StreamBounds(**kwargs)  # type: ignore[arg-type]
+        bounds()
 
 
 # ---------- encode / parse ----------
