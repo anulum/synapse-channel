@@ -222,6 +222,8 @@ def _sealed_executable_snapshot(
             f"MCP server {server!r}: executable exceeds the "
             f"{MCP_EXECUTABLE_SNAPSHOT_LIMIT}-byte snapshot limit"
         )
+    if _fcntl is None:
+        raise McpConfigError(f"MCP server {server!r}: sealed executable snapshots are unavailable")
     snapshot = os.memfd_create(
         "synapse-mcp-executable",
         getattr(os, "MFD_CLOEXEC", 0) | getattr(os, "MFD_ALLOW_SEALING", 0),
@@ -270,6 +272,8 @@ def _write_all(descriptor: int, payload: bytes) -> None:
     view = memoryview(payload)
     while view:
         written = os.write(descriptor, view)
+        if written <= 0:
+            raise OSError("short write while sealing MCP executable")
         view = view[written:]
 
 

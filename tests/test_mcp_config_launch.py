@@ -19,6 +19,8 @@ from _platform_caps import requires_sealed_launch
 from _portable_exec import install_posix_tool
 from synapse_channel.core.mcp_config import McpConfigError, McpServerSpec
 from synapse_channel.core.mcp_config_launch import (
+    _sealed_executable_snapshot,
+    _write_all,
     bind_mcp_server_launch,
     child_environment,
     validate_mcp_server_launch,
@@ -299,3 +301,34 @@ def test_child_environment_is_empty_unless_each_name_is_approved() -> None:
         "LANG": "override",
         "EXPLICIT": "configured",
     }
+
+
+@pytest.mark.parametrize("written", [0, -1])
+def test_a_non_positive_write_refuses_the_sealed_copy(
+    monkeypatch: pytest.MonkeyPatch, written: int
+) -> None:
+    """A zero or negative write stops the seal instead of spinning."""
+
+    def refuse(_descriptor: int, _buffer: object) -> int:
+        return written
+
+    monkeypatch.setattr(os, "write", refuse)
+    with pytest.raises(OSError, match="short write while sealing MCP executable"):
+        _write_all(1, b"executable-bytes")
+
+
+def test_a_missing_seal_module_refuses_before_a_snapshot_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without fcntl the copy refuses by name and does not open a memfd."""
+    executable, _digest = _executable(tmp_path / "tool")
+    descriptor = os.open(executable, os.O_RDONLY)
+    try:
+        info = os.fstat(descriptor)
+        before = set(os.listdir("/proc/self/fd"))
+        monkeypatch.setattr(launch_module, "_fcntl", None)
+        with pytest.raises(McpConfigError, match="sealed executable snapshots are unavailable"):
+            _sealed_executable_snapshot(descriptor, info, server="tool")
+        assert set(os.listdir("/proc/self/fd")) == before
+    finally:
+        os.close(descriptor)
