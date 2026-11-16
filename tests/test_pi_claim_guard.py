@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import json
-import subprocess  # nosec B404
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -33,10 +33,10 @@ def _repo(tmp_path: Path) -> Path:
     """Create a real local Git worktree for path-identity checks."""
     root = tmp_path / "repo"
     root.mkdir()
-    subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)  # nosec B603
+    subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
     (root / "target.txt").write_text("unchanged\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(root), "add", "target.txt"], check=True)  # nosec B603
-    subprocess.run(  # nosec B603
+    subprocess.run(["git", "-C", str(root), "add", "target.txt"], check=True)
+    subprocess.run(
         [
             "git",
             "-C",
