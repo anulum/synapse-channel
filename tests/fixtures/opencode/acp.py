@@ -104,14 +104,19 @@ def acp_initialize(
         _close_main_pipes(stdin, stderr_stream)
 
 
-def acp_session_prompt(
+def _start_acp_prompt(
     binary: str,
-    *,
     cwd: Path,
     env: Mapping[str, str],
-    prompt: str,
-) -> tuple[str, str, str, str]:
-    """Exercise ACP session creation and one scripted-provider prompt."""
+) -> tuple[
+    subprocess.Popen[str],
+    IO[str],
+    IO[str],
+    queue.Queue[str],
+    list[str],
+    threading.Thread,
+]:
+    """Start one ACP process and collect session updates from its stdout."""
     process = subprocess.Popen(
         [binary, "acp", "--cwd", str(cwd)],
         cwd=cwd,
@@ -141,38 +146,64 @@ def acp_session_prompt(
 
     reader = threading.Thread(target=_read_response, daemon=True)
     reader.start()
+    return process, stdin, stderr_stream, responses, chunks, reader
 
-    def _exchange(request_id: int, method: str, params: Mapping[str, Any]) -> dict[str, Any]:
-        stdin.write(
-            json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
-            + "\n"
-        )
-        stdin.flush()
-        for _ in range(256):
-            try:
-                message = json.loads(responses.get(timeout=45))
-            except queue.Empty as exc:
-                raise AssertionError(f"OpenCode ACP {method} timed out") from exc
-            if not isinstance(message, dict):
-                raise AssertionError("OpenCode ACP returned a non-object JSON-RPC message")
-            if message.get("method") == "session/update":
-                update = message.get("params", {}).get("update", {})
-                content = update.get("content", {})
-                if isinstance(content, dict) and isinstance(content.get("text"), str):
-                    chunks.append(content["text"])
-            if message.get("id") == request_id:
-                return message
-        raise AssertionError(f"OpenCode ACP {method} exceeded the bounded message count")
 
+def _exchange_acp_prompt(
+    stdin: IO[str],
+    responses: queue.Queue[str],
+    chunks: list[str],
+    request_id: int,
+    method: str,
+    params: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Send one ACP request and return its reply, keeping session text updates."""
+    stdin.write(
+        json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}) + "\n"
+    )
+    stdin.flush()
+    for _ in range(256):
+        try:
+            message = json.loads(responses.get(timeout=45))
+        except queue.Empty as exc:
+            raise AssertionError(f"OpenCode ACP {method} timed out") from exc
+        if not isinstance(message, dict):
+            raise AssertionError("OpenCode ACP returned a non-object JSON-RPC message")
+        if message.get("method") == "session/update":
+            update = message.get("params", {}).get("update", {})
+            content = update.get("content", {})
+            if isinstance(content, dict) and isinstance(content.get("text"), str):
+                chunks.append(content["text"])
+        if message.get("id") == request_id:
+            return message
+    raise AssertionError(f"OpenCode ACP {method} exceeded the bounded message count")
+
+
+def acp_session_prompt(
+    binary: str,
+    *,
+    cwd: Path,
+    env: Mapping[str, str],
+    prompt: str,
+) -> tuple[str, str, str, str]:
+    """Exercise ACP session creation and one scripted-provider prompt."""
+    process, stdin, stderr_stream, responses, chunks, reader = _start_acp_prompt(binary, cwd, env)
     try:
-        initialize = _exchange(1, "initialize", _INITIALIZE_PARAMS)
+        initialize = _exchange_acp_prompt(
+            stdin, responses, chunks, 1, "initialize", _INITIALIZE_PARAMS
+        )
         if initialize.get("result", {}).get("protocolVersion") != 1:
             raise AssertionError("OpenCode ACP initialize protocol changed")
-        session = _exchange(2, "session/new", {"cwd": str(cwd), "mcpServers": []})
+        session = _exchange_acp_prompt(
+            stdin, responses, chunks, 2, "session/new", {"cwd": str(cwd), "mcpServers": []}
+        )
         session_id = session.get("result", {}).get("sessionId")
         if not isinstance(session_id, str) or not session_id:
             raise AssertionError("OpenCode ACP did not create a session")
-        result = _exchange(
+        result = _exchange_acp_prompt(
+            stdin,
+            responses,
+            chunks,
             3,
             "session/prompt",
             {"sessionId": session_id, "prompt": [{"type": "text", "text": prompt}]},
