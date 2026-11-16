@@ -108,7 +108,9 @@ interfaces, maturity, and release commitments.
   [at-rest encryption](docs/at-rest-encryption.md).
 - Identity-scoped mailbox, waiter, tmux, shell-hook, and worker-session
   ergonomics for keeping provider processes reachable without making presence
-  itself a wake loop.
+  itself a wake loop. A mailbox's pending count is stored beside the journal
+  and kept exact with each chat, acknowledgement and deletion, so `who` never
+  reads the chat history to answer.
 - Mail that no session will collect can be found, handed to a successor or
   closed (`synapse mailbox orphans`, `handover`, `close` and `drain`, and
   `synapse doctor --mailbox-orphans`), and mail addressed to a role waits in
@@ -180,6 +182,11 @@ interfaces, maturity, and release commitments.
   declaration with an intent built from the plan, an approval by another
   identity, one attempt, and the published outcome. See
   [operations](docs/operations.md).
+- One operation's whole chain without the hub: `synapse operation report`
+  prints the declaration with its intent digest checked, the approval notes,
+  the hub's answers, the executor's reports, the verifications and the seals.
+  An executor's report is never shown as a success without a verification.
+  See the [CLI reference](docs/cli.md).
 - Attempts and seals for declared operations: `synapse operation declare
   --intent` fixes an authorisation intent before the effect,
   `synapse operation attempt` asks the hub to open an attempt for that exact
@@ -212,6 +219,24 @@ interfaces, maturity, and release commitments.
   serves it, `/findings.json` serves the findings agents recorded with the
   hub, and a `scope` narrows the fleet to one project's part. See
   [cockpit](docs/cockpit.md).
+- Governed operations in the cockpit: an operations tab over
+  `/operations.json` shows each operation's chain link by link, and an
+  approval view checks the recorded intent digest against the one the
+  dashboard recomputes. With `--operator`, a login that holds `task_update`
+  records an approval note there (`POST /approval/decide`); the hub judges it
+  when an attempt is asked. The attention queue names refused operations and
+  silent attempts. See [cockpit](docs/cockpit.md).
+- Scopes beyond one project: `synapse dashboard --scope-groups FILE` declares
+  groups of namespaces (`scope=group:<name>`), the five event-backed feeds and
+  the live stream take the scope, and `--observed-peer HUB=URI` serves an
+  observed hub as an advisory scope of its own (`scope=peer:<HUB>`) with
+  writes off. See [cockpit](docs/cockpit.md) and the
+  [CLI reference](docs/cli.md).
+- Setup from the dashboard, opt-in (`--setup-apply` with `--operator`, on
+  loopback, for an access file's admins): `GET /setup/preflight.json` gives
+  each requirement of the command line's `local-single-user` profile, and
+  `POST /setup/plan` issues a plan bound to the command line's own plan, with
+  a receipt for every answer. See the [CLI reference](docs/cli.md).
 - A dashboard and Studio projection for live claims, tasks, conflicts, security
   posture, receipts, governed operator actions, and observed peer state. See
   [Studio](docs/studio.md).
@@ -287,7 +312,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.52 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.53 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities

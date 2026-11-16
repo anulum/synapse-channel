@@ -1941,7 +1941,7 @@ an installed protected runtime or revocation fencing.
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.99.52 |
+| Package version | 0.99.53 |
 | Public API exports | 70 |
 | Package modules | 1031 |
 | Classes | 1460 |
@@ -2225,7 +2225,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
   title   = {SYNAPSE CHANNEL: Local-first multi-agent coordination bus},
   url      = {https://github.com/anulum/synapse-channel},
   doi      = {10.5281/zenodo.20801559},
-  version = {0.99.52},
+  version = {0.99.53},
   year     = {2026}
 }
 ```

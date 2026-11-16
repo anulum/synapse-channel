@@ -18,6 +18,33 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.53] - 2026-11-16
+
+Core 0.99.53 lets an operator follow and approve governed operations in the
+cockpit, gives the cockpit declared groups and observed peer hubs as scopes,
+and stops `who` from reading the chat history.
+
+- **Governed operations in the cockpit.** An operations tab shows each
+  operation's chain link by link. An approval view checks the recorded intent
+  digest against the one the dashboard recomputes, and with `--operator` a
+  login that holds `task_update` records an approval note there; the hub
+  judges it when an attempt is asked. The attention queue names refused
+  operations and silent attempts. `synapse operation report` prints one
+  operation's chain without the hub.
+- **Scopes.** Declared groups of namespaces (`--scope-groups`) and observed
+  peer hubs (`--observed-peer`) are scopes of their own, and the five
+  event-backed feeds and the live stream take the scope. A peer scope is
+  advisory, and its writes are off.
+- **Setup from the dashboard**, opt-in and on loopback only. An admin reads
+  the command line's preflight and is issued a plan bound to the command
+  line's own plan, with a receipt for every answer.
+- **Hub stability.** A mailbox's pending count is stored beside the journal
+  and kept exact in the same transaction as each chat, acknowledgement and
+  deletion. A `who` for a new identity no longer reads the whole chat history
+  on the hub's serving loop.
+- **`synapse git-release`** exits 69 when it cannot reach the hub and prints
+  the `synapse release` command for claims that may stay held.
+
 ### Added
 
 - With setup served (`--setup-apply`), the dashboard issues a setup plan at `POST /setup/plan` to an admin:

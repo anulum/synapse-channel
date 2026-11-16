@@ -97,7 +97,7 @@ def test_roadmap_release_range_commands_exist_in_the_production_parser() -> None
         "mailbox": {"orphans", "handover", "close", "drain"},
         "work-state": {"build"},
         "waker": {"uncertain"},
-        "operation": {"declare", "outcome", "verification", "attempt", "seal"},
+        "operation": {"declare", "outcome", "verification", "attempt", "seal", "report"},
         "verify-result": {"file", "git", "deployment", "migration"},
         "ops": {"run"},
         "export": {"create"},
@@ -122,6 +122,9 @@ def test_roadmap_release_range_commands_exist_in_the_production_parser() -> None
         "--require-signed-frames",
         "--require-identity-proof",
     } <= _options("hub")
+    assert {"--scope-groups", "--observed-peer", "--operator", "--setup-apply"} <= _options(
+        "dashboard"
+    )
 
 
 def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
@@ -142,8 +145,18 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     ):
         assert released_in_0_99_52 in shipped, released_in_0_99_52
         assert released_in_0_99_52 not in unreleased, released_in_0_99_52
+    for released_in_0_99_53 in (
+        "`synapse operation report`",
+        "`/operations.json`",
+        "`POST /approval/decide`",
+        "`scope=group:<name>`",
+        "`scope=peer:<HUB>`",
+        "`POST /setup/plan`",
+    ):
+        assert released_in_0_99_53 in shipped, released_in_0_99_53
+        assert released_in_0_99_53 not in unreleased, released_in_0_99_53
     assert "in no release yet" in unreleased
-    assert "At 0.99.52 nothing on `main` is outside a release." in unreleased
+    assert "At 0.99.53 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:
