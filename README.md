@@ -1947,7 +1947,7 @@ an installed protected runtime or revocation fencing.
 | Classes | 1459 |
 | Wire message types | 122 |
 | CLI subcommands | 310 |
-| Test functions | 14517 |
+| Test functions | 14528 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 99 |
 | GitHub Actions workflows | 29 |
