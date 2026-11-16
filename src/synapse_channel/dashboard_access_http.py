@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Final, cast
@@ -52,6 +53,29 @@ class AccessHttpDecision:
     def allowed(self) -> bool:
         """Return whether request processing may continue."""
         return self.status is None and self.principal is not None
+
+
+def is_own_origin(host: str, origins: Sequence[str]) -> bool:
+    """Return whether a write carries exactly one ``Origin``, this dashboard's own.
+
+    Every dashboard write, operator and setup alike, is refused without it. The
+    own origin is ``http://`` and the request's single ``Host``, which the host
+    guard has already admitted; the comparison ignores case. A missing, foreign
+    or repeated ``Origin`` is not this dashboard's own.
+
+    Parameters
+    ----------
+    host : str
+        The request's ``Host`` header.
+    origins : Sequence[str]
+        Every ``Origin`` header the request carried.
+
+    Returns
+    -------
+    bool
+        ``True`` only for exactly one ``Origin`` equal to ``http://<Host>``.
+    """
+    return bool(host) and len(origins) == 1 and origins[0].lower() == f"http://{host}".lower()
 
 
 def read_decision(

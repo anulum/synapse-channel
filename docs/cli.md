@@ -673,8 +673,12 @@ only when the start gives both `--operator` and `--setup-apply` (below): a
 change to the dashboard's own host is an administrative act. This document is a presentation
 hint only: every POST rechecks the bearer and route server-side. Missing/bad
 credentials receive `401`, a known principal without the capability receives
-`403`, and unarmed write routes remain `404`; the hub then applies its own ACL
-and durable audit as before. Without an access file, the existing one-token and
+`403`, and unarmed write routes remain `404`. Every write, operator and setup
+alike, also needs exactly one `Origin` header, this dashboard's own
+(`http://<Host>`), which a browser on the cockpit sends by itself: a missing,
+repeated or other site's `Origin` receives `403` and nothing is relayed. A
+script that writes must send it too. The hub then applies its own ACL and
+durable audit as before. Without an access file, the existing one-token and
 generated-bearer profile applies on loopback too; no anonymous live-data access is implied.
 
 ### Setup from the dashboard (opt-in)

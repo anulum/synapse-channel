@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 if TYPE_CHECKING:
@@ -25,6 +26,11 @@ The tests assert what a response says, never how fast it came. A server's cold
 first request on a host at load 15 took over 3 seconds, so this is a guard
 against a hang, not a latency budget.
 """
+
+
+def own_origin(url: str) -> str:
+    """Return the ``Origin`` a page served at ``url`` sends: ``http://`` and its authority."""
+    return f"http://{urlsplit(url).netloc}"
 
 
 def _http_get(url: str, *, authorization: str | None = None) -> tuple[int, str, str]:

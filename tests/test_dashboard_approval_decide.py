@@ -29,6 +29,7 @@ import pytest
 import operation_attempt_scenario as scene
 import operation_report_store as journal_helpers
 import synapse_channel.dashboard_approval_decide as decide_module
+from dashboard_helpers import own_origin
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.core.approvals import APPROVAL_NOTE_KIND, format_approval_note
 from synapse_channel.core.hub import SynapseHub
@@ -556,6 +557,7 @@ def _post(server: DashboardServer, bearer: str, body: dict[str, object]) -> tupl
             "Connection": "close",
             "Content-Type": "application/json",
             "Authorization": f"Bearer {bearer}",
+            "Origin": own_origin(server.url(APPROVAL_DECIDE_PATH)),
         },
         method="POST",
     )

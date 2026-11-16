@@ -43,8 +43,9 @@ test("filters a durable route, restores its URL, and responds to exact evidence"
   await page.getByLabel("Interface language").selectOption("fr");
   await expect(page.locator("html")).toHaveAttribute("lang", "fr");
   const target = "cockpit-e2e-filter-target";
+  // A write outside the page's own fetch names the dashboard's Origin, as the browser does.
   const relay = await page.request.post("/message", {
-    headers: { Authorization: `Bearer ${bearer}` },
+    headers: { Authorization: `Bearer ${bearer}`, Origin: new URL(page.url()).origin },
     data: { to: target, text: "communication evidence probe" },
   });
   expect(relay.status()).toBe(200);

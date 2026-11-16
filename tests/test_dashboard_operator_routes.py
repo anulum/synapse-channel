@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import socket
 
@@ -17,6 +18,7 @@ import pytest
 
 import synapse_channel.dashboard as dashboard_module
 import synapse_channel.dashboard_operator_writes as operator_writes_module
+from dashboard_helpers import own_origin
 from synapse_channel.dashboard import DashboardServer, start_dashboard_server
 from synapse_channel.dashboard_operator import (
     ACCEPTED,
@@ -39,7 +41,7 @@ def _http_post(
     from urllib.error import HTTPError
     from urllib.request import Request, urlopen
 
-    headers = {"Connection": "close", "Content-Type": content_type}
+    headers = {"Connection": "close", "Content-Type": content_type, "Origin": own_origin(url)}
     if authorization is not None:
         headers["Authorization"] = authorization
     data = body.encode("utf-8") if isinstance(body, str) else body
@@ -454,6 +456,78 @@ def test_operator_write_maps_a_relay_exception_to_503(monkeypatch: pytest.Monkey
     assert "connection reset" in body
 
 
+_WRITE_ROUTES = ("/message", "/message/respond", "/task", "/task/update", "/approval/decide")
+
+
+def _post_with_origins(
+    server: DashboardServer, route: str, origins: tuple[str, ...]
+) -> tuple[int, str]:
+    """POST one armed write with the known bearer and exactly these ``Origin`` headers."""
+    host = str(server.server.server_address[0])
+    port = int(server.server.server_address[1])
+    body = json.dumps({"to": "SC-NEUROCORE", "text": "ship it"}).encode("utf-8")
+    connection = http.client.HTTPConnection(host, port, timeout=10)
+    try:
+        connection.putrequest("POST", route)
+        connection.putheader("Authorization", _OP_BEARER)
+        connection.putheader("Content-Type", "application/json")
+        connection.putheader("Content-Length", str(len(body)))
+        for origin in origins:
+            connection.putheader("Origin", origin)
+        connection.endheaders(body)
+        response = connection.getresponse()
+        return response.status, response.read().decode("utf-8")
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize("route", _WRITE_ROUTES)
+@pytest.mark.parametrize(
+    "origins",
+    [
+        pytest.param((), id="missing"),
+        pytest.param(("http://evil.example",), id="foreign"),
+        pytest.param(("https://{authority}",), id="other-scheme"),
+        pytest.param(("http://{authority}", "http://{authority}"), id="repeated"),
+    ],
+)
+def test_every_write_without_its_own_origin_is_refused_before_it_relays(
+    monkeypatch: pytest.MonkeyPatch, route: str, origins: tuple[str, ...]
+) -> None:
+    relayed: list[object] = []
+
+    class _RecordingRelay:
+        def __init__(self, **kwargs: object) -> None:
+            relayed.append(kwargs)
+
+    monkeypatch.setattr(operator_writes_module, "OperatorRelay", _RecordingRelay)
+    server = _operator_server()
+    try:
+        authority = server.url("/").split("/")[2]
+        sent = tuple(origin.format(authority=authority) for origin in origins)
+        status, body = _post_with_origins(server, route, sent)
+    finally:
+        server.close()
+
+    assert (status, body) == (403, "dashboard writes require this dashboard's own Origin\n")
+    assert relayed == []
+
+
+def test_a_write_with_its_own_origin_passes_the_origin_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outcome = RelayOutcome(DELIVERED, "delivered")
+    monkeypatch.setattr(operator_writes_module, "OperatorRelay", _stub_relay_class(outcome))
+    server = _operator_server()
+    try:
+        status, body = _post_with_origins(server, "/message", (own_origin(server.url("/")),))
+    finally:
+        server.close()
+
+    assert status == 200
+    assert json.loads(body)["status"] == DELIVERED
+
+
 def test_operator_write_refuses_an_oversize_body() -> None:
     # A body past the 64 KiB ceiling is refused before it is read as JSON, so a
     # write route cannot be used to feed the process an unbounded payload.
@@ -478,6 +552,7 @@ def test_operator_write_refuses_a_non_numeric_content_length() -> None:
     raw = (
         "POST /message HTTP/1.1\r\n"
         f"Host: {host}:{port}\r\n"
+        f"Origin: http://{host}:{port}\r\n"
         f"Authorization: {_OP_BEARER}\r\n"
         "Content-Type: application/json\r\n"
         "Content-Length: not-a-number\r\n"

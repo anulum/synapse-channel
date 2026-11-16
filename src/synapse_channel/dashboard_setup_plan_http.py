@@ -49,7 +49,7 @@ from typing import Final, cast
 
 from synapse_channel import __version__
 from synapse_channel.dashboard_access import DashboardAccessPolicy, DashboardPrincipal
-from synapse_channel.dashboard_access_http import AccessHttpDecision
+from synapse_channel.dashboard_access_http import AccessHttpDecision, is_own_origin
 from synapse_channel.dashboard_operator import WriteRateLimiter
 from synapse_channel.dashboard_operator_writes import is_json_media_type
 from synapse_channel.dashboard_setup_contract import (
@@ -187,8 +187,7 @@ def setup_plan_response(
     profile, plans, receipts = serving.profile, serving.plans, serving.receipts
     if profile is None or plans is None or receipts is None:
         return _plain(HTTPStatus.NOT_FOUND, f"setup not served: {serving.decision.reason}")
-    expected = f"http://{request.host}".lower()
-    if len(request.origins) != 1 or request.origins[0].lower() != expected:
+    if not is_own_origin(request.host, request.origins):
         return _plain(HTTPStatus.FORBIDDEN, "setup writes require this dashboard's own Origin")
     principal = bindings.policy.resolve_credential(request.authorization)
     if principal is None:
@@ -198,6 +197,7 @@ def setup_plan_response(
     parsed = parse_setup_plan_request(request.body)
     if isinstance(parsed, SetupContractRefusal):
         return _plain(HTTPStatus.BAD_REQUEST, f"setup plan request refused: {parsed.code}")
+    expected = f"http://{request.host}".lower()
     admitted = _Admitted(
         parsed, principal, request.host, expected, profile, plans, receipts, bindings.clock()
     )

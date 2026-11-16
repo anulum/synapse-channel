@@ -18,6 +18,14 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- Every dashboard write needs exactly one `Origin` header, the dashboard's own
+  (`http://<Host>`), as `POST /setup/plan` already did: `/message`,
+  `/message/respond`, `/task`, `/task/update` and `/approval/decide` answer 403
+  to a missing, repeated or foreign `Origin` and relay nothing. A browser on the
+  cockpit sends it by itself; a script that writes must send it.
+
 ## [0.99.53] - 2026-11-16
 
 Core 0.99.53 lets an operator follow and approve governed operations in the

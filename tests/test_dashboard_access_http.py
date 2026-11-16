@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 import synapse_channel.dashboard as dashboard_module
+from dashboard_helpers import own_origin
 from synapse_channel.dashboard import DashboardServer, start_dashboard_server
 from synapse_channel.dashboard_access import (
     DashboardAccessPolicy,
@@ -96,6 +97,7 @@ def _request(
     method = "GET"
     if document is not None:
         headers["Content-Type"] = "application/json"
+        headers["Origin"] = own_origin(server.url(path))
         data = json.dumps(document).encode("utf-8")
         method = "POST"
     request = Request(server.url(path), data=data, headers=headers, method=method)

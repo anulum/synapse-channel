@@ -78,7 +78,7 @@ test("viewer tampering cannot reach writes; operator/admin expose exactly shippe
     await expect(page.getByText(/admin:/u)).toHaveCount(0);
     await page.keyboard.press("Escape");
     const relay = await page.request.post("/message", {
-      headers: { Authorization: `Bearer ${tokens[role]}` },
+      headers: { Authorization: `Bearer ${tokens[role]}`, Origin: new URL(page.url()).origin },
       data: { to: `cockpit-e2e-absent-${role}`, text: `${role} identity audit` },
     });
     expect(relay.status()).toBe(200);

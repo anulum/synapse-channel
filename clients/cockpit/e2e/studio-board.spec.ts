@@ -15,14 +15,20 @@ if (bearer === undefined || bearer === "") {
 
 const headers = { Authorization: `Bearer ${bearer}` };
 
+// A write outside a page names the dashboard's own Origin, as the browser does.
+function writeHeaders(origin: string): Record<string, string> {
+  return { ...headers, Origin: origin };
+}
+
 async function declareTask(
   request: APIRequestContext,
+  origin: string,
   id: string,
   title: string,
   dependsOn: readonly string[] = [],
 ): Promise<void> {
   const response = await request.post("/task", {
-    headers,
+    headers: writeHeaders(origin),
     data: { id, title, depends_on: dependsOn },
   });
   expect(response.status()).toBe(200);
@@ -31,11 +37,12 @@ async function declareTask(
 
 async function updateTask(
   request: APIRequestContext,
+  origin: string,
   id: string,
   status: string,
 ): Promise<void> {
   const response = await request.post("/task/update", {
-    headers,
+    headers: writeHeaders(origin),
     data: { id, status, note: "Studio board browser acceptance" },
   });
   expect(response.status()).toBe(200);
@@ -45,7 +52,9 @@ async function updateTask(
 test("the protected Studio renders exact read-only columns on desktop and mobile", async ({
   page,
   request,
+  baseURL,
 }) => {
+  const origin = new URL(baseURL ?? "").origin;
   const suffix = Date.now().toString(36);
   const openId = `studio-open-${suffix}`;
   const workingId = `studio-working-${suffix}`;
@@ -53,13 +62,13 @@ test("the protected Studio renders exact read-only columns on desktop and mobile
   const doneId = `studio-done-${suffix}`;
   const payload = `<img id="studio-pwn" onerror="window.__studioPwned=1">\"'`;
 
-  await declareTask(request, openId, payload);
-  await declareTask(request, workingId, "Working in Chromium");
-  await updateTask(request, workingId, "in_progress");
-  await declareTask(request, blockedId, "Blocked in Chromium", [workingId]);
-  await updateTask(request, blockedId, "blocked");
-  await declareTask(request, doneId, "Closed in Chromium");
-  await updateTask(request, doneId, "done");
+  await declareTask(request, origin, openId, payload);
+  await declareTask(request, origin, workingId, "Working in Chromium");
+  await updateTask(request, origin, workingId, "in_progress");
+  await declareTask(request, origin, blockedId, "Blocked in Chromium", [workingId]);
+  await updateTask(request, origin, blockedId, "blocked");
+  await declareTask(request, origin, doneId, "Closed in Chromium");
+  await updateTask(request, origin, doneId, "done");
 
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));

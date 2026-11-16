@@ -616,7 +616,10 @@ When that boundary is crossed, the proportionate controls are:
   rebinding page cannot present — so the boundary defers to that token there
   unless the operator lists exact hosts with `--dashboard-allow-host`. The
   boundary is transport hardening, not a substitute for a token: keep the bind on
-  loopback and set a `--dashboard-token` before any deliberate exposure.
+  loopback and set a `--dashboard-token` before any deliberate exposure. Every
+  write, operator and setup alike, also needs exactly one `Origin` that is the
+  dashboard's own (`http://<Host>`); a missing, repeated or foreign `Origin` is
+  refused with 403 before anything is relayed.
 
 The core hub and its state stay on the operator's machine, but two boundaries are
 worth stating plainly:

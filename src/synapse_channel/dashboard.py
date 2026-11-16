@@ -28,6 +28,7 @@ from synapse_channel.dashboard_access_http import (
     TASK_UPDATE_PATH,
     AccessHttpDecision,
     access_descriptor_decision,
+    is_own_origin,
     read_decision,
     write_decision,
 )
@@ -465,8 +466,10 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         """Re-resolve one principal and relay only its exact route capability.
 
         Unarmed routes stay undisclosed as 404. Armed writes require a known
-        bearer, JSON media type, rate limit, bounded body, and a principal-specific
-        relay identity; the hub still authorizes and audits the resulting action.
+        bearer, exactly one ``Origin`` that is this dashboard's own (the check
+        ``/setup/plan`` makes too), JSON media type, rate limit, bounded body, and
+        a principal-specific relay identity; the hub still authorizes and audits
+        the resulting action.
         """
         if self._reject_foreign_host():
             return
@@ -483,6 +486,13 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._write_access_decision(access)
             return
         principal = cast(DashboardPrincipal, access.principal)
+        if not is_own_origin(self.headers.get("Host", ""), self.headers.get_all("Origin") or ()):
+            self._write(
+                HTTPStatus.FORBIDDEN,
+                b"dashboard writes require this dashboard's own Origin\n",
+                content_type="text/plain",
+            )
+            return
         if not is_json_media_type(self.headers.get("Content-Type", "")):
             self._write(
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
