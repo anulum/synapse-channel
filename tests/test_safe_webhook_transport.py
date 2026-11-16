@@ -554,7 +554,7 @@ def test_read_bounded_caps_the_response_body() -> None:
             return b"x" * amount
 
     body = _Body()
-    transport.read_bounded(body)  # type: ignore[arg-type]
+    transport.read_bounded(body)  # type: ignore[arg-type] # body is not a stream
     assert body.requested == transport.WEBHOOK_MAX_RESPONSE_BYTES
 
 
