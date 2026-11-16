@@ -120,7 +120,12 @@ class _RegistryBytes:
         return self._payload
 
 
-def _accept_the_same_bytes_from_the_registry(root: Path, archive: Path, dependency: str) -> None:
+def _accept_the_same_bytes_from_the_registry(
+    root: Path,
+    archive: Path,
+    dependency: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A registry read of the locked archive leaves an already matching install in place."""
     module = _load_pins()
     payload = archive.read_bytes()
@@ -130,7 +135,7 @@ def _accept_the_same_bytes_from_the_registry(root: Path, archive: Path, dependen
         assert timeout == 30
         return _RegistryBytes(payload)
 
-    module.urllib.request.urlopen = _open
+    monkeypatch.setattr(module.urllib.request, "urlopen", _open)
     module.synchronize(root, None, dependency=dependency)
 
 
@@ -158,7 +163,7 @@ def _run(
 
 @pytest.mark.parametrize("dependency", list(VERSIONS))
 def test_cli_replaces_only_the_locked_package_and_is_idempotent(
-    tmp_path: Path, dependency: str
+    tmp_path: Path, dependency: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Only the declared dependency changes and a repeated verification is stable."""
     archive, target = _fixture(tmp_path, dependency=dependency)
@@ -173,7 +178,7 @@ def test_cli_replaces_only_the_locked_package_and_is_idempotent(
         assert (tmp_path / "integrations/pi/package-lock.json").read_bytes() == before_lock
         assert not list(target.parent.glob(".synapse-pin-*"))
     if dependency == "brace-expansion":
-        _accept_the_same_bytes_from_the_registry(tmp_path, archive, dependency)
+        _accept_the_same_bytes_from_the_registry(tmp_path, archive, dependency, monkeypatch)
         assert (target / "index.js").read_bytes() == b"export default 'reviewed';\n"
         assert not list(target.parent.glob(".synapse-pin-*"))
 
