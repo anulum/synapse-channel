@@ -21,7 +21,7 @@ refused write is an answer to read, not an error.
 from __future__ import annotations
 
 import shutil
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from collections.abc import Callable
 from pathlib import Path
 
@@ -121,7 +121,7 @@ def _default_git_runner(args: list[str]) -> str:
     if git is None:
         raise GitError("git is not installed or not on PATH")
     try:
-        result = subprocess.run(  # nosec B603
+        result = subprocess.run(  # nosec B603 # argument vector, never a shell
             [git, *args],
             capture_output=True,
             text=True,
