@@ -93,10 +93,16 @@ export async function stop(started: Started | undefined): Promise<void> {
  * Start the private hub and dashboard and return the cockpit's address. With
  * `observedPeer`, the dashboard also observes a second real hub
  * (`e2e/peer_hub.py`), which a peer scope shows. With `scopeGroups`, it declares
- * the group `ships` of the demonstration fleet's two projects.
+ * the group `ships` of the demonstration fleet's two projects. With `operations`,
+ * a real hub first journals one governed operation in every state the
+ * operation report gives.
  */
 export async function startHarness(
-  options: { readonly observedPeer?: boolean; readonly scopeGroups?: boolean } = {},
+  options: {
+    readonly observedPeer?: boolean;
+    readonly scopeGroups?: boolean;
+    readonly operations?: boolean;
+  } = {},
 ): Promise<{ readonly harness: Started; readonly url: string }> {
   const harness = await start("e2e/dashboard_harness.py", [], {
     ...process.env,
@@ -107,6 +113,7 @@ export async function startHarness(
     SYNAPSE_COCKPIT_E2E_SEED_FINDINGS: "0",
     SYNAPSE_COCKPIT_E2E_OBSERVED_PEER: options.observedPeer === true ? "1" : "0",
     SYNAPSE_COCKPIT_E2E_SCOPE_GROUPS: options.scopeGroups === true ? "1" : "0",
+    SYNAPSE_COCKPIT_E2E_OPERATIONS: options.operations === true ? "1" : "0",
   });
   const url = /ready at (\S+)/u.exec(harness.line)?.[1];
   if (!url) {

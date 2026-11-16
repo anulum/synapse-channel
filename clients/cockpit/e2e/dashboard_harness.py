@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib
 import json
 import os
 import signal
+import sys
 import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -186,6 +188,23 @@ def _seed_journal(journal: EventStore, scratch: Path) -> Path:
     return _attention_store(journal, scratch)
 
 
+async def _journal_operations(path: Path) -> None:
+    """Journal one governed operation in every state the operation report gives.
+
+    A real hub writes them through its own requests, with the writer the
+    report's and the feed's tests share, so the operations journey reads the
+    same store those tests read. The writer lives in the repository's ``tests``
+    folder, which this harness puts on the import path only when asked.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        The event store the harness's hub then journals to; it must not exist yet.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tests"))
+    await importlib.import_module("operation_report_store").journal_every_state_async(path)
+
+
 def _scope_groups(scratch: Path) -> Path | None:
     """Write the owner-only groups file the scope journey declares, when it asks for one."""
     if os.environ.get("SYNAPSE_COCKPIT_E2E_SCOPE_GROUPS") != "1":
@@ -246,6 +265,8 @@ async def _serve() -> None:
     scratch = TemporaryDirectory(prefix="synapse-cockpit-e2e-")
     scratch_path = Path(scratch.name)
     access_file = _access_policy(scratch_path, tokens)
+    if os.environ.get("SYNAPSE_COCKPIT_E2E_OPERATIONS") == "1":
+        await _journal_operations(scratch_path / "hub.db")
     journal = EventStore(scratch_path / "hub.db")
     _seed_journal(journal, scratch_path)
     hub = SynapseHub(hub_id="cockpit-e2e", journal=journal)

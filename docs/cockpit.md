@@ -225,9 +225,9 @@ between retained live state and reconstruction.
 
 The inspector also defines the cockpit's JavaScript delivery boundary. The
 default signal log and attention queue ship in the entry chunk because they are
-the immediate operator surfaces. Fleet, topology, metrics, audit, incident, and
-causality are separate feature chunks requested only when their tab becomes
-active. A localised live status occupies the existing tabpanel while a deferred
+the immediate operator surfaces. Fleet, topology, metrics, audit, operations,
+incident, and causality are separate feature chunks requested only when their
+tab becomes active. A localised live status occupies the existing tabpanel while a deferred
 chunk loads; the surrounding panel error boundary remains responsible for a
 failed import. This is behavioural code splitting, not a warning override: the
 recorded comparison measured an entry of 468.48 kB minified / 137.26 kB gzip
@@ -786,6 +786,22 @@ processes.
   receipt is the dashboard's operator-relay receipt; actor, task, or timestamp
   similarity is never used as an inferred join. Partial evidence remains
   visibly partial and any event hop opens that exact retained sequence.
+- **operations** lists the governed operations the hub journalled, from
+  `/operations.json` (it needs `--feeds-db`), grouped by state, newest
+  declaration first, one page of 50 at a time. Choose one to read its chain
+  link by link: A, the declared intent with its digest checked; B, each approval
+  note on that digest; C, each of the hub's answers and each seal; D, each
+  executor's report and each observer's reading. Every link shows its journal
+  sequence, its time, its sender and the fields its row holds, and nothing
+  else. **open evidence** fetches that row's inclusion proof and recomputes the
+  root in the browser. The state words and the hub's answer names, such as
+  `refused: not_approved` or `outcome reported, unknown`, are the operation
+  report's own and stay untranslated in every language. A state the cockpit
+  does not know is shown as the hub gave it and marked. An executor's report is
+  never shown as a success, an attempt past its deadline is never shown as
+  ended, a field the row does not hold reads "not recorded", and custody reads
+  as the feed states it. A scope narrows the list; one chosen chain is shown
+  whole, and the tab says so.
 - **causality** traces recorded causes or effects from an event sequence or task.
   A task hop from the log opens this panel with the task already selected.
 - **topology** joins identities and held tasks and adds imported federation

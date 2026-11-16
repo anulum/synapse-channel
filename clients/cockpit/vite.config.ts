@@ -31,6 +31,7 @@ const DASHBOARD_PROXY = {
   "/sessions.json": DASHBOARD_ORIGIN,
   "/waits.json": DASHBOARD_ORIGIN,
   "/health-anomalies.json": DASHBOARD_ORIGIN,
+  "/operations.json": DASHBOARD_ORIGIN,
 } as const;
 
 export default defineConfig({

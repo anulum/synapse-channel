@@ -124,18 +124,23 @@ async def _word_states(seats: dict[str, AgentHandle], epoch: int) -> None:
     await scene.declare(worker, epoch, operation_id="op-declared")
 
 
+async def journal_every_state_async(path: Path) -> None:
+    """Write, in the running loop, a hub journal at ``path`` with an operation in every state.
+
+    The cockpit's browser harness calls this from its own loop on the main thread,
+    where the hub can install its signal handlers.
+    """
+    store = EventStore(path)
+    try:
+        hub = SynapseHub(journal=store, acl_policy=policy())
+        async with running_hub(hub) as (_hub, uri), connected_seats(uri) as seats:
+            epoch = await scene.claim(seats[scene.WORKER])
+            await _attempt_states(seats, epoch)
+            await _word_states(seats, epoch)
+    finally:
+        store.close()
+
+
 def journal_every_state(path: Path) -> None:
     """Write a hub journal at ``path`` holding one operation in every state the report gives."""
-
-    async def journal() -> None:
-        store = EventStore(path)
-        try:
-            hub = SynapseHub(journal=store, acl_policy=policy())
-            async with running_hub(hub) as (_hub, uri), connected_seats(uri) as seats:
-                epoch = await scene.claim(seats[scene.WORKER])
-                await _attempt_states(seats, epoch)
-                await _word_states(seats, epoch)
-        finally:
-            store.close()
-
-    asyncio.run(journal())
+    asyncio.run(journal_every_state_async(path))

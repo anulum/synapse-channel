@@ -83,6 +83,8 @@ describe("InspectorTabs", () => {
     expect(await screen.findByLabelText("Log metrics")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "audit" }));
     expect(await screen.findByLabelText("Receipt and operator audit")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "operations" }));
+    expect(await screen.findByLabelText("Governed operations")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "incident" }));
     expect(await screen.findByLabelText("Guided incident workspace")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "causality" }));

@@ -45,6 +45,10 @@ start to finish and makes the cockpit the dashboard's front door.
 
 ### Added
 
+- The cockpit has an **operations** tab: the governed operations the hub journalled, grouped by
+  state, and one operation's chain link by link, each link with its journal sequence, sender, time,
+  the fields its row holds and an inclusion-proof check; the state words and the hub's answer names
+  stay the report's own in every language.
 - `/operations.json` serves the declared operations from the dashboard's event store, newest first
   in bounded pages, each with its state and latest journalled row, and `?operation=ID` serves one
   operation's whole chain; a `scope` keeps the operations of its declarer or task.

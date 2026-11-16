@@ -21,6 +21,7 @@ export const INSPECTOR_TABS = [
   "topology",
   "metrics",
   "audit",
+  "operations",
   "incident",
   "causality",
 ] as const;

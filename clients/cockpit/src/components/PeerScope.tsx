@@ -60,6 +60,7 @@ const PEER_TAB_PANELS: Readonly<Record<Exclude<InspectorTab, "topology">, { labe
   fleet: { label: "", title: "Fleet" },
   metrics: { label: "Log metrics", title: "Metrics" },
   audit: { label: "Receipt and operator audit", title: "Audit" },
+  operations: { label: "Governed operations", title: "Operations" },
   incident: { label: "Guided incident workspace", title: "Incident" },
   causality: { label: "Causality inspector", title: "Causality" },
 };

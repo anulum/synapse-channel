@@ -62,8 +62,8 @@ test("the built setup assistant remains read-only, secret-free and operable in b
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("setup-clipboard-sentinel");
 
   const served = assistant.getByRole("region", { name: "What this dashboard serves" });
-  await expect(served).toContainText("14 of 15 optional surfaces are served.");
-  await expect(served.getByRole("listitem")).toHaveCount(15);
+  await expect(served).toContainText("15 of 16 optional surfaces are served.");
+  await expect(served.getByRole("listitem")).toHaveCount(16);
   const federation = served.getByRole("listitem").filter({ hasText: "/federation.json" });
   await expect(federation).toContainText("start with --federation-store");
   await expect(served.getByRole("listitem").filter({ hasText: "/waits.json" })).toContainText("served");

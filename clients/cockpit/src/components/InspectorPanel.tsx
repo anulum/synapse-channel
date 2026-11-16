@@ -20,6 +20,7 @@ import { eventCoverageOf, type EventCoverage } from "../lib/eventCoverage";
 import type { FederationState } from "../lib/federation";
 import type { LogQuery } from "../lib/logQuery";
 import type { MetricsState } from "../lib/metrics";
+import { OPERATIONS_SOURCE } from "../lib/operationsFeed";
 import { fleetSelectionOf } from "../lib/selection";
 import type { SessionsState } from "../lib/sessions";
 import type {
@@ -42,6 +43,7 @@ const CausalityView = lazy(async () => ({ default: (await import("./CausalityVie
 const FleetViews = lazy(async () => ({ default: (await import("./FleetViews")).FleetViews }));
 const IncidentWorkspace = lazy(async () => ({ default: (await import("./IncidentWorkspace")).IncidentWorkspace }));
 const MetricsPanel = lazy(async () => ({ default: (await import("./MetricsPanel")).MetricsPanel }));
+const OperationsView = lazy(async () => ({ default: (await import("./OperationsView")).OperationsView }));
 const TopologyView = lazy(async () => ({ default: (await import("./TopologyView")).TopologyView }));
 
 export interface InspectorPanelProps {
@@ -139,6 +141,8 @@ export function InspectorPanel(props: InspectorPanelProps): JSX.Element {
               operatorActions={operatorActions ?? { data: null, status: "connecting", fetchedAt: null, error: null }}
               selection={selection} onSelectEvent={(seq) => onSelectionChange?.(seq === null ? null : { kind: "event", seq })}
               onOpenEvent={onOpenEvent ?? ((seq) => onSelectionChange?.({ kind: "event", seq }))} />
+          ) : tab === "operations" ? (
+            <OperationsView source={OPERATIONS_SOURCE} />
           ) : tab === "incident" ? (
             <IncidentWorkspace key={incidentStorageKey} step={incidentStep} onStepChange={(next) => onIncidentStepChange?.(next)}
               selection={selection} replay={replay} storageKey={incidentStorageKey} hubVersion={hubVersion}

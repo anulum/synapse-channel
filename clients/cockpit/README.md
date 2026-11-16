@@ -109,6 +109,12 @@ across all five interface languages and both display densities.
   (kind, status, subject, actor) and governed operator-relay history (action,
   outcome, subject, operator). Each states live, absent, failed, or stale
   last-good provenance independently and retains a bounded newest-first window.
+- **Operations** — the governed operations the hub journalled, grouped by the
+  operation report's state, and one operation's chain link by link (intent,
+  approvals, the hub's answers and seals, the executor's reports and the
+  observer's readings), each with its journal sequence and an **open evidence**
+  inclusion check. State words and answer names stay the report's own; an
+  executor's report is never a success.
 - **Causality** — recorded causes/effects traces for a sequence or task, with
   per-hub clustering; log rows and task chips hop straight into it.
 
@@ -133,6 +139,8 @@ first), with the spine kept at every width.
 | `/health-anomalies.json` | 30 s poll | the hub's causal-graph anomaly report: orphaned / dangling / stale (optional) |
 | `/receipts.json?since=SEQ&limit=N` | 2 s incremental | universal receipts projected from receipt-bearing durable events (optional) |
 | `/operator-actions.json?since=SEQ&limit=N` | 2 s incremental | governed operator-relay audit history from durable `operator_relay` events (optional) |
+| `/operations.json?before=SEQ` | 10 s poll while the tab is open | one page of the declared operations, newest first, each with its state (optional) |
+| `/operations.json?operation=ID` | on choice | one operation's whole chain, as `synapse operation report` prints it (optional) |
 | `POST /message` | on send | governed operator chat relay; `undelivered` never reads as "sent" |
 | `POST /message/respond` | on response | semantic reply with `message_seq`, `to`, `status`, and optional `note` |
 | `POST /task` | on declaration | governed task declaration with `id`, `title`, and `depends_on` |
