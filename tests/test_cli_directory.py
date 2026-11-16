@@ -188,7 +188,7 @@ async def test_directory_names_the_snapshots_that_never_arrived(
     code = await cli_directory._directory(
         uri="ws://unused",
         name="DIR",
-        agent_factory=_SilentDirectoryAgent,  # type: ignore[arg-type]
+        agent_factory=_SilentDirectoryAgent,  # type: ignore[arg-type] # probe
         response_timeout=0.1,
     )
     assert code == 1
