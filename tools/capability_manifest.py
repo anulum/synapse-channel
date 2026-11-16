@@ -27,7 +27,7 @@ import argparse
 import ast
 import json
 import os
-import subprocess  # nosec B404
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -120,7 +120,7 @@ def _git_tracked_py_files(root: Path) -> list[Path]:
             capture_output=True,
             text=True,
             env=git_env,
-        )  # nosec B603,B607
+        )
     except OSError:
         return []
     if top_level.returncode != 0:
@@ -136,7 +136,7 @@ def _git_tracked_py_files(root: Path) -> list[Path]:
         capture_output=True,
         text=True,
         env=git_env,
-    )  # nosec B603,B607
+    )
     if result.returncode != 0:
         return []
     return [git_root / line for line in result.stdout.splitlines() if line.endswith(".py") and line]
@@ -215,7 +215,7 @@ def _tracked_test_files(tests_root: Path) -> list[Path]:
             capture_output=True,
             text=True,
             env=_git_env(),
-        )  # nosec B603,B607
+        )
     except OSError:
         return []
     if result.returncode != 0:
