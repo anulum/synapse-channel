@@ -13,7 +13,7 @@ import argparse
 import io
 import json
 import os
-import subprocess  # nosec B404
+import subprocess
 import sys
 from pathlib import Path
 
@@ -54,7 +54,7 @@ def _run_hook(root: Path, payload: bytes) -> subprocess.CompletedProcess[bytes]:
         "--uri",
         "ws://127.0.0.1:1",
     ]
-    return subprocess.run(  # nosec B603
+    return subprocess.run(
         argv,
         input=payload,
         capture_output=True,
