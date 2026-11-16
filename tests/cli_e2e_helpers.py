@@ -304,7 +304,7 @@ def http_get(
     """GET ``url`` and return ``(status, body)``; status 0 means unreachable."""
     try:
         request = urllib.request.Request(url, headers=headers or {}, method="GET")
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             return int(response.status), response.read().decode("utf-8")
     except urllib.error.HTTPError as error:
         return int(error.code), error.read().decode("utf-8")
@@ -516,7 +516,7 @@ def isolated_dashboard(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[
     snapshot the cockpit and other clients consume.
     """
     port = free_port()
-    token = "e2e-dashboard-token"  # nosec B105 - fixed loopback test bearer, not a secret
+    token = "e2e-dashboard-token"  # fixed loopback test bearer, not a secret
     proc = subprocess.Popen(  # fixed interpreter, test-only
         [
             *_CLI,
