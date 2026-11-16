@@ -211,7 +211,7 @@ async def test_emit_frame_scopes_to_a_channel() -> None:
             calls.append({"type": msg_type, "target": target, "payload": payload, **extra})
 
     await _emit_frame(
-        _Recorder(),  # type: ignore[arg-type]
+        _Recorder(),  # type: ignore[arg-type] # recorder is not the sender
         StreamFrame("S1", 0, OPEN),
         target="RX",
         channel="ops",
