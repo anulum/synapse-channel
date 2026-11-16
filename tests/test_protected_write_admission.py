@@ -105,7 +105,10 @@ def test_install_refuses_invalid_budget_without_mutation(budget: object) -> None
     state = SynapseState()
     state.claims["task-1"] = _claim()
     with pytest.raises(ValueError, match="budget"):
-        state.install_protected_write_admission(_admission(), max_reservations=budget)  # type: ignore[arg-type]
+        state.install_protected_write_admission(
+            _admission(),
+            max_reservations=budget,  # type: ignore[arg-type] # bad budget
+        )
     assert state.protected_write_admissions == {}
     assert state.protected_claim_custody == {}
 
@@ -327,7 +330,7 @@ def test_admission_refuses_invalid_clock(now: object) -> None:
         bind_protected_write_admission(
             json.dumps(request),
             json.dumps(result),
-            context=replace(CONTEXT, now=now),  # type: ignore[arg-type]
+            context=replace(CONTEXT, now=now),  # type: ignore[arg-type] # now is wrong
             claims={"task-1": _claim()},
             limits=LIMITS,
             reason_codes=frozenset(),
@@ -341,7 +344,10 @@ def test_admission_refuses_invalid_journal_sequence(sequence: object) -> None:
         bind_protected_write_admission(
             json.dumps(request),
             json.dumps(result),
-            context=replace(CONTEXT, admission_sequence=sequence),  # type: ignore[arg-type]
+            context=replace(
+                CONTEXT,
+                admission_sequence=sequence,  # type: ignore[arg-type] # bad sequence
+            ),
             claims={"task-1": _claim()},
             limits=LIMITS,
             reason_codes=frozenset(),
