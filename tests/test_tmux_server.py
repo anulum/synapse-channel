@@ -152,7 +152,7 @@ def rig(tmp_path: Path) -> Iterator[Rig]:
             subprocess.run(
                 ["systemctl", "--user", "reset-failed", unit], capture_output=True, check=False
             )
-        socket_dir = Path(os.environ.get("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}"  # nosec B108
+        socket_dir = Path(os.environ.get("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}"
         (socket_dir / owned.socket_name).unlink(missing_ok=True)
 
 
