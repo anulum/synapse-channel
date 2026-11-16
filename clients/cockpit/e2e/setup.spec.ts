@@ -67,6 +67,7 @@ test("the built setup assistant remains read-only, secret-free and operable in b
   const federation = served.getByRole("listitem").filter({ hasText: "/federation.json" });
   await expect(federation).toContainText("start with --federation-store");
   await expect(served.getByRole("listitem").filter({ hasText: "/waits.json" })).toContainText("served");
+  await expect(served.getByRole("listitem").filter({ hasText: "/operations.json" })).toContainText("served");
 
   const darkResult = await page.evaluate(async () =>
     (window as unknown as AxeWindow).axe.run(document),
