@@ -41,6 +41,59 @@ class PaneMetadata:
     project: str | None
 
 
+def _tmux_list_argv(socket: str | None) -> list[str]:
+    """Return the fixed list-panes argument vector for one local socket."""
+    argv = ["tmux"]
+    if socket is not None:
+        argv += ["-S", socket]
+    argv += [
+        "list-panes",
+        "-a",
+        "-F",
+        "#{pane_pid}\t#{session_id}\t#{pane_id}\t#{session_attached}\t"
+        "#{SYN_IDENTITY}\t#{SYN_PROJECT}",
+    ]
+    return argv
+
+
+def _read_tmux_stdout(
+    child: subprocess.Popen[bytes], deadline: float
+) -> tuple[bytearray, str | None]:
+    """Read tmux stdout until EOF. A status means the read stopped early."""
+    output = bytearray()
+    assert child.stdout is not None
+    with selectors.DefaultSelector() as selector:
+        selector.register(child.stdout, selectors.EVENT_READ)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or len(output) > 65536:
+                child.kill()
+                child.wait()
+                return output, "partial"
+            if not selector.select(remaining):
+                continue
+            chunk = os.read(child.stdout.fileno(), 4096)
+            if not chunk:
+                return output, None
+            output.extend(chunk)
+
+
+def _pane_metadata(output: bytes) -> tuple[tuple[PaneMetadata, ...], str]:
+    """Parse pane rows, or report a partial read when a row is not the format."""
+    panes: list[PaneMetadata] = []
+    try:
+        for line in output.decode("utf-8").splitlines():
+            pid, session, pane, attached, identity, project = line.split("\t")
+            panes.append(
+                PaneMetadata(
+                    int(pid), session, pane, int(attached) > 0, identity or None, project or None
+                )
+            )
+    except (ValueError, UnicodeDecodeError):
+        return (), "partial"
+    return tuple(panes), "complete"
+
+
 def observe_tmux(socket: str | None = None) -> tuple[tuple[PaneMetadata, ...], str]:
     """Read the selected local tmux socket within time and byte limits.
 
@@ -55,38 +108,18 @@ def observe_tmux(socket: str | None = None) -> tuple[tuple[PaneMetadata, ...], s
         Pane metadata and complete, partial or unavailable status.
         No server is created and no session is changed.
     """
-    argv = ["tmux"]
-    if socket is not None:
-        argv += ["-S", socket]
-    argv += [
-        "list-panes",
-        "-a",
-        "-F",
-        "#{pane_pid}\t#{session_id}\t#{pane_id}\t#{session_attached}\t"
-        "#{SYN_IDENTITY}\t#{SYN_PROJECT}",
-    ]
-    output = bytearray()
+    # The socket is one -S argument; commands and formats are package constants.
     try:
-        # The socket is one -S argument; commands and formats are package constants.
         with subprocess.Popen(  # nosec B603 # argument vector, never a shell
-            argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, shell=False
+            _tmux_list_argv(socket),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            shell=False,
         ) as child:
-            assert child.stdout is not None
             deadline = time.monotonic() + 0.5
-            with selectors.DefaultSelector() as selector:
-                selector.register(child.stdout, selectors.EVENT_READ)
-                while True:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0 or len(output) > 65536:
-                        child.kill()
-                        child.wait()
-                        return (), "partial"
-                    if not selector.select(remaining):
-                        continue
-                    chunk = os.read(child.stdout.fileno(), 4096)
-                    if not chunk:
-                        break
-                    output.extend(chunk)
+            output, stopped = _read_tmux_stdout(child, deadline)
+            if stopped is not None:
+                return (), stopped
             try:
                 code = child.wait(timeout=max(0.001, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
@@ -97,15 +130,4 @@ def observe_tmux(socket: str | None = None) -> tuple[tuple[PaneMetadata, ...], s
         return (), "unavailable"
     if code != 0:
         return (), "unavailable"
-    panes: list[PaneMetadata] = []
-    try:
-        for line in output.decode("utf-8").splitlines():
-            pid, session, pane, attached, identity, project = line.split("\t")
-            panes.append(
-                PaneMetadata(
-                    int(pid), session, pane, int(attached) > 0, identity or None, project or None
-                )
-            )
-    except (ValueError, UnicodeDecodeError):
-        return (), "partial"
-    return tuple(panes), "complete"
+    return _pane_metadata(bytes(output))
