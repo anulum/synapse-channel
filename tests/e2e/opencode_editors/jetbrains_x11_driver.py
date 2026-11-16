@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import time
 
 from e2e.opencode_editors.jetbrains_clipboard import owned_clipboard
@@ -132,7 +132,7 @@ def _xdotool(
     """Run one bounded ``xdotool`` command and normalize timeout failure."""
     command = [_required_tool("xdotool"), *args]
     try:
-        return subprocess.run(  # nosec B603
+        return subprocess.run(
             command,
             capture_output=True,
             text=True,
@@ -225,7 +225,7 @@ def _window_parentage(tree: str) -> tuple[str | None, str | None]:
 
 def _window_is_root_child(window: str, *, deadline: float | None = None) -> bool:
     """Return whether a visible window is a top-level child of the X11 root."""
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(
         [_required_tool("xwininfo"), "-id", window, "-tree"],
         capture_output=True,
         text=True,
@@ -244,7 +244,7 @@ def _required_window_is_root_child(
     deadline: float | None = None,
 ) -> bool:
     """Return root ownership, rejecting failed or malformed X11 parentage queries."""
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(
         [_required_tool("xwininfo"), "-id", window, "-tree"],
         capture_output=True,
         text=True,
@@ -271,7 +271,7 @@ def _window_parent_ids(
     deadline: float | None = None,
 ) -> tuple[int | None, int | None]:
     """Return parsed root and parent XIDs for one candidate focus owner."""
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(
         [_required_tool("xwininfo"), "-id", str(window), "-tree"],
         capture_output=True,
         text=True,
@@ -308,7 +308,7 @@ def _xprop_window_id(output: str) -> int | None:
 
 def _window_transient_for(window: str, *, deadline: float | None = None) -> int | None:
     """Return the XID that owns one transient top-level window."""
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(
         [_required_tool("xprop"), "-id", window, "WM_TRANSIENT_FOR"],
         capture_output=True,
         text=True,
@@ -326,7 +326,7 @@ def _required_window_transient_for(
     deadline: float | None = None,
 ) -> int | None:
     """Return transient ownership, rejecting an X11 property query failure."""
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(
         [_required_tool("xprop"), "-id", window, "WM_TRANSIENT_FOR"],
         capture_output=True,
         text=True,
