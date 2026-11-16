@@ -95,7 +95,7 @@ def fetch_json(url: str) -> dict[str, Any]:
         url,
         headers={"User-Agent": "Synapse-Channel-Discovery/0.1", "Accept": "application/json"},
     )
-    with urlopen(request, timeout=15) as response:  # nosec B310 - exact HTTPS source list
+    with urlopen(request, timeout=15) as response:  # exact HTTPS source list
         final = urlsplit(response.geturl())
         if final.scheme != "https" or final.hostname != parsed.hostname:
             raise DiscoveryError("public source redirected to another host")
