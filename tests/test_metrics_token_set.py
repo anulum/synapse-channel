@@ -122,7 +122,7 @@ def test_the_exposure_guard_accepts_a_metrics_token_set(tmp_path: Path) -> None:
     token_set = TokenSetAuthenticator(path)
     connect = TokenAuthenticator(["connect"])
     guarded = exposure_problems(
-        "0.0.0.0",  # nosec B104 - an exposure check, nothing binds
+        "0.0.0.0",  # an exposure check, nothing binds
         authenticator=connect,
         enable_metrics=True,
         metrics_token=None,
@@ -130,7 +130,7 @@ def test_the_exposure_guard_accepts_a_metrics_token_set(tmp_path: Path) -> None:
     )
     assert guarded == []
     (problem,) = exposure_problems(
-        "0.0.0.0",  # nosec B104 - an exposure check, nothing binds
+        "0.0.0.0",  # an exposure check, nothing binds
         authenticator=connect,
         enable_metrics=True,
         metrics_token=None,
@@ -138,7 +138,7 @@ def test_the_exposure_guard_accepts_a_metrics_token_set(tmp_path: Path) -> None:
     assert "--metrics-token-set" in problem
     hub = SynapseHub(authenticator=connect, enable_metrics=True, metrics_token_set=token_set)
     assert hub.metrics_token_set is token_set
-    assert hub._exposure_problems("0.0.0.0") == []  # nosec B104
+    assert hub._exposure_problems("0.0.0.0") == []
 
 
 def _kinds(store: EventStore) -> list[tuple[str, dict[str, Any]]]:
