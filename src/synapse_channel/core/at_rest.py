@@ -78,7 +78,7 @@ data key is unchanged when the KEK rotates, the passphrase (or hardware key) can
 re-encrypting any stored data.
 """
 
-PASSPHRASE_SCRYPT_BACKEND = "passphrase-scrypt"  # nosec B105 - backend identifier, not a secret
+PASSPHRASE_SCRYPT_BACKEND = "passphrase-scrypt"  # nosec B105 # backend identifier, not a secret
 """Wrapped-key ``backend`` tag for the default software KEK (a passphrase derived with scrypt)."""
 
 GCM_MESSAGE_LIMIT = 2**32
