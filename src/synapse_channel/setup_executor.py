@@ -15,7 +15,7 @@ import platform
 import stat
 
 # All subprocess calls below use fixed argv and a ten-second timeout.
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import tempfile
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
