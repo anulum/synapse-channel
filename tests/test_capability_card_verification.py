@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
 
@@ -74,19 +76,31 @@ def _fixture(
     )
 
 
+def _signature(card: Mapping[str, object]) -> dict[Any, Any]:
+    signature = card["signature"]
+    assert isinstance(signature, dict)
+    return signature
+
+
 def _verify(
     card: dict[str, object],
     trust: CapabilityCardTrustBundle,
-    **overrides: object,
+    *,
+    now: float = 150.0,
+    required_agent: str = "P/worker",
+    required_project: str = "P",
+    required_manifest_digest: str = "sha256:abc",
+    remember: bool = True,
 ) -> CapabilityCardVerification:
-    kwargs: dict[str, object] = {
-        "now": 150.0,
-        "required_agent": "P/worker",
-        "required_project": "P",
-        "required_manifest_digest": "sha256:abc",
-    }
-    kwargs.update(overrides)
-    return verify_capability_card(card, trust_bundle=trust, **kwargs)  # type: ignore[arg-type]
+    return verify_capability_card(
+        card,
+        trust_bundle=trust,
+        now=now,
+        required_agent=required_agent,
+        required_project=required_project,
+        required_manifest_digest=required_manifest_digest,
+        remember=remember,
+    )
 
 
 def test_valid_card_projects_complete_diagnostics() -> None:
@@ -95,7 +109,7 @@ def test_valid_card_projects_complete_diagnostics() -> None:
 
     assert result.result is CapabilityCardVerificationResult.VALID
     assert result.as_dict() == {
-        "card_digest": signed["signature"]["card_digest"],  # type: ignore[index]
+        "card_digest": _signature(signed)["card_digest"],
         "detail": "signature, bindings, expiry, and lifecycle checks passed",
         "expires_at": 200.0,
         "key_id": "P:key",
@@ -164,7 +178,7 @@ def test_malformed_signature_metadata_fails_closed(
     field: str, value: object, expected: CapabilityCardVerificationResult
 ) -> None:
     signed, trust = _fixture()
-    signed["signature"][field] = value  # type: ignore[index]
+    _signature(signed)[field] = value
     assert _verify(signed, trust).result is expected
 
 
@@ -184,7 +198,7 @@ def test_card_validity_window_honours_clock_skew(
 
 def test_verification_rejects_an_inverted_signed_window() -> None:
     signed, trust = _fixture()
-    signed["signature"]["expires_at"] = 100.0  # type: ignore[index]
+    _signature(signed)["expires_at"] = 100.0
     assert _verify(signed, trust, now=100.0).result is CapabilityCardVerificationResult.EXPIRED
 
 
@@ -195,11 +209,11 @@ def test_tampered_card_digest_and_signature_fail() -> None:
     assert _verify(tampered, trust).result is CapabilityCardVerificationResult.BAD_SIGNATURE
 
     bad_value = copy.deepcopy(signed)
-    bad_value["signature"]["value"] = "not-base64!"  # type: ignore[index]
+    _signature(bad_value)["value"] = "not-base64!"
     assert _verify(bad_value, trust).result is CapabilityCardVerificationResult.BAD_SIGNATURE
 
     missing_value = copy.deepcopy(signed)
-    missing_value["signature"]["value"] = ""  # type: ignore[index]
+    _signature(missing_value)["value"] = ""
     assert _verify(missing_value, trust).result is CapabilityCardVerificationResult.BAD_SIGNATURE
 
     other_key = copy.deepcopy(signed)
@@ -211,7 +225,7 @@ def test_tampered_card_digest_and_signature_fail() -> None:
         signed_at=100.0,
         expires_at=200.0,
     )
-    other_key["signature"]["value"] = replacement["signature"]["value"]  # type: ignore[index]
+    _signature(other_key)["value"] = _signature(replacement)["value"]
     assert _verify(other_key, trust).result is CapabilityCardVerificationResult.BAD_SIGNATURE
 
 
