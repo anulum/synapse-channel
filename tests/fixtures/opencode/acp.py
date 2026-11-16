@@ -39,7 +39,7 @@ def acp_initialize(
     env: Mapping[str, str],
 ) -> tuple[dict[str, Any], str]:
     """Perform one real ACP initialize exchange and close cleanly on stdin EOF."""
-    process = subprocess.Popen(  # nosec B603
+    process = subprocess.Popen(
         [binary, "acp", "--cwd", str(cwd)],
         cwd=cwd,
         env=dict(env),
@@ -102,7 +102,7 @@ def acp_session_prompt(
     prompt: str,
 ) -> tuple[str, str, str, str]:
     """Exercise ACP session creation and one scripted-provider prompt."""
-    process = subprocess.Popen(  # nosec B603
+    process = subprocess.Popen(
         [binary, "acp", "--cwd", str(cwd)],
         cwd=cwd,
         env=dict(env),
