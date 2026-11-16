@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
