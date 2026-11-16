@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import time
 
 from e2e.opencode_editors.zed_timing import DEFAULT_ZED_TIMING
@@ -47,7 +47,7 @@ def _run_xdotool(
     """Run one X11 command without extending its absolute phase deadline."""
     command = [required_executable("xdotool"), *args]
     try:
-        return subprocess.run(  # nosec B603
+        return subprocess.run(
             command,
             capture_output=True,
             text=True,
