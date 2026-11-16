@@ -426,7 +426,7 @@ def test_encrypt_file_leaves_no_temp_when_encryption_fails(tmp_path: Path) -> No
 
     target = tmp_path / "out.enc"
     with pytest.raises(RuntimeError):
-        at_rest.encrypt_file(target, b"x", _Boom())  # type: ignore[arg-type]
+        at_rest.encrypt_file(target, b"x", _Boom())  # type: ignore[arg-type] # double is not a key
     assert not target.exists()
     assert list(tmp_path.glob("*.tmp")) == []
 
