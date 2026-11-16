@@ -965,7 +965,10 @@ def test_apply_records_recovery_failure_when_installed_unit_is_replaced(tmp_path
     assert record.state == "failed"
 
 
-def test_apply_refuses_an_unsafe_or_contended_host_lock(tmp_path: Path) -> None:
+def _lock_apply_case(
+    tmp_path: Path,
+) -> tuple[Path, dict[str, object], dict[str, object], Path, Path]:
+    """Prepare one apply host whose waiter inspection is not yet satisfied."""
     systemctl = _manager(tmp_path)
     inspection = _inspection(systemctl, {"waiter": "fail"})
     plan = build_setup_plan(_profile(), inspection)
@@ -974,21 +977,33 @@ def test_apply_refuses_an_unsafe_or_contended_host_lock(tmp_path: Path) -> None:
     ledger_dir = tmp_path / "ledger"
     with SetupAuthorizationLedger(ledger_dir):
         pass
-    target = tmp_path / "lock-target"
-    target.write_text("not a lock\n", encoding="utf-8")
-    (ledger_dir / "setup-apply.lock").symlink_to(target)
-    authorization = _authorization(plan, nonce=f"{NONCE}_unsafe_lock")
-    with pytest.raises(SetupExecutionError) as caught:
-        _run_apply(
-            plan,
-            authorization,
-            inspection=inspection,
-            home=home,
-            ledger=ledger_dir,
-        )
-    assert caught.value.code == "application_lock_unavailable"
+    return systemctl, inspection, plan, home, ledger_dir
 
-    (ledger_dir / "setup-apply.lock").unlink()
+
+def test_apply_refuses_an_unsafe_host_lock(tmp_path: Path) -> None:
+    """A lock path that is not a lock file is refused before any effect."""
+    systemctl, inspection, plan, home, ledger_dir = _lock_apply_case(tmp_path)
+    try:
+        target = tmp_path / "lock-target"
+        target.write_text("not a lock\n", encoding="utf-8")
+        (ledger_dir / "setup-apply.lock").symlink_to(target)
+        authorization = _authorization(plan, nonce=f"{NONCE}_unsafe_lock")
+        with pytest.raises(SetupExecutionError) as caught:
+            _run_apply(
+                plan,
+                authorization,
+                inspection=inspection,
+                home=home,
+                ledger=ledger_dir,
+            )
+        assert caught.value.code == "application_lock_unavailable"
+    finally:
+        _stop_manager_processes(systemctl)
+
+
+def test_apply_refuses_a_contended_host_lock(tmp_path: Path) -> None:
+    """A second apply waits out the lock instead of sharing it."""
+    systemctl, inspection, plan, home, ledger_dir = _lock_apply_case(tmp_path)
 
     async def contend() -> tuple[dict[str, object], SetupExecutionError]:
         entered = asyncio.Event()

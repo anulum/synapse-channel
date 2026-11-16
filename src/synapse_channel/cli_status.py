@@ -326,6 +326,21 @@ class _StatusStream(Protocol):
         ...
 
 
+def _watch_rewrites_in_place(stream: _StatusStream, *, as_json: bool) -> bool:
+    """Return whether one refresh replaces the previous line."""
+    return stream.isatty() and not as_json
+
+
+def _watch_frame(status: HubStatus, *, as_json: bool, in_place: bool, plain: bool) -> str:
+    """Return one refresh as NDJSON, an in-place rewrite, or an appended line."""
+    if as_json:
+        return json.dumps(status_to_json(status), sort_keys=True) + "\n"
+    line = render_status_line(status, plain=plain)
+    if in_place:
+        return "\r\x1b[2K" + line
+    return line + "\n"
+
+
 async def watch_status(
     *,
     uri: str,
@@ -381,7 +396,7 @@ async def watch_status(
         ``0`` when the last refresh saw a reachable hub, ``1`` otherwise.
     """
     stream = sys.stdout if out is None else out
-    in_place = stream.isatty() and not as_json
+    in_place = _watch_rewrites_in_place(stream, as_json=as_json)
     status = HubStatus(reachable=False)
     refreshes = 0
     try:
@@ -398,12 +413,7 @@ async def watch_status(
                 observed_pins=observed_pins,
                 mailbox_identity=mailbox_identity,
             )
-            if as_json:
-                stream.write(json.dumps(status_to_json(status), sort_keys=True) + "\n")
-            elif in_place:
-                stream.write("\r\x1b[2K" + render_status_line(status, plain=plain))
-            else:
-                stream.write(render_status_line(status, plain=plain) + "\n")
+            stream.write(_watch_frame(status, as_json=as_json, in_place=in_place, plain=plain))
             stream.flush()
             refreshes += 1
             if count and refreshes >= count:
