@@ -141,6 +141,7 @@ def test_inbox_option_parser_supports_equals_forms_and_deduplicates_aliases() ->
         [],
         {"SYN_ALIASES": "user/coordinator, ,user/coordinator"},
     )
+    separate = ergonomics_inbox.parse_inbox_options(["--as", "user/coordinator"], {})
 
     assert options == ergonomics_inbox.InboxOptions(
         exact_name="user/terminal-23696",
@@ -148,6 +149,7 @@ def test_inbox_option_parser_supports_equals_forms_and_deduplicates_aliases() ->
         aliases=("user/coordinator",),
     )
     assert env_options.aliases == ("user/coordinator",)
+    assert separate.aliases == ("user/coordinator",)
 
 
 @pytest.mark.parametrize(

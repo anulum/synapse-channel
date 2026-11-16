@@ -83,65 +83,66 @@ def split_as_names(rest: Sequence[str], env: Mapping[str, str]) -> list[str]:
     return [name for name in names if name]
 
 
-def parse_inbox_options(rest: Sequence[str], env: Mapping[str, str]) -> InboxOptions:
-    """Parse inbox-only flags and reject anything that would be silently ignored."""
-    tokens = list(rest)
-    aliases: list[str] = []
-    exact_name: str | None = None
-    project_wide = False
-    source_options: dict[str, str] = {}
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        flag, separator, inline = token.partition("=")
-        if flag in {"--source", "--uri", "--token-file", "--limit"}:
-            if flag in source_options:
-                raise ValueError(f"{flag} may be supplied only once")
-            if separator:
-                value = inline.strip()
-                index += 1
-            else:
-                if index + 1 >= len(tokens) or tokens[index + 1].startswith("--"):
-                    raise ValueError(f"{flag} requires a nonblank value")
-                value = tokens[index + 1].strip()
-                index += 2
-            if not value:
-                raise ValueError(f"{flag} requires a nonblank value")
-            source_options[flag] = value
-            continue
-        if token in {"--as", "--name"}:
-            if index + 1 >= len(tokens) or tokens[index + 1].startswith("--"):
-                raise ValueError(f"{token} requires a nonblank identity")
-            value = tokens[index + 1].strip()
-            if not value:
-                raise ValueError(f"{token} requires a nonblank identity")
-            if token == "--as":  # nosec B105 # a command-line flag, not a credential
-                aliases.append(value)
-            elif exact_name is not None:
-                raise ValueError("--name may be supplied only once")
-            else:
-                exact_name = value
-            index += 2
-            continue
-        if token.startswith("--as=") or token.startswith("--name="):
-            option, _, raw_value = token.partition("=")
-            value = raw_value.strip()
-            if not value:
-                raise ValueError(f"{option} requires a nonblank identity")
-            if option == "--as":
-                aliases.append(value)
-            elif exact_name is not None:
-                raise ValueError("--name may be supplied only once")
-            else:
-                exact_name = value
-            index += 1
-            continue
-        if token == "--project-wide":  # nosec B105 # a command-line flag, not a credential
-            project_wide = True
-            index += 1
-            continue
-        raise ValueError(f"unsupported inbox option: {token}")
+def _store_source_option(tokens: Sequence[str], index: int, source_options: dict[str, str]) -> int:
+    """Record one source flag and return the index of the following token."""
+    flag, separator, inline = tokens[index].partition("=")
+    if flag in source_options:
+        raise ValueError(f"{flag} may be supplied only once")
+    if separator:
+        value = inline.strip()
+        next_index = index + 1
+    else:
+        if index + 1 >= len(tokens) or tokens[index + 1].startswith("--"):
+            raise ValueError(f"{flag} requires a nonblank value")
+        value = tokens[index + 1].strip()
+        next_index = index + 2
+    if not value:
+        raise ValueError(f"{flag} requires a nonblank value")
+    source_options[flag] = value
+    return next_index
 
+
+def _store_separate_identity(
+    tokens: Sequence[str], index: int, aliases: list[str], exact_name: str | None
+) -> tuple[int, str | None]:
+    """Record ``--as`` or ``--name`` and return the next index and exact name."""
+    token = tokens[index]
+    if index + 1 >= len(tokens) or tokens[index + 1].startswith("--"):
+        raise ValueError(f"{token} requires a nonblank identity")
+    value = tokens[index + 1].strip()
+    if not value:
+        raise ValueError(f"{token} requires a nonblank identity")
+    if token == "--as":  # nosec B105 # a command-line flag, not a credential
+        aliases.append(value)
+        return index + 2, exact_name
+    if exact_name is not None:
+        raise ValueError("--name may be supplied only once")
+    return index + 2, value
+
+
+def _store_inline_identity(token: str, aliases: list[str], exact_name: str | None) -> str | None:
+    """Record ``--as=`` or ``--name=`` and return the exact name."""
+    option, _, raw_value = token.partition("=")
+    value = raw_value.strip()
+    if not value:
+        raise ValueError(f"{option} requires a nonblank identity")
+    if option == "--as":
+        aliases.append(value)
+        return exact_name
+    if exact_name is not None:
+        raise ValueError("--name may be supplied only once")
+    return value
+
+
+def _finish_inbox_options(
+    *,
+    aliases: list[str],
+    exact_name: str | None,
+    project_wide: bool,
+    source_options: dict[str, str],
+    env: Mapping[str, str],
+) -> InboxOptions:
+    """Validate the collected inbox flags and build the options."""
     if exact_name is not None and project_wide:
         raise ValueError("--name and --project-wide are mutually exclusive")
     if not aliases:
@@ -167,6 +168,41 @@ def parse_inbox_options(rest: Sequence[str], env: Mapping[str, str]) -> InboxOpt
         uri=source_options.get("--uri"),
         token_file=source_options.get("--token-file"),
         limit=limit,
+    )
+
+
+def parse_inbox_options(rest: Sequence[str], env: Mapping[str, str]) -> InboxOptions:
+    """Parse inbox-only flags and reject anything that would be silently ignored."""
+    tokens = list(rest)
+    aliases: list[str] = []
+    exact_name: str | None = None
+    project_wide = False
+    source_options: dict[str, str] = {}
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        flag, _, _inline = token.partition("=")
+        if flag in {"--source", "--uri", "--token-file", "--limit"}:
+            index = _store_source_option(tokens, index, source_options)
+            continue
+        if token in {"--as", "--name"}:
+            index, exact_name = _store_separate_identity(tokens, index, aliases, exact_name)
+            continue
+        if token.startswith("--as=") or token.startswith("--name="):
+            exact_name = _store_inline_identity(token, aliases, exact_name)
+            index += 1
+            continue
+        if token == "--project-wide":  # nosec B105 # a command-line flag, not a credential
+            project_wide = True
+            index += 1
+            continue
+        raise ValueError(f"unsupported inbox option: {token}")
+    return _finish_inbox_options(
+        aliases=aliases,
+        exact_name=exact_name,
+        project_wide=project_wide,
+        source_options=source_options,
+        env=env,
     )
 
 
