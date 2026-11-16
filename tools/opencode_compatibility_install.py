@@ -236,7 +236,7 @@ def download_archive(contract: Compatibility, artifact: Artifact, destination: P
     written = 0
     digest = hashlib.sha256()
     try:
-        with opener.open(request, timeout=90) as response:  # nosec B310
+        with opener.open(request, timeout=90) as response:
             _require_download_url(response.geturl())
             length = response.headers.get("Content-Length")
             if length is not None and int(length) > _MAX_ARCHIVE_BYTES:
