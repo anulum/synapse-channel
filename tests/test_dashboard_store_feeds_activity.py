@@ -267,7 +267,10 @@ class TestWaitsFeed:
         document = build_waits_feed(db)
 
         assert document["wait_count"] == 1
-        gate = document["waits"][0]  # type: ignore[index]
+        waits = document["waits"]
+        assert isinstance(waits, list)
+        gate = waits[0]
+        assert isinstance(gate, dict)
         assert gate["on_what"] == ["NOT-YET-DECLARED"]
 
     def test_a_blocked_status_task_with_unmet_deps_is_a_gate(self, tmp_path: Path) -> None:
