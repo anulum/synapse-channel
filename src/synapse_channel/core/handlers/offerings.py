@@ -45,91 +45,79 @@ if TYPE_CHECKING:
             ...
 
 
-async def handle_advertise(
-    hub: OfferingsContext, sender: str, data: dict[str, Any], websocket: Any
-) -> None:
-    """Store an agent's capability card and broadcast it to the channel.
+_SEAT_REQUIRED = (
+    "Persistent capability registration requires a project-scoped seat identity (<project>/<seat>)."
+)
+_FOREIGN_CARD = (
+    "Capability registration for another identity requires the "
+    "connection to be that identity or a recognised receiver sidecar."
+)
 
-    With the additive ``persist`` flag the card becomes a persistent dispatch
-    registration (survives disconnect, 24h refresh TTL) instead of a live
-    session card; ``dispatchable`` opts the registration in or out of
-    automated dispatch. Persistent registration is reserved for
-    project-scoped seat identities and fails closed otherwise.
-    """
-    raw_skills = data.get("skills")
-    raw_classes = data.get("task_classes")
-    skills = [str(s) for s in raw_skills] if isinstance(raw_skills, list) else []
-    task_classes = [str(c) for c in raw_classes] if isinstance(raw_classes, list) else []
-    meta = data.get("meta")
-    persist = data.get("persist")
-    dispatchable = data.get("dispatchable")
-    if persist is not None and not isinstance(persist, bool):
-        await hub.send_json(
-            websocket,
-            hub.system(
-                "Malformed frame: 'persist' must be a boolean.",
-                msg_type=MessageType.ERROR,
-                target=sender,
-            ),
+
+def _string_list(value: Any) -> list[str]:
+    """Return the text of a list, or an empty list for any other shape."""
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
+def _project_seat(identity: str) -> bool:
+    """Return whether the identity is a project-scoped seat with a real name."""
+    seat = identity.split("/", 1)[1] if "/" in identity else ""
+    return bool(project_of(identity) and seat.strip())
+
+
+async def _reject_capability(hub: OfferingsContext, sender: str, websocket: Any, text: str) -> None:
+    """Send one private error for a capability advertisement."""
+    await hub.send_json(
+        websocket,
+        hub.system(text, msg_type=MessageType.ERROR, target=sender),
+    )
+
+
+async def _refuse_bad_flag(
+    hub: OfferingsContext, sender: str, websocket: Any, name: str, value: Any
+) -> bool:
+    """Reject a present flag that is not a boolean and report whether it was refused."""
+    if value is not None and not isinstance(value, bool):
+        await _reject_capability(
+            hub, sender, websocket, f"Malformed frame: '{name}' must be a boolean."
         )
-        return
-    if dispatchable is not None and not isinstance(dispatchable, bool):
-        await hub.send_json(
-            websocket,
-            hub.system(
-                "Malformed frame: 'dispatchable' must be a boolean.",
-                msg_type=MessageType.ERROR,
-                target=sender,
-            ),
-        )
-        return
-    if persist:
-        seat = sender.split("/", 1)[1] if "/" in sender else ""
-        if not project_of(sender) or not seat.strip():
-            await hub.send_json(
-                websocket,
-                hub.system(
-                    "Persistent capability registration requires a project-scoped "
-                    "seat identity (<project>/<seat>).",
-                    msg_type=MessageType.ERROR,
-                    target=sender,
-                ),
-            )
-            return
-    agent = sender
-    declared_agent = data.get("agent")
-    if declared_agent is not None:
-        requested = str(declared_agent).strip()
-        # Mirror the mailbox structural gate: a connection may register a card
-        # for itself or for the identity whose recognised receiver sidecar it
-        # is (a wake listener registers its seat, not its receive-only name). Anything
-        # else is an impersonation attempt and fails closed.
-        if not requested or (requested != sender and waiter_owner(sender) != requested):
-            await hub.send_json(
-                websocket,
-                hub.system(
-                    "Capability registration for another identity requires the "
-                    "connection to be that identity or a recognised receiver sidecar.",
-                    msg_type=MessageType.ERROR,
-                    target=sender,
-                ),
-            )
-            return
-        agent = requested
-        if persist:
-            agent_seat = agent.split("/", 1)[1] if "/" in agent else ""
-            if not project_of(agent) or not agent_seat.strip():
-                await hub.send_json(
-                    websocket,
-                    hub.system(
-                        "Persistent capability registration requires a project-scoped "
-                        "seat identity (<project>/<seat>).",
-                        msg_type=MessageType.ERROR,
-                        target=sender,
-                    ),
-                )
-                return
-    card_kwargs: dict[str, Any] = {
+        return True
+    return False
+
+
+async def _refuse_unscoped_persist(
+    hub: OfferingsContext, sender: str, websocket: Any, identity: str, persist: Any
+) -> bool:
+    """Reject persistent registration that is not a project-scoped seat."""
+    if persist and not _project_seat(identity):
+        await _reject_capability(hub, sender, websocket, _SEAT_REQUIRED)
+        return True
+    return False
+
+
+def _accepted_agent(sender: str, declared: Any) -> str | None:
+    """Return the card identity, or none when the declaration impersonates someone."""
+    if declared is None:
+        return sender
+    requested = str(declared).strip()
+    # Mirror the mailbox structural gate: a connection may register a card
+    # for itself or for the identity whose recognised receiver sidecar it
+    # is (a wake listener registers its seat, not its receive-only name). Anything
+    # else is an impersonation attempt and fails closed.
+    if not requested or (requested != sender and waiter_owner(sender) != requested):
+        return None
+    return requested
+
+
+def _capability_kwargs(
+    data: dict[str, Any],
+    agent: str,
+    skills: list[str],
+    task_classes: list[str],
+    meta: Any,
+) -> dict[str, Any]:
+    """Return the stored card fields, with tags and metadata in their safe shapes."""
+    return {
         "description": str(data.get("description") or ""),
         "skills": skills,
         "task_classes": task_classes,
@@ -140,14 +128,30 @@ async def handle_advertise(
         "meta": meta if isinstance(meta, dict) else None,
         "signature": data.get("signature"),
     }
+
+
+def _store_capability(
+    hub: OfferingsContext,
+    agent: str,
+    card_kwargs: dict[str, Any],
+    *,
+    persist: Any,
+    dispatchable: Any,
+) -> Any:
+    """Store a persistent registration or a live session card."""
     if persist:
-        card = hub.capabilities.advertise_persistent(
+        return hub.capabilities.advertise_persistent(
             agent,
             dispatchable=True if dispatchable is None else dispatchable,
             **card_kwargs,
         )
-    else:
-        card = hub.capabilities.advertise(agent, **card_kwargs)
+    return hub.capabilities.advertise(agent, **card_kwargs)
+
+
+async def _broadcast_capability(
+    hub: OfferingsContext, agent: str, card: Any, *, persist: Any
+) -> None:
+    """Broadcast the stored card, adding the persistent flags when they were stored."""
     card_payload = card.as_dict()
     if persist:
         registration = hub.capabilities.get_persistent(agent)
@@ -163,6 +167,44 @@ async def handle_advertise(
             card=card_payload,
         )
     )
+
+
+async def handle_advertise(
+    hub: OfferingsContext, sender: str, data: dict[str, Any], websocket: Any
+) -> None:
+    """Store an agent's capability card and broadcast it to the channel.
+
+    With the additive ``persist`` flag the card becomes a persistent dispatch
+    registration (survives disconnect, 24h refresh TTL) instead of a live
+    session card; ``dispatchable`` opts the registration in or out of
+    automated dispatch. Persistent registration is reserved for
+    project-scoped seat identities and fails closed otherwise.
+    """
+    skills = _string_list(data.get("skills"))
+    task_classes = _string_list(data.get("task_classes"))
+    meta = data.get("meta")
+    persist = data.get("persist")
+    dispatchable = data.get("dispatchable")
+    if await _refuse_bad_flag(hub, sender, websocket, "persist", persist):
+        return
+    if await _refuse_bad_flag(hub, sender, websocket, "dispatchable", dispatchable):
+        return
+    if await _refuse_unscoped_persist(hub, sender, websocket, sender, persist):
+        return
+    agent = _accepted_agent(sender, data.get("agent"))
+    if agent is None:
+        await _reject_capability(hub, sender, websocket, _FOREIGN_CARD)
+        return
+    if await _refuse_unscoped_persist(hub, sender, websocket, agent, persist):
+        return
+    card = _store_capability(
+        hub,
+        agent,
+        _capability_kwargs(data, agent, skills, task_classes, meta),
+        persist=persist,
+        dispatchable=dispatchable,
+    )
+    await _broadcast_capability(hub, agent, card, persist=persist)
 
 
 def _resource_persister(
