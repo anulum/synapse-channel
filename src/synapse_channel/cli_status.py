@@ -25,7 +25,7 @@ import os
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, TextIO
+from typing import Any, Protocol
 
 from synapse_channel.cli_query_transport import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
@@ -310,6 +310,22 @@ def status_to_json(status: HubStatus) -> dict[str, object]:
     return payload
 
 
+class _StatusStream(Protocol):
+    """The write, flush, and TTY checks a status watch actually uses."""
+
+    def write(self, text: str) -> int:
+        """Append one chunk and return how many characters were accepted."""
+        ...
+
+    def flush(self) -> None:
+        """Push any buffered text to the consumer."""
+        ...
+
+    def isatty(self) -> bool:
+        """Return whether the consumer rewrites a single line in place."""
+        ...
+
+
 async def watch_status(
     *,
     uri: str,
@@ -321,7 +337,7 @@ async def watch_status(
     as_json: bool = False,
     plain: bool = False,
     agent_factory: AgentFactory = SynapseAgent,
-    out: TextIO | None = None,
+    out: _StatusStream | None = None,
     observed_peers: tuple[ObservedPeerSpec, ...] = (),
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
@@ -352,8 +368,9 @@ async def watch_status(
         ASCII-only rendering for the human line.
     agent_factory : AgentFactory, optional
         Factory for the probe agent; injectable for testing.
-    out : typing.TextIO or None, optional
-        Output stream; defaults to ``sys.stdout``.
+    out : stream or None, optional
+        Where each refresh is written. It accepts text, flushes, and reports
+        whether it is a TTY. Defaults to ``sys.stdout``.
     mailbox_identity : str or None, optional
         Exact identity whose mailbox count is rendered; forwarded to each
         :func:`query_status` refresh.

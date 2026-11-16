@@ -302,7 +302,7 @@ async def test_query_status_marks_unanswered_snapshots_unavailable() -> None:
     """A ready hub that answers nothing never turns missing measurements into zeroes."""
     status = await query_status(
         uri="ws://unused",
-        agent_factory=_SilentStatusAgent,  # type: ignore[arg-type]
+        agent_factory=_SilentStatusAgent,  # type: ignore[arg-type] # probe double, not an agent
         attempts=2,
     )
     assert status.reachable is True
@@ -473,7 +473,7 @@ def test_watch_offline_appends_lines_and_exits_one() -> None:
             ready_timeout=0.05,
             interval=0.01,
             count=2,
-            out=out,  # type: ignore[arg-type]
+            out=out,
         )
     )
     assert code == 1
@@ -491,7 +491,7 @@ def test_watch_json_emits_ndjson() -> None:
             interval=0.01,
             count=2,
             as_json=True,
-            out=out,  # type: ignore[arg-type]
+            out=out,
         )
     )
     assert code == 1
@@ -509,7 +509,7 @@ def test_watch_tty_rewrites_in_place_and_restores_the_newline() -> None:
             interval=0.01,
             count=2,
             plain=True,
-            out=out,  # type: ignore[arg-type]
+            out=out,
         )
     )
     text = "".join(out.chunks)
@@ -524,7 +524,7 @@ async def test_watch_reachable_hub_exits_zero() -> None:
         try:
             code = await asyncio.to_thread(
                 asyncio.run,
-                cli_status.watch_status(uri=uri, interval=0.01, count=1, out=out),  # type: ignore[arg-type]
+                cli_status.watch_status(uri=uri, interval=0.01, count=1, out=out),
             )
         finally:
             await close_agents(online)
