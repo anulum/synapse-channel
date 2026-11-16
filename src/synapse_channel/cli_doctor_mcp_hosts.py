@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 import tomllib
 from collections.abc import Callable, Mapping
@@ -123,7 +123,7 @@ def default_project(cwd: Path, *, search_path: str | None = None) -> Path:
     if git is None:
         return cwd
     try:
-        result = subprocess.run(  # nosec B603
+        result = subprocess.run(  # nosec B603 # argument vector, never a shell
             [git, "-C", str(cwd), "rev-parse", "--show-toplevel"],
             capture_output=True,
             text=True,
