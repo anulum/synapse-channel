@@ -71,6 +71,15 @@ def run_waker_command(
     limit = command_timeout(timeout)
     if not capture_output or not text:
         raise ValueError("waker commands require captured text output")
+    returncode, stdout, stderr = _run_captured_waker(args, limit)
+    result = subprocess.CompletedProcess(args, returncode, stdout, stderr)
+    if check:
+        result.check_returncode()
+    return result
+
+
+def _run_captured_waker(args: list[str], limit: float) -> tuple[int, str, str]:
+    """Run one command and reap its group when the wait is interrupted."""
     with subprocess.Popen(  # nosec B603 # argument vector, never a shell
         args,
         stdin=subprocess.DEVNULL,
@@ -87,7 +96,4 @@ def run_waker_command(
                 os.killpg(process.pid, signal.SIGKILL)
             process.wait()
             raise
-    result = subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
-    if check:
-        result.check_returncode()
-    return result
+        return process.returncode, stdout, stderr
