@@ -321,7 +321,7 @@ async def test_route_task_names_the_snapshots_that_never_arrived(
         uri="ws://unused",
         name="ROUTER",
         task_id="T1",
-        agent_factory=_SilentRoutingAgent,  # type: ignore[arg-type]
+        agent_factory=_SilentRoutingAgent,  # type: ignore[arg-type] # probe double
         response_timeout=0.1,
     )
     assert code == 1
