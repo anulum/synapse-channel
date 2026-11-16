@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import platform
 import shutil
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -55,7 +55,7 @@ def systemd_user_manager_available(executable: str) -> bool:
     """Return whether the current user's systemd manager answers read-only."""
     try:
         # ``executable`` is resolved from PATH and every remaining argv token is fixed.
-        completed = subprocess.run(  # nosec B603
+        completed = subprocess.run(  # nosec B603 # argument vector, never a shell
             [executable, "--user", "show-environment"],
             capture_output=True,
             text=True,
@@ -70,7 +70,7 @@ def systemd_user_manager_available(executable: str) -> bool:
 def systemd_user_hub_pid(executable: str) -> int | None:
     """Return the active user hub PID through one bounded read-only probe."""
     try:
-        completed = subprocess.run(  # nosec B603
+        completed = subprocess.run(  # nosec B603 # argument vector, never a shell
             [
                 executable,
                 "--user",
