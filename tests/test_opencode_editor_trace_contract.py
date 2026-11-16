@@ -260,7 +260,7 @@ def test_proxy_process_failure_wins_clean_child_exit_race(tmp_path: Path) -> Non
     assert clean_child is not None
 
     for index in range(20):
-        completed = subprocess.run(  # nosec B603
+        completed = subprocess.run(
             [
                 sys.executable,
                 str(proxy),
