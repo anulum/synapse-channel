@@ -351,7 +351,10 @@ def test_verification_authorization_refuses_bad_inputs_and_time() -> None:
         }
         values.update(kwargs)
         with pytest.raises(SetupVerificationError, match=code):
-            build_verification_authorization(verification_plan, **values)  # type: ignore[arg-type]
+            build_verification_authorization(
+                verification_plan,
+                **values,  # type: ignore[arg-type] # bad values
+            )
     with pytest.raises(SetupVerificationError, match="authorization_expired"):
         validate_verification_authorization(
             verification_plan,
