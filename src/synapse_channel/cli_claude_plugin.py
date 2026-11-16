@@ -14,7 +14,7 @@ import json
 import os
 import re
 import shutil
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 from pathlib import Path
 
@@ -41,7 +41,7 @@ def _host_binary(explicit: str | None) -> str:
 
 def _validate(host: str, path: Path) -> bool:
     """Run the host's strict plugin validator on a complete plugin directory."""
-    result = subprocess.run(  # nosec B603
+    result = subprocess.run(  # nosec B603 # argument vector, never a shell
         [host, "plugin", "validate", "--strict", "--json", str(path)],
         capture_output=True,
         text=True,
@@ -52,7 +52,7 @@ def _validate(host: str, path: Path) -> bool:
 
 
 def _host_version(host: str) -> str:
-    result = subprocess.run(  # nosec B603
+    result = subprocess.run(  # nosec B603 # argument vector, never a shell
         [host, "--version"], capture_output=True, text=True, timeout=10, check=False
     )
     if result.returncode != 0:
@@ -62,7 +62,7 @@ def _host_version(host: str) -> str:
 
 def _token_file_supported(binary: str) -> bool:
     """Probe the exact installed MCP command before configuring a token file."""
-    result = subprocess.run(  # nosec B603
+    result = subprocess.run(  # nosec B603 # argument vector, never a shell
         [binary, "mcp", "--help"], capture_output=True, text=True, timeout=30, check=False
     )
     return result.returncode == 0 and "--token-file" in result.stdout
@@ -70,7 +70,7 @@ def _token_file_supported(binary: str) -> bool:
 
 def _core_supported(binary: str) -> bool:
     """Admit only an installed Synapse command at the plugin's minimum version."""
-    result = subprocess.run(  # nosec B603
+    result = subprocess.run(  # nosec B603 # argument vector, never a shell
         [binary, "--version"], capture_output=True, text=True, timeout=30, check=False
     )
     match = re.match(r"synapse-channel (\d+)\.(\d+)\.(\d+)", result.stdout.strip())
