@@ -15,7 +15,7 @@ import json
 import os
 import queue
 import stat
-import subprocess
+import subprocess  # nosec B404 # fixed argument vectors for the operator-named binary, no shell
 import tempfile
 import threading
 from pathlib import Path
@@ -195,7 +195,7 @@ def smoke_binary(
         (home / "tmp").mkdir(mode=0o700)
         environment = _process_environment(home)
         try:
-            completed = subprocess.run(
+            completed = subprocess.run(  # nosec B603 # fixed argument vector, no shell
                 [str(binary), "--version"],
                 cwd=workspace,
                 env=environment,
@@ -212,7 +212,7 @@ def smoke_binary(
                 f"got {completed.stdout.strip() or completed.stderr.strip() or 'no output'}"
             )
         try:
-            process = subprocess.Popen(
+            process = subprocess.Popen(  # nosec B603 # fixed ACP argument vector, no shell
                 [str(binary), "acp", "--cwd", str(workspace)],
                 cwd=workspace,
                 env=environment,
