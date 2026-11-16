@@ -333,7 +333,7 @@ async def test_gateway_posts_reads_and_assigns() -> None:
     boards: list[Any] = []
     payload = {"tasks": [{"task_id": "w/a", "status": "open", "suggested_owner": ""}]}
     agent = _FakeAgent(boards, board_payload=payload)
-    gateway = _AgentGateway(agent, boards)  # type: ignore[arg-type]
+    gateway = _AgentGateway(agent, boards)  # type: ignore[arg-type] # probe double
 
     tasks = compile_to_tasks(parse_workflow(_GOOD))
     await gateway.post_tasks(tasks)
@@ -488,7 +488,7 @@ def test_run_command_reports_an_unreachable_hub(
 ) -> None:
     parser = _parser()
     args = parser.parse_args(["workflow", "run", _write(tmp_path, _GOOD)])
-    assert _cmd_run(args, agent_factory=_NotReadyAgent) == 1  # type: ignore[arg-type]
+    assert _cmd_run(args, agent_factory=_NotReadyAgent) == 1  # type: ignore[arg-type] # probe
     assert "WORKFLOW" in capsys.readouterr().out
 
 
