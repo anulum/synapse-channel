@@ -14,7 +14,7 @@ import hashlib
 import html
 import json
 import re
-import subprocess  # nosec B404 - fixed version-only commands, never a shell
+import subprocess  # fixed version-only commands, never a shell
 import sys
 from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime, timedelta
@@ -83,7 +83,7 @@ def fetch_source(url: str) -> bytes:
             "Accept": "application/json,text/markdown,text/html",
         },
     )
-    with urlopen(request, timeout=15) as response:  # nosec B310 - exact HTTPS allowlist
+    with urlopen(request, timeout=15) as response:  # exact HTTPS allowlist
         final = urlsplit(response.geturl())
         if final.scheme != "https" or final.hostname != urlsplit(url).hostname:
             raise VendorWatchError("official source redirected to a different host")
@@ -138,7 +138,7 @@ def installed_version(command: tuple[str, ...] | None) -> str | None:
     if command is None:
         return None
     try:
-        result = subprocess.run(  # nosec B603 - constant argv from SOURCES
+        result = subprocess.run(  # constant argv from SOURCES
             command, capture_output=True, text=True, timeout=8, check=False
         )
     except (OSError, subprocess.TimeoutExpired):
