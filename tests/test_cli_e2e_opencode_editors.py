@@ -13,8 +13,9 @@ import json
 import os
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -187,24 +188,30 @@ def _expected_clients(client: str) -> dict[str, str]:
     return {identity.name: identity.version}
 
 
-def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
-    client = os.environ.get("SYNAPSE_EDITOR_E2E_CLIENT", "").strip().lower()
-    if not client:
-        pytest.skip("dedicated editor acceptance workflow selects the real client")
-    if client not in _CLIENT_TIMEOUT_SECONDS:
-        raise AssertionError(f"unknown SYNAPSE_EDITOR_E2E_CLIENT: {client}")
+@dataclass(frozen=True)
+class _EditorWorkspace:
+    """Paths one real editor acceptance run prepares before it starts the hub."""
 
+    client: str
+    fixture_dir: Path
+    trace: Path
+    home: Path
+    project: Path
+    opencode: Path
+    identity: str
+    launcher: Path
+    config_path: Path
+
+
+def _prepare_editor_workspace(tmp_path: Path, client: str) -> _EditorWorkspace:
+    """Create the private home, project and OpenCode config the editor will use."""
     fixture_dir = Path(__file__).resolve().parent / "e2e" / "opencode_editors"
     artifact_dir = Path(_required_env("SYNAPSE_EDITOR_E2E_ARTIFACT_DIR")).resolve()
     artifact_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    trace = artifact_dir / f"{client}-acp.jsonl"
     home = tmp_path / "home"
     project = git_repo(tmp_path / "project")
     home.mkdir(mode=0o700)
     project.chmod(0o700)
-    opencode = _exact_opencode()
-    identity = f"editor/{client}"
-    launcher = synapse_launcher(tmp_path / "synapse-current")
     config_path = project / ".opencode" / "opencode.json"
     config_path.parent.mkdir(mode=0o700)
     config_path.write_text(
@@ -218,7 +225,162 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     config_path.chmod(0o600)
+    return _EditorWorkspace(
+        client=client,
+        fixture_dir=fixture_dir,
+        trace=artifact_dir / f"{client}-acp.jsonl",
+        home=home,
+        project=project,
+        opencode=_exact_opencode(),
+        identity=f"editor/{client}",
+        launcher=synapse_launcher(tmp_path / "synapse-current"),
+        config_path=config_path,
+    )
 
+
+def _install_the_editor_identity(
+    workspace: _EditorWorkspace,
+    environment: dict[str, str],
+    identity_environment: Mapping[str, str],
+    *,
+    llm: ScriptedLlmServer,
+    hub_uri: str,
+) -> dict[str, str]:
+    """Install the adapter and return the environment the editor process uses."""
+    installed = run_cli(
+        "adapters",
+        "opencode",
+        "install",
+        "--identity",
+        workspace.identity,
+        "--project",
+        str(workspace.project),
+        "--synapse-bin",
+        str(workspace.launcher),
+        uri=hub_uri,
+        cwd=workspace.project,
+        env=identity_environment,
+    )
+    assert installed.ok(), installed.output
+    environment = governed_project_environment(environment, workspace.project)
+    config = json.loads(environment["OPENCODE_CONFIG_CONTENT"])
+    config["model"] = TEST_MODEL
+    environment["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
+    proxy_argv = [
+        sys.executable,
+        str(workspace.fixture_dir / "acp_trace_proxy.py"),
+        "--trace",
+        str(workspace.trace),
+        "--opencode-bin",
+        str(workspace.opencode),
+        "--cwd",
+        str(workspace.project),
+    ]
+    environment.update(
+        {
+            "SYNAPSE_ACP_PROXY_ARGV_JSON": json.dumps(proxy_argv),
+            "SYNAPSE_ACP_TRACE": str(workspace.trace),
+            "SYNAPSE_EDITOR_E2E_PROJECT": str(workspace.project),
+            "SYNAPSE_EDITOR_E2E_PROMPT": PROMPT,
+            "SYNAPSE_EDITOR_E2E_RESPONSE": RESPONSE,
+        }
+    )
+    enqueue_governance_turn(llm, workspace.project)
+    return environment
+
+
+def _exercise_the_editor_client(
+    workspace: _EditorWorkspace,
+    environment: Mapping[str, str],
+    llm: ScriptedLlmServer,
+) -> None:
+    """Run the selected editor and require the governed trace and files."""
+    command = _command(workspace.client, workspace.fixture_dir)
+    if workspace.client == "zed":
+        completed = run_isolated_editor_command(
+            command,
+            cwd=workspace.project,
+            env=environment,
+            timeout=_CLIENT_TIMEOUT_SECONDS[workspace.client],
+        )
+    else:
+        completed = subprocess.run(
+            command,
+            cwd=workspace.project,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_CLIENT_TIMEOUT_SECONDS[workspace.client],
+        )
+    assert completed.returncode == 0, (
+        f"{workspace.client} acceptance exited {completed.returncode}\n"
+        f"stdout:\n{completed.stdout[-8000:]}\n"
+        f"stderr:\n{completed.stderr[-12000:]}"
+    )
+    assert_editor_trace(
+        workspace.trace,
+        expected_clients=_expected_clients(workspace.client),
+        expected_agent_version=OPENCODE_VERSION,
+        prompt=PROMPT,
+    )
+    assert_provider_governance(llm.prompt_requests)
+    assert (workspace.project / "allowed.txt").read_text(encoding="utf-8") == "governed\n"
+    assert not (workspace.project / "denied-before.txt").exists()
+    assert not (workspace.project / "denied-after.txt").exists()
+
+
+def _uninstall_the_editor_adapter(
+    workspace: _EditorWorkspace,
+    identity_environment: Mapping[str, str] | None,
+) -> None:
+    """Remove the adapter and keep the project's original write permission."""
+    cleanup_errors: list[str] = []
+    expected_config: dict[str, object] | None = None
+    try:
+        installed_config = json.loads(workspace.config_path.read_text(encoding="utf-8"))
+        expected_config = _expected_config_after_adapter_uninstall(installed_config)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        cleanup_errors.append(f"installed OpenCode configuration could not be verified: {exc}")
+    removed = run_cli(
+        "adapters",
+        "opencode",
+        "uninstall",
+        "--project",
+        str(workspace.project),
+        cwd=workspace.project,
+        env=identity_environment,
+    )
+    if not removed.ok():
+        cleanup_errors.append(f"OpenCode adapter uninstall failed: {removed.output}")
+    try:
+        restored_config = json.loads(workspace.config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        cleanup_errors.append(f"OpenCode configuration could not be verified: {exc}")
+    else:
+        if expected_config is not None and restored_config != expected_config:
+            cleanup_errors.append("OpenCode adapter uninstall changed non-owned configuration")
+        if restored_config.get("permission") != {"write": "allow"}:
+            cleanup_errors.append("OpenCode adapter uninstall lost the original write permission")
+    if cleanup_errors:
+        detail = "; ".join(cleanup_errors)
+        active_error = sys.exc_info()[1]
+        if active_error is not None:
+            raise AssertionError(
+                f"editor acceptance and cleanup both failed: {detail}"
+            ) from active_error
+        raise AssertionError(detail)
+
+
+def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
+    """One real editor completes a governed OpenCode turn and leaves the project clean."""
+    client = os.environ.get("SYNAPSE_EDITOR_E2E_CLIENT", "").strip().lower()
+    if not client:
+        pytest.skip("dedicated editor acceptance workflow selects the real client")
+    if client not in _CLIENT_TIMEOUT_SECONDS:
+        raise AssertionError(f"unknown SYNAPSE_EDITOR_E2E_CLIENT: {client}")
+
+    workspace = _prepare_editor_workspace(tmp_path, client)
     with (
         ScriptedLlmServer() as llm,
         isolated_hub(
@@ -230,127 +392,21 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
         try:
             environment = source_environment(
                 isolated_environment(
-                    home,
+                    workspace.home,
                     llm.url,
                     pure=False,
                     disable_project_config=True,
                 )
             )
             identity_environment = {"XDG_DATA_HOME": environment["XDG_DATA_HOME"]}
-            installed = run_cli(
-                "adapters",
-                "opencode",
-                "install",
-                "--identity",
-                identity,
-                "--project",
-                str(project),
-                "--synapse-bin",
-                str(launcher),
-                uri=hub.uri,
-                cwd=project,
-                env=identity_environment,
+            environment = _install_the_editor_identity(
+                workspace,
+                environment,
+                identity_environment,
+                llm=llm,
+                hub_uri=hub.uri,
             )
-            assert installed.ok(), installed.output
-            environment = governed_project_environment(environment, project)
-            config = json.loads(environment["OPENCODE_CONFIG_CONTENT"])
-            config["model"] = TEST_MODEL
-            environment["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
-            proxy_argv = [
-                sys.executable,
-                str(fixture_dir / "acp_trace_proxy.py"),
-                "--trace",
-                str(trace),
-                "--opencode-bin",
-                str(opencode),
-                "--cwd",
-                str(project),
-            ]
-            environment.update(
-                {
-                    "SYNAPSE_ACP_PROXY_ARGV_JSON": json.dumps(proxy_argv),
-                    "SYNAPSE_ACP_TRACE": str(trace),
-                    "SYNAPSE_EDITOR_E2E_PROJECT": str(project),
-                    "SYNAPSE_EDITOR_E2E_PROMPT": PROMPT,
-                    "SYNAPSE_EDITOR_E2E_RESPONSE": RESPONSE,
-                }
-            )
-            enqueue_governance_turn(llm, project)
-            command = _command(client, fixture_dir)
-            if client == "zed":
-                completed = run_isolated_editor_command(
-                    command,
-                    cwd=project,
-                    env=environment,
-                    timeout=_CLIENT_TIMEOUT_SECONDS[client],
-                )
-            else:
-                completed = subprocess.run(
-                    command,
-                    cwd=project,
-                    env=environment,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=_CLIENT_TIMEOUT_SECONDS[client],
-                )
-            assert completed.returncode == 0, (
-                f"{client} acceptance exited {completed.returncode}\n"
-                f"stdout:\n{completed.stdout[-8000:]}\n"
-                f"stderr:\n{completed.stderr[-12000:]}"
-            )
-            assert_editor_trace(
-                trace,
-                expected_clients=_expected_clients(client),
-                expected_agent_version=OPENCODE_VERSION,
-                prompt=PROMPT,
-            )
-            assert_provider_governance(llm.prompt_requests)
-            assert (project / "allowed.txt").read_text(encoding="utf-8") == "governed\n"
-            assert not (project / "denied-before.txt").exists()
-            assert not (project / "denied-after.txt").exists()
+            _exercise_the_editor_client(workspace, environment, llm)
         finally:
-            cleanup_errors: list[str] = []
-            expected_config: dict[str, object] | None = None
-            try:
-                installed_config = json.loads(config_path.read_text(encoding="utf-8"))
-                expected_config = _expected_config_after_adapter_uninstall(installed_config)
-            except (OSError, json.JSONDecodeError, ValueError) as exc:
-                cleanup_errors.append(
-                    f"installed OpenCode configuration could not be verified: {exc}"
-                )
-            removed = run_cli(
-                "adapters",
-                "opencode",
-                "uninstall",
-                "--project",
-                str(project),
-                cwd=project,
-                env=identity_environment,
-            )
-            if not removed.ok():
-                cleanup_errors.append(f"OpenCode adapter uninstall failed: {removed.output}")
-            try:
-                restored_config = json.loads(config_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as exc:
-                cleanup_errors.append(f"OpenCode configuration could not be verified: {exc}")
-            else:
-                if expected_config is not None and restored_config != expected_config:
-                    cleanup_errors.append(
-                        "OpenCode adapter uninstall changed non-owned configuration"
-                    )
-                if restored_config.get("permission") != {"write": "allow"}:
-                    cleanup_errors.append(
-                        "OpenCode adapter uninstall lost the original write permission"
-                    )
-            if cleanup_errors:
-                detail = "; ".join(cleanup_errors)
-                active_error = sys.exc_info()[1]
-                if active_error is not None:
-                    raise AssertionError(
-                        f"editor acceptance and cleanup both failed: {detail}"
-                    ) from active_error
-                else:
-                    raise AssertionError(detail)
-
-    assert_durable_governance(hub.db_path, project, identity)
+            _uninstall_the_editor_adapter(workspace, identity_environment)
+    assert_durable_governance(hub.db_path, workspace.project, workspace.identity)
