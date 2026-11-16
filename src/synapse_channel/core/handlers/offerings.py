@@ -190,66 +190,94 @@ def _resource_offer_body(
     return draft.response  # type: ignore[union-attr] # None return is not narrowed here
 
 
+def _resource_request(data: dict[str, Any]) -> tuple[str, str, Any, Any] | None:
+    """Return kind, name, capacity and meta, or none when kind or name is blank."""
+    kind = str(data.get("kind") or data.get("resource_kind") or "").strip()
+    name = str(data.get("name") or data.get("resource_name") or "").strip()
+    if not kind or not name:
+        return None
+    return kind, name, data.get("capacity", 1), data.get("meta") or {}
+
+
+async def _reject_resource(hub: OfferingsContext, sender: str, websocket: Any, text: str) -> None:
+    """Send one private rejection for a resource offer."""
+    await hub.send_json(
+        websocket,
+        hub.system(text, msg_type=MessageType.ERROR, target=sender),
+    )
+
+
+def _store_resource_offer(
+    state: SynapseState,
+    *,
+    sender: str,
+    kind: str,
+    name: str,
+    capacity: Any,
+    meta: Any,
+) -> tuple[str | None, ResourceOffer | None]:
+    """Register one offer and return its key and the stored record."""
+    key = state.offer_resource(sender, kind=kind, name=name, capacity=capacity, meta=meta)
+    return key, state.resources.get(key) if key is not None else None
+
+
+def _draft_resource_offer(
+    hub: OfferingsContext,
+    result: tuple[str | None, ResourceOffer | None],
+    *,
+    sender: str,
+    kind: str,
+    name: str,
+) -> OperationDraft | None:
+    """Build the broadcast and journal draft for a stored offer."""
+    key, offer = result
+    if key is None or offer is None:
+        return None
+    offered = hub.system(
+        f"Resource offered by {sender}",
+        msg_type=MessageType.RESOURCE_OFFERED,
+        agent=sender,
+        kind=kind,
+        name=name,
+        key=key,
+    )
+    return OperationDraft(
+        response=offered,
+        events=(
+            (
+                EventKind.RESOURCE,
+                {
+                    "agent": offer.agent,
+                    "kind": offer.kind,
+                    "name": offer.name,
+                    "capacity": offer.capacity,
+                    "meta": offer.meta,
+                    "offered_at": offer.offered_at,
+                },
+            ),
+        ),
+        intent={"family": "resource", "response_type": MessageType.RESOURCE_OFFERED},
+    )
+
+
 async def handle_resource(
     hub: OfferingsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Register a resource offer and broadcast it, or reject bad input."""
-    kind = str(data.get("kind") or data.get("resource_kind") or "").strip()
-    name = str(data.get("name") or data.get("resource_name") or "").strip()
-    capacity = data.get("capacity", 1)
-    meta = data.get("meta") or {}
+    requested = _resource_request(data)
+    if requested is None:
+        await _reject_resource(hub, sender, websocket, "resource offer requires kind+name")
+        return
+    kind, name, capacity, meta = requested
     journal = hub.journal
 
-    if not kind or not name:
-        await hub.send_json(
-            websocket,
-            hub.system(
-                "resource offer requires kind+name",
-                msg_type=MessageType.ERROR,
-                target=sender,
-            ),
-        )
-        return
-
     def mutate(state: SynapseState) -> tuple[str | None, ResourceOffer | None]:
-        key = state.offer_resource(
-            sender,
-            kind=kind,
-            name=name,
-            capacity=capacity,
-            meta=meta,
+        return _store_resource_offer(
+            state, sender=sender, kind=kind, name=name, capacity=capacity, meta=meta
         )
-        return key, state.resources.get(key) if key is not None else None
 
     def prepare(result: tuple[str | None, ResourceOffer | None]) -> OperationDraft | None:
-        key, offer = result
-        if key is None or offer is None:
-            return None
-        offered = hub.system(
-            f"Resource offered by {sender}",
-            msg_type=MessageType.RESOURCE_OFFERED,
-            agent=sender,
-            kind=kind,
-            name=name,
-            key=key,
-        )
-        return OperationDraft(
-            response=offered,
-            events=(
-                (
-                    EventKind.RESOURCE,
-                    {
-                        "agent": offer.agent,
-                        "kind": offer.kind,
-                        "name": offer.name,
-                        "capacity": offer.capacity,
-                        "meta": offer.meta,
-                        "offered_at": offer.offered_at,
-                    },
-                ),
-            ),
-            intent={"family": "resource", "response_type": MessageType.RESOURCE_OFFERED},
-        )
+        return _draft_resource_offer(hub, result, sender=sender, kind=kind, name=name)
 
     execution = await hub.run_atomic_operation(data, mutate, prepare)
     if execution is not None and execution.outcome in {"replayed", "conflict"}:
@@ -266,14 +294,7 @@ async def handle_resource(
         )
     )
     if key is None:
-        await hub.send_json(
-            websocket,
-            hub.system(
-                "resource offer quota exceeded",
-                msg_type=MessageType.ERROR,
-                target=sender,
-            ),
-        )
+        await _reject_resource(hub, sender, websocket, "resource offer quota exceeded")
         return
     draft = None if execution is not None else prepare((key, offer))
     offered = _resource_offer_body(execution, draft)
