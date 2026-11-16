@@ -25,7 +25,7 @@ import json
 import os
 import shlex
 import shutil
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from pathlib import Path
@@ -133,7 +133,7 @@ def run_doctor_notify(command: str, findings: list[str], *, uri: str) -> None:
         # inside -c payloads). CreateProcess accepts forward-slash paths.
         to_split = command.replace("\\", "/") if os.name == "nt" else command
         argv = shlex.split(to_split, posix=True)
-        completed = subprocess.run(  # nosec B603
+        completed = subprocess.run(  # nosec B603 # argument vector, never a shell
             argv,
             input=payload,
             text=True,
