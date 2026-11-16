@@ -463,7 +463,7 @@ def test_non_sqlite_driver_fault_fails_closed() -> None:
     cache = MessageReplayCache(
         window_seconds=30.0,
         max_entries=8,
-        durable=DriverFaultStore(),  # type: ignore[arg-type]
+        durable=DriverFaultStore(),  # type: ignore[arg-type] # fault store is not the driver
     )
     assert (
         _verify(_signed(nonce="driver-fault", sequence=1, timestamp=1.0), cache, now=1.0)
