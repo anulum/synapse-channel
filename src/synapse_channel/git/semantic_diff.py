@@ -25,7 +25,7 @@ import os
 import re
 import shutil
 import signal
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import threading
 import time
 from collections.abc import Sequence
@@ -276,7 +276,7 @@ def _git(
     if max_stdout_bytes < 0:
         raise ValueError("git semantic diff stdout limit must not be negative")
     try:
-        process = subprocess.Popen(  # nosec B603
+        process = subprocess.Popen(  # nosec B603 # argument vector, never a shell
             [
                 git,
                 "-c",
