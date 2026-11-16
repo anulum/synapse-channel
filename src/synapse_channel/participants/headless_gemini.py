@@ -43,7 +43,7 @@ from __future__ import annotations
 
 # The Gemini CLI is this module's controlled subprocess boundary; argv is built from typed
 # fields and never from a shell string.
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 
 from synapse_channel.participants.envelope import TurnRequest, TurnResult
 from synapse_channel.participants.gemini_stream import parse_gemini_stream
