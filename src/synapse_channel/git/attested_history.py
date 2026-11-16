@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -97,7 +97,7 @@ def _default_git_runner(args: list[str]) -> str:
         raise GitError("git is not installed or not on PATH")
     try:
         # Fixed git binary, no shell, bounded argv from internal git operations.
-        result = subprocess.run(  # nosec B603
+        result = subprocess.run(  # nosec B603 # argument vector, never a shell
             [git, *args],
             capture_output=True,
             text=True,
