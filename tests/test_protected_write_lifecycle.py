@@ -325,7 +325,11 @@ def test_transition_rejects_invalid_or_reused_sequence(sequence: object) -> None
         initial, "begin", 2, operation_phase="executing", begin_sequence=2
     )
     with pytest.raises(ValueError, match="journal sequence"):
-        _go(initial, (request, reply, replace(context, event_sequence=sequence)))  # type: ignore[arg-type]
+        revised = replace(
+            context,
+            event_sequence=sequence,  # type: ignore[arg-type] # bad sequence
+        )
+        _go(initial, (request, reply, revised))
 
 
 @pytest.mark.parametrize("field", ["principal", "session_id"])
