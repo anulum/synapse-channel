@@ -334,11 +334,11 @@ def check_mcp_posture(
         findings.append("claim tools registered: " + ", ".join(sorted(REQUIRED_MCP_CLAIM_TOOLS)))
 
     if git_toplevel is None:
-        import subprocess  # nosec B404 - fixed git argv below, never a shell string
+        import subprocess  # nosec B404 # fixed git argv below, never a shell string
 
         root = Path.cwd() if cwd is None else Path(cwd)
         try:
-            proc = subprocess.run(  # nosec B603 B607 — fixed argv, no shell
+            proc = subprocess.run(  # nosec B603 B607 # fixed argv, no shell
                 ["git", "rev-parse", "--show-toplevel"],
                 cwd=root,
                 check=False,
