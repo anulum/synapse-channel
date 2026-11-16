@@ -18,19 +18,24 @@ durable sequence. It is not evidence that a model read or acted on their bodies.
 
 from __future__ import annotations
 
-import fnmatch
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, cast
 
 from synapse_channel.core.agent_liveness import waiter_owner
-from synapse_channel.core.dead_letters import is_directed_target
 from synapse_channel.core.hub_address import is_hub_qualified_name
 from synapse_channel.core.journal import EventKind, record_mailbox_watermark, record_role_binding
+from synapse_channel.core.mailbox_pending_layout import (
+    count_after,
+    count_between,
+    load_counters,
+    project_mailbox_layout,
+    remember_count,
+    stored_count,
+)
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.role_mailbox import (
-    addresses_role,
     mailbox_role,
     pending_in_mailbox,
     role_mailbox_key,
@@ -301,7 +306,7 @@ class MailboxPendingTracker:
         if self.store is None or not name:
             return 0
         self._remember(name)
-        self._materialise_missing_counts()
+        self._refresh_counts((name,))
         return self._counts.get(name, 0)
 
     def pending_chats(
@@ -403,88 +408,85 @@ class MailboxPendingTracker:
         return {identity: self._counts[identity] for identity in sorted(self._known)}
 
     def _materialise_missing_counts(self) -> None:
-        """Project every cold count from one shared chat-history read."""
-        missing = tuple(identity for identity in self._known if identity not in self._counts)
-        if not missing:
-            return
-        starts = {identity: self.watermark_for(identity) + 1 for identity in missing}
+        """Fill retained counts from the stored rows, without reading chat bodies."""
+        self._refresh_counts(tuple(self._known))
+
+    def _refresh_counts(self, identities: tuple[str, ...]) -> None:
+        """Read each mailbox's stored count, under the store lock."""
         store = cast(EventStore, self.store)
-        events = store.read_window(
-            min_seq=min(starts.values()),
-            max_seq=None,
-            kinds=(EventKind.CHAT,),
-        )
-        counts = dict.fromkeys(missing, 0)
-        exact_recipients = self._exact_recipients(missing)
-        for event in events:
-            payload = event.payload
-            target = str(payload.get("target") or "all")
-            if payload.get("channel") or not is_directed_target(target):
-                continue
-            sender = str(payload.get("sender") or "")
-            for identity in self._recipients(target, missing, exact_recipients):
-                if event.seq >= starts[identity] and sender != identity:
-                    counts[identity] += 1
-        self._counts.update(counts)
+        with store.storage.lock:
+            for identity in identities:
+                self._ensure_stored_count(store, identity)
+            store.storage.connection.commit()
 
-    @staticmethod
-    def _exact_recipients(missing: Iterable[str]) -> dict[str, set[str]]:
-        """Map each exact address to the cold mailboxes it reaches.
-
-        A personal mailbox is reached by its name and its bare project; a role
-        mailbox only by its role.
-        """
-        exact: dict[str, set[str]] = {}
-        for identity in missing:
-            role = mailbox_role(identity)
-            addresses = (role,) if role is not None else (identity, identity.split("/", 1)[0])
-            for address in addresses:
-                exact.setdefault(address, set()).add(identity)
-        return exact
-
-    @staticmethod
-    def _recipients(target: str, missing: Iterable[str], exact: Mapping[str, set[str]]) -> set[str]:
-        """Return the cold mailboxes one directed target reaches."""
-        recipients: set[str] = set()
-        for part in (raw.strip() for raw in target.split(",") if raw.strip()):
-            if any(marker in part for marker in _GLOB_MARKERS):
-                recipients.update(identity for identity in missing if _glob_reaches(part, identity))
-            else:
-                recipients.update(exact.get(part, ()))
-        return recipients
+    def _ensure_stored_count(self, store: EventStore, identity: str) -> None:
+        """Load one counter, or compose it from hits when the watermark differs."""
+        if identity not in self._known:
+            return
+        watermark = self.watermark_for(identity)
+        connection = store.storage.connection
+        stored = stored_count(connection, identity)
+        if stored is not None and stored[1] == watermark:
+            self._counts[identity] = stored[0]
+            return
+        pending = count_after(connection, identity, watermark)
+        remember_count(connection, identity, pending, watermark)
+        self._counts[identity] = pending
 
     def _restore(self) -> None:
-        """Restore known mailboxes and the highest valid watermark of each."""
+        """Restore stored counts, then replay watermarks and role bindings.
+
+        Chat bodies are not read. The projection walk, when this store is still
+        at version 0, has already filled the tables before this returns, and the
+        hub has not bound its socket yet.
+        """
         if self.store is None:
             return
-        kinds = (EventKind.CHAT, EventKind.MAILBOX_WATERMARK, EventKind.ROLE_BINDING)
-        for event in self.store.iter_events(kinds=kinds):
-            if event.kind == EventKind.ROLE_BINDING:
-                self._restore_binding(event.payload)
-                continue
-            if event.kind == EventKind.CHAT:
-                for identity in self._target_identities(str(event.payload.get("target") or "all")):
-                    self._remember(identity)
-                continue
-            identity = str(event.payload.get("identity") or "").strip()
-            if not identity:
-                continue
-            through_seq = safe_int(
-                event.payload.get("through_seq"),
-                default=0,
-                min_value=0,
-                allow_bool=False,
-            )
-            role = mailbox_role(identity)
-            carried = 0 if role is None else self._adopt_plain_name(role)
+        project_mailbox_layout(self.store)
+        self._load_stored_counters()
+        self._replay_mailbox_events()
+
+    def _load_stored_counters(self) -> None:
+        """Remember each stored mailbox in insertion order and keep its count."""
+        store = cast(EventStore, self.store)
+        for identity, pending, watermark in load_counters(store.storage.connection):
             self._remember(identity)
             if identity not in self._known:
                 continue
-            self._watermarks[identity] = max(
-                self.watermark_for(identity),
-                carried,
-                min(through_seq, event.seq),
-            )
+            self._watermarks[identity] = max(self.watermark_for(identity), watermark)
+            self._counts[identity] = pending
+
+    def _replay_mailbox_events(self) -> None:
+        """Replay watermark and role-binding events, which are not chat bodies."""
+        store = cast(EventStore, self.store)
+        kinds = (EventKind.MAILBOX_WATERMARK, EventKind.ROLE_BINDING)
+        for event in store.iter_events(kinds=kinds):
+            if event.kind == EventKind.ROLE_BINDING:
+                self._restore_binding(event.payload)
+                continue
+            self._restore_watermark(event.payload, event.seq)
+
+    def _restore_watermark(self, payload: Mapping[str, Any], seq: int) -> None:
+        """Apply one watermark event without lowering a stored cursor."""
+        identity = str(payload.get("identity") or "").strip()
+        if not identity:
+            return
+        through_seq = safe_int(
+            payload.get("through_seq"),
+            default=0,
+            min_value=0,
+            allow_bool=False,
+        )
+        role = mailbox_role(identity)
+        carried = 0 if role is None else self._adopt_plain_name(role)
+        self._remember(identity)
+        if identity not in self._known:
+            return
+        self._watermarks[identity] = max(
+            self.watermark_for(identity),
+            carried,
+            min(through_seq, seq),
+        )
 
     def _remember(self, identity: str) -> None:
         """Touch one mailbox and evict the least-recent one beyond the bound.
@@ -582,24 +584,7 @@ class MailboxPendingTracker:
         return key if key in self._known else part
 
     def _count_window(self, identity: str, *, min_seq: int, max_seq: int | None) -> int:
-        """Count matching directed chats inside one inclusive sequence window."""
+        """Count matching directed chats from the address index."""
         store = cast(EventStore, self.store)
-        events = store.read_window(
-            min_seq=min_seq,
-            max_seq=max_seq,
-            kinds=(EventKind.CHAT,),
-        )
-        return sum(1 for event in events if pending_in_mailbox(event.payload, identity))
-
-
-def _glob_reaches(part: str, identity: str) -> bool:
-    """Return whether a glob target part reaches a mailbox.
-
-    A role mailbox is reached when its role matches the part; a personal mailbox
-    when its name or its bare project does.
-    """
-    role = mailbox_role(identity)
-    if role is not None:
-        return addresses_role(part, role)
-    project = identity.split("/", 1)[0]
-    return fnmatch.fnmatchcase(identity, part) or fnmatch.fnmatchcase(project, part)
+        with store.storage.lock:
+            return count_between(store.storage.connection, identity, min_seq, max_seq)

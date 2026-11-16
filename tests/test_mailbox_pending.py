@@ -125,7 +125,7 @@ def test_cold_snapshot_reads_chat_history_once_for_all_identities(tmp_path: Path
     finally:
         store.close()
 
-    assert read_window.call_count == 1
+    assert read_window.call_count == 0
     assert counts == {
         "PROJ/ALICE": 0,
         "PROJ/BOB": 2,
