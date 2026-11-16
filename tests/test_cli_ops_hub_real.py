@@ -128,7 +128,7 @@ async def test_an_approved_run_goes_through_the_hub_once(
 
     status = await _cli(world, hub, epoch, "--intent-sha256", digest)
     report = _line(capsys)
-    assert status == 0, report
+    assert status == 0, json.dumps(report, sort_keys=True)
     assert (report["attempt"]["answer"], report["outcome_published"]["status"]) == (
         "approved_fresh",
         "accepted",
