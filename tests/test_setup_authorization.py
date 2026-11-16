@@ -115,16 +115,21 @@ def _assert_code(code: str, call: object) -> None:
 def test_authorization_is_deterministic_schema_valid_and_non_executable() -> None:
     jsonschema = pytest.importorskip("jsonschema")
     plan = _plan({"waiter": "fail"})
-    kwargs = {
-        "confirm_digest": plan["plan_digest"],
-        "nonce": NONCE,
-        "expires_in": 300,
-        "restart_pid": None,
-        "clock": lambda: 1_788_520_000.9,
-    }
+    digest = plan["plan_digest"]
+    assert isinstance(digest, str)
 
-    first = build_setup_authorization(plan, **kwargs)  # type: ignore[arg-type]
-    second = build_setup_authorization(deepcopy(plan), **kwargs)  # type: ignore[arg-type]
+    def authorize(document: dict[str, object]) -> dict[str, object]:
+        return build_setup_authorization(
+            document,
+            confirm_digest=digest,
+            nonce=NONCE,
+            expires_in=300,
+            restart_pid=None,
+            clock=lambda: 1_788_520_000.9,
+        )
+
+    first = authorize(plan)
+    second = authorize(deepcopy(plan))
 
     assert first == second
     assert first["read_only"] is True
