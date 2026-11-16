@@ -336,7 +336,7 @@ def test_require_boto3_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     def _block(name: str, *args: object, **kwargs: object) -> object:
         if name == "boto3":
             raise ImportError("blocked for test")
-        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type] # import args stay open
 
     monkeypatch.setattr(builtins, "__import__", _block)
     with pytest.raises(RuntimeError, match="boto3"):
