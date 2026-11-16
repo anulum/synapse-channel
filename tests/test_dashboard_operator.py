@@ -106,18 +106,25 @@ class _FakeAgent:
             await self._on_task(self)
 
 
-def _factory(
-    *,
-    ready: bool = True,
-    closed: bool = False,
-    on_send: OnSend | None = None,
-    on_task: OnTask | None = None,
-) -> Callable[..., _FakeAgent]:
-    """Build an agent factory yielding a configured :class:`_FakeAgent`."""
+class _HoldingFactory:
+    """Callable agent factory that keeps the agent it just built."""
 
-    holder: dict[str, _FakeAgent] = {}
+    def __init__(
+        self,
+        *,
+        ready: bool,
+        closed: bool,
+        on_send: OnSend | None,
+        on_task: OnTask | None,
+    ) -> None:
+        self.holder: dict[str, _FakeAgent] = {}
+        self._ready = ready
+        self._closed = closed
+        self._on_send = on_send
+        self._on_task = on_task
 
-    def make(
+    def __call__(
+        self,
         name: str,
         collect: Callable[[dict[str, Any]], Awaitable[None]],
         *,
@@ -131,16 +138,25 @@ def _factory(
             uri=uri,
             verbose=verbose,
             token=token,
-            ready=ready,
-            closed=closed,
-            on_send=on_send,
-            on_task=on_task,
+            ready=self._ready,
+            closed=self._closed,
+            on_send=self._on_send,
+            on_task=self._on_task,
         )
-        holder["agent"] = agent
+        self.holder["agent"] = agent
         return agent
 
-    make.holder = holder  # type: ignore[attr-defined]
-    return make
+
+def _factory(
+    *,
+    ready: bool = True,
+    closed: bool = False,
+    on_send: OnSend | None = None,
+    on_task: OnTask | None = None,
+) -> _HoldingFactory:
+    """Build an agent factory yielding a configured :class:`_FakeAgent`."""
+
+    return _HoldingFactory(ready=ready, closed=closed, on_send=on_send, on_task=on_task)
 
 
 async def _deliver(agent: _FakeAgent, target: str, payload: str) -> None:
@@ -236,7 +252,7 @@ def test_relay_message_reports_delivered() -> None:
 
     assert outcome.status == DELIVERED
     assert outcome.ok is True
-    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    agent = factory.holder["agent"]
     assert agent.sent == [
         (MessageType.CHAT, "SC-NEUROCORE", "ship it", {"receipt_requested": True})
     ]
@@ -272,7 +288,7 @@ def test_relay_message_response_carries_exact_sequence_status_and_note() -> None
 
     assert outcome.status == DELIVERED
     assert "semantic response" in outcome.detail
-    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    agent = factory.holder["agent"]
     assert agent.sent == [
         (
             MessageType.CHAT,
@@ -293,7 +309,7 @@ def test_relay_message_response_generates_a_visible_default_body() -> None:
     outcome = asyncio.run(_relay(factory).relay_message_response(9, "ALPHA", "acknowledged"))
 
     assert outcome.status == UNDELIVERED
-    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    agent = factory.holder["agent"]
     assert agent.sent[0][2] == "acknowledged message #9."
 
 
@@ -362,7 +378,7 @@ def test_relay_task_reports_accepted() -> None:
 
     assert outcome.status == ACCEPTED
     assert outcome.ok is True
-    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    agent = factory.holder["agent"]
     assert agent.sent == [
         ("post_task", "T-100", "Ship the release", {"depends_on": ("T-1", "T-2")})
     ]
@@ -407,7 +423,7 @@ def test_relay_task_update_status_reports_accepted() -> None:
 
     assert outcome.status == ACCEPTED
     assert outcome.ok is True
-    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    agent = factory.holder["agent"]
     assert agent.sent == [("update_ledger_task", "T-9", "done", {})]
 
 
@@ -416,7 +432,7 @@ def test_relay_task_update_note_reports_accepted() -> None:
     outcome = asyncio.run(_relay(factory).relay_task_update("T-9", note="halfway there"))
 
     assert outcome.status == ACCEPTED
-    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    agent = factory.holder["agent"]
     assert agent.sent == [("post_progress", "T-9", "halfway there", {"kind": "note"})]
 
 
@@ -427,7 +443,7 @@ def test_relay_task_update_status_and_note_sends_both_and_waits_for_both() -> No
     )
 
     assert outcome.status == ACCEPTED
-    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    agent = factory.holder["agent"]
     assert agent.sent == [
         ("update_ledger_task", "T-9", "blocked", {}),
         ("post_progress", "T-9", "waiting on CI", {"kind": "note"}),
