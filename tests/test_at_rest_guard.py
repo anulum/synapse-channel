@@ -21,6 +21,7 @@ SQLCipher driver adds the install hint.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -135,11 +136,11 @@ def test_guard_stays_silent_on_loopback(caplog: pytest.LogCaptureFixture) -> Non
     assert caplog.records == []
 
 
-def test_hub_guard_refuses_plaintext_journal_off_loopback(tmp_path: object) -> None:
+def test_hub_guard_refuses_plaintext_journal_off_loopback(tmp_path: Path) -> None:
     from synapse_channel.core.hub import SynapseHub
     from synapse_channel.core.persistence import EventStore
 
-    store = EventStore(tmp_path / "events.db")  # type: ignore[operator]
+    store = EventStore(tmp_path / "events.db")
     try:
         assert store.encrypted is False
         hub = SynapseHub(journal=store)
@@ -158,12 +159,12 @@ def test_hub_guard_allows_a_hub_with_no_journal() -> None:
 
 
 def test_hub_guard_downgrades_under_the_override(
-    tmp_path: object, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     from synapse_channel.core.hub import SynapseHub
     from synapse_channel.core.persistence import EventStore
 
-    store = EventStore(tmp_path / "events.db")  # type: ignore[operator]
+    store = EventStore(tmp_path / "events.db")
     try:
         hub = SynapseHub(journal=store, insecure_plaintext_at_rest=True)
         with caplog.at_level("WARNING", logger="synapse.hub"):
