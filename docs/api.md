@@ -625,6 +625,8 @@ bound is closed at once.
 
 ::: synapse_channel.dashboard_handler_binding
 
+::: synapse_channel.dashboard_start
+
 ::: synapse_channel.dashboard_http_pages
 
 ::: synapse_channel.dashboard_http_live

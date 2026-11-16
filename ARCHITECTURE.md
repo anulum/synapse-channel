@@ -89,6 +89,9 @@ routing. `dashboard_http_pages` prepares shells and snapshot pages;
 `dashboard_http_live` emits bounded NDJSON frames and feed cursors;
 `dashboard_handler_binding` creates each server's snapshot gate, caches and
 host monitor. Snapshot collection remains late-bound to the facade.
+`dashboard_start` checks the bind, resolves the access policy, binds the
+start's owner-only files and host monitor, and serves; the facade re-exports
+`start_dashboard_server` and `DashboardServer`.
 
 `agent_tmux.inject_wake` binds the exact pane probes and registry writer to
 `pane_wake`. Binding and idle checks precede mutation; a successful paste is
