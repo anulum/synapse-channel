@@ -28,7 +28,7 @@ import json
 import os
 import secrets
 import socket
-import subprocess  # nosec B404
+import subprocess
 import sys
 import time
 from collections.abc import Iterator
@@ -113,7 +113,7 @@ def running(
     """
     with log.open("xb") as output:
         # A fixed command: this interpreter running the shipped Synapse CLI.
-        process = subprocess.Popen(  # nosec B603
+        process = subprocess.Popen(
             command,
             stdin=subprocess.DEVNULL,
             stdout=output,
