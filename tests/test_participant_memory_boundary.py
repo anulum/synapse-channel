@@ -100,6 +100,6 @@ def test_renderer_rejects_invalid_bounds(max_hits: object, max_chars: object) ->
     with pytest.raises(ValueError):
         render_memory_context(
             result,
-            max_hits=max_hits,  # type: ignore[arg-type]
-            max_chars=max_chars,  # type: ignore[arg-type]
+            max_hits=max_hits,  # type: ignore[arg-type] # not an int
+            max_chars=max_chars,  # type: ignore[arg-type] # not an int
         )
