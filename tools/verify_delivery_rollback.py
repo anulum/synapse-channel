@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-import subprocess  # nosec B404: fixed argv to an operator-supplied isolated Python
+import subprocess  # fixed argv to an operator-supplied isolated Python
 import sys
 import tempfile
 from pathlib import Path
@@ -84,7 +84,7 @@ async def _verify(old_python: Path) -> None:
 
         environment = dict(os.environ)
         environment.pop("PYTHONPATH", None)
-        result = subprocess.run(  # nosec B603: explicit interpreter and fixed code; no shell
+        result = subprocess.run(  # explicit interpreter and fixed code; no shell
             [str(old_python), "-c", OLD_HUB, str(path)],
             cwd=temporary,
             env=environment,
