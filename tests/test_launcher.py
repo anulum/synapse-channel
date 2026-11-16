@@ -415,6 +415,6 @@ def test_shutdown_escalates_to_kill_on_an_unexpected_terminate_error() -> None:
             return 0
 
     exploding = ExplodingProc()
-    _shutdown([("x", exploding)], timeout_seconds=0.05)  # type: ignore[list-item]
+    _shutdown([("x", exploding)], timeout_seconds=0.05)  # type: ignore[list-item] # not a task
     assert exploding.killed
     assert exploding.waits == 1
