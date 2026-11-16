@@ -13,7 +13,7 @@ import contextlib
 import errno
 import json
 import sys
-from collections.abc import AsyncIterator, Coroutine
+from collections.abc import AsyncIterator, Callable, Coroutine
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -467,12 +467,12 @@ def test_start_reports_a_keyboard_interrupt(
     assert "Shutting down." in capsys.readouterr().out
 
 
-def _closing(runner: object) -> object:
+def _closing(runner: Callable[[object], None]) -> Callable[[object], None]:
     """Wrap a fake asyncio.run so the un-awaited coroutine is closed first."""
 
     def run(coro: object) -> None:
-        coro.close()  # type: ignore[attr-defined]
-        runner(coro)  # type: ignore[operator]
+        coro.close()  # type: ignore[attr-defined] # close is not on object
+        runner(coro)
 
     return run
 
