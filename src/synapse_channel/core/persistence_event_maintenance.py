@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.mailbox_pending_layout import record_deleted_sequences
 from synapse_channel.core.persistence_connection import StoreConnection
 
 if TYPE_CHECKING:
     pass
 logger = logging.getLogger("synapse_channel.core.persistence")
+_PRESENT_CHUNK = 400
 
 
 class EventMaintenance:
@@ -71,9 +73,10 @@ class EventMaintenance:
             "operations.commit_seq)"
         )
         with self.storage.lock:
-            cursor = self.storage.connection.executemany(sql, ((seq,) for seq in seq_list))
+            removed = _removed_sequences(self.storage.connection, seq_list, sql)
+            record_deleted_sequences(self.storage.connection, removed)
             self.storage.connection.commit()
-        return int(cursor.rowcount)
+        return len(removed)
 
     def vacuum(self) -> None:
         """Reclaim free pages left by deletes, shrinking the database file on disk.
@@ -86,3 +89,25 @@ class EventMaintenance:
         with self.storage.lock:
             self.storage.connection.commit()
             self.storage.connection.execute("VACUUM")
+
+
+def _removed_sequences(connection: Any, seqs: list[int], sql: str) -> list[int]:
+    """Return the sequence numbers ``sql`` actually removed."""
+    before = _present_sequences(connection, seqs)
+    connection.executemany(sql, ((seq,) for seq in seqs))
+    after = _present_sequences(connection, seqs)
+    return [seq for seq in seqs if seq in before and seq not in after]
+
+
+def _present_sequences(connection: Any, seqs: list[int]) -> set[int]:
+    """Return which of ``seqs`` are still rows in ``events``."""
+    found: set[int] = set()
+    for start in range(0, len(seqs), _PRESENT_CHUNK):
+        chunk = seqs[start : start + _PRESENT_CHUNK]
+        marks = ",".join("?" for _ in chunk)
+        rows = connection.execute(
+            f"SELECT seq FROM events WHERE seq IN ({marks})",
+            chunk,
+        ).fetchall()
+        found.update(int(row[0]) for row in rows)
+    return found
