@@ -641,7 +641,7 @@ class HubClientRegistry:
             if callable(wait_closed):
                 await wait_closed()
         # Closing is best-effort: the socket may already be gone.
-        except Exception:  # nosec B110
+        except Exception:  # nosec B110 # best-effort close; the socket may be gone
             pass
 
     @staticmethod
