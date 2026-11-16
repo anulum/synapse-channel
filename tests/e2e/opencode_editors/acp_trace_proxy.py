@@ -15,7 +15,7 @@ import json
 import os
 import queue
 import stat
-import subprocess  # nosec B404
+import subprocess
 import sys
 import threading
 from collections.abc import Mapping
@@ -408,7 +408,7 @@ def main() -> int:
     trace = _new_trace_writer(args.trace)
     child_environment = _lifecycle_environment(trace.path, os.environ)
     failures: queue.SimpleQueue[str] = queue.SimpleQueue()
-    process = subprocess.Popen(  # nosec B603
+    process = subprocess.Popen(
         [str(args.opencode_bin), "acp", "--cwd", str(args.cwd)],
         cwd=args.cwd,
         env=child_environment,
