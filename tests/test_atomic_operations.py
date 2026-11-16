@@ -651,5 +651,5 @@ async def test_actor_cancellation_publishes_uncommitted_persisted_candidate(
 def test_pending_operation_intent_limit_is_bounded(tmp_path: Path, limit: object) -> None:
     store = EventStore(tmp_path / "limit.db")
     with pytest.raises(ValueError, match="operation outbox limit"):
-        store.pending_operation_intents(limit=limit)  # type: ignore[arg-type]
+        store.pending_operation_intents(limit=limit)  # type: ignore[arg-type] # limit is not an int
     store.close()
