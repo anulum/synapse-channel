@@ -391,20 +391,31 @@ def _copy_stderr(source: BinaryIO) -> None:
         sys.stderr.buffer.flush()
 
 
-def main() -> int:
-    """Run the exact OpenCode ACP child and return its exit status."""
+def _parsed_proxy_arguments() -> argparse.Namespace:
+    """Read the trace path, OpenCode binary and working directory."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--trace", type=Path, required=True)
     parser.add_argument("--opencode-bin", type=Path, required=True)
     parser.add_argument("--cwd", type=Path, required=True)
     args = parser.parse_args()
-
     if not args.opencode_bin.is_file() or not os.access(args.opencode_bin, os.X_OK):
         parser.error("--opencode-bin must be an executable regular file")
     if not args.cwd.is_dir():
         parser.error("--cwd must be a directory")
     args.trace.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return args
 
+
+_AcpChild = tuple[
+    subprocess.Popen[bytes],
+    TraceWriter,
+    tuple[threading.Thread, ...],
+    queue.SimpleQueue[str],
+]
+
+
+def _start_the_acp_child(args: argparse.Namespace) -> _AcpChild:
+    """Start OpenCode and the three relay threads."""
     trace = _new_trace_writer(args.trace)
     child_environment = _lifecycle_environment(trace.path, os.environ)
     failures: queue.SimpleQueue[str] = queue.SimpleQueue()
@@ -420,7 +431,6 @@ def main() -> int:
         process.kill()
         trace.close()
         raise RuntimeError("OpenCode ACP pipes were not created")
-
     threads = (
         threading.Thread(
             target=_relay,
@@ -446,6 +456,16 @@ def main() -> int:
     )
     for thread in threads:
         thread.start()
+    return process, trace, threads, failures
+
+
+def _relay_until_the_child_exits(
+    process: subprocess.Popen[bytes],
+    trace: TraceWriter,
+    threads: tuple[threading.Thread, ...],
+    failures: queue.SimpleQueue[str],
+) -> int:
+    """Relay until OpenCode exits and return its status, or 70 after a relay failure."""
     relay_failed = False
     try:
         while process.poll() is None:
@@ -479,6 +499,13 @@ def main() -> int:
     if process.returncode is None:
         raise RuntimeError("OpenCode ACP process did not expose an exit status")
     return process.returncode
+
+
+def main() -> int:
+    """Run the exact OpenCode ACP child and return its exit status."""
+    args = _parsed_proxy_arguments()
+    process, trace, threads, failures = _start_the_acp_child(args)
+    return _relay_until_the_child_exits(process, trace, threads, failures)
 
 
 if __name__ == "__main__":
