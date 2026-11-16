@@ -152,7 +152,7 @@ def test_idea_log_wait_checks_the_lifecycle_guard_before_success(tmp_path: Path)
 def test_trace_wait_checks_the_lifecycle_guard_before_success(tmp_path: Path) -> None:
     trace = tmp_path / "trace.jsonl"
     trace.write_text('{"method":"initialize"}\n', encoding="utf-8")
-    process = subprocess.Popen(  # nosec B603
+    process = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(10)"],
         text=True,
         start_new_session=True,
@@ -178,7 +178,7 @@ def test_trace_wait_rejects_duplicate_lifecycle_before_matching_marker(
 ) -> None:
     trace = tmp_path / "trace.jsonl"
     trace.write_text('{"method":"initialize"}\n', encoding="utf-8")
-    process = subprocess.Popen(  # nosec B603
+    process = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(10)"],
         text=True,
         start_new_session=True,
@@ -314,7 +314,7 @@ def test_trace_reader_rejects_symlink_and_wait_reports_exit_or_timeout(
     assert jetbrains_evidence.trace_has(alias, '"method":"initialize"') is False
     assert jetbrains_evidence.trace_has(tmp_path / "missing", "marker") is False
 
-    process = subprocess.Popen(  # nosec B603
+    process = subprocess.Popen(
         [sys.executable, "-c", "pass"],
         text=True,
         start_new_session=True,
@@ -331,7 +331,7 @@ def test_trace_wait_polls_once_before_evidence_arrives(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     trace = tmp_path / "trace.jsonl"
-    process = subprocess.Popen(  # nosec B603
+    process = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(10)"],
         text=True,
         start_new_session=True,
