@@ -140,9 +140,11 @@ def _read_snapshot(
             bytes(row[1]).decode() for row in connection.execute("PRAGMA table_info(events)")
         }
         mac_column = "mac" if "mac" in columns else "NULL"
-        events = connection.execute(
-            f"SELECT seq, ts, kind, payload, {mac_column} FROM events ORDER BY seq"  # nosec B608
-        ).fetchall()
+        statement = (
+            "SELECT seq, ts, kind, payload, "  # nosec B608 # mac or NULL
+            f"{mac_column} FROM events ORDER BY seq"
+        )
+        events = connection.execute(statement).fetchall()
         if between_reads is not None:
             between_reads()
         tables = {
