@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import selectors
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import time
 from dataclasses import dataclass
 
@@ -68,7 +68,7 @@ def observe_tmux(socket: str | None = None) -> tuple[tuple[PaneMetadata, ...], s
     output = bytearray()
     try:
         # The socket is one -S argument; commands and formats are package constants.
-        with subprocess.Popen(  # nosec B603
+        with subprocess.Popen(  # nosec B603 # argument vector, never a shell
             argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, shell=False
         ) as child:
             assert child.stdout is not None
