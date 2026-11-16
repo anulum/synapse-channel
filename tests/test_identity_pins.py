@@ -191,10 +191,10 @@ def test_pin_reclaim_policy_fails_closed_at_each_independent_gate(
         "break_glass": False,
     }
     inputs.update(overrides)
-    assert detail in pin_reclaim_denial(**inputs)  # type: ignore[arg-type]
+    assert detail in pin_reclaim_denial(**inputs)  # type: ignore[arg-type] # pin fields vary
     if overrides in ({"owner_online": True}, {"lease_live": True}):
         inputs["break_glass"] = True
-        assert pin_reclaim_denial(**inputs) == ""  # type: ignore[arg-type]
+        assert pin_reclaim_denial(**inputs) == ""  # type: ignore[arg-type] # pin fields vary
 
 
 def test_pin_reclaim_policy_allows_a_stale_exact_pin() -> None:
