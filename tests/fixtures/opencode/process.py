@@ -109,7 +109,7 @@ def find_opencode() -> str:
     binary = os.environ.get("OPENCODE_BIN", "").strip() or shutil.which("opencode")
     if binary is None:
         pytest.skip("OpenCode acceptance requires the pinned opencode binary; not installed")
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(
         [binary, "--version"], capture_output=True, text=True, check=False, timeout=15
     )
     if completed.returncode != 0 or completed.stdout.strip() != OPENCODE_VERSION:
@@ -129,7 +129,7 @@ def run_opencode(
     timeout: float = 60,
 ) -> subprocess.CompletedProcess[str]:
     """Run one real OpenCode process without a shell."""
-    return subprocess.run(  # nosec B603
+    return subprocess.run(
         [binary, *args],
         cwd=cwd,
         env=dict(env),
