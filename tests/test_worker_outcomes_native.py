@@ -279,10 +279,12 @@ def test_actual_tmux_executable_refusal_preserves_unknown_report(tmp_path: Path)
 def test_provider_changed_report_is_preserved_and_never_relaunched(tmp_path: Path) -> None:
     """A provider changes its report after its start is recorded; the final publication refuses.
 
-    The provider waits for the launch record that names its own process. The
-    launcher writes it only after its ``provider_started`` publication returned,
-    so the change is seen only by the publication at exit. A change the start's
-    own publication sees is the next test's case.
+    The provider waits for the launch record of this test's private state
+    directory. The launcher writes it only after its ``provider_started``
+    publication returned, so the change is seen only by the publication at exit.
+    The record is matched by directory, not by process id: on Windows a venv's
+    ``python.exe`` starts the interpreter as a child with another id. A change
+    the start's own publication sees is the next test's case.
     """
     env = private_environment(tmp_path)
     report, effect = tmp_path / "private" / "outcome.json", tmp_path / "effect"
@@ -291,7 +293,7 @@ def test_provider_changed_report_is_preserved_and_never_relaunched(tmp_path: Pat
         "state = pathlib.Path(os.environ['XDG_STATE_HOME'])\n"
         "records = state / 'synapse' / 'launch-records'\n"
         "deadline = time.monotonic() + 20\n"
-        "while not list(records.glob(f'*__{os.getpid()}__*.json')):\n"
+        "while not list(records.glob('*.json')):\n"
         "    if time.monotonic() > deadline: sys.exit(3)\n"
         "    time.sleep(0.01)\n"
         "pathlib.Path(sys.argv[1]).write_text('UNTRUSTED_REPLACEMENT')\n"
@@ -323,21 +325,25 @@ def test_a_report_changed_before_the_start_is_recorded_stops_the_provider(
     and nothing is launched again.
     """
     report, effect = tmp_path / "private" / "outcome.json", tmp_path / "effect"
+    program = "import pathlib,sys,time; time.sleep(30); pathlib.Path(sys.argv[1]).write_text('x')"
+    command = [sys.executable, "-c", program, str(effect)]
     real_popen = subprocess.Popen
     started: list[subprocess.Popen[bytes]] = []
 
     def popen_then_change_the_report(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
-        provider: subprocess.Popen[bytes] = real_popen(*args, **kwargs)
-        started.append(provider)
-        report.write_text("UNTRUSTED_REPLACEMENT")
-        return provider
+        # Only the provider's own start changes the report; on Windows the launch
+        # also runs helper processes before the report exists.
+        process: subprocess.Popen[bytes] = real_popen(*args, **kwargs)
+        if args and list(args[0]) == command:
+            started.append(process)
+            report.write_text("UNTRUSTED_REPLACEMENT")
+        return process
 
     monkeypatch.setattr(subprocess, "Popen", popen_then_change_the_report)
-    program = "import pathlib,sys,time; time.sleep(30); pathlib.Path(sys.argv[1]).write_text('x')"
     with pytest.raises(ValueError, match=_REFUSAL):
         run_worker_session(
             identity="TEST/worker",
-            command=[sys.executable, "-c", program, str(effect)],
+            command=command,
             terminal_tmux="off",
             arm=False,
             environ=private_environment(tmp_path),
