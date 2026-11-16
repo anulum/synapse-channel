@@ -21,7 +21,7 @@ import os
 import shlex
 import shutil
 import stat
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -328,7 +328,7 @@ class _GitInspectionLimit(ValueError):
 def _run_git(project: Path, *arguments: str) -> str:
     command = ["git", "-C", str(project), *arguments]
     # The command is a fixed Git executable with structured arguments and no shell.
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(  # nosec B603 # argument vector, never a shell
         command,
         capture_output=True,
         check=False,
