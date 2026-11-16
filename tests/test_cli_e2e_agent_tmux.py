@@ -422,6 +422,15 @@ def test_pending_wake_keeps_its_hint_when_native_paste_loses_the_target(tmp_path
                 )
 
 
+def _holds_all_oversized_output(capture: str) -> bool:
+    """Return whether the pane is over the bound and ends with the provider's last line.
+
+    Crossing the bound is not enough: output still arriving after the capture
+    would change the pane, and the test compares the pane before and after a wake.
+    """
+    return len(capture) > PANE_CAPTURE_MAX_CHARS and capture.rstrip().endswith("›")
+
+
 def test_oversized_native_capture_keeps_the_wake_pending_without_input(tmp_path: Path) -> None:
     """An actual oversized viewport cannot authorize a paste or an idle classification."""
     provider = tmp_path / "codex-fixture-large"
@@ -453,9 +462,9 @@ def test_oversized_native_capture_keeps_the_wake_pending_without_input(tmp_path:
             check=True,
             timeout=10,
         )
-        deadline = time.monotonic() + 5
-        while len(before := _capture_pane(session)) <= PANE_CAPTURE_MAX_CHARS:
-            assert time.monotonic() < deadline, len(before)
+        deadline = time.monotonic() + 30
+        while not _holds_all_oversized_output(before := _capture_pane(session)):
+            assert time.monotonic() < deadline, before[-200:]
             time.sleep(0.025)
         config = AgentTmuxConfig(
             identity=_IDENTITY,

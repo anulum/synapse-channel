@@ -122,6 +122,21 @@ async def command(repo: Path, uri: str, *args: str) -> CliResult:
 _SETUP_REPLY_TIMEOUT = "10"
 """Reply budget for a claim that only sets a test up; a loaded CI runner can need more than 1 s."""
 
+_ANSWERED_REPLY_TIMEOUT = "10"
+"""Reply budget for a run whose every exchange is answered: a ceiling, never waited out.
+
+Recovery reads and refusals answer at once; on a host at load 19 an answer can still
+take more than the 0.1 to 0.2 seconds these runs once allowed.
+"""
+
+_LOST_REPLY_TIMEOUT = "2"
+"""Reply budget for a run whose release reply is lost or held, which the command waits out.
+
+The exact query before the release must still be answered within it on a loaded host,
+so it is ten times the 0.2 seconds that failed at load 19, and short enough that each
+lost reply adds little to the suite.
+"""
+
 
 async def claim(repo: Path, uri: str) -> None:
     """Obtain a real scoped claim whose on-disk fence the next process loads."""
@@ -152,7 +167,7 @@ def recovery_arguments(result: CliResult) -> list[str]:
     values = shlex.split(line.removeprefix("Read-only recovery: "))[1:]
     index = next(index for index, value in enumerate(values) if value.startswith("--uri="))
     del values[index]
-    values.insert(values.index("--"), "--reply-timeout=0.2")
+    values.insert(values.index("--"), f"--reply-timeout={_ANSWERED_REPLY_TIMEOUT}")
     return values
 
 
@@ -173,7 +188,7 @@ async def test_lost_reply_recovers_exact_atomic_receipt_without_releasing_again(
                 "--name",
                 "release-owner",
                 "--reply-timeout",
-                "0.2",
+                _LOST_REPLY_TIMEOUT,
                 "--receipt-json",
                 "--idem-key",
                 "unique-release",
@@ -204,7 +219,7 @@ async def test_unrelated_error_does_not_deny_the_committed_release(tmp_path: Pat
                 "release",
                 "release-proof",
                 "--name=release-owner",
-                "--reply-timeout=0.1",
+                f"--reply-timeout={_LOST_REPLY_TIMEOUT}",
                 "--receipt-json",
             )
             assert result.ok(), result.output
@@ -267,7 +282,12 @@ async def test_per_message_auth_refusal_is_correlated_for_keyed_and_legacy_reque
     repo = git_repo(tmp_path / "repository")
     async with running_hub(SynapseHub(require_per_message_auth=True)) as (_hub, uri):
         result = await command(
-            repo, uri, "release", "release-proof", "--name=release-owner", "--reply-timeout=0.1"
+            repo,
+            uri,
+            "release",
+            "release-proof",
+            "--name=release-owner",
+            f"--reply-timeout={_ANSWERED_REPLY_TIMEOUT}",
         )
         assert result.returncode == 1, result.output
         assert "per-message authentication failed" in result.stdout
@@ -313,7 +333,7 @@ async def test_held_reply_unknown_then_confirm_after_restart_with_no_replay(tmp_
                     "--name",
                     "release-owner",
                     "--reply-timeout",
-                    "0.15",
+                    _LOST_REPLY_TIMEOUT,
                     "--idem-key",
                     "held-release",
                     "--evidence",
@@ -369,7 +389,7 @@ async def test_held_reply_unknown_then_confirm_after_restart_with_no_replay(tmp_
                 "--name",
                 "release-owner",
                 "--reply-timeout",
-                "0.2",
+                _ANSWERED_REPLY_TIMEOUT,
                 "--idem-key",
                 "held-release",
             )
@@ -396,7 +416,7 @@ async def test_no_journal_does_not_use_memory_cache_or_absence_as_confirmation(
             "--name",
             "release-owner",
             "--reply-timeout",
-            "0.15",
+            _LOST_REPLY_TIMEOUT,
         )
         assert result.returncode == 3, result.output
         assert "release-proof" not in hub.state.claims
@@ -423,7 +443,7 @@ async def test_precommit_timeout_can_commit_later_and_never_authorizes_a_retry(
                     "--name",
                     "release-owner",
                     "--reply-timeout",
-                    "0.1",
+                    _LOST_REPLY_TIMEOUT,
                     "--idem-key",
                     "precommit-release",
                 )
@@ -433,8 +453,8 @@ async def test_precommit_timeout_can_commit_later_and_never_authorizes_a_retry(
                 arguments = recovery_arguments(result)
             finally:
                 candidate.resume.set()
-            await asyncio.wait_for(candidate.committed.wait(), 2)
-            deadline = asyncio.get_running_loop().time() + 2
+            await asyncio.wait_for(candidate.committed.wait(), float(_ANSWERED_REPLY_TIMEOUT))
+            deadline = asyncio.get_running_loop().time() + float(_ANSWERED_REPLY_TIMEOUT)
             while "release-owner" in hub.online_agents():
                 assert asyncio.get_running_loop().time() < deadline
                 await asyncio.sleep(0.01)
@@ -458,7 +478,7 @@ async def test_legacy_snapshot_is_not_an_exact_confirmation(tmp_path: Path) -> N
                 "--name",
                 "release-owner",
                 "--reply-timeout",
-                "0.1",
+                _ANSWERED_REPLY_TIMEOUT,
                 "--idem-key",
                 "legacy-release",
             )
@@ -486,7 +506,7 @@ async def test_existing_live_identity_is_refused_before_release(tmp_path: Path) 
                     "--name",
                     "release-owner",
                     "--reply-timeout",
-                    "0.2",
+                    _ANSWERED_REPLY_TIMEOUT,
                 )
                 assert result.returncode == 1, result.output
                 assert "4009" in result.stdout
@@ -523,7 +543,7 @@ async def test_recovery_command_preserves_option_like_task_and_key(tmp_path: Pat
             uri,
             "release",
             "--name=release-owner",
-            "--reply-timeout=0.1",
+            f"--reply-timeout={_LOST_REPLY_TIMEOUT}",
             "--idem-key=" + key,
             "--",
             task,
@@ -633,10 +653,9 @@ async def test_corrupt_durable_proof_never_confirms_or_leaks_storage_details(
                     "--request-digest",
                     stored.request_digest,
                     "--reply-timeout",
-                    "0.2",
+                    _ANSWERED_REPLY_TIMEOUT,
                 ]
                 recovery = recovery_arguments(result)
-                recovery[recovery.index("--reply-timeout=0.2")] = "--reply-timeout=1"
                 assert f"--request-digest={stored.request_digest}" in recovery
                 recovered = await command(repo, uri, *recovery)
                 assert recovered.ok(), recovered.output

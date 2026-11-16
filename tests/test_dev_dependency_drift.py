@@ -27,6 +27,14 @@ sys.modules[_DRIFT_SPEC.name] = drift
 _DRIFT_SPEC.loader.exec_module(drift)
 
 
+_CHECKER_TIMEOUT_SECONDS = 120
+"""How long the checker may run before the test fails as hung.
+
+The checker reads every installed distribution's metadata; on a host at load 15
+that took over 15 seconds. This guards against a hang, not a slow host.
+"""
+
+
 def _run_checker(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(CHECKER), *args],
@@ -34,7 +42,7 @@ def _run_checker(*args: str) -> subprocess.CompletedProcess[str]:
         check=False,
         capture_output=True,
         text=True,
-        timeout=15,
+        timeout=_CHECKER_TIMEOUT_SECONDS,
     )
 
 
@@ -139,7 +147,7 @@ def test_cli_ignores_installed_metadata_without_a_distribution_name(tmp_path: Pa
         capture_output=True,
         text=True,
         check=False,
-        timeout=15,
+        timeout=_CHECKER_TIMEOUT_SECONDS,
     )
     assert result.returncode == 0, result.stderr + result.stdout
     assert "1 requirement(s) across dev" in result.stdout

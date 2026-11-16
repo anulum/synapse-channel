@@ -18,6 +18,14 @@ from urllib.request import Request, urlopen
 if TYPE_CHECKING:
     from synapse_channel.dashboard import DashboardServer
 
+_READ_TIMEOUT_SECONDS = 30
+"""How long one GET may wait before the test fails as hung.
+
+The tests assert what a response says, never how fast it came. A server's cold
+first request on a host at load 15 took over 3 seconds, so this is a guard
+against a hang, not a latency budget.
+"""
+
 
 def _http_get(url: str, *, authorization: str | None = None) -> tuple[int, str, str]:
     headers = {"Connection": "close"}
@@ -25,7 +33,7 @@ def _http_get(url: str, *, authorization: str | None = None) -> tuple[int, str, 
         headers["Authorization"] = authorization
     request = Request(url, headers=headers)
     try:
-        with urlopen(request, timeout=3) as response:
+        with urlopen(request, timeout=_READ_TIMEOUT_SECONDS) as response:
             return (
                 response.status,
                 response.headers.get_content_type(),

@@ -18,10 +18,15 @@ for (const mode of ["superseded", "deadline"]) {
     let held: ServerResponse | undefined;
     let disconnected = false;
     let count = 0;
+    // After a deadline the retry is answered only once the test has seen the
+    // unavailable state; otherwise a fast retry can replace it before it is read.
+    let releaseRetry = () => {};
+    const retryReleased = new Promise<void>(resolve => { releaseRetry = resolve; });
     // Core supplies HTML, assets and descriptor; only body delivery is delayed.
     const server = createServer(async (incoming, response) => {
       if (incoming.url === "/dashboard-access.json") {
         count += 1;
+        if (count > 1 && mode === "deadline") await retryReleased;
         response.writeHead(200, { "Content-Type": "application/json" });
         if (count === 1) {
           held = response;
@@ -52,10 +57,14 @@ for (const mode of ["superseded", "deadline"]) {
       }
       await expect.poll(() => disconnected, { timeout: 7000 }).toBe(true);
       const pill = page.locator("#cc-access");
-      if (mode === "deadline") await expect(pill).toHaveText("access unavailable");
+      if (mode === "deadline") {
+        await expect(pill).toHaveText("access unavailable");
+        releaseRetry();
+      }
       await expect(pill).toHaveText("viewer · viewer", { timeout: 7000 });
       expect(count).toBeGreaterThanOrEqual(2);
     } finally {
+      releaseRetry();
       try { await page.close(); }
       finally {
         held?.destroy();
