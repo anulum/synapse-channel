@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import shutil
-import subprocess  # nosec B404 — drives bash/zsh/fish syntax checks on generated scripts
+import subprocess  # drives bash/zsh/fish syntax checks on generated scripts
 from pathlib import Path
 
 import pytest
@@ -105,7 +105,7 @@ def test_bash_script_quotes_embedded_single_quotes() -> None:
     if os.name == "nt" or shutil.which("bash") is None:
         pytest.skip("bash -n requires a real POSIX bash (absent or broken on Windows GHA)")
     script = bash_script(_spec())
-    proc = subprocess.run(  # nosec B603 B607 — fixed argv, generated input
+    proc = subprocess.run(  # fixed argv, generated input
         ["bash", "-n", "/dev/stdin"], input=script, capture_output=True, text=True
     )
     assert proc.returncode == 0, proc.stderr
@@ -121,7 +121,7 @@ def test_bash_script_for_the_live_tree_passes_a_bash_syntax_check(tmp_path: Path
     script = bash_script(command_tree())
     target = tmp_path / "synapse.bash"
     target.write_text(script, encoding="utf-8")
-    proc = subprocess.run(  # nosec B603 B607 — fixed argv over a written temp file
+    proc = subprocess.run(  # fixed argv over a written temp file
         ["bash", "-n", str(target)], capture_output=True, text=True
     )
     assert proc.returncode == 0, proc.stderr
@@ -160,7 +160,7 @@ def test_zsh_script_for_the_live_tree_passes_a_zsh_syntax_check_when_available(
     if zsh:
         target = tmp_path / "_synapse"
         target.write_text(script, encoding="utf-8")
-        proc = subprocess.run(  # nosec B603 — resolved binary over a written temp file
+        proc = subprocess.run(  # resolved binary over a written temp file
             [zsh, "-n", str(target)], capture_output=True, text=True
         )
         assert proc.returncode == 0, proc.stderr
@@ -196,7 +196,7 @@ def test_fish_script_for_the_live_tree_passes_a_fish_syntax_check_when_available
     if fish:
         target = tmp_path / "synapse.fish"
         target.write_text(script, encoding="utf-8")
-        proc = subprocess.run(  # nosec B603 — resolved binary over a written temp file
+        proc = subprocess.run(  # resolved binary over a written temp file
             [fish, "-n", str(target)], capture_output=True, text=True
         )
         assert proc.returncode == 0, proc.stderr
