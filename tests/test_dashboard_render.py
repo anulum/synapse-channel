@@ -348,6 +348,31 @@ def test_the_root_opens_the_cockpit_unlock_screen_when_a_build_is_served(tmp_pat
     assert (page_status, page) == (200, "<title>unlock cockpit</title>")
 
 
+def test_the_root_redirect_keeps_an_encoded_line_break_encoded(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<title>unlock cockpit</title>", encoding="utf-8")
+    server = _feeds_server(cockpit_dist=dist, dashboard_token="secret")
+    address = urlsplit(server.url("/"))
+    assert address.hostname is not None and address.port is not None
+    connection = http.client.HTTPConnection(address.hostname, address.port, timeout=5)
+    try:
+        connection.request(
+            "GET", "/?lang=sk%0D%0ASet-Cookie:%20pwned=1", headers={"Host": address.netloc}
+        )
+        response = connection.getresponse()
+        response.read()
+        headers = response.getheaders()
+    finally:
+        connection.close()
+        server.close()
+
+    assert response.status == 302
+    assert [name for name, _ in headers].count("Location") == 1
+    assert "Set-Cookie" not in [name for name, _ in headers]
+    assert response.getheader("Location") == "/cockpit/?lang=sk%0D%0ASet-Cookie%3A+pwned%3D1"
+
+
 def test_the_root_stays_the_studio_page_without_a_cockpit_build() -> None:
     server = _feeds_server(dashboard_token="secret")
     try:

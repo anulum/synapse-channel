@@ -16,7 +16,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import ClassVar, Final, cast
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from synapse_channel.dashboard_access import DashboardAccessPolicy, DashboardPrincipal
 from synapse_channel.dashboard_access_http import (
@@ -359,7 +359,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             # The cockpit is the front door. Its build resolves its files against
             # /cockpit/, and a navigation carries no bearer: send the browser to the
             # unlock screen there, keeping any query (such as ?lang=sk).
-            query = urlsplit(self.path).query
+            query = _encoded_query(urlsplit(self.path).query)
             target = COCKPIT_DIST_PREFIX + (f"?{query}" if query else "")
             self._write(
                 HTTPStatus.FOUND,
@@ -724,6 +724,26 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         with contextlib.suppress(*READER_LEFT_ERRORS):
             self.end_headers()
             self.wfile.write(body)
+
+
+def _encoded_query(query: str) -> str:
+    """Return a request's query decoded and encoded again, for a ``Location`` header.
+
+    The query is request data. Decoding each name and value and encoding them
+    again leaves only URL-safe characters, so an encoded line break or any other
+    control character stays encoded and cannot end the header.
+
+    Parameters
+    ----------
+    query : str
+        The query part of the request target, without ``?``.
+
+    Returns
+    -------
+    str
+        The same names and values, percent-encoded.
+    """
+    return urlencode(parse_qsl(query, keep_blank_values=True))
 
 
 def _handler_class(
