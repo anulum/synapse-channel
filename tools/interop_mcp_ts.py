@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess  # nosec B404
+import subprocess
 from pathlib import Path
 
 from tools.interop_hub import (
@@ -101,7 +101,7 @@ def typescript_client_half(
     environment["NODE_EXTRA_CA_CERTS"] = str(provisioned.certificate)
     try:
         # A fixed command: the configured Node and the built client.
-        completed = subprocess.run(  # nosec B603
+        completed = subprocess.run(
             [NODE, str(CLIENT_DIRECTORY / "dist" / "journey.js"), str(config_file)],
             capture_output=True,
             text=True,
