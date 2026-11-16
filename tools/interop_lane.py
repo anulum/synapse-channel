@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess  # nosec B404
+import subprocess
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -99,7 +99,7 @@ def _commit() -> str:
     if sha:
         return sha
     # A fixed git query.
-    return subprocess.run(  # nosec B603 B607
+    return subprocess.run(
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
     ).stdout.strip()
 
