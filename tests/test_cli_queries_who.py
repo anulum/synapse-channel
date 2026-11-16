@@ -487,7 +487,7 @@ async def test_who_under_a_foreign_key_fails_loudly_not_silently(
                 callback,
                 uri=str(kwargs["uri"]),
                 verbose=False,
-                token=kwargs.get("token"),  # type: ignore[arg-type]
+                token=kwargs.get("token"),  # type: ignore[arg-type] # token is unchecked
                 **machine_identity_agent_kwargs(base=tmp_path / "b"),
             )
 
