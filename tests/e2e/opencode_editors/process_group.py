@@ -12,7 +12,7 @@ from __future__ import annotations
 import contextlib
 import os
 import signal
-import subprocess  # nosec B404
+import subprocess
 import time
 
 _TERM_TIMEOUT_SECONDS = 15.0
