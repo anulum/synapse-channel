@@ -71,7 +71,7 @@ def _default_poster(url: str, body: bytes, *, timeout: float) -> bytes:
     request = urllib.request.Request(
         url, data=body, headers={"Content-Type": "application/json"}, method="POST"
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310 # http(s) only
         return read_bounded(response, purpose="ollama API response")
 
 
