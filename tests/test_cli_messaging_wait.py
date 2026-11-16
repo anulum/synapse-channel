@@ -846,7 +846,7 @@ async def test_takeover_refused_at_handshake_yields(
         name="X-rx",
         for_name="X",
         timeout=0.0,
-        agent_factory=_RefusedAgent,  # type: ignore[arg-type]
+        agent_factory=_RefusedAgent,  # type: ignore[arg-type] # probe double, not an agent
     )
     assert code == 4
     assert "takeover" in capsys.readouterr().out
