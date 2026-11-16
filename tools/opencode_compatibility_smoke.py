@@ -174,10 +174,8 @@ def _validate_initialize(response: object, contract: Compatibility) -> dict[str,
     }
 
 
-def smoke_binary(
-    binary: Path, contract: Compatibility, *, timeout: float = 30.0
-) -> dict[str, object]:
-    """Require the exact CLI version and one real ACP initialize exchange."""
+def _require_regular_binary(binary: Path) -> Path:
+    """Return the absolute path of a regular OpenCode binary."""
     binary = Path(os.path.abspath(binary))
     try:
         status = binary.lstat()
@@ -185,7 +183,99 @@ def smoke_binary(
         raise SmokeError(f"cannot inspect OpenCode binary: {binary}") from exc
     if not stat.S_ISREG(status.st_mode):
         raise SmokeError("OpenCode smoke target must be a regular file")
+    return binary
 
+
+def _require_cli_version(
+    binary: Path,
+    contract: Compatibility,
+    *,
+    workspace: Path,
+    environment: dict[str, str],
+    timeout: float,
+) -> None:
+    """Require ``binary --version`` to print the pinned contract version."""
+    try:
+        completed = subprocess.run(  # nosec B603 # fixed argument vector, no shell
+            [str(binary), "--version"],
+            cwd=workspace,
+            env=environment,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SmokeError("OpenCode CLI version probe failed") from exc
+    if completed.returncode != 0 or completed.stdout.strip() != contract.version:
+        raise SmokeError(
+            f"OpenCode CLI version mismatch: expected {contract.version}, "
+            f"got {completed.stdout.strip() or completed.stderr.strip() or 'no output'}"
+        )
+
+
+def _exchange_smoke_initialize(
+    binary: Path,
+    contract: Compatibility,
+    *,
+    workspace: Path,
+    environment: dict[str, str],
+    timeout: float,
+) -> dict[str, object]:
+    """Run one ACP initialize exchange and return the accepted capability report."""
+    try:
+        process = subprocess.Popen(  # nosec B603 # fixed ACP argument vector, no shell
+            [str(binary), "acp", "--cwd", str(workspace)],
+            cwd=workspace,
+            env=environment,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError as exc:
+        raise SmokeError("OpenCode ACP process could not start") from exc
+    if process.stdin is None or process.stdout is None or process.stderr is None:
+        _terminate(process)
+        raise SmokeError("OpenCode ACP pipes were not created")
+    stdin = process.stdin
+    stderr_stream = process.stderr
+    responses, reader = _read_one_line(process.stdout)
+    try:
+        stdin.write(json.dumps(_INITIALIZE_REQUEST, separators=(",", ":")) + "\n")
+        stdin.flush()
+        try:
+            line = responses.get(timeout=timeout)
+        except queue.Empty as exc:
+            raise SmokeError("OpenCode ACP initialize response timed out") from exc
+        if not line:
+            raise SmokeError("OpenCode ACP closed stdout before initialize response")
+        try:
+            response = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise SmokeError("OpenCode ACP returned malformed JSON") from exc
+        stdin.close()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired as exc:
+            raise SmokeError("OpenCode ACP did not exit after stdin EOF") from exc
+        stderr = stderr_stream.read()
+        if process.returncode != 0:
+            raise SmokeError(f"OpenCode ACP exited {process.returncode}: {stderr[-2000:]}")
+        return _validate_initialize(response, contract)
+    except OSError as exc:
+        raise SmokeError("OpenCode ACP pipe I/O failed") from exc
+    finally:
+        _terminate(process)
+        reader.join(timeout=2)
+        _close_pipes(stdin, stderr_stream)
+
+
+def smoke_binary(
+    binary: Path, contract: Compatibility, *, timeout: float = 30.0
+) -> dict[str, object]:
+    """Require the exact CLI version and one real ACP initialize exchange."""
+    binary = _require_regular_binary(binary)
     with tempfile.TemporaryDirectory(prefix="synapse-opencode-smoke-") as temporary:
         root = Path(temporary)
         home = root / "home"
@@ -194,69 +284,20 @@ def smoke_binary(
         workspace.mkdir(mode=0o700)
         (home / "tmp").mkdir(mode=0o700)
         environment = _process_environment(home)
-        try:
-            completed = subprocess.run(  # nosec B603 # fixed argument vector, no shell
-                [str(binary), "--version"],
-                cwd=workspace,
-                env=environment,
-                capture_output=True,
-                check=False,
-                text=True,
-                timeout=timeout,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise SmokeError("OpenCode CLI version probe failed") from exc
-        if completed.returncode != 0 or completed.stdout.strip() != contract.version:
-            raise SmokeError(
-                f"OpenCode CLI version mismatch: expected {contract.version}, "
-                f"got {completed.stdout.strip() or completed.stderr.strip() or 'no output'}"
-            )
-        try:
-            process = subprocess.Popen(  # nosec B603 # fixed ACP argument vector, no shell
-                [str(binary), "acp", "--cwd", str(workspace)],
-                cwd=workspace,
-                env=environment,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-        except OSError as exc:
-            raise SmokeError("OpenCode ACP process could not start") from exc
-        if process.stdin is None or process.stdout is None or process.stderr is None:
-            _terminate(process)
-            raise SmokeError("OpenCode ACP pipes were not created")
-        stdin = process.stdin
-        stderr_stream = process.stderr
-        responses, reader = _read_one_line(process.stdout)
-        try:
-            stdin.write(json.dumps(_INITIALIZE_REQUEST, separators=(",", ":")) + "\n")
-            stdin.flush()
-            try:
-                line = responses.get(timeout=timeout)
-            except queue.Empty as exc:
-                raise SmokeError("OpenCode ACP initialize response timed out") from exc
-            if not line:
-                raise SmokeError("OpenCode ACP closed stdout before initialize response")
-            try:
-                response = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise SmokeError("OpenCode ACP returned malformed JSON") from exc
-            stdin.close()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired as exc:
-                raise SmokeError("OpenCode ACP did not exit after stdin EOF") from exc
-            stderr = stderr_stream.read()
-            if process.returncode != 0:
-                raise SmokeError(f"OpenCode ACP exited {process.returncode}: {stderr[-2000:]}")
-            return _validate_initialize(response, contract)
-        except OSError as exc:
-            raise SmokeError("OpenCode ACP pipe I/O failed") from exc
-        finally:
-            _terminate(process)
-            reader.join(timeout=2)
-            _close_pipes(stdin, stderr_stream)
+        _require_cli_version(
+            binary,
+            contract,
+            workspace=workspace,
+            environment=environment,
+            timeout=timeout,
+        )
+        return _exchange_smoke_initialize(
+            binary,
+            contract,
+            workspace=workspace,
+            environment=environment,
+            timeout=timeout,
+        )
 
 
 def main() -> int:
