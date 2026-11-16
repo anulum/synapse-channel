@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import math
-import subprocess  # nosec B404
+import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
@@ -72,7 +72,7 @@ def run_isolated_editor_command(
 
     process_env = dict(env)
     process_env[PROCESS_GROUP_SUPERVISION_ENV] = "1"
-    process = subprocess.Popen(  # nosec B603
+    process = subprocess.Popen(
         list(argv),
         cwd=cwd,
         env=process_env,
