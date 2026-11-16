@@ -16,7 +16,7 @@ the same event log a coordination journey writes.
 from __future__ import annotations
 
 import json
-import subprocess  # nosec B404 — syntax-checks generated completion scripts
+import subprocess  # syntax-checks generated completion scripts
 from pathlib import Path
 
 from cli_e2e_helpers import isolated_hub, run_cli
@@ -92,7 +92,7 @@ def test_completions_emit_sourceable_scripts_for_each_shell(tmp_path: Path) -> N
     script = tmp_path / "synapse.bash"
     script.write_text(bash.stdout, encoding="utf-8")
     if os.name != "nt" and shutil.which("bash") is not None:
-        checked = subprocess.run(  # nosec B603 B607 — fixed argv over a written temp file
+        checked = subprocess.run(  # fixed argv over a written temp file
             ["bash", "-n", str(script)], capture_output=True, text=True
         )
         assert checked.returncode == 0, checked.stderr
