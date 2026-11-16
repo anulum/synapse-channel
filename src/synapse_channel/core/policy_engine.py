@@ -32,7 +32,7 @@ from typing import Any
 
 from synapse_channel.core.errors import SynapseError
 
-PASS = "pass"  # nosec B105 - decision status name, not a secret
+PASS = "pass"  # nosec B105 # decision status name, not a secret
 WARN = "warn"
 FAIL = "fail"
 NOT_APPLICABLE = "not_applicable"
