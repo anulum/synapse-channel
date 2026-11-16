@@ -16,7 +16,7 @@ import os
 import platform
 import sqlite3
 import stat
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import tempfile
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
