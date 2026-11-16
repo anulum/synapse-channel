@@ -12,11 +12,14 @@ import type { FeedState } from "../src/lib/feed";
 import { fetchAndVerify } from "../src/lib/merkleVerify";
 import type { OperationRow, OperationsPage } from "../src/lib/operations";
 import {
+  APPROVAL_DECIDE_URL,
   OPERATIONS_ATTENTION_POLL_MS,
   OPERATIONS_POLL_MS,
   OPERATIONS_SOURCE,
   createOperationsAttentionFeed,
   createOperationsFeed,
+  decideApproval,
+  decideOutcome,
   detailText,
   fetchOperationChain,
   operationChainUrl,
@@ -281,5 +284,86 @@ describe("createOperationsAttentionFeed", () => {
     feed.subscribe((state) => states.push(state));
     await vi.waitFor(() => expect(states.at(-1)?.status).toBe("absent"));
     feed.stop();
+  });
+});
+
+describe("decideOutcome", () => {
+  const document = (status: string, detail: string, ok: boolean): string =>
+    JSON.stringify({ action: "approval_decide", operation_id: "op-1", status, detail, ok });
+
+  it("calls a decision recorded only when the hub recorded it and the dashboard answered 200", () => {
+    expect(decideOutcome(200, document("recorded", "approved recorded", true))).toEqual({ kind: "recorded", detail: "approved recorded" });
+    expect(decideOutcome(201, document("recorded", "approved recorded", true))).toEqual({
+      kind: "error",
+      detail: "dashboard answered 'recorded' with 201",
+    });
+    expect(decideOutcome(200, document("recorded", "x", false)).kind).toBe("error");
+    expect(decideOutcome(200, document("accepted", "x", true))).toEqual({ kind: "error", detail: "dashboard answered 'accepted' with 200" });
+  });
+
+  it("tells the dashboard's own refusal from the hub's", () => {
+    expect(decideOutcome(409, document("refused", "not all equal", false))).toEqual({ kind: "refused", detail: "not all equal" });
+    expect(decideOutcome(404, document("refused", "needs --feeds-db", false))).toEqual({ kind: "refused", detail: "needs --feeds-db" });
+    expect(decideOutcome(409, document("rejected", "approval gate: stale", false))).toEqual({ kind: "hub-refused", detail: "approval gate: stale" });
+    expect(decideOutcome(403, document("denied", "no rule", false))).toEqual({ kind: "hub-refused", detail: "no rule" });
+    expect(decideOutcome(503, document("unreachable", "no answer", false))).toEqual({ kind: "unreachable", detail: "no answer" });
+  });
+
+  it("reads the plain answers of the dashboard's gates", () => {
+    expect(decideOutcome(401, "dashboard authorization required\n")).toEqual({ kind: "unauthorised" });
+    expect(decideOutcome(404, "not found\n")).toEqual({ kind: "not-armed" });
+    expect(decideOutcome(403, "dashboard capability denied\n")).toEqual({ kind: "refused", detail: "dashboard capability denied" });
+    expect(decideOutcome(429, "operator write rate limit exceeded\n")).toEqual({ kind: "rate-limited", detail: "operator write rate limit exceeded" });
+    expect(decideOutcome(400, "'reason' exceeds 4096 UTF-8 bytes\n")).toEqual({ kind: "invalid", detail: "'reason' exceeds 4096 UTF-8 bytes" });
+    expect(decideOutcome(503, "operator relay failed: boom\n")).toEqual({ kind: "unreachable", detail: "operator relay failed: boom" });
+    expect(decideOutcome(415, "operator writes require Content-Type: application/json\n")).toEqual({
+      kind: "error",
+      detail: "dashboard returned 415 without a decision outcome",
+    });
+  });
+
+  it("never shows markup, a blank body or an overlong body as the dashboard's words", () => {
+    expect(decideOutcome(400, "<html>oops</html>")).toEqual({ kind: "invalid", detail: "the dashboard refused the request" });
+    expect(decideOutcome(429, "  ")).toEqual({ kind: "rate-limited", detail: "operator rate limit exceeded" });
+    expect(decideOutcome(503, "x".repeat(601))).toEqual({ kind: "unreachable", detail: "the dashboard could not reach the hub" });
+    expect(decideOutcome(403, "<p>")).toEqual({ kind: "refused", detail: "dashboard capability denied" });
+    expect(decideOutcome(409, document("refused", "x".repeat(600), false))).toEqual({ kind: "refused", detail: "x".repeat(600) });
+    expect(decideOutcome(409, document("refused", "", false))).toEqual({ kind: "refused", detail: "dashboard returned 409" });
+  });
+});
+
+describe("decideApproval", () => {
+  const input = { operationId: "op-1", intentSha256: "a".repeat(64), decision: "approved", reason: "looked" } as const;
+
+  it("posts exactly the four fields as JSON to the route, and names no identity", async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({ action: "approval_decide", status: "recorded", detail: "done", ok: true }), { status: 200 }),
+    );
+    const result = await decideApproval(input, fetcher as unknown as typeof fetch);
+    expect(result).toEqual({ kind: "recorded", detail: "done" });
+    const [url, init] = fetcher.mock.calls[0] ?? [];
+    expect(String(url)).toBe(APPROVAL_DECIDE_URL);
+    expect(init?.method).toBe("POST");
+    expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      operation_id: "op-1",
+      intent_sha256: "a".repeat(64),
+      decision: "approved",
+      reason: "looked",
+    });
+  });
+
+  it("says why a request threw", async () => {
+    const thrown = vi.fn(async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+    const odd = vi.fn(async () => { throw "odd"; }) as unknown as typeof fetch;
+    expect(await decideApproval(input, thrown)).toEqual({ kind: "error", detail: "offline" });
+    expect(await decideApproval(input, odd)).toEqual({ kind: "error", detail: "odd" });
+  });
+
+  it("is the source's decide, with the cockpit's authenticated fetch", async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response("not found\n", { status: 404 }));
+    vi.stubGlobal("fetch", fetcher);
+    expect(await OPERATIONS_SOURCE.decide(input)).toEqual({ kind: "not-armed" });
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe(APPROVAL_DECIDE_URL);
   });
 });

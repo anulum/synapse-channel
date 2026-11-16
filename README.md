@@ -1902,6 +1902,7 @@ an installed protected runtime or revocation fencing.
 | `dashboard_handler_binding`, `dashboard_http_pages`, `dashboard_http_live` | Per-server readers, shells/snapshots and bounded NDJSON delivery, behind the dashboard's existing access checks. |
 | `dashboard_hub_snapshot` | The hub snapshot a dashboard reads through public requests, with observed peers, re-exported as `dashboard.fetch_dashboard_snapshot`. |
 | `dashboard_start` | One dashboard server's start: the bind, the access policy, the owner-only files, the host monitor and the serving thread, re-exported as `dashboard.start_dashboard_server`. |
+| `dashboard_approval_decide` | `POST /approval/decide`: an approval decision from the cockpit, checked against the event store (digests, declarer, project) and the hub's roster before the operator relay records it. |
 | `dashboard_setup_http` | Whether one dashboard start serves setup (`--setup-apply`, `--setup-receipts`), and its read-only `/setup/preflight.json`: the command line's inspection, projected without anything it measured. |
 | `pane_wake` | Staged wake preparation and submission through `agent_tmux.inject_wake`, with verified pane binding and retry state. |
 | `agent_pane_state` | Provider marker precedence, submit readiness, staged-hint observations and opt-in native input readiness, used by the `agent_tmux` facade. |
@@ -1941,11 +1942,11 @@ an installed protected runtime or revocation fencing.
 |---|---:|
 | Package version | 0.99.52 |
 | Public API exports | 70 |
-| Package modules | 1023 |
-| Classes | 1455 |
+| Package modules | 1024 |
+| Classes | 1457 |
 | Wire message types | 122 |
 | CLI subcommands | 310 |
-| Test functions | 14458 |
+| Test functions | 14482 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 99 |
 | GitHub Actions workflows | 29 |

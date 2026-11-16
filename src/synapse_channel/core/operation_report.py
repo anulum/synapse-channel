@@ -162,6 +162,17 @@ class OperationReport:
     recomputed_sha256: str = ""
     intent_fields: tuple[tuple[str, str], ...] = ()
 
+    @property
+    def declaration(self) -> ChainLink | None:
+        """Return the declaration's link, or ``None`` when nothing is declared.
+
+        The approval notes on the intent's digest join the chain in journal order,
+        and a note can be journalled before the declaration, so the first link is
+        not always the declaration.
+        """
+        declared = _KINDS[EventKind.OPERATION_DECLARED]
+        return next((link for link in self.chain if link.kind == declared), None)
+
 
 def _read_events(db_path: str | Path, key_file: str | Path | None) -> tuple[StoredEvent, ...]:
     """Read every row of the hub event store at ``db_path``; refuse a store that does not exist."""

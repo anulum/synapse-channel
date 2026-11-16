@@ -76,3 +76,14 @@
 .op-command { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-small); }
 .op-command__text { padding: var(--sp-1) var(--sp-2); background: var(--raised); border-radius: var(--radius); }
 .op-command__status { color: var(--ink); }
+.op-decide { display: flex; flex-direction: column; gap: var(--sp-1); margin: 0 0 var(--sp-3); padding: var(--sp-2); border: 1px solid var(--ink); border-radius: var(--radius); }
+.op-decide__label { font-size: var(--fs-small); font-weight: 700; color: var(--ink); }
+.op-decide__reason {
+  width: 100%; min-height: 64px; padding: var(--sp-1) var(--sp-2); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--raised); color: var(--ink); font: inherit; font-size: var(--fs-small); resize: vertical;
+}
+.op-decide__reason:focus-visible { outline: 2px solid var(--now); outline-offset: -2px; }
+.op-decide__reason[aria-invalid="true"] { border-color: var(--sev-crit); }
+.op-decide__actions, .op-decide__confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.op-decide__question { flex: 1 1 100%; margin: 0; overflow-wrap: anywhere; font-size: var(--fs-small); color: var(--ink); }
+.op-decide__recorded { margin: 0 0 var(--sp-2); padding: var(--sp-1) var(--sp-2); border-left: 3px solid var(--sev-ok); font-size: var(--fs-small); color: var(--ink); }

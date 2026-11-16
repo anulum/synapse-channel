@@ -122,7 +122,14 @@ function ChainHints({ state }: { readonly state: string }): JSX.Element | null {
   return null;
 }
 
-function ChainBody({ chain, verifyRow }: { readonly chain: Chain; readonly verifyRow: VerifyRow }): JSX.Element {
+interface ChainBodyProps {
+  readonly chain: Chain;
+  readonly verifyRow: VerifyRow;
+  readonly decide?: OperationsSource["decide"] | undefined;
+  readonly onRecorded: (detail: string) => void;
+}
+
+function ChainBody({ chain, verifyRow, decide, onRecorded }: ChainBodyProps): JSX.Element {
   const { t } = useCockpitI18n();
   if (!chain.present) {
     return <p className="panel__placeholder">{t("operations.chain.absent", { operation: chain.operationId })}</p>;
@@ -141,7 +148,7 @@ function ChainBody({ chain, verifyRow }: { readonly chain: Chain; readonly verif
         </span>
       </div>
       <ChainHints state={chain.state} />
-      <OperationApproval chain={chain} />
+      <OperationApproval chain={chain} decide={decide} onRecorded={onRecorded} />
       {chain.scope !== null && !chain.scope.applied && <p className="op-note">{t("operations.chain.scopeWhole")}</p>}
       {chain.attempts.length > 0 && (
         <ul className="op-attempts" aria-label={t("operations.chain.attempts")}>
@@ -169,13 +176,21 @@ interface OperationChainProps {
   readonly operationId: string;
   readonly scope: CockpitScope;
   readonly source: OperationsSource;
+  /** Whether this login may write; only then does the approval view offer to decide here. */
+  readonly canDecide?: boolean;
 }
 
-/** Read one operation's chain when it is chosen, and show every link the report gives. */
-export function OperationChain({ operationId, scope, source }: OperationChainProps): JSX.Element {
+/**
+ * Read one operation's chain when it is chosen, and show every link the report
+ * gives. After a decision is recorded here the chain is read again, so the
+ * journalled note and the hub's next word show as the store holds them.
+ */
+export function OperationChain({ operationId, scope, source, canDecide = false }: OperationChainProps): JSX.Element {
   const { t } = useCockpitI18n();
   const [result, setResult] = useState<{ readonly id: string; readonly value: ChainResult } | null>(null);
+  const [recorded, setRecorded] = useState<{ readonly id: string; readonly detail: string; readonly reads: number } | null>(null);
   const section = useRef<HTMLElement | null>(null);
+  const reads = recorded !== null && recorded.id === operationId ? recorded.reads : 0;
   // In a narrow inspector the chain sits below the list: bring the chosen one into view.
   useEffect(() => {
     section.current?.scrollIntoView?.({ block: "nearest" });
@@ -188,10 +203,14 @@ export function OperationChain({ operationId, scope, source }: OperationChainPro
     return () => {
       live = false;
     };
-  }, [operationId, scope, source]);
+  }, [operationId, scope, source, reads]);
   const current = result !== null && result.id === operationId ? result.value : null;
+  const onRecorded = (detail: string): void => setRecorded({ id: operationId, detail, reads: reads + 1 });
   return (
     <section ref={section} className="op-chain" aria-label={t("operations.chain.aria", { operation: operationId })}>
+      {reads > 0 && recorded !== null && (
+        <p className="op-decide__recorded" role="status">{t("operations.approval.decide.recorded", { detail: recorded.detail })}</p>
+      )}
       {current === null ? (
         <p className="panel__placeholder" role="status">{t("operations.chain.loading")}</p>
       ) : current.kind === "absent" ? (
@@ -199,7 +218,8 @@ export function OperationChain({ operationId, scope, source }: OperationChainPro
       ) : current.kind === "error" ? (
         <p className="panel__placeholder">{t("operations.chain.error", { error: current.message })}</p>
       ) : (
-        <ChainBody chain={current.chain} verifyRow={source.verifyRow} />
+        <ChainBody chain={current.chain} verifyRow={source.verifyRow} decide={canDecide ? source.decide : undefined}
+          onRecorded={onRecorded} />
       )}
     </section>
   );

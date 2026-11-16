@@ -137,9 +137,11 @@ interface OperationsViewProps {
   /** The chosen operation when the workspace owns the choice; the tab keeps its own otherwise. */
   readonly selected?: string | null;
   readonly onSelect?: ((operationId: string | null) => void) | undefined;
+  /** Whether this login may write: the approval view then offers to decide here. */
+  readonly canDecide?: boolean;
 }
 
-export function OperationsView({ source, selected: chosen, onSelect }: OperationsViewProps): JSX.Element {
+export function OperationsView({ source, selected: chosen, onSelect, canDecide = false }: OperationsViewProps): JSX.Element {
   const { t } = useCockpitI18n();
   const scopeKey = scopeText(useContext(ScopeContext));
   const scope = useMemo(() => parseScope(scopeKey), [scopeKey]);
@@ -176,7 +178,7 @@ export function OperationsView({ source, selected: chosen, onSelect }: Operation
         {selected === null ? (
           <p className="panel__placeholder ops__pick">{t("operations.chain.pick")}</p>
         ) : (
-          <OperationChain operationId={selected} scope={scope} source={source} />
+          <OperationChain operationId={selected} scope={scope} source={source} canDecide={canDecide} />
         )}
       </div>
     </section>

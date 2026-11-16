@@ -9,8 +9,9 @@
 
 The dashboard is a read-only observer by default. When it is armed with operator
 mode it may relay a small, explicit set of write actions — sending a directed or
-broadcast chat message, declaring a board task, and updating a task's status or
-appending a progress note.
+broadcast chat message, declaring a board task, updating a task's status or
+appending a progress note, and recording an approval decision on an intent's
+digest.
 
 This module holds the relay itself, deliberately thin: it opens a short-lived,
 authenticated client under an explicit operator identity, sends one frame, and
@@ -35,6 +36,7 @@ from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import closed_after_ready
+from synapse_channel.core.approvals import APPROVAL_NOTE_KIND, format_approval_note
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.protocol import MessageType
 
@@ -96,6 +98,9 @@ DELIVERED = "delivered"
 UNDELIVERED = "undelivered"
 #: The hub applied a board mutation (task declared or updated) and confirmed it.
 ACCEPTED = "accepted"
+#: The hub journalled an approval decision. It judges the decision only when an
+#: attempt is asked, so a recorded decision says nothing yet about any attempt.
+RECORDED = "recorded"
 #: The hub's ACL refused the frame; it was not routed.
 DENIED = "denied"
 #: The hub's blackboard refused the write on its own terms (unknown id, invalid
@@ -130,6 +135,17 @@ def _note_confirms(message: dict[str, Any], task_id: str, author: str) -> bool:
     )
 
 
+def _approval_confirms(message: dict[str, Any], subject: str, author: str, text: str) -> bool:
+    """Return whether a broadcast carries this operator's own approval note on ``subject``."""
+    note = message.get("note")
+    return (
+        _note_confirms(message, subject, author)
+        and isinstance(note, dict)
+        and note.get("kind") == APPROVAL_NOTE_KIND
+        and note.get("text") == text
+    )
+
+
 @dataclass(frozen=True)
 class RelayOutcome:
     """The outcome of relaying one operator action to the hub.
@@ -152,8 +168,8 @@ class RelayOutcome:
 
     @property
     def ok(self) -> bool:
-        """Return whether the hub accepted the frame (delivered, dead-lettered, or applied)."""
-        return self.status in (DELIVERED, UNDELIVERED, ACCEPTED)
+        """Return whether the hub took the frame: delivered, dead-lettered, applied or recorded."""
+        return self.status in (DELIVERED, UNDELIVERED, ACCEPTED, RECORDED)
 
 
 class OperatorRelay:
@@ -421,6 +437,60 @@ class OperatorRelay:
 
         return await self._run(
             collect, send, resolve, timeout_detail="hub confirmed no task update in time"
+        )
+
+    async def relay_approval_decision(self, digest: str, state: str, reason: str) -> RelayOutcome:
+        """Record an approval decision on ``sha256:<digest>`` under the operator identity.
+
+        The note is the one ``synapse approvals decide`` posts: a progress note of
+        kind ``approval`` whose body is :func:`format_approval_note`. The hub's
+        verdict gate may refuse an ``approved`` note when it is posted; otherwise
+        the hub journals it and judges it only when an attempt is asked.
+
+        Parameters
+        ----------
+        digest : str
+            The intent's SHA-256, 64 lowercase hex characters.
+        state : str
+            ``approved`` or ``rejected``.
+        reason : str
+            The person's own words; may be empty.
+
+        Returns
+        -------
+        RelayOutcome
+            :data:`RECORDED` once the hub broadcast this operator's note,
+            :data:`DENIED` on ACL refusal, :data:`REJECTED` when the hub refused the
+            note (its verdict gate among them), or :data:`UNREACHABLE` when the hub
+            could not be reached or gave no outcome in time.
+        """
+        subject = f"sha256:{digest}"
+        text = format_approval_note(subject=subject, state=state, reason=reason)
+        posted: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+
+        async def collect(data: dict[str, Any]) -> None:
+            message_type = data.get("type")
+            if message_type == MessageType.LEDGER_PROGRESS_POSTED and _approval_confirms(
+                data, subject, self.operator_name, text
+            ):
+                posted.append(data)
+            elif message_type == MessageType.ERROR and data.get("target") == self.operator_name:
+                errors.append(data)
+
+        async def send(agent: SynapseAgent) -> None:
+            await agent.post_progress(subject, text, kind=APPROVAL_NOTE_KIND)
+
+        def resolve() -> RelayOutcome | None:
+            if errors:
+                return self._denial(errors[0])
+            if posted:
+                detail = f"{state} recorded for {subject}; the hub judges it when asked"
+                return RelayOutcome(RECORDED, f"{detail} for an attempt", posted[0])
+            return None
+
+        return await self._run(
+            collect, send, resolve, timeout_detail="hub confirmed no approval note in time"
         )
 
     @staticmethod

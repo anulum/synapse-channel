@@ -15,7 +15,10 @@
 import { authenticatedFetch } from "./auth";
 import { createEndpointFeed, type EndpointFeed } from "./feed";
 import { fetchAndVerify } from "./merkleVerify";
+import { parseOperatorOutcome } from "./operatorActionValidation";
 import type {
+  ApprovalDecideInput,
+  ApprovalDecideResult,
   AttemptRow,
   ChainLink,
   ChainResult,
@@ -212,9 +215,81 @@ export async function fetchOperationChain(
   }
 }
 
-/** The reads the inspector hands the operations tab. */
+/** The route that records one approval decision. */
+export const APPROVAL_DECIDE_URL = "/approval/decide";
+
+const DECIDE_ACTION = "approval_decide";
+
+/** Longest dashboard text shown as it came; a longer or markup-looking body gives the fallback. */
+const MAX_LINE = 600;
+
+function line(raw: string, fallback: string): string {
+  const trimmed = raw.trim();
+  return trimmed === "" || trimmed.startsWith("<") || trimmed.length > MAX_LINE ? fallback : trimmed;
+}
+
+function json(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** Read the route's plain-text answers: the dashboard's own gates before the route's document. */
+function plainOutcome(status: number, raw: string): ApprovalDecideResult {
+  if (status === 401) return { kind: "unauthorised" };
+  if (status === 404) return { kind: "not-armed" };
+  if (status === 403) return { kind: "refused", detail: line(raw, "dashboard capability denied") };
+  if (status === 429) return { kind: "rate-limited", detail: line(raw, "operator rate limit exceeded") };
+  if (status === 400) return { kind: "invalid", detail: line(raw, "the dashboard refused the request") };
+  if (status === 503) return { kind: "unreachable", detail: line(raw, "the dashboard could not reach the hub") };
+  return { kind: "error", detail: `dashboard returned ${status} without a decision outcome` };
+}
+
+/**
+ * Map one answer of `POST /approval/decide`. A `refused` document is the
+ * dashboard's own refusal before any relay; `denied` and `rejected` are the
+ * hub's; only `recorded` with 200 is a recorded decision.
+ */
+export function decideOutcome(status: number, raw: string): ApprovalDecideResult {
+  const document = parseOperatorOutcome(json(raw), DECIDE_ACTION);
+  if (document === null) return plainOutcome(status, raw);
+  const detail = line(document.detail, `dashboard returned ${status}`);
+  if (document.status === "refused") return { kind: "refused", detail };
+  if (document.status === "denied" || document.status === "rejected") return { kind: "hub-refused", detail };
+  if (document.status === "unreachable") return { kind: "unreachable", detail };
+  if (document.status === "recorded" && document.ok && status === 200) return { kind: "recorded", detail };
+  return { kind: "error", detail: `dashboard answered '${document.status}' with ${status}` };
+}
+
+/** Ask the dashboard to record one decision; the body names no identity. */
+export async function decideApproval(
+  input: ApprovalDecideInput,
+  fetcher: typeof fetch = authenticatedFetch,
+): Promise<ApprovalDecideResult> {
+  const body = {
+    operation_id: input.operationId,
+    intent_sha256: input.intentSha256,
+    decision: input.decision,
+    reason: input.reason,
+  };
+  try {
+    const response = await fetcher(APPROVAL_DECIDE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return decideOutcome(response.status, await response.text());
+  } catch (cause) {
+    return { kind: "error", detail: cause instanceof Error ? cause.message : String(cause) };
+  }
+}
+
+/** The reads the inspector hands the operations tab, and the one write it may ask for. */
 export const OPERATIONS_SOURCE: OperationsSource = {
   openList: (scope, before) => createOperationsFeed(scope, before),
   readChain: (operationId, scope) => fetchOperationChain(operationId, scope),
   verifyRow: (seq) => fetchAndVerify(seq),
+  decide: (input) => decideApproval(input),
 };

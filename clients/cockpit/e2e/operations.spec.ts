@@ -197,6 +197,31 @@ test("the operations tab shows each journalled operation's state and chain, and 
         await test.step(`approval view, ${width} pixels, ${theme}`, () => expectAccessible(page, width, theme));
       }
     }
+
+    // Last, because it changes op-awaiting's state in the harness's store.
+    await test.step("a decision recorded from the approval view counts as the hub's journal says", async () => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      const section = page.getByRole("region", { name: "Chain of operation op-awaiting" });
+      const before = await served<ServedChain>(page.request, origin, "/operations.json?operation=op-awaiting");
+      const decide = section.getByRole("group", { name: "Decide here" });
+      await decide.getByLabel("Reason, in your own words").fill("read the intent field by field");
+      await decide.getByRole("button", { name: "Approve…" }).click();
+      await expect(decide).toContainText(`Record “approved” for sha256:${before.intent_sha256}?`);
+      await decide.getByRole("button", { name: "Record" }).click();
+      await expect(section.getByRole("status").filter({ hasText: /^Recorded: / })).toHaveText(
+        `Recorded: approved recorded for sha256:${before.intent_sha256}; the hub judges it when asked for an attempt`,
+      );
+      const after = await served<ServedChain>(page.request, origin, "/operations.json?operation=op-awaiting");
+      expect(after.state).toBe("approved, no attempt");
+      expect(after.chain.filter(link => link.kind === "approval").at(-1)).toMatchObject({
+        actor: "P/approver-cockpit",
+        detail: { state: "approved", reason: "read the intent field by field" },
+      });
+      await expectChainAsServed(section, after);
+      await expect(section.getByRole("region", { name: "Approval" })).toHaveCount(0);
+      await expect(section).not.toContainText(/may now run|is allowed/u);
+      await expectAccessible(page, 1440, "light");
+    });
   } finally {
     await stop(harness);
   }

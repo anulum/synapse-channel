@@ -824,10 +824,18 @@ processes.
   the requester's own words in a box marked as not checked, and the two
   `synapse approvals decide` commands for that digest (approve, reject), each
   with a copy button. The commands carry a placeholder approver and never a
-  token. When the digests differ, the view says that the intent must not be
-  approved, and it offers no command. The cockpit itself never approves: the
-  hub judges an approval when an attempt is asked, and only an approver of the
-  declarer's project who is not the declarer counts.
+  token. When the login holds `task_update`, the view also offers **Decide
+  here**: the person's reason (at most 4096 bytes, refused rather than
+  trimmed), approve or reject, and a confirmation that names the digest. The
+  dashboard records the note under the login's relay identity, after its own
+  checks (`POST /approval/decide` in the CLI reference), and the view shows
+  what it answered: "Recorded" with the dashboard's words, or why nothing was
+  recorded. After a recorded decision the chain is read again, so the new
+  approval link and the new state show as the store holds them. The view never
+  says that the operation may now run. When the digests differ, the view says
+  that the intent must not be approved, and it offers neither the commands nor
+  the decision. The hub judges an approval when an attempt is asked, and only
+  an approver of the declarer's project who is not the declarer counts.
 - **causality** traces recorded causes or effects from an event sequence or task.
   A task hop from the log opens this panel with the task already selected.
 - **topology** joins identities and held tasks and adds imported federation

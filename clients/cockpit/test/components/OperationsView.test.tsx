@@ -7,7 +7,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the operations tab: the list by state, one chain and each link's evidence
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,11 +15,11 @@ import { OperationsView } from "../../src/components/OperationsView";
 import { ScopeContext } from "../../src/components/ScopeTag";
 import type { VerifyResult } from "../../src/lib/merkleVerify";
 import type { OperationsSource } from "../../src/lib/operations";
-import { createOperationsFeed, fetchOperationChain } from "../../src/lib/operationsFeed";
+import { createOperationsFeed, decideApproval, fetchOperationChain } from "../../src/lib/operationsFeed";
 import type { CockpitScope } from "../../src/lib/scope";
 
 const verifyRow = vi.fn<(seq: number) => Promise<VerifyResult>>();
-let fetcher = vi.fn(async (_input: RequestInfo | URL) => new Response("{}", { status: 500 }));
+let fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response("{}", { status: 500 }));
 
 beforeEach(() => {
   verifyRow.mockReset();
@@ -78,13 +78,14 @@ function chain(overrides: Record<string, unknown> = {}): Record<string, unknown>
   };
 }
 
-type Route = (url: string) => { status: number; body: unknown };
+type Route = (url: string, init?: RequestInit) => { status: number; body: unknown };
 
-/** Answer the tab's reads from `route`, through the real list feed and chain read. */
+/** Answer the tab's reads and its one write from `route`, through the real feed, chain read and decision. */
 function stubRoutes(route: Route): typeof fetcher {
-  fetcher = vi.fn(async (input: RequestInfo | URL) => {
-    const answer = route(String(input));
-    return new Response(JSON.stringify(answer.body), { status: answer.status });
+  fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const answer = route(String(input), init);
+    const body = typeof answer.body === "string" ? answer.body : JSON.stringify(answer.body);
+    return new Response(body, { status: answer.status });
   });
   return fetcher;
 }
@@ -97,12 +98,13 @@ const SOURCE: OperationsSource = {
   openList: (scope, before) => createOperationsFeed(scope, before, fetcher as unknown as typeof fetch),
   readChain: (operationId, scope) => fetchOperationChain(operationId, scope, fetcher as unknown as typeof fetch),
   verifyRow,
+  decide: (input) => decideApproval(input, fetcher as unknown as typeof fetch),
 };
 
-function renderView(scope: CockpitScope = { kind: "all" }): void {
+function renderView(scope: CockpitScope = { kind: "all" }, canDecide = false): void {
   render(
     <ScopeContext.Provider value={scope}>
-      <OperationsView source={SOURCE} />
+      <OperationsView source={SOURCE} canDecide={canDecide} />
     </ScopeContext.Provider>,
   );
 }
@@ -327,6 +329,7 @@ describe("the approval view", () => {
       expect(command).not.toMatch(/token/iu);
     }
     expect(region.textContent).toContain("This cockpit does not approve.");
+    expect(within(region).queryByRole("group", { name: "Decide here" })).toBeNull();
   });
 
   it("copies a command, and says so when the clipboard is unavailable", async () => {
@@ -370,6 +373,151 @@ describe("the approval view", () => {
     const silent = [...declaredOnly, { seq: 12, at: 1, kind: "approval", actor: "P/worker", detail: { state: "requested", reason: "" } }];
     region = await openAwaiting(awaiting({ chain: silent }));
     expect(region.querySelector(".op-words__text")?.textContent).toBe("The request gave no reason.");
+  });
+});
+
+describe("deciding here", () => {
+  const recorded = "b".repeat(64);
+  const awaitingChain = chain({
+    operation_id: "op-open",
+    state: "awaiting approval",
+    intent_sha256: recorded,
+    recomputed_sha256: recorded,
+    digest_check: "matches",
+    attempts: [],
+    intent_fields: [{ field: "budget", canonical: '"not_applicable"' }],
+    chain: [
+      { seq: 10, at: 1, kind: "declared", actor: "P/worker", detail: { effect: "file" } },
+      { seq: 12, at: 2, kind: "approval", actor: "P/worker", detail: { state: "requested", reason: "please" } },
+    ],
+  });
+  const approvedChain = chain({
+    ...awaitingChain,
+    state: "approved, no attempt",
+    chain: [
+      ...(awaitingChain["chain"] as unknown[]),
+      { seq: 15, at: 3, kind: "approval", actor: "P/approver-alice", detail: { state: "approved", reason: "looked" } },
+    ],
+  });
+  const detail = `approved recorded for sha256:${recorded}; the hub judges it when asked for an attempt`;
+
+  /** Answer the decision with `decision`, and every chain read with the awaiting chain until one is recorded. */
+  async function openDeciding(decision: { status: number; body: unknown }): Promise<{ region: HTMLElement; chainReads: () => number }> {
+    let decided = false;
+    stubRoutes((url) => {
+      if (url === "/approval/decide") {
+        decided = decision.status === 200;
+        return decision;
+      }
+      if (url.includes("operation=")) return { status: 200, body: decided ? approvedChain : awaitingChain };
+      return { status: 200, body: PAGE };
+    });
+    renderView({ kind: "all" }, true);
+    await userEvent.click(await screen.findByRole("button", { name: /op-open/u }));
+    const region = await screen.findByRole("group", { name: "Decide here" });
+    const chainReads = (): number => urls(fetcher).filter((url) => url.includes("operation=")).length;
+    return { region, chainReads };
+  }
+
+  function decisionBodies(): unknown[] {
+    return fetcher.mock.calls
+      .filter((call) => String(call[0]) === "/approval/decide")
+      .map((call) => JSON.parse(String(call[1]?.body)) as unknown);
+  }
+
+  it("records a decision after a confirmation that names the digest, and reads the chain again", async () => {
+    const { region, chainReads } = await openDeciding({
+      status: 200,
+      body: { action: "approval_decide", status: "recorded", detail, ok: true },
+    });
+    expect(screen.queryByText("This cockpit does not approve.")).toBeNull();
+    expect(screen.getAllByText(/synapse approvals decide/u)).toHaveLength(2);
+    await userEvent.type(within(region).getByLabelText("Reason, in your own words"), "looked");
+    await userEvent.click(within(region).getByRole("button", { name: "Approve…" }));
+    expect(region.textContent).toContain(`Record “approved” for sha256:${recorded}?`);
+    expect(within(region).getByLabelText("Reason, in your own words").hasAttribute("disabled")).toBe(true);
+    expect(chainReads()).toBe(1);
+    await userEvent.click(within(region).getByRole("button", { name: "Record" }));
+    const notice = await screen.findByText(`Recorded: ${detail}`);
+    expect(notice.getAttribute("role")).toBe("status");
+    await waitFor(() => expect(chainReads()).toBe(2));
+    expect(decisionBodies()).toEqual([
+      { operation_id: "op-open", intent_sha256: recorded, decision: "approved", reason: "looked" },
+    ]);
+    const call = fetcher.mock.calls.find((item) => String(item[0]) === "/approval/decide");
+    expect(call?.[1]?.method).toBe("POST");
+    expect(new Headers(call?.[1]?.headers).get("Content-Type")).toBe("application/json");
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Approval" })).toBeNull());
+    expect(screen.getByText("by P/approver-alice")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/may now run|is allowed|approved for the attempt/u);
+  });
+
+  it("cancels without sending, and records a rejection with its reason", async () => {
+    const { region } = await openDeciding({
+      status: 200,
+      body: { action: "approval_decide", status: "recorded", detail: "rejected recorded", ok: true },
+    });
+    await userEvent.click(within(region).getByRole("button", { name: "Reject…" }));
+    expect(region.textContent).toContain(`Record “rejected” for sha256:${recorded}?`);
+    await userEvent.click(within(region).getByRole("button", { name: "Cancel" }));
+    expect(within(region).getByRole("button", { name: "Approve…" })).toBeTruthy();
+    expect(decisionBodies()).toEqual([]);
+    await userEvent.type(within(region).getByLabelText("Reason, in your own words"), "not yet");
+    await userEvent.click(within(region).getByRole("button", { name: "Reject…" }));
+    await userEvent.click(within(region).getByRole("button", { name: "Record" }));
+    await screen.findByText("Recorded: rejected recorded");
+    expect(decisionBodies()).toEqual([
+      { operation_id: "op-open", intent_sha256: recorded, decision: "rejected", reason: "not yet" },
+    ]);
+  });
+
+  it("shows a refusal in the dashboard's words, keeps the chain, and lets the person try again", async () => {
+    const words = "the relay identity 'P/worker' is the intent's actor; the hub never admits an attempt on its own approval";
+    const { region, chainReads } = await openDeciding({
+      status: 409,
+      body: { action: "approval_decide", operation_id: "op-open", status: "refused", detail: words, ok: false },
+    });
+    await userEvent.click(within(region).getByRole("button", { name: "Approve…" }));
+    await userEvent.click(within(region).getByRole("button", { name: "Record" }));
+    const alert = await within(region).findByRole("alert");
+    expect(alert.textContent).toBe(`Not recorded. The dashboard refused before relaying anything: ${words}`);
+    expect(chainReads()).toBe(1);
+    expect(screen.queryByText(/^Recorded:/u)).toBeNull();
+    await userEvent.click(within(region).getByRole("button", { name: "Approve…" }));
+    expect(within(region).queryByRole("alert")).toBeNull();
+  });
+
+  it("names the hub's refusal and an unarmed dashboard", async () => {
+    let { region } = await openDeciding({
+      status: 409,
+      body: { action: "approval_decide", status: "rejected", detail: "approval gate: no accepted verdict", ok: false },
+    });
+    await userEvent.click(within(region).getByRole("button", { name: "Approve…" }));
+    await userEvent.click(within(region).getByRole("button", { name: "Record" }));
+    expect((await within(region).findByRole("alert")).textContent).toBe(
+      "Not recorded. The hub refused the note: approval gate: no accepted verdict",
+    );
+    cleanup();
+    ({ region } = await openDeciding({ status: 404, body: "not found\n" }));
+    await userEvent.click(within(region).getByRole("button", { name: "Approve…" }));
+    await userEvent.click(within(region).getByRole("button", { name: "Record" }));
+    expect((await within(region).findByRole("alert")).textContent).toBe(
+      "Not recorded. This dashboard takes no decisions: its operator writes are not armed.",
+    );
+  });
+
+  it("refuses a reason over the byte bound before anything is sent", async () => {
+    const { region } = await openDeciding({ status: 500, body: {} });
+    const reason = within(region).getByLabelText("Reason, in your own words");
+    fireEvent.change(reason, { target: { value: "é".repeat(2049) } });
+    expect(within(region).getByRole("alert").textContent).toContain("longer than 4096 bytes");
+    expect(reason.getAttribute("aria-invalid")).toBe("true");
+    expect(within(region).getByRole("button", { name: "Approve…" }).hasAttribute("disabled")).toBe(true);
+    expect(within(region).getByRole("button", { name: "Reject…" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(reason, { target: { value: "é".repeat(2048) } });
+    expect(within(region).queryByRole("alert")).toBeNull();
+    expect(region.textContent).toContain("Optional. At most 4096 bytes.");
+    expect(decisionBodies()).toEqual([]);
   });
 });
 

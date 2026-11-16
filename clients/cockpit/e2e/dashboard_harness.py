@@ -58,6 +58,15 @@ SEEDED_FINDINGS = (
 )
 """Findings the browser gate expects in the panel: one re-checked, one withdrawn."""
 
+OPERATIONS_APPROVER = "P/approver-cockpit"
+"""The operator's relay identity when the harness journals operations.
+
+The journalled operations are declared by ``P/worker``. The hub counts an
+approval only from an identity of the declarer's project that is not the
+declarer, and the dashboard relays only under a name no agent uses, so the
+operations journey can record a decision that counts.
+"""
+
 
 def _port_from_env(name: str, default: int) -> int:
     """Return one validated TCP port from the environment.
@@ -114,7 +123,9 @@ def _access_policy(root: Path, tokens: dict[str, str]) -> Path:
         token_path.chmod(0o600)
         principal = {"id": role, "role": role, "token_file": token_path.name}
         if role == "operator":
-            principal["operator_name"] = "operator:cockpit-e2e"
+            operations = os.environ.get("SYNAPSE_COCKPIT_E2E_OPERATIONS") == "1"
+            relay = OPERATIONS_APPROVER if operations else "operator:cockpit-e2e"
+            principal["operator_name"] = relay
         elif role == "admin":
             principal["operator_name"] = "operator:cockpit-e2e-admin"
         principals.append(principal)

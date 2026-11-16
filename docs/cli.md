@@ -645,6 +645,12 @@ control characters, optionally followed by one newline. The loader caps the
 policy at 64 principals and 256 KiB and rejects unknown fields/roles/versions,
 duplicate JSON keys, ids, tokens, or relay identities before binding HTTP.
 
+A principal who decides approvals from the cockpit needs a relay identity of
+the declarer's project that no agent uses, such as `harbour/approver-alice`.
+The hub counts an approval only from an identity of the actor's project that is
+not the actor, and the dashboard refuses to relay under a name that is online as
+an agent.
+
 ```bash
 chmod 600 ~/.config/synapse/dashboard-access.json ~/.config/synapse/*.token
 synapse dashboard --operator \
@@ -793,15 +799,22 @@ from the dashboard"). A surface asked for without its store answers `404` with
 answer and the start's lines come from one table, so they cannot disagree. The
 cockpit's setup assistant shows the list under "What this dashboard serves".
 
-**Operator write-path (opt-in).** `--operator` arms three write routes so the
+**Operator write-path (opt-in).** `--operator` arms these write routes so the
 cockpit can act on the fleet rather than only observe it:
 
 - `POST /message` `{"to": "<name|group|all>", "text": "..."}` — relay one chat
   message to the fleet.
+- `POST /message/respond` `{"message_seq": <n>, "to": "...", "status": "...",
+  "note": "..."?}` — answer one durable chat message with a semantic response
+  (`acknowledged`, `in_progress`, `needs_input`, `declined` or `completed`).
 - `POST /task` `{"id": "...", "title": "...", "depends_on": ["..."]?}` — declare
   a board task.
 - `POST /task/update` `{"id": "...", "status": "..."?, "note": "..."?}` — change
   a task's status and/or append a progress note (at least one of the two).
+- `POST /approval/decide` `{"operation_id": "...", "intent_sha256": "...",
+  "decision": "approved" | "rejected", "reason": "..."}` — record an approval
+  decision on an operation's intent (it needs `--feeds-db`; see "Approval
+  decisions" below).
 
 The write-path is **off by default** — without the flag every route answers 404,
 indistinguishable from an unknown path, and the dashboard stays a pure observer.
@@ -812,10 +825,31 @@ never impersonating an agent. The relay reimplements neither authorisation nor
 auditing: the hub applies its own ACL to the relayed frame and records it in the
 durable log, so every operator action is authorised at the hub and shows up in
 replay, `/state-at`, and the signal stream like any other frame. The response is
-JSON — `200` when the hub delivered, dead-lettered, or applied it, `403` when the
-ACL refuses it, `409` when the blackboard refuses the task on its own terms
-(unknown id, empty title, dependency cycle, unknown status), and `503` when the
-hub is unreachable.
+JSON — `200` when the hub delivered, dead-lettered, applied or recorded it, `403`
+when the ACL refuses it, `409` when the blackboard refuses the task on its own
+terms (unknown id, empty title, dependency cycle, unknown status) or the hub
+refuses the note, and `503` when the hub is unreachable.
+
+**Approval decisions.** `POST /approval/decide` records the note that
+`synapse approvals decide` records, a progress note of kind `approval` on
+`sha256:<digest>`, under the principal's relay identity; it needs the
+`task_update` capability. The body is exactly the four fields above, and any
+other field, an identity among them, is a `400`. A reason over 4096 UTF-8 bytes
+is a `400` too, never trimmed. Before anything is relayed, the dashboard refuses:
+
+| Answer | When |
+| --- | --- |
+| `404` | the start has no `--feeds-db`, or the operation has no declaration in the store |
+| `409` | the body's digest, the declaration's digest and the digest recomputed from the kept intent are not all equal |
+| `409` | the relay identity is the intent's actor, or is not of the actor's project (the part before the first `/`); so the compatibility identity `operator:<name>` never approves |
+| `409` | the relay identity is online as an agent |
+| `503` | the event store or the hub's roster cannot be read |
+
+These refusals are JSON documents with `"status": "refused"` and the reason in
+`detail`. A relayed decision answers `200` with `"status": "recorded"`. The hub
+judges an approval only when an attempt is asked, so the answer never says that
+an attempt may run. A `409` with `"status": "rejected"` carries the hub's own
+refusal, such as its verdict gate's.
 
 **Public status-page posture:** the dashboard is read-only by default —
 every endpoint answers `GET` only unless `--operator` is set (above), and

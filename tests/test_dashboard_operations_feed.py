@@ -11,15 +11,23 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+import synapse_channel.dashboard_operations_feed as operations_feed_module
 from dashboard_helpers import _authorized_get, _feeds_server
 from operation_report_store import journal_every_state
-from synapse_channel.core.operation_report import operation_report_to_json, run_operation_report
+from synapse_channel.core.operation_report import (
+    ChainLink,
+    OperationReport,
+    operation_report_to_json,
+    run_operation_report,
+)
 from synapse_channel.dashboard import DashboardServer
+from synapse_channel.dashboard_operations_feed import build_operations_feed
 
 DECLARED = 12
 """The operations the shared journal declares."""
@@ -154,3 +162,53 @@ def test_a_scope_keeps_the_operations_of_its_declarer_and_a_named_chain_stays_wh
         "applied": False,
         "reason": "one record is named, and it is shown whole",
     }
+
+
+def test_an_approval_journalled_before_the_declaration_never_stands_for_the_declarer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    early = OperationReport(
+        operation_id="op-early",
+        task_id="T1",
+        state="approved, no attempt",
+        intent_sha256="a" * 64,
+        digest_check="matches",
+        attempts=(),
+        chain=(
+            ChainLink(4, 4.0, "approval", "P/approver", {"state": "approved"}),
+            ChainLink(9, 9.0, "declared", "P/worker", {}),
+        ),
+        as_of_seq=9,
+        as_of=9.0,
+    )
+    later = replace(
+        early,
+        operation_id="op-later",
+        chain=(ChainLink(7, 7.0, "declared", "P/worker", {}),),
+    )
+    monkeypatch.setattr(
+        operations_feed_module, "run_operation_reports", lambda *_a, **_k: (early, later)
+    )
+
+    first = build_operations_feed("unused.db", limit=1)
+    cursor = first["next_before"]
+    assert isinstance(cursor, int)
+    second = build_operations_feed("unused.db", before=cursor, limit=1)
+    later_rows = second["operations"]
+    assert isinstance(later_rows, list)
+
+    assert first["operations"] == [
+        {
+            "operation_id": "op-early",
+            "task_id": "T1",
+            "declarer": "P/worker",
+            "declared_seq": 9,
+            "state": "approved, no attempt",
+            "latest_seq": 9,
+            "latest_kind": "declared",
+            "latest_at": 9.0,
+        }
+    ]
+    assert cursor == 9
+    assert [row["operation_id"] for row in later_rows] == ["op-later"]
+    assert second["next_before"] is None

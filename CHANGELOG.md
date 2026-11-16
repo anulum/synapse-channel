@@ -45,6 +45,14 @@ start to finish and makes the cockpit the dashboard's front door.
 
 ### Added
 
+- `synapse dashboard --operator` serves `POST /approval/decide`, and the cockpit's approval view offers
+  **Decide here** to a login that holds `task_update`: the person's reason, approve or reject, and a
+  confirmation naming the digest. The dashboard records the note `synapse approvals decide` records, under
+  the principal's relay identity, only after its own checks: a body of exactly four fields (an identity in
+  the body is refused); `--feeds-db` and a declaration; the body's, the row's and the recomputed digest
+  equal; a relay identity of the actor's project that is not the actor (the compatibility
+  `operator:<name>` never approves); no live agent under that name, and a readable roster. The answer
+  says "recorded": the hub judges the approval when an attempt is asked.
 - The cockpit's attention queue adds a row for each refused operation, naming the hub's exact answer, and
   for each silent attempt, saying that an open attempt ends only by its report, an observed effect or a
   seal; it reads the newest 200 declared operations every 30 seconds. Each row opens the operation's
@@ -631,6 +639,9 @@ start to finish and makes the cockpit the dashboard's front door.
   refused and left in place. On POSIX the replaced inode stays watched, so a
   write into an earlier inode is still put back and refused.
 
+- `/operations.json` took an operation's first chain link as its declaration. An approval note journalled
+  before the declaration then stood as the declarer and set the page order. The list now reads the
+  declaration's own link.
 - The cockpit roster's inspect button is named by what its row shows. For an identity with a project,
   the row draws the last segment over the project (`api` over `harbour`), and the button was named
   "Inspect agent harbour/api", so speech input could not use the visible words and axe reported

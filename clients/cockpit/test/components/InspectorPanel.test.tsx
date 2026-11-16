@@ -8,9 +8,14 @@
 // SYNAPSE_CHANNEL — inspector panel router contracts
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { InspectorPanel, type InspectorPanelProps } from "../../src/components/InspectorPanel";
+
+// The operations tab stands in as what the inspector hands it, so the hop of the capability is seen alone.
+vi.mock("../../src/components/OperationsView", () => ({
+  OperationsView: ({ canDecide }: { readonly canDecide?: boolean }) => <p>{`decide here offered: ${String(canDecide)}`}</p>,
+}));
 
 afterEach(cleanup);
 
@@ -28,5 +33,12 @@ describe("InspectorPanel", () => {
     expect(screen.getAllByText("observed transitions").length).toBeGreaterThan(0);
     rerender(<InspectorPanel {...props("attention")} connected />);
     expect(screen.getByLabelText("Fleet attention queue")).toBeTruthy();
+  });
+
+  it("offers the operations tab a decision only when the login may record one", async () => {
+    const { rerender } = render(<InspectorPanel {...props("operations")} />);
+    expect(await screen.findByText("decide here offered: false")).toBeTruthy();
+    rerender(<InspectorPanel {...props("operations")} canDecideApproval />);
+    expect(await screen.findByText("decide here offered: true")).toBeTruthy();
   });
 });

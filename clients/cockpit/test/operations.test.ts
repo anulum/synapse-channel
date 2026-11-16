@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   ANSWER_NAMES,
   APPROVED_FRESH,
+  MAX_APPROVAL_REASON_BYTES,
   OPERATION_STATES,
   approvalView,
   decideCommands,
@@ -19,6 +20,7 @@ import {
   isRefusingAnswer,
   phaseOf,
   readState,
+  reasonBytes,
   requestReason,
   type ChainLink,
   type OperationChain,
@@ -211,5 +213,14 @@ describe("decideCommands", () => {
     for (const digest of ["", "C".repeat(64), "c".repeat(63), `${"c".repeat(64)}; rm -rf ~`]) {
       expect(decideCommands(digest)).toEqual([]);
     }
+  });
+});
+
+describe("reasonBytes", () => {
+  it("counts the reason as the dashboard does, in UTF-8 bytes", () => {
+    expect(reasonBytes("")).toBe(0);
+    expect(reasonBytes("abc")).toBe(3);
+    expect(reasonBytes("é")).toBe(2);
+    expect(reasonBytes("é".repeat(MAX_APPROVAL_REASON_BYTES / 2))).toBe(MAX_APPROVAL_REASON_BYTES);
   });
 });

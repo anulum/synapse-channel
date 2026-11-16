@@ -164,6 +164,7 @@ def _announce(args: argparse.Namespace, server: DashboardServer, cockpit_dist: P
         print("operator write: POST " + server.url("/message"))
         print("operator task: POST " + server.url("/task"))
         print("operator task update: POST " + server.url("/task/update"))
+        print("operator approval decision: POST " + server.url("/approval/decide"))
     if getattr(args, "setup_apply", False):
         print(
             f"setup preflight (admin): {server.url(SETUP_PREFLIGHT_PATH)}; "

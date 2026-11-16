@@ -427,7 +427,7 @@ def test_cmd_dashboard_announces_every_configured_feed(
 def test_cmd_dashboard_announces_operator_write_routes(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # With --operator the dispatcher must print the three write routes, so an
+    # With --operator the dispatcher must print the write routes, so an
     # operator sees exactly which mutating endpoints the armed dashboard exposes.
     from synapse_channel import cli_dashboard
 
@@ -446,6 +446,7 @@ def test_cmd_dashboard_announces_operator_write_routes(
     assert "operator write: POST http://127.0.0.1:8765/message" in out
     assert "operator task: POST http://127.0.0.1:8765/task" in out
     assert "operator task update: POST http://127.0.0.1:8765/task/update" in out
+    assert "operator approval decision: POST http://127.0.0.1:8765/approval/decide" in out
 
 
 def test_dashboard_parser_wires_operator_flags() -> None:

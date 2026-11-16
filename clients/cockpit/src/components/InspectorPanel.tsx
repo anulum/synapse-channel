@@ -64,6 +64,8 @@ export interface InspectorPanelProps {
   readonly operation?: string | null;
   /** Choose an operation: the operations tab opens on its chain. */
   readonly onOperationChange?: ((operationId: string | null) => void) | undefined;
+  /** Whether this login may record an approval decision from the operations tab. */
+  readonly canDecideApproval?: boolean;
   readonly events: readonly CockpitEvent[];
   readonly window?: TimeWindow | null;
   readonly onClearWindow?: (() => void) | undefined;
@@ -111,7 +113,7 @@ export function InspectorPanel(props: InspectorPanelProps): JSX.Element {
     operatorActions, incidentStorageKey = "synapse-cockpit-incident-v1:unavailable",
     incidentStep = "scope", onIncidentStepChange, replay = { mode: "live" },
     hubVersion = "", configEpoch = "", onOpenIncidentEvidence, onTabChange, prefill,
-    operation = null, onOperationChange,
+    operation = null, onOperationChange, canDecideApproval = false,
   } = props;
   const shownCoverage = coverage ?? eventCoverageOf(events, provenance);
   return (
@@ -148,7 +150,8 @@ export function InspectorPanel(props: InspectorPanelProps): JSX.Element {
               selection={selection} onSelectEvent={(seq) => onSelectionChange?.(seq === null ? null : { kind: "event", seq })}
               onOpenEvent={onOpenEvent ?? ((seq) => onSelectionChange?.({ kind: "event", seq }))} />
           ) : tab === "operations" ? (
-            <OperationsView source={OPERATIONS_SOURCE} selected={operation} onSelect={onOperationChange} />
+            <OperationsView source={OPERATIONS_SOURCE} selected={operation} onSelect={onOperationChange}
+              canDecide={canDecideApproval} />
           ) : tab === "incident" ? (
             <IncidentWorkspace key={incidentStorageKey} step={incidentStep} onStepChange={(next) => onIncidentStepChange?.(next)}
               selection={selection} replay={replay} storageKey={incidentStorageKey} hubVersion={hubVersion}

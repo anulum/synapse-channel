@@ -22,11 +22,13 @@ import synapse_channel.dashboard as dashboard_module
 from synapse_channel.dashboard import DashboardServer, start_dashboard_server
 from synapse_channel.dashboard_access import (
     DashboardAccessPolicy,
+    DashboardCapabilities,
     DashboardCredential,
     DashboardPrincipal,
     capabilities_for_role,
 )
 from synapse_channel.dashboard_access_http import (
+    APPROVAL_DECIDE_PATH,
     MESSAGE_PATH,
     MESSAGE_RESPONSE_PATH,
     TASK_PATH,
@@ -183,7 +185,8 @@ def test_open_read_policy_returns_its_viewer() -> None:
 
 
 @pytest.mark.parametrize(
-    "route", [MESSAGE_PATH, MESSAGE_RESPONSE_PATH, TASK_PATH, TASK_UPDATE_PATH]
+    "route",
+    [MESSAGE_PATH, MESSAGE_RESPONSE_PATH, TASK_PATH, TASK_UPDATE_PATH, APPROVAL_DECIDE_PATH],
 )
 @pytest.mark.parametrize("token", ["o", "a"])
 def test_operator_and_admin_are_allowed_only_on_shipped_routes(route: str, token: str) -> None:
@@ -197,7 +200,8 @@ def test_operator_and_admin_are_allowed_only_on_shipped_routes(route: str, token
 
 
 @pytest.mark.parametrize(
-    "route", [MESSAGE_PATH, MESSAGE_RESPONSE_PATH, TASK_PATH, TASK_UPDATE_PATH]
+    "route",
+    [MESSAGE_PATH, MESSAGE_RESPONSE_PATH, TASK_PATH, TASK_UPDATE_PATH, APPROVAL_DECIDE_PATH],
 )
 def test_viewer_is_forbidden_on_every_write_route(route: str) -> None:
     decision = write_decision(_policy(), f"Bearer {'v' * 32}", route)
@@ -223,6 +227,18 @@ def test_write_refuses_a_capability_without_relay_attribution() -> None:
     assert write_decision(policy, f"Bearer {'b' * 32}", MESSAGE_PATH).status is (
         HTTPStatus.FORBIDDEN
     )
+
+
+def test_an_approval_decision_needs_the_capability_that_appends_progress_notes() -> None:
+    capabilities = DashboardCapabilities(
+        read=True, message_send=True, task_declare=True, task_update=False
+    )
+    principal = DashboardPrincipal("ops", "operator", capabilities, "P/approver")
+    policy = DashboardAccessPolicy((DashboardCredential(principal, b"p" * 32),), None, True)
+    bearer = f"Bearer {'p' * 32}"
+
+    assert write_decision(policy, bearer, MESSAGE_PATH).allowed is True
+    assert write_decision(policy, bearer, APPROVAL_DECIDE_PATH).status is HTTPStatus.FORBIDDEN
 
 
 @pytest.mark.parametrize("role", ["viewer", "operator", "admin"])

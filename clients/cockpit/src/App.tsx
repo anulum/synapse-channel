@@ -314,6 +314,7 @@ export function App(): JSX.Element {
                   onInspectTask={overlays.inspectTask}
                   operation={workspace.operation ?? null}
                   onOperationChange={setOperation}
+                  canDecideApproval={capabilities.task_update && peerHub === null}
                   events={feeds.log}
                   window={brush}
                   onClearWindow={onClearWindow}

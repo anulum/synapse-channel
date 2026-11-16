@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 
 from synapse_channel.dashboard_access import DashboardAccessPolicy, DashboardPrincipal
 from synapse_channel.dashboard_access_http import (
+    APPROVAL_DECIDE_PATH,
     DASHBOARD_ACCESS_PATH,
     MESSAGE_PATH,
     MESSAGE_RESPONSE_PATH,
@@ -30,6 +31,7 @@ from synapse_channel.dashboard_access_http import (
     read_decision,
     write_decision,
 )
+from synapse_channel.dashboard_approval_decide import ApprovalDecideBindings, decide_approval
 from synapse_channel.dashboard_attention import serve_attention
 from synapse_channel.dashboard_feed_scope import feed_scope, scoped_feed
 from synapse_channel.dashboard_feed_serving import (
@@ -148,6 +150,7 @@ from synapse_channel.dashboard_hub_snapshot import (
 from synapse_channel.dashboard_operations_feed import OPERATIONS_PATH
 from synapse_channel.dashboard_operator import WriteRateLimiter
 from synapse_channel.dashboard_operator_writes import (
+    RelayPlan,
     execute_relay,
     is_json_media_type,
     plan_message,
@@ -493,6 +496,10 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 content_type="text/plain",
             )
             return
+        relay_identity = cast(str, principal.operator_name)
+        if route == APPROVAL_DECIDE_PATH:
+            self._write_response(decide_approval(body, relay_identity, self._approval_bindings()))
+            return
         planners = {
             MESSAGE_PATH: plan_message,
             MESSAGE_RESPONSE_PATH: plan_message_response,
@@ -503,15 +510,31 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if isinstance(plan, str):
             self._write(HTTPStatus.BAD_REQUEST, f"{plan}\n".encode(), content_type="text/plain")
             return
-        self._write_response(
-            execute_relay(
-                plan,
-                uri=self.uri,
-                operator_name=cast(str, principal.operator_name),
-                token=self.token,
-                ready_timeout=self.ready_timeout,
-                response_timeout=self.response_timeout,
-            )
+        self._write_response(self._relay(plan, relay_identity))
+
+    def _relay(self, plan: RelayPlan, relay_identity: str) -> FeedResponse:
+        """Run one relay plan under ``relay_identity`` against this start's hub."""
+        return execute_relay(
+            plan,
+            uri=self.uri,
+            operator_name=relay_identity,
+            token=self.token,
+            ready_timeout=self.ready_timeout,
+            response_timeout=self.response_timeout,
+        )
+
+    def _approval_bindings(self) -> ApprovalDecideBindings:
+        """Lend the approval route this start's store, a fresh roster read and the relay."""
+
+        def online_agents() -> list[str]:
+            # A fresh read through the dashboard's own snapshot identity, never a cache.
+            return self.snapshot_gate.fetch(wait_timeout=1.0).online_agents
+
+        return ApprovalDecideBindings(
+            feeds_db=self.reliability_db,
+            key_file=self.reliability_db_key_file,
+            online_agents=online_agents,
+            relay=self._relay,
         )
 
     def _configured_flags(self) -> frozenset[str]:

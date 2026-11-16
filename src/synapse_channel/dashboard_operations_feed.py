@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Final
 
 from synapse_channel.core.operation_report import (
+    ChainLink,
     OperationReport,
     operation_report_to_json,
     run_operation_report,
@@ -41,9 +42,8 @@ MAX_OPERATION_ID_LENGTH: Final = 512
 """Longest operation id accepted at the HTTP boundary."""
 
 
-def _row(report: OperationReport) -> dict[str, object]:
+def _row(report: OperationReport, declared: ChainLink) -> dict[str, object]:
     """Return one operation's list row: its state and where its chain stands."""
-    declared = report.chain[0]
     latest = report.chain[-1]
     return {
         "operation_id": report.operation_id,
@@ -86,14 +86,17 @@ def build_operations_feed(
     """
     bounded = max(1, min(int(limit), MAX_OPERATIONS_LIMIT))
     reports = run_operation_reports(db_path, key_file=key_file)
-    newest_first = sorted(reports, key=lambda report: report.chain[0].seq, reverse=True)
-    eligible = [report for report in newest_first if before is None or report.chain[0].seq < before]
+    # The declaration's own link orders the rows: an approval journalled before
+    # it comes first in the chain, and must never stand for the declarer.
+    declared = [(report, link) for report in reports if (link := report.declaration) is not None]
+    newest_first = sorted(declared, key=lambda pair: pair[1].seq, reverse=True)
+    eligible = [pair for pair in newest_first if before is None or pair[1].seq < before]
     page = eligible[:bounded]
     more = len(eligible) > bounded
     return {
-        "operations": [_row(report) for report in page],
-        "total": len(reports),
-        "next_before": page[-1].chain[0].seq if more and page else None,
+        "operations": [_row(report, link) for report, link in page],
+        "total": len(declared),
+        "next_before": page[-1][1].seq if more and page else None,
         "limit": bounded,
         "as_of_seq": reports[0].as_of_seq if reports else 0,
         "custody": "not recorded here",

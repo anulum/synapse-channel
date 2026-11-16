@@ -256,6 +256,8 @@ export interface OperationsSource {
   readonly readChain: (operationId: string, scope: CockpitScope) => Promise<ChainResult>;
   /** Fetch one row's inclusion proof and check it in the browser. */
   readonly verifyRow: (seq: number) => Promise<VerifyResult>;
+  /** Ask the dashboard to record one approval decision under the login's relay identity. */
+  readonly decide: (input: ApprovalDecideInput) => Promise<ApprovalDecideResult>;
 }
 
 /** The state that an approval decision is asked for. */
@@ -311,6 +313,38 @@ export function decideCommands(digest: string): readonly string[] {
   if (!DIGEST.test(digest)) return [];
   const base = `synapse approvals decide --name "<approver>" --subject sha256:${digest}`;
   return [`${base} --approve`, `${base} --reject --reason "<why>"`];
+}
+
+/** The two decisions the cockpit can record. */
+export type ApprovalDecision = "approved" | "rejected";
+
+/** The largest reason the dashboard relays, in UTF-8 bytes; it refuses a longer one rather than trimming it. */
+export const MAX_APPROVAL_REASON_BYTES = 4096;
+
+/** One decision as the person gives it. The relay identity is never part of it: the dashboard takes it from the login. */
+export interface ApprovalDecideInput {
+  readonly operationId: string;
+  readonly intentSha256: string;
+  readonly decision: ApprovalDecision;
+  readonly reason: string;
+}
+
+/**
+ * The dashboard's answer to one decision.
+ *
+ * `recorded`: the hub journalled the note, and judges it only when an attempt
+ * is asked. `refused`: the dashboard refused before relaying anything (the
+ * digests, the declarer, the project, a live agent, the store or the roster).
+ * `hub-refused`: the hub refused the note itself (its verdict gate or its
+ * access rules). `invalid`: the dashboard refused the request's fields.
+ */
+export type ApprovalDecideResult =
+  | { readonly kind: "recorded" | "refused" | "hub-refused" | "unreachable" | "invalid" | "rate-limited" | "error"; readonly detail: string }
+  | { readonly kind: "not-armed" | "unauthorised" };
+
+/** The reason's size as the dashboard counts it: UTF-8 bytes. */
+export function reasonBytes(reason: string): number {
+  return new TextEncoder().encode(reason).length;
 }
 
 /** Render epoch seconds as an exact UTC instant, or null when the row holds none. */
