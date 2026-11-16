@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess  # nosec B404
+import subprocess
 import sys
 import time
 from collections.abc import Callable
@@ -133,7 +133,7 @@ def _write_profile(data_root: Path, proxy_argv: list[str]) -> None:
 def _capture_screenshot(path: Path) -> bool:
     """Capture the root X11 surface and report whether evidence exists."""
     try:
-        completed = subprocess.run(  # nosec B603
+        completed = subprocess.run(
             [required_executable("import"), "-window", "root", str(path)],
             capture_output=True,
             text=True,
@@ -175,7 +175,7 @@ def main() -> int:
     process_env["ZED_ALLOW_EMULATED_GPU"] = "1"
     with log_path.open("w", encoding="utf-8") as log:
         startup_deadline = time.monotonic() + DEFAULT_ZED_TIMING.startup_seconds
-        process = subprocess.Popen(  # nosec B603
+        process = subprocess.Popen(
             [str(zed), "--foreground", "--user-data-dir", str(data_root), str(project)],
             cwd=project,
             env=process_env,
