@@ -288,7 +288,7 @@ def test_offline_install_cli_uses_the_same_manifest_and_archive_contract(tmp_pat
     destination = tmp_path / "installed" / "opencode"
     report = tmp_path / "install-report.json"
 
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(
         [
             sys.executable,
             "-m",
@@ -402,7 +402,7 @@ def test_real_pinned_opencode_negotiates_the_expected_acp_face() -> None:
     if not discovered:
         pytest.skip("real OpenCode compatibility smoke requires OPENCODE_BIN")
     binary = Path(discovered).resolve()
-    version = subprocess.run(  # nosec B603
+    version = subprocess.run(
         [str(binary), "--version"],
         capture_output=True,
         check=False,
