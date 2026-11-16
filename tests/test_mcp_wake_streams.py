@@ -63,7 +63,9 @@ def test_progress_restarts_terminal_clears_and_stalled_stream_wakes_once(tmp_pat
     assert not outbox.expire_streams(now=421)
     attempt = outbox.acquire(421)
     assert attempt is not None and json.loads(attempt.body)["changes"] == ["messages"]
-    assert "aaaa" not in attempt.body.decode()
+    # The stream key ("a" * 64) must not reach the wake body, whole or cut short. Four letters
+    # were too few: the body's random hex identifiers contain "aaaa" by chance.
+    assert "a" * 16 not in attempt.body.decode()
     assert outbox.finish(attempt, 422, "accepted", http_status=202)
     assert not outbox.observe_recovery_page(2, page(3, stream(3, key="b" * 64, at=500)), now=500)
     assert outbox.observe_recovery_page(3, page(4, stream(4, key="b" * 64, terminal=True)), now=510)
