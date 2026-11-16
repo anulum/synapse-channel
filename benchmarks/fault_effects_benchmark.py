@@ -81,7 +81,7 @@ import os
 import platform
 import random
 import secrets
-import subprocess  # nosec B404 - fixed git commands in a disposable repository
+import subprocess  # fixed git commands in a disposable repository
 import sys
 import tempfile
 import time
@@ -222,7 +222,7 @@ def schedule(seed: int, *, agents: int = 3, tasks_per_agent: int = len(FAULTS)) 
     tuple[Task, ...]
         Tasks in execution order.
     """
-    rng = random.Random(seed)  # nosec B311 - reproducible schedule, not cryptography
+    rng = random.Random(seed)  # reproducible schedule, not cryptography
     tasks: list[Task] = []
     for agent_index in range(agents):
         for index in range(tasks_per_agent):
@@ -300,7 +300,7 @@ class Repository:
     @staticmethod
     def _git(cwd: Path, *args: str) -> str:
         command = ["git", "-c", "user.name=bench", "-c", "user.email=bench@localhost", *args]
-        result = subprocess.run(  # nosec B603 - fixed argument vector
+        result = subprocess.run(  # fixed argument vector
             command, cwd=cwd, check=True, capture_output=True, text=True
         )
         return result.stdout
@@ -1093,7 +1093,7 @@ def _cpu_since(start: tuple[float, float]) -> float | None:
 
 def _git_output(directory: Path, *args: str) -> str:
     """Return a Git command's output in ``directory``, or ``""`` when it is not a checkout."""
-    result = subprocess.run(  # nosec B603 B607 - fixed git read commands
+    result = subprocess.run(  # fixed git read commands
         ["git", "-C", str(directory), *args], capture_output=True, text=True, check=False
     )
     return result.stdout.strip() if result.returncode == 0 else ""
