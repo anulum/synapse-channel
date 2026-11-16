@@ -47,7 +47,9 @@ def test_valid_mapping_parses_into_a_package() -> None:
 
 def test_non_mapping_is_refused() -> None:
     with pytest.raises(DeliberationError, match="must be a JSON object"):
-        export_package_from_mapping(["not", "a", "mapping"])  # type: ignore[arg-type]
+        export_package_from_mapping(
+            ["not", "a", "mapping"]  # type: ignore[arg-type] # not a mapping
+        )
 
 
 @pytest.mark.parametrize(
