@@ -32,13 +32,12 @@ def _close_main_pipes(*streams: IO[str]) -> None:
             stream.close()
 
 
-def acp_initialize(
+def _start_acp_initialize(
     binary: str,
-    *,
     cwd: Path,
     env: Mapping[str, str],
-) -> tuple[dict[str, Any], str]:
-    """Perform one real ACP initialize exchange and close cleanly on stdin EOF."""
+) -> tuple[subprocess.Popen[str], IO[str], IO[str], queue.Queue[str], threading.Thread]:
+    """Start one ACP process and a thread that owns its stdout."""
     process = subprocess.Popen(
         [binary, "acp", "--cwd", str(cwd)],
         cwd=cwd,
@@ -67,6 +66,17 @@ def acp_initialize(
 
     reader = threading.Thread(target=_read_response, daemon=True)
     reader.start()
+    return process, stdin, stderr_stream, responses, reader
+
+
+def acp_initialize(
+    binary: str,
+    *,
+    cwd: Path,
+    env: Mapping[str, str],
+) -> tuple[dict[str, Any], str]:
+    """Perform one real ACP initialize exchange and close cleanly on stdin EOF."""
+    process, stdin, stderr_stream, responses, reader = _start_acp_initialize(binary, cwd, env)
     request = {
         "jsonrpc": "2.0",
         "id": 1,
