@@ -231,14 +231,18 @@ def test_proof_from_json_rejects_missing_field() -> None:
 
 
 def test_proof_from_json_rejects_non_list_path() -> None:
-    payload = proof_to_json(build_proof(_events(3), 2))  # type: ignore[arg-type]
+    proof = build_proof(_events(3), 2)
+    assert proof is not None
+    payload = proof_to_json(proof)
     payload["path"] = "not-a-list"
     with pytest.raises(ValueError, match="malformed inclusion proof"):
         proof_from_json(payload)
 
 
 def test_proof_from_json_rejects_non_integer_index() -> None:
-    payload = proof_to_json(build_proof(_events(3), 2))  # type: ignore[arg-type]
+    proof = build_proof(_events(3), 2)
+    assert proof is not None
+    payload = proof_to_json(proof)
     payload["index"] = "middle"
     with pytest.raises(ValueError, match="malformed inclusion proof"):
         proof_from_json(payload)
@@ -260,10 +264,14 @@ def test_render_root_empty_and_populated() -> None:
 
 
 def test_render_proof_with_and_without_path() -> None:
-    multi = render_proof_markdown(build_proof(_events(5), 3))  # type: ignore[arg-type]
+    multi_proof = build_proof(_events(5), 3)
+    assert multi_proof is not None
+    multi = render_proof_markdown(multi_proof)
     assert "Audit path" in multi
     assert multi.count("  - ") >= 1
-    single = render_proof_markdown(build_proof(_events(1), 1))  # type: ignore[arg-type]
+    single_proof = build_proof(_events(1), 1)
+    assert single_proof is not None
+    single = render_proof_markdown(single_proof)
     assert "single-event log" in single
 
 
