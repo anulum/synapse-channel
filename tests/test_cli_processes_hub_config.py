@@ -328,7 +328,7 @@ def test_cmd_hub_aef_startup_failure_closes_the_authoritative_store(
     opened: list[EventStore] = []
 
     def store_factory(path: str, **kwargs: object) -> EventStore:
-        store = EventStore(path, **kwargs)  # type: ignore[arg-type]
+        store = EventStore(path, **kwargs)  # type: ignore[arg-type] # store options vary
         opened.append(store)
         return store
 
