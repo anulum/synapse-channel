@@ -13,7 +13,7 @@ import math
 import os
 import shutil
 import stat
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -132,7 +132,7 @@ class PiParticipant:
         if resolved is None:
             return ParticipantHealth(self._identity, self.channel, False, "pi binary not found")
         try:
-            completed = subprocess.run(  # nosec B603
+            completed = subprocess.run(  # nosec B603 # argument vector, never a shell
                 [resolved, "--version"],
                 capture_output=True,
                 text=True,
