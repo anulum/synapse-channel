@@ -374,6 +374,97 @@ def _run_terminal_tmux_session(
     return _attach_tmux_session(session=resolved_session, tmux_bin=tmux_bin, env=env)
 
 
+def _prepare_worker_launch(
+    *,
+    identity: str,
+    project: str | None,
+    cwd: Path | None,
+    environ: Mapping[str, str] | None,
+    outcome_file: Path | None,
+) -> tuple[Path, dict[str, str], WorkerObservation]:
+    """Resolve the working directory, identity environment, and outcome record."""
+    resolved_cwd = Path.cwd() if cwd is None else cwd.absolute()
+    env = dict(os.environ if environ is None else environ)
+    resolved_project = (project or _project_from_identity(identity)).strip()
+    env["SYN_PROJECT"] = resolved_project
+    env["SYN_IDENTITY"] = identity.strip()
+    outcome = WorkerObservation(outcome_file)
+    env[OPERATION_ID_ENV] = outcome.operation_id
+    return resolved_cwd, env, outcome
+
+
+def _launch_terminal_worker(
+    *,
+    outcome: WorkerObservation,
+    env: dict[str, str],
+    command: Sequence[str],
+    uri: str,
+    token: str | None,
+    token_file: str | None,
+    tmux_bin: str,
+    synapse_bin: str,
+    session: str | None,
+    cwd: Path,
+) -> WorkerExit:
+    """Run the provider through tmux and report that outcome."""
+    env["SYN_TMUX_PROVIDER"] = "1"
+    env["SYNAPSE_AUTO_CONNECT"] = "0"
+    return outcome.tmux_result(
+        lambda: _run_terminal_tmux_session(
+            identity=env["SYN_IDENTITY"],
+            command=command,
+            env=env,
+            uri=uri,
+            token=token,
+            token_file=token_file,
+            tmux_bin=tmux_bin,
+            synapse_bin=synapse_bin,
+            session=session,
+            cwd=cwd,
+        )
+    )
+
+
+def _open_arm_sidecar(
+    env: dict[str, str],
+    *,
+    syn_bin: str,
+    uri: str,
+    token: str | None,
+    token_file: str | None,
+) -> subprocess.Popen[bytes]:
+    """Start the local arm sidecar and return it with its log already closed."""
+    arm_cmd = [syn_bin, "arm", "--uri", uri]
+    if token:
+        arm_cmd.extend(["--token", token])
+    if token_file:
+        arm_cmd.extend(["--token-file", token_file])
+    log_handle = _sidecar_log_path(env["SYN_IDENTITY"], env).open("ab")
+    try:
+        return subprocess.Popen(  # nosec B603 # argument vector, never a shell
+            arm_cmd,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    finally:
+        log_handle.close()
+
+
+def _stop_arm_sidecar(sidecar: subprocess.Popen[bytes] | None, timeout: float) -> None:
+    """Terminate a live arm sidecar, killing it when it ignores the request."""
+    if sidecar is None or sidecar.poll() is not None:
+        return
+    sidecar.terminate()
+    try:
+        sidecar.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        sidecar.kill()
+        sidecar.wait()
+
+
 def run_worker_session(
     *,
     identity: str,
@@ -402,64 +493,76 @@ def run_worker_session(
     The sidecar is a local ``syn arm`` process. It holds a socket and prints wake
     messages, but it does not call a model provider and therefore does not spend
     tokens while waiting. ``cwd`` sets the provider working directory in both
-    direct and tmux modes; it defaults to the directory at the time of this call.
-    That same directory resolves POSIX executable paths in the launch record.
+    direct and tmux modes and resolves POSIX executable paths in the launch record.
     """
     if not command:
         raise ValueError("worker-session requires a provider command")
-    resolved_cwd = Path.cwd() if cwd is None else cwd.absolute()
-    env = dict(os.environ if environ is None else environ)
-    resolved_project = (project or _project_from_identity(identity)).strip()
-    env["SYN_PROJECT"] = resolved_project
-    env["SYN_IDENTITY"] = identity.strip()
-    outcome = WorkerObservation(outcome_file)
-    env[OPERATION_ID_ENV] = outcome.operation_id
+    return _dispatch_worker_session(
+        identity=identity,
+        command=command,
+        project=project,
+        uri=uri,
+        syn_bin=syn_bin,
+        token=token,
+        token_file=token_file,
+        arm=arm,
+        terminal_tmux=terminal_tmux,
+        tmux_bin=tmux_bin,
+        synapse_bin=synapse_bin,
+        tmux_session=tmux_session,
+        cwd=cwd,
+        environ=environ,
+        sidecar_shutdown_timeout_seconds=sidecar_shutdown_timeout_seconds,
+        outcome_file=outcome_file,
+    )
+
+
+def _dispatch_worker_session(
+    *,
+    identity: str,
+    command: Sequence[str],
+    project: str | None,
+    uri: str,
+    syn_bin: str,
+    token: str | None,
+    token_file: str | None,
+    arm: bool,
+    terminal_tmux: str,
+    tmux_bin: str,
+    synapse_bin: str,
+    tmux_session: str | None,
+    cwd: Path | None,
+    environ: Mapping[str, str] | None,
+    sidecar_shutdown_timeout_seconds: float,
+    outcome_file: Path | None,
+) -> WorkerExit:
+    """Choose a tmux terminal or a direct provider, with the arm sidecar when asked."""
+    resolved_cwd, env, outcome = _prepare_worker_launch(
+        identity=identity,
+        project=project,
+        cwd=cwd,
+        environ=environ,
+        outcome_file=outcome_file,
+    )
     if _terminal_tmux_enabled(command=command, mode=terminal_tmux, env=env):
-        env["SYN_TMUX_PROVIDER"] = "1"
-        env["SYNAPSE_AUTO_CONNECT"] = "0"
-        return outcome.tmux_result(
-            lambda: _run_terminal_tmux_session(
-                identity=env["SYN_IDENTITY"],
-                command=command,
-                env=env,
-                uri=uri,
-                token=token,
-                token_file=token_file,
-                tmux_bin=tmux_bin,
-                synapse_bin=synapse_bin,
-                session=tmux_session,
-                cwd=resolved_cwd,
-            )
+        return _launch_terminal_worker(
+            outcome=outcome,
+            env=env,
+            command=command,
+            uri=uri,
+            token=token,
+            token_file=token_file,
+            tmux_bin=tmux_bin,
+            synapse_bin=synapse_bin,
+            session=tmux_session,
+            cwd=resolved_cwd,
         )
-
-    sidecar: subprocess.Popen[bytes] | None = None
-    if arm:
-        arm_cmd = [syn_bin, "arm", "--uri", uri]
-        if token:
-            arm_cmd.extend(["--token", token])
-        if token_file:
-            arm_cmd.extend(["--token-file", token_file])
-        sidecar_log = _sidecar_log_path(env["SYN_IDENTITY"], env)
-        log_handle = sidecar_log.open("ab")
-        try:
-            sidecar = subprocess.Popen(  # nosec B603 # argument vector, never a shell
-                arm_cmd,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=log_handle,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-        finally:
-            log_handle.close()
-
+    sidecar = (
+        _open_arm_sidecar(env, syn_bin=syn_bin, uri=uri, token=token, token_file=token_file)
+        if arm
+        else None
+    )
     try:
         return _run_provider(command, env, cwd=resolved_cwd, outcome=outcome)
     finally:
-        if sidecar is not None and sidecar.poll() is None:
-            sidecar.terminate()
-            try:
-                sidecar.wait(timeout=sidecar_shutdown_timeout_seconds)
-            except subprocess.TimeoutExpired:
-                sidecar.kill()
-                sidecar.wait()
+        _stop_arm_sidecar(sidecar, sidecar_shutdown_timeout_seconds)
