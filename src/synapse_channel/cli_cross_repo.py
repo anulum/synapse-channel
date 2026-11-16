@@ -33,7 +33,7 @@ import argparse
 import json
 import os
 import shlex
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 import time
 from collections.abc import Callable
@@ -107,7 +107,7 @@ def run_notify_command(command: str, added: list[str], removed: list[str], root:
         # inside -c payloads). CreateProcess accepts forward-slash paths.
         to_split = command.replace("\\", "/") if os.name == "nt" else command
         argv = shlex.split(to_split, posix=True)
-        completed = subprocess.run(  # nosec B603
+        completed = subprocess.run(  # nosec B603 # argument vector, never a shell
             argv,
             input=summary,
             text=True,
