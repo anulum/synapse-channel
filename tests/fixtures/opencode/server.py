@@ -43,7 +43,7 @@ def running_opencode_server(
         "OPENCODE_SERVER_USERNAME": username,
         "OPENCODE_SERVER_PASSWORD": password,
     }
-    process = subprocess.Popen(  # nosec B603
+    process = subprocess.Popen(
         [binary, "serve", "--hostname", "127.0.0.1", "--port", "0"],
         cwd=cwd,
         env=server_env,
