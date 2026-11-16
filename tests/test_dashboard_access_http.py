@@ -354,4 +354,4 @@ def test_access_file_refuses_legacy_identity_controls(
         **conflict,
     }
     with pytest.raises(ValueError, match="dashboard-access-file"):
-        start_dashboard_server(**kwargs)  # type: ignore[arg-type]
+        start_dashboard_server(**kwargs)  # type: ignore[arg-type] # the posture is wrong
