@@ -330,7 +330,7 @@ class OwnedFleet:
             "poll_interval": 0.2,
         }
         arguments.update(overrides)
-        return restart_hub(**arguments)  # type: ignore[arg-type]
+        return restart_hub(**arguments)  # type: ignore[arg-type] # restart fields vary
 
 
 @pytest.fixture
