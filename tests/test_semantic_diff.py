@@ -21,8 +21,9 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -564,6 +565,20 @@ def test_git_runner_denies_unclosed_reader_threads(
     with pytest.raises(ValueError, match="output streams did not close"):
         semantic_diff._git(tmp_path, ("status",))
     assert terminated == [process]
+
+
+def test_an_unimplemented_git_child_does_not_signal() -> None:
+    """The declaration signals nothing. A real child supplies the process."""
+
+    poll = cast(Callable[..., object], semantic_diff._GitChild.poll)
+    wait = cast(Callable[..., object], semantic_diff._GitChild.wait)
+    terminate = cast(Callable[..., object], semantic_diff._GitChild.terminate)
+    kill = cast(Callable[..., object], semantic_diff._GitChild.kill)
+    child = object()
+    assert poll(child) is None
+    assert wait(child, 0.5) is None
+    assert terminate(child) is None
+    assert kill(child) is None
 
 
 def test_git_process_termination_escalates_to_kill(

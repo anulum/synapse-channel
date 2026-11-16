@@ -11,8 +11,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -442,6 +443,17 @@ def test_status_line_and_json_include_observed_peer_counts() -> None:
     assert "observed claim" not in unavailable_line
     assert "max lag" not in unavailable_line
     assert "max skew" not in unavailable_line
+
+
+def test_an_unimplemented_status_stream_does_not_write() -> None:
+    """The declaration writes nothing. A real stream supplies the body."""
+
+    write = cast(Callable[..., object], cli_status._StatusStream.write)
+    flush = cast(Callable[..., object], cli_status._StatusStream.flush)
+    isatty = cast(Callable[..., object], cli_status._StatusStream.isatty)
+    assert write(object(), "line") is None
+    assert flush(object()) is None
+    assert isatty(object()) is None
 
 
 # --- watch mode -----------------------------------------------------------------
