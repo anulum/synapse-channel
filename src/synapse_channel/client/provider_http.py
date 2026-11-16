@@ -63,7 +63,8 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def open_provider_request(request: urllib.request.Request, *, timeout: float) -> Any:
     """Open HTTP without credential-forwarding redirects."""
-    return urllib.request.build_opener(_NoRedirect()).open(request, timeout=timeout)  # nosec B310
+    opener = urllib.request.build_opener(_NoRedirect())
+    return opener.open(request, timeout=timeout)  # nosec B310 # redirects are refused
 
 
 @dataclass(frozen=True)
