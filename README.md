@@ -1943,8 +1943,8 @@ an installed protected runtime or revocation fencing.
 |---|---:|
 | Package version | 0.99.52 |
 | Public API exports | 70 |
-| Package modules | 1025 |
-| Classes | 1459 |
+| Package modules | 1026 |
+| Classes | 1460 |
 | Wire message types | 122 |
 | CLI subcommands | 310 |
 | Test functions | 14528 |

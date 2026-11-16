@@ -59,6 +59,7 @@ NOT_INCLUDED = (
     "external anti-rollback checkpoint store",
     "binary upload objects",
     "delivery, message-forward and operation state tables",
+    "mailbox pending counts, address hits and their layout record",
 )
 """What an export deliberately leaves out; recorded in every manifest."""
 
@@ -401,7 +402,8 @@ def export_to_sqlite(out_dir: str | Path, sqlite_path: str | Path) -> VerifiedEx
     """Verify an export, then copy exactly the verified rows into a new plain SQLite file.
 
     The file is not a hub store: no hub opens it. It exists so any SQLite tool
-    can read the history without Synapse.
+    can read the history without Synapse. Mailbox pending counts are omitted
+    because this file has a different schema and is not opened as a hub store.
 
     Raises
     ------

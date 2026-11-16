@@ -32,6 +32,7 @@ from typing import Any
 
 from synapse_channel.core.at_rest import KEY_BYTES, load_key_file
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.mailbox_pending_layout import copy_mailbox_layout
 
 SQLCIPHER_INSTALL_HINT = (
     "SQLCipher support requires the optional sqlcipher extra: "
@@ -376,28 +377,28 @@ def migrate_plaintext_to_sqlcipher(
             else "SELECT seq, ts, kind, payload, NULL FROM events ORDER BY seq"
         )
         rows = list(plain.execute(query))
+        enc = connect_sqlcipher(dst, material)
+        try:
+            enc.execute(
+                "CREATE TABLE IF NOT EXISTS events ("
+                "seq INTEGER PRIMARY KEY, "
+                "ts REAL NOT NULL, "
+                "kind TEXT NOT NULL, "
+                "payload TEXT NOT NULL, "
+                "mac TEXT)"
+            )
+            enc.executemany(
+                "INSERT INTO events (seq, ts, kind, payload, mac) VALUES (?, ?, ?, ?, ?)",
+                rows,
+            )
+            copy_mailbox_layout(plain, enc)
+            enc.commit()
+            enc.execute("PRAGMA journal_mode=WAL")
+            enc.commit()
+        finally:
+            enc.close()
     finally:
         plain.close()
-
-    enc = connect_sqlcipher(dst, material)
-    try:
-        enc.execute(
-            "CREATE TABLE IF NOT EXISTS events ("
-            "seq INTEGER PRIMARY KEY, "
-            "ts REAL NOT NULL, "
-            "kind TEXT NOT NULL, "
-            "payload TEXT NOT NULL, "
-            "mac TEXT)"
-        )
-        enc.executemany(
-            "INSERT INTO events (seq, ts, kind, payload, mac) VALUES (?, ?, ?, ?, ?)",
-            rows,
-        )
-        enc.commit()
-        enc.execute("PRAGMA journal_mode=WAL")
-        enc.commit()
-    finally:
-        enc.close()
     _restrict_owner(dst)
     _restrict_owner(Path(f"{dst}-wal"))
     _restrict_owner(Path(f"{dst}-shm"))

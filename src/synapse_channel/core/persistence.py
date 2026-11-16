@@ -47,6 +47,10 @@ from synapse_channel.core.event_row_mac import RowMacKey
 from synapse_channel.core.event_row_recovery import (
     CorruptEventRow,
 )
+from synapse_channel.core.mailbox_pending_layout import (
+    ensure_mailbox_schema,
+    refuse_unknown_mailbox_layout,
+)
 from synapse_channel.core.message_forward_ledger import MessageForwardLedger
 from synapse_channel.core.persistence_api import (
     APPEND_DOCUMENTATION,
@@ -214,6 +218,8 @@ class EventStore:
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
             create_event_schema(self._conn)
+            refuse_unknown_mailbox_layout(self._conn)
+            ensure_mailbox_schema(self._conn)
             create_operation_schema(self._conn)
             create_receipt_schema(self._conn)
             self._backfill_delivery_receipt_aggregates()

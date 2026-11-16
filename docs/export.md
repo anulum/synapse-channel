@@ -53,7 +53,9 @@ Add `--db-key-file` for a SQLCipher store.
   - the AEF receipt count;
   - the SHA-256 of each data file;
   - what is not included: keys, the anti-rollback checkpoint store, binary
-    upload objects, and the delivery, message-forward and operation state.
+    upload objects, the delivery, message-forward and operation state, and
+    mailbox pending counts. The SQLite file is not a hub store, so it does
+    not carry those count tables.
 
 An export holds the journal's content in plaintext. Its custody is yours.
 
