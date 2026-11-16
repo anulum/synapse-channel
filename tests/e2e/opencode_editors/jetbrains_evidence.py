@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import stat
-import subprocess  # nosec B404
+import subprocess
 import tempfile
 import time
 from collections.abc import Callable
@@ -43,7 +43,7 @@ def capture_screenshot(path: Path, *, deadline: float | None = None) -> None:
     temporary = Path(temporary_name)
     temporary.chmod(0o600)
     try:
-        completed = subprocess.run(  # nosec B603
+        completed = subprocess.run(
             [_required_tool("import"), "-window", "root", str(temporary)],
             capture_output=True,
             text=True,
