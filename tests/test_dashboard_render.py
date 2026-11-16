@@ -23,10 +23,10 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.dashboard import (
     DashboardServer,
     DashboardSnapshot,
-    _agent_roles_from_who,
     fetch_dashboard_snapshot,
 )
 from synapse_channel.dashboard_feed_serving import PACKAGED_COCKPIT, packaged_cockpit_dist
+from synapse_channel.dashboard_hub_snapshot import _agent_roles_from_who
 from synapse_channel.dashboard_render import render_dashboard_html
 
 
