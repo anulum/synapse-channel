@@ -93,6 +93,15 @@ _EFFECT_RULES = (
 )
 
 
+def setup_effect_ids() -> tuple[str, ...]:
+    """Return every effect id a setup plan can name, in the rule table's order.
+
+    The dashboard's receipt chain takes its effect vocabulary from here, so an
+    effect added to the table cannot be missing from it.
+    """
+    return tuple(rule.effect_id for rule in _EFFECT_RULES)
+
+
 def _validated_statuses(
     profile: SetupProfile, inspection: dict[str, object]
 ) -> dict[str, SetupCheckStatus]:

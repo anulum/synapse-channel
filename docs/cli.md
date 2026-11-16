@@ -708,6 +708,50 @@ evidence source and remedy, and the status the inspection observed (`pass`,
 fixed `limits`. It returns nothing the inspection measured: no path, hub
 address, identity or process id. An inspection that fails answers `503`.
 
+`POST /setup/plan` takes exactly `{"version": 1, "profile": "local-single-user",
+"request_id": "<uuid4>"}` and issues one plan, which a later apply must name
+within its time to live (180 seconds). The dashboard inspects and plans the
+profile as `synapse setup inspect` and `synapse setup plan` do, and binds its
+own plan to that plan by its digest:
+
+- **The plan holds:**
+  - `cli_plan_digest`, the command line's plan digest;
+  - `configuration_generation`, the digest of that plan's executable and
+    platform facts, whose paths stay on the server;
+  - each effect's `id`, `disposition` (`planned` or `blocked`), `authority`,
+    `disruption`, `reversible` and `process_id` (the running hub's process,
+    which a restart names, or `null`).
+- **The answer adds:** the plan's id and digest, and a one-use
+  `confirmation_nonce`.
+- **Not in the plan:** no path, hub address or identity.
+- **Blocked effects:** a plan with a `blocked` effect is issued, so the person
+  sees what cannot be applied.
+
+The route needs exactly one `Origin` header, this dashboard's own
+(`http://<Host>`), besides the bearer and `application/json`. It answers in this
+order:
+
+| Answer | When | Receipt |
+| --- | --- | --- |
+| `404` | setup is not served (the reason is named) | none |
+| `403` | the `Origin` is missing, repeated or another site's | none |
+| `401`, `415`, `400` | no recognised bearer; not `application/json`; a body that is not exactly the request (its refusal code is named) | none |
+| `429` | the operator writes' rate limit is spent | `rate_limited`, `rate_limit` |
+| `403` | the bearer lacks `setup_plan` | `denied`, `capability_denied` |
+| `503` | the inspection or the plan fails | `refused`, `plan_issue_failed` |
+| `409` | the `request_id` was used before | `refused`, `plan_request_reused` |
+| `503` | the plan store is full; it clears as plans expire | `refused`, `plan_store_full` |
+| `500` | the server's own token factory failed | `refused`, `plan_issue_failed` |
+| `200` | the plan is issued | `planned` |
+
+- **Receipts:** every answer from the rate limit on is written to the receipt
+  chain before it is given.
+- **Refusals before a plan:** their receipts carry no plan id, plan digest or,
+  before the inspection, generation (`null`).
+- **When the chain cannot be written:** the answer is `503 setup receipt chain
+  unavailable`. A plan issued meanwhile is discarded, so it can never be applied.
+- **The bodies:** a refusal's body names its reason and nothing else.
+
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
 name) the dashboard serves thirteen feeds off the **durable event store** —
 available when the hub is down, real sequences and timestamps, behind the

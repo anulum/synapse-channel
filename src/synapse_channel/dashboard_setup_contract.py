@@ -9,23 +9,36 @@
 
 This module deliberately has no HTTP, filesystem, subprocess, secret, or
 service-manager dependency. Importing it cannot arm a route or mutate a host.
+
+The dashboard serves the command line's setup profile, and a dashboard plan is
+bound to one command-line plan by that plan's digest: what a person confirms is
+what the command line's executor would apply. The dashboard plan keeps the
+command-line effects' decision fields and leaves out everything the inspection
+measured, so it holds no path, hub address or identity.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Any, Literal, NoReturn, cast
+from typing import Any, Final, Literal, NoReturn, cast, get_args
 from uuid import UUID
+
+from synapse_channel.setup_contract import (
+    SetupEffectAuthority,
+    SetupEffectDisposition,
+    SetupEffectDisruption,
+    document_digest,
+)
+from synapse_channel.setup_planner import setup_effect_ids
+from synapse_channel.setup_profiles import SetupProfileId, available_setup_profiles
 
 MAX_SETUP_REQUEST_BYTES = 4096
 SETUP_CONTRACT_VERSION = 1
 
-SetupProfileId = Literal["local-ephemeral", "local-durable-existing"]
-SetupEffectKind = Literal["runtime_directory", "user_unit", "durable_store"]
-SetupEffectChange = Literal["create_if_absent", "install_or_match", "verify_existing"]
 SetupPostureReason = Literal[
     "ready",
     "unarmed",
@@ -60,6 +73,11 @@ _APPLY_FIELDS = frozenset(
 )
 _LOWER_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _OPAQUE_ID = re.compile(r"[A-Za-z0-9_-]{22,128}\Z")
+_DISPOSITIONS: Final = frozenset(get_args(SetupEffectDisposition))
+_AUTHORITIES: Final = frozenset(get_args(SetupEffectAuthority))
+_DISRUPTIONS: Final = frozenset(get_args(SetupEffectDisruption))
+_RESTART_AUTHORITY: Final = "operator_restart_authority"
+_MAX_PROCESS_ID: Final = 2_147_483_647
 
 
 @dataclass(frozen=True)
@@ -70,25 +88,38 @@ class SetupContractRefusal:
 
 
 @dataclass(frozen=True)
-class SetupEffect:
-    """One allow-listed effect named without a host filesystem path."""
+class SetupPlanEffect:
+    """One command-line effect as a person confirms it: what it does, never where.
 
-    kind: SetupEffectKind
-    target: str
-    change: SetupEffectChange
+    Attributes
+    ----------
+    effect_id : str
+        The command line's effect id.
+    disposition, authority, disruption : str
+        The command line's decision fields for the effect.
+    reversible : bool
+        Whether the command line can undo the effect.
+    process_id : int or None
+        The running hub's process id when the effect restarts it, else ``None``.
+    """
 
-    def as_dict(self) -> dict[str, str]:
-        """Return the canonical token-only projection."""
-        return {"kind": self.kind, "target": self.target, "change": self.change}
+    effect_id: str
+    disposition: SetupEffectDisposition
+    authority: SetupEffectAuthority
+    disruption: SetupEffectDisruption
+    reversible: bool
+    process_id: int | None
 
-
-@dataclass(frozen=True)
-class SetupProfile:
-    """One immutable package-owned local setup profile."""
-
-    profile_id: SetupProfileId
-    version: int
-    effects: tuple[SetupEffect, ...]
+    def as_dict(self) -> dict[str, object]:
+        """Return the canonical projection, keyed as the command line keys its effects."""
+        return {
+            "id": self.effect_id,
+            "disposition": self.disposition,
+            "authority": self.authority,
+            "disruption": self.disruption,
+            "reversible": self.reversible,
+            "process_id": self.process_id,
+        }
 
 
 @dataclass(frozen=True)
@@ -111,14 +142,21 @@ class SetupApplyRequest:
 
 @dataclass(frozen=True)
 class SetupPlan:
-    """Canonical effect plan; it contains neither a secret nor an executable."""
+    """Canonical effect plan; it contains neither a secret nor an executable.
+
+    ``configuration_generation`` is the digest of the command-line plan's
+    generation, whose executable paths stay on the server, and
+    ``cli_plan_digest`` is that plan's own digest; both are covered by
+    :meth:`canonical_bytes`.
+    """
 
     request_id: str
     profile: SetupProfileId
     profile_version: int
     configuration_generation: str
+    cli_plan_digest: str
     expires_at: int
-    effects: tuple[SetupEffect, ...]
+    effects: tuple[SetupPlanEffect, ...]
 
     def as_dict(self) -> dict[str, object]:
         """Return the stable digest input."""
@@ -128,6 +166,7 @@ class SetupPlan:
             "profile": self.profile,
             "profile_version": self.profile_version,
             "configuration_generation": self.configuration_generation,
+            "cli_plan_digest": self.cli_plan_digest,
             "expires_at": self.expires_at,
             "effects": [effect.as_dict() for effect in self.effects],
         }
@@ -166,35 +205,6 @@ class SetupPostureDecision:
     reason: SetupPostureReason
 
 
-_USER_UNITS = (
-    SetupEffect("user_unit", "synapse-hub.service", "install_or_match"),
-    SetupEffect("user_unit", "synapse-presence@.service", "install_or_match"),
-    SetupEffect("user_unit", "synapse-arm@.service", "install_or_match"),
-)
-_PROFILES: dict[SetupProfileId, SetupProfile] = {
-    "local-ephemeral": SetupProfile(
-        "local-ephemeral",
-        1,
-        (SetupEffect("runtime_directory", "synapse-user-runtime", "create_if_absent"),)
-        + _USER_UNITS,
-    ),
-    "local-durable-existing": SetupProfile(
-        "local-durable-existing",
-        1,
-        (
-            SetupEffect("runtime_directory", "synapse-user-runtime", "create_if_absent"),
-            SetupEffect("durable_store", "configured-existing-store", "verify_existing"),
-        )
-        + _USER_UNITS,
-    ),
-}
-
-
-def available_setup_profiles() -> tuple[SetupProfileId, ...]:
-    """Return the stable profile order without exposing the mutable registry."""
-    return tuple(_PROFILES)
-
-
 def evaluate_setup_posture(posture: SetupPosture) -> SetupPostureDecision:
     """Apply startup gates in non-disclosing, fail-closed order."""
     if not posture.feature_armed:
@@ -223,7 +233,7 @@ def parse_setup_plan_request(body: bytes) -> SetupPlanRequest | SetupContractRef
     if not _valid_request_id(request_id):
         return SetupContractRefusal("invalid_request_id")
     profile = document["profile"]
-    if not isinstance(profile, str) or profile not in _PROFILES:
+    if not isinstance(profile, str) or profile not in available_setup_profiles():
         return SetupContractRefusal("unknown_profile")
     return SetupPlanRequest(cast(str, request_id), profile)
 
@@ -254,26 +264,108 @@ def parse_setup_apply_request(body: bytes) -> SetupApplyRequest | SetupContractR
     return SetupApplyRequest(cast(str, request_id), plan_id, plan_digest, nonce)
 
 
+def setup_generation_digest(cli_plan: Mapping[str, object]) -> str:
+    """Return the digest of a command-line plan's generation, which never leaves the server.
+
+    Raises
+    ------
+    ValueError
+        If the plan carries no generation object.
+    """
+    generation = cli_plan.get("generation")
+    if not isinstance(generation, dict):
+        raise ValueError("the command-line plan has no generation")
+    return document_digest(cast(dict[str, object], generation))
+
+
 def build_setup_plan(
     request: SetupPlanRequest,
     *,
-    configuration_generation: str,
+    cli_plan: Mapping[str, object],
     expires_at: int,
 ) -> SetupPlan:
-    """Build one deterministic plan from server-owned values and profile data."""
-    if _LOWER_SHA256.fullmatch(configuration_generation) is None:
-        raise ValueError("configuration generation must be a lowercase SHA-256 digest")
+    """Build one deterministic dashboard plan bound to one command-line plan.
+
+    Parameters
+    ----------
+    request : SetupPlanRequest
+        The browser's validated request.
+    cli_plan : Mapping
+        The document :func:`synapse_channel.setup_planner.build_setup_plan`
+        returned for the request's profile.
+    expires_at : int
+        The plan's expiry, in seconds since the epoch.
+
+    Raises
+    ------
+    ValueError
+        If the expiry is not a positive integer, or the command-line plan is not
+        of the request's profile, does not match its own digest, or names an
+        effect outside the command line's vocabulary.
+    """
     if isinstance(expires_at, bool) or not isinstance(expires_at, int) or expires_at <= 0:
         raise ValueError("plan expiry must be a positive integer timestamp")
-    profile = _PROFILES[request.profile]
+    if cli_plan.get("profile") != request.profile:
+        raise ValueError("the command-line plan is not of the requested profile")
+    profile_version = cli_plan.get("profile_version")
+    if type(profile_version) is not int or profile_version < 1:
+        raise ValueError("the command-line plan's profile version is invalid")
+    effects = cli_plan.get("effects")
+    if not isinstance(effects, list):
+        raise ValueError("the command-line plan has no effect list")
     return SetupPlan(
         request.request_id,
-        profile.profile_id,
-        profile.version,
-        configuration_generation,
+        request.profile,
+        profile_version,
+        setup_generation_digest(cli_plan),
+        _verified_cli_digest(cli_plan),
         expires_at,
-        profile.effects,
+        tuple(_plan_effect(effect) for effect in effects),
     )
+
+
+def _verified_cli_digest(cli_plan: Mapping[str, object]) -> str:
+    """Return the command-line plan's digest after recomputing it from the plan."""
+    digest = cli_plan.get("plan_digest")
+    unsigned = {key: value for key, value in cli_plan.items() if key != "plan_digest"}
+    if not isinstance(digest, str) or digest != document_digest(unsigned):
+        raise ValueError("the command-line plan does not match its digest")
+    return digest
+
+
+def _plan_effect(value: object) -> SetupPlanEffect:
+    """Return one command-line effect's decision fields; refuse any outside the vocabulary."""
+    if not isinstance(value, Mapping):
+        raise ValueError("a command-line plan effect is not an object")
+    words = (value.get("id"), value.get("disposition"), value.get("authority"))
+    effect_id, disposition, authority = (word if isinstance(word, str) else "" for word in words)
+    disruption = value.get("disruption")
+    reversible = value.get("reversible")
+    process_id = value.get("process_id")
+    restart = process_id is not None
+    if (
+        effect_id not in setup_effect_ids()
+        or disposition not in _DISPOSITIONS
+        or authority not in _AUTHORITIES
+        or not isinstance(disruption, str)
+        or disruption not in _DISRUPTIONS
+        or not isinstance(reversible, bool)
+        or restart != (authority == _RESTART_AUTHORITY)
+        or (restart and not _valid_process_id(process_id))
+    ):
+        raise ValueError("a command-line plan effect is outside the setup vocabulary")
+    return SetupPlanEffect(
+        effect_id=effect_id,
+        disposition=cast(SetupEffectDisposition, disposition),
+        authority=cast(SetupEffectAuthority, authority),
+        disruption=cast(SetupEffectDisruption, disruption),
+        reversible=reversible,
+        process_id=cast("int | None", process_id),
+    )
+
+
+def _valid_process_id(value: object) -> bool:
+    return type(value) is int and 1 < value <= _MAX_PROCESS_ID
 
 
 def _valid_version(value: object) -> bool:
@@ -325,15 +417,15 @@ __all__ = [
     "SETUP_CONTRACT_VERSION",
     "SetupApplyRequest",
     "SetupContractRefusal",
-    "SetupEffect",
     "SetupPlan",
+    "SetupPlanEffect",
     "SetupPlanRequest",
     "SetupProfileId",
     "SetupPosture",
     "SetupPostureDecision",
-    "available_setup_profiles",
     "build_setup_plan",
     "evaluate_setup_posture",
     "parse_setup_apply_request",
     "parse_setup_plan_request",
+    "setup_generation_digest",
 ]

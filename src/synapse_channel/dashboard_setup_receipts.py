@@ -37,7 +37,8 @@ from synapse_channel.core.aef_canonical import (
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.persistence import BUSY_TIMEOUT_MS
 from synapse_channel.core.private_dir import ensure_private_dir
-from synapse_channel.dashboard_setup_contract import SetupEffectKind, SetupProfileId
+from synapse_channel.setup_planner import setup_effect_ids
+from synapse_channel.setup_profiles import SetupProfileId, available_setup_profiles
 
 SETUP_RECEIPT_VERSION = 1
 SETUP_RECEIPT_DATABASE = "setup-receipts.db"
@@ -77,6 +78,9 @@ SetupReceiptReason = Literal[
     "effect_failed",
     "postcondition_unverified",
     "partial_effects",
+    "plan_store_full",
+    "plan_request_reused",
+    "plan_issue_failed",
 ]
 
 _GENESIS_DIGEST = "0" * 64
@@ -121,10 +125,16 @@ _REASONS = frozenset(
         "effect_failed",
         "postcondition_unverified",
         "partial_effects",
+        "plan_store_full",
+        "plan_request_reused",
+        "plan_issue_failed",
     }
 )
-_PROFILE_IDS = frozenset({"local-ephemeral", "local-durable-existing"})
-_EFFECT_KINDS = frozenset({"runtime_directory", "user_unit", "durable_store"})
+# Derived from their sources, so a profile or an effect the command line adds
+# cannot be missing from the chain's vocabulary.
+_PROFILE_IDS = frozenset(available_setup_profiles())
+_EFFECT_KINDS = frozenset(setup_effect_ids())
+_BEFORE_PLAN_OUTCOMES = frozenset({"refused", "denied", "rate_limited"})
 
 
 class SetupReceiptStoreError(SynapseError, ValueError):
@@ -147,9 +157,13 @@ class SetupReceiptIntegrityError(SetupReceiptStoreError):
 
 @dataclass(frozen=True, slots=True)
 class SetupEffectReceipt:
-    """Bounded before/after evidence for one package-owned setup effect."""
+    """Bounded before/after evidence for one package-owned setup effect.
 
-    kind: SetupEffectKind
+    ``kind`` is the command line's effect id, and ``target`` the unit the effect
+    installs, or the effect id for an effect no adapter supports.
+    """
+
+    kind: str
     target: str
     before: SetupInspectionVerdict
     after: SetupInspectionVerdict
@@ -191,16 +205,21 @@ class SetupArtifactDigest:
 
 @dataclass(frozen=True, slots=True)
 class SetupReceiptDraft:
-    """Server-owned evidence awaiting an assigned sequence and chain digest."""
+    """Server-owned evidence awaiting an assigned sequence and chain digest.
+
+    ``plan_id``, ``plan_digest`` and ``configuration_generation`` are ``None``
+    only in a receipt of a plan request refused before any plan existed; every
+    receipt that names a plan names all three of its values.
+    """
 
     request_id: str
-    plan_id: str
-    plan_digest: str
+    plan_id: str | None
+    plan_digest: str | None
     principal_id: str
     capability: SetupCapability
     profile: SetupProfileId
     profile_version: int
-    configuration_generation: str
+    configuration_generation: str | None
     timestamp_ms: int
     outcome: SetupReceiptOutcome
     effects: tuple[SetupEffectReceipt, ...]
@@ -212,9 +231,7 @@ class SetupReceiptDraft:
     def __post_init__(self) -> None:
         """Validate every persisted field before a transaction begins."""
         _validate_uuid(self.request_id)
-        if _OPAQUE_ID.fullmatch(self.plan_id) is None:
-            raise ValueError("setup receipt plan id is invalid")
-        _validate_digest(self.plan_digest, name="plan digest")
+        _validate_plan_reference(self)
         _validate_safe_text(self.principal_id, name="principal", limit=128)
         if self.capability not in _CAPABILITIES:
             raise ValueError("setup receipt capability is invalid")
@@ -222,7 +239,6 @@ class SetupReceiptDraft:
             raise ValueError("setup receipt profile is invalid")
         if type(self.profile_version) is not int or not 1 <= self.profile_version <= 65535:
             raise ValueError("setup receipt profile version is invalid")
-        _validate_digest(self.configuration_generation, name="configuration generation")
         if type(self.timestamp_ms) is not int or not 1 <= self.timestamp_ms <= IJSON_MAX_INTEGER:
             raise ValueError("setup receipt timestamp is invalid")
         if self.outcome not in _OUTCOMES:
@@ -425,6 +441,23 @@ class SetupReceiptStore:
             ) from exc
 
 
+def _validate_plan_reference(draft: SetupReceiptDraft) -> None:
+    """Require the plan's id, digest and generation, except before any plan existed."""
+    if draft.plan_id is None or draft.plan_digest is None:
+        if draft.plan_id is not None or draft.plan_digest is not None:
+            raise ValueError("setup receipt plan id and plan digest go together")
+        if draft.capability != "setup_plan" or draft.outcome not in _BEFORE_PLAN_OUTCOMES:
+            raise ValueError("setup receipt without a plan must be a refused plan request")
+    else:
+        if _OPAQUE_ID.fullmatch(draft.plan_id) is None:
+            raise ValueError("setup receipt plan id is invalid")
+        _validate_digest(draft.plan_digest, name="plan digest")
+        if draft.configuration_generation is None:
+            raise ValueError("setup receipt with a plan names its configuration generation")
+    if draft.configuration_generation is not None:
+        _validate_digest(draft.configuration_generation, name="configuration generation")
+
+
 def _build_receipt(
     sequence: int,
     draft: SetupReceiptDraft,
@@ -526,13 +559,13 @@ def _receipt_from_document(document: dict[str, object]) -> SetupReceipt:
     artifacts = tuple(_artifact_from_document(item) for item in artifacts_raw)
     draft = SetupReceiptDraft(
         request_id=_require_str(document["request_id"]),
-        plan_id=_require_str(document["plan_id"]),
-        plan_digest=_require_str(document["plan_digest"]),
+        plan_id=_optional_str(document["plan_id"]),
+        plan_digest=_optional_str(document["plan_digest"]),
         principal_id=_require_str(document["principal_id"]),
         capability=cast(SetupCapability, _require_str(document["capability"])),
         profile=cast(SetupProfileId, _require_str(document["profile"])),
         profile_version=_require_int(document["profile_version"]),
-        configuration_generation=_require_str(document["configuration_generation"]),
+        configuration_generation=_optional_str(document["configuration_generation"]),
         timestamp_ms=_require_int(document["timestamp_ms"]),
         outcome=cast(SetupReceiptOutcome, _require_str(document["outcome"])),
         effects=effects,
@@ -553,7 +586,7 @@ def _effect_from_document(value: object) -> SetupEffectReceipt:
     if not isinstance(value, dict) or set(value) != {"kind", "target", "before", "after"}:
         raise ValueError("setup receipt effect fields are invalid")
     return SetupEffectReceipt(
-        kind=cast(SetupEffectKind, _require_str(value["kind"])),
+        kind=_require_str(value["kind"]),
         target=_require_str(value["target"]),
         before=cast(SetupInspectionVerdict, _require_str(value["before"])),
         after=cast(SetupInspectionVerdict, _require_str(value["after"])),
@@ -632,6 +665,10 @@ def _require_str(value: object) -> str:
     if not isinstance(value, str):
         raise ValueError("setup receipt field must be text")
     return value
+
+
+def _optional_str(value: object) -> str | None:
+    return None if value is None else _require_str(value)
 
 
 def _require_int(value: object) -> int:

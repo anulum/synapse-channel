@@ -19,8 +19,13 @@ from uuid import uuid4
 
 import pytest
 
+import setup_plan_fixture as fixture
 from synapse_channel.client.diagnostics import Diagnosis
-from synapse_channel.dashboard_setup_contract import SetupApplyRequest, SetupPlanRequest
+from synapse_channel.dashboard_setup_contract import (
+    SetupApplyRequest,
+    SetupPlanRequest,
+    setup_generation_digest,
+)
 from synapse_channel.dashboard_setup_planner import (
     MAX_SETUP_PLAN_CAPACITY,
     MAX_SETUP_PLAN_TTL_SECONDS,
@@ -37,7 +42,8 @@ from synapse_channel.setup_profiles import SetupProfile, get_setup_profile
 REQUEST_ID = "4dc282e6-21eb-4f5c-89d8-ea824836ef65"
 PLAN_ID = "plan_id_0123456789abcdef"
 NONCE = "nonce_0123456789abcdef"
-GENERATION = "a" * 64
+CLI = fixture.cli_plan(fixture.HUB_AND_WAITER_DOWN, hub_pid=4321)
+GENERATION = setup_generation_digest(CLI)
 SALT = b"s" * 32
 
 
@@ -91,8 +97,9 @@ def issue(
     now: int = 100,
 ) -> IssuedSetupPlan:
     result = store.issue(
-        SetupPlanRequest(request_id, "local-ephemeral"),
+        SetupPlanRequest(request_id, "local-single-user"),
         binding=context or binding(),
+        cli_plan=CLI,
         now=now,
     )
     assert isinstance(result, IssuedSetupPlan)
@@ -289,6 +296,27 @@ def test_issue_builds_a_deterministic_context_bound_plan() -> None:
     assert plan.as_dict()["plan_digest"] == plan.plan.digest
     assert store.record_count == 1
     assert NONCE not in repr(store)
+    assert plan.as_dict()["cli_plan_digest"] == CLI["plan_digest"]
+    assert plan.plan.effects[0].process_id == 4321
+
+
+def test_issue_refuses_a_binding_whose_generation_is_not_the_plans() -> None:
+    store = store_with_tokens(PLAN_ID, NONCE)
+
+    with pytest.raises(ValueError, match="configuration generation is not the plan's"):
+        issue(store, context=binding(configuration_generation="c" * 64))
+    assert store.record_count == 0
+
+
+def test_a_discarded_plan_can_never_be_authorised() -> None:
+    store = store_with_tokens(PLAN_ID, NONCE)
+    plan = issue(store)
+
+    assert store.discard(plan.plan_id) is True
+    assert store.discard(plan.plan_id) is False
+    assert store.record_count == 0
+    refused = store.authorise_once(apply_request(plan), binding=binding(), now=101)
+    assert error_code(refused) == "not_found"
 
 
 @pytest.mark.parametrize(
@@ -302,7 +330,12 @@ def test_issue_rejects_invalid_generated_tokens(tokens: tuple[str, str]) -> None
     store = store_with_tokens(*tokens)
     assert (
         error_code(
-            store.issue(SetupPlanRequest(REQUEST_ID, "local-ephemeral"), binding=binding(), now=1)
+            store.issue(
+                SetupPlanRequest(REQUEST_ID, "local-single-user"),
+                binding=binding(),
+                cli_plan=CLI,
+                now=1,
+            )
         )
         == "invalid_token"
     )
@@ -315,7 +348,9 @@ def test_issue_rejects_an_invalid_salt_factory() -> None:
         salt_factory=lambda _size: b"short",
     )
 
-    result = store.issue(SetupPlanRequest(REQUEST_ID, "local-ephemeral"), binding=binding(), now=1)
+    result = store.issue(
+        SetupPlanRequest(REQUEST_ID, "local-single-user"), binding=binding(), cli_plan=CLI, now=1
+    )
 
     assert error_code(result) == "invalid_token"
     assert store.record_count == 0
@@ -326,8 +361,9 @@ def test_duplicate_request_is_refused_without_replacing_the_first_plan() -> None
     issue(store)
 
     result = store.issue(
-        SetupPlanRequest(REQUEST_ID, "local-durable-existing"),
+        SetupPlanRequest(REQUEST_ID, "local-single-user"),
         binding=binding(principal_id="another-admin"),
+        cli_plan=CLI,
         now=101,
     )
 
@@ -340,7 +376,10 @@ def test_capacity_refuses_without_evicting_an_unexpired_plan() -> None:
     first = issue(store)
 
     result = store.issue(
-        SetupPlanRequest(str(uuid4()), "local-ephemeral"), binding=binding(), now=101
+        SetupPlanRequest(str(uuid4()), "local-single-user"),
+        binding=binding(),
+        cli_plan=CLI,
+        now=101,
     )
 
     assert error_code(result) == "capacity"
@@ -354,7 +393,10 @@ def test_generated_plan_id_collision_is_refused() -> None:
     issue(store)
 
     result = store.issue(
-        SetupPlanRequest(str(uuid4()), "local-ephemeral"), binding=binding(), now=101
+        SetupPlanRequest(str(uuid4()), "local-single-user"),
+        binding=binding(),
+        cli_plan=CLI,
+        now=101,
     )
 
     assert error_code(result) == "token_collision"
@@ -487,8 +529,9 @@ def test_store_rejects_invalid_time_across_public_operations(now: object) -> Non
     store = store_with_tokens(PLAN_ID, NONCE)
     with pytest.raises(ValueError, match="time"):
         store.issue(
-            SetupPlanRequest(REQUEST_ID, "local-ephemeral"),
+            SetupPlanRequest(REQUEST_ID, "local-single-user"),
             binding=binding(),
+            cli_plan=CLI,
             now=cast(int, now),
         )
     with pytest.raises(ValueError, match="time"):

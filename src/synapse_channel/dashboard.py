@@ -169,6 +169,12 @@ from synapse_channel.dashboard_setup_http import (
     SetupServing,
     setup_preflight_response,
 )
+from synapse_channel.dashboard_setup_plan_http import (
+    SETUP_PLAN_PATH,
+    SetupPlanBindings,
+    read_setup_plan_request,
+    setup_plan_response,
+)
 from synapse_channel.dashboard_start import DashboardServer as DashboardServer
 from synapse_channel.dashboard_start import start_dashboard_server as start_dashboard_server
 from synapse_channel.dashboard_store_feeds import event_store_key
@@ -465,6 +471,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if self._reject_foreign_host():
             return
         route = urlsplit(self.path).path
+        if route == SETUP_PLAN_PATH:
+            self._write_access_decision(self._setup_plan_decision())
+            return
         access = write_decision(
             self.access_policy,
             self.headers.get("Authorization"),
@@ -511,6 +520,16 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._write(HTTPStatus.BAD_REQUEST, f"{plan}\n".encode(), content_type="text/plain")
             return
         self._write_response(self._relay(plan, relay_identity))
+
+    def _setup_plan_decision(self) -> AccessHttpDecision:
+        """Answer ``POST /setup/plan`` from this start's setup decision and the route's checks."""
+        bindings = SetupPlanBindings(
+            self.access_policy,
+            self.setup_serving,
+            type(self).setup_inspection,
+            self.operator_rate_limiter,
+        )
+        return setup_plan_response(read_setup_plan_request(self.headers, self.rfile), bindings)
 
     def _relay(self, plan: RelayPlan, relay_identity: str) -> FeedResponse:
         """Run one relay plan under ``relay_identity`` against this start's hub."""

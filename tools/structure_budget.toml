@@ -339,7 +339,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/secure_path.py::read_owner_only_file_bytes" = 20
 "src/synapse_channel/core/state.py::SynapseState.transfer_protected_write_custody" = 18
 "src/synapse_channel/core/state_transaction.py::SerializedStateMutationActor.run_atomic" = 16
-"src/synapse_channel/dashboard_setup_receipts.py::SetupReceiptDraft.__post_init__" = 16
 "src/synapse_channel/ergonomics.py::main" = 31
 "src/synapse_channel/ergonomics.py::resolve_identity" = 18
 "src/synapse_channel/ergonomics_inbox.py::parse_inbox_options" = 32

@@ -19,7 +19,9 @@ them. ``/capabilities.json`` states the same decision.
 ``local-single-user`` profile with the command line's own inspection and returns
 the projection of
 :func:`~synapse_channel.dashboard_setup_planner.build_setup_preflight`, to a
-principal holding ``setup_plan`` only.
+principal holding ``setup_plan`` only. ``POST /setup/plan``
+(:mod:`synapse_channel.dashboard_setup_plan_http`) issues plans into the start's
+one-use plan store.
 """
 
 from __future__ import annotations
@@ -42,7 +44,7 @@ from synapse_channel.dashboard_setup_contract import (
     SetupPostureDecision,
     evaluate_setup_posture,
 )
-from synapse_channel.dashboard_setup_planner import build_setup_preflight
+from synapse_channel.dashboard_setup_planner import SetupPlanStore, build_setup_preflight
 from synapse_channel.dashboard_setup_receipts import SetupReceiptStore, SetupReceiptStoreError
 from synapse_channel.setup_inspector import inspect_setup
 from synapse_channel.setup_profiles import SetupProfile, get_setup_profile
@@ -72,11 +74,13 @@ class SetupServing:
 
     The directory is kept, not an open chain: each use opens the chain and closes
     it again, so a start holds no database open and a failed start leaks none.
+    ``plans`` is the start's one-use plan store, present only when setup is served.
     """
 
     decision: SetupPostureDecision
     receipts: Path | None = None
     profile: SetupProfile | None = None
+    plans: SetupPlanStore | None = None
 
     def capability(self) -> dict[str, object]:
         """Return the ``setup`` block of ``/capabilities.json``."""
@@ -163,7 +167,8 @@ def setup_serving(
     profile = get_setup_profile(SETUP_PROFILE_ID) if decision.advertised else None
     if decision.advertised and profile is None:
         raise ValueError(f"setup profile {SETUP_PROFILE_ID} is not registered")
-    return SetupServing(decision, receipts, profile)
+    plans = SetupPlanStore() if decision.advertised else None
+    return SetupServing(decision, receipts, profile, plans)
 
 
 def setup_preflight_response(

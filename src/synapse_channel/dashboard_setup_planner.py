@@ -213,16 +213,23 @@ class SetupPlanStore:
         request: SetupPlanRequest,
         *,
         binding: SetupPlanBinding,
+        cli_plan: Mapping[str, object],
         now: int,
     ) -> IssuedSetupPlan | SetupPlanStoreRefusal:
-        """Issue one expiring plan or refuse without evicting an unexpired record."""
+        """Issue one expiring plan bound to ``cli_plan``, or refuse without evicting a record.
+
+        Raises
+        ------
+        ValueError
+            If ``cli_plan`` cannot be bound (see
+            :func:`~synapse_channel.dashboard_setup_contract.build_setup_plan`), or
+            its generation is not the one ``binding`` names.
+        """
         _validate_now(now)
         expires_at = now + self._ttl_seconds
-        plan = build_setup_plan(
-            request,
-            configuration_generation=binding.configuration_generation,
-            expires_at=expires_at,
-        )
+        plan = build_setup_plan(request, cli_plan=cli_plan, expires_at=expires_at)
+        if plan.configuration_generation != binding.configuration_generation:
+            raise ValueError("the binding's configuration generation is not the plan's")
         binding_digest = _binding_digest(binding)
         with self._lock:
             self._purge_expired_locked(now)
@@ -294,6 +301,15 @@ class SetupPlanStore:
                 return SetupPlanStoreRefusal("mismatch")
             self._records[request.plan_id] = replace(record, consumed=True)
             return AuthorisedSetupPlan(request.plan_id, record.plan)
+
+    def discard(self, plan_id: str) -> bool:
+        """Drop one issued plan so it can never be authorised, and return whether it was held.
+
+        A plan whose ``planned`` receipt could not be written is discarded at once:
+        no plan exists that the receipt chain does not record.
+        """
+        with self._lock:
+            return self._records.pop(plan_id, None) is not None
 
     def purge_expired(self, *, now: int) -> int:
         """Drop expired records and return the exact number removed."""

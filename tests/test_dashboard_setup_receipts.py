@@ -30,6 +30,8 @@ from synapse_channel.dashboard_setup_receipts import (
     SetupReceiptReason,
     SetupReceiptStore,
 )
+from synapse_channel.setup_planner import setup_effect_ids
+from synapse_channel.setup_profiles import SetupProfileId, available_setup_profiles
 
 _REQUEST_ID = "123e4567-e89b-42d3-a456-426614174000"
 _PLAN_ID = "A" * 22
@@ -50,15 +52,15 @@ def _draft(
         plan_digest=_DIGEST,
         principal_id="SYNAPSE-CHANNEL/setup-admin",
         capability="setup_plan",
-        profile="local-ephemeral",
+        profile="local-single-user",
         profile_version=1,
         configuration_generation="b" * 64,
         timestamp_ms=1_784_758_400_000,
         outcome=outcome,
         effects=(
             SetupEffectReceipt(
-                "runtime_directory",
-                "synapse-user-runtime",
+                "establish_local_loopback_hub",
+                "synapse-hub.service",
                 "not_checked",
                 "not_checked",
             ),
@@ -291,7 +293,7 @@ def test_effect_and_artifact_models_reject_unknown_or_duplicate_values() -> None
     with pytest.raises(ValueError, match="effect kind"):
         _rejected_effect("unknown", "absent")
     with pytest.raises(ValueError, match="verdict"):
-        _rejected_effect("user_unit", "unknown")
+        _rejected_effect("establish_identity_waiter", "unknown")
     with pytest.raises(ValueError, match="artifact digest"):
         SetupArtifactDigest("unit", "invalid")
     duplicate = SetupArtifactDigest("unit", "d" * 64)
@@ -474,3 +476,103 @@ def test_preexisting_loose_directory_and_database_are_tightened(tmp_path: Path) 
 
     assert stat.S_IMODE(directory.stat().st_mode) == 0o700
     assert stat.S_IMODE(database.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("effect_id", setup_effect_ids())
+def test_every_command_line_effect_is_a_receipt_kind_and_no_other_is(effect_id: str) -> None:
+    receipt = SetupEffectReceipt(effect_id, effect_id, "unverifiable", "not_checked")
+    assert receipt.as_dict()["kind"] == effect_id
+    for retired in ("runtime_directory", "user_unit", "durable_store"):
+        with pytest.raises(ValueError, match="effect kind"):
+            _rejected_effect(retired, "absent")
+
+
+@pytest.mark.parametrize("profile", available_setup_profiles())
+def test_every_command_line_profile_is_a_receipt_profile_and_no_other_is(
+    profile: SetupProfileId,
+) -> None:
+    assert replace(_draft(), profile=profile).profile == profile
+    for retired in ("local-ephemeral", "local-durable-existing"):
+        with pytest.raises(ValueError, match="profile"):
+            _rejected_draft(profile=retired)
+
+
+def _before_plan(
+    outcome: SetupReceiptOutcome, reason: SetupReceiptReason, generation: str | None = None
+) -> SetupReceiptDraft:
+    return replace(
+        _draft(),
+        plan_id=None,
+        plan_digest=None,
+        configuration_generation=generation,
+        outcome=outcome,
+        reason=reason,
+        effects=(),
+        artifacts=(),
+    )
+
+
+def test_a_plan_request_refused_before_any_plan_is_recorded_without_one(tmp_path: Path) -> None:
+    drafts = (
+        _before_plan("rate_limited", "rate_limit"),
+        _before_plan("denied", "capability_denied"),
+        _before_plan("refused", "plan_issue_failed"),
+        _before_plan("refused", "plan_store_full", "b" * 64),
+        _before_plan("refused", "plan_request_reused", "b" * 64),
+    )
+    with SetupReceiptStore(tmp_path / "receipts") as store:
+        for draft in drafts:
+            store.append(draft)
+    with SetupReceiptStore(tmp_path / "receipts") as reopened:
+        stored = reopened.read_all()
+
+    assert [receipt.draft for receipt in stored] == list(drafts)
+    first = stored[0].browser_projection()
+    assert (first["plan_id"], first["plan_digest"], first["configuration_generation"]) == (
+        None,
+        None,
+        None,
+    )
+    assert stored[3].browser_projection()["configuration_generation"] == "b" * 64
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"plan_id": None}, "go together"),
+        ({"plan_digest": None}, "go together"),
+        ({"configuration_generation": None}, "names its configuration generation"),
+        ({"plan_id": None, "plan_digest": None}, "must be a refused plan request"),
+        (
+            {
+                "plan_id": None,
+                "plan_digest": None,
+                "capability": "setup_apply",
+                "outcome": "refused",
+                "reason": "plan_drift",
+            },
+            "must be a refused plan request",
+        ),
+        (
+            {
+                "plan_id": None,
+                "plan_digest": None,
+                "outcome": "refused",
+                "reason": "plan_drift",
+                "configuration_generation": "G" * 64,
+            },
+            "configuration generation",
+        ),
+    ],
+)
+def test_a_receipt_names_its_whole_plan_or_none_of_it(
+    change: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _rejected_draft(**change)
+
+
+def test_an_underscore_in_a_principal_id_is_kept_as_the_access_file_allows(tmp_path: Path) -> None:
+    with SetupReceiptStore(tmp_path / "receipts") as store:
+        receipt = store.append(replace(_draft(), principal_id="ops_admin"))
+    assert receipt.draft.principal_id == "ops_admin"

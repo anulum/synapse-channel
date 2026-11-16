@@ -45,6 +45,16 @@ start to finish and makes the cockpit the dashboard's front door.
 
 ### Added
 
+- With setup served (`--setup-apply`), the dashboard issues a setup plan at `POST /setup/plan` to an admin:
+  - **The plan is bound to the command line's own plan.** It is planned from the same inspection as
+    `synapse setup inspect` and carries that plan's digest (`cli_plan_digest`), the digest of its
+    executable facts, and each effect's id, disposition, authority, disruption, reversibility and the
+    restarted hub's process id. It holds no path, address or identity.
+  - **The route's checks:** exactly this dashboard's own `Origin`, the bearer, `application/json` and the
+    strict request.
+  - **Every answer to a known caller is a receipt**, written first: rate-limited, denied, refused (the
+    request id reused, the plan store full, the plan not issued) or planned.
+  - **A plan whose receipt cannot be written** is discarded, and the answer is 503.
 - `synapse dashboard --operator` serves `POST /approval/decide`, and the cockpit's approval view offers
   **Decide here** to a login that holds `task_update`: the person's reason, approve or reject, and a
   confirmation naming the digest. The dashboard records the note `synapse approvals decide` records, under
@@ -399,6 +409,17 @@ start to finish and makes the cockpit the dashboard's front door.
 
 ### Changed
 
+- The dashboard's setup contract serves the command line's `local-single-user` profile only:
+  - **Retired:** its two July profiles (`local-ephemeral`, `local-durable-existing`) and their effect kinds
+    (`runtime_directory`, `user_unit`, `durable_store`).
+  - **The receipt chain's vocabulary is derived from the command line:** its effect kinds from
+    `setup_planner.setup_effect_ids()`, and its profiles from `available_setup_profiles()`.
+  - **The effect target:** the unit the effect installs (`synapse-hub.service`, `synapse-arm@.service`), or
+    the effect id for an effect no adapter supports.
+  - **Three refusal reasons are added:** `plan_store_full`, `plan_request_reused` and `plan_issue_failed`.
+  - **A plan request refused before any plan existed** has a receipt with no plan id, plan digest or
+    generation.
+  - **The receipt version stays 1:** no receipt had been written.
 - The operations guide says that a `synapse ops run` run is outside the hub's governed operations: the
   hub holds no declaration, approval, attempt or outcome for it, and an approval on the hub neither
   admits it nor is needed for it. It points to the integrator contract for an effect that must be
