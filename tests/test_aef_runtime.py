@@ -208,4 +208,4 @@ def test_drain_rejects_invalid_bounds(
 ) -> None:
     config = _config(tmp_path)
     with pytest.raises(ValueError, match=message):
-        drain_aef_database(config, **kwargs)  # type: ignore[arg-type]
+        drain_aef_database(config, **kwargs)  # type: ignore[arg-type] # the drain fields are wrong
