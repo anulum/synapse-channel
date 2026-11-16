@@ -5,7 +5,7 @@
     "cli_subcommands": 310,
     "documentation_pages": 99,
     "optional_dependency_groups": 14,
-    "package_modules": 1026,
+    "package_modules": 1031,
     "public_api_exports": 70,
     "tests": 14544,
     "version": "0.99.52",
