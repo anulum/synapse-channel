@@ -70,7 +70,7 @@ printf '%s\\n' "$*" >> "$SYSTEMCTL_LOG"
         escape_runner=_fake_systemd_escape,
     )[2]
     assert shlex.split(restart.command)[0] == "flock"
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(
         ["/bin/sh", "-c", restart.command],
         check=False,
         capture_output=True,
