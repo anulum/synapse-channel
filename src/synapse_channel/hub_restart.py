@@ -33,7 +33,7 @@ elsewhere before anything is asked or changed.
 from __future__ import annotations
 
 import os
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 import time
 from collections.abc import Callable
