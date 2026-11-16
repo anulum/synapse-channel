@@ -261,7 +261,7 @@ async def test_resource_bids_names_the_snapshots_that_never_arrived(
         uri="ws://unused",
         name="BIDDER",
         task_id="T1",
-        agent_factory=_SilentBiddingAgent,  # type: ignore[arg-type]
+        agent_factory=_SilentBiddingAgent,  # type: ignore[arg-type] # probe double
         response_timeout=0.1,
     )
     assert code == 1
