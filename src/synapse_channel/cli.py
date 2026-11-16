@@ -296,7 +296,7 @@ def _requested_command(argv: list[str]) -> str | None:
     back to the full parser, which owns the error message.
     """
     for token in argv:
-        if token != "--" and not token.startswith("-"):  # nosec B105 - argv separator, not a secret
+        if token != "--" and not token.startswith("-"):  # nosec B105 # argv separator, not a secret
             return token
     return None
 
@@ -340,7 +340,7 @@ def build_parser(*, command: str | None = None) -> argparse.ArgumentParser:
 
 
 #: Environment variable name read as a fallback source for the hub shared-secret token.
-TOKEN_ENV = "SYNAPSE_TOKEN"  # nosec B105
+TOKEN_ENV = "SYNAPSE_TOKEN"  # nosec B105 # environment variable name, not a credential
 
 
 def _token_set_conflict(args: argparse.Namespace) -> str | None:
