@@ -207,7 +207,11 @@ def test_preflight_sandboxed_reads_function_exports_only() -> None:
             _FakeExport("memory", _FakeMemoryType()),
         ]
     )
-    report = preflight_sandboxed(_MANIFEST, b"wasm-bytes", runtime=runtime)  # type: ignore[arg-type]
+    report = preflight_sandboxed(
+        _MANIFEST,
+        b"wasm-bytes",
+        runtime=runtime,  # type: ignore[arg-type] # double
+    )
     # memory is not a function export, so it is not listed; names come back sorted
     assert report["exported_functions"] == ["helper", "run"]
     assert report["entrypoint_exported"] is True
@@ -216,7 +220,11 @@ def test_preflight_sandboxed_reads_function_exports_only() -> None:
 
 def test_preflight_sandboxed_reports_a_malformed_module() -> None:
     runtime = _FakeRuntime(fail="bad magic number")
-    report = preflight_sandboxed(_MANIFEST, b"not-wasm", runtime=runtime)  # type: ignore[arg-type]
+    report = preflight_sandboxed(
+        _MANIFEST,
+        b"not-wasm",
+        runtime=runtime,  # type: ignore[arg-type] # double
+    )
     assert report["module_valid"] is False
     assert report["exported_functions"] == []
     # only the first line of the runtime error is kept
