@@ -13,7 +13,7 @@ import contextlib
 import math
 import os
 import signal
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 
 DEFAULT_COMMAND_TIMEOUT = 30.0
 """Maximum seconds spent waiting for one service command, excluding process creation."""
@@ -71,7 +71,7 @@ def run_waker_command(
     limit = command_timeout(timeout)
     if not capture_output or not text:
         raise ValueError("waker commands require captured text output")
-    with subprocess.Popen(  # nosec B603
+    with subprocess.Popen(  # nosec B603 # argument vector, never a shell
         args,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
