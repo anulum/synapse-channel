@@ -15,12 +15,16 @@ const VIEWER: DashboardCapabilities = {
   message_send: false,
   task_declare: false,
   task_update: false,
+  setup_plan: false,
+  setup_apply: false,
 };
 const OPERATOR: DashboardCapabilities = {
   ...VIEWER,
   message_send: true,
   task_declare: true,
   task_update: true,
+  setup_plan: false,
+  setup_apply: false,
 };
 
 describe("buildCommands", () => {

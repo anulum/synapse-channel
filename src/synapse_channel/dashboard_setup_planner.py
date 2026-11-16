@@ -11,6 +11,11 @@ This module deliberately performs no HTTP, filesystem, subprocess, service
 manager, or secret-file operation. Request authentication and loopback Host and
 Origin validation remain upstream responsibilities; their exact validated
 values are bound here so a plan cannot cross request contexts.
+
+The preflight a browser reads is a projection of the command line's own
+inspection of its ``local-single-user`` profile: each requirement with its fixed
+text and the status the inspection observed, and nothing the inspection
+measured, so no path, hub address or identity reaches the browser.
 """
 
 from __future__ import annotations
@@ -20,26 +25,25 @@ import re
 import secrets
 import threading
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from hashlib import sha256
-from typing import Literal
+from typing import Final, Literal
 
 from synapse_channel.dashboard_setup_contract import (
     SETUP_CONTRACT_VERSION,
     SetupApplyRequest,
     SetupPlan,
     SetupPlanRequest,
-    available_setup_profiles,
     build_setup_plan,
 )
+from synapse_channel.setup_profiles import SetupProfile
 
 DEFAULT_SETUP_PLAN_CAPACITY = 128
 MAX_SETUP_PLAN_CAPACITY = 1024
 DEFAULT_SETUP_PLAN_TTL_SECONDS = 180
 MAX_SETUP_PLAN_TTL_SECONDS = 900
 
-SetupProbeState = Literal["ready", "absent", "blocked", "unverifiable"]
 SetupPlanStoreRefusalCode = Literal[
     "capacity",
     "duplicate_request",
@@ -55,43 +59,14 @@ _LOWER_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _OPAQUE_ID = re.compile(r"[A-Za-z0-9_-]{22,128}\Z")
 
 
-@dataclass(frozen=True, slots=True)
-class SetupDoctorFacts:
-    """Already-bounded local observations used by the setup preflight view."""
+_CHECK_STATUSES: Final = frozenset({"pass", "warn", "fail", "unavailable"})
 
-    apply_armed: bool
-    loopback: bool
-    runtime: SetupProbeState
-    user_services: SetupProbeState
-    receipt_store: SetupProbeState
-
-
-@dataclass(frozen=True, slots=True)
-class SetupPreflight:
-    """Token-free setup doctor projection safe for an authorised browser."""
-
-    apply_armed: bool
-    loopback: bool
-    runtime: SetupProbeState
-    user_services: SetupProbeState
-    receipt_store: SetupProbeState
-
-    def as_dict(self) -> dict[str, object]:
-        """Return the stable versioned preflight document."""
-        return {
-            "version": SETUP_CONTRACT_VERSION,
-            "apply_armed": self.apply_armed,
-            "loopback": self.loopback,
-            "runtime": self.runtime,
-            "user_services": self.user_services,
-            "receipt_store": self.receipt_store,
-            "profiles": list(available_setup_profiles()),
-            "limits": {
-                "creates_secrets": False,
-                "broader_bind": False,
-                "system_services": False,
-            },
-        }
+SETUP_PREFLIGHT_LIMITS: Final = {
+    "creates_secrets": False,
+    "broader_bind": False,
+    "system_services": False,
+}
+"""What no setup plan from the dashboard does, stated in every preflight."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,15 +136,46 @@ TokenFactory = Callable[[int], str]
 SaltFactory = Callable[[int], bytes]
 
 
-def build_setup_preflight(facts: SetupDoctorFacts) -> SetupPreflight:
-    """Project bounded observations without probing a host or revealing paths."""
-    return SetupPreflight(
-        apply_armed=facts.apply_armed,
-        loopback=facts.loopback,
-        runtime=facts.runtime,
-        user_services=facts.user_services,
-        receipt_store=facts.receipt_store,
-    )
+def build_setup_preflight(
+    profile: SetupProfile, inspection: Mapping[str, object]
+) -> dict[str, object]:
+    """Project one inspection of ``profile`` for an authorised browser.
+
+    Parameters
+    ----------
+    profile : SetupProfile
+        The command line's profile the inspection was made for.
+    inspection : Mapping
+        The document :func:`~synapse_channel.setup_inspector.inspect_setup` returned.
+
+    Returns
+    -------
+    dict
+        Each requirement of ``profile`` with its fixed description, evidence
+        source and remedy (the desired state) and the status the inspection
+        observed for it (the effective state), ``unavailable`` where the
+        inspection gave none; ``ready`` when every required one passed; and the
+        fixed limits. The inspection's values, details and remedies are left
+        out: they hold paths, the hub's address and identities.
+    """
+    checks = inspection.get("checks")
+    statuses: dict[str, str] = {}
+    for check in checks if isinstance(checks, list) else ():
+        if isinstance(check, Mapping) and isinstance(check.get("id"), str):
+            status = check.get("status")
+            statuses[str(check["id"])] = status if status in _CHECK_STATUSES else "unavailable"
+    requirements = [
+        {**requirement.as_dict(), "status": statuses.get(requirement.requirement_id, "unavailable")}
+        for requirement in profile.requirements
+    ]
+    return {
+        "version": SETUP_CONTRACT_VERSION,
+        "profile": profile.profile_id,
+        "profile_version": profile.version,
+        "ready": all(item["status"] == "pass" for item in requirements if item["required"]),
+        "requirements": requirements,
+        "limits": dict(SETUP_PREFLIGHT_LIMITS),
+    }
 
 
 class SetupPlanStore:
@@ -382,10 +388,9 @@ __all__ = [
     "IssuedSetupPlan",
     "MAX_SETUP_PLAN_CAPACITY",
     "MAX_SETUP_PLAN_TTL_SECONDS",
-    "SetupDoctorFacts",
     "SetupPlanBinding",
     "SetupPlanStore",
     "SetupPlanStoreRefusal",
-    "SetupPreflight",
+    "SETUP_PREFLIGHT_LIMITS",
     "build_setup_preflight",
 ]

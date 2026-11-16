@@ -661,13 +661,46 @@ state, and the presentation trust boundary. It is `no-store`, varies on
 `Authorization`, and contains no token, hash, path, or ACL rule.
 
 Capabilities, not role names, decide which React controls exist. A viewer has
-read only; operator and admin currently receive the same three shipped write
-capabilities, with no invented admin verb. This document is a presentation
+read only; operator and admin receive the same three shipped write
+capabilities. Only an admin can also hold `setup_plan` and `setup_apply`, and
+only when the start gives both `--operator` and `--setup-apply` (below): a
+change to the dashboard's own host is an administrative act. This document is a presentation
 hint only: every POST rechecks the bearer and route server-side. Missing/bad
 credentials receive `401`, a known principal without the capability receives
 `403`, and unarmed write routes remain `404`; the hub then applies its own ACL
 and durable audit as before. Without an access file, the existing one-token and
 generated-bearer profile applies on loopback too; no anonymous live-data access is implied.
+
+### Setup from the dashboard (opt-in)
+
+`--setup-apply` arms setup from the dashboard. Setup is served only when all of
+these hold, and otherwise every setup route answers `404` with the first reason
+that fails, in this order:
+
+| Reason | What is missing |
+| --- | --- |
+| `unarmed` | `--setup-apply` |
+| `non_loopback` | a loopback bind |
+| `compatibility_access` | a `--dashboard-access-file`; the single compatibility bearer never serves setup |
+| `access_file_required` | a versioned access file with principals |
+| `receipt_store_unavailable` | `--setup-receipts DIR` |
+
+`--setup-apply` needs `--operator`, and `--setup-receipts` needs
+`--setup-apply`; the start refuses either alone. `--setup-receipts DIR` names an
+existing directory owned by the dashboard's user, mode `0700` or stricter, and
+not a symlink, where the setup receipt chain is kept; there is no default, and
+the start refuses any other directory with exit 2, naming the flag and no path.
+`/capabilities.json` says the decision in `setup`, for example
+`{"advertised": false, "reason": "unarmed"}`.
+
+`GET /setup/preflight.json` is read-only and needs `setup_plan`, so an admin's
+bearer. It inspects the command line's `local-single-user` profile with the
+same inspection as `synapse setup inspect`, against the dashboard's hub, and
+returns each of the profile's requirements with its fixed description,
+evidence source and remedy, and the status the inspection observed (`pass`,
+`warn`, `fail`, or `unavailable` where it gave none), plus `ready` and the
+fixed `limits`. It returns nothing the inspection measured: no path, hub
+address, identity or process id. An inspection that fails answers `503`.
 
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
 name) the dashboard serves thirteen feeds off the **durable event store** —
@@ -754,7 +787,8 @@ flag (`not served without --feeds-db: reliability, events, …`).
 `/capabilities.json`, read-gated like every feed, says the same to a client:
 `surfaces` lists every optional surface with its `name`, `path`, `flag` and
 whether this start serves it (`configured`), and `configured` and `total` count
-them. A surface asked for without its store answers `404` with
+them; `setup` says whether this start serves setup and, if not, why (see "Setup
+from the dashboard"). A surface asked for without its store answers `404` with
 `<name> feed not configured; start the dashboard with <flag>`. The list, that
 answer and the start's lines come from one table, so they cannot disagree. The
 cockpit's setup assistant shows the list under "What this dashboard serves".

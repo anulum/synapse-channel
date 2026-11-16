@@ -47,6 +47,8 @@ function descriptor(
       message_send: writes,
       task_declare: writes,
       task_update: writes,
+      setup_plan: false,
+      setup_apply: false,
     },
     operator_armed: true,
     trust_boundary: "presentation hints only; HTTP and hub policy enforce writes",

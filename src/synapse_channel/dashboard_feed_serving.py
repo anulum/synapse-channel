@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
@@ -183,12 +183,16 @@ def configured_flags(
     return frozenset(flag for flag, store in stores.items() if store is not None)
 
 
-def capability_summary(configured_flags: frozenset[str]) -> dict[str, object]:
+def capability_summary(
+    configured_flags: frozenset[str], *, setup: Mapping[str, object] | None = None
+) -> dict[str, object]:
     """Return what this start serves: each optional surface, whether it is on, and its flag.
 
     The declared groups are not a surface of their own: they add ``group:<name>``
     scopes to the snapshot and the feeds, so ``scope_groups`` says whether this start
-    declares them and which flag would.
+    declares them and which flag would. ``setup`` says whether this start serves
+    setup and, when it does not, the first reason; a start that names none did not
+    arm it.
     """
     surfaces = [
         {
@@ -207,6 +211,7 @@ def capability_summary(configured_flags: frozenset[str]) -> dict[str, object]:
             "flag": SCOPE_GROUPS_FLAG,
             "configured": SCOPE_GROUPS_FLAG in configured_flags,
         },
+        "setup": dict(setup) if setup is not None else {"advertised": False, "reason": "unarmed"},
     }
 
 

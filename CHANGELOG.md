@@ -45,6 +45,17 @@ start to finish and makes the cockpit the dashboard's front door.
 
 ### Added
 
+- `synapse dashboard --setup-apply` (with `--operator`) and `--setup-receipts DIR` decide at start whether
+  the dashboard serves setup. Setup is served only on loopback, with a versioned access file and an
+  existing owner-only receipt directory; otherwise every setup route answers 404 naming the first
+  reason, and `/capabilities.json` says it in `setup`. Only an access file's admins hold the new
+  `setup_plan` and `setup_apply` capabilities, which `/dashboard-access.json`, the cockpit and Studio
+  read. `GET /setup/preflight.json` gives an admin each requirement of the command line's
+  `local-single-user` profile with its fixed text and the status `synapse setup inspect` observes, and
+  nothing the inspection measured. The dashboard planner's three unobserved preflight facts
+  (`runtime`, `user_services`, `receipt_store`, `SetupDoctorFacts`) are replaced by this projection;
+  the dashboard contract's two July profiles (`local-ephemeral`, `local-durable-existing`) remain until
+  the plan route binds the command line's plan.
 - The cockpit's operations tab shows an approval view for an operation that awaits approval: the kept
   intent field by field in canonical order, the recorded digest beside the one the dashboard recomputes,
   the requester's words as unchecked text, and the `synapse approvals decide` commands only when the

@@ -16,6 +16,10 @@ export interface DashboardCapabilities {
   readonly message_send: boolean;
   readonly task_declare: boolean;
   readonly task_update: boolean;
+  /** Whether this principal may plan a change to the dashboard's host: an admin's, when armed. */
+  readonly setup_plan: boolean;
+  /** Whether this principal may apply a planned change to the dashboard's host. */
+  readonly setup_apply: boolean;
 }
 
 export interface DashboardAccessDescriptor {
@@ -37,6 +41,8 @@ export const NO_DASHBOARD_CAPABILITIES: DashboardCapabilities = Object.freeze({
   message_send: false,
   task_declare: false,
   task_update: false,
+  setup_plan: false,
+  setup_apply: false,
 });
 export const LOADING_DASHBOARD_ACCESS: DashboardAccessState = Object.freeze({
   phase: "loading",
@@ -55,7 +61,14 @@ const DESCRIPTOR_KEYS = [
   "trust_boundary",
   "version",
 ] as const;
-const CAPABILITY_KEYS = ["message_send", "read", "task_declare", "task_update"] as const;
+const CAPABILITY_KEYS = [
+  "message_send",
+  "read",
+  "setup_apply",
+  "setup_plan",
+  "task_declare",
+  "task_update",
+] as const;
 const PRINCIPAL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,12 +80,26 @@ function hasExactKeys(value: Record<string, unknown>, expected: readonly string[
   return actual.length === expected.length && expected.every((key, index) => key === actual[index]);
 }
 
+/** Parse the exact capability set: every one of its keys, each a boolean, and nothing else. */
+function parseCapabilities(value: unknown): DashboardCapabilities | null {
+  if (!isRecord(value) || !hasExactKeys(value, CAPABILITY_KEYS)) return null;
+  if (!CAPABILITY_KEYS.every((key) => typeof value[key] === "boolean")) return null;
+  return Object.freeze({
+    read: value["read"] === true,
+    message_send: value["message_send"] === true,
+    task_declare: value["task_declare"] === true,
+    task_update: value["task_update"] === true,
+    setup_plan: value["setup_plan"] === true,
+    setup_apply: value["setup_apply"] === true,
+  });
+}
+
 /** Parse only the version-one, server-authored descriptor shape. */
 export function parseDashboardAccess(value: unknown): DashboardAccessDescriptor | null {
   if (!isRecord(value) || !hasExactKeys(value, DESCRIPTOR_KEYS)) return null;
   const principal = value["principal"];
   const role = value["role"];
-  const capabilities = value["capabilities"];
+  const capabilities = parseCapabilities(value["capabilities"]);
   if (value["version"] !== 1 || typeof principal !== "string" || !PRINCIPAL_ID.test(principal)) {
     return null;
   }
@@ -80,29 +107,12 @@ export function parseDashboardAccess(value: unknown): DashboardAccessDescriptor 
   if (typeof value["operator_armed"] !== "boolean" || typeof value["trust_boundary"] !== "string") {
     return null;
   }
-  if (!isRecord(capabilities) || !hasExactKeys(capabilities, CAPABILITY_KEYS)) return null;
-  const read = capabilities["read"];
-  const messageSend = capabilities["message_send"];
-  const taskDeclare = capabilities["task_declare"];
-  const taskUpdate = capabilities["task_update"];
-  if (
-    typeof read !== "boolean" ||
-    typeof messageSend !== "boolean" ||
-    typeof taskDeclare !== "boolean" ||
-    typeof taskUpdate !== "boolean"
-  ) {
-    return null;
-  }
+  if (capabilities === null) return null;
   return Object.freeze({
     version: 1,
     principal,
     role,
-    capabilities: Object.freeze({
-      read,
-      message_send: messageSend,
-      task_declare: taskDeclare,
-      task_update: taskUpdate,
-    }),
+    capabilities,
     operator_armed: value["operator_armed"],
     trust_boundary: value["trust_boundary"],
   });
@@ -133,7 +143,14 @@ export function capabilitiesOf(access: DashboardAccessState): DashboardCapabilit
  * scope shows an observed hub's state, so nothing done from it may change work.
  */
 export function readOnlyCapabilities(capabilities: DashboardCapabilities): DashboardCapabilities {
-  return { ...capabilities, message_send: false, task_declare: false, task_update: false };
+  return {
+    ...capabilities,
+    message_send: false,
+    task_declare: false,
+    task_update: false,
+    setup_plan: false,
+    setup_apply: false,
+  };
 }
 
 /** Detect removal of any currently shipped write control. */

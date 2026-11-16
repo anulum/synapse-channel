@@ -36,6 +36,7 @@ from synapse_channel.dashboard_host_guard import allowed_host_authorities
 from synapse_channel.dashboard_host_sessions import load_host_grants
 from synapse_channel.dashboard_operator import WriteRateLimiter
 from synapse_channel.dashboard_scope_groups import load_scope_groups
+from synapse_channel.dashboard_setup_http import SetupServing, hub_inspection, setup_serving
 from synapse_channel.observed_peers import ObservedPeerSpec
 from synapse_channel.prompt_bind_http import PromptBindThreadingHTTPServer
 
@@ -134,43 +135,71 @@ def _optional_path(value: str | Path | None) -> Path | None:
     return Path(value) if value is not None else None
 
 
+@dataclass(frozen=True)
+class _StartAccess:
+    """Who may use this start: its access policy, its effective bearer, and its setup decision."""
+
+    policy: DashboardAccessPolicy
+    token: str | None
+    generated: bool
+    setup: SetupServing
+
+
 def _resolve_access(
     *,
     name: str,
+    host: str,
     dashboard_token: str | None,
     dashboard_access_file: str | Path | None,
     operator: bool,
     operator_name: str | None,
-) -> tuple[DashboardAccessPolicy, str | None, bool]:
-    """Return the start's access policy, its effective bearer and whether that bearer was generated.
+    setup: tuple[bool, str | Path | None],
+) -> _StartAccess:
+    """Return the start's access policy, its effective bearer, whether it was generated, and setup.
 
     An access file carries each principal, so it stands alone: no bearer and no
     global operator name beside it, and no bearer of the start's own. Without
     one, a single bearer, given or generated, guards the reads and, when armed,
     the operator's writes, which are attributed to ``operator:<name>`` unless an
-    operator name is given.
+    operator name is given. ``setup`` is ``(setup_apply, setup_receipts)``: an
+    access file's admins hold the setup capabilities only when setup is armed,
+    and :func:`~synapse_channel.dashboard_setup_http.setup_serving` decides
+    whether setup is served at all.
 
     Raises
     ------
     ValueError
         When an access file is combined with a bearer or an operator name, or
-        cannot be used.
+        cannot be used, or when the setup options cannot be used.
     """
+    setup_apply, setup_receipts = setup
     if dashboard_access_file is not None:
         if dashboard_token is not None:
             raise ValueError("--dashboard-access-file cannot be combined with --dashboard-token")
         if operator_name is not None:
             raise ValueError("--dashboard-access-file carries each operator identity")
-        policy = load_dashboard_access_policy(dashboard_access_file, operator_armed=operator)
-        return policy, None, False
-    effective, generated, protects_reads = _resolve_dashboard_token(dashboard_token=dashboard_token)
-    policy = compatibility_access_policy(
-        dashboard_token=effective,
-        token_protects_reads=protects_reads,
-        operator_armed=operator,
-        operator_name=(operator_name if operator_name else f"operator:{name}"),
+        policy = load_dashboard_access_policy(
+            dashboard_access_file, operator_armed=operator, setup_armed=setup_apply
+        )
+        effective, generated = None, False
+    else:
+        effective, generated, protects_reads = _resolve_dashboard_token(
+            dashboard_token=dashboard_token
+        )
+        policy = compatibility_access_policy(
+            dashboard_token=effective,
+            token_protects_reads=protects_reads,
+            operator_armed=operator,
+            operator_name=(operator_name if operator_name else f"operator:{name}"),
+        )
+    serving = setup_serving(
+        host=host,
+        operator=operator,
+        setup_apply=setup_apply,
+        setup_receipts=setup_receipts,
+        policy=policy,
     )
-    return policy, effective, generated
+    return _StartAccess(policy, effective, generated, serving)
 
 
 def _bind_host_monitor(
@@ -197,12 +226,7 @@ def _bind_host_monitor(
 
 
 def _serve(
-    handler: type[_DashboardHandler],
-    host: str,
-    port: int,
-    *,
-    dashboard_token: str | None,
-    dashboard_token_generated: bool,
+    handler: type[_DashboardHandler], host: str, port: int, access: _StartAccess
 ) -> DashboardServer:
     """Bind the HTTP server, serve it on a daemon thread and return the handle to it."""
     server = PromptBindThreadingHTTPServer((host, int(port)), handler)
@@ -211,8 +235,8 @@ def _serve(
     return DashboardServer(
         server=server,
         thread=thread,
-        dashboard_token=dashboard_token,
-        dashboard_token_generated=dashboard_token_generated,
+        dashboard_token=access.token,
+        dashboard_token_generated=access.generated,
         heavy_feed_cache=handler.heavy_feed_cache,
         state_feed_cache=handler.state_feed_cache,
     )
@@ -246,6 +270,8 @@ def start_dashboard_server(
     cockpit_dist: str | Path | None = None,
     operator: bool = False,
     operator_name: str | None = None,
+    setup_apply: bool = False,
+    setup_receipts: str | Path | None = None,
     observed_peers: tuple[ObservedPeerSpec, ...] = (),
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
@@ -313,6 +339,13 @@ def start_dashboard_server(
     operator_name : str or None, optional
         Sender identity for relayed operator actions; ``operator:<name>`` when
         omitted, so operator writes are attributed and never impersonate an agent.
+    setup_apply : bool, optional
+        Arm setup from the dashboard (``--setup-apply``); it needs ``operator``,
+        and only an access file's ``admin`` principals then hold the setup
+        capabilities.
+    setup_receipts : str, pathlib.Path, or None, optional
+        Existing owner-only directory of the setup receipt chain
+        (``--setup-receipts``); without it, setup is not served.
     allow_hosts : tuple of str, optional
         Extra ``Host`` authorities admitted by the always-on DNS-rebinding
         boundary, for a deliberate LAN or reverse-proxy exposure. The loopback
@@ -333,12 +366,14 @@ def start_dashboard_server(
     validate_dashboard_bind(host, allow_non_loopback=allow_non_loopback)
     # Surface a malformed operator-approved host at startup, not per request.
     allowed_host_authorities(host, int(port), tuple(allow_hosts))
-    access_policy, effective_dashboard_token, dashboard_token_generated = _resolve_access(
+    access = _resolve_access(
         name=name,
+        host=host,
         dashboard_token=dashboard_token,
         dashboard_access_file=dashboard_access_file,
         operator=operator,
         operator_name=operator_name,
+        setup=(setup_apply, setup_receipts),
     )
     handler = _handler_class(
         uri=uri,
@@ -348,7 +383,7 @@ def start_dashboard_server(
         response_timeout=response_timeout,
         refresh_seconds=max(1, int(refresh_seconds)),
         a2a_state_file=_optional_path(a2a_state_file),
-        access_policy=access_policy,
+        access_policy=access.policy,
         reliability_db=_optional_path(reliability_db),
         reliability_db_key_file=_optional_path(reliability_db_key_file),
         attention_store=_optional_path(attention_store),
@@ -376,10 +411,6 @@ def start_dashboard_server(
         tmux_socket=host_session_tmux_socket,
         context_root=host_session_context_root,
     )
-    return _serve(
-        handler,
-        host,
-        port,
-        dashboard_token=effective_dashboard_token,
-        dashboard_token_generated=dashboard_token_generated,
-    )
+    handler.setup_serving = access.setup
+    handler.setup_inspection = hub_inspection(uri, token)
+    return _serve(handler, host, port, access)

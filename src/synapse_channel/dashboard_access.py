@@ -14,26 +14,30 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 DashboardRole = Literal["viewer", "operator", "admin"]
-DashboardCapability = Literal["read", "message_send", "task_declare", "task_update"]
+DashboardCapability = Literal[
+    "read", "message_send", "task_declare", "task_update", "setup_plan", "setup_apply"
+]
 
 
 @dataclass(frozen=True)
 class DashboardCapabilities:
-    """Exact dashboard routes one authenticated principal may use."""
+    """Exact dashboard routes one authenticated principal may use.
+
+    ``setup_plan`` and ``setup_apply`` change the host the dashboard runs on, an
+    administrative act: only an ``admin`` holds them, and only when the start armed
+    both the operator's writes and setup apply.
+    """
 
     read: bool
     message_send: bool
     task_declare: bool
     task_update: bool
+    setup_plan: bool = False
+    setup_apply: bool = False
 
     def allows(self, capability: DashboardCapability) -> bool:
         """Return the named capability without accepting arbitrary attributes."""
-        return {
-            "read": self.read,
-            "message_send": self.message_send,
-            "task_declare": self.task_declare,
-            "task_update": self.task_update,
-        }[capability]
+        return self.as_dict()[capability]
 
     def as_dict(self) -> dict[str, bool]:
         """Return the stable access-descriptor representation."""
@@ -42,6 +46,8 @@ class DashboardCapabilities:
             "message_send": self.message_send,
             "task_declare": self.task_declare,
             "task_update": self.task_update,
+            "setup_plan": self.setup_plan,
+            "setup_apply": self.setup_apply,
         }
 
 
@@ -101,14 +107,18 @@ def capabilities_for_role(
     role: DashboardRole,
     *,
     operator_armed: bool,
+    setup_armed: bool = False,
 ) -> DashboardCapabilities:
-    """Return current capabilities; admin invents no unshipped mutation."""
+    """Return current capabilities; setup is the admin's alone, with both arms set."""
     writes = role in {"operator", "admin"} and operator_armed
+    setup = role == "admin" and operator_armed and setup_armed
     return DashboardCapabilities(
         read=True,
         message_send=writes,
         task_declare=writes,
         task_update=writes,
+        setup_plan=setup,
+        setup_apply=setup,
     )
 
 

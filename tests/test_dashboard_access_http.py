@@ -155,6 +155,8 @@ def test_descriptor_is_token_free_and_role_capability_exact(
             "message_send": writes,
             "task_declare": writes,
             "task_update": writes,
+            "setup_plan": False,
+            "setup_apply": False,
         },
         "operator_armed": True,
         "trust_boundary": TRUST_BOUNDARY,
@@ -251,6 +253,8 @@ def test_real_server_descriptor_is_private_exact_and_token_free(
         "message_send": writes,
         "task_declare": writes,
         "task_update": writes,
+        "setup_plan": False,
+        "setup_apply": False,
     }
     assert all(token not in body for token in _TOKENS.values())
     assert str(access_file) not in body

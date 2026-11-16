@@ -26,12 +26,16 @@ const VIEWER: DashboardCapabilities = {
   message_send: false,
   task_declare: false,
   task_update: false,
+  setup_plan: false,
+  setup_apply: false,
 };
 const OPERATOR: DashboardCapabilities = {
   read: true,
   message_send: true,
   task_declare: true,
   task_update: true,
+  setup_plan: false,
+  setup_apply: false,
 };
 
 function descriptor(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -47,6 +51,25 @@ function descriptor(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 
 describe("parseDashboardAccess", () => {
+  it("reads an admin's setup capabilities as the server gives them", () => {
+    const admin = { ...OPERATOR, setup_plan: true, setup_apply: true };
+    const parsed = parseDashboardAccess(descriptor({ role: "admin", capabilities: admin }));
+    expect(parsed?.capabilities).toEqual(admin);
+    for (const [plan, apply] of [[true, false], [false, true]] as const) {
+      const uneven = { ...OPERATOR, setup_plan: plan, setup_apply: apply };
+      const read = parseDashboardAccess(descriptor({ role: "admin", capabilities: uneven }));
+      expect([read?.capabilities.setup_plan, read?.capabilities.setup_apply]).toEqual([plan, apply]);
+    }
+    expect(readOnlyCapabilities(admin)).toEqual({
+      ...admin,
+      message_send: false,
+      task_declare: false,
+      task_update: false,
+      setup_plan: false,
+      setup_apply: false,
+    });
+  });
+
   it.each(["viewer", "operator", "admin"] as const)("accepts and freezes a strict %s", (role) => {
     const parsed = parseDashboardAccess(descriptor({ role }));
     expect(parsed).toEqual({ ...descriptor({ role }), capabilities: OPERATOR });
@@ -72,6 +95,12 @@ describe("parseDashboardAccess", () => {
     { ...descriptor(), capabilities: { ...OPERATOR, message_send: 1 } },
     { ...descriptor(), capabilities: { ...OPERATOR, task_declare: null } },
     { ...descriptor(), capabilities: { ...OPERATOR, task_update: undefined } },
+    { ...descriptor(), capabilities: { ...OPERATOR, setup_plan: "no" } },
+    { ...descriptor(), capabilities: { ...OPERATOR, setup_apply: 0 } },
+    {
+      ...descriptor(),
+      capabilities: { read: true, message_send: true, task_declare: true, task_update: true },
+    },
   ])("rejects malformed or expanded input %#", (value) => {
     expect(parseDashboardAccess(value)).toBeNull();
   });

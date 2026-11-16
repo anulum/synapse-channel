@@ -35,6 +35,8 @@ def test_capability_matrix_never_invents_admin_actions(role: DashboardRole) -> N
         "message_send": expected,
         "task_declare": expected,
         "task_update": expected,
+        "setup_plan": False,
+        "setup_apply": False,
     }
     names: tuple[DashboardCapability, ...] = (
         "read",
@@ -44,6 +46,28 @@ def test_capability_matrix_never_invents_admin_actions(role: DashboardRole) -> N
     )
     for name in names:
         assert capabilities.allows(name) is capabilities.as_dict()[name]
+
+
+@pytest.mark.parametrize(
+    ("role", "operator_armed", "setup_armed", "expected"),
+    [
+        ("admin", True, True, True),
+        ("admin", True, False, False),
+        ("admin", False, True, False),
+        ("operator", True, True, False),
+        ("viewer", True, True, False),
+    ],
+)
+def test_setup_is_the_admins_alone_and_only_with_both_arms(
+    role: DashboardRole, operator_armed: bool, setup_armed: bool, expected: bool
+) -> None:
+    capabilities = capabilities_for_role(
+        role, operator_armed=operator_armed, setup_armed=setup_armed
+    )
+
+    assert (capabilities.setup_plan, capabilities.setup_apply) == (expected, expected)
+    assert capabilities.allows("setup_plan") is expected
+    assert capabilities.allows("setup_apply") is expected
 
 
 def test_unarmed_roles_are_read_only() -> None:

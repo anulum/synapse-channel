@@ -32,6 +32,8 @@ const OPERATOR: DashboardCapabilities = {
   message_send: true,
   task_declare: true,
   task_update: true,
+  setup_plan: false,
+  setup_apply: false,
 };
 const COMMANDS = buildCommands(["quantum/worker"], ["t-1"], OPERATOR);
 
@@ -49,6 +51,8 @@ describe("Palette", () => {
       message_send: false,
       task_declare: false,
       task_update: false,
+      setup_plan: false,
+      setup_apply: false,
     });
     render(<Palette open commands={commands} onClose={() => {}} onRun={() => {}} />);
     expect(document.querySelector('[class*="--write"]')).toBeNull();

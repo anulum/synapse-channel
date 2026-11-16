@@ -18,12 +18,16 @@ const OPERATOR: DashboardCapabilities = {
   message_send: true,
   task_declare: true,
   task_update: true,
+  setup_plan: false,
+  setup_apply: false,
 };
 const VIEWER: DashboardCapabilities = {
   read: true,
   message_send: false,
   task_declare: false,
   task_update: false,
+  setup_plan: false,
+  setup_apply: false,
 };
 
 interface OverlayProps {

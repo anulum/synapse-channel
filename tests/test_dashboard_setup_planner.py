@@ -9,26 +9,30 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
 
+from synapse_channel.client.diagnostics import Diagnosis
 from synapse_channel.dashboard_setup_contract import SetupApplyRequest, SetupPlanRequest
 from synapse_channel.dashboard_setup_planner import (
     MAX_SETUP_PLAN_CAPACITY,
     MAX_SETUP_PLAN_TTL_SECONDS,
     AuthorisedSetupPlan,
     IssuedSetupPlan,
-    SetupDoctorFacts,
     SetupPlanBinding,
     SetupPlanStore,
     SetupPlanStoreRefusal,
     build_setup_preflight,
 )
+from synapse_channel.setup_inspector import PlatformSnapshot, inspect_setup
+from synapse_channel.setup_profiles import SetupProfile, get_setup_profile
 
 REQUEST_ID = "4dc282e6-21eb-4f5c-89d8-ea824836ef65"
 PLAN_ID = "plan_id_0123456789abcdef"
@@ -116,33 +120,124 @@ def error_code(result: object) -> str:
     return result.code
 
 
-def test_preflight_is_versioned_bounded_and_token_free() -> None:
-    preflight = build_setup_preflight(
-        SetupDoctorFacts(
-            apply_armed=True,
-            loopback=True,
-            runtime="ready",
-            user_services="absent",
-            receipt_store="blocked",
+HOST_VALUES = (
+    "/home/alice/.venvs/synapse/bin/synapse",
+    "/usr/bin/systemctl",
+    "ws://127.0.0.1:8876",
+    "harbour/alice",
+    "harbour",
+)
+"""What the inspection measured on this fake host; none of it may reach the browser."""
+
+HUB_SECRET = "hub-shared-secret-0123456789abcdef"
+"""The hub's shared secret in the inspection's environment."""
+
+
+def _profile() -> SetupProfile:
+    profile = get_setup_profile("local-single-user")
+    assert profile is not None
+    return profile
+
+
+async def _diagnoses(**_kwargs: Any) -> tuple[int, list[str], list[Diagnosis]]:
+    return (
+        0,
+        [],
+        [
+            Diagnosis(
+                "identity", "pass", "project 'harbour' (identity 'harbour/alice') from env", ""
+            ),
+            Diagnosis("hub", "pass", "hub at ws://127.0.0.1:8876 answered", ""),
+            Diagnosis(
+                "waiter", "fail", "no waiter 'harbour/alice-rx' on the bus", "arm harbour/alice"
+            ),
+        ],
+    )
+
+
+def _inspection() -> dict[str, object]:
+    return asyncio.run(
+        inspect_setup(
+            _profile(),
+            uri="ws://127.0.0.1:8876",
+            project="harbour",
+            agent_id="alice",
+            env={
+                "HOME": "/home/alice",
+                "SYN_PROJECT": "harbour",
+                "SYN_IDENTITY": "alice",
+                "SYNAPSE_TOKEN": HUB_SECRET,
+            },
+            executable_probe=lambda name: HOST_VALUES[0] if name == "synapse" else HOST_VALUES[1],
+            platform_probe=lambda: PlatformSnapshot("Linux", "7.0.0", "x86_64"),
+            service_manager_probe=lambda _executable: True,
+            hub_service_pid_probe=lambda _executable: 4242,
+            diagnose_runner=_diagnoses,
         )
     )
 
-    assert preflight.as_dict() == {
-        "version": 1,
-        "apply_armed": True,
-        "loopback": True,
-        "runtime": "ready",
-        "user_services": "absent",
-        "receipt_store": "blocked",
-        "profiles": ["local-ephemeral", "local-durable-existing"],
-        "limits": {
-            "creates_secrets": False,
-            "broader_bind": False,
-            "system_services": False,
-        },
+
+def test_preflight_gives_each_requirement_its_fixed_text_and_the_observed_status() -> None:
+    profile = _profile()
+    preflight = build_setup_preflight(profile, _inspection())
+
+    rows = cast(list[dict[str, object]], preflight["requirements"])
+    assert [row["id"] for row in rows] == [item.requirement_id for item in profile.requirements]
+    assert [{key: row[key] for key in row if key != "status"} for row in rows] == [
+        item.as_dict() for item in profile.requirements
+    ]
+    assert {row["id"]: row["status"] for row in rows}["waiter"] == "fail"
+    assert {row["id"]: row["status"] for row in rows}["hub"] == "pass"
+    assert preflight["ready"] is False
+    assert (preflight["version"], preflight["profile"], preflight["profile_version"]) == (
+        1,
+        "local-single-user",
+        profile.version,
+    )
+    assert preflight["limits"] == {
+        "creates_secrets": False,
+        "broader_bind": False,
+        "system_services": False,
     }
-    assert "token" not in repr(preflight.as_dict()).lower()
-    assert "/home/" not in repr(preflight.as_dict())
+
+
+def test_preflight_carries_nothing_the_inspection_measured() -> None:
+    inspection = _inspection()
+    text = json.dumps(build_setup_preflight(_profile(), inspection))
+    measured = json.dumps(inspection)
+
+    for value in (*HOST_VALUES, "4242", "alice-rx"):
+        assert value in measured
+        assert value not in text
+    assert HUB_SECRET not in text
+
+
+def test_preflight_reads_an_unusable_inspection_as_unavailable_and_not_ready() -> None:
+    profile = _profile()
+    odd = {
+        "checks": [
+            {"id": "package", "status": "pass"},
+            {"id": "python", "status": "excellent"},
+            {"status": "pass"},
+            "executable",
+        ]
+    }
+
+    for inspection in (odd, {"checks": "none"}, {}):
+        preflight = build_setup_preflight(profile, inspection)
+        statuses = {
+            row["id"]: row["status"]
+            for row in cast(list[dict[str, object]], preflight["requirements"])
+        }
+        assert preflight["ready"] is False
+        assert statuses["python"] == "unavailable"
+        assert statuses["hub"] == "unavailable"
+    assert {
+        row["id"]: row["status"]
+        for row in cast(
+            list[dict[str, object]], build_setup_preflight(profile, odd)["requirements"]
+        )
+    }["package"] == "pass"
 
 
 @pytest.mark.parametrize(

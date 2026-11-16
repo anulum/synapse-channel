@@ -23,6 +23,11 @@ from synapse_channel.dashboard_feed_serving import (
     packaged_cockpit_dist,
 )
 from synapse_channel.dashboard_scope_groups import SCOPE_GROUPS_FLAG
+from synapse_channel.dashboard_setup_http import (
+    SETUP_APPLY_FLAG,
+    SETUP_PREFLIGHT_PATH,
+    SETUP_RECEIPTS_FLAG,
+)
 from synapse_channel.observed_peers import (
     parse_observed_peer,
     parse_observed_pin,
@@ -74,6 +79,8 @@ def _start(args: argparse.Namespace, cockpit_dist: Path | None) -> DashboardServ
         cockpit_dist=cockpit_dist,
         operator=args.operator,
         operator_name=args.operator_name,
+        setup_apply=getattr(args, "setup_apply", False),
+        setup_receipts=getattr(args, "setup_receipts", None),
         observed_peers=tuple(args.observed_peers),
         observed_token=args.observed_token,
         observed_timeout=args.observed_timeout,
@@ -157,6 +164,11 @@ def _announce(args: argparse.Namespace, server: DashboardServer, cockpit_dist: P
         print("operator write: POST " + server.url("/message"))
         print("operator task: POST " + server.url("/task"))
         print("operator task update: POST " + server.url("/task/update"))
+    if getattr(args, "setup_apply", False):
+        print(
+            f"setup preflight (admin): {server.url(SETUP_PREFLIGHT_PATH)}; "
+            "whether setup is served: /capabilities.json"
+        )
     if args.reliability_db is not None:
         for label, path in _STORE_FEED_LINES:
             print(f"{label}: {server.url(path)}")
@@ -319,6 +331,30 @@ def _add_view_arguments(dashboard: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_setup_arguments(dashboard: argparse.ArgumentParser) -> None:
+    """Add the setup arm and the setup receipt directory."""
+    dashboard.add_argument(
+        SETUP_APPLY_FLAG,
+        dest="setup_apply",
+        action="store_true",
+        help=(
+            "Serve setup from the dashboard: the read-only preflight of the local-single-user "
+            "profile. Needs --operator, a --dashboard-access-file whose admins then hold "
+            "setup_plan and setup_apply, a loopback bind, and --setup-receipts."
+        ),
+    )
+    dashboard.add_argument(
+        SETUP_RECEIPTS_FLAG,
+        dest="setup_receipts",
+        type=Path,
+        default=None,
+        help=(
+            "Existing owner-only directory (mode 0700, owned by you, not a symlink) of the "
+            "setup receipt chain; the start refuses any other. No default."
+        ),
+    )
+
+
 def _add_observed_peer_arguments(dashboard: argparse.ArgumentParser) -> None:
     """Add the observed peer hubs and their trust."""
     dashboard.add_argument(
@@ -370,5 +406,6 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     _add_feed_store_arguments(dashboard)
     _add_operator_store_arguments(dashboard)
     _add_view_arguments(dashboard)
+    _add_setup_arguments(dashboard)
     _add_observed_peer_arguments(dashboard)
     dashboard.set_defaults(func=_cmd_dashboard)

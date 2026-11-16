@@ -159,6 +159,13 @@ from synapse_channel.dashboard_operator_writes import (
 from synapse_channel.dashboard_postmortem_feed import POSTMORTEM_PATH
 from synapse_channel.dashboard_render import render_dashboard_html
 from synapse_channel.dashboard_scope_groups import ScopeGroups
+from synapse_channel.dashboard_setup_http import (
+    SETUP_PATHS,
+    UNARMED,
+    Inspection,
+    SetupServing,
+    setup_preflight_response,
+)
 from synapse_channel.dashboard_start import DashboardServer as DashboardServer
 from synapse_channel.dashboard_start import start_dashboard_server as start_dashboard_server
 from synapse_channel.dashboard_store_feeds import event_store_key
@@ -298,6 +305,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     fleet_observed_access_file: ClassVar[Path | None] = None
     scope_groups: ClassVar[ScopeGroups | None] = None
     host_session_monitor: ClassVar[HostSessionMonitor]
+    setup_serving: ClassVar[SetupServing] = UNARMED
+    setup_inspection: ClassVar[Inspection]
 
     def _reject_foreign_host(self) -> bool:
         """Refuse a request whose ``Host`` is not an admitted authority.
@@ -350,32 +359,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             )
             return
         authorization = self.headers.get("Authorization")
-        if path in FLEET_MIRROR_PATHS:
-            self._write_access_decision(
-                fleet_mirror_response(
-                    path,
-                    authorization,
-                    self.access_policy,
-                    self.fleet_observed_file,
-                    self.fleet_observed_access_file,
-                )
-            )
-            return
-        if path in HOST_SESSION_PATHS:
-            self._write_access_decision(
-                host_session_response(
-                    path,
-                    authorization,
-                    self.access_policy,
-                    self.host_sessions_access_file,
-                    self.host_session_monitor,
-                )
-            )
-            return
-        if path == DASHBOARD_ACCESS_PATH:
-            self._write_access_decision(
-                access_descriptor_decision(self.access_policy, authorization)
-            )
+        own_gate = self._own_gate_decision(path, authorization)
+        if own_gate is not None:
+            self._write_access_decision(own_gate)
             return
         access = read_decision(self.access_policy, authorization)
         if not access.allowed:
@@ -390,6 +376,37 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         # Bind optional SQLCipher key for every store-backed feed on this request.
         with event_store_key(self.reliability_db_key_file):
             self._do_get_routed()
+
+    def _own_gate_decision(self, path: str, authorization: str | None) -> AccessHttpDecision | None:
+        """Answer a route that checks its own access, or return ``None`` for every other route.
+
+        The Fleet mirror and the host sessions check their own grants, the access
+        descriptor answers any bearer, and setup needs ``setup_plan``; none of them
+        is a plain read.
+        """
+        if path in FLEET_MIRROR_PATHS:
+            return fleet_mirror_response(
+                path,
+                authorization,
+                self.access_policy,
+                self.fleet_observed_file,
+                self.fleet_observed_access_file,
+            )
+        if path in HOST_SESSION_PATHS:
+            return host_session_response(
+                path,
+                authorization,
+                self.access_policy,
+                self.host_sessions_access_file,
+                self.host_session_monitor,
+            )
+        if path == DASHBOARD_ACCESS_PATH:
+            return access_descriptor_decision(self.access_policy, authorization)
+        if path in SETUP_PATHS:
+            return setup_preflight_response(
+                authorization, self.access_policy, self.setup_serving, type(self).setup_inspection
+            )
+        return None
 
     def _do_get_routed(self) -> None:
         """Route an admitted GET to its shell, feed or bounded snapshot page."""
@@ -534,7 +551,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         lives in :mod:`synapse_channel.dashboard_feed_serving`.
         """
         if path == CAPABILITIES_PATH:
-            return json_response(capability_summary(self._configured_flags()))
+            return json_response(
+                capability_summary(self._configured_flags(), setup=self.setup_serving.capability())
+            )
         db = self.reliability_db
         query_feed = _QUERY_FEEDS.get(path)
         if query_feed is not None:

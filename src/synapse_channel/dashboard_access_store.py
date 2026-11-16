@@ -35,8 +35,13 @@ def load_dashboard_access_policy(
     path: str | Path,
     *,
     operator_armed: bool,
+    setup_armed: bool = False,
 ) -> DashboardAccessPolicy:
-    """Return one fail-closed policy from strict owner-controlled files."""
+    """Return one fail-closed policy from strict owner-controlled files.
+
+    ``setup_armed`` gives each ``admin`` the setup capabilities, as
+    :func:`~synapse_channel.dashboard_access.capabilities_for_role` rules.
+    """
     policy_path = Path(path).expanduser()
     raw = _read_owner_file(policy_path, MAX_ACCESS_FILE_BYTES, "dashboard access file")
     try:
@@ -65,6 +70,7 @@ def load_dashboard_access_policy(
             index=index,
             policy_dir=policy_path.parent,
             operator_armed=operator_armed,
+            setup_armed=setup_armed,
         )
         principal = credential.principal
         if principal.principal_id in ids:
@@ -87,6 +93,7 @@ def _parse_principal(
     index: int,
     policy_dir: Path,
     operator_armed: bool,
+    setup_armed: bool,
 ) -> DashboardCredential:
     if not isinstance(value, dict):
         raise ValueError(f"dashboard access principal {index} must be an object")
@@ -120,7 +127,7 @@ def _parse_principal(
     principal = DashboardPrincipal(
         principal_id,
         role,
-        capabilities_for_role(role, operator_armed=operator_armed),
+        capabilities_for_role(role, operator_armed=operator_armed, setup_armed=setup_armed),
         operator_name,
     )
     return DashboardCredential(principal, token)

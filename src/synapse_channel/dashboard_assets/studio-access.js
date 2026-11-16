@@ -21,7 +21,9 @@
   const accessUrl = config.accessUrl || "/dashboard-access.json";
   const pollMs = Math.max(1000, Number(config.pollMs) || 5000);
   const roles = new Set(["viewer", "operator", "admin"]);
-  const capabilityNames = ["read", "message_send", "task_declare", "task_update"];
+  const capabilityNames = [
+    "read", "message_send", "task_declare", "task_update", "setup_plan", "setup_apply",
+  ];
   const listeners = new Set();
   let started = false;
   let activeRequest = null;
@@ -34,6 +36,7 @@
       role: null,
       capabilities: Object.freeze({
         read: false, message_send: false, task_declare: false, task_update: false,
+        setup_plan: false, setup_apply: false,
       }),
     });
   }
