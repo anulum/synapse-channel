@@ -12,6 +12,7 @@ import type { BoardTask } from "./board";
 import type { BranchConflictView, ClaimView } from "./claims";
 import type { CommunicationModel } from "./communications";
 import type { DeadLetterView } from "./deadLetters";
+import type { OperationRow } from "./operations";
 import type { WaitRow } from "./waits";
 
 export type AttentionLevel = "critical" | "warning" | "info";
@@ -21,9 +22,11 @@ export type AttentionKind =
   | "failed_route"
   | "stale_claim"
   | "missing_waiter"
+  | "operation_silent"
   | "blocked_task"
   | "deferred_route"
   | "pending_approval"
+  | "operation_refused"
   | "coordination_wait"
   | "approval_request"
   | "failed_delivery"
@@ -34,7 +37,8 @@ export type AttentionKind =
 export type AttentionAction =
   | { readonly kind: "agent"; readonly id: string }
   | { readonly kind: "task"; readonly id: string }
-  | { readonly kind: "route"; readonly source: string; readonly target: string };
+  | { readonly kind: "route"; readonly source: string; readonly target: string }
+  | { readonly kind: "operation"; readonly id: string };
 
 export interface AttentionItem {
   readonly id: string;
@@ -56,6 +60,8 @@ export interface AttentionInputs {
   readonly board: readonly BoardTask[];
   readonly approvals: readonly PendingApprovalView[];
   readonly waits: readonly WaitRow[];
+  /** The newest declared operations, as `/operations.json` lists them; absent before the feed answers. */
+  readonly operations?: readonly OperationRow[];
 }
 
 const KIND_RANK: Record<AttentionKind, number> = {
@@ -64,16 +70,48 @@ const KIND_RANK: Record<AttentionKind, number> = {
   failed_route: 2,
   stale_claim: 3,
   missing_waiter: 4,
-  blocked_task: 5,
-  deferred_route: 6,
-  pending_approval: 7,
-  coordination_wait: 8,
-  approval_request: 9,
-  failed_delivery: 10,
-  delivery_recovery: 11,
-  stale_data: 12,
-  quota_reset: 13,
+  operation_silent: 5,
+  blocked_task: 6,
+  deferred_route: 7,
+  pending_approval: 8,
+  operation_refused: 9,
+  coordination_wait: 10,
+  approval_request: 11,
+  failed_delivery: 12,
+  delivery_recovery: 13,
+  stale_data: 14,
+  quota_reset: 15,
 };
+
+/** The state the operation report gives an attempt open past its deadline. */
+export const SILENT_ATTEMPT = "attempt open, silent";
+
+/** What a silent attempt's item says, so that it is never read as ended. */
+export const SILENT_ATTEMPT_MEANING =
+  "an open attempt ends only by its report, an observed effect or a seal";
+
+const REFUSED_PREFIX = "refused: ";
+
+/**
+ * Turn the operations the hub refused, and the attempts that fell silent, into
+ * queue items. A refusal names the hub's answer exactly as the report gives it;
+ * a silent attempt says what alone can end it. Any other state gives no item.
+ */
+export function operationAttention(rows: readonly OperationRow[]): AttentionItem[] {
+  const items: AttentionItem[] = [];
+  for (const row of rows) {
+    const action: AttentionAction = { kind: "operation", id: row.operationId };
+    const base = { subject: row.operationId, observedAt: row.latestAt, action };
+    if (row.state.startsWith(REFUSED_PREFIX) && row.state.length > REFUSED_PREFIX.length) {
+      const answer = row.state.slice(REFUSED_PREFIX.length);
+      const task = row.taskId === "" ? "" : ` on task ${row.taskId}`;
+      items.push({ ...base, id: `operation:refused:${row.operationId}`, level: "warning", kind: "operation_refused", evidence: `${REFUSED_PREFIX}${answer}${task}` });
+    } else if (row.state === SILENT_ATTEMPT) {
+      items.push({ ...base, id: `operation:silent:${row.operationId}`, level: "critical", kind: "operation_silent", evidence: `${SILENT_ATTEMPT}: ${SILENT_ATTEMPT_MEANING}` });
+    }
+  }
+  return items;
+}
 
 const LEVEL_RANK: Record<AttentionLevel, number> = { critical: 0, warning: 1, info: 2 };
 
@@ -205,6 +243,8 @@ export function deriveAttentionQueue(input: AttentionInputs): AttentionItem[] {
       action: taskAction(approval.taskId),
     });
   });
+
+  items.push(...operationAttention(input.operations ?? []));
 
   for (const wait of input.waits) {
     items.push({

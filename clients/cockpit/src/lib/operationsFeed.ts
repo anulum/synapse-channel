@@ -34,6 +34,12 @@ export const OPERATIONS_URL = "/operations.json";
 /** How often the list is read again while the tab is open. */
 export const OPERATIONS_POLL_MS = 10_000;
 
+/** How often the attention queue reads the operations again; each read folds the whole store. */
+export const OPERATIONS_ATTENTION_POLL_MS = 30_000;
+
+/** The newest declared operations the attention queue looks at: the feed's largest page. */
+export const OPERATIONS_ATTENTION_LIMIT = 200;
+
 type Fields = Record<string, unknown>;
 
 function record(value: unknown): Fields | null {
@@ -166,6 +172,23 @@ export function createOperationsFeed(
   return createEndpointFeed({
     url: operationsUrl(scope, before),
     pollMs: OPERATIONS_POLL_MS,
+    parse: parseOperationsPage,
+    ...(fetcher === undefined ? {} : { fetcher }),
+  });
+}
+
+/**
+ * Poll the newest page of declared operations for the attention queue, which
+ * turns their refusals and silent attempts into items. An older operation
+ * beyond the page is not looked at; the operations tab pages back to it.
+ */
+export function createOperationsAttentionFeed(
+  scope: CockpitScope,
+  fetcher?: typeof fetch,
+): EndpointFeed<OperationsPage> {
+  return createEndpointFeed({
+    url: withScope(appendQuery(OPERATIONS_URL, `limit=${OPERATIONS_ATTENTION_LIMIT}`), scope),
+    pollMs: OPERATIONS_ATTENTION_POLL_MS,
     parse: parseOperationsPage,
     ...(fetcher === undefined ? {} : { fetcher }),
   });

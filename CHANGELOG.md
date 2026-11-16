@@ -45,6 +45,10 @@ start to finish and makes the cockpit the dashboard's front door.
 
 ### Added
 
+- The cockpit's attention queue adds a row for each refused operation, naming the hub's exact answer, and
+  for each silent attempt, saying that an open attempt ends only by its report, an observed effect or a
+  seal; it reads the newest 200 declared operations every 30 seconds. Each row opens the operation's
+  chain. The chosen operation is part of the address (`?panel=operations&operation=<id>`).
 - `synapse dashboard --setup-apply` (with `--operator`) and `--setup-receipts DIR` decide at start whether
   the dashboard serves setup. Setup is served only on loopback, with a versioned access file and an
   existing owner-only receipt directory; otherwise every setup route answers 404 naming the first

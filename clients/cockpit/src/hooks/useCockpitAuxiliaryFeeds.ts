@@ -15,6 +15,9 @@ import {
   type HealthAnomaliesState,
 } from "../lib/healthAnomalies";
 import { createMetricsStore, type MetricsState } from "../lib/metrics";
+import type { FeedState } from "../lib/feed";
+import type { OperationsPage } from "../lib/operations";
+import { createOperationsAttentionFeed } from "../lib/operationsFeed";
 import { createReliabilityStore, type ReliabilityState } from "../lib/reliability";
 import { createSessionsStore, type SessionsState } from "../lib/sessions";
 import { createWaitsStore, type WaitsState } from "../lib/waits";
@@ -38,6 +41,8 @@ export interface CockpitAuxiliaryFeeds {
   readonly anomalyReport: HealthAnomaliesState;
   /** The recorded findings, read from the durable log. */
   readonly findings: FindingsState;
+  /** The newest declared operations, for the attention queue's refusals and silent attempts. */
+  readonly operations: FeedState<OperationsPage>;
   readonly start: () => void;
 }
 
@@ -61,6 +66,7 @@ export function useCockpitAuxiliaryFeeds(
   const [waits, setWaits] = useState<WaitsState>(CONNECTING);
   const [anomalyReport, setAnomalyReport] = useState<HealthAnomaliesState>(CONNECTING);
   const [findings, setFindings] = useState<FindingsState>(CONNECTING);
+  const [operations, setOperations] = useState<FeedState<OperationsPage>>(CONNECTING);
   const startRef = useRef<(() => void) | null>(null);
   const start = useCallback(() => startRef.current?.(), []);
 
@@ -72,6 +78,7 @@ export function useCockpitAuxiliaryFeeds(
     setWaits(CONNECTING);
     setAnomalyReport(CONNECTING);
     setFindings(CONNECTING);
+    setOperations(CONNECTING);
     startRef.current = null;
     if (blocked) return;
     const active = parseScope(scopeKey);
@@ -92,6 +99,8 @@ export function useCockpitAuxiliaryFeeds(
       const unsubscribeSessions = sessionsStore.subscribe(setSessions);
       const unsubscribeWaits = waitsStore.subscribe(setWaits);
       const unsubscribeFindings = findingsStore.subscribe(setFindings);
+      const operationsFeed = createOperationsAttentionFeed(active);
+      const unsubscribeOperations = operationsFeed.subscribe(setOperations);
       let anomaliesStore: ReturnType<typeof createHealthAnomaliesStore> | undefined;
       let unsubscribeAnomalies: (() => void) | undefined;
       let anomalyFallback: ReturnType<typeof setTimeout>;
@@ -113,6 +122,7 @@ export function useCockpitAuxiliaryFeeds(
         unsubscribeSessions();
         unsubscribeWaits();
         unsubscribeFindings();
+        unsubscribeOperations();
         clearTimeout(anomalyFallback);
         unsubscribeAnomalies?.();
         reliabilityStore.stop();
@@ -121,6 +131,7 @@ export function useCockpitAuxiliaryFeeds(
         sessionsStore.stop();
         waitsStore.stop();
         findingsStore.stop();
+        operationsFeed.stop();
         anomaliesStore?.stop();
       };
     };
@@ -134,5 +145,5 @@ export function useCockpitAuxiliaryFeeds(
     };
   }, [blocked, credentialRevision, scopeKey]);
 
-  return { reliability, federation, metrics, sessions, waits, anomalyReport, findings, start };
+  return { reliability, federation, metrics, sessions, waits, anomalyReport, findings, operations, start };
 }

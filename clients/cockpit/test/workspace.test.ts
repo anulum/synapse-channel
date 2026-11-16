@@ -307,3 +307,24 @@ describe("workspaceToSearch", () => {
     expect(workspaceFromSearch(workspaceToSearch(compareWorkspace))).toEqual(compareWorkspace);
   });
 });
+
+describe("the chosen operation", () => {
+  it("is read only with the operations panel, and only as one bounded identifier", () => {
+    expect(workspaceFromSearch("?panel=operations&operation=op-1").operation).toBe("op-1");
+    expect(workspaceFromSearch("?panel=operations").operation).toBeNull();
+    expect(workspaceFromSearch("?panel=operations&operation=%0Aop").operation).toBeNull();
+    expect(workspaceFromSearch(`?panel=operations&operation=${"x".repeat(513)}`).operation).toBeNull();
+    expect("operation" in workspaceFromSearch("?panel=log&operation=op-1")).toBe(false);
+  });
+
+  it("is written only with the operations panel, and never when it is not one clean identifier", () => {
+    const base = workspaceFromSearch("?panel=operations");
+    expect(workspaceToSearch({ ...base, operation: "op 1" })).toBe("?panel=operations&operation=op+1");
+    expect(workspaceToSearch({ ...base, operation: null })).toBe("?panel=operations");
+    expect(workspaceToSearch({ ...base, operation: "   " })).toBe("?panel=operations");
+    expect(workspaceToSearch({ ...base, operation: "op\u0007" })).toBe("?panel=operations");
+    expect(workspaceToSearch({ ...base, operation: "x".repeat(513) })).toBe("?panel=operations");
+    expect(workspaceToSearch({ ...base, panel: "log", operation: "op-1" })).toBe("");
+    expect(workspaceToSearch(base, "?operation=stale")).toBe("?panel=operations");
+  });
+});

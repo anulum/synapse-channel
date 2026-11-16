@@ -23,6 +23,17 @@ afterEach(() => {
 });
 
 describe("useCockpitWorkspace", () => {
+  it("opens the operations tab on one operation's chain, and on none", () => {
+    window.history.replaceState(null, "", "/cockpit/?panel=log#h");
+    const { result } = renderHook(() => useCockpitWorkspace());
+    act(() => result.current.setOperation("op-7"));
+    expect(location.search).toBe("?panel=operations&operation=op-7");
+    expect(result.current.workspace.operation).toBe("op-7");
+    act(() => result.current.setOperation(null));
+    expect(location.search).toBe("?panel=operations");
+    expect(location.hash).toBe("#h");
+  });
+
   it("initialises from the URL and pushes navigable changes without losing the hash", () => {
     const remove = vi.spyOn(window, "removeEventListener");
     const { result, unmount } = renderHook(() => useCockpitWorkspace());

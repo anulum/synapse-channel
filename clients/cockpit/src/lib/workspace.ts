@@ -58,6 +58,8 @@ export interface CockpitWorkspace {
   readonly incidentStep: IncidentStep;
   readonly communicationQuery: string;
   readonly communicationHealth: CommunicationHealthFilter;
+  /** The operation whose chain the operations tab shows; null or absent for none. */
+  readonly operation?: string | null;
 }
 
 export const DEFAULT_WORKSPACE: CockpitWorkspace = {
@@ -86,6 +88,7 @@ const WORKSPACE_PARAMS = [
   "incident",
   "comm",
   "delivery",
+  "operation",
 ] as const;
 const ENTITY_MAX_LENGTH = 512;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/u;
@@ -171,6 +174,7 @@ export function workspaceFromSearch(search: string): CockpitWorkspace {
     incidentStep,
     communicationQuery: boundedQuery(params, "comm"),
     communicationHealth,
+    ...(panel === "operations" ? { operation: entity(params, "operation") } : {}),
   };
 }
 
@@ -193,6 +197,16 @@ export function workspaceToSearch(workspace: CockpitWorkspace, currentSearch = "
     if (workspace.communicationHealth !== DEFAULT_WORKSPACE.communicationHealth) {
       params.set("delivery", workspace.communicationHealth);
     }
+  }
+  const operation = workspace.operation ?? null;
+  if (
+    workspace.panel === "operations" &&
+    operation !== null &&
+    operation.trim() !== "" &&
+    operation.length <= ENTITY_MAX_LENGTH &&
+    !CONTROL_CHARACTERS.test(operation)
+  ) {
+    params.set("operation", operation);
   }
   if (workspace.selection !== null) {
     if (workspace.selection.kind === "route") {

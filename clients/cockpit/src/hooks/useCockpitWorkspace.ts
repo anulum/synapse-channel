@@ -32,6 +32,8 @@ interface CockpitWorkspaceController {
   readonly replaceReplay: (replay: ReplayState) => void;
   readonly setIncidentStep: (step: IncidentStep) => void;
   readonly setCommunicationFilter: (filter: CommunicationFilter) => void;
+  /** Open the operations tab on one operation's chain, or on none. */
+  readonly setOperation: (operationId: string | null) => void;
 }
 
 function currentWorkspace(): CockpitWorkspace {
@@ -122,8 +124,14 @@ export function useCockpitWorkspace(): CockpitWorkspaceController {
     [navigate],
   );
 
+  const setOperation = useCallback(
+    (operation: string | null) => navigate((current) => ({ ...current, panel: "operations", operation })),
+    [navigate],
+  );
+
   return {
     workspace,
+    setOperation,
     setPanel,
     setFleetView,
     setSelection,

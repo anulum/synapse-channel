@@ -101,8 +101,12 @@ export function useCockpitViewModel({
         board: liveBoard,
         approvals,
         waits: feeds.waits.data?.waits ?? [],
+        operations: feeds.operations.data?.operations ?? [],
       }),
-    [liveConflicts, deadLetters, communication, liveClaims, snapshot, liveBoard, approvals, feeds.waits.data],
+    [
+      liveConflicts, deadLetters, communication, liveClaims, snapshot, liveBoard, approvals,
+      feeds.waits.data, feeds.operations.data,
+    ],
   );
 
   return {

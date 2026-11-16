@@ -98,3 +98,22 @@ describe("AttentionQueue", () => {
     expect(screen.queryByText("agent-51")).toBeNull();
   });
 });
+
+describe("an operation's item", () => {
+  it("opens the operation's chain", async () => {
+    const onInspectOperation = vi.fn();
+    const item: AttentionItem = {
+      id: "operation:refused:op-1",
+      level: "warning",
+      kind: "operation_refused",
+      subject: "op-1",
+      evidence: "refused: not_approved on task T1",
+      observedAt: 10,
+      action: { kind: "operation", id: "op-1" },
+    };
+    render(<AttentionQueue items={[item]} connected onInspectOperation={onInspectOperation} />);
+    expect(screen.getByText(/operation refused · refused: not_approved on task T1/u)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /open operation/u }));
+    expect(onInspectOperation).toHaveBeenCalledWith("op-1");
+  });
+});

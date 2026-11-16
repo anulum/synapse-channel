@@ -61,6 +61,7 @@ import {
   AUXILIARY_FEED_START_FALLBACK_MS,
   HEAVY_FEED_STAGGER_FALLBACK_MS,
   useCockpitAuxiliaryFeeds,
+  type CockpitAuxiliaryFeeds,
 } from "./useCockpitAuxiliaryFeeds";
 
 export { AUXILIARY_FEED_START_FALLBACK_MS, HEAVY_FEED_STAGGER_FALLBACK_MS };
@@ -108,6 +109,8 @@ export interface CockpitFeeds {
   readonly metrics: MetricsState;
   readonly sessions: SessionsState;
   readonly waits: WaitsState;
+  /** The newest declared operations, for the attention queue. */
+  readonly operations: CockpitAuxiliaryFeeds["operations"];
   readonly anomalyReport: HealthAnomaliesState;
   readonly findings: FindingsState;
   readonly receipts: ReceiptsState;
@@ -422,6 +425,7 @@ export function useCockpitFeeds(
     metrics: auxiliary.metrics,
     sessions: auxiliary.sessions,
     waits: auxiliary.waits,
+    operations: auxiliary.operations,
     anomalyReport: auxiliary.anomalyReport,
     findings: auxiliary.findings,
     receipts,

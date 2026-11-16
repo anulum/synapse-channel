@@ -12,8 +12,10 @@ import type { FeedState } from "../src/lib/feed";
 import { fetchAndVerify } from "../src/lib/merkleVerify";
 import type { OperationRow, OperationsPage } from "../src/lib/operations";
 import {
+  OPERATIONS_ATTENTION_POLL_MS,
   OPERATIONS_POLL_MS,
   OPERATIONS_SOURCE,
+  createOperationsAttentionFeed,
   createOperationsFeed,
   detailText,
   fetchOperationChain,
@@ -253,5 +255,31 @@ describe("OPERATIONS_SOURCE", () => {
     );
     expect(await OPERATIONS_SOURCE.verifyRow(4)).toEqual({ kind: "unserved" });
     expect(vi.mocked(fetchAndVerify)).toHaveBeenCalledWith(4);
+  });
+});
+
+describe("createOperationsAttentionFeed", () => {
+  it("reads the feed's largest page for the scope, more slowly than the open tab", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn(async (_url: RequestInfo | URL) => response(200, { operations: [], total: 0, next_before: null }));
+    const feed = createOperationsAttentionFeed({ kind: "project", namespace: "P" }, fetcher as unknown as typeof fetch);
+    const states: FeedState<OperationsPage>[] = [];
+    feed.subscribe((state) => states.push(state));
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe("live"));
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe("/operations.json?limit=200&scope=project%3AP");
+    expect(OPERATIONS_ATTENTION_POLL_MS).toBeGreaterThan(OPERATIONS_POLL_MS);
+    await vi.advanceTimersByTimeAsync(OPERATIONS_ATTENTION_POLL_MS);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    feed.stop();
+  });
+
+  it("uses the cockpit's authenticated fetch when none is given", async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL) => response(404, {}));
+    vi.stubGlobal("fetch", fetcher);
+    const feed = createOperationsAttentionFeed({ kind: "all" });
+    const states: FeedState<OperationsPage>[] = [];
+    feed.subscribe((state) => states.push(state));
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe("absent"));
+    feed.stop();
   });
 });

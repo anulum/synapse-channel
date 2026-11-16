@@ -132,14 +132,23 @@ function OperationsPageView({ page, before, selected, onSelect, onCursor }: Page
  * one's chain. The reads come from `source`, which the always-loaded inspector
  * owns, so this chunk reaches no network code of its own.
  */
-export function OperationsView({ source }: { readonly source: OperationsSource }): JSX.Element {
+interface OperationsViewProps {
+  readonly source: OperationsSource;
+  /** The chosen operation when the workspace owns the choice; the tab keeps its own otherwise. */
+  readonly selected?: string | null;
+  readonly onSelect?: ((operationId: string | null) => void) | undefined;
+}
+
+export function OperationsView({ source, selected: chosen, onSelect }: OperationsViewProps): JSX.Element {
   const { t } = useCockpitI18n();
   const scopeKey = scopeText(useContext(ScopeContext));
   const scope = useMemo(() => parseScope(scopeKey), [scopeKey]);
   const [cursor, setCursor] = useState<{ readonly scope: string; readonly before: number | null }>({ scope: scopeKey, before: null });
   const before = cursor.scope === scopeKey ? cursor.before : null;
   const [state, setState] = useState<FeedState<OperationsPage>>(OPERATIONS_CONNECTING);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [own, setOwn] = useState<string | null>(null);
+  const selected = onSelect === undefined ? own : (chosen ?? null);
+  const setSelected = onSelect ?? setOwn;
   useEffect(() => {
     setState(OPERATIONS_CONNECTING);
     const feed = source.openList(scope, before);

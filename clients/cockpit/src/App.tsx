@@ -73,6 +73,7 @@ export function App(): JSX.Element {
     replaceReplay,
     setIncidentStep,
     setCommunicationFilter,
+    setOperation,
   } = useCockpitWorkspace();
   const auth = useSyncExternalStore(
     subscribeCockpitAuth,
@@ -311,6 +312,8 @@ export function App(): JSX.Element {
                   attentionFeed={feeds.attention}
                   onInspectAgent={overlays.inspectAgent}
                   onInspectTask={overlays.inspectTask}
+                  operation={workspace.operation ?? null}
+                  onOperationChange={setOperation}
                   events={feeds.log}
                   window={brush}
                   onClearWindow={onClearWindow}

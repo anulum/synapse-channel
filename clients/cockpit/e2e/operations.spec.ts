@@ -167,6 +167,22 @@ test("the operations tab shows each journalled operation's state and chain, and 
     await verified.getByRole("button", { name: `open evidence (seq ${seq})` }).click();
     await expect(verified.getByRole("status")).toHaveText(new RegExp(`^seq ${seq} is committed to root [0-9a-f]{64}$`, "u"));
 
+    await test.step("a refusal opens its chain from the attention queue", async () => {
+      await page.getByRole("tab", { name: "attention" }).click();
+      const queue = page.getByRole("region", { name: "Fleet attention queue" });
+      const refusal = queue.getByRole("listitem").filter({ hasText: "op-refused" }).filter({ hasText: "refused: not_approved" });
+      await expect(refusal).toHaveCount(1, { timeout: 45_000 });
+      await expect(queue.getByRole("listitem").filter({ hasText: "op-verified" })).toHaveCount(0);
+      await refusal.getByRole("button", { name: /open operation/u }).click();
+      await expect(page.getByRole("tab", { name: "operations" })).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("region", { name: "Chain of operation op-refused" })).toBeVisible();
+      expect(new URL(page.url()).searchParams.get("operation")).toBe("op-refused");
+      await page.goBack();
+      await expect(page.getByRole("tab", { name: "attention" })).toHaveAttribute("aria-selected", "true");
+    });
+    await page.getByRole("tab", { name: "operations" }).click();
+    await tab.getByRole("button", { name: /^op-verified / }).click();
+
     for (const width of [1440, 1024, 390]) {
       for (const theme of ["dark", "light"] as const) {
         await test.step(`${width} pixels, ${theme}`, () => expectAccessible(page, width, theme));

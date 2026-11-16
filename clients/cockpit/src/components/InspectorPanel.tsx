@@ -60,6 +60,10 @@ export interface InspectorPanelProps {
   readonly attentionFeed?: AttentionFeedState;
   readonly onInspectAgent?: ((identity: string) => void) | undefined;
   readonly onInspectTask?: ((taskId: string) => void) | undefined;
+  /** The operation whose chain the operations tab shows, from the workspace. */
+  readonly operation?: string | null;
+  /** Choose an operation: the operations tab opens on its chain. */
+  readonly onOperationChange?: ((operationId: string | null) => void) | undefined;
   readonly events: readonly CockpitEvent[];
   readonly window?: TimeWindow | null;
   readonly onClearWindow?: (() => void) | undefined;
@@ -107,6 +111,7 @@ export function InspectorPanel(props: InspectorPanelProps): JSX.Element {
     operatorActions, incidentStorageKey = "synapse-cockpit-incident-v1:unavailable",
     incidentStep = "scope", onIncidentStepChange, replay = { mode: "live" },
     hubVersion = "", configEpoch = "", onOpenIncidentEvidence, onTabChange, prefill,
+    operation = null, onOperationChange,
   } = props;
   const shownCoverage = coverage ?? eventCoverageOf(events, provenance);
   return (
@@ -116,7 +121,8 @@ export function InspectorPanel(props: InspectorPanelProps): JSX.Element {
         <Suspense fallback={<div className="panel__empty" role="status">{t("tabs.loadingPanel")}</div>}>
           {tab === "attention" ? (
             <AttentionQueue items={attention} stored={attentionFeed} connected={connected} onInspectAgent={onInspectAgent}
-              onInspectTask={onInspectTask} onInspectRoute={(source, target) => onFleetSelectionChange({ kind: "route", source, target })} />
+              onInspectTask={onInspectTask} onInspectRoute={(source, target) => onFleetSelectionChange({ kind: "route", source, target })}
+              onInspectOperation={onOperationChange} />
           ) : tab === "log" ? (
             <SignalLog events={events} window={window} onClearWindow={onClearWindow} onSelectTask={onSelectTask}
               selection={selection} onSelectEvent={(seq) => onSelectionChange?.({ kind: "event", seq })}
@@ -142,7 +148,7 @@ export function InspectorPanel(props: InspectorPanelProps): JSX.Element {
               selection={selection} onSelectEvent={(seq) => onSelectionChange?.(seq === null ? null : { kind: "event", seq })}
               onOpenEvent={onOpenEvent ?? ((seq) => onSelectionChange?.({ kind: "event", seq }))} />
           ) : tab === "operations" ? (
-            <OperationsView source={OPERATIONS_SOURCE} />
+            <OperationsView source={OPERATIONS_SOURCE} selected={operation} onSelect={onOperationChange} />
           ) : tab === "incident" ? (
             <IncidentWorkspace key={incidentStorageKey} step={incidentStep} onStepChange={(next) => onIncidentStepChange?.(next)}
               selection={selection} replay={replay} storageKey={incidentStorageKey} hubVersion={hubVersion}

@@ -115,6 +115,23 @@ function feeds(snapshot: FleetSnapshot | null): CockpitFeeds {
     federation: ABSENT,
     metrics: ABSENT,
     sessions: ABSENT,
+    operations: {
+      data: {
+        operations: [
+          { operationId: "op-refused", taskId: "TASK-1", declarer: "alpha/one", declaredSeq: 3, state: "refused: stale_epoch", latestSeq: 4, latestKind: "answer", latestAt: 20 },
+          { operationId: "op-fine", taskId: "TASK-1", declarer: "alpha/one", declaredSeq: 5, state: "verified", latestSeq: 6, latestKind: "verification", latestAt: 21 },
+        ],
+        unreadable: 0,
+        total: 2,
+        nextBefore: null,
+        asOfSeq: 6,
+        custody: "not recorded here",
+        scope: null,
+      },
+      status: "live",
+      fetchedAt: 1,
+      error: null,
+    },
     waits: {
       data: {
         present: true,
@@ -185,6 +202,9 @@ describe("useCockpitViewModel", () => {
     expect(result.current.deadLetters.map((letter) => letter.target)).toEqual(["ghost"]);
     expect(result.current.approvals.map((approval) => approval.taskId)).toEqual(["TASK-1"]);
     expect(result.current.attention.some((item) => item.kind === "missing_waiter")).toBe(true);
+    const refused = result.current.attention.filter((item) => item.kind === "operation_refused");
+    expect(refused.map((item) => [item.subject, item.evidence])).toEqual([["op-refused", "refused: stale_epoch on task TASK-1"]]);
+    expect(result.current.attention.some((item) => item.subject === "op-fine")).toBe(false);
 
     rerender({ travelling: true });
     expect(result.current.claims).toEqual([]);

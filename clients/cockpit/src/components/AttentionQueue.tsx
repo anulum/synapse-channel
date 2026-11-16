@@ -22,6 +22,8 @@ interface AttentionQueueProps {
   readonly onInspectAgent?: ((identity: string) => void) | undefined;
   readonly onInspectTask?: ((taskId: string) => void) | undefined;
   readonly onInspectRoute?: ((source: string, target: string) => void) | undefined;
+  /** Open one operation's chain in the operations tab. */
+  readonly onInspectOperation?: ((operationId: string) => void) | undefined;
 }
 
 const SHOWN_LIMIT = 50;
@@ -29,6 +31,7 @@ const SHOWN_LIMIT = 50;
 function actionLabel(action: AttentionAction): string {
   if (action.kind === "agent") return "inspect agent";
   if (action.kind === "task") return "open task";
+  if (action.kind === "operation") return "open operation";
   return "inspect route";
 }
 
@@ -48,6 +51,7 @@ export function AttentionQueue({
   onInspectAgent,
   onInspectTask,
   onInspectRoute,
+  onInspectOperation,
 }: AttentionQueueProps): JSX.Element {
   const [filter, setFilter] = useState<AttentionFilter>("all");
   const combined = useMemo(
@@ -68,6 +72,7 @@ export function AttentionQueue({
   const runAction = (action: AttentionAction): void => {
     if (action.kind === "agent") onInspectAgent?.(action.id);
     else if (action.kind === "task") onInspectTask?.(action.id);
+    else if (action.kind === "operation") onInspectOperation?.(action.id);
     else onInspectRoute?.(action.source, action.target);
   };
 

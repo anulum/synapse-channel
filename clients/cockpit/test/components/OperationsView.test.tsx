@@ -372,3 +372,19 @@ describe("the approval view", () => {
     expect(region.querySelector(".op-words__text")?.textContent).toBe("The request gave no reason.");
   });
 });
+
+describe("a chosen operation the workspace owns", () => {
+  it("shows the workspace's choice and hands a new one back without keeping its own", async () => {
+    stubRoutes((url) => ({ status: 200, body: url.includes("operation=") ? chain() : PAGE }));
+    const onSelect = vi.fn();
+    render(
+      <ScopeContext.Provider value={{ kind: "all" }}>
+        <OperationsView source={SOURCE} selected="op-verified" onSelect={onSelect} />
+      </ScopeContext.Provider>,
+    );
+    expect(await screen.findByRole("region", { name: "Chain of operation op-verified" })).toBeTruthy();
+    await userEvent.click(await screen.findByRole("button", { name: /^op-open /u }));
+    expect(onSelect).toHaveBeenCalledWith("op-open");
+    expect(screen.getByRole("region", { name: "Chain of operation op-verified" })).toBeTruthy();
+  });
+});

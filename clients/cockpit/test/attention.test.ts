@@ -8,7 +8,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import { deriveAttentionQueue, mergeStoredAttention, type AttentionInputs } from "../src/lib/attention";
+import {
+  SILENT_ATTEMPT,
+  SILENT_ATTEMPT_MEANING,
+  deriveAttentionQueue,
+  mergeStoredAttention,
+  operationAttention,
+  type AttentionInputs,
+} from "../src/lib/attention";
+import type { OperationRow } from "../src/lib/operations";
 
 const EMPTY: AttentionInputs = {
   conflicts: [],
@@ -337,5 +345,57 @@ describe("mergeStoredAttention", () => {
     ]);
     expect(merged[0]?.action).toBeNull();
     expect(mergeStoredAttention(merged, null)).toEqual(merged);
+  });
+});
+
+describe("operationAttention", () => {
+  const ANSWERS = [
+    "not_claim_holder", "stale_epoch", "unknown", "not_approved", "approval_stale",
+    "approval_expired", "approver_unauthorised", "operation_closed", "attempt_exists",
+    "earlier_attempt_unreconciled",
+  ];
+  const row = (operationId: string, state: string, taskId = "T1"): OperationRow => ({
+    operationId, taskId, declarer: "P/worker", declaredSeq: 1, state, latestSeq: 2, latestKind: "answer", latestAt: 50,
+  });
+
+  it("gives each refusing answer one item with its exact name and a hop to the chain", () => {
+    for (const answer of ANSWERS) {
+      const items = operationAttention([row(`op-${answer}`, `refused: ${answer}`)]);
+      expect(items).toEqual([{
+        id: `operation:refused:op-${answer}`,
+        level: "warning",
+        kind: "operation_refused",
+        subject: `op-${answer}`,
+        evidence: `refused: ${answer} on task T1`,
+        observedAt: 50,
+        action: { kind: "operation", id: `op-${answer}` },
+      }]);
+    }
+    expect(operationAttention([row("op-x", "refused: not_approved", "")])[0]?.evidence).toBe("refused: not_approved");
+  });
+
+  it("gives a silent attempt one critical item that never reads it as ended", () => {
+    const [item] = operationAttention([row("op-silent", SILENT_ATTEMPT)]);
+    expect(item).toMatchObject({ kind: "operation_silent", level: "critical", subject: "op-silent" });
+    expect(item?.evidence).toBe(`attempt open, silent: ${SILENT_ATTEMPT_MEANING}`);
+    expect(item?.evidence).not.toMatch(/\bended\b|\bclosed\b|\bdone\b/u);
+  });
+
+  it("gives no item for any other state, a verified operation among them", () => {
+    const quiet = [
+      "verified", "sealed", "ended, unreconciled", "outcome reported, unknown", "attempt open",
+      "reconciled", "awaiting approval", "approved, no attempt", "approval rejected", "declared",
+      "not recorded", "refused: ", "refusedish", "",
+    ];
+    expect(operationAttention(quiet.map((state, index) => row(`op-${index}`, state)))).toEqual([]);
+  });
+
+  it("ranks a silent attempt with the claims and a refusal after the pending approvals", () => {
+    const items = deriveAttentionQueue({
+      ...EMPTY,
+      operations: [row("op-r", "refused: stale_epoch"), row("op-s", SILENT_ATTEMPT)],
+    });
+    expect(items.map((item) => item.kind)).toEqual(["operation_silent", "operation_refused"]);
+    expect(deriveAttentionQueue({ ...EMPTY }).some((item) => item.kind.startsWith("operation"))).toBe(false);
   });
 });

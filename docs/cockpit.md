@@ -623,6 +623,19 @@ tasks, pending relay approvals, and coordination waits. Filter the queue by
 critical, warning or information evidence, then open the exact agent, task, or route named by
 a row.
 
+With `--feeds-db`, the queue also reads the newest 200 declared operations from
+`/operations.json`, every 30 seconds, and adds two kinds of row:
+- **operation refused:** one per operation whose state is `refused: <answer>`.
+  The row names the hub's answer exactly, such as `refused: not_approved`.
+- **operation silent:** one per operation whose state is `attempt open, silent`.
+  The row says that an open attempt ends only by its report, an observed effect
+  or a seal, and never calls it ended.
+
+A verified operation, or one in any other state, gives no row. **open
+operation** opens the operations tab on that operation's chain. An operation
+older than the newest 200 is not looked at here; the operations tab pages back
+to it.
+
 With `synapse dashboard --attention-store /path/to/queue.sqlite3`, the same
 panel also shows owner-local approval, delivery, recovery and quota alerts
 from [`synapse attention`](attention.md). Their snooze and resolution state is
@@ -801,7 +814,9 @@ processes.
   never shown as a success, an attempt past its deadline is never shown as
   ended, a field the row does not hold reads "not recorded", and custody reads
   as the feed states it. A scope narrows the list; one chosen chain is shown
-  whole, and the tab says so.
+  whole, and the tab says so. The chosen operation is part of the address
+  (`?panel=operations&operation=<id>`), so a link opens that chain, and Back and
+  Forward return to it.
 - **The approval view.** For an operation that awaits approval, the chain
   shows the intent the declaration kept, field by field in canonical order, as
   the dashboard encoded it. Beside it are the digest the declaration recorded

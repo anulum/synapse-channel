@@ -118,6 +118,10 @@ across all five interface languages and both display densities.
   its kept intent field by field, the recorded and the recomputed digest, the
   requester's words as unchecked text, and the copyable `synapse approvals
   decide` commands only when the digests are equal; the cockpit never approves.
+  The chosen operation is in the address (`?panel=operations&operation=<id>`).
+  The attention queue adds a row for each refused operation, with the hub's exact
+  answer, and for each silent attempt, from the newest 200 declared operations;
+  each row opens its chain.
 - **Causality** — recorded causes/effects traces for a sequence or task, with
   per-hub clustering; log rows and task chips hop straight into it.
 
