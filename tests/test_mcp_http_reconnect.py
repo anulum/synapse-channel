@@ -29,6 +29,13 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.mcp.http_application import build_http_mcp_app
 
+_OPERATION_TIMEOUT = 5.0
+"""Budget of one MCP tool call, which an offline call waits out.
+
+The answered call after each restart must fit in it on a loaded host: a declare
+there took 1.7 seconds at load 10, over the 0.5 seconds this test once allowed.
+"""
+
 
 async def test_https_principals_recover_without_replaying_offline_mutations(tmp_path: Path) -> None:
     """Existing SDK sessions and principal ownership survive two private outages."""
@@ -46,7 +53,7 @@ async def test_https_principals_recover_without_replaying_offline_mutations(tmp_
             hub_uri=f"ws://{host}:{port}",
             allowed_hosts=["127.0.0.1:*"],
             allowed_origins=[],
-            operation_timeout=0.5,
+            operation_timeout=_OPERATION_TIMEOUT,
         )
         async with https_server(app, tmp_path) as (url, tls):
             session_id = SessionIdRecorder()
