@@ -83,7 +83,7 @@ def _isolated_editor_process(marker: Path, *, ignore_term: bool) -> subprocess.P
         f"pathlib.Path({str(marker)!r}).write_text(str(child.pid),encoding='utf-8');"
         "time.sleep(60)"
     )
-    return subprocess.Popen(  # nosec B603
+    return subprocess.Popen(
         [sys.executable, "-c", parent],
         start_new_session=True,
         text=True,
