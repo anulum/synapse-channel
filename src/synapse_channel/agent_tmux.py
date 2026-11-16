@@ -29,11 +29,11 @@ import json
 import os
 
 # Jitter spreads fleet-wide retry timing; it is not used for any security purpose.
-import random  # nosec B311
+import random  # nosec B311 # jitter for retry timing, not a secret
 import shlex
 
 # Tmux and synapse subprocesses are this module's controlled process boundary.
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
