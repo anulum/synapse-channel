@@ -50,60 +50,74 @@ asyncio.run(main())
 """
 
 
+def _queue_v3_follow_up(path: Path) -> str:
+    """Write one queued v3 follow-up and return its operation key."""
+    frame = {
+        "protocol_version": 3,
+        "target": "P/receiver",
+        "request_id": "rollback-request",
+        "idempotency_key": "rollback-key",
+        "target_incarnation": "a" * 64,
+        "mode": "follow_up",
+        "task_id": "rollback-task",
+        "body": "Preserve this queued delivery",
+        "deadline": 160.0,
+    }
+    intent = parse_delivery_intent(frame, sender="P/author", origin_hub="rollback-hub", now=100.0)
+    with EventStore(path) as store:
+        write = store.delivery.create(
+            intent,
+            selected_mode="follow_up",
+            quality="native",
+            offer={
+                "type": "delivery_offer",
+                "operation_key": intent.operation_key,
+                "notification_id": f"delivery:{intent.operation_key}:1",
+                "target": intent.target,
+                "target_incarnation": intent.target_incarnation,
+            },
+        )
+        assert write.record.stage == "queued"
+    return intent.operation_key
+
+
+def _run_released_hub(old_python: Path, path: Path, temporary: str) -> None:
+    """Run the isolated interpreter and refuse a non-zero exit."""
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+    result = subprocess.run(  # explicit interpreter and fixed code; no shell
+        [str(old_python), "-c", OLD_HUB, str(path)],
+        cwd=temporary,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    if result.returncode:
+        raise RuntimeError(f"released 0.99.26 hub failed: {result.stderr}")
+
+
+async def _expire_preserved_work(path: Path, operation_key: str) -> None:
+    """Require the queued record, expire it once, and verify the replay."""
+    with EventStore(path) as restored:
+        record = restored.delivery.get(operation_key)
+        assert record is not None and record.stage == "queued", "old hub changed v3 work"
+        hub = SynapseHub(journal=restored, hub_id="rollback-hub")
+        assert await expire_due_deliveries(hub) == 1
+        record = restored.delivery.get(operation_key)
+        assert record is not None and record.stage == "expired"
+        restored.delivery.verify_replay()
+        hub.close()
+
+
 async def _verify(old_python: Path) -> None:
+    """Queue v3 work, run the released hub, then expire that preserved work."""
     with tempfile.TemporaryDirectory(prefix="synapse-rollback-") as temporary:
         path = Path(temporary) / "hub.db"
-        frame = {
-            "protocol_version": 3,
-            "target": "P/receiver",
-            "request_id": "rollback-request",
-            "idempotency_key": "rollback-key",
-            "target_incarnation": "a" * 64,
-            "mode": "follow_up",
-            "task_id": "rollback-task",
-            "body": "Preserve this queued delivery",
-            "deadline": 160.0,
-        }
-        intent = parse_delivery_intent(
-            frame, sender="P/author", origin_hub="rollback-hub", now=100.0
-        )
-        with EventStore(path) as store:
-            write = store.delivery.create(
-                intent,
-                selected_mode="follow_up",
-                quality="native",
-                offer={
-                    "type": "delivery_offer",
-                    "operation_key": intent.operation_key,
-                    "notification_id": f"delivery:{intent.operation_key}:1",
-                    "target": intent.target,
-                    "target_incarnation": intent.target_incarnation,
-                },
-            )
-            assert write.record.stage == "queued"
-
-        environment = dict(os.environ)
-        environment.pop("PYTHONPATH", None)
-        result = subprocess.run(  # explicit interpreter and fixed code; no shell
-            [str(old_python), "-c", OLD_HUB, str(path)],
-            cwd=temporary,
-            env=environment,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=15,
-        )
-        if result.returncode:
-            raise RuntimeError(f"released 0.99.26 hub failed: {result.stderr}")
-
-        with EventStore(path) as restored:
-            record = restored.delivery.get(intent.operation_key)
-            assert record is not None and record.stage == "queued", "old hub changed v3 work"
-            hub = SynapseHub(journal=restored, hub_id="rollback-hub")
-            assert await expire_due_deliveries(hub) == 1
-            record = restored.delivery.get(intent.operation_key)
-            assert record is not None and record.stage == "expired"
-            restored.delivery.verify_replay()
+        operation_key = _queue_v3_follow_up(path)
+        _run_released_hub(old_python, path, temporary)
+        await _expire_preserved_work(path, operation_key)
         print("real 0.99.26 rollback preserved queued v3 work; 0.99.27 roll-forward expired it")
 
 
