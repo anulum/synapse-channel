@@ -65,7 +65,7 @@ def _receipt(**fields: object) -> RunReceipt:
         "fuel_used": 2,
         "reason": "",
     }
-    base.update(fields)  # type: ignore[typeddict-item]
+    base.update(fields)  # type: ignore[typeddict-item] # fields vary
     return base
 
 
@@ -101,7 +101,7 @@ def _preflight_report(**fields: object) -> PreflightReport:
         "ok": True,
         "reason": "",
     }
-    base.update(fields)  # type: ignore[typeddict-item]
+    base.update(fields)  # type: ignore[typeddict-item] # fields vary
     return base
 
 
