@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import socket
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any
@@ -86,6 +87,35 @@ def _rows(db_path: Path, *kinds: str) -> list[tuple[str, dict[str, Any]]]:
         store.close()
 
 
+def _applied_rows(db_path: Path) -> int:
+    """Count applied key-set rows the running hub has already committed."""
+    connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=1.0)
+    try:
+        row = connection.execute(
+            "SELECT COUNT(*) FROM events WHERE kind = ?",
+            (MESSAGE_KEY_SET_APPLIED_KIND,),
+        ).fetchone()
+    finally:
+        connection.close()
+    assert row is not None
+    return int(row[0])
+
+
+async def _wait_until_the_hub_applies_the_key_set(db_path: Path, count: int) -> None:
+    """Wait until the hub's journal records ``count`` applied key sets."""
+    deadline = time.monotonic() + 8.0
+    last = -1
+    while time.monotonic() < deadline:
+        try:
+            last = _applied_rows(db_path)
+        except sqlite3.Error:
+            last = -1
+        if last >= count:
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"the hub had applied {last} key sets; this step needs {count}")
+
+
 def _hub_args(key_set: Path) -> list[str]:
     return ["--require-message-auth", "--message-auth-key-set", str(key_set)]
 
@@ -136,7 +166,9 @@ async def test_replacing_only_a_secret_file_rotates_the_key_in_a_running_hub(
     manifest = key_set.read_bytes()
     with isolated_hub(tmp_path, extra_args=_hub_args(key_set)) as hub:
         first = await _claim(hub.uri, "P/a", "key-a", "first-secret", "T1")
+        applied_before_rotation = _applied_rows(hub.db_path)
         write_secret(tmp_path, "key-a", "second-secret")
+        await _wait_until_the_hub_applies_the_key_set(hub.db_path, applied_before_rotation + 1)
         rotated = [
             await _claim(hub.uri, "P/a", "key-a", "first-secret", "T2"),
             await _claim(hub.uri, "P/a", "key-a", "second-secret", "T3"),
@@ -144,7 +176,9 @@ async def test_replacing_only_a_secret_file_rotates_the_key_in_a_running_hub(
         replace_owner_only(tmp_path / "key-a.key", "\n")  # empty: not a usable secret
         time.sleep(_TWO_INTERVALS + 0.5)
         kept = await _claim(hub.uri, "P/a", "key-a", "second-secret", "T4")
+        applied_before_repair = _applied_rows(hub.db_path)
         write_secret(tmp_path, "key-a", "third-secret")
+        await _wait_until_the_hub_applies_the_key_set(hub.db_path, applied_before_repair + 1)
         repaired = await _claim(hub.uri, "P/a", "key-a", "third-secret", "T5")
         db_path = hub.db_path
     assert first == "granted"
