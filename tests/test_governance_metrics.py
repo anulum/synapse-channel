@@ -116,6 +116,7 @@ class TestMixedAndRobustness:
     def test_unknown_event_types_are_ignored(self) -> None:
         # A richer collector may pass a superset; a type this computation does not
         # recognise must be skipped, not counted or crash.
-        metrics = compute_governance_metrics([object(), EditEvent("a.py", True)])  # type: ignore[list-item]
+        events = [object(), EditEvent("a.py", True)]
+        metrics = compute_governance_metrics(events)  # type: ignore[arg-type] # not an edit
         assert metrics.total_edits == 1
         assert metrics.clean is True
