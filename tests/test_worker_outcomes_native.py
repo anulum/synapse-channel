@@ -17,12 +17,15 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from synapse_channel.execution_outcome import OutcomeState
 from synapse_channel.worker_outcome import WorkerExit, WorkerObservation, read_worker_outcome
 from synapse_channel.worker_session import run_worker_session
+
+_REFUSAL = "^worker outcome record changed; inquire before continuing$"
 
 
 def private_environment(root: Path) -> dict[str, str]:
@@ -274,12 +277,25 @@ def test_actual_tmux_executable_refusal_preserves_unknown_report(tmp_path: Path)
 
 
 def test_provider_changed_report_is_preserved_and_never_relaunched(tmp_path: Path) -> None:
-    """A real provider changes its report before exit; final publication refuses overwrite."""
+    """A provider changes its report after its start is recorded; the final publication refuses.
+
+    The provider waits for the launch record that names its own process. The
+    launcher writes it only after its ``provider_started`` publication returned,
+    so the change is seen only by the publication at exit. A change the start's
+    own publication sees is the next test's case.
+    """
     env = private_environment(tmp_path)
     report, effect = tmp_path / "private" / "outcome.json", tmp_path / "effect"
     program = (
-        "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('UNTRUSTED_REPLACEMENT'); "
-        "pathlib.Path(sys.argv[2]).write_text('one effect')"
+        "import os,pathlib,sys,time\n"
+        "state = pathlib.Path(os.environ['XDG_STATE_HOME'])\n"
+        "records = state / 'synapse' / 'launch-records'\n"
+        "deadline = time.monotonic() + 20\n"
+        "while not list(records.glob(f'*__{os.getpid()}__*.json')):\n"
+        "    if time.monotonic() > deadline: sys.exit(3)\n"
+        "    time.sleep(0.01)\n"
+        "pathlib.Path(sys.argv[1]).write_text('UNTRUSTED_REPLACEMENT')\n"
+        "pathlib.Path(sys.argv[2]).write_text('one effect')\n"
     )
     launched = subprocess.run(
         launch_arguments(report, program, str(report), str(effect)),
@@ -287,13 +303,50 @@ def test_provider_changed_report_is_preserved_and_never_relaunched(tmp_path: Pat
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=60,
     )
     assert launched.returncode == 2
     assert "record changed; inquire before continuing" in launched.stdout
     assert "UNTRUSTED_REPLACEMENT" not in launched.stdout + launched.stderr
     assert report.read_text() == "UNTRUSTED_REPLACEMENT"
     assert effect.read_text() == "one effect"
+
+
+def test_a_report_changed_before_the_start_is_recorded_stops_the_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The start's own publication refuses a changed report, and the provider is stopped.
+
+    The report is changed right after the provider process exists and before the
+    launcher records ``provider_started``, so that publication sees the change. The
+    changed report is kept, the provider is stopped and reaped before its effect,
+    and nothing is launched again.
+    """
+    report, effect = tmp_path / "private" / "outcome.json", tmp_path / "effect"
+    real_popen = subprocess.Popen
+    started: list[subprocess.Popen[bytes]] = []
+
+    def popen_then_change_the_report(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+        provider: subprocess.Popen[bytes] = real_popen(*args, **kwargs)
+        started.append(provider)
+        report.write_text("UNTRUSTED_REPLACEMENT")
+        return provider
+
+    monkeypatch.setattr(subprocess, "Popen", popen_then_change_the_report)
+    program = "import pathlib,sys,time; time.sleep(30); pathlib.Path(sys.argv[1]).write_text('x')"
+    with pytest.raises(ValueError, match=_REFUSAL):
+        run_worker_session(
+            identity="TEST/worker",
+            command=[sys.executable, "-c", program, str(effect)],
+            terminal_tmux="off",
+            arm=False,
+            environ=private_environment(tmp_path),
+            cwd=tmp_path,
+            outcome_file=report,
+        )
+    assert report.read_text() == "UNTRUSTED_REPLACEMENT"
+    assert len(started) == 1 and started[0].poll() is not None
+    assert not effect.exists()
 
 
 @pytest.mark.parametrize("mode", ["query_launch", "query_output", "empty_identity"])
