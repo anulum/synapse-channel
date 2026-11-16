@@ -194,8 +194,8 @@ async def test_mcp_memory_recall_wrong_key_fails_closed(tmp_path: Path) -> None:
     assert str(db) not in out
 
 
-def _stub_bridge_for_route_task() -> SynapseHubBridge:
-    """Shipped bridge with hub snapshot replies faked (store open still real)."""
+def _route_task_replies() -> list[dict[str, Any]]:
+    """Return the board, manifest, and state snapshots a route read expects."""
     from synapse_channel.core.protocol import MessageType
 
     task = {
@@ -204,27 +204,28 @@ def _stub_bridge_for_route_task() -> SynapseHubBridge:
         "description": "Improve deterministic route fallback.",
         "status": "open",
     }
-    replies: list[dict[str, Any]] = [
-        {
-            "type": MessageType.BOARD_SNAPSHOT,
-            "board": {"tasks": [task]},
-        },
+    return [
+        {"type": MessageType.BOARD_SNAPSHOT, "board": {"tasks": [task]}},
         {"type": MessageType.MANIFEST_SNAPSHOT, "manifest": []},
         {"type": MessageType.STATE_SNAPSHOT, "snapshot": {"resources": []}},
     ]
 
-    class _Agent:
-        async def request_board(self) -> None:
-            return None
 
-        async def request_manifest(self) -> None:
-            return None
+class _RouteTaskAgent:
+    """Answer the three hub reads a route uses, without a live connection."""
 
-        async def request_state(self) -> None:
-            return None
+    async def request_board(self) -> None:
+        return None
 
-    bridge = SynapseHubBridge.__new__(SynapseHubBridge)
-    bridge.agent = _Agent()  # type: ignore[assignment] # probe double
+    async def request_manifest(self) -> None:
+        return None
+
+    async def request_state(self) -> None:
+        return None
+
+
+def _install_canned_replies(bridge: SynapseHubBridge, replies: list[dict[str, Any]]) -> None:
+    """Serve the canned snapshots in order when the route predicate accepts them."""
     idx = {"i": 0}
 
     async def _await_reply(
@@ -245,6 +246,13 @@ def _stub_bridge_for_route_task() -> SynapseHubBridge:
         return await bridge._await_reply(predicate, request)
 
     bridge.advisory_actions = McpAdvisoryActions(bridge.agent, await_reply)
+
+
+def _stub_bridge_for_route_task() -> SynapseHubBridge:
+    """Shipped bridge with hub snapshot replies faked (store open still real)."""
+    bridge = SynapseHubBridge.__new__(SynapseHubBridge)
+    bridge.agent = _RouteTaskAgent()  # type: ignore[assignment] # probe double
+    _install_canned_replies(bridge, _route_task_replies())
     return bridge
 
 
