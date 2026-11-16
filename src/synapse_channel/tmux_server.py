@@ -36,7 +36,7 @@ panes stay children of the server in the original control group.
 from __future__ import annotations
 
 import os
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
