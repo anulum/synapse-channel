@@ -36,7 +36,7 @@ and participants), then the dashboard:
 synapse dashboard --port 8765
 # front door (cockpit): http://127.0.0.1:8765/
 # capabilities JSON: http://127.0.0.1:8765/capabilities.json
-# not served without --feeds-db: reliability, events, metrics, state-at, merkle-proof, health-anomalies, causality, findings, sessions, waits, operator-actions, receipts, postmortem
+# not served without --feeds-db: reliability, events, metrics, state-at, merkle-proof, health-anomalies, causality, findings, sessions, waits, operator-actions, receipts, postmortem, operations
 # not served without --federation-store: federation
 # not served without --attention-store: attention
 # not served without --scope-groups: group scopes

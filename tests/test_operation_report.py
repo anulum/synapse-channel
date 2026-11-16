@@ -12,20 +12,14 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 import operation_attempt_scenario as scene
-from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, running_hub
+from operation_report_store import connected_seats, declared, journal_every_state, policy
 from synapse_channel import cli
-from synapse_channel.core.acl import OPERATION_SEAL, AclPolicy, AclRule
-from synapse_channel.core.approvals import APPROVAL_NOTE_KIND, format_approval_note
-from synapse_channel.core.attempt_markers import LANDED, AttemptMarker
-from synapse_channel.core.execution_outcome import OutcomeState
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_report import (
@@ -35,119 +29,12 @@ from synapse_channel.core.operation_report import (
 )
 from synapse_channel.core.persistence import EventStore
 
-RECOVERY = "R/recovery"
-
-
-def _policy() -> AclPolicy:
-    rules = list(scene.policy().rules)
-    rules.append(AclRule(OPERATION_SEAL, "claim", "T*", "R", "the recovery role seals"))
-    return AclPolicy(rules)
-
-
-@asynccontextmanager
-async def _seats(uri: str) -> AsyncIterator[dict[str, AgentHandle]]:
-    names = (scene.WORKER, scene.REVIEWER, scene.APPROVER, scene.CHECKER, RECOVERY)
-    handles = {name: await connect_agent(name, uri) for name in names}
-    try:
-        yield handles
-    finally:
-        await close_agents(*handles.values())
-
-
-async def _declared(
-    seats: dict[str, AgentHandle], epoch: int, operation: str, **intent: Any
-) -> str:
-    """Declare ``operation`` with an intent and record the reviewer's accepted verdict on it."""
-    digest = await scene.declare(
-        seats[scene.WORKER], epoch, operation_id=operation, intent=scene.statement(**intent)
-    )
-    await scene.review(seats[scene.REVIEWER], digest)
-    return digest
-
-
-async def _decide(seats: dict[str, AgentHandle], digest: str, state: str, reason: str = "") -> None:
-    text = format_approval_note(subject=f"sha256:{digest}", state=state, reason=reason)
-    await scene.note(seats[scene.APPROVER], APPROVAL_NOTE_KIND, text)
-
-
-async def _opened(seats: dict[str, AgentHandle], epoch: int, operation: str, key: str) -> str:
-    """Declare, review, approve and open one attempt of ``operation``; return its attempt id."""
-    digest = await _declared(seats, epoch, operation)
-    await scene.approve(seats[scene.APPROVER], digest)
-    answer = await scene.attempt(seats[scene.WORKER], epoch, digest, key, operation_id=operation)
-    assert answer["answer"] == "approved_fresh", answer
-    return str(answer["attempt_id"])
-
-
-async def _record(handle: AgentHandle, fields: dict[str, Any]) -> None:
-    result = await scene.record(handle, **fields)
-    assert result["status"] == "accepted", result
-
-
-async def _attempt_states(seats: dict[str, AgentHandle], epoch: int) -> None:
-    """Journal one operation in each attempt state through the hub's own requests."""
-    worker, checker = seats[scene.WORKER], seats[scene.CHECKER]
-    await _opened(seats, epoch, "op-verified", "v1")
-    await _record(worker, scene.outcome(OutcomeState.CONFIRMED_DONE, "op-verified"))
-    await _record(checker, scene.verification("observed", "verified", "op-verified"))
-    await _opened(seats, epoch, "op-ended", "e1")
-    await _record(worker, scene.outcome(OutcomeState.CONFIRMED_DONE, "op-ended"))
-    await _opened(seats, epoch, "op-reconciled", "r1")
-    await _record(worker, scene.outcome(OutcomeState.NOT_STARTED, "op-reconciled"))
-    await _record(checker, scene.verification("absent", "not_verified", "op-reconciled"))
-    await _opened(seats, epoch, "op-unknown", "u1")
-    await _record(worker, scene.outcome(OutcomeState.STARTED, "op-unknown"))
-    open_digest = await _declared(seats, epoch, "op-open")
-    await scene.approve(seats[scene.APPROVER], open_digest)
-    await scene.attempt(worker, epoch, open_digest, "o1", operation_id="op-open")
-    refused = await scene.attempt(worker, epoch, open_digest, "o2", operation_id="op-open")
-    assert refused["answer"] == "attempt_exists", refused
-    sealed_digest = await _declared(seats, epoch, "op-sealed")
-    await scene.approve(seats[scene.APPROVER], sealed_digest)
-    opened = await scene.attempt(worker, epoch, sealed_digest, "s1", operation_id="op-sealed")
-    marker = AttemptMarker("op-sealed", str(opened["attempt_id"]), sealed_digest)
-    seal = {
-        "attempt_id": opened["attempt_id"],
-        "marker_ref": marker.ref,
-        "object_format": "sha1",
-        "marker_object": marker.objects("sha1").sealed,
-        "observation": LANDED,
-    }
-    fields = {"record": "seal", "task_id": scene.TASK, "operation_id": "op-sealed", "seal": seal}
-    await _record(seats[RECOVERY], fields)
-
-
-async def _word_states(seats: dict[str, AgentHandle], epoch: int) -> None:
-    """Journal one operation in each state that has no attempt."""
-    worker = seats[scene.WORKER]
-    refused = await _declared(seats, epoch, "op-refused")
-    await scene.attempt(worker, epoch, refused, "f1", operation_id="op-refused")
-    later = await _declared(seats, epoch, "op-refused-then-approved")
-    await scene.attempt(worker, epoch, later, "f2", operation_id="op-refused-then-approved")
-    await _decide(seats, later, "approved", "line one\nforged \x1b[31mred")
-    await _decide(seats, await _declared(seats, epoch, "op-awaiting"), "requested")
-    await _decide(seats, await _declared(seats, epoch, "op-approved"), "approved")
-    await _decide(seats, await _declared(seats, epoch, "op-rejected"), "rejected", "no")
-    await scene.declare(worker, epoch, operation_id="op-declared")
-
 
 @pytest.fixture(scope="module")
 def store_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """One real hub journal holding an operation in every state the report gives."""
     path = tmp_path_factory.mktemp("operation-report") / "hub.db"
-
-    async def journal() -> None:
-        store = EventStore(path)
-        try:
-            hub = SynapseHub(journal=store, acl_policy=_policy())
-            async with running_hub(hub) as (_hub, uri), _seats(uri) as seats:
-                epoch = await scene.claim(seats[scene.WORKER])
-                await _attempt_states(seats, epoch)
-                await _word_states(seats, epoch)
-        finally:
-            store.close()
-
-    asyncio.run(journal())
+    journal_every_state(path)
     return path
 
 
@@ -256,8 +143,8 @@ def test_a_declaration_the_hubs_reader_skips_gives_no_attempt_rather_than_a_fail
 async def test_an_open_attempt_past_its_deadline_is_silent_and_never_ended(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "hub.db")
     try:
-        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_hub, uri):
-            async with _seats(uri) as seats:
+        async with running_hub(SynapseHub(journal=store, acl_policy=policy())) as (_hub, uri):
+            async with connected_seats(uri) as seats:
                 epoch = await scene.claim(seats[scene.WORKER])
                 deadline = int(time.time()) + 3
                 await _opened_with_deadline(seats, epoch, deadline)
@@ -273,7 +160,7 @@ async def test_an_open_attempt_past_its_deadline_is_silent_and_never_ended(tmp_p
 
 
 async def _opened_with_deadline(seats: dict[str, AgentHandle], epoch: int, deadline: int) -> None:
-    digest = await _declared(seats, epoch, "op-silent", deadline=deadline)
+    digest = await declared(seats, epoch, "op-silent", deadline=deadline)
     await scene.approve(seats[scene.APPROVER], digest)
     answer = await scene.attempt(seats[scene.WORKER], epoch, digest, "q1", operation_id="op-silent")
     assert answer["answer"] == "approved_fresh", answer

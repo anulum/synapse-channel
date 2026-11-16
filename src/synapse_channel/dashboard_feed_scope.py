@@ -82,12 +82,18 @@ def _alert_place(row: Mapping[str, Any]) -> tuple[str, str]:
     return "", _text(row.get("subject"))
 
 
+def _operation_place(row: Mapping[str, Any]) -> tuple[str, str]:
+    """Return an operation's declarer, the live claim holder, and the task it was declared on."""
+    return _text(row.get("declarer")), _text(row.get("task_id"))
+
+
 FILTERED_FEEDS: dict[str, tuple[str, Place, str]] = {
     "/events.json": ("events", _event_place, ""),
     "/findings.json": ("findings", _finding_place, ""),
     "/receipts.json": ("receipts", _receipt_place, "receipt_count"),
     "/waits.json": ("waits", _wait_place, "wait_count"),
     "/attention.json": ("alerts", _alert_place, ""),
+    "/operations.json": ("operations", _operation_place, ""),
 }
 """Each filtered feed's rows key, how a row is placed, and the count kept equal to its rows."""
 
@@ -120,6 +126,10 @@ def _filtered(
 ) -> dict[str, Any]:
     """Return the document with only the rows of ``scope`` and the counts of the cut."""
     key, place, count_key = feed
+    if key not in document:
+        # One named record, such as one operation's chain, is shown whole.
+        reason = "one record is named, and it is shown whole"
+        return {**document, "scope": {"scope": scope.text, "applied": False, "reason": reason}}
     rows = [row for row in document.get(key) or [] if isinstance(row, Mapping)]
     kept = [row for row in rows if _holds(scope, *place(row), projects)]
     narrowed = {**document, key: kept}

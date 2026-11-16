@@ -47,6 +47,7 @@ from synapse_channel.dashboard_feed_serving import (
     serve_health_anomalies,
     serve_merkle_proof,
     serve_metrics_feed,
+    serve_operations,
     serve_operator_actions,
     serve_postmortem,
     serve_public_cockpit_asset,
@@ -144,6 +145,7 @@ from synapse_channel.dashboard_hub_snapshot import SnapshotMapping as SnapshotMa
 from synapse_channel.dashboard_hub_snapshot import (
     fetch_dashboard_snapshot as fetch_dashboard_snapshot,
 )
+from synapse_channel.dashboard_operations_feed import OPERATIONS_PATH
 from synapse_channel.dashboard_operator import WriteRateLimiter
 from synapse_channel.dashboard_operator_writes import (
     execute_relay,
@@ -508,7 +510,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         """Compute a feed's answer under the request's ``scope``, or ``None`` for no feed.
 
         A malformed scope is refused with 400 before the feed is built. The
-        scope keeps the rows of the five event-backed feeds that belong to it,
+        scope keeps the rows that belong to it in each feed that places a row
+        (``FILTERED_FEEDS``),
         and every other feed says that it was not applied
         (:mod:`synapse_channel.dashboard_feed_scope`).
         """
@@ -563,6 +566,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return serve_attention(self.attention_store)
         if path == POSTMORTEM_PATH:
             return serve_postmortem(db, self.reliability_db_key_file, query)
+        if path == OPERATIONS_PATH:
+            return serve_operations(db, self.reliability_db_key_file, query)
         if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
             return serve_cockpit_dist(self.cockpit_dist, COCKPIT_DIST_PREFIX, path)
         return None

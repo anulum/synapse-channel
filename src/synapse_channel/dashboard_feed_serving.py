@@ -29,6 +29,12 @@ from typing import Any, Final
 from urllib.parse import parse_qs
 
 from synapse_channel.core.reliability import reliability_to_json, run_reliability_report
+from synapse_channel.dashboard_operations_feed import (
+    DEFAULT_OPERATIONS_LIMIT,
+    MAX_OPERATION_ID_LENGTH,
+    build_operation_chain_feed,
+    build_operations_feed,
+)
 from synapse_channel.dashboard_postmortem_feed import (
     MAX_POSTMORTEM_TASK_ID_LENGTH,
     build_postmortem_feed,
@@ -137,6 +143,7 @@ OPTIONAL_SURFACES: Final[tuple[OptionalSurface, ...]] = (
     OptionalSurface("operator-actions", "/operator-actions.json", "--feeds-db"),
     OptionalSurface("receipts", "/receipts.json", "--feeds-db"),
     OptionalSurface("postmortem", "/postmortem.json", "--feeds-db"),
+    OptionalSurface("operations", "/operations.json", "--feeds-db"),
     OptionalSurface("federation", "/federation.json", "--federation-store"),
     OptionalSurface("attention", "/attention.json", "--attention-store"),
 )
@@ -381,6 +388,40 @@ def serve_postmortem(db: Path | None, key_file: Path | None, query: str) -> Feed
             f"{MAX_POSTMORTEM_TASK_ID_LENGTH} characters",
         )
     return _store_feed(lambda: build_postmortem_feed(db, task_id, key_file=key_file))
+
+
+def serve_operations(db: Path | None, key_file: Path | None, query: str) -> FeedResponse:
+    """Serve the declared operations, newest first, or one operation's chain from ``?operation=ID``.
+
+    ``before`` (an exclusive declaration-sequence cursor) pages back and ``limit``
+    caps a page. ``operation`` is one non-empty bounded id. A malformed number, a
+    cursor below one, or a bad id is a 400 naming the parameter, refused before the
+    store is touched.
+    """
+    if db is None:
+        return absent_surface("operations")
+    params = parse_qs(query, keep_blank_values=True)
+    if "operation" in params:
+        values = params["operation"]
+        operation = values[0].strip() if len(values) == 1 else ""
+        if not operation or len(operation) > MAX_OPERATION_ID_LENGTH:
+            return plain_response(
+                HTTPStatus.BAD_REQUEST,
+                "operation must be one non-empty identifier of at most "
+                f"{MAX_OPERATION_ID_LENGTH} characters",
+            )
+        return _store_feed(lambda: build_operation_chain_feed(db, operation, key_file=key_file))
+    try:
+        limit = bounded_query_int(params.get("limit", [str(DEFAULT_OPERATIONS_LIMIT)])[0])
+        before_raw = params.get("before")
+        before = None if before_raw is None else bounded_query_int(before_raw[0])
+    except ValueError:
+        return plain_response(HTTPStatus.BAD_REQUEST, "before and limit must be integers")
+    if before is not None and before < 1:
+        return plain_response(HTTPStatus.BAD_REQUEST, "before must be at least 1")
+    return _store_feed(
+        lambda: build_operations_feed(db, before=before, limit=limit, key_file=key_file)
+    )
 
 
 def serve_events(db: Path | None, query: str) -> FeedResponse:

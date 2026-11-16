@@ -254,10 +254,10 @@ def _add_feed_store_arguments(dashboard: argparse.ArgumentParser) -> None:
         type=Path,
         default=None,
         help=(
-            "Hub event store powering 13 read-only feeds, including "
+            "Hub event store powering 14 read-only feeds, including "
             "/reliability.json (audit signals, not scores), /events.json (raw log "
             "tail), /postmortem.json?task=ID (replayable task evidence), "
-            "/receipts.json, /causality.json, /operator-actions.json, "
+            "/receipts.json, /causality.json, /operator-actions.json, /operations.json, "
             "/sessions.json and /findings.json (recorded findings, newest first). "
             "Read-only; without it each endpoint reports its absence with 404. "
             "--reliability-db is the same flag's original name."

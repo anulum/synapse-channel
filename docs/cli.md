@@ -567,7 +567,7 @@ Studio projection of a peer scope (`/studio.json?scope=peer:<HUB>`) also says
 `"advisory": true` and carries the `peer` block. A peer scope grants nothing and
 carries no write: the hub that owns the work is the only authority for it.
 
-The same `scope` works on the feeds. Five of them keep only the rows of the scope:
+The same `scope` works on the feeds. Six of them keep only the rows of the scope:
 
 | Feed | A row belongs by |
 | --- | --- |
@@ -576,6 +576,7 @@ The same `scope` works on the feeds. Five of them keep only the rows of the scop
 | `/findings.json` | the identity the hub attested for it (`verified_at_source.by`) |
 | `/waits.json` | its task only (its `who` is an owner or a creator) |
 | `/attention.json` | its `subject`, when that is a task |
+| `/operations.json` | its declarer, the claim holder who declared it, or the task it was declared on; one named operation's chain is shown whole, with `applied: false` |
 
 A task's scope is the `project` field the durable log declared for it, so these
 feeds need `--feeds-db`; without it, `/attention.json` keeps its rows and says
@@ -698,6 +699,13 @@ configured principal grants as protected dashboard data:
   `note` naming which absence it is: an event recorded but outside the
   coordination causal graph (chatter carries no causal edges), or no
   event at that sequence at all;
+- `/operations.json` — the declared operations as `synapse operation report`
+  reads them: newest declaration first, one bounded page at a time (`before`,
+  `limit`, at most 200), each with its state, task, declarer and latest
+  journalled row; `?operation=ID` returns that operation's whole chain, or
+  `present: false` when nothing is recorded under the id. An executor's report
+  is never a success without a verification, and custody is "not recorded
+  here";
 - `/postmortem.json?task=ID` — the same replayable task evidence as
   `synapse postmortem`, projected as JSON for cockpit links. The identifier is
   required and bounded before storage access; a task with no matching events

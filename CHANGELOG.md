@@ -45,6 +45,9 @@ start to finish and makes the cockpit the dashboard's front door.
 
 ### Added
 
+- `/operations.json` serves the declared operations from the dashboard's event store, newest first
+  in bounded pages, each with its state and latest journalled row, and `?operation=ID` serves one
+  operation's whole chain; a `scope` keeps the operations of its declarer or task.
 - `synapse operation report DB --operation-id ID` prints one operation's chain from the hub's event
   store, without the hub: the declaration with its intent digest checked, the approval notes on it, the
   hub's answers, the executor's reports, the verifications and the seals, each with its journal

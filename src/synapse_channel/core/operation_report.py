@@ -154,6 +154,19 @@ class OperationReport:
     custody: str = CUSTODY
 
 
+def _read_events(db_path: str | Path, key_file: str | Path | None) -> tuple[StoredEvent, ...]:
+    """Read every row of the hub event store at ``db_path``; refuse a store that does not exist."""
+    path = Path(db_path)
+    if not path.exists():
+        msg = f"missing event store: {path}"
+        raise ValueError(msg)
+    store = EventStore(path, key_file=key_file)
+    try:
+        return tuple(store.read_all())
+    finally:
+        store.close()
+
+
 def run_operation_report(
     db_path: str | Path, operation_id: str, *, key_file: str | Path | None = None
 ) -> OperationReport:
@@ -164,34 +177,79 @@ def run_operation_report(
     ValueError
         If the event store does not exist.
     """
-    path = Path(db_path)
-    if not path.exists():
-        msg = f"missing event store: {path}"
-        raise ValueError(msg)
-    store = EventStore(path, key_file=key_file)
-    try:
-        events = tuple(store.read_all())
-    finally:
-        store.close()
-    return build_operation_report(operation_id, events)
+    return build_operation_report(operation_id, _read_events(db_path, key_file))
+
+
+def run_operation_reports(
+    db_path: str | Path, *, key_file: str | Path | None = None
+) -> tuple[OperationReport, ...]:
+    """Read the report of every declared operation in the hub event store at ``db_path``.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist.
+    """
+    return list_operation_reports(_read_events(db_path, key_file))
 
 
 def build_operation_report(operation_id: str, events: Sequence[StoredEvent]) -> OperationReport:
     """Fold ``operation_id``'s rows in ``events`` into its report."""
-    as_of_seq = max((event.seq for event in events), default=0)
-    as_of = max((event.ts for event in events), default=0.0)
     rows = [event for event in events if _is_of(event, operation_id)]
+    approvals = build_approval_report(events).by_subject
+    return _report(operation_id, rows, approvals, _as_of(events))
+
+
+def list_operation_reports(events: Sequence[StoredEvent]) -> tuple[OperationReport, ...]:
+    """Return the report of every declared operation in ``events``, in declaration order.
+
+    The approval notes are read once for all operations, so a store of many
+    operations is read in one pass.
+    """
+    rows_by_operation: dict[str, list[StoredEvent]] = {}
+    for event in events:
+        operation_id = event.payload.get("operation_id") if event.kind in _KINDS else None
+        if isinstance(operation_id, str):
+            rows_by_operation.setdefault(operation_id, []).append(event)
+    declared = sorted(
+        (
+            (next(row.seq for row in rows if row.kind == EventKind.OPERATION_DECLARED), key)
+            for key, rows in rows_by_operation.items()
+            if any(row.kind == EventKind.OPERATION_DECLARED for row in rows)
+        )
+    )
+    approvals = build_approval_report(events).by_subject
+    as_of = _as_of(events)
+    return tuple(_report(key, rows_by_operation[key], approvals, as_of) for _seq, key in declared)
+
+
+def _as_of(events: Sequence[StoredEvent]) -> tuple[int, float]:
+    """Return the store's last sequence and the hub's last recorded time."""
+    return (
+        max((event.seq for event in events), default=0),
+        max((event.ts for event in events), default=0.0),
+    )
+
+
+def _report(
+    operation_id: str,
+    rows: Sequence[StoredEvent],
+    approvals: Mapping[str, ApprovalStatus],
+    as_of: tuple[int, float],
+) -> OperationReport:
+    """Fold one operation's rows into its report, given the store's approvals and last row."""
+    as_of_seq, as_of_time = as_of
     declaration = next((row for row in rows if row.kind == EventKind.OPERATION_DECLARED), None)
     if declaration is None:
         return OperationReport(
-            operation_id, "", NOT_RECORDED, "", "no intent", (), (), as_of_seq, as_of
+            operation_id, "", NOT_RECORDED, "", "no intent", (), (), as_of_seq, as_of_time
         )
     ledger = AttemptLedger(None)
     for row in rows:
         ledger.apply_event(row)
     digest = str(declaration.payload.get("intent_sha256") or "")
-    approval = build_approval_report(events).by_subject.get(f"sha256:{digest}") if digest else None
-    attempts = _attempts(operation_id, ledger, rows, _deadline(declaration), as_of)
+    approval = approvals.get(f"sha256:{digest}") if digest else None
+    attempts = _attempts(operation_id, ledger, rows, _deadline(declaration), as_of_time)
     return OperationReport(
         operation_id=operation_id,
         task_id=str(declaration.payload.get("task_id") or ""),
@@ -201,7 +259,7 @@ def build_operation_report(operation_id: str, events: Sequence[StoredEvent]) -> 
         attempts=attempts,
         chain=_chain(rows, approval),
         as_of_seq=as_of_seq,
-        as_of=as_of,
+        as_of=as_of_time,
     )
 
 
