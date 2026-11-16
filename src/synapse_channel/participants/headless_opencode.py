@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Protocol
