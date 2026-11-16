@@ -28,7 +28,7 @@ adapter may say:
 
 from __future__ import annotations
 
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import time
 from collections.abc import Callable
 
