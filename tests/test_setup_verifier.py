@@ -202,17 +202,33 @@ def test_verify_transaction_records_failures_without_claiming_recovery(
     jsonschema.validate(receipt, setup_schema())
 
 
-def test_verify_requires_exact_digest_platform_pid_and_live_protected_process(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _plan, _authorization, _receipt, verification_plan, verification_authorization = (
-        setup_documents()
-    )
-    env = {"HOME": str(tmp_path)}
-    ledger_directory = tmp_path / "ledger"
-    adapter = RecordingAdapter()
-    runner = inspection_runner(inspection(waiter="pass", hub_pid=9876))
+class _PreparedVerification:
+    """Documents and directories one verifier refusal proof consumes."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        documents = setup_documents()
+        self.plan = documents[3]
+        self.authorization = documents[4]
+        self.env = {"HOME": str(tmp_path)}
+        self.ledger = tmp_path / "ledger"
+        self.runner = inspection_runner(inspection(waiter="pass", hub_pid=9876))
+        self.digest = cast(str, self.plan["verification_plan_digest"])
+
+
+@pytest.fixture
+def prepared_verification(tmp_path: Path) -> _PreparedVerification:
+    """Build the documents shared by the verifier refusal proofs."""
+    return _PreparedVerification(tmp_path)
+
+
+def _refuse(
+    prepared: _PreparedVerification,
+    confirm: str,
+    *,
+    adapter: RecordingAdapter | None = None,
+    probe: Callable[[int], bool] | None = None,
+) -> dict[str, object]:
+    """Run one verification against the prepared documents."""
 
     def alive(_pid: int) -> bool:
         return True
@@ -220,43 +236,55 @@ def test_verify_requires_exact_digest_platform_pid_and_live_protected_process(
     def wall_clock() -> float:
         return 201.0
 
-    probe: Callable[[int], bool] = alive
-    digest = cast(str, verification_plan["verification_plan_digest"])
-
-    def verify(confirm: str) -> dict[str, object]:
-        return asyncio.run(
-            verify_setup(
-                verification_plan,
-                verification_authorization,
-                confirm_digest=confirm,
-                env=env,
-                ledger_directory=ledger_directory,
-                adapter=adapter,
-                inspection_runner=runner,
-                probe=probe,
-                wall_clock=wall_clock,
-            )
+    return asyncio.run(
+        verify_setup(
+            prepared.plan,
+            prepared.authorization,
+            confirm_digest=confirm,
+            env=prepared.env,
+            ledger_directory=prepared.ledger,
+            adapter=adapter if adapter is not None else RecordingAdapter(),
+            inspection_runner=prepared.runner,
+            probe=probe if probe is not None else alive,
+            wall_clock=wall_clock,
         )
+    )
 
+
+def test_verify_refuses_a_digest_mismatch(prepared_verification: _PreparedVerification) -> None:
+    """A confirm digest that is not the plan digest is refused."""
     with pytest.raises(SetupVerificationError, match="digest_mismatch"):
-        verify("a" * 64)
+        _refuse(prepared_verification, "a" * 64)
+
+
+def test_verify_refuses_a_non_linux_platform(
+    prepared_verification: _PreparedVerification,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verification runs only on Linux."""
     monkeypatch.setattr("synapse_channel.setup_verifier.platform.system", lambda: "Darwin")
     with pytest.raises(SetupVerificationError, match="application_platform_unsupported"):
-        verify(digest)
-    monkeypatch.setattr("synapse_channel.setup_verifier.platform.system", lambda: "Linux")
-    wrong = RecordingAdapter()
-    wrong.restarted = True
-    adapter = wrong
-    with pytest.raises(SetupVerificationError, match="verification_target_changed"):
-        verify(digest)
+        _refuse(prepared_verification, prepared_verification.digest)
+
+
+def test_verify_refuses_a_changed_hub_pid(prepared_verification: _PreparedVerification) -> None:
+    """A hub pid that is not the plan pid is refused."""
     adapter = RecordingAdapter()
+    adapter.restarted = True
+    with pytest.raises(SetupVerificationError, match="verification_target_changed"):
+        _refuse(prepared_verification, prepared_verification.digest, adapter=adapter)
+
+
+def test_verify_refuses_a_missing_protected_process(
+    prepared_verification: _PreparedVerification,
+) -> None:
+    """A protected process that is not alive is refused."""
 
     def missing(_pid: int) -> bool:
         return False
 
-    probe = missing
     with pytest.raises(SetupVerificationError, match="verification_protected_process_missing"):
-        verify(digest)
+        _refuse(prepared_verification, prepared_verification.digest, probe=missing)
 
 
 def test_verify_records_reinspection_and_late_process_failure(tmp_path: Path) -> None:

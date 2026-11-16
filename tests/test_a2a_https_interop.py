@@ -82,8 +82,42 @@ def _serve_https(
     return server, port, thread
 
 
-def test_https_interop_trace_twice_with_consistent_observables(tmp_path: Path) -> None:
-    """Run the independent client twice over native HTTPS; both must succeed."""
+def _https_trace(port: int, certfile: Path, *, index: int) -> dict[str, object]:
+    """Run one independent client trace over the native HTTPS server."""
+    return run_local_interop_trace(
+        host="127.0.0.1",
+        port=port,
+        scheme="https",
+        ca_file=certfile,
+        message_text=f"https-probe-{index}",
+        timeout=5.0,
+    )
+
+
+def _assert_https_receipt(receipt: dict[str, object], *, index: int) -> None:
+    """Check the observables of one native HTTPS trace."""
+    assert receipt["schema"] == RECEIPT_SCHEMA
+    endpoint = receipt["endpoint"]
+    assert isinstance(endpoint, dict)
+    assert endpoint["scheme"] == "https"
+    assert endpoint["url"].startswith("https://")
+    discovery = receipt["discovery"]
+    assert isinstance(discovery, dict)
+    assert discovery["url_scheme"] == "https"
+    assert discovery["http_status"] == 200
+    lifecycle = receipt["task_lifecycle"]
+    assert isinstance(lifecycle, dict)
+    assert lifecycle["task_id"]
+    assert lifecycle["message_text"] == f"https-probe-{index}"
+    assert lifecycle["send_http_status"] == 200
+    assert lifecycle["get_http_status"] == 200
+    dimensions = receipt["dimensions"]
+    assert isinstance(dimensions, dict)
+    assert dimensions["proxy_tls"] == "recorded"
+
+
+def _open_https(tmp_path: Path) -> tuple[A2ABridge, A2AHTTPServer, int, Path]:
+    """Start one native HTTPS bridge and return it with its port and certificate."""
     certfile, keyfile = _write_server_tls_pair(tmp_path)
     bridge = A2ABridge(
         agent=RecordingAgent(),
@@ -92,44 +126,44 @@ def test_https_interop_trace_twice_with_consistent_observables(tmp_path: Path) -
         store=A2ATaskStore(),
     )
     server, port, _thread = _serve_https(bridge, certfile, keyfile)
-    receipts: list[dict[str, object]] = []
+    return bridge, server, port, certfile
+
+
+def test_https_interop_trace_records_the_first_run(tmp_path: Path) -> None:
+    """The first independent client run over native HTTPS succeeds."""
+    _bridge, server, port, certfile = _open_https(tmp_path)
     try:
-        for index in (1, 2):
-            receipt = run_local_interop_trace(
-                host="127.0.0.1",
-                port=port,
-                scheme="https",
-                ca_file=certfile,
-                message_text=f"https-probe-{index}",
-                timeout=5.0,
-            )
-            receipts.append(receipt)
+        receipt = _https_trace(port, certfile, index=1)
+    finally:
+        server.shutdown()
+        server.server_close()
+    _assert_https_receipt(receipt, index=1)
+
+
+def test_https_interop_trace_records_the_second_run(tmp_path: Path) -> None:
+    """The second independent client run over native HTTPS succeeds."""
+    _bridge, server, port, certfile = _open_https(tmp_path)
+    try:
+        receipt = _https_trace(port, certfile, index=2)
+    finally:
+        server.shutdown()
+        server.server_close()
+    _assert_https_receipt(receipt, index=2)
+
+
+def test_https_interop_traces_keep_distinct_task_ids(tmp_path: Path) -> None:
+    """Two runs produce different task ids and both messages arrive."""
+    bridge, server, port, certfile = _open_https(tmp_path)
+    try:
+        receipts = [
+            _https_trace(port, certfile, index=1),
+            _https_trace(port, certfile, index=2),
+        ]
     finally:
         server.shutdown()
         server.server_close()
 
     assert len(receipts) == 2
-    for index, receipt in enumerate(receipts, start=1):
-        assert receipt["schema"] == RECEIPT_SCHEMA
-        endpoint = receipt["endpoint"]
-        assert isinstance(endpoint, dict)
-        assert endpoint["scheme"] == "https"
-        assert endpoint["url"].startswith("https://")
-        discovery = receipt["discovery"]
-        assert isinstance(discovery, dict)
-        assert discovery["url_scheme"] == "https"
-        assert discovery["http_status"] == 200
-        lifecycle = receipt["task_lifecycle"]
-        assert isinstance(lifecycle, dict)
-        assert lifecycle["task_id"]
-        assert lifecycle["message_text"] == f"https-probe-{index}"
-        assert lifecycle["send_http_status"] == 200
-        assert lifecycle["get_http_status"] == 200
-        dimensions = receipt["dimensions"]
-        assert isinstance(dimensions, dict)
-        assert dimensions["proxy_tls"] == "recorded"
-
-    # Both runs produced non-empty distinct task ids and matching message content.
     ids: list[str] = []
     for receipt in receipts:
         assert isinstance(receipt, dict)
