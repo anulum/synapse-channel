@@ -195,8 +195,12 @@ def test_observe_handles_a_read_failure_after_opening(
             return None
 
     args = _args("observe", "--peer-db", str(db))
+
     # opens fine but the read fails — the store is still closed in the finally
-    assert _cmd_observe(args, store_factory=lambda _p: _BadReadStore()) == 2  # type: ignore[arg-type,return-value]
+    def factory(_path: str) -> _BadReadStore:
+        return _BadReadStore()
+
+    assert _cmd_observe(args, store_factory=factory) == 2  # type: ignore[arg-type] # bad store
     assert "could not read peer event store" in capsys.readouterr().err
 
 
