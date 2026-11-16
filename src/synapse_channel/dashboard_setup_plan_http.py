@@ -87,7 +87,7 @@ _EFFECT_TARGETS: Final = {
 """The unit each supported effect installs, as the executor names it; others name themselves."""
 
 _BEFORE: Final[Mapping[str, SetupInspectionVerdict]] = {
-    "pass": "satisfied",
+    "pass": "satisfied",  # nosec B105 # an inspection status, not a secret
     "warn": "unsatisfied",
     "fail": "unsatisfied",
     "unavailable": "unverifiable",
