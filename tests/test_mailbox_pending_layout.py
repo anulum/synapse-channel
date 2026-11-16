@@ -636,3 +636,139 @@ async def test_a_cold_count_answers_when_the_chat_journal_cannot_be_read(
         if hub is not None:
             hub.close()
         store.close()
+
+
+def _raw_chat(connection: Any, target: str = "PROJ/BOB") -> None:
+    connection.execute(
+        "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)",
+        (
+            0.0,
+            "chat",
+            json.dumps({"sender": "PEER", "target": target, "type": "chat", "payload": "raw"}),
+        ),
+    )
+
+
+def test_raw_inserts_are_counted_when_the_store_reopens(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    path = tmp_path / "hub.db"
+    store = EventStore(path)
+    try:
+        _chat(store, target="PROJ/BOB")
+        MailboxPendingTracker(store)
+        _raw_chat(store.storage.connection)
+        _raw_chat(store.storage.connection)
+        store.storage.connection.commit()
+    finally:
+        store.close()
+    reopened = EventStore(path)
+    try:
+        caplog.set_level(logging.INFO, logger="synapse.hub")
+        tracker = MailboxPendingTracker(reopened)
+        assert "journal changed outside this layout" in caplog.text
+        counted = _historical_counts(
+            reopened,
+            ("PROJ/BOB",),
+            {"PROJ/BOB": tracker.watermark_for("PROJ/BOB")},
+        )
+        assert tracker.pending_count("PROJ/BOB") == counted["PROJ/BOB"] == 3
+    finally:
+        reopened.close()
+
+
+def test_a_raw_delete_is_counted_when_the_store_reopens(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    path = tmp_path / "hub.db"
+    store = EventStore(path)
+    try:
+        first = _chat(store)
+        _chat(store)
+        MailboxPendingTracker(store)
+        store.storage.connection.execute("DELETE FROM events WHERE seq = ?", (first,))
+        store.storage.connection.commit()
+    finally:
+        store.close()
+    reopened = EventStore(path)
+    try:
+        caplog.set_level(logging.INFO, logger="synapse.hub")
+        tracker = MailboxPendingTracker(reopened)
+        assert "journal changed outside this layout" in caplog.text
+        counted = _historical_counts(
+            reopened,
+            ("PROJ/BOB",),
+            {"PROJ/BOB": tracker.watermark_for("PROJ/BOB")},
+        )
+        assert tracker.pending_count("PROJ/BOB") == counted["PROJ/BOB"] == 1
+    finally:
+        reopened.close()
+
+
+def test_a_clean_reopen_does_not_walk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    path = tmp_path / "hub.db"
+    store = EventStore(path)
+    try:
+        _chat(store, target="PROJ/BOB")
+        MailboxPendingTracker(store)
+    finally:
+        store.close()
+    reopened = EventStore(path)
+    try:
+
+        def _refuse_journal_read(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("walk")
+
+        monkeypatch.setattr(reopened, "read_window", _refuse_journal_read)
+        caplog.set_level(logging.INFO, logger="synapse.hub")
+        tracker = MailboxPendingTracker(reopened)
+        assert tracker.pending_count("PROJ/BOB") == 1
+        assert "journal changed outside this layout" not in caplog.text
+        assert "mailbox pending layout walk started" not in caplog.text
+    finally:
+        reopened.close()
+
+
+def test_a_layout_row_without_extent_columns_is_projected_again(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    path = tmp_path / "hub.db"
+    store = EventStore(path)
+    try:
+        _chat(store, target="PROJ/BOB")
+        _chat(store, target="PROJ/BOB")
+        MailboxPendingTracker(store)
+    finally:
+        store.close()
+    raw = sqlite3.connect(path)
+    raw.execute("ALTER TABLE mailbox_pending_layout RENAME TO mailbox_pending_layout_old")
+    raw.execute("CREATE TABLE mailbox_pending_layout (version INTEGER NOT NULL)")
+    raw.execute(
+        "INSERT INTO mailbox_pending_layout (version) "
+        "SELECT version FROM mailbox_pending_layout_old"
+    )
+    raw.execute("DROP TABLE mailbox_pending_layout_old")
+    raw.commit()
+    raw.close()
+    reopened = EventStore(path)
+    try:
+        columns = {
+            str(row[1])
+            for row in reopened.storage.connection.execute(
+                "PRAGMA table_info(mailbox_pending_layout)"
+            )
+        }
+        assert {"projected_through", "chat_rows"} <= columns
+        caplog.set_level(logging.INFO, logger="synapse.hub")
+        tracker = MailboxPendingTracker(reopened)
+        assert "journal changed outside this layout" in caplog.text
+        counted = _historical_counts(
+            reopened,
+            ("PROJ/BOB",),
+            {"PROJ/BOB": tracker.watermark_for("PROJ/BOB")},
+        )
+        assert tracker.pending_count("PROJ/BOB") == counted["PROJ/BOB"] == 2
+    finally:
+        reopened.close()

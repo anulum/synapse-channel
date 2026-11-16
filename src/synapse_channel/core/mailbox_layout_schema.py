@@ -7,9 +7,11 @@
 # SYNAPSE_CHANNEL — mailbox-count tables, layout version, and copy
 """Create the mailbox-count tables and refuse a layout this code does not know.
 
-The tables share the event store's one connection. Version 1 is one row. A
-newer version is refused before any table is rewritten. A finished layout can
-be copied onto a converted store so that store does not walk again.
+The tables share the event store's one connection. Version 1 is one row. That
+row also records the highest event sequence and the number of chat rows the
+tables reflect. A newer version is refused before any table is rewritten. A
+finished layout can be copied onto a converted store so that store does not
+walk again.
 """
 
 from __future__ import annotations
@@ -22,10 +24,13 @@ LAYOUT_VERSION = 1
 GLOB_SQL = "(instr(address, '?') > 0 OR instr(address, '[') > 0 OR instr(address, '*') > 0)"
 """Partial index and count predicate for glob target parts."""
 
+_CHAT = "chat"
 _KNOWN_COLUMNS = (
     ("mailbox_pending_counts", "pending", "INTEGER NOT NULL DEFAULT 0"),
     ("mailbox_pending_counts", "watermark", "INTEGER NOT NULL DEFAULT 0"),
     ("mailbox_address_hits", "sender", "TEXT NOT NULL DEFAULT ''"),
+    ("mailbox_pending_layout", "projected_through", "INTEGER NOT NULL DEFAULT 0"),
+    ("mailbox_pending_layout", "chat_rows", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -62,7 +67,9 @@ def ensure_mailbox_schema(connection: Any) -> None:
         "identity TEXT PRIMARY KEY, pending INTEGER NOT NULL, watermark INTEGER NOT NULL)"
     )
     connection.execute(
-        "CREATE TABLE IF NOT EXISTS mailbox_pending_layout (version INTEGER NOT NULL)"
+        "CREATE TABLE IF NOT EXISTS mailbox_pending_layout ("
+        "version INTEGER NOT NULL, projected_through INTEGER NOT NULL DEFAULT 0, "
+        "chat_rows INTEGER NOT NULL DEFAULT 0)"
     )
     for table, column, declaration in _KNOWN_COLUMNS:
         _add_known_column(connection, table, column, declaration)
@@ -158,10 +165,12 @@ def _copy_rows(source: Any, destination: Any) -> None:
         "INSERT INTO mailbox_pending_counts (identity, pending, watermark) VALUES (?, ?, ?)",
         list(source.execute("SELECT identity, pending, watermark FROM mailbox_pending_counts")),
     )
+    through, chats = _copied_extent(source)
     destination.execute("DELETE FROM mailbox_pending_layout")
     destination.execute(
-        "INSERT INTO mailbox_pending_layout (version) VALUES (?)",
-        (LAYOUT_VERSION,),
+        "INSERT INTO mailbox_pending_layout (version, projected_through, chat_rows) "
+        "VALUES (?, ?, ?)",
+        (LAYOUT_VERSION, through, chats),
     )
 
 
@@ -185,6 +194,84 @@ def _stored_version(connection: Any) -> int | None:
     if isinstance(version, bool) or not isinstance(version, int):
         raise MailboxLayoutRefused("mailbox pending layout version is not an integer")
     return version
+
+
+def _journal_extent(connection: Any) -> tuple[int, int]:
+    """Return the highest event sequence and the number of chat rows."""
+    maximum = connection.execute("SELECT MAX(seq) FROM events").fetchone()
+    chats = connection.execute("SELECT COUNT(*) FROM events WHERE kind = ?", (_CHAT,)).fetchone()
+    high = 0 if maximum is None or maximum[0] is None else maximum[0]
+    count = 0 if chats is None or chats[0] is None else chats[0]
+    pair = _extent_pair(high, count)
+    return (0, 0) if pair is None else pair
+
+
+def _layout_matches(connection: Any) -> bool:
+    """Return whether the stored extent is the journal's extent."""
+    row = connection.execute(
+        "SELECT projected_through, chat_rows FROM mailbox_pending_layout LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return False
+    stored = _extent_pair(row[0], row[1])
+    return stored is not None and stored == _journal_extent(connection)
+
+
+def _advance_layout_extent(connection: Any, seq: int, kind: str) -> None:
+    """Move the stored extent after one insert, when a layout row already exists."""
+    row = connection.execute(
+        "SELECT projected_through, chat_rows FROM mailbox_pending_layout LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return
+    stored = _extent_pair(row[0], row[1])
+    through, chats = (0, 0) if stored is None else stored
+    if kind == _CHAT:
+        chats += 1
+    connection.execute(
+        "UPDATE mailbox_pending_layout SET projected_through = ?, chat_rows = ?",
+        (max(through, int(seq)), chats),
+    )
+
+
+def _refresh_layout_extent(connection: Any) -> None:
+    """Replace the stored extent from the journal, when a layout row already exists."""
+    row = connection.execute("SELECT 1 FROM mailbox_pending_layout LIMIT 1").fetchone()
+    if row is None:
+        return
+    _write_layout_extent(connection)
+
+
+def _write_layout_extent(connection: Any) -> None:
+    """Store version 1 and the journal's current extent."""
+    through, chats = _journal_extent(connection)
+    connection.execute("DELETE FROM mailbox_pending_layout")
+    connection.execute(
+        "INSERT INTO mailbox_pending_layout (version, projected_through, chat_rows) "
+        "VALUES (?, ?, ?)",
+        (LAYOUT_VERSION, through, chats),
+    )
+
+
+def _copied_extent(source: Any) -> tuple[int, int]:
+    columns = {str(row[1]) for row in source.execute("PRAGMA table_info(mailbox_pending_layout)")}
+    if "projected_through" not in columns or "chat_rows" not in columns:
+        return 0, 0
+    row = source.execute(
+        "SELECT projected_through, chat_rows FROM mailbox_pending_layout LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return 0, 0
+    stored = _extent_pair(row[0], row[1])
+    return (0, 0) if stored is None else stored
+
+
+def _extent_pair(through: object, chats: object) -> tuple[int, int] | None:
+    if isinstance(through, bool) or not isinstance(through, int):
+        return None
+    if isinstance(chats, bool) or not isinstance(chats, int):
+        return None
+    return through, chats
 
 
 def _refuse_version(version: int) -> None:

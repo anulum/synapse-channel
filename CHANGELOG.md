@@ -120,9 +120,11 @@ execution evidence when carrying a release claim forward.
 - A mailbox pending count is stored beside the event journal and kept exact in
   the same transaction as the chat, the acknowledgement, and a deletion. `who`
   reads that stored count. The first open of an older journal projects it once
-  before the hub listens, and logs when that walk starts and finishes. An
-  unknown layout version refuses to start and leaves the tables unchanged. A
-  portable journal export omits the tables: its SQLite file is not a hub store.
+  before the hub listens, and logs when that walk starts and finishes. Each
+  later open compares the recorded extent with the journal, and a difference
+  projects the tables again. An unknown layout version refuses to start and
+  leaves the tables unchanged. A portable journal export omits the tables: its
+  SQLite file is not a hub store.
 
 - `synapse git-release` exits 69 when it cannot reach the hub, including when
   its name stays in conflict for the whole registration budget. Standard error

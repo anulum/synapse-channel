@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — one startup walk that fills mailbox hits and counters
-"""Project a store that has no mailbox-count version, once, before the socket binds."""
+"""Project a store before the socket binds, and again when the journal no longer matches."""
 
 from __future__ import annotations
 
@@ -15,7 +15,12 @@ from typing import Any
 from synapse_channel.core.mailbox_addresses import counts_at_all, identity_addresses, parts
 from synapse_channel.core.mailbox_layout_counts import count_after
 from synapse_channel.core.mailbox_layout_maintenance import _capped_through
-from synapse_channel.core.mailbox_layout_schema import LAYOUT_VERSION, require_known_layout
+from synapse_channel.core.mailbox_layout_schema import (
+    LAYOUT_VERSION,
+    _layout_matches,
+    _write_layout_extent,
+    require_known_layout,
+)
 
 logger = logging.getLogger("synapse.hub")
 
@@ -25,12 +30,14 @@ _PAGE = 2000
 
 
 def project_mailbox_layout(store: Any) -> None:
-    """Project version 0 once. A finished store returns without reading chats.
+    """Project version 0, and any version-1 store whose recorded extent differs.
 
-    The walk drops any partial projection, reads the journal in pages, writes
-    hits, then stores one counter per mailbox the journal names. Version 1 is
-    recorded only after that finishes, so a crash retries the whole walk. The
-    caller constructs the mailbox tracker before the listening socket is bound.
+    A finished store whose highest sequence and chat-row count still match the
+    journal returns without reading chats. Any other open drops the projection
+    and walks. The walk writes hits, then one counter per mailbox the journal
+    names, and records the extent only after that finishes, so a crash retries
+    the whole walk. The caller constructs the mailbox tracker before the
+    listening socket is bound.
 
     Parameters
     ----------
@@ -39,8 +46,11 @@ def project_mailbox_layout(store: Any) -> None:
     """
     connection = store.storage.connection
     with store.storage.lock:
-        if require_known_layout(connection) == LAYOUT_VERSION:
+        version = require_known_layout(connection)
+        if version == LAYOUT_VERSION and _layout_matches(connection):
             return
+        if version == LAYOUT_VERSION:
+            logger.info("journal changed outside this layout")
         _project_locked(store, connection)
 
 
@@ -52,7 +62,7 @@ def _project_locked(store: Any, connection: Any) -> None:
     connection.execute("DELETE FROM mailbox_pending_layout")
     counters = _project_pages(store, connection)
     _store_counters(connection, counters)
-    connection.execute("INSERT INTO mailbox_pending_layout (version) VALUES (?)", (LAYOUT_VERSION,))
+    _write_layout_extent(connection)
     connection.commit()
     hit_rows = int(connection.execute("SELECT COUNT(*) FROM mailbox_address_hits").fetchone()[0])
     logger.info(
