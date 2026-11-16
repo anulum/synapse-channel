@@ -222,7 +222,11 @@ class TestSealAndVerify:
         sealed = seal_export_package(_package(), key=key)
         # Alter the body after signing; the signature over the commitment still
         # verifies, but the committed root no longer matches the body.
-        sealed["package"]["result"]["resolution"] = "BLOCK"  # type: ignore[index]
+        package = sealed["package"]
+        assert isinstance(package, dict)
+        result = package["result"]
+        assert isinstance(result, dict)
+        result["resolution"] = "BLOCK"
         outcome = verify_sealed_package(sealed, trusted_keys=trusted)
         assert outcome.ok is False
         assert outcome.content_bound is False
@@ -255,7 +259,11 @@ class TestSealAndVerify:
     ) -> None:
         key, trusted = signing
         sealed = seal_export_package(_package(), key=key)
-        sealed["verification"]["merkle"]["scheme"] = "spoofed"  # type: ignore[index]
+        verification = sealed["verification"]
+        assert isinstance(verification, dict)
+        merkle = verification["merkle"]
+        assert isinstance(merkle, dict)
+        merkle["scheme"] = "spoofed"
         outcome = verify_sealed_package(sealed, trusted_keys=trusted)
         assert outcome.ok is False
         assert "scheme is not recognised" in outcome.reason
@@ -265,6 +273,8 @@ class TestSealAndVerify:
     ) -> None:
         key, trusted = signing
         sealed = seal_export_package(_package(), key=key)
-        del sealed["verification"]["merkle_signature"]  # type: ignore[attr-defined]
+        verification = sealed["verification"]
+        assert isinstance(verification, dict)
+        del verification["merkle_signature"]
         outcome = verify_sealed_package(sealed, trusted_keys=trusted)
         assert outcome.ok is False
