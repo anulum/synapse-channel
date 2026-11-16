@@ -32,7 +32,7 @@ import shutil
 
 # The tmux wake is driven through agent_tmux's injected subprocess runner; this module never
 # spawns a process directly.
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from typing import TYPE_CHECKING
 
 from synapse_channel.agent_tmux import (
