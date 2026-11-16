@@ -214,7 +214,7 @@ async def test_agent_advertise_signs_normalised_card_fields(tmp_path: Path) -> N
         capability_card_lifetime_seconds=60.0,
     )
     connection = _Connection()
-    agent.connection = connection  # type: ignore[assignment]
+    agent.connection = connection  # type: ignore[assignment] # capture stands in for the socket
 
     await agent.advertise(
         description="  worker  ",
@@ -235,7 +235,7 @@ async def test_agent_advertise_signs_normalised_card_fields(tmp_path: Path) -> N
 async def test_unsigned_agent_can_advertise_a_manifest_digest() -> None:
     agent = SynapseAgent("P/a", machine_identity=False)
     connection = _Connection()
-    agent.connection = connection  # type: ignore[assignment]
+    agent.connection = connection  # type: ignore[assignment] # capture stands in for the socket
 
     await agent.advertise(manifest_digest="sha256:abc")
 
