@@ -56,13 +56,14 @@ class _FakeGitProcess:
         returncode: int | None = 0,
         wait_results: list[int | subprocess.TimeoutExpired] | None = None,
     ) -> None:
-        self.stdout = io.BytesIO(stdout)
+        self.stdout: io.BytesIO | None = io.BytesIO(stdout)
         self.stderr = io.BytesIO(stderr)
         self.returncode = returncode
         self.pid = 4242
         self.wait_results = list(wait_results or [])
         self.terminate_calls = 0
         self.kill_calls = 0
+        self.fail_kill = False
 
     def poll(self) -> int | None:
         return self.returncode
@@ -82,6 +83,8 @@ class _FakeGitProcess:
 
     def kill(self) -> None:
         self.kill_calls += 1
+        if self.fail_kill:
+            return
         self.returncode = -9
 
 
@@ -517,7 +520,7 @@ def test_git_runner_rejects_invalid_limit_launch_and_pipe_failures(
         semantic_diff._git(tmp_path, ("status",))
 
     process = _FakeGitProcess()
-    process.stdout = None  # type: ignore[assignment]
+    process.stdout = None
     terminated: list[_FakeGitProcess] = []
     monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
     monkeypatch.setattr(
@@ -573,7 +576,7 @@ def test_git_process_termination_escalates_to_kill(
     signals: list[int] = []
     monkeypatch.setattr(os, "killpg", lambda _pid, sent: signals.append(sent))
 
-    semantic_diff._terminate_git_process(process, posix=True)  # type: ignore[arg-type]
+    semantic_diff._terminate_git_process(process, posix=True)
 
     assert signals == [signal.SIGTERM, signal.SIGKILL]
 
@@ -591,14 +594,14 @@ def test_git_process_exit_race_does_not_trigger_stale_group_kill(
 
     monkeypatch.setattr(os, "killpg", exited_during_signal)
 
-    semantic_diff._terminate_git_process(process, posix=True)  # type: ignore[arg-type]
+    semantic_diff._terminate_git_process(process, posix=True)
 
     assert signals == [signal.SIGTERM]
 
 
 def test_windows_style_git_termination_escalates_and_fails_closed() -> None:
     gentle = _FakeGitProcess(returncode=None, wait_results=[0])
-    semantic_diff._terminate_git_process(gentle, posix=False)  # type: ignore[arg-type]
+    semantic_diff._terminate_git_process(gentle, posix=False)
     assert gentle.terminate_calls == 1
     assert gentle.kill_calls == 0
 
@@ -606,7 +609,7 @@ def test_windows_style_git_termination_escalates_and_fails_closed() -> None:
         returncode=None,
         wait_results=[subprocess.TimeoutExpired("git", 0.5), -9],
     )
-    semantic_diff._terminate_git_process(stubborn, posix=False)  # type: ignore[arg-type]
+    semantic_diff._terminate_git_process(stubborn, posix=False)
     assert stubborn.terminate_calls == 1
     assert stubborn.kill_calls == 1
 
@@ -617,9 +620,9 @@ def test_windows_style_git_termination_escalates_and_fails_closed() -> None:
             subprocess.TimeoutExpired("git", 0.5),
         ],
     )
-    unterminated.kill = lambda: None  # type: ignore[method-assign]
+    unterminated.fail_kill = True
     with pytest.raises(ValueError, match="could not be terminated"):
-        semantic_diff._terminate_git_process(unterminated, posix=False)  # type: ignore[arg-type]
+        semantic_diff._terminate_git_process(unterminated, posix=False)
 
 
 def test_pipe_drain_keeps_first_overflow_label_and_exact_byte_ceiling() -> None:

@@ -31,7 +31,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Protocol
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.git.semantic_scope import semantic_scope_path
@@ -183,8 +183,30 @@ def _drain_git_pipe(
             stream.close()
 
 
+class _GitChild(Protocol):
+    """The process operations the bounded Git runner actually uses."""
+
+    pid: int
+
+    def poll(self) -> int | None:
+        """Return the exit code once the child has finished."""
+        ...
+
+    def wait(self, timeout: float | None = None) -> int:
+        """Wait for the child, or raise when the grace period expires."""
+        ...
+
+    def terminate(self) -> None:
+        """Ask the child to exit."""
+        ...
+
+    def kill(self) -> None:
+        """Stop the child without a further grace period."""
+        ...
+
+
 def _terminate_git_process(
-    process: subprocess.Popen[bytes],
+    process: _GitChild,
     *,
     posix: bool = os.name != "nt",
 ) -> None:

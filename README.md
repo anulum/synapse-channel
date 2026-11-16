@@ -1939,7 +1939,7 @@ an installed protected runtime or revocation fencing.
 | Package version | 0.99.52 |
 | Public API exports | 70 |
 | Package modules | 1017 |
-| Classes | 1450 |
+| Classes | 1451 |
 | Wire message types | 122 |
 | CLI subcommands | 309 |
 | Test functions | 14421 |
