@@ -21,7 +21,7 @@ import ast
 import fnmatch
 import json
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -232,7 +232,7 @@ def _changed_paths_from_git(repo_root: Path, base: str | None, head: str) -> tup
         check=False,
         capture_output=True,
         text=True,
-    )  # nosec B603
+    )
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip() or "git diff failed"
         raise ValueError(message)
