@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -30,7 +30,7 @@ def owned_clipboard(prompt: str, *, deadline: float) -> Iterator[None]:
         raise RuntimeError("JetBrains clipboard tool is unavailable: xclip")
     if time.monotonic() >= deadline:
         raise RuntimeError("JetBrains clipboard phase deadline expired")
-    owner = subprocess.Popen(  # nosec B603
+    owner = subprocess.Popen(
         [executable, "-selection", "clipboard", "-in", "-quiet"],
         stdin=subprocess.PIPE,
         stdout=subprocess.DEVNULL,
@@ -46,7 +46,7 @@ def owned_clipboard(prompt: str, *, deadline: float) -> Iterator[None]:
                 raise RuntimeError("JetBrains clipboard phase deadline expired")
             if owner.poll() is not None:
                 raise RuntimeError("JetBrains clipboard owner exited before paste")
-            readback = subprocess.run(  # nosec B603
+            readback = subprocess.run(
                 [executable, "-selection", "clipboard", "-out"],
                 capture_output=True,
                 check=False,
