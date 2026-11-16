@@ -9,15 +9,16 @@
 
 from __future__ import annotations
 
-import json
 import os
-import stat
 import subprocess
-import sys
-import time
 from pathlib import Path
+from types import SimpleNamespace
 
-from e2e.opencode_editors import jetbrains_x11_driver as x11
+from e2e.opencode_editors.jetbrains_acceptance import (
+    read_jetbrains_acceptance,
+    retain_jetbrains_failure_evidence,
+    run_jetbrains_acceptance,
+)
 from e2e.opencode_editors.jetbrains_cleanup import capture_evidence_and_terminate
 from e2e.opencode_editors.jetbrains_evidence import (
     capture_screenshot,
@@ -26,7 +27,7 @@ from e2e.opencode_editors.jetbrains_evidence import (
     wait_for_trace,
 )
 from e2e.opencode_editors.jetbrains_lifecycle import JetBrainsLifecycleGuard
-from e2e.opencode_editors.jetbrains_readiness import all_then_completion, prerequisite_then_all
+from e2e.opencode_editors.jetbrains_readiness import prerequisite_then_all
 from e2e.opencode_editors.jetbrains_selector import (
     AGENT_NAME as _AGENT_NAME,
 )
@@ -110,50 +111,46 @@ def _wait_for_agent_session(
     )
 
 
+def _acceptance_steps() -> SimpleNamespace:
+    """Return this module's steps, including any a test has replaced."""
+    return SimpleNamespace(
+        _required_env=_required_env,
+        _AGENT_NAME=_AGENT_NAME,
+        render_acp_config=render_acp_config,
+        write_inactive_acp_config=write_inactive_acp_config,
+        write_idea_profile=write_idea_profile,
+        idea_command=idea_command,
+        _STARTUP_TIMEOUT_SECONDS=_STARTUP_TIMEOUT_SECONDS,
+        _PROJECT_READY_TIMEOUT_SECONDS=_PROJECT_READY_TIMEOUT_SECONDS,
+        _ACP_HANDSHAKE_TIMEOUT_SECONDS=_ACP_HANDSHAKE_TIMEOUT_SECONDS,
+        _ACP_PROMPT_TIMEOUT_SECONDS=_ACP_PROMPT_TIMEOUT_SECONDS,
+        _PROJECT_READY_MARKERS=_PROJECT_READY_MARKERS,
+        _PROJECT_READY_PREREQUISITES=_PROJECT_READY_PREREQUISITES,
+        _PROJECT_READY_COMPLETION=_PROJECT_READY_COMPLETION,
+        complete_first_run_agreements=complete_first_run_agreements,
+        find_project_window=find_project_window,
+        skip_islands_onboarding=skip_islands_onboarding,
+        wait_for_idea_log=wait_for_idea_log,
+        wait_for_trace=wait_for_trace,
+        trace_has=trace_has,
+        capture_screenshot=capture_screenshot,
+        capture_evidence_and_terminate=capture_evidence_and_terminate,
+        _wait_for_agent_session=_wait_for_agent_session,
+    )
+
+
 def main() -> int:
     """Run the isolated JetBrains/OpenCode ACP acceptance flow."""
-    binary = Path(_required_env("SYNAPSE_JETBRAINS_BIN"))
-    plugins = Path(_required_env("SYNAPSE_JETBRAINS_PLUGINS"))
-    project = Path(_required_env("SYNAPSE_EDITOR_E2E_PROJECT"))
-    trace = Path(_required_env("SYNAPSE_ACP_TRACE"))
-    prompt = _required_env("SYNAPSE_EDITOR_E2E_PROMPT")
-    proxy_argv = json.loads(_required_env("SYNAPSE_ACP_PROXY_ARGV_JSON"))
-    if (
-        not isinstance(proxy_argv, list)
-        or not proxy_argv
-        or not all(isinstance(arg, str) for arg in proxy_argv)
-    ):
-        raise RuntimeError("SYNAPSE_ACP_PROXY_ARGV_JSON must contain non-empty string arguments")
-    agent_config = render_acp_config(proxy_argv, agent_name=_AGENT_NAME)
-
-    home = Path(_required_env("HOME"))
-    artifacts = Path(_required_env("SYNAPSE_EDITOR_E2E_ARTIFACT_DIR"))
-    runtime_root = Path(_required_env("XDG_DATA_HOME")) / "intellij-e2e"
-    config_root = runtime_root / "config"
-    system_root = runtime_root / "system"
-    log_root = runtime_root / "log"
-    for directory in (config_root, system_root, log_root):
-        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    write_inactive_acp_config(home)
-    write_idea_profile(config_root)
-
-    output = artifacts / "intellij-process.log"
-    screenshot = artifacts / "intellij.png"
-    hub_screenshot = artifacts / "intellij-ai-chat-hub.png"
-    chat_screenshot = artifacts / "intellij-chat-open.png"
-    command = idea_command(
-        binary,
-        home=home,
-        config_root=config_root,
-        system_root=system_root,
-        plugins=plugins,
-        log_root=log_root,
-        project=project,
-    )
+    driver = _acceptance_steps()
+    acceptance = read_jetbrains_acceptance(driver)
+    output = acceptance.artifacts / "intellij-process.log"
+    screenshot = acceptance.artifacts / "intellij.png"
+    hub_screenshot = acceptance.artifacts / "intellij-ai-chat-hub.png"
+    chat_screenshot = acceptance.artifacts / "intellij-chat-open.png"
     with output.open("w", encoding="utf-8") as log:
         process = subprocess.Popen(
-            command,
-            cwd=project,
+            acceptance.command,
+            cwd=acceptance.project,
             env=dict(os.environ),
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -161,171 +158,31 @@ def main() -> int:
             start_new_session=True,
         )
         lifecycle = JetBrainsLifecycleGuard.capture(
-            log_root,
-            trace,
+            acceptance.log_root,
+            acceptance.trace,
             agent_id=_AGENT_ID,
             agent_name=_AGENT_NAME,
         )
         try:
-            startup_deadline = time.monotonic() + _STARTUP_TIMEOUT_SECONDS
-            complete_first_run_agreements(startup_deadline)
-            window = find_project_window(startup_deadline)
-            skip_islands_onboarding(startup_deadline, window)
-            window = find_project_window(startup_deadline)
-            project_deadline = time.monotonic() + _PROJECT_READY_TIMEOUT_SECONDS
-            wait_for_idea_log(
-                log_root,
-                _PROJECT_READY_MARKERS,
-                project_deadline,
-                process.poll,
-                matcher=lambda contents: all_then_completion(
-                    contents,
-                    _PROJECT_READY_PREREQUISITES,
-                    _PROJECT_READY_COMPLETION,
-                ),
-            )
-            lifecycle.require_none()
-            activation_deadline = time.monotonic() + _ACP_HANDSHAKE_TIMEOUT_SECONDS
-            x11._focus_window_for_input(window, deadline=activation_deadline)
-            x11._checked_xdotool(
-                "open the isolated JetBrains ACP configuration",
-                "key",
-                "ctrl+alt+shift+a",
-                deadline=activation_deadline,
-            )
-            wait_for_idea_log(
-                log_root,
-                "fileOpened acp.json",
-                activation_deadline,
-                process.poll,
-                guard=lifecycle.assert_at_most_one,
-            )
-            x11._focus_window_for_input(window, deadline=activation_deadline)
-            x11._pointer_click(
-                window,
-                900,
-                300,
-                "focus the opened JetBrains ACP configuration editor",
-                deadline=activation_deadline,
-            )
-            x11._checked_xdotool(
-                "select the isolated JetBrains ACP configuration",
-                "key",
-                "ctrl+a",
-                deadline=activation_deadline,
-            )
-            x11._checked_xdotool(
-                "enter the exact JetBrains ACP configuration",
-                "type",
-                "--clearmodifiers",
-                "--delay",
-                "1",
-                agent_config,
-                deadline=activation_deadline,
-            )
-            x11._checked_xdotool(
-                "save the isolated JetBrains ACP configuration",
-                "key",
-                "ctrl+s",
-                deadline=activation_deadline,
-            )
-            wait_for_idea_log(
-                log_root,
-                "Local ACP agents reloaded: 1 active",
-                activation_deadline,
-                process.poll,
-                guard=lifecycle.assert_at_most_one,
-            )
-            config_path = home / ".jetbrains" / "acp.json"
-            config_stat = config_path.lstat()
-            if (
-                not stat.S_ISREG(config_stat.st_mode)
-                or config_stat.st_uid != os.getuid()
-                or config_stat.st_mode & 0o777 != 0o600
-                or json.loads(config_path.read_text(encoding="utf-8")) != json.loads(agent_config)
-            ):
-                raise RuntimeError("IntelliJ IDEA did not save the exact ACP configuration")
-            lifecycle.require_configured_state()
-            selection_deadline = time.monotonic() + _ACP_HANDSHAKE_TIMEOUT_SECONDS
-            x11._pointer_click(
-                window,
-                1382,
-                83,
-                "open the JetBrains AI Chat tool window",
-                deadline=selection_deadline,
-            )
-            x11._checked_xdotool(
-                "wait for the JetBrains AI Chat hub",
-                "sleep",
-                "2",
-                deadline=selection_deadline,
-            )
-            lifecycle.assert_at_most_one()
-            capture_screenshot(hub_screenshot, deadline=selection_deadline)
-            for attempt in range(10):
-                if trace_has(trace, '"method":"initialize"'):
-                    break
-                x11._pointer_click(
-                    window,
-                    1130,
-                    613,
-                    "continue to JetBrains AI Chat without activating JetBrains AI "
-                    f"(attempt {attempt + 1})",
-                    deadline=selection_deadline,
-                )
-                x11._bounded_poll_sleep(selection_deadline)
-            x11._checked_xdotool(
-                "wait for the provider-neutral JetBrains AI Chat",
-                "sleep",
-                "2",
-                deadline=selection_deadline,
-            )
-            handshake_deadline = time.monotonic() + _ACP_HANDSHAKE_TIMEOUT_SECONDS
-            wait_for_trace(
-                trace,
-                '"method":"initialize"',
-                handshake_deadline,
+            run_jetbrains_acceptance(
+                driver,
+                acceptance,
                 process,
-                guard=lifecycle.assert_at_most_one,
+                lifecycle,
+                hub_screenshot=hub_screenshot,
+                chat_screenshot=chat_screenshot,
+                screenshot=screenshot,
             )
-            lifecycle.require_initialized_state()
-            _wait_for_agent_session(trace, log_root, handshake_deadline, process, lifecycle)
-            capture_screenshot(chat_screenshot, deadline=handshake_deadline)
-            prompt_deadline = time.monotonic() + _ACP_PROMPT_TIMEOUT_SECONDS
-            x11._submit_chat_prompt(window, prompt, deadline=prompt_deadline)
-            wait_for_trace(
-                trace,
-                '"method":"session/prompt"',
-                prompt_deadline,
-                process,
-                guard=lifecycle.require_exactly_one,
-            )
-            wait_for_trace(
-                trace,
-                '"response_to":"session/prompt"',
-                prompt_deadline,
-                process,
-                guard=lifecycle.require_exactly_one,
-            )
-            lifecycle.require_exactly_one()
-            capture_screenshot(screenshot)
-            lifecycle.require_exactly_one()
             return 0
         finally:
-            capture_evidence_and_terminate(
-                process,
+            retain_jetbrains_failure_evidence(
+                driver,
+                process=process,
                 screenshot=screenshot,
-                capture_screenshot=capture_screenshot,
-                active_error=sys.exc_info()[1],
+                output=output,
+                artifacts=acceptance.artifacts,
+                log_root=acceptance.log_root,
             )
-            if process.returncode not in (0, -15):
-                print(output.read_text(encoding="utf-8")[-12000:], file=sys.stderr)
-            idea_log = log_root / "idea.log"
-            if idea_log.is_file():
-                (artifacts / "intellij-idea-tail.log").write_text(
-                    idea_log.read_text(encoding="utf-8", errors="replace")[-200_000:],
-                    encoding="utf-8",
-                )
 
 
 if __name__ == "__main__":
