@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import stat
+import subprocess
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -75,3 +76,44 @@ def test_start_tmux_waiter_prefers_token_file_over_inline_token(
     assert token_file in argv
     assert "--token" not in argv
     assert "inline-must-not-appear" not in argv
+
+
+def test_a_waiter_that_ignores_terminate_is_killed(tmp_path: Path, monkeypatch: Any) -> None:
+    """A pid file that cannot be written still reaps a waiter that ignores terminate."""
+    env = {"XDG_RUNTIME_DIR": str(tmp_path)}
+    stopped = MagicMock()
+    stopped.pid = 7
+    stopped.wait.side_effect = [subprocess.TimeoutExpired(["synapse"], 1), 0]
+
+    def fake_popen(cmd: list[str], **kwargs: object) -> MagicMock:
+        return stopped
+
+    original = Path.write_text
+
+    def refuse_pid(
+        self: Path,
+        data: str,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> int:
+        if self.name.endswith(".pid"):
+            raise OSError("cannot record the waiter")
+        return original(self, data, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr("synapse_channel.worker_session.subprocess.Popen", fake_popen)
+    monkeypatch.setattr(Path, "write_text", refuse_pid)
+    with pytest.raises(OSError, match="cannot record the waiter"):
+        worker_session._start_tmux_waiter(
+            identity="proj/agent",
+            session="synapse-proj_agent",
+            cwd=tmp_path,
+            command=["codex"],
+            synapse_bin="synapse",
+            uri="ws://127.0.0.1:9",
+            token=None,
+            env=env,
+        )
+    stopped.terminate.assert_called_once()
+    stopped.kill.assert_called_once()
+    assert stopped.wait.call_count == 2

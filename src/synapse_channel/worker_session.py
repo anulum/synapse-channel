@@ -140,24 +140,19 @@ def _pid_is_alive(pidfile: Path) -> bool:
     return pid_is_live_process(pid)
 
 
-def _start_tmux_waiter(
+def _waiter_command(
     *,
     identity: str,
     session: str,
     cwd: Path,
     command: Sequence[str],
     synapse_bin: str,
-    tmux_bin: str = "tmux",
+    tmux_bin: str,
     uri: str,
     token: str | None,
-    token_file: str | None = None,
-    env: Mapping[str, str],
-) -> None:
-    """Start the persistent directed waiter for a provider tmux session."""
-    pidfile, logfile = _waiter_paths(identity, env)
-    if _pid_is_alive(pidfile):
-        return
-
+    token_file: str | None,
+) -> list[str]:
+    """Build the fixed waiter argument vector, preferring a token file."""
     wait_command = [
         synapse_bin,
         "agent-tmux",
@@ -183,10 +178,50 @@ def _start_tmux_waiter(
         wait_command.extend(["--token", token])
     if uri != DEFAULT_HUB_URI:
         wait_command.extend(["--uri", uri])
+    return wait_command
+
+
+def _stop_failed_waiter(waiter: subprocess.Popen[bytes]) -> None:
+    """Stop a waiter whose pid file could not be written, and reap it."""
+    waiter.terminate()
+    try:
+        waiter.wait(timeout=SIDECAR_SHUTDOWN_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        waiter.kill()
+        waiter.wait()
+
+
+def _start_tmux_waiter(
+    *,
+    identity: str,
+    session: str,
+    cwd: Path,
+    command: Sequence[str],
+    synapse_bin: str,
+    tmux_bin: str = "tmux",
+    uri: str,
+    token: str | None,
+    token_file: str | None = None,
+    env: Mapping[str, str],
+) -> None:
+    """Start the persistent directed waiter for a provider tmux session."""
+    pidfile, logfile = _waiter_paths(identity, env)
+    if _pid_is_alive(pidfile):
+        return
 
     with logfile.open("ab") as log_handle:
         waiter = subprocess.Popen(  # nosec B603 # argument vector, never a shell
-            wait_command,
+            _waiter_command(
+                identity=identity,
+                session=session,
+                cwd=cwd,
+                command=command,
+                synapse_bin=synapse_bin,
+                tmux_bin=tmux_bin,
+                uri=uri,
+                token=token,
+                token_file=token_file,
+            ),
             env=dict(env),
             stdin=subprocess.DEVNULL,
             stdout=log_handle,
@@ -197,12 +232,7 @@ def _start_tmux_waiter(
         pidfile.write_text(f"{waiter.pid}\n", encoding="utf-8")
         threading.Thread(target=waiter.wait, name="synapse-waiter-reaper", daemon=True).start()
     except BaseException:
-        waiter.terminate()
-        try:
-            waiter.wait(timeout=SIDECAR_SHUTDOWN_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            waiter.kill()
-            waiter.wait()
+        _stop_failed_waiter(waiter)
         raise
 
 
