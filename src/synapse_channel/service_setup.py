@@ -20,7 +20,7 @@ install services.
 from __future__ import annotations
 
 import shutil
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
