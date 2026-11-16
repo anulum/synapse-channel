@@ -634,7 +634,10 @@ def install_shell_hook(
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
     if START_MARKER in existing and END_MARKER in existing:
         return [f"already installed in {path}"]
-    block = render_rc_block(shell=resolved, synapse_bin=synapse_bin)  # nosec B604
+    block = render_rc_block(
+        shell=resolved,  # nosec B604 # names a dialect, not a process
+        synapse_bin=synapse_bin,
+    )
     separator = "" if not existing or existing.endswith("\n") else "\n"
     path.write_text(f"{existing}{separator}{block}", encoding="utf-8")
     return [f"installed shell hook in {path}", "open a new terminal or source the file"]
