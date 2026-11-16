@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 import socket
-import subprocess  # nosec B404 - fixed provider argv, never a shell string
+import subprocess  # nosec B404 # fixed provider argv, never a shell string
 import sys
 import time
 import urllib.request
