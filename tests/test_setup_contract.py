@@ -58,7 +58,7 @@ def test_packaged_schema_is_a_valid_draft_2020_12_schema() -> None:
 def test_unknown_profile_error_is_stable_and_schema_valid(command: str) -> None:
     jsonschema = pytest.importorskip("jsonschema")
     document = setup_error_document(
-        command=command,  # type: ignore[arg-type]
+        command=command,  # type: ignore[arg-type] # command is not in the set
         profile="future-profile",
         code="unknown_profile",
     )
