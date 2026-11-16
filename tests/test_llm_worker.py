@@ -51,7 +51,7 @@ def _env_var(name: str, value: str | None) -> Iterator[None]:
 def _worker(**kwargs: object) -> SynapseLLMWorker:
     params: dict[str, object] = {"name": "ALPHA", "provider": "rule"}
     params.update(kwargs)
-    return SynapseLLMWorker(**params)  # type: ignore[arg-type]
+    return SynapseLLMWorker(**params)  # type: ignore[arg-type] # worker fields vary
 
 
 async def _start_worker_agent(worker: SynapseLLMWorker) -> asyncio.Task[None]:
