@@ -292,7 +292,7 @@ def test_generate_parser_defaults_scrypt_and_passphrase_flags() -> None:
         DEFAULT_SCRYPT_R,
     )
 
-    args = cli.build_parser().parse_args(["encrypt-key", "generate", "/tmp/k"])  # nosec B108
+    args = cli.build_parser().parse_args(["encrypt-key", "generate", "/tmp/k"])
     assert args.from_passphrase is False
     assert args.scrypt_n == DEFAULT_SCRYPT_N
     assert args.scrypt_r == DEFAULT_SCRYPT_R
