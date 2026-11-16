@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
@@ -104,10 +105,9 @@ def _present_sequences(connection: Any, seqs: list[int]) -> set[int]:
     found: set[int] = set()
     for start in range(0, len(seqs), _PRESENT_CHUNK):
         chunk = seqs[start : start + _PRESENT_CHUNK]
-        marks = ",".join("?" for _ in chunk)
         rows = connection.execute(
-            f"SELECT seq FROM events WHERE seq IN ({marks})",
-            chunk,
+            "SELECT seq FROM events WHERE seq IN (SELECT value FROM json_each(?))",
+            (json.dumps(chunk),),
         ).fetchall()
         found.update(int(row[0]) for row in rows)
     return found

@@ -570,6 +570,12 @@ def test_conversion_copies_a_finished_layout(
         assert "mailbox pending layout walk started" not in caplog.text
         assert tracker.pending_count("PROJ/BOB") == 1
         assert copied is not None and copied[0] == 1
+        reached = opened.storage.connection.execute(
+            "SELECT value FROM json_each(?)",
+            ('["PROJ/BOB"]',),
+        ).fetchone()
+        assert reached is not None and reached[0] == "PROJ/BOB"
+        assert count_between(opened.storage.connection, "PROJ/BOB", 1, None) == 1
     finally:
         opened.close()
 

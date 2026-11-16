@@ -9,10 +9,11 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from synapse_channel.core.mailbox_addresses import exact_addresses, reaches
-from synapse_channel.core.mailbox_layout_schema import GLOB_SQL, ensure_mailbox_schema
+from synapse_channel.core.mailbox_layout_schema import ensure_mailbox_schema
 
 
 def stored_count(connection: Any, identity: str) -> tuple[int, int] | None:
@@ -139,13 +140,20 @@ def _count_exact(
     min_seq: int,
     max_seq: int | None,
 ) -> int:
-    bound_sql, params = _bound(min_seq, max_seq)
-    marks = ",".join("?" for _ in addresses)
-    row = connection.execute(
-        "SELECT COUNT(DISTINCT seq) FROM mailbox_address_hits "
-        f"WHERE {bound_sql} AND sender != ? AND address IN ({marks})",
-        (*params, identity, *addresses),
-    ).fetchone()
+    names = json.dumps(list(addresses))
+    if max_seq is None:
+        row = connection.execute(
+            "SELECT COUNT(DISTINCT seq) FROM mailbox_address_hits "
+            "WHERE seq >= ? AND sender != ? AND address IN (SELECT value FROM json_each(?))",
+            (min_seq, identity, names),
+        ).fetchone()
+    else:
+        row = connection.execute(
+            "SELECT COUNT(DISTINCT seq) FROM mailbox_address_hits "
+            "WHERE seq >= ? AND seq <= ? AND sender != ? "
+            "AND address IN (SELECT value FROM json_each(?))",
+            (min_seq, max_seq, identity, names),
+        ).fetchone()
     return int(row[0])
 
 
@@ -156,12 +164,20 @@ def _count_glob_only(
     min_seq: int,
     max_seq: int | None,
 ) -> int:
-    bound_sql, params = _bound(min_seq, max_seq)
-    rows = connection.execute(
-        "SELECT seq, address FROM mailbox_address_hits "
-        f"WHERE {bound_sql} AND sender != ? AND {GLOB_SQL}",
-        (*params, identity),
-    ).fetchall()
+    if max_seq is None:
+        rows = connection.execute(
+            "SELECT seq, address FROM mailbox_address_hits "
+            "WHERE seq >= ? AND sender != ? AND "
+            "(instr(address, '?') > 0 OR instr(address, '[') > 0 OR instr(address, '*') > 0)",
+            (min_seq, identity),
+        ).fetchall()
+    else:
+        rows = connection.execute(
+            "SELECT seq, address FROM mailbox_address_hits "
+            "WHERE seq >= ? AND seq <= ? AND sender != ? AND "
+            "(instr(address, '?') > 0 OR instr(address, '[') > 0 OR instr(address, '*') > 0)",
+            (min_seq, max_seq, identity),
+        ).fetchall()
     return _extra_glob_seqs(connection, identity, addresses, rows)
 
 
@@ -184,15 +200,9 @@ def _extra_glob_seqs(
 
 
 def _same_seq_exact(connection: Any, seq: int, addresses: tuple[str, ...]) -> bool:
-    marks = ",".join("?" for _ in addresses)
     row = connection.execute(
-        "SELECT 1 FROM mailbox_address_hits WHERE seq = ? AND address IN (" + marks + ") LIMIT 1",
-        (seq, *addresses),
+        "SELECT 1 FROM mailbox_address_hits WHERE seq = ? "
+        "AND address IN (SELECT value FROM json_each(?)) LIMIT 1",
+        (seq, json.dumps(list(addresses))),
     ).fetchone()
     return row is not None
-
-
-def _bound(min_seq: int, max_seq: int | None) -> tuple[str, list[int]]:
-    if max_seq is None:
-        return "seq >= ?", [min_seq]
-    return "seq >= ? AND seq <= ?", [min_seq, max_seq]

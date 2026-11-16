@@ -161,11 +161,11 @@ def _count_deleted_hit(
 def _hits_for(connection: Any, seqs: list[int]) -> list[tuple[Any, Any, Any]]:
     found: list[tuple[Any, Any, Any]] = []
     for chunk in _chunks(seqs):
-        marks = ",".join("?" for _ in chunk)
         found.extend(
             connection.execute(
-                f"SELECT seq, address, sender FROM mailbox_address_hits WHERE seq IN ({marks})",
-                chunk,
+                "SELECT seq, address, sender FROM mailbox_address_hits "
+                "WHERE seq IN (SELECT value FROM json_each(?))",
+                (json.dumps(chunk),),
             )
         )
     return found
@@ -173,10 +173,9 @@ def _hits_for(connection: Any, seqs: list[int]) -> list[tuple[Any, Any, Any]]:
 
 def _delete_hits(connection: Any, seqs: list[int]) -> None:
     for chunk in _chunks(seqs):
-        marks = ",".join("?" for _ in chunk)
         connection.execute(
-            f"DELETE FROM mailbox_address_hits WHERE seq IN ({marks})",
-            chunk,
+            "DELETE FROM mailbox_address_hits WHERE seq IN (SELECT value FROM json_each(?))",
+            (json.dumps(chunk),),
         )
 
 

@@ -21,17 +21,7 @@ from typing import Any
 LAYOUT_VERSION = 1
 """The only mailbox-count layout this code opens."""
 
-GLOB_SQL = "(instr(address, '?') > 0 OR instr(address, '[') > 0 OR instr(address, '*') > 0)"
-"""Partial index and count predicate for glob target parts."""
-
 _CHAT = "chat"
-_KNOWN_COLUMNS = (
-    ("mailbox_pending_counts", "pending", "INTEGER NOT NULL DEFAULT 0"),
-    ("mailbox_pending_counts", "watermark", "INTEGER NOT NULL DEFAULT 0"),
-    ("mailbox_address_hits", "sender", "TEXT NOT NULL DEFAULT ''"),
-    ("mailbox_pending_layout", "projected_through", "INTEGER NOT NULL DEFAULT 0"),
-    ("mailbox_pending_layout", "chat_rows", "INTEGER NOT NULL DEFAULT 0"),
-)
 
 
 class MailboxLayoutRefused(ValueError):
@@ -60,7 +50,8 @@ def ensure_mailbox_schema(connection: Any) -> None:
     )
     connection.execute(
         "CREATE INDEX IF NOT EXISTS mailbox_address_hits_glob_seq "
-        "ON mailbox_address_hits(seq) WHERE " + GLOB_SQL
+        "ON mailbox_address_hits(seq) WHERE "
+        "(instr(address, '?') > 0 OR instr(address, '[') > 0 OR instr(address, '*') > 0)"
     )
     connection.execute(
         "CREATE TABLE IF NOT EXISTS mailbox_pending_counts ("
@@ -71,8 +62,7 @@ def ensure_mailbox_schema(connection: Any) -> None:
         "version INTEGER NOT NULL, projected_through INTEGER NOT NULL DEFAULT 0, "
         "chat_rows INTEGER NOT NULL DEFAULT 0)"
     )
-    for table, column, declaration in _KNOWN_COLUMNS:
-        _add_known_column(connection, table, column, declaration)
+    _add_known_columns(connection)
 
 
 def refuse_unknown_mailbox_layout(connection: Any) -> None:
@@ -174,10 +164,36 @@ def _copy_rows(source: Any, destination: Any) -> None:
     )
 
 
-def _add_known_column(connection: Any, table: str, column: str, declaration: str) -> None:
-    present = {str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})")}
-    if column not in present:
-        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+def _add_known_columns(connection: Any) -> None:
+    """Add each column this code already knows, using that column's own statement."""
+    counts = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(mailbox_pending_counts)")
+    }
+    if "pending" not in counts:
+        connection.execute(
+            "ALTER TABLE mailbox_pending_counts ADD COLUMN pending INTEGER NOT NULL DEFAULT 0"
+        )
+    if "watermark" not in counts:
+        connection.execute(
+            "ALTER TABLE mailbox_pending_counts ADD COLUMN watermark INTEGER NOT NULL DEFAULT 0"
+        )
+    hits = {str(row[1]) for row in connection.execute("PRAGMA table_info(mailbox_address_hits)")}
+    if "sender" not in hits:
+        connection.execute(
+            "ALTER TABLE mailbox_address_hits ADD COLUMN sender TEXT NOT NULL DEFAULT ''"
+        )
+    layout = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(mailbox_pending_layout)")
+    }
+    if "projected_through" not in layout:
+        connection.execute(
+            "ALTER TABLE mailbox_pending_layout ADD COLUMN projected_through "
+            "INTEGER NOT NULL DEFAULT 0"
+        )
+    if "chat_rows" not in layout:
+        connection.execute(
+            "ALTER TABLE mailbox_pending_layout ADD COLUMN chat_rows INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def _stored_version(connection: Any) -> int | None:
