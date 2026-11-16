@@ -15,7 +15,7 @@ import json
 import os
 import shutil
 import stat
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 import tempfile
 import uuid
@@ -62,7 +62,7 @@ def _host_version(binary: Path | None) -> str | None:
     if binary is None:
         return None
     try:
-        result = subprocess.run(  # nosec B603
+        result = subprocess.run(  # nosec B603 # argument vector, never a shell
             [str(binary), "--version"],
             capture_output=True,
             text=True,
@@ -106,7 +106,7 @@ def _child_adapter(args: argparse.Namespace, capability: HostCapability) -> tupl
         if args.token_file:
             command.extend(["--token-file", args.token_file])
     try:
-        result = subprocess.run(  # nosec B603
+        result = subprocess.run(  # nosec B603 # argument vector, never a shell
             command, capture_output=True, text=True, timeout=45, check=False
         )
     except (OSError, subprocess.TimeoutExpired):
