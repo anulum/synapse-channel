@@ -117,6 +117,12 @@ def _result(
     )
 
 
+def _requests(seat: OrchestrationSeat) -> list[TurnRequest]:
+    participant = seat.participant
+    assert isinstance(participant, _FakeParticipant)
+    return participant.requests
+
+
 def _seat(
     name: str,
     results: list[TurnResult],
@@ -175,7 +181,7 @@ async def test_completed_run_threads_context_and_accumulates() -> None:
     assert transcript.metrics.input_tokens == 20
     # No signals fire under default thresholds for clean turns.
     assert transcript.rounds[0].advice.is_empty
-    requests = seat.participant.requests  # type: ignore[attr-defined]
+    requests = _requests(seat)
     # Round 0 sees only the shared context; round 1 reacts to the framed previous turn.
     assert requests[0].context == "house rules"
     assert "house rules" in requests[1].context
@@ -299,7 +305,7 @@ async def test_bounded_route_dispatches_only_eligible_free_local_seat() -> None:
     assert [(item.candidate, item.code) for item in transcript.route_decisions[0].rejected] == [
         ("remote", "cost_unverified")
     ]
-    assert not remote.participant.requests  # type: ignore[attr-defined]
+    assert not _requests(remote)
 
 
 async def test_over_budget_signal_halts_the_run() -> None:
@@ -373,7 +379,7 @@ async def test_empty_shared_context_threads_only_the_reaction_and_peer() -> None
         thresholds=AdvisorThresholds(),
     )
     assert transcript.stopped == STOPPED_COMPLETED
-    requests = seat.participant.requests  # type: ignore[attr-defined]
+    requests = _requests(seat)
     assert requests[0].context == ""
     # With no shared context, round 1 carries the reaction directive and the framed peer turn only.
     assert requests[1].context.startswith(REACTION_DIRECTIVE)
