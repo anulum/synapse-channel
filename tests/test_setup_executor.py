@@ -29,6 +29,7 @@ from synapse_channel.setup_authorization import build_setup_authorization
 from synapse_channel.setup_contract import setup_schema
 from synapse_channel.setup_executor import (
     SetupExecutionError,
+    SetupInspectionRunner,
     apply_setup,
     write_setup_receipt,
 )
@@ -245,7 +246,7 @@ def _authorization(
     )
 
 
-def _inspection_runner(document: dict[str, object]) -> Callable[..., object]:
+def _inspection_runner(document: dict[str, object]) -> SetupInspectionRunner:
     async def inspect(*_args: object, **kwargs: object) -> dict[str, object]:
         environment = kwargs["env"]
         assert isinstance(environment, dict)
@@ -276,7 +277,7 @@ def _run_apply(
             receipt_path=receipt,
             env={"HOME": str(home)},
             ledger_directory=ledger,
-            inspection_runner=_inspection_runner(inspection),  # type: ignore[arg-type]
+            inspection_runner=_inspection_runner(inspection),
             clock=clock,
         )
     )
@@ -578,7 +579,7 @@ def test_apply_refuses_missing_protected_pid_and_relative_home_before_effect(
                 confirm_digest=cast(str, plan["plan_digest"]),
                 env={"HOME": "relative"},
                 ledger_directory=tmp_path / "other-ledger",
-                inspection_runner=_inspection_runner(inspection),  # type: ignore[arg-type]
+                inspection_runner=_inspection_runner(inspection),
                 clock=lambda: 101.0,
             )
         )
@@ -646,7 +647,7 @@ def test_apply_refuses_a_second_digest_confirmation_mismatch(tmp_path: Path) -> 
                 confirm_digest="0" * 64,
                 env={"HOME": str(tmp_path / "home")},
                 ledger_directory=tmp_path / "ledger",
-                inspection_runner=_inspection_runner(inspection),  # type: ignore[arg-type]
+                inspection_runner=_inspection_runner(inspection),
                 clock=lambda: 101.0,
             )
         )
@@ -1019,7 +1020,7 @@ def test_apply_refuses_an_unsafe_or_contended_host_lock(tmp_path: Path) -> None:
                 confirm_digest=cast(str, plan["plan_digest"]),
                 env={"HOME": str(home)},
                 ledger_directory=ledger_dir,
-                inspection_runner=_inspection_runner(inspection),  # type: ignore[arg-type]
+                inspection_runner=_inspection_runner(inspection),
                 clock=lambda: 101.0,
             )
         release.set()
@@ -1318,7 +1319,7 @@ def test_apply_recovers_when_protected_pid_disappears_after_inert_reservation(
             confirm_digest=cast(str, plan["plan_digest"]),
             env={"HOME": str(home)},
             ledger_directory=tmp_path / "ledger",
-            inspection_runner=_inspection_runner(ready),  # type: ignore[arg-type]
+            inspection_runner=_inspection_runner(ready),
             probe=disappears_after_reservation,
             clock=lambda: 101.0,
         )
