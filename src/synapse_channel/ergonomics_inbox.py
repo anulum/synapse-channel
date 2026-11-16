@@ -71,7 +71,7 @@ def split_as_names(rest: Sequence[str], env: Mapping[str, str]) -> list[str]:
     index = 0
     while index < len(tokens):
         token = tokens[index]
-        if token == "--as" and index + 1 < len(tokens):  # nosec B105
+        if token == "--as" and index + 1 < len(tokens):  # nosec B105 # flag, not a credential
             names.append(tokens[index + 1].strip())
             index += 2
             continue
@@ -115,7 +115,7 @@ def parse_inbox_options(rest: Sequence[str], env: Mapping[str, str]) -> InboxOpt
             value = tokens[index + 1].strip()
             if not value:
                 raise ValueError(f"{token} requires a nonblank identity")
-            if token == "--as":  # nosec B105
+            if token == "--as":  # nosec B105 # a command-line flag, not a credential
                 aliases.append(value)
             elif exact_name is not None:
                 raise ValueError("--name may be supplied only once")
@@ -136,7 +136,7 @@ def parse_inbox_options(rest: Sequence[str], env: Mapping[str, str]) -> InboxOpt
                 exact_name = value
             index += 1
             continue
-        if token == "--project-wide":  # nosec B105
+        if token == "--project-wide":  # nosec B105 # a command-line flag, not a credential
             project_wide = True
             index += 1
             continue
