@@ -35,7 +35,11 @@ def test_lineage_distinguishes_parent_outcome_from_current_custody() -> None:
 @pytest.mark.parametrize("budget", [True, 0, -1, 1.0])
 def test_lineage_rejects_invalid_budget(budget: object) -> None:
     with pytest.raises(ValueError, match="budget"):
-        read_protected_lineage(SynapseState(), "missing", max_reservations=budget)  # type: ignore[arg-type]
+        read_protected_lineage(
+            SynapseState(),
+            "missing",
+            max_reservations=budget,  # type: ignore[arg-type] # bad budget
+        )
 
 
 @pytest.mark.parametrize(
