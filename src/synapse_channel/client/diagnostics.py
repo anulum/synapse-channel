@@ -282,6 +282,133 @@ def _mcp_server_importable() -> bool:
     return True
 
 
+def _record_posture(
+    findings: list[str],
+    remedies: list[str],
+    status: DoctorStatus,
+    finding: str,
+    remedy: str | None,
+    proposed: DoctorStatus,
+) -> DoctorStatus:
+    """Append one finding and keep the more severe verdict."""
+    findings.append(finding)
+    if remedy:
+        remedies.append(remedy)
+    if proposed == "fail" or status == "fail":
+        return "fail"
+    if proposed == "warn" or status == "warn":
+        return "warn"
+    return "pass"
+
+
+def _mcp_extra_finding(available: bool, hint: str) -> tuple[str, str | None, DoctorStatus]:
+    """Describe whether the optional MCP server package can be imported."""
+    if available:
+        return "mcp extra importable", None, "pass"
+    return "mcp extra not installed", hint, "warn"
+
+
+def _claim_tool_finding(
+    tools: Collection[str], required: Collection[str]
+) -> tuple[str, str | None, DoctorStatus]:
+    """Describe whether the registered MCP tools include the claim set."""
+    missing = sorted(set(required) - set(tools))
+    if missing:
+        return (
+            f"claim tools missing from inventory: {', '.join(missing)}",
+            "rebuild/update synapse-channel so registration exports claim tools",
+            "fail",
+        )
+    return (
+        "claim tools registered: " + ", ".join(sorted(required)),
+        None,
+        "pass",
+    )
+
+
+def _resolved_git_toplevel(cwd: Path | None, git_toplevel: str | None) -> str:
+    """Return an injected worktree root, or the root git reports from cwd."""
+    if git_toplevel is not None:
+        return git_toplevel
+    import subprocess  # nosec B404 # fixed git argv below, never a shell string
+
+    root = Path.cwd() if cwd is None else Path(cwd)
+    try:
+        proc = subprocess.run(  # nosec B603 B607 # fixed argv, no shell
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return ""
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def _git_worktree_finding(toplevel: str) -> tuple[str, str | None, DoctorStatus]:
+    """Describe whether a git worktree root is available for MCP claim tools."""
+    if toplevel:
+        return f"git worktree resolvable ({toplevel})", None, "pass"
+    return (
+        "git worktree not resolvable from cwd",
+        "run doctor from a git checkout before using MCP git-claim tools",
+        "warn",
+    )
+
+
+def _hub_token_finding(
+    token: str | None, token_file: str | PathLike[str] | None
+) -> tuple[str, str | None, DoctorStatus]:
+    """Describe whether the hub token arrives on argv or in a file."""
+    if bool(token) and not bool(token_file):
+        return (
+            "hub token present on argv (process-visible)",
+            "prefer --token-file with mode 0600; avoid --token SECRET",
+            "warn",
+        )
+    if bool(token_file):
+        return "hub token via token-file (preferred)", None, "pass"
+    return "no hub token configured (ok for open loopback)", None, "pass"
+
+
+def _assemble_mcp_posture(
+    *,
+    cwd: Path | None,
+    token: str | None,
+    token_file: str | PathLike[str] | None,
+    git_toplevel: str | None,
+    mcp_extra_available: bool | None,
+) -> tuple[list[str], list[str], DoctorStatus]:
+    """Collect the MCP findings in verdict order: extra, tools, worktree, token."""
+    from synapse_channel.mcp.registration import (
+        MCP_EXTRA_HINT,
+        REQUIRED_MCP_CLAIM_TOOLS,
+        registered_mcp_tool_names,
+    )
+
+    findings: list[str] = []
+    remedies: list[str] = []
+    available = _mcp_server_importable() if mcp_extra_available is None else mcp_extra_available
+    status = _record_posture(
+        findings, remedies, "pass", *_mcp_extra_finding(available, MCP_EXTRA_HINT)
+    )
+    status = _record_posture(
+        findings,
+        remedies,
+        status,
+        *_claim_tool_finding(registered_mcp_tool_names(), REQUIRED_MCP_CLAIM_TOOLS),
+    )
+    status = _record_posture(
+        findings,
+        remedies,
+        status,
+        *_git_worktree_finding(_resolved_git_toplevel(cwd, git_toplevel)),
+    )
+    status = _record_posture(findings, remedies, status, *_hub_token_finding(token, token_file))
+    return findings, remedies, status
+
+
 def check_mcp_posture(
     *,
     cwd: Path | None = None,
@@ -305,74 +432,17 @@ def check_mcp_posture(
     mcp_extra_available : bool or None
         Injected MCP SDK availability; when ``None``, probe the optional import.
     """
-    from synapse_channel.mcp.registration import (
-        MCP_EXTRA_HINT,
-        REQUIRED_MCP_CLAIM_TOOLS,
-        registered_mcp_tool_names,
+    findings, remedies, status = _assemble_mcp_posture(
+        cwd=cwd,
+        token=token,
+        token_file=token_file,
+        git_toplevel=git_toplevel,
+        mcp_extra_available=mcp_extra_available,
     )
-
-    findings: list[str] = []
-    remedies: list[str] = []
-    status: DoctorStatus = "pass"
-
-    if mcp_extra_available is None:
-        mcp_extra_available = _mcp_server_importable()
-    if not mcp_extra_available:
-        findings.append("mcp extra not installed")
-        remedies.append(MCP_EXTRA_HINT)
-        status = "warn"
-    else:
-        findings.append("mcp extra importable")
-
-    tools = registered_mcp_tool_names()
-    missing = sorted(REQUIRED_MCP_CLAIM_TOOLS - tools)
-    if missing:
-        findings.append(f"claim tools missing from inventory: {', '.join(missing)}")
-        remedies.append("rebuild/update synapse-channel so registration exports claim tools")
-        status = "fail"
-    else:
-        findings.append("claim tools registered: " + ", ".join(sorted(REQUIRED_MCP_CLAIM_TOOLS)))
-
-    if git_toplevel is None:
-        import subprocess  # nosec B404 # fixed git argv below, never a shell string
-
-        root = Path.cwd() if cwd is None else Path(cwd)
-        try:
-            proc = subprocess.run(  # nosec B603 B607 # fixed argv, no shell
-                ["git", "rev-parse", "--show-toplevel"],
-                cwd=root,
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            git_toplevel = proc.stdout.strip() if proc.returncode == 0 else ""
-        except OSError:
-            git_toplevel = ""
-    if git_toplevel:
-        findings.append(f"git worktree resolvable ({git_toplevel})")
-    else:
-        findings.append("git worktree not resolvable from cwd")
-        remedies.append("run doctor from a git checkout before using MCP git-claim tools")
-        if status == "pass":
-            status = "warn"
-
-    has_inline = bool(token)
-    has_file = bool(token_file)
-    if has_inline and not has_file:
-        findings.append("hub token present on argv (process-visible)")
-        remedies.append("prefer --token-file with mode 0600; avoid --token SECRET")
-        if status == "pass":
-            status = "warn"
-    elif has_file:
-        findings.append("hub token via token-file (preferred)")
-    else:
-        findings.append("no hub token configured (ok for open loopback)")
-
-    detail = "; ".join(findings)
     return Diagnosis(
         check="mcp_posture",
         status=status,
-        detail=detail,
+        detail="; ".join(findings),
         remedy="; ".join(remedies),
     )
 
