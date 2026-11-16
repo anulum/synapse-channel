@@ -30,6 +30,7 @@ class _FakeTask:
         self.suggested_owner = ""
         self.assignment_origin = None
         self.status = "open"
+        self.marker = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {"id": self.task_id}
@@ -349,7 +350,7 @@ class TestJournalFailureRollback:
         monkeypatch.setattr(planning_events, "record_ledger_task", _raise)
         board = _FakeBlackboard()
         prior = _FakeTask("t1")
-        prior.marker = "pre-mutation"  # type: ignore[attr-defined]
+        prior.marker = "pre-mutation"
         board.tasks["t1"] = prior
         hub = _FakeHub(board, journal=object())
         await planning.handle_ledger_task(
@@ -369,7 +370,7 @@ class TestJournalFailureRollback:
         monkeypatch.setattr(planning_events, "record_ledger_task", _raise)
         board = _FakeBlackboard()
         prior = _FakeTask("t1")
-        prior.marker = "pre-mutation"  # type: ignore[attr-defined]
+        prior.marker = "pre-mutation"
         board.tasks["t1"] = prior
         hub = _FakeHub(board, journal=object())
         await planning.handle_ledger_task_update(
