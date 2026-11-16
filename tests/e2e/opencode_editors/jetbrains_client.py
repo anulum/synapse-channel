@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import os
 import stat
-import subprocess  # nosec B404
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -151,7 +151,7 @@ def main() -> int:
         project=project,
     )
     with output.open("w", encoding="utf-8") as log:
-        process = subprocess.Popen(  # nosec B603
+        process = subprocess.Popen(
             command,
             cwd=project,
             env=dict(os.environ),
