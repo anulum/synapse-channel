@@ -21,7 +21,7 @@ from __future__ import annotations
 import ctypes
 import os
 import stat
-import subprocess  # nosec B404 - fixed icacls/whoami argv only; never a shell string
+import subprocess  # nosec B404 # fixed icacls/whoami argv only; never a shell string
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -614,7 +614,7 @@ def _windows_current_user_sid_whoami() -> str:
         # ``/fo`` is whoami's format switch (not a misspelling of "of"); split
         # so the spell-checker does not rewrite a fixed Windows argv token.
         whoami_format = "/" + "fo"
-        result = subprocess.run(  # nosec B603 B607 - fixed whoami argv, never a shell string
+        result = subprocess.run(  # nosec B603 B607 # fixed whoami argv, never a shell string
             ["whoami", "/user", whoami_format, "csv", "/nh"],
             check=False,
             capture_output=True,
@@ -736,7 +736,7 @@ def _windows_apply_owner_only(path: Path, *, directory: bool) -> None:
     grant = f"*{sid}:{rights}"
     try:
         # takeown: claim ownership when the file is Administrators-owned.
-        takeown = subprocess.run(  # nosec B603 B607 - fixed takeown argv
+        takeown = subprocess.run(  # nosec B603 B607 # fixed takeown argv
             ["takeown", "/f", str(path)],
             check=False,
             capture_output=True,
@@ -745,7 +745,7 @@ def _windows_apply_owner_only(path: Path, *, directory: bool) -> None:
         if takeown.returncode != 0:
             # Non-fatal when already owned; icacls grant is the hard requirement.
             pass
-        strip = subprocess.run(  # nosec B603 B607
+        strip = subprocess.run(  # nosec B603 B607 # fixed argv from PATH, no shell
             ["icacls", str(path), "/inheritance:r"],
             check=False,
             capture_output=True,
@@ -756,7 +756,7 @@ def _windows_apply_owner_only(path: Path, *, directory: bool) -> None:
             raise SecurePathError(
                 f"cannot strip inherited ACL on {path}: {detail or strip.returncode}"
             )
-        grant_run = subprocess.run(  # nosec B603 B607
+        grant_run = subprocess.run(  # nosec B603 B607 # fixed argv from PATH, no shell
             ["icacls", str(path), "/grant:r", grant],
             check=False,
             capture_output=True,
