@@ -197,7 +197,7 @@ def synchronize(
         raise ValueError("Pi dependency pin has malformed SHA-512 integrity")
     if archive is None:
         # The URL is a fixed HTTPS registry URL; bytes must match the reviewed lock.
-        with urllib.request.urlopen(pin.tarball, timeout=30) as response:  # nosec B310
+        with urllib.request.urlopen(pin.tarball, timeout=30) as response:
             payload = response.read(LIMIT + 1)
     else:
         with archive.open("rb") as source:
