@@ -493,50 +493,11 @@ def run_worker_session(
     The sidecar is a local ``syn arm`` process. It holds a socket and prints wake
     messages, but it does not call a model provider and therefore does not spend
     tokens while waiting. ``cwd`` sets the provider working directory in both
-    direct and tmux modes and resolves POSIX executable paths in the launch record.
+    direct and tmux modes; it defaults to the directory at the time of this call.
+    That same directory resolves POSIX executable paths in the launch record.
     """
     if not command:
         raise ValueError("worker-session requires a provider command")
-    return _dispatch_worker_session(
-        identity=identity,
-        command=command,
-        project=project,
-        uri=uri,
-        syn_bin=syn_bin,
-        token=token,
-        token_file=token_file,
-        arm=arm,
-        terminal_tmux=terminal_tmux,
-        tmux_bin=tmux_bin,
-        synapse_bin=synapse_bin,
-        tmux_session=tmux_session,
-        cwd=cwd,
-        environ=environ,
-        sidecar_shutdown_timeout_seconds=sidecar_shutdown_timeout_seconds,
-        outcome_file=outcome_file,
-    )
-
-
-def _dispatch_worker_session(
-    *,
-    identity: str,
-    command: Sequence[str],
-    project: str | None,
-    uri: str,
-    syn_bin: str,
-    token: str | None,
-    token_file: str | None,
-    arm: bool,
-    terminal_tmux: str,
-    tmux_bin: str,
-    synapse_bin: str,
-    tmux_session: str | None,
-    cwd: Path | None,
-    environ: Mapping[str, str] | None,
-    sidecar_shutdown_timeout_seconds: float,
-    outcome_file: Path | None,
-) -> WorkerExit:
-    """Choose a tmux terminal or a direct provider, with the arm sidecar when asked."""
     resolved_cwd, env, outcome = _prepare_worker_launch(
         identity=identity,
         project=project,
