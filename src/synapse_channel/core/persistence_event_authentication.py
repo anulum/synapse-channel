@@ -22,6 +22,7 @@ from synapse_channel.core.event_row_recovery import (
     decode_event_row,
     unauthenticated_row,
 )
+from synapse_channel.core.mailbox_pending_layout import record_inserted_event
 from synapse_channel.core.persistence_connection import StoreConnection
 from synapse_channel.core.persistence_schema import create_row_mac_index
 
@@ -73,6 +74,7 @@ class EventAuthentication:
                 "UPDATE events SET mac = ? WHERE seq = ?",
                 (self.storage.row_mac.mac(sequence, ts, kind, payload), sequence),
             )
+        record_inserted_event(self.storage.connection, sequence, kind, payload)
         return sequence
 
     def has_row_macs(self) -> bool:
