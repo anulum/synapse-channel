@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -420,7 +420,7 @@ def _cwd_project_context(
 
         def runner(cmd: Sequence[str]) -> str:
             # Fixed-argv git metadata probe; no shell or user command text.
-            return subprocess.run(  # nosec
+            return subprocess.run(  # nosec B603 # argv, never a shell
                 list(cmd), capture_output=True, text=True, check=True
             ).stdout.strip()
 
