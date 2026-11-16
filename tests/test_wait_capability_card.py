@@ -212,7 +212,7 @@ async def test_wait_with_failing_advertise_stays_up(
         name="PROJ/seat-1-rx",
         for_name="PROJ/seat-1",
         timeout=0.2,
-        agent_factory=_FailingAdvertiseAgent,  # type: ignore[arg-type]
+        agent_factory=_FailingAdvertiseAgent,  # type: ignore[arg-type] # probe double, not an agent
         capability_card_path=card_path,
     )
     assert code == 2
@@ -245,7 +245,7 @@ async def test_wait_periodically_refreshes_the_registration(tmp_path: Path) -> N
         name="PROJ/seat-1-rx",
         for_name="PROJ/seat-1",
         timeout=0.35,
-        agent_factory=_RecordingAgent,  # type: ignore[arg-type]
+        agent_factory=_RecordingAgent,  # type: ignore[arg-type] # probe double, not an agent
         capability_card_path=card_path,
         capability_refresh_seconds=0.1,
     )
@@ -281,7 +281,7 @@ async def test_wait_without_refresh_interval_advertises_once(tmp_path: Path) -> 
         name="PROJ/seat-1-rx",
         for_name="PROJ/seat-1",
         timeout=0.2,
-        agent_factory=_RecordingAgent,  # type: ignore[arg-type]
+        agent_factory=_RecordingAgent,  # type: ignore[arg-type] # probe double, not an agent
         capability_card_path=card_path,
         capability_refresh_seconds=0.0,
     )
