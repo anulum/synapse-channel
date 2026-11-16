@@ -13,7 +13,7 @@ import hashlib
 import json
 import re
 import shutil
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -168,7 +168,7 @@ def _git(repo: Path, *args: str, input_bytes: bytes | None = None) -> bytes:
     if executable is None:
         raise ReviewFeedbackError("Git executable is unavailable")
     try:
-        result = subprocess.run(  # nosec B603
+        result = subprocess.run(  # nosec B603 # argument vector, never a shell
             [executable, "-C", str(repo), *args],
             input=input_bytes,
             stdout=subprocess.PIPE,
