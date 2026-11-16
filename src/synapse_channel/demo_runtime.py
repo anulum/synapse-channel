@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import asyncio
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -129,7 +129,7 @@ async def _start_local_hub(
 
 def _run_git(workspace: Path, *args: str) -> str:
     """Run one bounded Git command in the disposable demo workspace."""
-    result = subprocess.run(  # nosec B603 B607
+    result = subprocess.run(  # nosec B603 B607 # fixed argv; the executable is resolved from PATH
         ["git", *args],
         cwd=workspace,
         check=False,
