@@ -9,15 +9,16 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
 import logging
 import random
 import sqlite3
 import time
-from fnmatch import fnmatchcase
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from websockets.asyncio.client import connect
@@ -42,12 +43,12 @@ from synapse_channel.core.mailbox_pending_layout import (
 from synapse_channel.core.mailbox_pending_layout import (
     _project_event as project_one_event,
 )
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import (
     migrate_plaintext_to_sqlcipher,
     sqlcipher_available,
 )
-from synapse_channel.core.role_mailbox import mailbox_role
+from synapse_channel.core.role_mailbox import addresses_role, mailbox_role
 
 _IDENTITIES = ("P/ann", "P/bob", "Q/dee", "P", "role:P/reviewer")
 _TARGETS = (
@@ -80,50 +81,115 @@ def _chat(store: EventStore, *, sender: str = "PEER", target: str = "PROJ/BOB") 
     )
 
 
-def _reference_reaches(target: str, identity: str) -> bool:
-    """The historical scan: one directed chat reaches a mailbox once."""
+# Copied verbatim from d6b659c9 src/synapse_channel/core/mailbox_pending.py.
+_GLOB_MARKERS = frozenset("*?[")
+
+
+class _HistoricalScan:
+    """Run the cold count copied from d6b659c9 against one store."""
+
+    store: EventStore | None
+    _known: tuple[str, ...]
+    _counts: dict[str, int]
+    _watermarks: dict[str, int]
+    _retired_role_watermarks: dict[str, int]
+
+    def watermark_for(self, identity: str) -> int:
+        """Return the highest accepted durable chat sequence for a mailbox."""
+        name = identity.strip()
+        if name in self._watermarks:
+            return self._watermarks[name]
+        return self._retired_role_watermarks.get(name, 0)
+
+    def _materialise_missing_counts(self) -> None:
+        """Project every cold count from one shared chat-history read."""
+        missing = tuple(identity for identity in self._known if identity not in self._counts)
+        if not missing:
+            return
+        starts = {identity: self.watermark_for(identity) + 1 for identity in missing}
+        store = cast(EventStore, self.store)
+        events = store.read_window(
+            min_seq=min(starts.values()),
+            max_seq=None,
+            kinds=(EventKind.CHAT,),
+        )
+        counts = dict.fromkeys(missing, 0)
+        exact_recipients = self._exact_recipients(missing)
+        for event in events:
+            payload = event.payload
+            target = str(payload.get("target") or "all")
+            if payload.get("channel") or not is_directed_target(target):
+                continue
+            sender = str(payload.get("sender") or "")
+            for identity in self._recipients(target, missing, exact_recipients):
+                if event.seq >= starts[identity] and sender != identity:
+                    counts[identity] += 1
+        self._counts.update(counts)
+
+    @staticmethod
+    def _exact_recipients(missing: Iterable[str]) -> dict[str, set[str]]:
+        """Map each exact address to the cold mailboxes it reaches.
+
+        A personal mailbox is reached by its name and its bare project; a role
+        mailbox only by its role.
+        """
+        exact: dict[str, set[str]] = {}
+        for identity in missing:
+            role = mailbox_role(identity)
+            addresses = (role,) if role is not None else (identity, identity.split("/", 1)[0])
+            for address in addresses:
+                exact.setdefault(address, set()).add(identity)
+        return exact
+
+    @staticmethod
+    def _recipients(target: str, missing: Iterable[str], exact: Mapping[str, set[str]]) -> set[str]:
+        """Return the cold mailboxes one directed target reaches."""
+        recipients: set[str] = set()
+        for part in (raw.strip() for raw in target.split(",") if raw.strip()):
+            if any(marker in part for marker in _GLOB_MARKERS):
+                recipients.update(identity for identity in missing if _glob_reaches(part, identity))
+            else:
+                recipients.update(exact.get(part, ()))
+        return recipients
+
+
+def _glob_reaches(part: str, identity: str) -> bool:
+    """Return whether a glob target part reaches a mailbox.
+
+    A role mailbox is reached when its role matches the part; a personal mailbox
+    when its name or its bare project does.
+    """
     role = mailbox_role(identity)
+    if role is not None:
+        return addresses_role(part, role)
     project = identity.split("/", 1)[0]
-    for raw in target.split(","):
-        part = raw.strip()
-        if not part:
-            continue
-        if role is not None:
-            if fnmatchcase(role, part):
-                return True
-            continue
-        if any(marker in part for marker in "*?["):
-            if fnmatchcase(identity, part) or fnmatchcase(project, part):
-                return True
-        elif part == identity or part == project:
-            return True
-    return False
+    return fnmatch.fnmatchcase(identity, part) or fnmatch.fnmatchcase(project, part)
 
 
-def _reference_pending(events: list[StoredEvent], identity: str, watermark: int) -> int:
-    """Count the way the cold scan did, from the events still in the journal."""
-    total = 0
-    for event in events:
-        if event.kind != EventKind.CHAT or event.seq <= watermark:
-            continue
-        payload = event.payload
-        target = str(payload.get("target") or "all")
-        if payload.get("channel") or not is_directed_target(target):
-            continue
-        if str(payload.get("sender") or "") == identity:
-            continue
-        if _reference_reaches(target, identity):
-            total += 1
-    return total
+def _historical_counts(
+    store: EventStore, identities: tuple[str, ...], watermarks: Mapping[str, int]
+) -> dict[str, int]:
+    """Count ``identities`` with the copied scan and the tracker's watermarks."""
+    scan = _HistoricalScan()
+    scan.store = store
+    scan._known = identities
+    scan._counts = {}
+    scan._watermarks = dict(watermarks)
+    scan._retired_role_watermarks = {}
+    scan._materialise_missing_counts()
+    return scan._counts
 
 
 def _assert_matches(store: EventStore, tracker: MailboxPendingTracker) -> None:
     tracker.snapshot(("P/ann",), lambda _name: ("P/reviewer",))
     assert tracker.pending_count("P/reviewer") == 0
-    events = store.read_since(0)
+    counted = _historical_counts(
+        store,
+        _IDENTITIES,
+        {identity: tracker.watermark_for(identity) for identity in _IDENTITIES},
+    )
     for identity in _IDENTITIES:
-        watermark = tracker.watermark_for(identity)
-        assert tracker.pending_count(identity) == _reference_pending(events, identity, watermark)
+        assert tracker.pending_count(identity) == counted[identity]
 
 
 def test_export_leaves_mailbox_counts_out_of_the_portable_file() -> None:
@@ -193,14 +259,15 @@ def test_deleting_a_counted_chat_matches_the_scan(tmp_path: Path) -> None:
         tracker = MailboxPendingTracker(store)
         assert tracker.advance("PROJ/BOB", first, source="cursor") is True
         assert store.delete([first]) == 1
-        events = store.read_since(0)
-        assert tracker.pending_count("PROJ/BOB") == _reference_pending(
-            events, "PROJ/BOB", tracker.watermark_for("PROJ/BOB")
-        )
+        mark = tracker.watermark_for("PROJ/BOB")
+        counted = _historical_counts(store, ("PROJ/BOB",), {"PROJ/BOB": mark})
+        assert tracker.pending_count("PROJ/BOB") == counted["PROJ/BOB"]
         assert store.delete([second]) == 1
-        events = store.read_since(0)
         assert tracker.pending_count("PROJ/BOB") == 0
-        assert _reference_pending(events, "PROJ/BOB", tracker.watermark_for("PROJ/BOB")) == 0
+        cleared = _historical_counts(
+            store, ("PROJ/BOB",), {"PROJ/BOB": tracker.watermark_for("PROJ/BOB")}
+        )
+        assert cleared["PROJ/BOB"] == 0
         assert store.delete([]) == 0
     finally:
         store.close()
