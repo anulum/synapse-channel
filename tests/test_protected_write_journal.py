@@ -64,6 +64,6 @@ def test_shared_commit_evidence_rejects_invalid_sequence(tmp_path: Path, sequenc
             store,
             operation_key=_admission().operation_key,
             request_digest=canonical_request_digest(request),
-            mutation_sequence=sequence,  # type: ignore[arg-type]
+            mutation_sequence=sequence,  # type: ignore[arg-type] # sequence is wrong
         )
     store.close()
