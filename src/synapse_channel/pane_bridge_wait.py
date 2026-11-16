@@ -18,7 +18,7 @@ within the same bound as before.
 from __future__ import annotations
 
 # The wait child is this module's controlled process boundary.
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 
@@ -76,7 +76,7 @@ def _popen(
 ) -> WaitProcess:
     """Start ``args`` with :class:`subprocess.Popen`."""
     # The command is the fixed `synapse wait` argument vector built by the bridge.
-    return subprocess.Popen(  # nosec B603
+    return subprocess.Popen(  # nosec B603 # argument vector, never a shell
         list(args), stdout=stdout, stderr=stderr, text=text, env=dict(env)
     )
 
