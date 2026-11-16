@@ -233,7 +233,10 @@ class TestHandledPaths:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         connector = object()
-        peer = OperatorRelayPeer(uri="wss://owner.test", connector=connector)  # type: ignore[arg-type]
+        peer = OperatorRelayPeer(
+            uri="wss://owner.test",
+            connector=connector,  # type: ignore[arg-type] # probe
+        )
         monkeypatch.setattr(
             orf,
             "route_operator_relay",
