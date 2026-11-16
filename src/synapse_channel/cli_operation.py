@@ -44,6 +44,7 @@ from typing import Any
 from synapse_channel.cli_hub_request import ask_hub
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.cli_operation_attempt import add_attempt_parser
+from synapse_channel.cli_operation_report import add_report_parser
 from synapse_channel.cli_operation_seal import add_seal_parsers
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.aef_canonical import canonicalize_json
@@ -331,7 +332,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     """Register every ``synapse operation`` subcommand.
 
     The subcommands are ``declare``, ``outcome``, ``verification``, ``attempt``, ``state``,
-    ``seal`` and ``unmark``.
+    ``seal``, ``unmark`` and ``report``.
 
     Parameters
     ----------
@@ -344,6 +345,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     actions = group.add_subparsers(dest="operation_command", required=True)
 
+    _add_declare_parser(actions)
+    _add_evidence_parsers(actions)
+    add_attempt_parser(actions, _add_common)
+    add_seal_parsers(actions, _add_common)
+    add_report_parser(actions)
+
+
+def _add_declare_parser(actions: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register ``declare``: the operation, its epoch, its effect and that effect's identifiers."""
     declare = actions.add_parser("declare", help="Declare an operation before its effect.")
     _add_common(declare)
     declare.add_argument(
@@ -384,6 +394,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     declare.set_defaults(func=_cmd_declare)
 
+
+def _add_evidence_parsers(actions: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register ``outcome`` and ``verification``, which publish a record file unchanged."""
     for name, help_text, func in (
         ("outcome", "Publish an execution-outcome report file.", _cmd_outcome),
         ("verification", "Publish a result-verification record file.", _cmd_verification),
@@ -395,6 +408,3 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "--operation-id", default=None, help="Defaults to the record's own operation_id."
         )
         evidence.set_defaults(func=func)
-
-    add_attempt_parser(actions, _add_common)
-    add_seal_parsers(actions, _add_common)

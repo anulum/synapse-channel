@@ -45,6 +45,11 @@ start to finish and makes the cockpit the dashboard's front door.
 
 ### Added
 
+- `synapse operation report DB --operation-id ID` prints one operation's chain from the hub's event
+  store, without the hub: the declaration with its intent digest checked, the approval notes on it, the
+  hub's answers, the executor's reports, the verifications and the seals, each with its journal
+  sequence, and the state of its most consequential attempt; an executor's report is never shown as a
+  success without a verification, and a deadline never ends an attempt.
 - `synapse dashboard --scope-groups FILE` declares groups of namespaces, each a scope of its own:
   `scope=group:<name>` narrows the snapshot, the Studio projection, the live stream and the five
   event-backed feeds to the union of the namespaces the group names. Core keeps no record of groups,

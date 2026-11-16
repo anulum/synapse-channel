@@ -1938,11 +1938,11 @@ an installed protected runtime or revocation fencing.
 |---|---:|
 | Package version | 0.99.52 |
 | Public API exports | 70 |
-| Package modules | 1019 |
-| Classes | 1452 |
+| Package modules | 1021 |
+| Classes | 1455 |
 | Wire message types | 122 |
-| CLI subcommands | 309 |
-| Test functions | 14431 |
+| CLI subcommands | 310 |
+| Test functions | 14438 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 99 |
 | GitHub Actions workflows | 29 |
