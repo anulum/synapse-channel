@@ -23,6 +23,7 @@ import os
 import shlex
 import shutil
 import stat
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,14 @@ HOOK_MARKER = "# synapse-git-hook"
 
 TRIGGER_HOOKS = {"commit": "post-commit", "merge": "post-merge"}
 """Maps an auto-release trigger to the git hook filename that fires it."""
+
+RELEASE_UNREACHABLE_EXIT_CODE = 69
+"""Exit when git-release could not reach the hub and claims may stay held.
+
+69 is the usual service-unavailable status. 75 is already the waker's temporary
+reload, so this result uses a different code. The installed hook keeps
+``|| true`` and does not fail the commit.
+"""
 
 
 def hooks_directory(*, runner: GitRunner = _default_git_runner) -> Path:
@@ -96,9 +105,13 @@ def _hook_script(
     ``PATH`` hijack).
     """
     auth = f" {shell_long_option('--token-file', token_file)}" if token_file else ""
+    # The comment is part of the installed script: a hook never blocks a commit,
+    # so a non-zero release result must not fail the commit that just landed.
     return (
         "#!/bin/sh\n"
         f"{HOOK_MARKER}\n"
+        "# A hook never blocks a commit: git-release exits non-zero when the\n"
+        "# hub was not reached, and that result must not fail the commit.\n"
         f"{shell_command_arg(synapse_bin)} git-release --resolve-identity "
         f"{shell_long_option('--trigger', trigger)} {shell_long_option('--uri', uri)} "
         f"{shell_long_option('--name', name)}{auth} || true\n"
@@ -200,13 +213,15 @@ def hook_installed(
 def _hook_synapse_bin(text: str) -> str | None:
     """Return the ``synapse`` executable a Synapse hook script invokes, or ``None``.
 
-    Reads the resolved binary back out of the hook's ``git-release`` line (the
-    first shell token), so a test can confirm the path a hook will actually run.
+    Reads the resolved binary back out of the hook's ``git-release`` command
+    (the first shell token). Comment lines are ignored, so a note that mentions
+    the command is not mistaken for it.
     """
     for line in text.splitlines():
-        if "git-release" in line:
-            tokens = shlex.split(line)
-            return tokens[0] if tokens else None
+        if line.lstrip().startswith("#") or "git-release" not in line:
+            continue
+        tokens = shlex.split(line)
+        return tokens[0] if tokens else None
     return None
 
 
@@ -329,6 +344,30 @@ def _paths_overlap(
     return False
 
 
+def _report_unreached_release(*, name: str, uri: str, changed: list[str]) -> int:
+    """Warn that this release did not happen and return the unreached code.
+
+    Claim task ids are not stored in the repository. The warning says the claims
+    of ``name`` may stay held, names the paths this commit changed when git
+    reported any, and prints the manual ``synapse release`` command.
+    """
+    print(f"[{name}] Could not reach hub at {uri}.", file=sys.stderr)
+    if changed:
+        listed = ", ".join(changed)
+        print(
+            f"Claims of {name} may stay held. This commit changed: {listed}.",
+            file=sys.stderr,
+        )
+    else:
+        print(f"Claims of {name} may stay held.", file=sys.stderr)
+    command = (
+        f"synapse release {shell_long_option('--name', name)} "
+        f"{shell_long_option('--uri', uri)} -- <task>"
+    )
+    print(f"Release them with: {command}", file=sys.stderr)
+    return RELEASE_UNREACHABLE_EXIT_CODE
+
+
 async def run_git_release(
     *,
     uri: str,
@@ -342,8 +381,11 @@ async def run_git_release(
 ) -> int:
     """Release this agent's branch-scoped claims whose paths were committed/merged.
 
-    A hook must never block a commit, so an unreachable hub is not an error here;
-    only a git failure before the hub is contacted returns non-zero.
+    A hook must never block a commit, so the installed hook keeps ``|| true``.
+    An unreachable hub, including a name conflict that outlasts the registration
+    budget, is still not a successful release: this function warns on stderr and
+    returns :data:`RELEASE_UNREACHABLE_EXIT_CODE`. Only a git failure before the
+    hub is contacted returns ``1``.
 
     Parameters
     ----------
@@ -366,8 +408,9 @@ async def run_git_release(
     Returns
     -------
     int
-        ``0`` on a clean run (including an unreachable hub); ``1`` only when git
-        fails before the hub is contacted.
+        ``0`` when the release ran, including when no claim matched;
+        :data:`RELEASE_UNREACHABLE_EXIT_CODE` when the hub could not be reached;
+        ``1`` when git fails before the hub is contacted.
     """
     try:
         changed = changed_files(trigger, runner=runner)
@@ -400,8 +443,7 @@ async def run_git_release(
     conn_task = await register_owner(agent, ready_timeout)
     try:
         if conn_task is None:
-            print(f"[{name}] Could not reach hub at {uri}.")
-            return 0
+            return _report_unreached_release(name=name, uri=uri, changed=changed)
         await agent.request_state()
         for _ in range(40):
             if snapshots:

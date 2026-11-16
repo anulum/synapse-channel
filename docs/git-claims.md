@@ -316,8 +316,16 @@ hub) to match the identity your agent claims under; a pre-existing hook from
 anything else is left untouched.
 
 The hub never parses Git or source: it receives only an ordinary release. The
-hook never blocks a commit — an unreachable hub or no matching claim is simply
-a no-op.
+hook never blocks a commit. When the hub cannot be reached, including a name
+conflict that lasts for the whole registration budget, `git-release` exits 69
+and writes a warning to standard error. 69 is the usual service-unavailable
+status; 75 is already the waker's reload code. Claim task ids are not stored in
+the repository, so the warning says that claims of this name may stay held,
+names the paths this commit changed, and prints
+`synapse release --name=<you> --uri=<hub> -- <task>`. The installed hook ends
+with `|| true`, and a comment in the hook says why that result must not fail
+the commit. A release that found no matching claim still exits 0. A git failure
+before the hub is contacted exits 1.
 
 When wrapping a commit with `synapse lock`, use the same owner identity as the
 installed hooks. The lock disconnects after acquiring its durable task claim so

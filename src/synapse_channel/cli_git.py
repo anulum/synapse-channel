@@ -29,7 +29,12 @@ from synapse_channel.cli_git_claim_options import add_claim_outcome_options
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.git.gitclaim import GitError, run_git_claim
 from synapse_channel.git.gitconflict import run_conflicts
-from synapse_channel.git.githook import check_hooks, install_hooks, run_git_release
+from synapse_channel.git.githook import (
+    RELEASE_UNREACHABLE_EXIT_CODE,
+    check_hooks,
+    install_hooks,
+    run_git_release,
+)
 from synapse_channel.git.gitinit import init_repo
 from synapse_channel.git.hook_release_identity import ReleaseIdentity, resolve_release_identity
 from synapse_channel.git.semantic_claim_suggest import (
@@ -405,6 +410,52 @@ def _cmd_conflicts(
     )
 
 
+def _add_git_release_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register ``git-release``, including the exit code for an unreached hub."""
+    git_release = subparsers.add_parser(
+        "git-release",
+        help=(
+            "Release branch-scoped claims whose paths were committed or merged "
+            f"(exit {RELEASE_UNREACHABLE_EXIT_CODE} when the hub cannot be reached)."
+        ),
+        description=(
+            "Used by git hooks. Exit 0 when the release ran, 1 when git fails "
+            "before the hub is contacted, and "
+            f"{RELEASE_UNREACHABLE_EXIT_CODE} when the hub cannot be reached, "
+            "including a name conflict that outlasts the registration budget. "
+            "That result warns on stderr which claims may stay held and prints "
+            "`synapse release <task> --name <you>`. The installed hook keeps "
+            "`|| true`, so the commit is not blocked."
+        ),
+    )
+    git_release.add_argument(
+        "task_id",
+        nargs="?",
+        default=None,
+        help="(not accepted) git-release is hook-invoked and auto-detects claims; "
+        "for a manual drop use `synapse release <task> --name <you>`.",
+    )
+    git_release.add_argument(
+        "--trigger",
+        choices=["commit", "merge"],
+        default=None,
+        help="Which auto-release trigger fired (required for the hook-invoked release).",
+    )
+    git_release.add_argument(
+        "--resolve-identity",
+        action="store_true",
+        help="Release as the seat recorded for the current worktree by `synapse git-init` "
+        "(its synapse.identity/uri/tokenFile), falling back to --name/--uri. The installed "
+        "hooks pass this so one shared hook releases each worktree's own claims.",
+    )
+    git_release.add_argument("--uri", default=default_hub_uri())
+    git_release.add_argument("--name", default="USER")
+    git_release.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    git_release.set_defaults(func=_cmd_git_release)
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the git-aware subparsers on the top-level CLI."""
     git_claim = subparsers.add_parser(
@@ -609,34 +660,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     git_hook.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     git_hook.set_defaults(func=_cmd_git_hook)
 
-    git_release = subparsers.add_parser(
-        "git-release",
-        help="Release branch-scoped claims whose paths were committed/merged (used by git hooks).",
-    )
-    git_release.add_argument(
-        "task_id",
-        nargs="?",
-        default=None,
-        help="(not accepted) git-release is hook-invoked and auto-detects claims; "
-        "for a manual drop use `synapse release <task> --name <you>`.",
-    )
-    git_release.add_argument(
-        "--trigger",
-        choices=["commit", "merge"],
-        default=None,
-        help="Which auto-release trigger fired (required for the hook-invoked release).",
-    )
-    git_release.add_argument(
-        "--resolve-identity",
-        action="store_true",
-        help="Release as the seat recorded for the current worktree by `synapse git-init` "
-        "(its synapse.identity/uri/tokenFile), falling back to --name/--uri. The installed "
-        "hooks pass this so one shared hook releases each worktree's own claims.",
-    )
-    git_release.add_argument("--uri", default=default_hub_uri())
-    git_release.add_argument("--name", default="USER")
-    git_release.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
-    git_release.set_defaults(func=_cmd_git_release)
+    _add_git_release_parser(subparsers)
 
     conflicts = subparsers.add_parser(
         "conflicts",

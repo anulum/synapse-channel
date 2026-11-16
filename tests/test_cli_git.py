@@ -19,6 +19,7 @@ import pytest
 
 from synapse_channel import cli, cli_git
 from synapse_channel.git.gitclaim import GitError
+from synapse_channel.git.githook import RELEASE_UNREACHABLE_EXIT_CODE
 from synapse_channel.git.hook_release_identity import ReleaseIdentity
 
 # --- git-claim ---------------------------------------------------------------
@@ -663,10 +664,18 @@ def test_cmd_git_hook_test_reports_git_error(capsys: pytest.CaptureFixture[str])
 # --- git-release -------------------------------------------------------------
 
 
-def test_parser_git_release() -> None:
-    args = cli.build_parser().parse_args(["git-release", "--trigger", "merge"])
+def test_parser_git_release(capsys: pytest.CaptureFixture[str]) -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["git-release", "--trigger", "merge"])
     assert args.func is cli_git._cmd_git_release
     assert args.trigger == "merge"
+    with pytest.raises(SystemExit) as caught:
+        parser.parse_args(["git-release", "--help"])
+    assert caught.value.code == 0
+    help_text = capsys.readouterr().out
+    assert f"{RELEASE_UNREACHABLE_EXIT_CODE} when the hub cannot be reached" in help_text
+    assert "synapse release <task> --name <you>" in help_text
+    assert "|| true" in help_text
 
 
 def test_cmd_git_release_dispatches() -> None:

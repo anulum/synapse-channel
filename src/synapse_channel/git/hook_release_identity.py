@@ -68,8 +68,8 @@ def _read_token(token_file: str) -> str | None:
     secret-floor refusal still yields ``None`` rather than raising: the
     auto-release hook must not block a commit, and a tokenless release simply
     cannot authenticate to a secured hub (which
-    :func:`synapse_channel.git.githook.run_git_release` already treats as a
-    no-op, not an error).
+    :func:`synapse_channel.git.githook.run_git_release` reports as an unreached
+    release, not as a release that succeeded).
     """
     if not token_file.strip():
         return None

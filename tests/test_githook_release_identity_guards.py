@@ -19,7 +19,7 @@ from claim_outcome_helpers import ClaimProxy, claim_proxy
 from cli_e2e_helpers import git_repo, git_run
 from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel.git.gitclaim import run_git_claim
-from synapse_channel.git.githook import run_git_release
+from synapse_channel.git.githook import RELEASE_UNREACHABLE_EXIT_CODE, run_git_release
 from synapse_channel.git.semantic_scope import semantic_scope_path
 
 
@@ -35,11 +35,101 @@ def _committed_repo(tmp_path: Path) -> Path:
 async def test_unreachable_hub_from_a_real_repository_never_blocks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The hook resolves the real repository, finds no hub, reports it and exits 0."""
+    """A missing hub warns that claims may stay held and returns the unreached code."""
     monkeypatch.chdir(_committed_repo(tmp_path))
     uri = f"ws://127.0.0.1:{free_port()}"
-    assert await run_git_release(uri=uri, name="me", trigger="commit", ready_timeout=0.2) == 0
-    assert f"[me] Could not reach hub at {uri}." in capsys.readouterr().out
+    code = await run_git_release(uri=uri, name="me", trigger="commit", ready_timeout=0.2)
+    captured = capsys.readouterr()
+    assert code == RELEASE_UNREACHABLE_EXIT_CODE
+    assert "Could not reach hub" not in captured.out
+    assert f"[me] Could not reach hub at {uri}." in captured.err
+    assert "Claims of me may stay held. This commit changed: notes.md." in captured.err
+    assert f"synapse release --name=me --uri={uri} -- <task>" in captured.err
+
+
+class _NameConflictAgent:
+    """A client the hub closes with a name conflict for every attempt."""
+
+    def __init__(
+        self,
+        name: str,
+        callback: object,
+        *,
+        uri: str,
+        verbose: bool,
+        token: str | None,
+    ) -> None:
+        self.name = name
+        self.callback = callback
+        self.uri = uri
+        self.verbose = verbose
+        self.token = token
+        self.running = True
+        self.last_close_code: int | None = None
+        self.last_close_reason = ""
+        self.hub_id = ""
+        self.connects = 0
+
+    async def connect(self) -> None:
+        """Close at once with the name-conflict code the registration retries."""
+        self.connects += 1
+        self.last_close_code = 4009
+        self.last_close_reason = "name conflict"
+
+    async def wait_until_ready(self, timeout: float) -> bool:
+        """Never become ready, so each attempt ends and the conflict is retried."""
+        assert timeout >= 0
+        return False
+
+
+async def test_name_conflict_that_outlasts_the_budget_reports_held_claims(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A name conflict that lasts the whole budget warns and does not look successful."""
+    monkeypatch.chdir(_committed_repo(tmp_path))
+    created: list[_NameConflictAgent] = []
+
+    def factory(
+        name: str,
+        callback: object,
+        *,
+        uri: str,
+        verbose: bool = False,
+        token: str | None = None,
+    ) -> Any:
+        agent = _NameConflictAgent(name, callback, uri=uri, verbose=verbose, token=token)
+        created.append(agent)
+        return agent
+
+    uri = "ws://127.0.0.1:9"
+    code = await run_git_release(
+        uri=uri,
+        name="me",
+        trigger="commit",
+        ready_timeout=0.2,
+        agent_factory=factory,
+    )
+    err = capsys.readouterr().err
+    assert code == RELEASE_UNREACHABLE_EXIT_CODE
+    assert created[0].connects >= 2
+    assert "Claims of me may stay held. This commit changed: notes.md." in err
+    assert f"synapse release --name=me --uri={uri} -- <task>" in err
+
+
+async def test_unreached_release_with_no_changed_path_still_names_the_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An empty commit still says this name's claims may stay held."""
+    repo = git_repo(tmp_path / "repo")
+    git_run(repo, "commit", "-q", "--allow-empty", "-m", "empty")
+    monkeypatch.chdir(repo)
+    uri = f"ws://127.0.0.1:{free_port()}"
+    code = await run_git_release(uri=uri, name="me", trigger="commit", ready_timeout=0.2)
+    err = capsys.readouterr().err
+    assert code == RELEASE_UNREACHABLE_EXIT_CODE
+    assert "Claims of me may stay held." in err
+    assert "This commit changed:" not in err
+    assert f"synapse release --name=me --uri={uri} -- <task>" in err
 
 
 def _misaligned_paths(claim: dict[str, Any]) -> None:

@@ -18,6 +18,12 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+- `synapse git-release` exits 69 when it cannot reach the hub, including when
+  its name stays in conflict for the whole registration budget. Standard error
+  says that claims of that name may stay held, names the paths this commit
+  changed, and prints the `synapse release` command. The installed hook still
+  ends with `|| true`, so the commit is not blocked.
+
 ## [0.99.52] - 2026-11-15
 
 Core 0.99.52 takes an effect through the hub's governed operations from

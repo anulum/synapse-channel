@@ -109,7 +109,7 @@ everything, since they need the whole command table.
 | `synapse git-claim` | Claim work scoped to the current git branch (see [Git-native claims](git-claims.md)). |
 | `synapse git-claim-check --staged` | Read the real staged index and fail unless one exact identity owns editable claims covering every path on this worktree and branch. |
 | `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
-| `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
+| `synapse git-release` | Release the claims whose paths a commit or merge just touched. Exit 69 when the hub cannot be reached and claims may stay held; the installed hook does not fail the commit. |
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
 | `synapse contracts` | `check --base main --branch A --branch B` finds API contract conflicts between branches that share no file, from `contracts.json` and exact SHA-256 versions: a dependent built against another contract version than a branch's new spec (`stale_dependent`), or a spec change whose dependents were not regenerated (`record_mismatch`). Prints one JSON report; exits 0 none, 1 found, 2 unusable input (including a missing or damaged git object), 3 not configured (no `contracts.json` at the base). Advisory: claims and blocks nothing. See [Contract conflicts](contract-conflicts.md). |
 | `synapse cross-repo` | Scan a directory of repositories into a dependency graph (manifests/CODEOWNERS as edges), flag provably conflicting version pins, and join live claims onto it; with `--repo`, exit `1` when a connected repository holds a live claim; `--suggest-resolution` names each conflict's odd-one-out declaration; `--watch --notify-cmd` runs a sink command on coordination-fact transitions. |
@@ -1246,8 +1246,13 @@ from caller-supplied `epistemic_status`.
 `synapse git-claim` accepts the task id either positionally (`synapse git-claim
 TASK-1 --paths src`) or as a named field (`synapse git-claim --task-id TASK-1
 --paths src`) for generated argv. Use one form, not both. `synapse git-release`
-is hook-invoked and does not take a task id; when a manual drop is needed, use
-`synapse release <task> --name <owner>`.
+is hook-invoked and does not take a task id. It exits 0 when the release ran,
+1 when git fails before the hub is contacted, and 69 when the hub cannot be
+reached, including a name conflict that outlasts the registration budget. Exit
+69 warns on standard error that claims of that name may stay held, names the
+paths this commit changed, and prints `synapse release <task> --name <you>`.
+The installed hook keeps `|| true`, so that result does not fail the commit.
+When a manual drop is needed, use `synapse release <task> --name <owner>`.
 
 `synapse claim-parse --from-text "fix the parser" --provider ollama-api
 --model gemma3:1b --name PROJECT/agent` asks the explicitly selected provider

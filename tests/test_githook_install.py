@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import os
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
 from synapse_channel.git.githook import (
     HOOK_MARKER,
+    RELEASE_UNREACHABLE_EXIT_CODE,
     _binary_resolvable,
     _hook_synapse_bin,
     check_hooks,
@@ -47,6 +49,33 @@ def test_install_hooks_writes_executable_hooks(tmp_path: Path) -> None:
         assert "--name=ME" in body
         assert os.access(hook, os.X_OK)
         assert hook.stat().st_mode & stat.S_IXUSR
+
+
+def test_hook_script_exits_zero_when_release_cannot_reach_the_hub(tmp_path: Path) -> None:
+    """The hook keeps || true, so a held-claim exit does not fail the commit.
+
+    An absent hub and a name conflict that outlasts the budget both return that
+    code. The script does not tell them apart, and neither result blocks the commit.
+    """
+    bin_dir = tmp_path / "bin"
+    hooks_dir = tmp_path / "hooks"
+    bin_dir.mkdir()
+    synapse = bin_dir / "synapse"
+    synapse.write_text(f"#!/bin/sh\nexit {RELEASE_UNREACHABLE_EXIT_CODE}\n", encoding="utf-8")
+    synapse.chmod(0o700)
+    old_path = os.environ.get("PATH", "")
+    try:
+        os.environ["PATH"] = str(bin_dir)
+        install_hooks(uri="ws://h", name="ME", hooks_dir=hooks_dir)
+    finally:
+        os.environ["PATH"] = old_path
+    for filename in ("post-commit", "post-merge"):
+        hook = hooks_dir / filename
+        body = hook.read_text(encoding="utf-8")
+        assert "|| true" in body
+        assert "A hook never blocks a commit" in body
+        completed = subprocess.run([str(hook)], check=False)
+        assert completed.returncode == 0
 
 
 def test_install_hooks_pass_resolve_identity(tmp_path: Path) -> None:
@@ -188,6 +217,8 @@ def test_check_hooks_resolves_dir_from_runner(tmp_path: Path) -> None:
 def test_hook_synapse_bin_extracts_or_returns_none() -> None:
     assert _hook_synapse_bin("/abs/synapse git-release --trigger commit") == "/abs/synapse"
     assert _hook_synapse_bin(f"#!/bin/sh\n{HOOK_MARKER}\n") is None
+    noted = f"# git-release must not fail the commit\n{HOOK_MARKER}\n'/opt/synapse' git-release\n"
+    assert _hook_synapse_bin(noted) == "/opt/synapse"
 
 
 def test_binary_resolvable_covers_each_path() -> None:

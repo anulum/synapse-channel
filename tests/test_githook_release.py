@@ -28,6 +28,7 @@ from synapse_channel.core.protocol import MessageType
 from synapse_channel.git import githook
 from synapse_channel.git.gitclaim import GitError, _default_git_runner, run_git_claim
 from synapse_channel.git.githook import (
+    RELEASE_UNREACHABLE_EXIT_CODE,
     _paths_overlap,
     run_git_release,
 )
@@ -231,9 +232,12 @@ async def test_real_repository_names_a_hub_that_closes_after_welcome(
     async with _hub_that_closes_after_welcome() as uri:
         rc = await run_git_release(uri=uri, name="me", trigger="commit", ready_timeout=1.0)
         release = capsys.readouterr()
-        assert rc == 0
-        assert release.err == ""
-        assert f"[me] Could not reach hub at {uri}." in release.out
+        assert rc == RELEASE_UNREACHABLE_EXIT_CODE
+        assert "Could not reach hub" not in release.out
+        assert f"[me] Could not reach hub at {uri}." in release.err
+        assert "Claims of me may stay held." in release.err
+        assert "This commit changed:" not in release.err
+        assert f"synapse release --name=me --uri={uri} -- <task>" in release.err
         marker = tmp_path / "child-ran"
         code = await _lock(
             uri=uri,

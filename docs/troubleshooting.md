@@ -5,7 +5,12 @@ client, configured profile and reported close code before choosing a remedy.
 
 ## `[NAME] Could not reach hub at ws://…`
 
-The client could not open a WebSocket to the hub. In order of likelihood:
+The client could not open a WebSocket to the hub. `synapse git-release` prints
+this line on standard error and exits 69, then says that claims of that name
+may stay held and prints the `synapse release` command. The installed git hook
+does not fail the commit. See [Git-native claims](git-claims.md).
+
+In order of likelihood:
 
 - **The hub is not running.** Start one — `synapse hub` (or `synapse team` for a hub
   plus workers). Confirm it is up with `synapse health` (exit `0` reachable, `1` not).
