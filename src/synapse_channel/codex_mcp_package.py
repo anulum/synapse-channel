@@ -13,7 +13,7 @@ import hashlib
 import json
 import os
 import re
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -124,7 +124,7 @@ def _run(host: Path, profile: Path, *args: str) -> subprocess.CompletedProcess[s
     env = dict(os.environ)
     env["CODEX_HOME"] = str(profile.expanduser().absolute())
     try:
-        return subprocess.run(  # nosec B603
+        return subprocess.run(  # nosec B603 # argument vector, never a shell
             [str(host), *args],
             env=env,
             capture_output=True,
