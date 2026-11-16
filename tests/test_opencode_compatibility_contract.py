@@ -102,7 +102,7 @@ def test_repository_uses_one_complete_immutable_compatibility_contract() -> None
 
 
 def test_compatibility_types_import_without_workflow_parser_dependency() -> None:
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(
         [
             sys.executable,
             "-S",
@@ -444,7 +444,7 @@ def test_contract_cli_writes_machine_readable_advisory(tmp_path: Path) -> None:
     ):
         path.write_text(json.dumps(value), encoding="utf-8")
 
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(
         [
             sys.executable,
             "-m",
