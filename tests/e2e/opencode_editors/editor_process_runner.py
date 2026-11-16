@@ -23,6 +23,68 @@ from e2e.opencode_editors.process_group import (
 PROCESS_GROUP_SUPERVISION_ENV = "SYNAPSE_EDITOR_E2E_PROCESS_GROUP_SUPERVISED"
 
 
+def _require_bounded_editor_command(
+    command: Sequence[str],
+    timeout: float,
+) -> tuple[str, ...]:
+    """Reject a command or timeout that cannot reserve process-group cleanup."""
+    argv = tuple(command)
+    if not argv or any(not isinstance(argument, str) or not argument for argument in argv):
+        raise ValueError("editor command must contain non-empty string arguments")
+    if not math.isfinite(timeout) or timeout <= PROCESS_GROUP_CLEANUP_TIMEOUT_SECONDS:
+        raise ValueError("editor timeout must reserve the complete process-group cleanup budget")
+    return argv
+
+
+def _start_isolated_editor_process(
+    argv: tuple[str, ...],
+    *,
+    cwd: Path,
+    env: Mapping[str, str],
+) -> subprocess.Popen[str]:
+    """Start the editor driver as a new session leader with the supervision marker."""
+    process_env = dict(env)
+    process_env[PROCESS_GROUP_SUPERVISION_ENV] = "1"
+    return subprocess.Popen(
+        list(argv),
+        cwd=cwd,
+        env=process_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+
+
+def _finish_isolated_editor_process(
+    process: subprocess.Popen[str],
+    argv: tuple[str, ...],
+    timeout: float,
+) -> subprocess.CompletedProcess[str]:
+    """Collect output, clean the group, and report a timeout against the full budget."""
+    command_timeout = timeout - PROCESS_GROUP_CLEANUP_TIMEOUT_SECONDS
+    timed_out: subprocess.TimeoutExpired | None = None
+    stdout = ""
+    stderr = ""
+    try:
+        stdout, stderr = process.communicate(timeout=command_timeout)
+    except subprocess.TimeoutExpired as exc:
+        timed_out = exc
+    finally:
+        terminate_isolated_process_group(process)
+        stdout, stderr = process.communicate()
+
+    if timed_out is not None:
+        raise subprocess.TimeoutExpired(
+            list(argv),
+            timeout,
+            output=stdout,
+            stderr=stderr,
+        ) from timed_out
+    returncode = cast(int, process.returncode)
+    return subprocess.CompletedProcess(list(argv), returncode, stdout, stderr)
+
+
 def run_isolated_editor_command(
     command: Sequence[str],
     *,
@@ -64,41 +126,6 @@ def run_isolated_editor_command(
     RuntimeError
         If process-group cleanup cannot prove that every member exited.
     """
-    argv = tuple(command)
-    if not argv or any(not isinstance(argument, str) or not argument for argument in argv):
-        raise ValueError("editor command must contain non-empty string arguments")
-    if not math.isfinite(timeout) or timeout <= PROCESS_GROUP_CLEANUP_TIMEOUT_SECONDS:
-        raise ValueError("editor timeout must reserve the complete process-group cleanup budget")
-
-    process_env = dict(env)
-    process_env[PROCESS_GROUP_SUPERVISION_ENV] = "1"
-    process = subprocess.Popen(
-        list(argv),
-        cwd=cwd,
-        env=process_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-    )
-    command_timeout = timeout - PROCESS_GROUP_CLEANUP_TIMEOUT_SECONDS
-    timed_out: subprocess.TimeoutExpired | None = None
-    stdout = ""
-    stderr = ""
-    try:
-        stdout, stderr = process.communicate(timeout=command_timeout)
-    except subprocess.TimeoutExpired as exc:
-        timed_out = exc
-    finally:
-        terminate_isolated_process_group(process)
-        stdout, stderr = process.communicate()
-
-    if timed_out is not None:
-        raise subprocess.TimeoutExpired(
-            list(argv),
-            timeout,
-            output=stdout,
-            stderr=stderr,
-        ) from timed_out
-    returncode = cast(int, process.returncode)
-    return subprocess.CompletedProcess(list(argv), returncode, stdout, stderr)
+    argv = _require_bounded_editor_command(command, timeout)
+    process = _start_isolated_editor_process(argv, cwd=cwd, env=env)
+    return _finish_isolated_editor_process(process, argv, timeout)
