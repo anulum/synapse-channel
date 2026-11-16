@@ -17,6 +17,7 @@ against a seeded log so the projection cannot drift from the report it renders.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -50,12 +51,12 @@ def _seed(db: Path) -> None:
     store.close()
 
 
-def _families(text: str) -> dict[str, object]:
+def _families(text: str) -> dict[str, Any]:
     return {family.name: family for family in text_string_to_metric_families(text)}
 
 
-def _sample(family: object, **labels: str) -> float:
-    for sample in family.samples:  # type: ignore[attr-defined]
+def _sample(family: Any, **labels: str) -> float:
+    for sample in family.samples:
         if all(sample.labels.get(key) == val for key, val in labels.items()):
             return float(sample.value)
     raise AssertionError(f"no sample matching {labels}")
@@ -79,8 +80,7 @@ class TestReliabilityTextfile:
 
         families = _families(render_reliability_textfile(run_reliability_report(db)))
         kinds = {
-            sample.labels["kind"]
-            for sample in families["synapse_reliability_findings"].samples  # type: ignore[attr-defined]
+            sample.labels["kind"] for sample in families["synapse_reliability_findings"].samples
         }
         assert kinds == {
             "stale_claim",
@@ -126,8 +126,7 @@ class TestHealthTextfile:
 
         families = _families(render_health_textfile(run_causal_health(db)))
         shapes = {
-            sample.labels["shape"]
-            for sample in families["synapse_causal_health_anomalies"].samples  # type: ignore[attr-defined]
+            sample.labels["shape"] for sample in families["synapse_causal_health_anomalies"].samples
         }
         assert shapes == {"orphaned", "dangling", "stale"}
 
@@ -161,6 +160,6 @@ def test_reliability_render_skips_an_unrecognised_finding_kind() -> None:
 
     families = _families(render_reliability_textfile(report))
     # every known series is present and zero; the unknown kind added no series
-    for sample in families["synapse_reliability_findings"].samples:  # type: ignore[attr-defined]
+    for sample in families["synapse_reliability_findings"].samples:
         assert sample.value == 0
         assert sample.labels["kind"] != "some_future_kind"
