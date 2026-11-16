@@ -37,7 +37,7 @@ import importlib.metadata
 import os
 import re
 import shutil
-import subprocess  # nosec B404 # fixed argv only, never a shell
+import subprocess  # fixed argv only, never a shell
 import sys
 import tempfile
 from collections.abc import Callable, Sequence
@@ -74,7 +74,7 @@ def _git(
     environment = dict(os.environ)
     if index is not None:
         environment["GIT_INDEX_FILE"] = str(index)
-    return subprocess.run(  # nosec B603 # fixed git argv, no shell
+    return subprocess.run(  # fixed git argv, no shell
         [git, "-C", str(repository), *args],
         capture_output=True,
         text=True,
@@ -170,7 +170,7 @@ def run_build(tree: Path, raw: Path, epoch: int, log: Path) -> tuple[Path, Path]
     environment = {**os.environ, "SOURCE_DATE_EPOCH": str(epoch)}
     command = [sys.executable, "-m", "build", "--no-isolation", "--outdir", str(raw), str(tree)]
     with log.open("w", encoding="utf-8") as output:
-        done = subprocess.run(  # nosec B603 # fixed argv, no shell
+        done = subprocess.run(  # fixed argv, no shell
             command, cwd=tree, env=environment, stdout=output, stderr=subprocess.STDOUT, check=False
         )
     if done.returncode != 0:
