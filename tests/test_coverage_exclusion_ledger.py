@@ -232,6 +232,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     # lifecycle and the Pi RPC body stay on these skips. Installed binaries
     # are read by the isolated-profile test.
     "tests/test_integration_catalog.py": (3, "optional-dep-guard"),
+    # Both conversion tests open an encrypted copy, which needs sqlcipher3.
+    "tests/test_mailbox_pending_layout.py": (2, "optional-dep-guard"),
     "tests/test_multihub_mcp_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_opencode_compatibility_smoke.py": (2, "operator-smoke"),
     # Linux procfs and tmux; the foreign-group case needs a process group the

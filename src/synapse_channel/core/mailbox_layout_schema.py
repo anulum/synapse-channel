@@ -224,13 +224,22 @@ def _journal_extent(connection: Any) -> tuple[int, int]:
 
 def _layout_matches(connection: Any) -> bool:
     """Return whether the stored extent is the journal's extent."""
-    row = connection.execute(
-        "SELECT projected_through, chat_rows FROM mailbox_pending_layout LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return False
-    stored = _extent_pair(row[0], row[1])
+    stored = _stored_extent(connection)
     return stored is not None and stored == _journal_extent(connection)
+
+
+def _stored_extent(connection: Any) -> tuple[int, int] | None:
+    """Return the stored extent, or ``None`` when no usable row is stored.
+
+    The outer join always yields one row, so a layout row that another process
+    removed after the version was read reads as an absent extent.
+    """
+    row = connection.execute(
+        "SELECT layout.projected_through, layout.chat_rows FROM (SELECT 1) "
+        "LEFT JOIN (SELECT projected_through, chat_rows FROM mailbox_pending_layout LIMIT 1) "
+        "AS layout ON 1"
+    ).fetchone()
+    return _extent_pair(row[0], row[1])
 
 
 def _advance_layout_extent(connection: Any, seq: int, kind: str) -> None:
@@ -273,12 +282,7 @@ def _copied_extent(source: Any) -> tuple[int, int]:
     columns = {str(row[1]) for row in source.execute("PRAGMA table_info(mailbox_pending_layout)")}
     if "projected_through" not in columns or "chat_rows" not in columns:
         return 0, 0
-    row = source.execute(
-        "SELECT projected_through, chat_rows FROM mailbox_pending_layout LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return 0, 0
-    stored = _extent_pair(row[0], row[1])
+    stored = _stored_extent(source)
     return (0, 0) if stored is None else stored
 
 

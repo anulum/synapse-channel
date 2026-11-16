@@ -33,6 +33,7 @@ from synapse_channel.core.journal_export import NOT_INCLUDED, export_to_sqlite
 from synapse_channel.core.mailbox_pending import MailboxPendingTracker
 from synapse_channel.core.mailbox_pending_layout import (
     MailboxLayoutRefused,
+    copy_mailbox_layout,
     count_between,
     layout_version,
     project_mailbox_layout,
@@ -778,3 +779,90 @@ def test_a_layout_row_without_extent_columns_is_projected_again(
         assert tracker.pending_count("PROJ/BOB") == counted["PROJ/BOB"] == 2
     finally:
         reopened.close()
+
+
+_TEXT_THROUGH = ("UPDATE mailbox_pending_layout SET projected_through = 'damaged'",)
+_TEXT_CHAT_ROWS = ("UPDATE mailbox_pending_layout SET chat_rows = 'damaged'",)
+_NO_EXTENT_COLUMNS = (
+    "ALTER TABLE mailbox_pending_layout RENAME TO mailbox_pending_layout_old",
+    "CREATE TABLE mailbox_pending_layout (version INTEGER NOT NULL)",
+    "INSERT INTO mailbox_pending_layout (version) SELECT version FROM mailbox_pending_layout_old",
+    "DROP TABLE mailbox_pending_layout_old",
+)
+
+
+def _projected_store(path: Path) -> int:
+    store = EventStore(path)
+    try:
+        seq = _chat(store, target="PROJ/BOB")
+        MailboxPendingTracker(store)
+    finally:
+        store.close()
+    return seq
+
+
+@pytest.mark.parametrize(
+    "damage", [_TEXT_THROUGH, _TEXT_CHAT_ROWS], ids=["projected-through", "chat-rows"]
+)
+def test_a_stored_extent_that_is_not_an_integer_is_projected_again(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, damage: tuple[str, ...]
+) -> None:
+    path = tmp_path / "hub.db"
+    seq = _projected_store(path)
+    raw = sqlite3.connect(path)
+    for statement in damage:
+        raw.execute(statement)
+    raw.commit()
+    raw.close()
+    reopened = EventStore(path)
+    try:
+        caplog.set_level(logging.INFO, logger="synapse.hub")
+        tracker = MailboxPendingTracker(reopened)
+        assert "journal changed outside this layout" in caplog.text
+        assert tracker.pending_count("PROJ/BOB") == 1
+        stored = reopened.storage.connection.execute(
+            "SELECT projected_through, chat_rows FROM mailbox_pending_layout"
+        ).fetchall()
+        assert stored == [(seq, 1)]
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize(
+    "damage", [_NO_EXTENT_COLUMNS, _TEXT_THROUGH], ids=["no-extent-columns", "text-extent"]
+)
+def test_a_copy_without_a_usable_source_extent_is_projected_again(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, damage: tuple[str, ...]
+) -> None:
+    plain = tmp_path / "plain.db"
+    converted = tmp_path / "converted.db"
+    seq = _projected_store(plain)
+    source = sqlite3.connect(plain)
+    destination = sqlite3.connect(converted)
+    try:
+        for statement in damage:
+            source.execute(statement)
+        source.commit()
+        source.backup(destination)
+        destination.execute("DROP TABLE mailbox_address_hits")
+        destination.execute("DROP TABLE mailbox_pending_counts")
+        destination.execute("DROP TABLE mailbox_pending_layout")
+        assert copy_mailbox_layout(source, destination)
+        destination.commit()
+        assert destination.execute(
+            "SELECT version, projected_through, chat_rows FROM mailbox_pending_layout"
+        ).fetchall() == [(1, 0, 0)]
+        assert destination.execute("SELECT seq, address FROM mailbox_address_hits").fetchall() == [
+            (seq, "PROJ/BOB")
+        ]
+    finally:
+        source.close()
+        destination.close()
+    opened = EventStore(converted)
+    try:
+        caplog.set_level(logging.INFO, logger="synapse.hub")
+        tracker = MailboxPendingTracker(opened)
+        assert "journal changed outside this layout" in caplog.text
+        assert tracker.pending_count("PROJ/BOB") == 1
+    finally:
+        opened.close()
