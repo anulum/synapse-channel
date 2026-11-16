@@ -267,8 +267,12 @@ def test_verify_refuses_a_non_linux_platform(
         _refuse(prepared_verification, prepared_verification.digest)
 
 
-def test_verify_refuses_a_changed_hub_pid(prepared_verification: _PreparedVerification) -> None:
-    """A hub pid that is not the plan pid is refused."""
+def test_verify_refuses_a_changed_hub_pid(
+    prepared_verification: _PreparedVerification,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hub pid that is not the plan pid is refused on the one platform that verifies."""
+    monkeypatch.setattr("synapse_channel.setup_verifier.platform.system", lambda: "Linux")
     adapter = RecordingAdapter()
     adapter.restarted = True
     with pytest.raises(SetupVerificationError, match="verification_target_changed"):
@@ -277,8 +281,10 @@ def test_verify_refuses_a_changed_hub_pid(prepared_verification: _PreparedVerifi
 
 def test_verify_refuses_a_missing_protected_process(
     prepared_verification: _PreparedVerification,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A protected process that is not alive is refused."""
+    """A protected process that is not alive is refused on the one platform that verifies."""
+    monkeypatch.setattr("synapse_channel.setup_verifier.platform.system", lambda: "Linux")
 
     def missing(_pid: int) -> bool:
         return False
