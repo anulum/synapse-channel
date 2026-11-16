@@ -224,7 +224,7 @@ def _stub_bridge_for_route_task() -> SynapseHubBridge:
             return None
 
     bridge = SynapseHubBridge.__new__(SynapseHubBridge)
-    bridge.agent = _Agent()  # type: ignore[assignment]
+    bridge.agent = _Agent()  # type: ignore[assignment] # probe double
     idx = {"i": 0}
 
     async def _await_reply(
