@@ -43,6 +43,12 @@ class _CaptureConnection:
         self.sent.append(raw)
 
 
+def _capture(agent: SynapseAgent) -> _CaptureConnection:
+    connection = _CaptureConnection()
+    agent.connection = connection  # type: ignore[assignment] # capture stands in for the socket
+    return connection
+
+
 def _bundle(private_key: Ed25519PrivateKey) -> EventSignatureTrustBundle:
     key = EventSignatureKey.from_private_key(
         key_id=_KEY_ID, private_key=private_key, senders=frozenset({_SENDER})
@@ -66,13 +72,13 @@ async def test_registration_heartbeat_is_identity_signed(tmp_path: Path) -> None
     agent = SynapseAgent(
         _SENDER, uri="ws://unused", identity_key_path=str(key_path), identity_key_id=_KEY_ID
     )
-    agent.connection = _CaptureConnection()  # type: ignore[assignment]
+    connection = _capture(agent)
 
     await agent.send_message(
         MessageType.HEARTBEAT, target="System", payload="online", sign_identity=True
     )
 
-    frame = json.loads(agent.connection.sent[0])  # type: ignore[union-attr]
+    frame = json.loads(connection.sent[0])
     assert frame["signature"]["key_id"] == _KEY_ID
     result = verify_registration(
         frame,
@@ -89,23 +95,23 @@ async def test_keepalive_heartbeat_is_not_identity_signed(tmp_path: Path) -> Non
     agent = SynapseAgent(
         _SENDER, uri="ws://unused", identity_key_path=str(key_path), identity_key_id=_KEY_ID
     )
-    agent.connection = _CaptureConnection()  # type: ignore[assignment]
+    connection = _capture(agent)
 
     # A keepalive leaves sign_identity at its default False.
     await agent.send_message(MessageType.HEARTBEAT, target="System", payload="online")
 
-    assert "signature" not in json.loads(agent.connection.sent[0])  # type: ignore[union-attr]
+    assert "signature" not in json.loads(connection.sent[0])
 
 
 async def test_opted_out_agent_signs_nothing() -> None:
     agent = SynapseAgent(_SENDER, uri="ws://unused", machine_identity=False)
-    agent.connection = _CaptureConnection()  # type: ignore[assignment]
+    connection = _capture(agent)
 
     await agent.send_message(
         MessageType.HEARTBEAT, target="System", payload="online", sign_identity=True
     )
 
-    assert "signature" not in json.loads(agent.connection.sent[0])  # type: ignore[union-attr]
+    assert "signature" not in json.loads(connection.sent[0])
 
 
 async def test_agent_presents_the_machine_identity_by_default(
@@ -121,13 +127,13 @@ async def test_agent_presents_the_machine_identity_by_default(
     """
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     agent = SynapseAgent(_SENDER, uri="ws://unused")
-    agent.connection = _CaptureConnection()  # type: ignore[assignment]
+    connection = _capture(agent)
 
     await agent.send_message(
         MessageType.HEARTBEAT, target="System", payload="online", sign_identity=True
     )
 
-    frame = json.loads(agent.connection.sent[0])  # type: ignore[union-attr]
+    frame = json.loads(connection.sent[0])
     assert frame["signature"]["key_id"].startswith(MACHINE_KEY_ID_PREFIX)
 
 
@@ -140,13 +146,13 @@ async def test_an_explicit_key_wins_over_the_machine_default(
     agent = SynapseAgent(
         _SENDER, uri="ws://unused", identity_key_path=str(key_path), identity_key_id=_KEY_ID
     )
-    agent.connection = _CaptureConnection()  # type: ignore[assignment]
+    connection = _capture(agent)
 
     await agent.send_message(
         MessageType.HEARTBEAT, target="System", payload="online", sign_identity=True
     )
 
-    frame = json.loads(agent.connection.sent[0])  # type: ignore[union-attr]
+    frame = json.loads(connection.sent[0])
     assert frame["signature"]["key_id"] == _KEY_ID
 
 
