@@ -85,7 +85,7 @@ class VendorRefusal(Exception):
 
 def _run(command: Sequence[str], cwd: Path) -> str:
     """Run ``command`` in ``cwd`` and return its output, or refuse with its error."""
-    done = subprocess.run(  # nosec B603 - fixed argument vectors, no shell
+    done = subprocess.run(  # fixed argument vectors, no shell
         list(command), cwd=cwd, capture_output=True, text=True, check=False
     )
     if done.returncode != 0:
