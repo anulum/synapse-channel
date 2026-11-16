@@ -115,7 +115,7 @@ def _generate(token: dict[str, str], path: Path, **kwargs: object) -> Path:
         module_path=token["module_path"],
         token_label=token["token_label"],
         pin=token["pin"],
-        **kwargs,  # type: ignore[arg-type]
+        **kwargs,  # type: ignore[arg-type] # extra fields are wrong
     )
 
 
