@@ -75,7 +75,7 @@ HOOK_REPLY_TIMEOUT = 5.0
 """Default seconds a hook waits for the hub's verdict."""
 
 
-TOKEN_ENV = "SYNAPSE_TOKEN"  # nosec B105
+TOKEN_ENV = "SYNAPSE_TOKEN"  # nosec B105 # environment variable name, not a credential
 """Environment variable read when neither token option is given."""
 
 
