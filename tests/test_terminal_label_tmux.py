@@ -141,7 +141,7 @@ class Server:
         for client, master in self.clients:
             client.wait(timeout=10)
             os.close(master)
-        socket_dir = Path(os.environ.get("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}"  # nosec B108
+        socket_dir = Path(os.environ.get("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}"
         (socket_dir / self.socket).unlink(missing_ok=True)
 
 
