@@ -271,6 +271,27 @@ def _run_provider(
     return outcome.finish(returncode)
 
 
+def _record_started_pane(
+    *,
+    identity: str,
+    command: Sequence[str],
+    env: Mapping[str, str],
+    tmux_bin: str,
+    session: str,
+    cwd: Path,
+) -> None:
+    """Record the pane pid when tmux reports one."""
+    pane = subprocess.run(  # nosec B603 # argv, never a shell
+        [tmux_bin, "display-message", "-p", "-t", session, "#{pane_pid}"],
+        env=dict(env),
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if pane.isdigit():
+        _record_launch(identity, command, int(pane), env, cwd=cwd)
+
+
 def _run_terminal_tmux_session(
     *,
     identity: str,
@@ -300,15 +321,14 @@ def _run_terminal_tmux_session(
     if started.returncode != 0:
         print(started.detail)
         return started.returncode
-    pane = subprocess.run(  # nosec B603 # argv, never a shell
-        [tmux_bin, "display-message", "-p", "-t", resolved_session, "#{pane_pid}"],
-        env=dict(env),
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip()
-    if pane.isdigit():
-        _record_launch(identity, command, int(pane), env, cwd=cwd)
+    _record_started_pane(
+        identity=identity,
+        command=command,
+        env=env,
+        tmux_bin=tmux_bin,
+        session=resolved_session,
+        cwd=cwd,
+    )
     _start_tmux_waiter(
         identity=identity,
         session=resolved_session,
