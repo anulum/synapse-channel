@@ -448,6 +448,24 @@ def test_public_docs_explain_who_me_presence_and_waiter_distinction() -> None:
     assert "presence is not a wake loop" in combined
 
 
+async def _pin_the_owner_machine(hub: SynapseHub, uri: str, base: Path, name: str) -> None:
+    """Connect the owner and wait until the hub records that machine key."""
+    owner = SynapseAgent(
+        name, None, uri=uri, verbose=False, **machine_identity_agent_kwargs(base=base)
+    )
+    owner_task = asyncio.create_task(owner.connect())
+    try:
+        assert await owner.wait_until_ready(3.0)
+        for _ in range(60):
+            if hub.identity_pins.pinned(name) is not None:
+                break
+            await asyncio.sleep(0.05)
+        assert hub.identity_pins.pinned(name) is not None
+    finally:
+        owner.running = False
+        owner_task.cancel()
+
+
 async def test_who_under_a_foreign_key_fails_loudly_not_silently(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -461,20 +479,7 @@ async def test_who_under_a_foreign_key_fails_loudly_not_silently(
     """
     name = "PROJ/pinned"
     async with running_hub(SynapseHub(identity_pin_path=tmp_path / "pins.json")) as (hub, uri):
-        owner = SynapseAgent(
-            name, None, uri=uri, verbose=False, **machine_identity_agent_kwargs(base=tmp_path / "a")
-        )
-        owner_task = asyncio.create_task(owner.connect())
-        try:
-            assert await owner.wait_until_ready(3.0)
-            for _ in range(60):
-                if hub.identity_pins.pinned(name) is not None:
-                    break
-                await asyncio.sleep(0.05)
-            assert hub.identity_pins.pinned(name) is not None
-        finally:
-            owner.running = False
-            owner_task.cancel()
+        await _pin_the_owner_machine(hub, uri, tmp_path / "a", name)
 
         def _foreign_agent(
             agent_name: str,
