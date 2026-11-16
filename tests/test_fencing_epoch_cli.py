@@ -21,6 +21,7 @@ the epoch store.
 from __future__ import annotations
 
 import shutil
+import time
 from pathlib import Path
 
 from _platform_caps import POSIX_MODE_BITS_MEANINGFUL
@@ -58,6 +59,45 @@ def _state(hub_uri: str, data_home: Path) -> str:
     return state.stdout
 
 
+def _online_names(stdout: str) -> set[str]:
+    """Return the live roster names, leaving out the listing's headings."""
+    names: set[str] = set()
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if (
+            not stripped
+            or stripped.startswith("Online")
+            or stripped.startswith("Reachable ")
+            or stripped.startswith("Unarmed ")
+            or stripped.endswith(":")
+        ):
+            continue
+        names.add(stripped.split()[0])
+    return names
+
+
+def _wait_until_the_hub_drops_the_name(hub_uri: str, data_home: Path, name: str) -> None:
+    """Poll the hub roster until ``name`` no longer holds a live socket."""
+    deadline = time.monotonic() + 8.0
+    last = ""
+    attempt = 0
+    while time.monotonic() < deadline:
+        attempt += 1
+        seen = run_cli(
+            "who",
+            "--name",
+            f"roster-{attempt}",
+            uri=hub_uri,
+            env={"XDG_DATA_HOME": str(data_home)},
+        )
+        assert seen.ok(), seen.output
+        last = seen.stdout
+        if name not in _online_names(seen.stdout):
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"{name} was still online after its process exited\n{last}")
+
+
 def _stored_epochs(data_home: Path) -> list[Path]:
     root = data_home / "synapse" / "lease-epoch"
     return sorted(path for path in root.rglob("*") if path.is_file()) if root.exists() else []
@@ -89,6 +129,7 @@ def test_the_commit_hook_release_names_the_stored_epoch(tmp_path: Path) -> None:
     data_home = tmp_path / "data"
     with isolated_hub(tmp_path, extra_args=STRICT) as hub:
         repo = _claim(tmp_path, hub.uri, data_home, "--auto-release-on", "commit")
+        _wait_until_the_hub_drops_the_name(hub.uri, data_home, "USER")
         # Commit the claimed path with the installed hooks off, then run the hook's own
         # release command as the claimer, from its own process.
         (repo / "src").mkdir(exist_ok=True)
