@@ -229,7 +229,7 @@ def test_maintenance_reopen_without_route_flag_still_protects_pending_source(
 def test_pending_limit_is_bounded(tmp_path: Path, limit: object) -> None:
     store = _store(tmp_path / "hub.db")
     with pytest.raises(ValueError, match="outbox limit"):
-        store.pending_aef_events(limit=limit)  # type: ignore[arg-type]
+        store.pending_aef_events(limit=limit)  # type: ignore[arg-type] # limit is not an int
     store.close()
 
 
