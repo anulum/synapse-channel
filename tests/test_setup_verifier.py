@@ -209,57 +209,54 @@ def test_verify_requires_exact_digest_platform_pid_and_live_protected_process(
     _plan, _authorization, _receipt, verification_plan, verification_authorization = (
         setup_documents()
     )
-    kwargs: dict[str, object] = {
-        "env": {"HOME": str(tmp_path)},
-        "ledger_directory": tmp_path / "ledger",
-        "adapter": RecordingAdapter(),
-        "inspection_runner": inspection_runner(inspection(waiter="pass", hub_pid=9876)),
-        "probe": lambda _pid: True,
-        "wall_clock": lambda: 201.0,
-    }
-    with pytest.raises(SetupVerificationError, match="digest_mismatch"):
-        asyncio.run(
+    env = {"HOME": str(tmp_path)}
+    ledger_directory = tmp_path / "ledger"
+    adapter = RecordingAdapter()
+    runner = inspection_runner(inspection(waiter="pass", hub_pid=9876))
+
+    def alive(_pid: int) -> bool:
+        return True
+
+    def wall_clock() -> float:
+        return 201.0
+
+    probe: Callable[[int], bool] = alive
+    digest = cast(str, verification_plan["verification_plan_digest"])
+
+    def verify(confirm: str) -> dict[str, object]:
+        return asyncio.run(
             verify_setup(
                 verification_plan,
                 verification_authorization,
-                confirm_digest="a" * 64,
-                **kwargs,  # type: ignore[arg-type]
+                confirm_digest=confirm,
+                env=env,
+                ledger_directory=ledger_directory,
+                adapter=adapter,
+                inspection_runner=runner,
+                probe=probe,
+                wall_clock=wall_clock,
             )
         )
+
+    with pytest.raises(SetupVerificationError, match="digest_mismatch"):
+        verify("a" * 64)
     monkeypatch.setattr("synapse_channel.setup_verifier.platform.system", lambda: "Darwin")
     with pytest.raises(SetupVerificationError, match="application_platform_unsupported"):
-        asyncio.run(
-            verify_setup(
-                verification_plan,
-                verification_authorization,
-                confirm_digest=cast(str, verification_plan["verification_plan_digest"]),
-                **kwargs,  # type: ignore[arg-type]
-            )
-        )
+        verify(digest)
     monkeypatch.setattr("synapse_channel.setup_verifier.platform.system", lambda: "Linux")
     wrong = RecordingAdapter()
     wrong.restarted = True
-    kwargs["adapter"] = wrong
+    adapter = wrong
     with pytest.raises(SetupVerificationError, match="verification_target_changed"):
-        asyncio.run(
-            verify_setup(
-                verification_plan,
-                verification_authorization,
-                confirm_digest=cast(str, verification_plan["verification_plan_digest"]),
-                **kwargs,  # type: ignore[arg-type]
-            )
-        )
-    kwargs["adapter"] = RecordingAdapter()
-    kwargs["probe"] = lambda _pid: False
+        verify(digest)
+    adapter = RecordingAdapter()
+
+    def missing(_pid: int) -> bool:
+        return False
+
+    probe = missing
     with pytest.raises(SetupVerificationError, match="verification_protected_process_missing"):
-        asyncio.run(
-            verify_setup(
-                verification_plan,
-                verification_authorization,
-                confirm_digest=cast(str, verification_plan["verification_plan_digest"]),
-                **kwargs,  # type: ignore[arg-type]
-            )
-        )
+        verify(digest)
 
 
 def test_verify_records_reinspection_and_late_process_failure(tmp_path: Path) -> None:
