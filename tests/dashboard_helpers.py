@@ -25,7 +25,7 @@ def _http_get(url: str, *, authorization: str | None = None) -> tuple[int, str, 
         headers["Authorization"] = authorization
     request = Request(url, headers=headers)
     try:
-        with urlopen(request, timeout=3) as response:  # nosec B310
+        with urlopen(request, timeout=3) as response:
             return (
                 response.status,
                 response.headers.get_content_type(),
