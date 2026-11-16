@@ -59,6 +59,10 @@ pytestmark = [
 
 _RUNNER = partial(run_waker_command, timeout=30.0)
 _BIND_ATTEMPTS = 5
+# A test process killed before its finaliser runs (SIGTERM or SIGKILL from a
+# runner or a supervisor) never stops its units; systemd stops each one after
+# this many seconds instead. No test here runs a unit for more than a few minutes.
+_UNIT_RUNTIME_LIMIT_SECONDS = 900
 
 
 def _lost_bind(detail: str) -> bool:
@@ -191,6 +195,7 @@ class OwnedFleet:
     port: int
     workdir: Path
     units: list[str] = field(default_factory=list)
+    runtime_limit: int = _UNIT_RUNTIME_LIMIT_SECONDS
 
     @property
     def hub_unit(self) -> str:
@@ -212,6 +217,7 @@ class OwnedFleet:
                 "--quiet",
                 f"--unit={unit}",
                 f"--working-directory={self.workdir}",
+                f"--property=RuntimeMaxSec={self.runtime_limit}",
                 *(f"--property={item}" for item in properties),
                 *command,
             ],
@@ -345,6 +351,41 @@ def fleet(tmp_path: Path) -> Iterator[OwnedFleet]:
             subprocess.run(
                 ["systemctl", "--user", "reset-failed", unit], capture_output=True, check=False
             )
+
+
+def _unit_property(unit: str, name: str) -> str:
+    """Return one property of the unit as systemd shows it."""
+    completed = subprocess.run(
+        ["systemctl", "--user", "show", unit, f"--property={name}", "--value"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.stdout.strip()
+
+
+def test_every_unit_the_fleet_starts_carries_its_runtime_limit(fleet: OwnedFleet) -> None:
+    hub = fleet.start_hub()
+    ordered = fleet.sleeper("ordered", ["After"])
+
+    assert {_unit_property(unit, "RuntimeMaxUSec") for unit in (hub, ordered)} == {"15min"}
+
+
+def test_a_unit_whose_test_process_was_killed_stops_on_its_own(tmp_path: Path) -> None:
+    """A killed test process runs no finaliser; the unit's runtime limit still ends it."""
+    _require_user_manager()
+    left = OwnedFleet(
+        tag=uuid.uuid4().hex[:10], port=free_port(), workdir=tmp_path, runtime_limit=3
+    )
+    unit = left.sleeper("left", [])
+    try:
+        deadline = time.monotonic() + 30.0
+        while not _unit_has_stopped(unit) and time.monotonic() < deadline:
+            time.sleep(0.2)
+        assert _unit_has_stopped(unit)
+        assert _unit_property(unit, "Result") == "timeout"
+    finally:
+        left._release_unit(unit)
 
 
 def _kinds(report: HubRestartReport) -> dict[str, str]:
