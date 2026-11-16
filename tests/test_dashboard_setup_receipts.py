@@ -25,7 +25,9 @@ from synapse_channel.dashboard_setup_receipts import (
     SetupEffectReceipt,
     SetupReceiptDraft,
     SetupReceiptIntegrityError,
+    SetupReceiptOutcome,
     SetupReceiptPersistenceError,
+    SetupReceiptReason,
     SetupReceiptStore,
 )
 
@@ -34,8 +36,14 @@ _PLAN_ID = "A" * 22
 _DIGEST = "a" * 64
 
 
-def _draft(*, request_id: str = _REQUEST_ID, outcome: str = "planned") -> SetupReceiptDraft:
-    reason = "none" if outcome in {"planned", "authorised", "applied"} else "plan_drift"
+def _draft(
+    *,
+    request_id: str = _REQUEST_ID,
+    outcome: SetupReceiptOutcome = "planned",
+) -> SetupReceiptDraft:
+    reason: SetupReceiptReason = (
+        "none" if outcome in {"planned", "authorised", "applied"} else "plan_drift"
+    )
     return SetupReceiptDraft(
         request_id=request_id,
         plan_id=_PLAN_ID,
@@ -46,7 +54,7 @@ def _draft(*, request_id: str = _REQUEST_ID, outcome: str = "planned") -> SetupR
         profile_version=1,
         configuration_generation="b" * 64,
         timestamp_ms=1_784_758_400_000,
-        outcome=outcome,  # type: ignore[arg-type]
+        outcome=outcome,
         effects=(
             SetupEffectReceipt(
                 "runtime_directory",
@@ -58,7 +66,7 @@ def _draft(*, request_id: str = _REQUEST_ID, outcome: str = "planned") -> SetupR
         package_version="0.99.12",
         template_version="setup-v1",
         artifacts=(SetupArtifactDigest("runtime-template", "c" * 64),),
-        reason=reason,  # type: ignore[arg-type]
+        reason=reason,
     )
 
 
@@ -236,6 +244,14 @@ def test_concurrent_connections_assign_one_unbroken_order(tmp_path: Path) -> Non
     assert [receipt.sequence for receipt in stored] == [1, 2, 3, 4]
 
 
+def _rejected_draft(**changes: object) -> SetupReceiptDraft:
+    return replace(_draft(), **changes)  # type: ignore[arg-type] # wrong field shape on purpose
+
+
+def _rejected_effect(kind: str, before: str) -> SetupEffectReceipt:
+    return SetupEffectReceipt(kind, "t", before, "satisfied")  # type: ignore[arg-type] # bad token
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [
@@ -253,14 +269,29 @@ def test_draft_rejects_unbounded_or_inconsistent_fields(
     change: dict[str, object], message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        replace(_draft(), **change)  # type: ignore[arg-type]
+        if "request_id" in change:
+            replace(_draft(), request_id="not-a-uuid")
+        elif "plan_id" in change:
+            replace(_draft(), plan_id="short")
+        elif "principal_id" in change:
+            replace(_draft(), principal_id="Bearer secret")
+        elif change.get("profile_version") is True:
+            _rejected_draft(profile_version=True)
+        elif "timestamp_ms" in change:
+            replace(_draft(), timestamp_ms=0)
+        elif "package_version" in change:
+            replace(_draft(), package_version="bad version")
+        elif change.get("outcome") == "drifted":
+            replace(_draft(), outcome="drifted")
+        else:
+            replace(_draft(), outcome="planned", reason="plan_drift")
 
 
 def test_effect_and_artifact_models_reject_unknown_or_duplicate_values() -> None:
     with pytest.raises(ValueError, match="effect kind"):
-        SetupEffectReceipt("unknown", "target", "absent", "satisfied")  # type: ignore[arg-type]
+        _rejected_effect("unknown", "absent")
     with pytest.raises(ValueError, match="verdict"):
-        SetupEffectReceipt("user_unit", "unit", "unknown", "satisfied")  # type: ignore[arg-type]
+        _rejected_effect("user_unit", "unknown")
     with pytest.raises(ValueError, match="artifact digest"):
         SetupArtifactDigest("unit", "invalid")
     duplicate = SetupArtifactDigest("unit", "d" * 64)
@@ -286,7 +317,21 @@ def test_draft_rejects_unknown_enums_and_oversized_collections(
     change: dict[str, object], message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        replace(_draft(), **change)  # type: ignore[arg-type]
+        if change.get("capability") == "root":
+            _rejected_draft(capability="root")
+        elif change.get("profile") == "foreign":
+            _rejected_draft(profile="foreign")
+        elif change.get("outcome") == "unknown":
+            _rejected_draft(outcome="unknown")
+        elif "effects" in change:
+            replace(_draft(), effects=(_draft().effects[0],) * 17)
+        elif "artifacts" in change:
+            replace(
+                _draft(),
+                artifacts=tuple(SetupArtifactDigest(f"a{index}", "d" * 64) for index in range(17)),
+            )
+        else:
+            _rejected_draft(reason="raw_error")
 
 
 def test_open_and_initialisation_failures_are_stable(
