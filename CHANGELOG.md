@@ -26,6 +26,13 @@ execution evidence when carrying a release claim forward.
   to a missing, repeated or foreign `Origin` and relay nothing. A browser on the
   cockpit sends it by itself; a script that writes must send it.
 
+### Fixed
+
+- The dashboard's redirect from `/` to the cockpit copied the request's query
+  into the `Location` header as it came. Its names and values are now decoded
+  and encoded again, so the header holds only URL-safe characters and an
+  encoded line break stays encoded. `?lang=sk` passes through unchanged.
+
 ## [0.99.53] - 2026-11-16
 
 Core 0.99.53 lets an operator follow and approve governed operations in the
