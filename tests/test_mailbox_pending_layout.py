@@ -20,7 +20,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from websockets.asyncio.client import connect
 
+from hub_e2e_helpers import read_until_type, running_hub
 from synapse_channel.core.at_rest import generate_key_file
 from synapse_channel.core.dead_letters import is_directed_target
 from synapse_channel.core.hub import SynapseHub
@@ -526,3 +528,44 @@ def test_conversion_leaves_an_unprojected_store_to_walk(
         assert layout_version(opened.storage.connection) == 1
     finally:
         opened.close()
+
+
+async def test_a_cold_count_answers_when_the_chat_journal_cannot_be_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cold mailbox still answers after the chat journal refuses further reads.
+
+    The startup walk may read the journal. ``P/ann`` is absent from that
+    projection: only the bare project was addressed. Once the tracker exists,
+    a cold snapshot, a cold pending count, and a who request must not read it.
+    """
+    store = EventStore(tmp_path / "hub.db")
+    hub: SynapseHub | None = None
+    try:
+        _chat(store, sender="PEER", target="P")
+        _chat(store, sender="PEER", target="P")
+        hub = SynapseHub(journal=store, anti_rollback_checkpoint=False, hub_id="cold-count")
+        assert "P/ann" not in hub.mailbox_pending.known_identities
+
+        def _refuse_journal_read(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("chat journal read")
+
+        monkeypatch.setattr(EventStore, "read_window", _refuse_journal_read)
+        monkeypatch.setattr(EventStore, "iter_events", _refuse_journal_read)
+        tracker = hub.mailbox_pending
+        counts = tracker.snapshot(("P/ann",), lambda _name: ())
+        assert counts is not None
+        assert counts["P/ann"] == 2
+        assert counts["P"] == 2
+        assert tracker.pending_count("P/ann") == 2
+        async with running_hub(hub) as (_serving, uri):
+            async with connect(uri) as websocket:
+                await read_until_type(websocket, "welcome")
+                await websocket.send(json.dumps({"sender": "SEAT", "type": "who_request"}))
+                who = await read_until_type(websocket, "who_snapshot")
+        assert who["mailbox_pending"]["P/ann"] == 2
+        assert who["mailbox_pending"]["P"] == 2
+    finally:
+        if hub is not None:
+            hub.close()
+        store.close()
