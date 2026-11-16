@@ -374,7 +374,7 @@ def test_concurrent_duplicate_correlated_reply_completes_once() -> None:
         time.sleep(0.05)
         return original_set_status(*args, **kwargs)
 
-    bridge._set_task_status = slow_set_status  # type: ignore[method-assign]
+    bridge._set_task_status = slow_set_status  # type: ignore[method-assign] # probe double
     frame = {
         "type": "chat",
         "sender": "WORKER",
