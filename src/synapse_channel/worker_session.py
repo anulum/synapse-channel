@@ -13,7 +13,7 @@ import os
 import shlex
 
 # Provider, tmux, and synapse subprocesses are this module's controlled boundary.
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 import threading
 from collections.abc import Mapping, Sequence
@@ -185,7 +185,7 @@ def _start_tmux_waiter(
         wait_command.extend(["--uri", uri])
 
     with logfile.open("ab") as log_handle:
-        waiter = subprocess.Popen(  # nosec B603
+        waiter = subprocess.Popen(  # nosec B603 # argument vector, never a shell
             wait_command,
             env=dict(env),
             stdin=subprocess.DEVNULL,
@@ -214,7 +214,7 @@ def _attach_tmux_session(
 ) -> int:
     """Attach the current terminal to ``session``."""
     command = [tmux_bin, "switch-client" if env.get("TMUX") else "attach-session", "-t", session]
-    return subprocess.run(  # nosec B603
+    return subprocess.run(  # nosec B603 # argument vector, never a shell
         command, env=dict(env), check=False
     ).returncode
 
@@ -246,7 +246,9 @@ def _run_provider(
     """Observe one native child; confirmed exit never establishes external effect undo."""
     outcome.observe(OutcomeState.STARTED, "provider_launch_invoked")
     try:
-        provider = subprocess.Popen(list(command), env=dict(env), cwd=cwd)  # nosec B603
+        provider = subprocess.Popen(  # nosec B603 # no shell
+            list(command), env=dict(env), cwd=cwd
+        )
     except OSError:
         outcome.observe(OutcomeState.NOT_STARTED, "provider_launch_refused")
         raise
@@ -298,7 +300,7 @@ def _run_terminal_tmux_session(
     if started.returncode != 0:
         print(started.detail)
         return started.returncode
-    pane = subprocess.run(  # nosec B603
+    pane = subprocess.run(  # nosec B603 # argv, never a shell
         [tmux_bin, "display-message", "-p", "-t", resolved_session, "#{pane_pid}"],
         env=dict(env),
         capture_output=True,
@@ -390,7 +392,7 @@ def run_worker_session(
         sidecar_log = _sidecar_log_path(env["SYN_IDENTITY"], env)
         log_handle = sidecar_log.open("ab")
         try:
-            sidecar = subprocess.Popen(  # nosec B603
+            sidecar = subprocess.Popen(  # nosec B603 # argument vector, never a shell
                 arm_cmd,
                 env=env,
                 stdin=subprocess.DEVNULL,
