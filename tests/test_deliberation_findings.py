@@ -131,7 +131,15 @@ class TestFindingsInResult:
         )
         sealed = seal_export_package(package, key=key)
         # Flip a confirmed finding to dismissed after signing.
-        sealed["package"]["result"]["findings"][0]["disposition"] = "dismissed"  # type: ignore[index]
+        body = sealed["package"]
+        assert isinstance(body, dict)
+        result = body["result"]
+        assert isinstance(result, dict)
+        findings = result["findings"]
+        assert isinstance(findings, list)
+        finding = findings[0]
+        assert isinstance(finding, dict)
+        finding["disposition"] = "dismissed"
         outcome = verify_sealed_package(sealed, trusted_keys=trusted)
         assert outcome.ok is False
         assert outcome.content_bound is False
