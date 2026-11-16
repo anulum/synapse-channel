@@ -19,6 +19,7 @@ import type {
   AttemptRow,
   ChainLink,
   ChainResult,
+  IntentField,
   OperationChain,
   OperationRow,
   OperationsPage,
@@ -106,6 +107,12 @@ function attemptRow(value: unknown): AttemptRow | null {
   return { attemptId: text(fields["attempt_id"]), executor: text(fields["executor"]), state: text(fields["state"]) };
 }
 
+function intentField(value: unknown): IntentField | null {
+  const fields = record(value);
+  if (fields === null || text(fields["field"]) === "" || typeof fields["canonical"] !== "string") return null;
+  return { field: text(fields["field"]), canonical: text(fields["canonical"]) };
+}
+
 function chainLink(value: unknown): ChainLink | null {
   const fields = record(value);
   const seq = sequence(fields?.["seq"]);
@@ -128,6 +135,8 @@ export function parseOperationChain(raw: unknown): OperationChain | null {
     state: text(fields["state"]),
     intentSha256: text(fields["intent_sha256"]),
     digestCheck: text(fields["digest_check"]),
+    recomputedSha256: text(fields["recomputed_sha256"]),
+    intentFields: readable(fields["intent_fields"], intentField).rows,
     attempts: readable(fields["attempts"], attemptRow).rows,
     chain: links.rows,
     unreadable: links.unreadable,

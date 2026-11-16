@@ -275,3 +275,100 @@ describe("OperationsView", () => {
     await waitFor(() => expect(document.querySelector(".op-state__text")?.textContent).toBe("not recorded"));
   });
 });
+
+describe("the approval view", () => {
+  const recorded = "b".repeat(64);
+  const awaiting = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+    chain({
+      operation_id: "op-awaiting",
+      state: "awaiting approval",
+      intent_sha256: recorded,
+      recomputed_sha256: recorded,
+      digest_check: "matches",
+      attempts: [],
+      intent_fields: [
+        { field: "budget", canonical: '"not_applicable"' },
+        { field: "tool", canonical: '{"name":"render-report","version":"1.0.0"}' },
+      ],
+      chain: [
+        { seq: 10, at: 1_800_000_000, kind: "declared", actor: "P/worker", detail: { effect: "file" } },
+        { seq: 12, at: 1_800_000_001, kind: "approval", actor: "P/worker", detail: { state: "requested", reason: "<b>trust me</b>\nline two" } },
+      ],
+      ...overrides,
+    });
+
+  async function openAwaiting(body: Record<string, unknown>): Promise<HTMLElement> {
+    stubRoutes((url) => ({ status: 200, body: url.includes("operation=") ? body : PAGE }));
+    renderView();
+    await userEvent.click(await screen.findByRole("button", { name: /op-open/u }));
+    return screen.findByRole("region", { name: "Approval" });
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "clipboard");
+  });
+
+  it("shows the kept intent field by field, both digests, the requester's words as text, and the commands", async () => {
+    const region = await openAwaiting(awaiting());
+
+    const fields = within(within(region).getByLabelText(/The intent, field by field/u)).getAllByRole("term");
+    expect(fields.map((field) => field.textContent)).toEqual(["budget", "tool"]);
+    expect(region.textContent).toContain('{"name":"render-report","version":"1.0.0"}');
+    expect(region.textContent).toContain(`recorded digest ${recorded}`);
+    expect(region.textContent).toContain(`recomputed digest ${recorded}`);
+    expect(region.textContent).toContain("Equal: the document shown is the one the recorded digest names.");
+    const words = region.querySelector(".op-words__text");
+    expect(words?.textContent).toBe("<b>trust me</b>\nline two");
+    expect(words?.querySelector("b")).toBeNull();
+    const commands = [...region.querySelectorAll(".op-command__text")].map((node) => node.textContent ?? "");
+    expect(commands).toHaveLength(2);
+    for (const command of commands) {
+      expect(command).toContain(`--subject sha256:${recorded}`);
+      expect(command).not.toMatch(/token/iu);
+    }
+    expect(region.textContent).toContain("This cockpit does not approve.");
+  });
+
+  it("copies a command, and says so when the clipboard is unavailable", async () => {
+    const writeText = vi.fn(async (_text: string) => undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const region = await openAwaiting(awaiting());
+    const buttons = within(region).getAllByRole("button", { name: /^Copy the command/u });
+    await userEvent.click(buttons[0] as HTMLElement);
+    expect(writeText).toHaveBeenCalledWith(`synapse approvals decide --name "<approver>" --subject sha256:${recorded} --approve`);
+    expect(await within(region).findByText("Command copied")).toBeTruthy();
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+    await userEvent.click(buttons[1] as HTMLElement);
+    expect(await within(region).findByText("Clipboard unavailable; select the command to copy it.")).toBeTruthy();
+  });
+
+  it("refuses an intent whose recomputed digest differs, and offers no command", async () => {
+    const region = await openAwaiting(awaiting({ recomputed_sha256: "d".repeat(64), digest_check: "differs" }));
+
+    expect(within(region).getByRole("alert").textContent).toContain("must not be approved");
+    expect(region.textContent).toContain(`recomputed digest ${"d".repeat(64)}`);
+    expect(region.querySelector(".op-command")).toBeNull();
+    expect(region.textContent).not.toContain("synapse approvals decide");
+  });
+
+  it("says there is nothing to approve without a kept intent, and has no view outside awaiting approval", async () => {
+    const region = await openAwaiting(awaiting({ intent_sha256: "", recomputed_sha256: "", intent_fields: [], digest_check: "no intent" }));
+    expect(within(region).getByRole("alert").textContent).toContain("nothing an approval could name");
+    cleanup();
+    stubRoutes((url) => ({ status: 200, body: url.includes("operation=") ? chain() : PAGE }));
+    renderView();
+    await userEvent.click(await screen.findByRole("button", { name: /op-verified/u }));
+    await screen.findByRole("list", { name: "Recorded rows" });
+    expect(screen.queryByRole("region", { name: "Approval" })).toBeNull();
+  });
+
+  it("names the absence of a request and of its words", async () => {
+    const declaredOnly = [{ seq: 10, at: 1, kind: "declared", actor: "P/worker", detail: {} }];
+    let region = await openAwaiting(awaiting({ chain: declaredOnly }));
+    expect(region.querySelector(".op-words__text")?.textContent).toBe("No approval request is recorded.");
+    cleanup();
+    const silent = [...declaredOnly, { seq: 12, at: 1, kind: "approval", actor: "P/worker", detail: { state: "requested", reason: "" } }];
+    region = await openAwaiting(awaiting({ chain: silent }));
+    expect(region.querySelector(".op-words__text")?.textContent).toBe("The request gave no reason.");
+  });
+});

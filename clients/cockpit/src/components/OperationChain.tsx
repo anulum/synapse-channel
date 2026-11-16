@@ -22,6 +22,7 @@ import {
   type OperationsSource,
 } from "../lib/operations";
 import type { CockpitScope } from "../lib/scope";
+import { OperationApproval } from "./OperationApproval";
 
 type Translate = ReturnType<typeof useCockpitI18n>["t"];
 
@@ -140,6 +141,7 @@ function ChainBody({ chain, verifyRow }: { readonly chain: Chain; readonly verif
         </span>
       </div>
       <ChainHints state={chain.state} />
+      <OperationApproval chain={chain} />
       {chain.scope !== null && !chain.scope.applied && <p className="op-note">{t("operations.chain.scopeWhole")}</p>}
       {chain.attempts.length > 0 && (
         <ul className="op-attempts" aria-label={t("operations.chain.attempts")}>

@@ -124,6 +124,26 @@ describe("parseOperationChain", () => {
     });
   });
 
+  it("reads the recomputed digest and the kept intent's fields, and drops a field it cannot read", () => {
+    const chain = parseOperationChain({
+      ...CHAIN,
+      recomputed_sha256: "b".repeat(64),
+      intent_fields: [
+        { field: "budget", canonical: '"not_applicable"' },
+        { field: "", canonical: "1" },
+        { field: "deadline" },
+        "tool",
+        { field: "egress", canonical: "[]" },
+      ],
+    });
+    expect(chain?.recomputedSha256).toBe("b".repeat(64));
+    expect(chain?.intentFields).toEqual([
+      { field: "budget", canonical: '"not_applicable"' },
+      { field: "egress", canonical: "[]" },
+    ]);
+    expect(parseOperationChain(CHAIN)).toMatchObject({ recomputedSha256: "", intentFields: [] });
+  });
+
   it("drops what it cannot read and counts the links", () => {
     const chain = parseOperationChain({
       present: true,

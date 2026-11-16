@@ -802,6 +802,17 @@ processes.
   ended, a field the row does not hold reads "not recorded", and custody reads
   as the feed states it. A scope narrows the list; one chosen chain is shown
   whole, and the tab says so.
+- **The approval view.** For an operation that awaits approval, the chain
+  shows the intent the declaration kept, field by field in canonical order, as
+  the dashboard encoded it. Beside it are the digest the declaration recorded
+  and the digest the dashboard recomputed. When they are equal, the view shows
+  the requester's own words in a box marked as not checked, and the two
+  `synapse approvals decide` commands for that digest (approve, reject), each
+  with a copy button. The commands carry a placeholder approver and never a
+  token. When the digests differ, the view says that the intent must not be
+  approved, and it offers no command. The cockpit itself never approves: the
+  hub judges an approval when an attempt is asked, and only an approver of the
+  declarer's project who is not the declarer counts.
 - **causality** traces recorded causes or effects from an event sequence or task.
   A task hop from the log opens this panel with the task already selected.
 - **topology** joins identities and held tasks and adds imported federation

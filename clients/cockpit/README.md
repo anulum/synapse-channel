@@ -114,7 +114,10 @@ across all five interface languages and both display densities.
   approvals, the hub's answers and seals, the executor's reports and the
   observer's readings), each with its journal sequence and an **open evidence**
   inclusion check. State words and answer names stay the report's own; an
-  executor's report is never a success.
+  executor's report is never a success. An operation awaiting approval shows
+  its kept intent field by field, the recorded and the recomputed digest, the
+  requester's words as unchecked text, and the copyable `synapse approvals
+  decide` commands only when the digests are equal; the cockpit never approves.
 - **Causality** — recorded causes/effects traces for a sequence or task, with
   per-hub clustering; log rows and task chips hop straight into it.
 

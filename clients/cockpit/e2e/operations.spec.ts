@@ -41,6 +41,9 @@ interface ServedChain {
   readonly state: string;
   readonly custody: string;
   readonly chain: readonly ServedLink[];
+  readonly intent_sha256: string;
+  readonly recomputed_sha256: string;
+  readonly intent_fields: readonly { readonly field: string; readonly canonical: string }[];
 }
 
 interface AxeWindow extends Window {
@@ -70,6 +73,23 @@ async function expectChainAsServed(section: Locator, chain: ServedChain): Promis
   }
   await expect(section).toContainText(`custody: ${chain.custody}`);
   await expect(section).not.toContainText(/success/iu);
+}
+
+/** Check the approval view against the served chain: the fields, both digests, the words and the commands. */
+async function expectApprovalAsServed(section: Locator, chain: ServedChain): Promise<void> {
+  const approval = section.getByRole("region", { name: "Approval" });
+  await expect(approval.locator("dt")).toHaveText(chain.intent_fields.map(item => item.field));
+  await expect(approval.locator(".op-intent code")).toHaveText(chain.intent_fields.map(item => item.canonical));
+  expect(chain.recomputed_sha256).toBe(chain.intent_sha256);
+  await expect(approval).toContainText(`recorded digest ${chain.intent_sha256}`);
+  await expect(approval).toContainText(`recomputed digest ${chain.recomputed_sha256}`);
+  await expect(approval.locator(".op-words__text")).toHaveText("The request gave no reason.");
+  const commands = approval.locator(".op-command__text");
+  await expect(commands).toHaveCount(2);
+  for (const command of await commands.allTextContents()) {
+    expect(command).toContain(`--subject sha256:${chain.intent_sha256}`);
+    expect(command).not.toMatch(/token/iu);
+  }
 }
 
 async function useTheme(page: Page, theme: "dark" | "light"): Promise<void> {
@@ -135,6 +155,8 @@ test("the operations tab shows each journalled operation's state and chain, and 
         const chain = await served<ServedChain>(page.request, origin, `/operations.json?operation=${operation}`);
         expect(chain.state).toBe(state);
         await expectChainAsServed(section, chain);
+        if (state === "awaiting approval") await expectApprovalAsServed(section, chain);
+        else await expect(section.getByRole("region", { name: "Approval" })).toHaveCount(0);
       });
     }
 
@@ -148,6 +170,15 @@ test("the operations tab shows each journalled operation's state and chain, and 
     for (const width of [1440, 1024, 390]) {
       for (const theme of ["dark", "light"] as const) {
         await test.step(`${width} pixels, ${theme}`, () => expectAccessible(page, width, theme));
+      }
+    }
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await tab.getByRole("button", { name: /^op-awaiting / }).click();
+    await expect(page.getByRole("region", { name: "Approval" })).toBeVisible();
+    for (const width of [1440, 1024, 390]) {
+      for (const theme of ["dark", "light"] as const) {
+        await test.step(`approval view, ${width} pixels, ${theme}`, () => expectAccessible(page, width, theme));
       }
     }
   } finally {

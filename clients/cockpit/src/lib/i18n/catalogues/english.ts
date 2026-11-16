@@ -429,6 +429,22 @@ export const ENGLISH = {
   "operations.evidence.error": "the proof could not be checked: {error}",
   "operations.hint.silent": "Past its deadline and not ended: an open attempt ends only by its report, an observed effect or a seal.",
   "operations.hint.unknown": "An executor's report is not a verification: the outcome stays unknown until an observer reads it.",
+  "operations.approval.title": "Approval",
+  "operations.approval.intent": "The intent, field by field, as the declaration kept it",
+  "operations.approval.recorded": "recorded digest",
+  "operations.approval.recomputed": "recomputed digest",
+  "operations.approval.equal": "Equal: the document shown is the one the recorded digest names.",
+  "operations.approval.refused": "Not equal: the recorded digest does not name the document kept, so this intent must not be approved.",
+  "operations.approval.noIntent": "No intent document was kept with this declaration, so there is nothing an approval could name.",
+  "operations.approval.words": "The requester's words, not checked",
+  "operations.approval.noWords": "The request gave no reason.",
+  "operations.approval.noRequest": "No approval request is recorded.",
+  "operations.approval.who": "To decide, run one of these in a terminal as an approver of the declarer's project who is not the declarer. The hub judges the approval when an attempt is asked.",
+  "operations.approval.notHere": "This cockpit does not approve.",
+  "operations.approval.copy": "copy",
+  "operations.approval.copyLabel": "Copy the command {command}",
+  "operations.approval.copied": "Command copied",
+  "operations.approval.copyFailed": "Clipboard unavailable; select the command to copy it.",
 } as const;
 
 export type MessageKey = keyof typeof ENGLISH;

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -20,11 +21,13 @@ import operation_attempt_scenario as scene
 from hub_e2e_helpers import AgentHandle, running_hub
 from operation_report_store import connected_seats, declared, journal_every_state, policy
 from synapse_channel import cli
+from synapse_channel.core.aef_canonical import canonical_json
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_report import (
     build_operation_report,
     operation_report_to_json,
+    render_lines,
     run_operation_report,
 )
 from synapse_channel.core.persistence import EventStore
@@ -95,6 +98,26 @@ def test_the_chain_names_each_link_its_evidence_and_the_kept_digest_is_checked(
     assert run_operation_report(store_path, "op-declared").digest_check == "no intent"
 
 
+def test_the_kept_intent_is_given_field_by_field_as_the_bytes_its_digest_covers(
+    store_path: Path,
+) -> None:
+    report = run_operation_report(store_path, "op-awaiting")
+    joined = "{" + ",".join(f"{json.dumps(key)}:{text}" for key, text in report.intent_fields) + "}"
+
+    assert [key for key, _text in report.intent_fields] == sorted(
+        key for key, _text in report.intent_fields
+    )
+    assert "tool" in dict(report.intent_fields)
+    assert dict(report.intent_fields)["egress"] == "[]"
+    assert hashlib.sha256(joined.encode("utf-8")).hexdigest() == report.intent_sha256
+    assert report.recomputed_sha256 == report.intent_sha256
+    assert operation_report_to_json(report)["intent_fields"] == [
+        {"field": key, "canonical": text} for key, text in report.intent_fields
+    ]
+    bare = run_operation_report(store_path, "op-declared")
+    assert (bare.recomputed_sha256, bare.intent_fields) == ("", ())
+
+
 def test_a_kept_intent_that_does_not_give_its_kept_digest_is_reported_as_differing(
     store_path: Path,
 ) -> None:
@@ -114,7 +137,20 @@ def test_a_kept_intent_that_does_not_give_its_kept_digest_is_reported_as_differi
             event = event._replace(payload=payload)
         changed.append(event)
 
-    assert build_operation_report("op-verified", changed).digest_check == "differs"
+    report = build_operation_report("op-verified", changed)
+    kept = next(
+        event.payload["intent"]
+        for event in changed
+        if event.kind == EventKind.OPERATION_DECLARED
+        and event.payload["operation_id"] == "op-verified"
+    )
+
+    assert report.digest_check == "differs"
+    assert report.recomputed_sha256 == hashlib.sha256(canonical_json(kept)).hexdigest()
+    assert report.recomputed_sha256 != report.intent_sha256
+    assert operation_report_to_json(report)["recomputed_sha256"] == report.recomputed_sha256
+    assert dict(report.intent_fields)["budget"] == '"a different budget"'
+    assert f"intent recomputed: {report.recomputed_sha256}" in render_lines(report)
 
 
 def test_a_declaration_the_hubs_reader_skips_gives_no_attempt_rather_than_a_failure(
@@ -177,6 +213,10 @@ def test_the_command_prints_the_chain_escaped_and_exits_by_what_is_recorded(
     # The note keeps no newline, and a control character from the journal is escaped, not sent.
     assert "reason=line one forged \\x1b[31mred" in text
     assert "\x1b" not in text
+    assert cli.main([*base, "op-verified"]) == 0
+    verified = capsys.readouterr().out
+    assert '  intent.budget = "not_applicable"' in verified
+    assert "intent recomputed" not in verified
     assert cli.main([*base, "op-verified", "--json"]) == 0
     document = json.loads(capsys.readouterr().out)
     assert document == operation_report_to_json(run_operation_report(store_path, "op-verified"))

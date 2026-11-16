@@ -45,6 +45,11 @@ start to finish and makes the cockpit the dashboard's front door.
 
 ### Added
 
+- The cockpit's operations tab shows an approval view for an operation that awaits approval: the kept
+  intent field by field in canonical order, the recorded digest beside the one the dashboard recomputes,
+  the requester's words as unchecked text, and the `synapse approvals decide` commands only when the
+  digests are equal. `synapse operation report` and `/operations.json` carry the recomputed digest and the
+  intent's canonical fields (`recomputed_sha256`, `intent_fields`).
 - The cockpit has an **operations** tab: the governed operations the hub journalled, grouped by
   state, and one operation's chain link by link, each link with its journal sequence, sender, time,
   the fields its row holds and an inclusion-proof check; the state words and the hub's answer names

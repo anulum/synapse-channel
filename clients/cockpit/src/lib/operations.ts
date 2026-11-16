@@ -192,6 +192,12 @@ export interface ChainLink {
   readonly detail: readonly (readonly [string, string])[];
 }
 
+/** One field of the kept intent, with its value as the canonical JSON text the digest covers. */
+export interface IntentField {
+  readonly field: string;
+  readonly canonical: string;
+}
+
 /** One operation's chain as the report gives it. */
 export interface OperationChain {
   readonly present: boolean;
@@ -200,6 +206,10 @@ export interface OperationChain {
   readonly state: string;
   readonly intentSha256: string;
   readonly digestCheck: string;
+  /** The kept intent's digest as the dashboard recomputed it; empty without an intent. */
+  readonly recomputedSha256: string;
+  /** The kept intent, field by field in canonical order, as the dashboard encoded it. */
+  readonly intentFields: readonly IntentField[];
   readonly attempts: readonly AttemptRow[];
   readonly chain: readonly ChainLink[];
   /** Links the chain held that were not readable and are not shown. */
@@ -246,6 +256,61 @@ export interface OperationsSource {
   readonly readChain: (operationId: string, scope: CockpitScope) => Promise<ChainResult>;
   /** Fetch one row's inclusion proof and check it in the browser. */
   readonly verifyRow: (seq: number) => Promise<VerifyResult>;
+}
+
+/** The state that an approval decision is asked for. */
+export const AWAITING_APPROVAL: OperationStateWord = "awaiting approval";
+
+/**
+ * What the approval view may offer for one chain.
+ *
+ * `decidable` only when the operation awaits approval and the kept intent's
+ * recomputed digest equals the recorded one; `differs` when they are not
+ * equal, which is never decidable; `no intent` when nothing was kept to
+ * decide on. Any other state has no approval view.
+ */
+export type ApprovalView =
+  | { readonly kind: "decidable"; readonly digest: string; readonly reason: string | null }
+  | { readonly kind: "differs"; readonly recorded: string; readonly recomputed: string }
+  | { readonly kind: "no intent" };
+
+/** The requester's own words: the reason of the latest `requested` approval note, or null without one. */
+export function requestReason(chain: OperationChain): string | null {
+  const requests = chain.chain.filter(
+    (link) => link.kind === "approval" && link.detail.some(([key, value]) => key === "state" && value === "requested"),
+  );
+  const latest = requests.at(-1);
+  if (latest === undefined) return null;
+  const reason = latest.detail.find(([key]) => key === "reason")?.[1];
+  // Empty text arrives as its JSON, `""`; absent and empty both mean no words were given.
+  return reason === undefined || reason === '""' ? "" : reason;
+}
+
+/** Return the approval view of a chain, or null when the operation does not await approval. */
+export function approvalView(chain: OperationChain): ApprovalView | null {
+  if (chain.state !== AWAITING_APPROVAL) return null;
+  if (chain.intentSha256 === "" || chain.recomputedSha256 === "" || chain.intentFields.length === 0) {
+    return { kind: "no intent" };
+  }
+  if (chain.digestCheck !== "matches" || chain.recomputedSha256 !== chain.intentSha256) {
+    return { kind: "differs", recorded: chain.intentSha256, recomputed: chain.recomputedSha256 };
+  }
+  return { kind: "decidable", digest: chain.intentSha256, reason: requestReason(chain) };
+}
+
+const DIGEST = /^[0-9a-f]{64}$/u;
+
+/**
+ * The two commands that decide a digest from a terminal, approve then reject.
+ *
+ * They carry the digest and a quoted placeholder for the approver, and never a
+ * token: the hub's own command reads its credential where it always does.
+ * A digest that is not 64 lowercase hex characters gives no command.
+ */
+export function decideCommands(digest: string): readonly string[] {
+  if (!DIGEST.test(digest)) return [];
+  const base = `synapse approvals decide --name "<approver>" --subject sha256:${digest}`;
+  return [`${base} --approve`, `${base} --reject --reason "<why>"`];
 }
 
 /** Render epoch seconds as an exact UTC instant, or null when the row holds none. */

@@ -12,11 +12,16 @@ import {
   ANSWER_NAMES,
   APPROVED_FRESH,
   OPERATION_STATES,
+  approvalView,
+  decideCommands,
   groupByState,
   instantText,
   isRefusingAnswer,
   phaseOf,
   readState,
+  requestReason,
+  type ChainLink,
+  type OperationChain,
   type OperationRow,
 } from "../src/lib/operations";
 
@@ -123,5 +128,88 @@ describe("instantText", () => {
   it("renders an exact UTC instant, and nothing for a row that holds none", () => {
     expect(instantText(1_800_000_000.5)).toBe("2027-01-15T08:00:00.500Z");
     expect(instantText(null)).toBeNull();
+  });
+});
+
+const DIGEST = "c".repeat(64);
+
+function approval(seq: number, state: string, reason: string): ChainLink {
+  return { seq, at: 1, kind: "approval", actor: "P/approver", detail: [["state", state], ["reason", reason]] };
+}
+
+function chainOf(overrides: Partial<OperationChain> = {}): OperationChain {
+  return {
+    present: true,
+    operationId: "op-awaiting",
+    taskId: "T1",
+    state: "awaiting approval",
+    intentSha256: DIGEST,
+    digestCheck: "matches",
+    recomputedSha256: DIGEST,
+    intentFields: [{ field: "budget", canonical: '"not_applicable"' }],
+    attempts: [],
+    chain: [{ seq: 1, at: 1, kind: "declared", actor: "P/worker", detail: [] }, approval(2, "requested", "please")],
+    unreadable: 0,
+    asOfSeq: 2,
+    custody: "not recorded here",
+    scope: null,
+    ...overrides,
+  };
+}
+
+describe("requestReason", () => {
+  it("gives the latest request's words, and says when none were given or no request is recorded", () => {
+    const later = chainOf({ chain: [approval(2, "requested", "first"), approval(3, "approved", "x"), approval(4, "requested", "second")] });
+    expect(requestReason(later)).toBe("second");
+    expect(requestReason(chainOf({ chain: [approval(2, "requested", '""')] }))).toBe("");
+    const bare: ChainLink = { seq: 2, at: 1, kind: "approval", actor: "", detail: [["state", "requested"]] };
+    expect(requestReason(chainOf({ chain: [bare] }))).toBe("");
+    expect(requestReason(chainOf({ chain: [approval(2, "approved", "yes")] }))).toBeNull();
+    const notApproval: ChainLink = { seq: 2, at: 1, kind: "answer", actor: "", detail: [["state", "requested"]] };
+    expect(requestReason(chainOf({ chain: [notApproval] }))).toBeNull();
+  });
+});
+
+describe("approvalView", () => {
+  it("offers a decision only for an operation awaiting approval whose digests are equal", () => {
+    expect(approvalView(chainOf())).toEqual({ kind: "decidable", digest: DIGEST, reason: "please" });
+    for (const state of OPERATION_STATES.filter((word) => word !== "awaiting approval")) {
+      expect(approvalView(chainOf({ state }))).toBeNull();
+    }
+    expect(approvalView(chainOf({ state: "refused: not_approved" }))).toBeNull();
+  });
+
+  it("never offers a decision when the recomputed digest differs from the recorded one", () => {
+    const other = "d".repeat(64);
+    expect(approvalView(chainOf({ recomputedSha256: other, digestCheck: "differs" }))).toEqual({
+      kind: "differs",
+      recorded: DIGEST,
+      recomputed: other,
+    });
+    expect(approvalView(chainOf({ recomputedSha256: other }))?.kind).toBe("differs");
+    expect(approvalView(chainOf({ digestCheck: "differs" }))?.kind).toBe("differs");
+  });
+
+  it("says there is nothing to decide on without a kept intent", () => {
+    expect(approvalView(chainOf({ intentSha256: "" }))).toEqual({ kind: "no intent" });
+    expect(approvalView(chainOf({ recomputedSha256: "" }))).toEqual({ kind: "no intent" });
+    expect(approvalView(chainOf({ intentFields: [] }))).toEqual({ kind: "no intent" });
+  });
+});
+
+describe("decideCommands", () => {
+  it("names the digest and a placeholder approver, and never a token", () => {
+    const commands = decideCommands(DIGEST);
+    expect(commands).toEqual([
+      `synapse approvals decide --name "<approver>" --subject sha256:${DIGEST} --approve`,
+      `synapse approvals decide --name "<approver>" --subject sha256:${DIGEST} --reject --reason "<why>"`,
+    ]);
+    for (const command of commands) expect(command).not.toMatch(/token/iu);
+  });
+
+  it("gives no command for a digest that is not 64 lowercase hex characters", () => {
+    for (const digest of ["", "C".repeat(64), "c".repeat(63), `${"c".repeat(64)}; rm -rf ~`]) {
+      expect(decideCommands(digest)).toEqual([]);
+    }
   });
 });

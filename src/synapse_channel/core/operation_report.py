@@ -26,6 +26,7 @@ refusal and its approval decision. Custody is not a record this hub keeps.
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -140,6 +141,12 @@ class OperationReport:
         attempt is judged by.
     custody : str
         Always :data:`CUSTODY`: custody is not a record this hub keeps.
+    recomputed_sha256 : str
+        The kept intent's digest as this reader recomputes it from the intent's
+        canonical bytes; empty when no intent was kept.
+    intent_fields : tuple
+        The kept intent's fields in canonical order, each with its value's
+        canonical JSON text; empty when no intent was kept.
     """
 
     operation_id: str
@@ -152,6 +159,8 @@ class OperationReport:
     as_of_seq: int
     as_of: float
     custody: str = CUSTODY
+    recomputed_sha256: str = ""
+    intent_fields: tuple[tuple[str, str], ...] = ()
 
 
 def _read_events(db_path: str | Path, key_file: str | Path | None) -> tuple[StoredEvent, ...]:
@@ -250,16 +259,20 @@ def _report(
     digest = str(declaration.payload.get("intent_sha256") or "")
     approval = approvals.get(f"sha256:{digest}") if digest else None
     attempts = _attempts(operation_id, ledger, rows, _deadline(declaration), as_of_time)
+    intent = declaration.payload.get("intent")
+    recomputed = _recomputed(intent)
     return OperationReport(
         operation_id=operation_id,
         task_id=str(declaration.payload.get("task_id") or ""),
         state=_state(attempts, rows, approval),
         intent_sha256=digest,
-        digest_check=_digest_check(declaration.payload.get("intent"), digest),
+        digest_check=_digest_check(recomputed, digest),
         attempts=attempts,
         chain=_chain(rows, approval),
         as_of_seq=as_of_seq,
         as_of=as_of_time,
+        recomputed_sha256=recomputed,
+        intent_fields=_intent_fields(intent),
     )
 
 
@@ -360,11 +373,29 @@ def _state(
     return "approved, no attempt" if approval.current_state == "approved" else "approval rejected"
 
 
-def _digest_check(intent: object, digest: str) -> str:
-    if not isinstance(intent, Mapping) or not digest:
+def _recomputed(intent: object) -> str:
+    """Return the kept intent's digest over its canonical bytes, or empty without an intent."""
+    if not isinstance(intent, Mapping):
+        return ""
+    return hashlib.sha256(canonical_json(dict(intent))).hexdigest()
+
+
+def _digest_check(recomputed: str, digest: str) -> str:
+    if not recomputed or not digest:
         return "no intent"
-    recomputed = hashlib.sha256(canonical_json(dict(intent))).hexdigest()
     return "matches" if recomputed == digest else "differs"
+
+
+def _intent_fields(intent: object) -> tuple[tuple[str, str], ...]:
+    """Return the kept intent's fields in canonical order, each value as canonical JSON text.
+
+    The order and the text are those of the bytes the digest covers, so a reader
+    shows the document the digest names without encoding it again.
+    """
+    if not isinstance(intent, Mapping):
+        return ()
+    ordered = json.loads(canonical_json(dict(intent)))
+    return tuple((key, canonical_json(value).decode("utf-8")) for key, value in ordered.items())
 
 
 def _chain(rows: Sequence[StoredEvent], approval: ApprovalStatus | None) -> tuple[ChainLink, ...]:
@@ -410,6 +441,8 @@ def operation_report_to_json(report: OperationReport) -> dict[str, object]:
         "as_of_seq": report.as_of_seq,
         "as_of": report.as_of,
         "custody": report.custody,
+        "recomputed_sha256": report.recomputed_sha256,
+        "intent_fields": [{"field": key, "canonical": text} for key, text in report.intent_fields],
     }
 
 
@@ -424,6 +457,9 @@ def render_lines(report: OperationReport) -> tuple[str, ...]:
         f"task: {report.task_id or '-'}; as of journal seq {report.as_of_seq}",
         f"intent: {report.intent_sha256 or '-'} ({report.digest_check})",
     ]
+    if report.digest_check == "differs":
+        lines.append(f"intent recomputed: {report.recomputed_sha256}")
+    lines += [f"  intent.{key} = {text}" for key, text in report.intent_fields]
     lines += [
         f"attempt {item.attempt_id} by {item.executor}: {item.state}" for item in report.attempts
     ]
