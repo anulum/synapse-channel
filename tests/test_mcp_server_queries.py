@@ -215,7 +215,7 @@ def _scripted_bridge(replies: list[dict[str, object] | None]) -> SynapseHubBridg
     async def playback(match: object, send: object) -> dict[str, object] | None:
         return queue.pop(0)
 
-    bridge._await_reply = playback  # type: ignore[method-assign]
+    bridge._await_reply = playback  # type: ignore[method-assign] # probe double
     return bridge
 
 
