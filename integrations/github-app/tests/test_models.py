@@ -111,7 +111,7 @@ def test_snapshot_requires_boolean_truncation_marker() -> None:
             head_ref="feature/a",
             base_ref="main",
             paths=("a",),
-            paths_truncated=1,  # type: ignore[arg-type]
+            paths_truncated=1,  # type: ignore[arg-type] # 1 is not a bool
         )
 
 
