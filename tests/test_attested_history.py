@@ -30,16 +30,21 @@ _SHA_B = "b1" + "0" * 38
 _SHA_C = "c2" + "f" * 38
 
 
-def _runner_returning(output: str) -> Any:
-    """Build a fake GitRunner that records its argv and returns ``output``."""
-    calls: list[list[str]] = []
+class _RecordingRunner:
+    """A Git runner that records each argv and returns one fixed string."""
 
-    def runner(args: list[str]) -> str:
-        calls.append(args)
-        return output
+    def __init__(self, output: str) -> None:
+        self.output = output
+        self.calls: list[list[str]] = []
 
-    runner.calls = calls  # type: ignore[attr-defined]
-    return runner
+    def __call__(self, args: list[str]) -> str:
+        self.calls.append(args)
+        return self.output
+
+
+def _runner_returning(output: str) -> _RecordingRunner:
+    """Build a fake Git runner that records its argv and returns ``output``."""
+    return _RecordingRunner(output)
 
 
 class TestListMainMoves:
