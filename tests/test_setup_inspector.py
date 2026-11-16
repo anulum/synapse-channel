@@ -47,20 +47,23 @@ async def test_inspection_is_ready_deterministic_and_schema_valid() -> None:
     jsonschema = pytest.importorskip("jsonschema")
     profile = get_setup_profile("local-single-user")
     assert profile is not None
-    kwargs = {
-        "uri": "ws://localhost:8876",
-        "project": "DEMO",
-        "agent_id": "codex-1",
-        "env": {},
-        "executable_probe": _which,
-        "platform_probe": lambda: PlatformSnapshot("Linux", "6.8", "x86_64"),
-        "service_manager_probe": lambda _executable: True,
-        "hub_service_pid_probe": lambda _executable: 4321,
-        "diagnose_runner": _healthy_diagnose,
-    }
 
-    first = await inspect_setup(profile, **kwargs)  # type: ignore[arg-type]
-    second = await inspect_setup(profile, **kwargs)  # type: ignore[arg-type]
+    async def inspect() -> dict[str, object]:
+        return await inspect_setup(
+            profile,
+            uri="ws://localhost:8876",
+            project="DEMO",
+            agent_id="codex-1",
+            env={},
+            executable_probe=_which,
+            platform_probe=lambda: PlatformSnapshot("Linux", "6.8", "x86_64"),
+            service_manager_probe=lambda _executable: True,
+            hub_service_pid_probe=lambda _executable: 4321,
+            diagnose_runner=_healthy_diagnose,
+        )
+
+    first = await inspect()
+    second = await inspect()
 
     assert first == second
     assert first["ready"] is True
