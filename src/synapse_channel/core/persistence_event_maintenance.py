@@ -12,13 +12,11 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from synapse_channel.core.mailbox_pending_layout import record_deleted_sequences
 from synapse_channel.core.persistence_connection import StoreConnection
 
-if TYPE_CHECKING:
-    pass
 logger = logging.getLogger("synapse_channel.core.persistence")
 _PRESENT_CHUNK = 400
 
@@ -44,14 +42,15 @@ class EventMaintenance:
         Parameters
         ----------
         seqs : Iterable[int]
-            Sequence numbers to remove; an empty iterable is a no-op.
+            Sequence numbers to remove; an empty iterable is a no-op. A number
+            named twice is deleted and counted once.
 
         Returns
         -------
         int
             The number of rows actually deleted.
         """
-        seq_list = [int(s) for s in seqs]
+        seq_list = list(dict.fromkeys(int(s) for s in seqs))
         if not seq_list:
             return 0
         sql = (
