@@ -18,37 +18,6 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
-- `synapse git-release` exits 69 when it cannot reach the hub, including when
-  its name stays in conflict for the whole registration budget. Standard error
-  says that claims of that name may stay held, names the paths this commit
-  changed, and prints the `synapse release` command. The installed hook still
-  ends with `|| true`, so the commit is not blocked.
-
-## [0.99.52] - 2026-11-15
-
-Core 0.99.52 takes an effect through the hub's governed operations from
-start to finish and makes the cockpit the dashboard's front door.
-
-- **Governed operations.** An operation can be declared with an authorisation
-  intent. One approval by another identity admits one attempt, which the hub
-  opens. An attempt whose executor fell silent can be sealed, and an attempt
-  marker in Git tells whether its effect landed. `synapse ops run --hub` takes
-  a catalogue operation through that path, and version 0.1 of the
-  effect-safety suite runs twenty-one variants against this package's own
-  stack.
-- **The dashboard and the cockpit.** The wheel carries the cockpit's
-  production build, and the dashboard opens on it. The dashboard says what it
-  serves and serves recorded findings. It bounds its fleet snapshot, says what
-  is known about each seat, shows the hub's own words for every event, and
-  serves one project's part of the fleet.
-- **The release payload** is built with one recipe and signed only when a
-  second runner rebuilds the same bytes.
-- **The MCP bridge** gains an inbox page and an owned-work listing, and the
-  remote adapter keeps its lease fences across restarts.
-- **The notification outbox's storage** ships at its first layout; no
-  command starts it yet.
-- **CI** counts the lines only Windows runs in the complete coverage gate.
-
 ### Added
 
 - With setup served (`--setup-apply`), the dashboard issues a setup plan at `POST /setup/plan` to an admin:
@@ -110,30 +79,6 @@ start to finish and makes the cockpit the dashboard's front door.
   `group:` scope is refused with 400 naming it. The `scope` block lists the declared groups with their
   counts, `/capabilities.json` says whether a start declares them, and the cockpit's scope selector
   offers them under "Declared groups". See `docs/cli.md`.
-- `synapse ops run --hub` runs a catalogue operation through the hub's governed operations, opt-in.
-  `--declare` plans the row and declares the operation on the seat's claimed task, with an
-  authorisation intent built from the plan by `synapse_channel.operations.hub_intent`: the tool and
-  its version, the executable's fingerprint, the row's binding digest, the digest of the row's
-  identity and command line, and the one file's state now and expected content afterwards. It prints
-  the hub's intent digest and runs nothing. After another identity of the project approves that
-  digest, `--intent-sha256` plans again and composes the intent locally. A changed plan, file or
-  identity is refused before the hub is asked, and so is a run the local grants do not cover, which
-  never consumes the approval. The run starts only inside the one attempt the hub opens, and its
-  outcome is published on the task, which ends the attempt. A repeat of an operation id that
-  already started never runs again: the outcome its journal recorded is published instead
-  (`unknown` for a start without an outcome), and the report says `already_started: true`.
-  The local grants file stays required,
-  and the report names both authorities. Only a row that changes one file goes through: `execute`,
-  `extend`, `approve` and read-only rows are refused with the reason. A run's report now says whether
-  the hub governed it (`hub_governed`). `synapse operation declare` and `synapse operation attempt`
-  share the one hub request the new path uses; their output is unchanged.
-- The dashboard serves a scope: `scope=project:<namespace>`, `scope=none` or `scope=all` on
-  `/snapshot.json`, `/studio.json` and the live stream narrows the fleet to one project, or to the
-  work and names that have none. A task belongs to its `project` field, an agent to its name's
-  namespace, a claim to its owner's namespace and to its task's scope, a progress note to its task.
-  Nothing is inferred. The fleet, risk and headline sections are computed in the scope, and a
-  `scope` block gives the scoped and hub-wide counts and every namespace present. A scope is a lens,
-  not an access boundary. Any other value is refused with 400.
 - The dashboard's feeds take the same `scope`. `/events.json`, `/receipts.json`, `/findings.json`,
   `/waits.json` and `/attention.json` keep only the rows of the scope: a row belongs by the
   namespace of the identity it names, or by the `project` field the durable log declared for the
@@ -169,6 +114,95 @@ start to finish and makes the cockpit the dashboard's front door.
   is, and the headline's seat counters count none of them.
 - In a peer scope the HUD shows the transport as `observed · polled`: the cockpit polls the observed
   hub's snapshot by design, and no longer calls it a `poll fallback`.
+
+### Changed
+
+- `synapse git-release` exits 69 when it cannot reach the hub, including when
+  its name stays in conflict for the whole registration budget. Standard error
+  says that claims of that name may stay held, names the paths this commit
+  changed, and prints the `synapse release` command. The installed hook still
+  ends with `|| true`, so the commit is not blocked.
+- The dashboard's setup contract serves the command line's `local-single-user` profile only:
+  - **Retired:** its two July profiles (`local-ephemeral`, `local-durable-existing`) and their effect kinds
+    (`runtime_directory`, `user_unit`, `durable_store`).
+  - **The receipt chain's vocabulary is derived from the command line:** its effect kinds from
+    `setup_planner.setup_effect_ids()`, and its profiles from `available_setup_profiles()`.
+  - **The effect target:** the unit the effect installs (`synapse-hub.service`, `synapse-arm@.service`), or
+    the effect id for an effect no adapter supports.
+  - **Three refusal reasons are added:** `plan_store_full`, `plan_request_reused` and `plan_issue_failed`.
+  - **A plan request refused before any plan existed** has a receipt with no plan id, plan digest or
+    generation.
+  - **The receipt version stays 1:** no receipt had been written.
+
+### Fixed
+
+- `/operations.json` took an operation's first chain link as its declaration. An approval note journalled
+  before the declaration then stood as the declarer and set the page order. The list now reads the
+  declaration's own link.
+- The cockpit roster's inspect button is named by what its row shows. For an identity with a project,
+  the row draws the last segment over the project (`api` over `harbour`), and the button was named
+  "Inspect agent harbour/api", so speech input could not use the visible words and axe reported
+  `label-content-name-mismatch` (WCAG 2.5.3) for every such row. The name now starts with the visible
+  words and ends with the whole identity (`api harbour: inspect agent harbour/api`; a bare name reads
+  `cockpit-e2e-dashboard: inspect agent`), and the visible text keeps the two words apart. The context
+  bar's chips had the same defect: the focus chip showed "focus" and the identity and was named "Clear
+  focus filter …", and so did the selection and time-window chips. Each chip is now named by what it
+  shows, then by what pressing it does (`focus api: clear the focus filter`), and its kind label uses
+  the muted ink: the faint ink measured 2.99:1 as text on the dark panel. The active focus lens
+  input's text now uses the warning text colour: the amber fill measured 4.47:1 as text on the light
+  theme.
+
+## [0.99.52] - 2026-11-15
+
+Core 0.99.52 takes an effect through the hub's governed operations from
+start to finish and makes the cockpit the dashboard's front door.
+
+- **Governed operations.** An operation can be declared with an authorisation
+  intent. One approval by another identity admits one attempt, which the hub
+  opens. An attempt whose executor fell silent can be sealed, and an attempt
+  marker in Git tells whether its effect landed. `synapse ops run --hub` takes
+  a catalogue operation through that path, and version 0.1 of the
+  effect-safety suite runs twenty-one variants against this package's own
+  stack.
+- **The dashboard and the cockpit.** The wheel carries the cockpit's
+  production build, and the dashboard opens on it. The dashboard says what it
+  serves and serves recorded findings. It bounds its fleet snapshot, says what
+  is known about each seat, shows the hub's own words for every event, and
+  serves one project's part of the fleet.
+- **The release payload** is built with one recipe and signed only when a
+  second runner rebuilds the same bytes.
+- **The MCP bridge** gains an inbox page and an owned-work listing, and the
+  remote adapter keeps its lease fences across restarts.
+- **The notification outbox's storage** ships at its first layout; no
+  command starts it yet.
+- **CI** counts the lines only Windows runs in the complete coverage gate.
+
+### Added
+
+- `synapse ops run --hub` runs a catalogue operation through the hub's governed operations, opt-in.
+  `--declare` plans the row and declares the operation on the seat's claimed task, with an
+  authorisation intent built from the plan by `synapse_channel.operations.hub_intent`: the tool and
+  its version, the executable's fingerprint, the row's binding digest, the digest of the row's
+  identity and command line, and the one file's state now and expected content afterwards. It prints
+  the hub's intent digest and runs nothing. After another identity of the project approves that
+  digest, `--intent-sha256` plans again and composes the intent locally. A changed plan, file or
+  identity is refused before the hub is asked, and so is a run the local grants do not cover, which
+  never consumes the approval. The run starts only inside the one attempt the hub opens, and its
+  outcome is published on the task, which ends the attempt. A repeat of an operation id that
+  already started never runs again: the outcome its journal recorded is published instead
+  (`unknown` for a start without an outcome), and the report says `already_started: true`.
+  The local grants file stays required,
+  and the report names both authorities. Only a row that changes one file goes through: `execute`,
+  `extend`, `approve` and read-only rows are refused with the reason. A run's report now says whether
+  the hub governed it (`hub_governed`). `synapse operation declare` and `synapse operation attempt`
+  share the one hub request the new path uses; their output is unchanged.
+- The dashboard serves a scope: `scope=project:<namespace>`, `scope=none` or `scope=all` on
+  `/snapshot.json`, `/studio.json` and the live stream narrows the fleet to one project, or to the
+  work and names that have none. A task belongs to its `project` field, an agent to its name's
+  namespace, a claim to its owner's namespace and to its task's scope, a progress note to its task.
+  Nothing is inferred. The fleet, risk and headline sections are computed in the scope, and a
+  `scope` block gives the scoped and hub-wide counts and every namespace present. A scope is a lens,
+  not an access boundary. Any other value is refused with 400.
 - The wheel carries the cockpit's production build, without source maps (about
   1.3 MB), in `synapse_channel/dashboard_assets/cockpit/`, with
   `THIRD_PARTY_NOTICES.md`: every npm package whose code the build carries, with
@@ -415,17 +449,6 @@ start to finish and makes the cockpit the dashboard's front door.
 
 ### Changed
 
-- The dashboard's setup contract serves the command line's `local-single-user` profile only:
-  - **Retired:** its two July profiles (`local-ephemeral`, `local-durable-existing`) and their effect kinds
-    (`runtime_directory`, `user_unit`, `durable_store`).
-  - **The receipt chain's vocabulary is derived from the command line:** its effect kinds from
-    `setup_planner.setup_effect_ids()`, and its profiles from `available_setup_profiles()`.
-  - **The effect target:** the unit the effect installs (`synapse-hub.service`, `synapse-arm@.service`), or
-    the effect id for an effect no adapter supports.
-  - **Three refusal reasons are added:** `plan_store_full`, `plan_request_reused` and `plan_issue_failed`.
-  - **A plan request refused before any plan existed** has a receipt with no plan id, plan digest or
-    generation.
-  - **The receipt version stays 1:** no receipt had been written.
 - The operations guide says that a `synapse ops run` run is outside the hub's governed operations: the
   hub holds no declaration, approval, attempt or outcome for it, and an approval on the hub neither
   admits it nor is needed for it. It points to the integrator contract for an effect that must be
@@ -666,21 +689,6 @@ start to finish and makes the cockpit the dashboard's front door.
   refused and left in place. On POSIX the replaced inode stays watched, so a
   write into an earlier inode is still put back and refused.
 
-- `/operations.json` took an operation's first chain link as its declaration. An approval note journalled
-  before the declaration then stood as the declarer and set the page order. The list now reads the
-  declaration's own link.
-- The cockpit roster's inspect button is named by what its row shows. For an identity with a project,
-  the row draws the last segment over the project (`api` over `harbour`), and the button was named
-  "Inspect agent harbour/api", so speech input could not use the visible words and axe reported
-  `label-content-name-mismatch` (WCAG 2.5.3) for every such row. The name now starts with the visible
-  words and ends with the whole identity (`api harbour: inspect agent harbour/api`; a bare name reads
-  `cockpit-e2e-dashboard: inspect agent`), and the visible text keeps the two words apart. The context
-  bar's chips had the same defect: the focus chip showed "focus" and the identity and was named "Clear
-  focus filter …", and so did the selection and time-window chips. Each chip is now named by what it
-  shows, then by what pressing it does (`focus api: clear the focus filter`), and its kind label uses
-  the muted ink: the faint ink measured 2.99:1 as text on the dark panel. The active focus lens
-  input's text now uses the warning text colour: the amber fill measured 4.47:1 as text on the light
-  theme.
 - The JetBrains editor acceptance types its prompt only after the IDE reports the agent session
   ready: the chat's replay controller in the IDE log, `session/new` and its successful response in
   the ACP trace, and the started client session with the agent's command list. It used to type the
