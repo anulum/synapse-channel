@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import hashlib
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -116,7 +116,7 @@ def _run_command(argv: list[str], *, cwd: Path | None, timeout_seconds: float) -
     if not argv:
         return _command_failure(argv, b"empty verification command")
     try:
-        result = subprocess.run(  # nosec B603
+        result = subprocess.run(  # nosec B603 # argument vector, never a shell
             argv,
             cwd=str(cwd) if cwd is not None else None,
             check=False,
@@ -158,7 +158,7 @@ def _hash_artifact(path: Path) -> ArtifactEvidence | None:
 def _git_stdout(root: Path, args: list[str]) -> str:
     """Return stripped stdout from one Git command, or an empty string on failure."""
     try:
-        result = subprocess.run(  # nosec B603 B607
+        result = subprocess.run(  # nosec B603 B607 # fixed argv from PATH, no shell
             ["git", *args],
             cwd=root,
             check=False,
