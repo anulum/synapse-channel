@@ -104,7 +104,9 @@ def test_preserves_revocation_as_a_live_deny_policy(tmp_path: Path) -> None:
 
     loaded = load_multihub_serving_config(path)
 
-    assert loaded.policy.federation.peer("domain-a").revoked is True  # type: ignore[union-attr]
+    peer = loaded.policy.federation.peer("domain-a")
+    assert peer is not None
+    assert peer.revoked is True
     assert loaded.policy.mtls.peers["domain-a"].revoked is True
 
 
@@ -159,9 +161,13 @@ def test_refuses_grants_not_backed_by_federation_material(
     message: str,
 ) -> None:
     path = _policy(tmp_path)
-    _store(tmp_path / "federation.json", **store_kwargs)  # type: ignore[arg-type]
+    _store(tmp_path / "federation.json", **store_kwargs)  # type: ignore[arg-type] # varies
     document = _document()
-    grant = dict(document["grants"][0])  # type: ignore[index]
+    grants = document["grants"]
+    assert isinstance(grants, list)
+    first_grant = grants[0]
+    assert isinstance(first_grant, dict)
+    grant = dict(first_grant)
     grant.update(grant_updates)
     document["grants"] = [grant]
     path.write_text(json.dumps(document), encoding="utf-8")
