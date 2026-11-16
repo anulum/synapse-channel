@@ -130,7 +130,12 @@ def test_https_interop_trace_twice_with_consistent_observables(tmp_path: Path) -
         assert dimensions["proxy_tls"] == "recorded"
 
     # Both runs produced non-empty distinct task ids and matching message content.
-    ids = [str(r["task_lifecycle"]["task_id"]) for r in receipts]  # type: ignore[index]
+    ids: list[str] = []
+    for receipt in receipts:
+        assert isinstance(receipt, dict)
+        lifecycle = receipt["task_lifecycle"]
+        assert isinstance(lifecycle, dict)
+        ids.append(str(lifecycle["task_id"]))
     assert ids[0] and ids[1]
     assert ids[0] != ids[1]
     assert any("https-probe-1" in text for _t, text in bridge.agent.messages)
