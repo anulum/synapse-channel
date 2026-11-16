@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import gzip
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -19,6 +20,7 @@ import subprocess
 import sys
 import tarfile
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -92,6 +94,46 @@ def _fixture(
     return archive, target
 
 
+def _load_pins() -> ModuleType:
+    """Load the operator script so a test can supply the registry response."""
+    spec = importlib.util.spec_from_file_location("reviewed_pi_pins_registry", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class _RegistryBytes:
+    """Return one reviewed archive without opening a network connection."""
+
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+
+    def __enter__(self) -> _RegistryBytes:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self, _limit: int) -> bytes:
+        return self._payload
+
+
+def _accept_the_same_bytes_from_the_registry(root: Path, archive: Path, dependency: str) -> None:
+    """A registry read of the locked archive leaves an already matching install in place."""
+    module = _load_pins()
+    payload = archive.read_bytes()
+
+    def _open(url: str, timeout: int = 30) -> _RegistryBytes:
+        assert url.endswith(f"{dependency}-{VERSIONS[dependency]}.tgz")
+        assert timeout == 30
+        return _RegistryBytes(payload)
+
+    module.urllib.request.urlopen = _open
+    module.synchronize(root, None, dependency=dependency)
+
+
 def _run(
     root: Path, archive: Path, *, dependency: str = "brace-expansion"
 ) -> subprocess.CompletedProcess[str]:
@@ -129,6 +171,10 @@ def test_cli_replaces_only_the_locked_package_and_is_idempotent(
         assert (target / "index.js").read_bytes() == b"export default 'reviewed';\n"
         assert (target.parent / "unrelated-package.txt").read_bytes() == b"preserve\n"
         assert (tmp_path / "integrations/pi/package-lock.json").read_bytes() == before_lock
+        assert not list(target.parent.glob(".synapse-pin-*"))
+    if dependency == "brace-expansion":
+        _accept_the_same_bytes_from_the_registry(tmp_path, archive, dependency)
+        assert (target / "index.js").read_bytes() == b"export default 'reviewed';\n"
         assert not list(target.parent.glob(".synapse-pin-*"))
 
 

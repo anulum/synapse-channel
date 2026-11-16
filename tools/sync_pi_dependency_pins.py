@@ -24,6 +24,7 @@ import tempfile
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import cast
 
 LIMIT = 2 * 1024 * 1024
 MAX_MEMBERS = 1024
@@ -154,6 +155,41 @@ def _installed_files_match(target: Path, files: dict[Path, bytes]) -> bool:
     )
 
 
+def _locked_sha512(root: Path, pin: DependencyPin) -> bytes:
+    """Read the reviewed lock digest for one installed Pi dependency."""
+    lock = json.loads((root / "integrations/pi/package-lock.json").read_text())
+    entry = lock["packages"][pin.relative]
+    if entry["version"] != pin.version or entry["resolved"] != pin.tarball:
+        raise ValueError(f"Pi {pin.name} pin requires a reviewed version and registry URL")
+    integrity = entry["integrity"]
+    if not isinstance(integrity, str) or not integrity.startswith("sha512-"):
+        raise ValueError("Pi dependency pin is missing SHA-512 integrity")
+    expected = base64.b64decode(integrity[7:], validate=True)
+    if len(expected) != 64:
+        raise ValueError("Pi dependency pin has malformed SHA-512 integrity")
+    return expected
+
+
+def _read_pinned_archive(pin: DependencyPin, archive: Path | None, expected: bytes) -> bytes:
+    """Load a local or registry archive and require the locked SHA-512 digest."""
+    if archive is None:
+        # The URL is a fixed HTTPS registry URL; bytes must match the reviewed lock.
+        with urllib.request.urlopen(pin.tarball, timeout=30) as response:
+            payload = cast(bytes, response.read(LIMIT + 1))
+    else:
+        with archive.open("rb") as source:
+            payload = source.read(LIMIT + 1)
+    if len(payload) > LIMIT or hashlib.sha512(payload).digest() != expected:
+        raise ValueError("Pi dependency archive does not match the locked SHA-512 digest")
+    return payload
+
+
+def _require_installed_package(target: Path) -> None:
+    """Refuse a missing, linked, or escaped installed package directory."""
+    if not target.is_dir() or target.is_symlink() or target.parent.resolve() != target.parent:
+        raise ValueError("Pi dependency target must be an installed ordinary package directory")
+
+
 def synchronize(
     root: Path, archive: Path | None = None, *, dependency: str = "brace-expansion"
 ) -> None:
@@ -185,29 +221,11 @@ def synchronize(
     """
     pin = PINS[dependency]
     root = root.resolve()
-    lock = json.loads((root / "integrations/pi/package-lock.json").read_text())
-    entry = lock["packages"][pin.relative]
-    if entry["version"] != pin.version or entry["resolved"] != pin.tarball:
-        raise ValueError(f"Pi {pin.name} pin requires a reviewed version and registry URL")
-    integrity = entry["integrity"]
-    if not isinstance(integrity, str) or not integrity.startswith("sha512-"):
-        raise ValueError("Pi dependency pin is missing SHA-512 integrity")
-    expected = base64.b64decode(integrity[7:], validate=True)
-    if len(expected) != 64:
-        raise ValueError("Pi dependency pin has malformed SHA-512 integrity")
-    if archive is None:
-        # The URL is a fixed HTTPS registry URL; bytes must match the reviewed lock.
-        with urllib.request.urlopen(pin.tarball, timeout=30) as response:
-            payload = response.read(LIMIT + 1)
-    else:
-        with archive.open("rb") as source:
-            payload = source.read(LIMIT + 1)
-    if len(payload) > LIMIT or hashlib.sha512(payload).digest() != expected:
-        raise ValueError("Pi dependency archive does not match the locked SHA-512 digest")
+    expected = _locked_sha512(root, pin)
+    payload = _read_pinned_archive(pin, archive, expected)
     files = _archive_files(payload, pin)
     target = root / "integrations/pi" / pin.relative
-    if not target.is_dir() or target.is_symlink() or target.parent.resolve() != target.parent:
-        raise ValueError("Pi dependency target must be an installed ordinary package directory")
+    _require_installed_package(target)
     if _installed_files_match(target, files):
         return
     _replace_directory(target, files)
