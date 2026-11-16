@@ -262,19 +262,16 @@ def _symbols_for_ranges(
     return tuple(dict.fromkeys(selected))
 
 
-def _git(
-    repo_root: Path,
-    args: Sequence[str],
-    *,
-    max_stdout_bytes: int = MAX_GIT_STDOUT_BYTES,
-    allow_stdout_truncation: bool = False,
-) -> bytes:
-    """Run one local Git read with bounded streams, deadline, and teardown."""
+def _require_git() -> str:
+    """Return the local git executable, or refuse when it is not on PATH."""
     git = shutil.which("git")
     if git is None:
         raise _SemanticGitReadError("git semantic diff failed: git is not installed or not on PATH")
-    if max_stdout_bytes < 0:
-        raise ValueError("git semantic diff stdout limit must not be negative")
+    return git
+
+
+def _open_git_read(repo_root: Path, args: Sequence[str], git: str) -> subprocess.Popen[bytes]:
+    """Start one bounded git read and refuse a process whose pipes did not open."""
     try:
         process = subprocess.Popen(  # nosec B603 # argument vector, never a shell
             [
@@ -300,12 +297,22 @@ def _git(
     if process.stdout is None or process.stderr is None:
         _terminate_git_process(process)
         raise _SemanticGitReadError("git semantic diff failed: git pipes were unavailable")
-    stdout = bytearray()
-    stderr = bytearray()
-    overflow = threading.Event()
-    overflow_labels: list[str] = []
-    reader_errors: list[str] = []
-    overflow_lock = threading.Lock()
+    return process
+
+
+def _start_git_readers(
+    process: subprocess.Popen[bytes],
+    stdout: bytearray,
+    stderr: bytearray,
+    *,
+    max_stdout_bytes: int,
+    overflow: threading.Event,
+    overflow_labels: list[str],
+    reader_errors: list[str],
+    overflow_lock: threading.Lock,
+) -> tuple[threading.Thread, threading.Thread]:
+    """Drain stdout and stderr together, then return the two reader threads."""
+    assert process.stdout is not None and process.stderr is not None
     readers = (
         threading.Thread(
             target=_drain_git_pipe,
@@ -336,18 +343,32 @@ def _git(
     )
     for reader in readers:
         reader.start()
+    return readers
+
+
+def _git_read_timed_out(process: subprocess.Popen[bytes], overflow: threading.Event) -> bool:
+    """Wait until git exits, a stream overflows, or the read deadline passes."""
     deadline = time.monotonic() + GIT_READ_TIMEOUT_SECONDS
-    timed_out = False
     while process.poll() is None and not overflow.is_set():
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            timed_out = True
-            break
+            return True
         overflow.wait(min(0.01, remaining))
-    if timed_out or overflow.is_set():
-        _terminate_git_process(process)
-    else:
-        process.wait(timeout=_GIT_TERMINATE_GRACE_SECONDS)
+    return False
+
+
+def _git_read_bytes(
+    process: subprocess.Popen[bytes],
+    readers: tuple[threading.Thread, threading.Thread],
+    stdout: bytearray,
+    stderr: bytearray,
+    *,
+    timed_out: bool,
+    overflow_labels: list[str],
+    reader_errors: list[str],
+    allow_stdout_truncation: bool,
+) -> bytes:
+    """Join the readers and return the retained stdout, or the same failures as before."""
     for reader in readers:
         reader.join(timeout=_GIT_TERMINATE_GRACE_SECONDS)
     if any(reader.is_alive() for reader in readers):
@@ -369,6 +390,50 @@ def _git(
         detail = _terminal_safe_detail(bytes(stderr))
         raise _SemanticGitReadError(f"git semantic diff failed: {detail or 'unknown git error'}")
     return bytes(stdout)
+
+
+def _git(
+    repo_root: Path,
+    args: Sequence[str],
+    *,
+    max_stdout_bytes: int = MAX_GIT_STDOUT_BYTES,
+    allow_stdout_truncation: bool = False,
+) -> bytes:
+    """Run one local Git read with bounded streams, deadline, and teardown."""
+    git = _require_git()
+    if max_stdout_bytes < 0:
+        raise ValueError("git semantic diff stdout limit must not be negative")
+    process = _open_git_read(repo_root, args, git)
+    stdout = bytearray()
+    stderr = bytearray()
+    overflow = threading.Event()
+    overflow_labels: list[str] = []
+    reader_errors: list[str] = []
+    readers = _start_git_readers(
+        process,
+        stdout,
+        stderr,
+        max_stdout_bytes=max_stdout_bytes,
+        overflow=overflow,
+        overflow_labels=overflow_labels,
+        reader_errors=reader_errors,
+        overflow_lock=threading.Lock(),
+    )
+    timed_out = _git_read_timed_out(process, overflow)
+    if timed_out or overflow.is_set():
+        _terminate_git_process(process)
+    else:
+        process.wait(timeout=_GIT_TERMINATE_GRACE_SECONDS)
+    return _git_read_bytes(
+        process,
+        readers,
+        stdout,
+        stderr,
+        timed_out=timed_out,
+        overflow_labels=overflow_labels,
+        reader_errors=reader_errors,
+        allow_stdout_truncation=allow_stdout_truncation,
+    )
 
 
 def _diff_args(base: str, head: str | None, paths: Sequence[str]) -> list[str]:
