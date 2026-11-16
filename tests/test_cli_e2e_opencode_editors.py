@@ -136,7 +136,7 @@ def _executable(name: str) -> Path:
 
 def _exact_opencode() -> Path:
     binary = _executable("OPENCODE_BIN")
-    completed = subprocess.run(  # nosec B603
+    completed = subprocess.run(
         [str(binary), "--version"],
         capture_output=True,
         text=True,
@@ -285,7 +285,7 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
                     timeout=_CLIENT_TIMEOUT_SECONDS[client],
                 )
             else:
-                completed = subprocess.run(  # nosec B603
+                completed = subprocess.run(
                     command,
                     cwd=project,
                     env=environment,
