@@ -15,7 +15,7 @@ import shutil
 import sqlite3
 
 # The only subprocess is a fixed argv for the locally resolved notification program.
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 import time
 from datetime import UTC, datetime
@@ -68,7 +68,7 @@ def _notify(path: Path, *, now: float, maximum: int) -> int:
         raise AttentionStoreError("notify-send is unavailable")
     # Desktop previews stay generic even when the owner queue contains opaque IDs.
     # The resolved executable receives no source content or user-controlled arguments.
-    subprocess.run(  # nosec B603
+    subprocess.run(  # nosec B603 # argument vector, never a shell
         [
             executable,
             "SYNAPSE attention",
