@@ -144,7 +144,7 @@ async def test_local_ollama_emulates_next_turn(tmp_path: Path) -> None:
     """A real local Ollama CLI turn produces an emulated next-turn outcome."""
     if shutil.which("ollama") is None:
         pytest.skip("local Ollama binary is unavailable")
-    models = subprocess.run(  # nosec B603
+    models = subprocess.run(
         ["ollama", "list"], capture_output=True, text=True, timeout=10, check=False
     )
     if models.returncode != 0 or "gemma3:1b" not in models.stdout:
