@@ -285,7 +285,7 @@ def _run_apply(
 
 @contextmanager
 def _process() -> Iterator[subprocess.Popen[bytes]]:
-    process = subprocess.Popen(  # nosec B603 - fixed test process
+    process = subprocess.Popen(  # fixed test process
         [sys.executable, "-c", "import time; time.sleep(300)"],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
