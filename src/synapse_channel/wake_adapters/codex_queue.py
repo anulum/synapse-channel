@@ -54,7 +54,7 @@ import os
 import re
 import signal
 import socket
-import subprocess  # nosec B404
+import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 import uuid
 from pathlib import Path
@@ -180,7 +180,7 @@ class _NoCustody(OSError):
 
 def _popen(argv: list[str], *, creationflags: int = 0) -> subprocess.Popen[str]:
     """Create the command with no input and both outputs captured."""
-    return subprocess.Popen(  # nosec B603 - fixed path, argument vector
+    return subprocess.Popen(  # nosec B603 # fixed path, argument vector
         argv,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
