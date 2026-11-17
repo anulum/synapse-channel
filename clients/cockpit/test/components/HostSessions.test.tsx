@@ -17,6 +17,7 @@ import { HostSessions, formatRuntime } from "../../src/components/HostSessions";
 import { CockpitI18nProvider, useCockpitI18n } from "../../src/context/CockpitI18n";
 import { formatMessage, SUPPORTED_LOCALES } from "../../src/lib/i18n";
 import { resetCockpitAuth, unlockCockpit } from "../../src/lib/auth";
+import { DASHBOARD_START_HANG_GUARD_MS, waitForDashboardUrl } from "./dashboardStartup";
 
 const directory = mkdtempSync(join(tmpdir(), "host-sessions-component-"));
 const grants = join(directory, "grants.json");
@@ -60,19 +61,12 @@ finally:
   child.stderr.on("data", (chunk: Buffer) => {
     diagnostics = (diagnostics + chunk.toString()).slice(-8192);
   });
-  base = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("dashboard startup timed out")), 5000);
-    child.once("error", (error) => { clearTimeout(timer); reject(error); });
-    child.once("exit", (code, signal) => {
-      clearTimeout(timer);
-      reject(new Error(`dashboard exited (${code ?? signal}): ${diagnostics}`));
-    });
-    child.stdout.once("data", (chunk: Buffer) => { clearTimeout(timer); resolve(chunk.toString().trim()); });
-  });
+  // The budget is a hang guard. Printing the URL is not a timing measurement.
+  base = await waitForDashboardUrl(child, () => diagnostics);
   // jsdom has no browser URL resolution; transport still crosses real loopback HTTP.
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
     networkFetch(new URL(String(input), base), init));
-}, 10000);
+}, DASHBOARD_START_HANG_GUARD_MS + 30_000);
 afterEach(() => {
   cleanup(); resetCockpitAuth(); grant(true); localStorage.clear();
   history.replaceState(null, "", "/cockpit/");
