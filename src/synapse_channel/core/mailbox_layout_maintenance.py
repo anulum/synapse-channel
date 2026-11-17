@@ -12,6 +12,9 @@ cost does not grow with every mailbox the journal has ever named. An exact part
 reaches the mailbox of that name, the personal mailboxes of the bare project it
 names, and role mailboxes; the address rules still decide each one. A glob part
 can reach any mailbox, so a target with one reads every counter.
+
+The tables exist from the moment the event store opens, which creates them, so
+an append or a deletion does not check the schema again.
 """
 
 from __future__ import annotations
@@ -31,7 +34,6 @@ from synapse_channel.core.mailbox_layout_mentions import delete_mentions, record
 from synapse_channel.core.mailbox_layout_schema import (
     _advance_layout_extent,
     _refresh_layout_extent,
-    ensure_mailbox_schema,
 )
 
 _CHAT = "chat"
@@ -69,7 +71,6 @@ def record_inserted_event(connection: Any, seq: int, kind: str, payload: str) ->
     payload : str
         The event payload as its stored JSON text.
     """
-    ensure_mailbox_schema(connection)
     _advance_layout_extent(connection, seq, kind)
     if kind == _CHAT:
         _record_chat(connection, seq, payload)
@@ -95,7 +96,6 @@ def record_deleted_sequences(connection: Any, seqs: list[int]) -> None:
     """
     if not seqs:
         return
-    ensure_mailbox_schema(connection)
     _decrement_deleted(connection, _hits_for(connection, seqs))
     _delete_hits(connection, seqs)
     delete_mentions(connection, seqs)
@@ -103,7 +103,6 @@ def record_deleted_sequences(connection: Any, seqs: list[int]) -> None:
 
 
 def _record_chat(connection: Any, seq: int, payload: str) -> None:
-    ensure_mailbox_schema(connection)
     body = _object(payload)
     if body is None:
         return
@@ -158,7 +157,6 @@ def _reachable_counters(connection: Any, addresses: tuple[str, ...]) -> list[tup
 
 
 def _record_watermark(connection: Any, seq: int, payload: str) -> None:
-    ensure_mailbox_schema(connection)
     body = _object(payload)
     if body is None:
         return

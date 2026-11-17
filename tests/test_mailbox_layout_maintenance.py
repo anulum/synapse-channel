@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -149,5 +150,38 @@ def test_stored_counters_equal_a_recount_after_every_append_and_delete(tmp_path:
         for seq in appended[::3]:
             assert store.delete([seq]) == 1
             _assert_counters_equal_a_recount(store)
+    finally:
+        store.close()
+
+
+def _schema_statements(store: EventStore, action: Callable[[], object]) -> list[str]:
+    """Run ``action`` and return the schema statements the store's connection ran."""
+    statements: list[str] = []
+    connection = store.storage.connection
+    connection.set_trace_callback(statements.append)
+    try:
+        action()
+    finally:
+        connection.set_trace_callback(None)
+    return [
+        statement
+        for statement in statements
+        if statement.lstrip().upper().startswith(("CREATE", "ALTER", "PRAGMA TABLE_INFO"))
+    ]
+
+
+def test_a_chat_a_watermark_a_read_and_a_delete_run_no_schema_statement(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        first = _chat(store, "P/ann")
+        tracker = MailboxPendingTracker(store)
+        assert _schema_statements(store, lambda: _chat(store, "P/ann")) == []
+        assert _schema_statements(store, lambda: tracker.pending_count("P/ann")) == []
+        assert (
+            _schema_statements(store, lambda: tracker.advance("P/ann", first, source="cursor"))
+            == []
+        )
+        assert _schema_statements(store, lambda: store.delete([first])) == []
+        assert tracker.pending_count("P/ann") == 1
     finally:
         store.close()

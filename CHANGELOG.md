@@ -48,6 +48,9 @@ execution evidence when carrying a release claim forward.
   that keeps no mentions is walked once more at its next start.
 - **Hub start.** The walk that builds the stored mailbox counts reads and
   decodes only chats and watermarks, not every event in the journal.
+- **Mailbox counts.** Storing a chat or a watermark, deleting a chat and
+  reading a pending count no longer recreate the count tables each time. The
+  event store creates them once, when it opens.
 
 ## [0.99.53] - 2026-11-16
 

@@ -37,7 +37,9 @@ def ensure_mailbox_schema(connection: Any) -> None:
     """Create the count tables when this store does not have them yet.
 
     An existing table is never dropped. A column this code already knows how to
-    read is added when an older table lacks it. Nothing else is rewritten.
+    read is added when an older table lacks it. Nothing else is rewritten. The
+    event store calls this once when it opens, and the walk and a layout copy call
+    it; appends, deletions and count reads rely on that and do not repeat it.
 
     Parameters
     ----------

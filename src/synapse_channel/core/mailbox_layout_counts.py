@@ -5,7 +5,11 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — read and store one mailbox's pending count
-"""Read a mailbox count from the address index, without scanning chat bodies."""
+"""Read a mailbox count from the address index, without scanning chat bodies.
+
+The tables exist from the moment the event store opens, which creates them, so
+no read here checks the schema again.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +17,6 @@ import json
 from typing import Any
 
 from synapse_channel.core.mailbox_addresses import exact_addresses, reaches
-from synapse_channel.core.mailbox_layout_schema import ensure_mailbox_schema
 
 
 def stored_count(connection: Any, identity: str) -> tuple[int, int] | None:
@@ -31,7 +34,6 @@ def stored_count(connection: Any, identity: str) -> tuple[int, int] | None:
     tuple[int, int] or None
         ``(pending, watermark)`` for a stored mailbox.
     """
-    ensure_mailbox_schema(connection)
     row = connection.execute(
         "SELECT pending, watermark FROM mailbox_pending_counts WHERE identity = ?",
         (identity,),
@@ -80,7 +82,6 @@ def count_between(connection: Any, identity: str, min_seq: int, max_seq: int | N
     int
         How many distinct chats in the window reach the mailbox.
     """
-    ensure_mailbox_schema(connection)
     if max_seq is not None and max_seq < min_seq:
         return 0
     exact = exact_addresses(identity)
@@ -102,7 +103,6 @@ def remember_count(connection: Any, identity: str, pending: int, watermark: int)
     watermark : int
         The watermark that count was taken after.
     """
-    ensure_mailbox_schema(connection)
     connection.execute(
         "INSERT INTO mailbox_pending_counts (identity, pending, watermark) VALUES (?, ?, ?) "
         "ON CONFLICT(identity) DO UPDATE SET pending = excluded.pending, "
@@ -124,7 +124,6 @@ def load_counters(connection: Any) -> tuple[tuple[str, int, int], ...]:
     tuple[tuple[str, int, int], ...]
         ``(identity, pending, watermark)`` rows, oldest mailbox first.
     """
-    ensure_mailbox_schema(connection)
     rows = connection.execute(
         "SELECT identity, pending, watermark FROM mailbox_pending_counts ORDER BY rowid"
     ).fetchall()
