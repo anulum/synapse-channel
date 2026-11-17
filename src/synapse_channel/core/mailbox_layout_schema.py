@@ -9,19 +9,24 @@
 
 The tables share the event store's one connection. Version 1 is one row. That
 row also records the highest event sequence and the number of chat rows the
-tables reflect. A newer version is refused before any table is rewritten. A
-finished layout can be copied onto a converted store so that store does not
-walk again.
+tables reflect, and the highest sequence the chats' name mentions reflect. A
+writer that keeps hits but not mentions leaves that last figure behind, and a
+stale figure is ``-1``. A newer version is refused before any table is
+rewritten. A finished layout can be copied onto a converted store so that store
+does not walk again.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from synapse_channel.core.mailbox_layout_mentions import copy_mentions
+
 LAYOUT_VERSION = 1
 """The only mailbox-count layout this code opens."""
 
 _CHAT = "chat"
+_STALE = -1
 
 
 class MailboxLayoutRefused(ValueError):
@@ -62,9 +67,14 @@ def ensure_mailbox_schema(connection: Any) -> None:
         "ON mailbox_pending_counts(identity) WHERE lower(substr(identity, 1, 5)) = 'role:'"
     )
     connection.execute(
+        "CREATE TABLE IF NOT EXISTS mailbox_name_mentions ("
+        "seq INTEGER NOT NULL, position INTEGER NOT NULL, name TEXT NOT NULL, "
+        "PRIMARY KEY(seq, position))"
+    )
+    connection.execute(
         "CREATE TABLE IF NOT EXISTS mailbox_pending_layout ("
         "version INTEGER NOT NULL, projected_through INTEGER NOT NULL DEFAULT 0, "
-        "chat_rows INTEGER NOT NULL DEFAULT 0)"
+        "chat_rows INTEGER NOT NULL DEFAULT 0, mentions_through INTEGER NOT NULL DEFAULT -1)"
     )
     _add_known_columns(connection)
 
@@ -160,11 +170,12 @@ def _copy_rows(source: Any, destination: Any) -> None:
         list(source.execute("SELECT identity, pending, watermark FROM mailbox_pending_counts")),
     )
     through, chats = _copied_extent(source)
+    current = copy_mentions(source, destination) and _copied_mentions_current(source)
     destination.execute("DELETE FROM mailbox_pending_layout")
     destination.execute(
-        "INSERT INTO mailbox_pending_layout (version, projected_through, chat_rows) "
-        "VALUES (?, ?, ?)",
-        (LAYOUT_VERSION, through, chats),
+        "INSERT INTO mailbox_pending_layout "
+        "(version, projected_through, chat_rows, mentions_through) VALUES (?, ?, ?, ?)",
+        (LAYOUT_VERSION, through, chats, through if current else _STALE),
     )
 
 
@@ -197,6 +208,11 @@ def _add_known_columns(connection: Any) -> None:
     if "chat_rows" not in layout:
         connection.execute(
             "ALTER TABLE mailbox_pending_layout ADD COLUMN chat_rows INTEGER NOT NULL DEFAULT 0"
+        )
+    if "mentions_through" not in layout:
+        connection.execute(
+            "ALTER TABLE mailbox_pending_layout ADD COLUMN mentions_through "
+            "INTEGER NOT NULL DEFAULT -1"
         )
 
 
@@ -246,20 +262,41 @@ def _stored_extent(connection: Any) -> tuple[int, int] | None:
     return _extent_pair(row[0], row[1])
 
 
-def _advance_layout_extent(connection: Any, seq: int, kind: str) -> None:
-    """Move the stored extent after one insert, when a layout row already exists."""
+def _mentions_current(connection: Any) -> bool:
+    """Return whether the stored mentions reflect every event the extent names.
+
+    The outer join always yields one row, as in :func:`_stored_extent`.
+    """
     row = connection.execute(
-        "SELECT projected_through, chat_rows FROM mailbox_pending_layout LIMIT 1"
+        "SELECT layout.projected_through, layout.mentions_through FROM (SELECT 1) "
+        "LEFT JOIN (SELECT projected_through, mentions_through FROM mailbox_pending_layout "
+        "LIMIT 1) AS layout ON 1"
+    ).fetchone()
+    pair = _extent_pair(row[0], row[1])
+    return pair is not None and pair[0] == pair[1]
+
+
+def _advance_layout_extent(connection: Any, seq: int, kind: str) -> None:
+    """Move the stored extent after one insert, when a layout row already exists.
+
+    The mentions figure moves with it only while it was current, so a gap left by
+    a writer that keeps no mentions stays visible until the next walk.
+    """
+    row = connection.execute(
+        "SELECT projected_through, chat_rows, mentions_through FROM mailbox_pending_layout LIMIT 1"
     ).fetchone()
     if row is None:
         return
     stored = _extent_pair(row[0], row[1])
     through, chats = (0, 0) if stored is None else stored
+    current = stored is not None and _extent_pair(through, row[2]) == (through, through)
     if kind == _CHAT:
         chats += 1
+    advanced = max(through, int(seq))
     connection.execute(
-        "UPDATE mailbox_pending_layout SET projected_through = ?, chat_rows = ?",
-        (max(through, int(seq)), chats),
+        "UPDATE mailbox_pending_layout SET projected_through = ?, chat_rows = ?, "
+        "mentions_through = ?",
+        (advanced, chats, advanced if current else _STALE),
     )
 
 
@@ -268,18 +305,28 @@ def _refresh_layout_extent(connection: Any) -> None:
     row = connection.execute("SELECT 1 FROM mailbox_pending_layout LIMIT 1").fetchone()
     if row is None:
         return
-    _write_layout_extent(connection)
+    _write_layout_extent(connection, mentions_current=_mentions_current(connection))
 
 
-def _write_layout_extent(connection: Any) -> None:
-    """Store version 1 and the journal's current extent."""
+def _write_layout_extent(connection: Any, *, mentions_current: bool = True) -> None:
+    """Store version 1 and the journal's current extent.
+
+    The mentions figure is that extent when the mentions are current, else stale.
+    """
     through, chats = _journal_extent(connection)
     connection.execute("DELETE FROM mailbox_pending_layout")
     connection.execute(
-        "INSERT INTO mailbox_pending_layout (version, projected_through, chat_rows) "
-        "VALUES (?, ?, ?)",
-        (LAYOUT_VERSION, through, chats),
+        "INSERT INTO mailbox_pending_layout "
+        "(version, projected_through, chat_rows, mentions_through) VALUES (?, ?, ?, ?)",
+        (LAYOUT_VERSION, through, chats, through if mentions_current else _STALE),
     )
+
+
+def _copied_mentions_current(source: Any) -> bool:
+    columns = {str(row[1]) for row in source.execute("PRAGMA table_info(mailbox_pending_layout)")}
+    if "projected_through" not in columns or "mentions_through" not in columns:
+        return False
+    return _mentions_current(source)
 
 
 def _copied_extent(source: Any) -> tuple[int, int]:

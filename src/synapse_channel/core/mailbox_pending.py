@@ -18,8 +18,10 @@ durable sequence. It is not evidence that a model read or acted on their bodies.
 
 from __future__ import annotations
 
+import heapq
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping
+from operator import itemgetter
 from typing import Any, cast
 
 from synapse_channel.core.agent_liveness import waiter_owner
@@ -29,6 +31,7 @@ from synapse_channel.core.mailbox_pending_layout import (
     count_after,
     count_between,
     load_counters,
+    mention_history,
     project_mailbox_layout,
     remember_count,
     stored_count,
@@ -434,37 +437,53 @@ class MailboxPendingTracker:
         self._counts[identity] = pending
 
     def _restore(self) -> None:
-        """Restore stored counts, then replay watermarks and role bindings.
+        """Replay the journal's mailbox history in order, then keep the stored counts.
 
-        Chat bodies are not read. The projection walk, when this store is still
-        at version 0, has already filled the tables before this returns, and the
-        hub has not bound its socket yet.
+        Chat bodies are not read: each chat's mailbox names come from the stored
+        mentions. The projection walk, when this store is still at version 0 or
+        no longer matches the journal, has already filled the tables before this
+        returns, and the hub has not bound its socket yet.
         """
         if self.store is None:
             return
         project_mailbox_layout(self.store)
-        self._load_stored_counters()
-        self._replay_mailbox_events()
+        self._replay_mailbox_history()
+        self._load_stored_counts()
 
-    def _load_stored_counters(self) -> None:
-        """Remember each stored mailbox in insertion order and keep its count."""
+    def _replay_mailbox_history(self) -> None:
+        """Replay chat mentions, watermarks and role bindings, merged by journal sequence.
+
+        The order is the journal's, as when every chat was read, so the bound
+        keeps the mailboxes the journal mentioned last, in that order.
+        """
+        store = cast(EventStore, self.store)
+        kinds = (EventKind.MAILBOX_WATERMARK, EventKind.ROLE_BINDING)
+        with store.storage.lock:
+            mentions = (
+                (seq, names, None) for seq, names in mention_history(store.storage.connection)
+            )
+            events = ((event.seq, (), event) for event in store.iter_events(kinds=kinds))
+            for _seq, names, event in heapq.merge(mentions, events, key=itemgetter(0)):
+                if event is None:
+                    self._remember_mentions(names)
+                elif event.kind == EventKind.ROLE_BINDING:
+                    self._restore_binding(event.payload)
+                else:
+                    self._restore_watermark(event.payload, event.seq)
+
+    def _remember_mentions(self, names: tuple[str, ...]) -> None:
+        """Touch the mailboxes one chat named, as reading that chat's target did."""
+        for identity in tuple(dict.fromkeys(self._mailbox_of_part(name) for name in names)):
+            self._remember(identity)
+
+    def _load_stored_counts(self) -> None:
+        """Keep each retained mailbox's stored count and the higher of the two cursors."""
         store = cast(EventStore, self.store)
         for identity, pending, watermark in load_counters(store.storage.connection):
-            self._remember(identity)
             if identity not in self._known:
                 continue
             self._watermarks[identity] = max(self.watermark_for(identity), watermark)
             self._counts[identity] = pending
-
-    def _replay_mailbox_events(self) -> None:
-        """Replay watermark and role-binding events, which are not chat bodies."""
-        store = cast(EventStore, self.store)
-        kinds = (EventKind.MAILBOX_WATERMARK, EventKind.ROLE_BINDING)
-        for event in store.iter_events(kinds=kinds):
-            if event.kind == EventKind.ROLE_BINDING:
-                self._restore_binding(event.payload)
-                continue
-            self._restore_watermark(event.payload, event.seq)
 
     def _restore_watermark(self, payload: Mapping[str, Any], seq: int) -> None:
         """Apply one watermark event without lowering a stored cursor."""

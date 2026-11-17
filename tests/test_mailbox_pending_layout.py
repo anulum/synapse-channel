@@ -458,7 +458,7 @@ def test_a_plain_name_loaded_after_its_role_stays_out_of_the_projection(tmp_path
     try:
         _chat(store, target="P/reviewer")
         tracker = MailboxPendingTracker(store)
-        tracker.snapshot(("P/bob",), lambda _name: ("P/reviewer",))
+        assert tracker.bind_roles("P/bob", ("P/reviewer",)) is True
         connection = store.storage.connection
         row = connection.execute(
             "SELECT pending, watermark FROM mailbox_pending_counts WHERE identity = 'P/reviewer'"

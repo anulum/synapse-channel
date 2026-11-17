@@ -916,9 +916,12 @@ bounded chat history, and the mailbox identity cap — so a restart cannot
 reconstruct an unbounded in-memory view from an append-only log.
 
 **Implementation.** `core/journal.py:replay` → `core/ledger.py:restore_progress`
-(three drop passes), bounded history seed, `mailbox_pending` LRU restore.
+(three drop passes), bounded history seed, `mailbox_pending` LRU restore (the
+journal's mailbox mentions, watermarks and role bindings replayed in order, from
+the stored mentions rather than the chat bodies).
 
-**Pinned by.** `tests/test_journal.py`, `tests/test_hub_state_seed.py`.
+**Pinned by.** `tests/test_journal.py`, `tests/test_hub_state_seed.py`,
+`tests/test_mailbox_restore_order.py`.
 
 ### INV-RR-3 — denial evidence is audit-only on replay
 

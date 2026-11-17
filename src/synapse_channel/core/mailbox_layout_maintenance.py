@@ -27,6 +27,7 @@ from synapse_channel.core.mailbox_addresses import (
     reaches,
 )
 from synapse_channel.core.mailbox_layout_counts import count_after, remember_count, stored_count
+from synapse_channel.core.mailbox_layout_mentions import delete_mentions, record_mentions
 from synapse_channel.core.mailbox_layout_schema import (
     _advance_layout_extent,
     _refresh_layout_extent,
@@ -50,8 +51,9 @@ _ROLE_COUNTERS = (
 def record_inserted_event(connection: Any, seq: int, kind: str, payload: str) -> None:
     """Record one new event's mailbox rows inside the caller's transaction.
 
-    A chat writes one hit per target part and increments each existing counter
-    the part reaches. A watermark moves that mailbox's cursor and stores the
+    A chat writes the mailbox names its target mentions. A chat that counts also
+    writes one hit per target part and increments each existing counter the
+    part reaches. A watermark moves that mailbox's cursor and stores the
     count strictly after it. Every kind moves the recorded extent when a layout
     row already exists: the highest sequence, and the chat-row count when the
     kind is a chat. The caller commits.
@@ -77,7 +79,7 @@ def record_inserted_event(connection: Any, seq: int, kind: str, payload: str) ->
 
 
 def record_deleted_sequences(connection: Any, seqs: list[int]) -> None:
-    """Drop hits for sequences that were actually deleted, and fix their counters.
+    """Drop hits and mentions for sequences that were actually deleted, and fix counters.
 
     A chat already at or below a mailbox's watermark was not in that count, so
     the counter stays. The recorded extent is taken from the journal again,
@@ -96,13 +98,17 @@ def record_deleted_sequences(connection: Any, seqs: list[int]) -> None:
     ensure_mailbox_schema(connection)
     _decrement_deleted(connection, _hits_for(connection, seqs))
     _delete_hits(connection, seqs)
+    delete_mentions(connection, seqs)
     _refresh_layout_extent(connection)
 
 
 def _record_chat(connection: Any, seq: int, payload: str) -> None:
     ensure_mailbox_schema(connection)
     body = _object(payload)
-    if body is None or not counts_at_all(body):
+    if body is None:
+        return
+    record_mentions(connection, seq, body)
+    if not counts_at_all(body):
         return
     sender = str(body.get("sender") or "")
     addresses = parts(str(body.get("target") or "all"))

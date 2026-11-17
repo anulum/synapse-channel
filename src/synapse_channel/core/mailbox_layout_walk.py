@@ -5,7 +5,12 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — one startup walk that fills mailbox hits and counters
-"""Project a store before the socket binds, and again when the journal no longer matches."""
+"""Project a store before the socket binds, and again when the journal no longer matches.
+
+The projection is the address hits, one counter per named mailbox, and each
+chat's mentioned mailbox names. A store whose mentions fall behind its extent,
+because a writer kept hits but no mentions, is projected again too.
+"""
 
 from __future__ import annotations
 
@@ -15,9 +20,11 @@ from typing import Any
 from synapse_channel.core.mailbox_addresses import counts_at_all, identity_addresses, parts
 from synapse_channel.core.mailbox_layout_counts import count_after
 from synapse_channel.core.mailbox_layout_maintenance import _capped_through
+from synapse_channel.core.mailbox_layout_mentions import record_mentions
 from synapse_channel.core.mailbox_layout_schema import (
     LAYOUT_VERSION,
     _layout_matches,
+    _mentions_current,
     _write_layout_extent,
     require_known_layout,
 )
@@ -33,11 +40,11 @@ def project_mailbox_layout(store: Any) -> None:
     """Project version 0, and any version-1 store whose recorded extent differs.
 
     A finished store whose highest sequence and chat-row count still match the
-    journal returns without reading chats. Any other open drops the projection
-    and walks. The walk writes hits, then one counter per mailbox the journal
-    names, and records the extent only after that finishes, so a crash retries
-    the whole walk. The caller constructs the mailbox tracker before the
-    listening socket is bound.
+    journal, and whose mentions are current, returns without reading chats. Any
+    other open drops the projection and walks. The walk writes hits and
+    mentions, then one counter per mailbox the journal names, and records the
+    extent only after that finishes, so a crash retries the whole walk. The
+    caller constructs the mailbox tracker before the listening socket is bound.
 
     Parameters
     ----------
@@ -47,9 +54,12 @@ def project_mailbox_layout(store: Any) -> None:
     connection = store.storage.connection
     with store.storage.lock:
         version = require_known_layout(connection)
-        if version == LAYOUT_VERSION and _layout_matches(connection):
+        matches = version == LAYOUT_VERSION and _layout_matches(connection)
+        if matches and _mentions_current(connection):
             return
-        if version == LAYOUT_VERSION:
+        if matches:
+            logger.info("mailbox name mentions are behind the journal")
+        elif version == LAYOUT_VERSION:
             logger.info("journal changed outside this layout")
         _project_locked(store, connection)
 
@@ -59,6 +69,7 @@ def _project_locked(store: Any, connection: Any) -> None:
     logger.info("mailbox pending layout walk started event_rows=%s", event_rows)
     connection.execute("DELETE FROM mailbox_address_hits")
     connection.execute("DELETE FROM mailbox_pending_counts")
+    connection.execute("DELETE FROM mailbox_name_mentions")
     connection.execute("DELETE FROM mailbox_pending_layout")
     counters = _project_pages(store, connection)
     _store_counters(connection, counters)
@@ -112,6 +123,7 @@ def _project_event(
         return
     if event.kind != _CHAT:
         return
+    record_mentions(connection, int(event.seq), payload)
     _insert_hits(connection, int(event.seq), payload)
     for address in identity_addresses(payload):
         _remember_name(seen, named, address)

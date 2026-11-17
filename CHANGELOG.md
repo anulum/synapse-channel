@@ -39,6 +39,13 @@ execution evidence when carrying a release claim forward.
   every counter the journal had ever named, on the hub's serving loop, so its
   cost grew with every mailbox ever addressed. A target with a glob part still
   reads every counter.
+- **Hub restart.** A restarted hub again keeps the mailboxes the journal
+  mentioned last, in that order, within its bound of 512, including a name a
+  chat introduced after the stored counts were built and a name only a channel
+  chat mentions. Since the counts were stored, it kept the mailboxes first
+  named, and lost those two. Each chat's mentioned names are stored beside the
+  journal, so the restart still reads no chat body. A store written by a build
+  that keeps no mentions is walked once more at its next start.
 
 ## [0.99.53] - 2026-11-16
 

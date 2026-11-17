@@ -45,6 +45,22 @@ def identity_addresses(payload: dict[str, Any]) -> tuple[str, ...]:
     )
 
 
+def mention_names(target: str) -> tuple[str, ...]:
+    """Return the parts of any chat's target that name a mailbox, first occurrence first.
+
+    These are the parts the tracker remembers as mailboxes, whether or not the
+    chat counts: a part that is not ``all``, not a glob and not hub-qualified.
+    A channel chat and an audience target name mailboxes too.
+    """
+    return tuple(
+        dict.fromkeys(
+            part
+            for part in parts(target)
+            if part != "all" and not is_glob(part) and not is_hub_qualified_name(part)
+        )
+    )
+
+
 def exact_addresses(identity: str) -> tuple[str, ...]:
     """Return the exact hit addresses that reach ``identity``."""
     role = mailbox_role(identity)

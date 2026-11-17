@@ -7,9 +7,9 @@
 # SYNAPSE_CHANNEL — durable mailbox pending counts and address hits
 """Keep the mailbox-count import path stable while each responsibility lives apart.
 
-Schema, the startup walk, insert and delete maintenance, stored counts, and
-address matching each have their own module. Callers that already import this
-module keep the same names.
+Schema, the startup walk, insert and delete maintenance, stored counts, chat
+name mentions, and address matching each have their own module. Callers that
+already import this module keep the same names.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from synapse_channel.core.mailbox_layout_maintenance import (
     record_deleted_sequences,
     record_inserted_event,
 )
+from synapse_channel.core.mailbox_layout_mentions import mention_history
 from synapse_channel.core.mailbox_layout_schema import (
     LAYOUT_VERSION,
     MailboxLayoutRefused,
@@ -46,6 +47,7 @@ __all__ = [
     "ensure_mailbox_schema",
     "layout_version",
     "load_counters",
+    "mention_history",
     "project_mailbox_layout",
     "record_deleted_sequences",
     "record_inserted_event",
