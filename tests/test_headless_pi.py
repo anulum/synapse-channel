@@ -133,6 +133,7 @@ async def test_guarded_turn_requires_exact_loaded_extension(
     """An extension load failure stops before a tool-enabled prompt is sent."""
     extension = tmp_path / "guard.ts"
     extension.write_text("export default function() {}", encoding="utf-8")
+    extension.chmod(0o600)
     binding = PiClaimBinding(
         project="PROJECT",
         repository=tmp_path,
@@ -300,6 +301,7 @@ async def test_guarded_turn_passes_exact_token_reference(tmp_path: Path) -> None
     repository.mkdir()
     extension = tmp_path / "guard.ts"
     extension.write_text("export default function() {}", encoding="utf-8")
+    extension.chmod(0o600)
     token = tmp_path / "hub.token"
     token.write_text("fixture-secret", encoding="utf-8")
     token.chmod(0o600)
@@ -364,6 +366,7 @@ async def test_guarded_turn_rejects_public_or_nonfile_hub_token(tmp_path: Path) 
     repository.mkdir()
     extension = tmp_path / "guard.ts"
     extension.write_text("export default function() {}", encoding="utf-8")
+    extension.chmod(0o600)
     token = tmp_path / "hub.token"
     token.write_text("secret", encoding="utf-8")
     token.chmod(0o644)
