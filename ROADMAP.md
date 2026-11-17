@@ -101,7 +101,8 @@ interfaces, maturity, and release commitments.
   nothing. See [contract conflicts](docs/contract-conflicts.md).
 - A typed task lifecycle and dependency-aware blackboard, append-only progress,
   atomic handoff, stalled-task supervision, resumable checkpoints, deadlock
-  detection, and release receipts.
+  detection, and release receipts. A progress note's text is bounded at 1 MiB
+  of UTF-8 (`MAX_PROGRESS_NOTE_BYTES`), the same for the hub and every writer.
 - A SQLite WAL event journal with admitted retained replay, supported idempotency keys,
   reconnect cursors, bounded histories and buffers, archive/compaction tools,
   and optional SQLCipher protection for the live store. See
@@ -110,7 +111,9 @@ interfaces, maturity, and release commitments.
   ergonomics for keeping provider processes reachable without making presence
   itself a wake loop. A mailbox's pending count is stored beside the journal
   and kept exact with each chat, acknowledgement and deletion, so `who` never
-  reads the chat history to answer.
+  reads the chat history to answer. Antigravity CLI (`agy`) is a provider
+  command like the others: the shell hook wraps it, its tmux pane takes
+  directed wakes, and `synapse participant ask agy` drives it headlessly.
 - Mail that no session will collect can be found, handed to a successor or
   closed (`synapse mailbox orphans`, `handover`, `close` and `drain`, and
   `synapse doctor --mailbox-orphans`), and mail addressed to a role waits in
@@ -237,6 +240,9 @@ interfaces, maturity, and release commitments.
   each requirement of the command line's `local-single-user` profile, and
   `POST /setup/plan` issues a plan bound to the command line's own plan, with
   a receipt for every answer. See the [CLI reference](docs/cli.md).
+- Every dashboard write needs exactly one `Origin`, the dashboard's own
+  (`http://<Host>`); a missing, repeated or foreign `Origin` is answered 403
+  and relays nothing. See [cockpit](docs/cockpit.md).
 - A dashboard and Studio projection for live claims, tasks, conflicts, security
   posture, receipts, governed operator actions, and observed peer state. See
   [Studio](docs/studio.md).
@@ -312,7 +318,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.53 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.54 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities

@@ -18,6 +18,24 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.54] - 2026-11-17
+
+Core 0.99.54 makes Antigravity CLI a first-class provider, bounds every
+progress note, requires the dashboard's own `Origin` on every write, and makes
+the hub's mailbox counts cheaper per chat and exact again after a restart.
+
+- **Antigravity CLI (`agy`).** Gemini CLI's successor for personal Google
+  accounts runs like the other providers: the shell hook wraps it, its tmux
+  pane takes directed wakes, read from its composer and footer only, and
+  `synapse participant ask agy` drives it headlessly. A headless turn whose
+  tools were denied is an error that keeps its token counts.
+- **Progress notes** are bounded at 1 MiB of UTF-8, by the hub and by every
+  writer.
+- **Dashboard writes** need exactly one `Origin`, the dashboard's own.
+- **Hub stability.** A chat reads only the mailbox counters it can reach, a
+  restarted hub keeps the mailboxes the journal mentioned last, and the
+  start-up walk reads only chats and watermarks.
+
 ### Added
 
 - Antigravity CLI (`agy`), the successor of Gemini CLI for personal Google
@@ -61,7 +79,6 @@ execution evidence when carrying a release claim forward.
   into the `Location` header as it came. Its names and values are now decoded
   and encoded again, so the header holds only URL-safe characters and an
   encoded line break stays encoded. `?lang=sk` passes through unchanged.
-
 - **Hub stability.** Storing or deleting a chat reads only the mailbox
   counters its target can reach: the mailbox it names, the personal mailboxes
   of a bare project it names, and the role mailboxes. Before, each chat read

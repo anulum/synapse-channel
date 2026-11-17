@@ -155,8 +155,16 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     ):
         assert released_in_0_99_53 in shipped, released_in_0_99_53
         assert released_in_0_99_53 not in unreleased, released_in_0_99_53
+    for released_in_0_99_54 in (
+        "`MAX_PROGRESS_NOTE_BYTES`",
+        "Antigravity CLI (`agy`)",
+        "`synapse participant ask agy`",
+        "exactly one `Origin`, the dashboard's own",
+    ):
+        assert released_in_0_99_54 in shipped, released_in_0_99_54
+        assert released_in_0_99_54 not in unreleased, released_in_0_99_54
     assert "in no release yet" in unreleased
-    assert "At 0.99.53 nothing on `main` is outside a release." in unreleased
+    assert "At 0.99.54 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:
