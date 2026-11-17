@@ -102,10 +102,13 @@ def test_password_file_replaced_while_it_is_opened_is_refused(
     swapped: list[str] = []
 
     def swap_then_open(target: str | os.PathLike[str], flags: int, mode: int = 0o777) -> int:
-        """Replace the checked file in the window between its checks and its open."""
-        if os.fspath(target) == os.fspath(path) and not swapped:
-            os.replace(replacement, path)
-            swapped.append(os.fspath(path))
+        """Replace the checked file in the window between its checks and its open.
+
+        The reader opens the file once; a second open would find no replacement
+        left to move and fail the test loudly.
+        """
+        swapped.append(os.fspath(target))
+        os.replace(replacement, path)
         return real_open(target, flags, mode)
 
     monkeypatch.setattr(os, "open", swap_then_open)
