@@ -381,7 +381,10 @@ def measure_key_set(seconds: float, pace: float, rotate_every: float | None) -> 
         raise ValueError("durations must be positive")
     with tempfile.TemporaryDirectory(prefix="synapse-key-set-bench-") as directory:
         os.chmod(directory, 0o700)
-        return asyncio.run(_measure_key_set(seconds, pace, rotate_every, Path(directory)))
+        # The hub opens the key set without following a symlink in any path
+        # component; a temporary root such as macOS's /var is one.
+        resolved = Path(directory).resolve()
+        return asyncio.run(_measure_key_set(seconds, pace, rotate_every, resolved))
 
 
 def main(argv: list[str] | None = None) -> int:

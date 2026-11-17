@@ -13,6 +13,7 @@ import importlib.util
 import json
 import runpy
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,23 @@ def test_the_key_set_workload_reports_both_runs_and_the_applied_rotations(
     assert unchanged["applied_sets"] == 1
     assert rotating["rotate_every_s"] == 0.1 and rotating["rotations"] > 0
     assert rotating["applied_sets"] >= 1
+
+
+def test_the_key_set_workload_runs_under_a_temporary_root_behind_a_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A temporary root reached through a symlink, as macOS's ``/var`` is, still holds the set.
+
+    The hub opens the key set through every path component without following a
+    symlink, so the benchmark must hand it the resolved directory.
+    """
+    real = tmp_path / "real"
+    real.mkdir(mode=0o700)
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    monkeypatch.setattr(tempfile, "tempdir", str(link))
+    run = bench.measure_key_set(0.3, 0.03, None)
+    assert run["granted"] == run["claims"] > 0
 
 
 async def test_a_refused_key_set_frame_stops_the_benchmark() -> None:
