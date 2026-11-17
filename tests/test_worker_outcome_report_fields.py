@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -158,9 +159,16 @@ def test_an_empty_birth_reference_is_read_as_given(tmp_path: Path) -> None:
 
 
 def test_a_started_report_stays_started_only_for_its_live_launcher(tmp_path: Path) -> None:
+    """A started report is confirmed only by its launcher's own live start identity.
+
+    Linux and Windows read a process's start identity. Another host, such as
+    macOS, reads none, so there a started report is never confirmed and reads
+    as unknown.
+    """
     report, document = _report(tmp_path)
     live = process_identity(os.getpid())
-    assert not live.unavailable and live.started
+    reads_start = sys.platform.startswith("linux") or sys.platform == "win32"
+    assert bool(live.started) is reads_start
     started = {
         **document,
         "state": "started",
@@ -169,10 +177,10 @@ def test_a_started_report_stays_started_only_for_its_live_launcher(tmp_path: Pat
         "launcher": {"pid": os.getpid(), "boot": live.boot, "started": live.started},
     }
     _rewrite(report, started)
-    assert read_worker_outcome(report)["state"] == "started"
+    assert read_worker_outcome(report)["state"] == ("started" if reads_start else "unknown")
     for launcher in (
         {"pid": os.getpid(), "boot": live.boot, "started": ""},
-        {"pid": os.getpid(), "boot": live.boot, "started": str(int(live.started) + 1)},
+        {"pid": os.getpid(), "boot": live.boot, "started": live.started + "1"},
     ):
         _rewrite(report, {**started, "launcher": launcher})
         read = read_worker_outcome(report)
