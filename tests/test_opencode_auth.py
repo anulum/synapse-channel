@@ -7,6 +7,7 @@
 
 import base64
 import os
+import stat
 import subprocess
 from pathlib import Path
 from unittest import mock
@@ -132,6 +133,28 @@ def test_password_file_on_a_host_neither_posix_nor_windows_is_refused_unread(
     with pytest.raises(OpenCodeAuthError, match=r"^OpenCode password file must be a user-owned"):
         load_password_file(path)
     opened.assert_not_called()
+
+
+def test_owned_password_file_is_read_and_a_foreign_posix_leaf_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Read a password file this user owns; refuse a foreign POSIX leaf by its owner."""
+    owned = tmp_path / "password"
+    _owner_only(owned, b"owned secret\n")
+    assert load_password_file(owned) == "owned secret"
+
+    if hasattr(os, "getuid"):
+        configured = os.environ.get("SYNAPSE_TEST_FOREIGN_OWNER_FILE")
+        assert configured, "Provide the native foreign-owner fixture described in CONTRIBUTING.md"
+        foreign = Path(configured)
+        before = foreign.lstat()
+        parent = foreign.parent.stat()
+        assert stat.S_ISREG(before.st_mode) and before.st_uid != os.getuid()
+        assert parent.st_uid == os.getuid() and not parent.st_mode & 0o022
+        with pytest.raises(OpenCodeAuthError) as failure:
+            load_password_file(foreign)
+        assert str(failure.value) == "OpenCode password file must be a user-owned regular file."
+        assert foreign.lstat() == before
 
 
 def test_password_file_refuses_symlink_and_empty_secret(tmp_path: Path) -> None:

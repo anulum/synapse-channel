@@ -195,13 +195,13 @@ the old release over the candidate. For a preloaded wheel directory, set
 it does not skip the journey. This historical protocol fixture is not a
 deployment recommendation or a general minor-version compatibility guarantee.
 
-The POSIX adapter-file ownership test also requires
-`SYNAPSE_TEST_FOREIGN_OWNER_FILE`: a regular file owned by a different UID,
-directly inside a safe directory owned by the test user. Its contents are never
-opened or changed. The test requires the exact leaf-owner refusal; an earlier
-parent-directory refusal does not qualify. For focused local runs, point this
-variable at an existing native fixture. A missing or unsuitable fixture fails
-the prerequisite instead of skipping the case.
+The POSIX ownership tests for adapter files and for the OpenCode password file
+also require `SYNAPSE_TEST_FOREIGN_OWNER_FILE`: a regular file owned by a
+different UID, directly inside a safe directory owned by the test user. Its
+contents are never opened or changed. Each test requires the exact leaf-owner
+refusal; an earlier parent-directory refusal does not qualify. For focused
+local runs, point this variable at an existing native fixture. A missing or
+unsuitable fixture fails the prerequisite instead of skipping the case.
 
 The Linux full-suite, macOS full-suite and OpenCode integration jobs prepare an
 inert root-owned file in a new private runner-owned temporary directory through
