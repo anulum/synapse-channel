@@ -522,9 +522,13 @@ def test_real_interrupted_wait_confirms_only_the_direct_child_stop(tmp_path: Pat
     The child stays in the wait long enough for the interrupt to be pending
     before it exits. It does not wait for the parent's provider-started
     record: an interrupt during that publish still owns the bytes it replaced.
+    The interrupt is raised while the child is still alive: the child is
+    stopped before its sleep ends, so it never writes its second file. A wait
+    that only notices the interrupt after the child exits lets it write.
     """
     env = private_environment(tmp_path)
     report, effect = tmp_path / "private" / "outcome.json", tmp_path / "effect"
+    finished = tmp_path / "finished"
     ready = threading.Event()
 
     def interrupt_after_effect() -> None:
@@ -550,8 +554,9 @@ def test_real_interrupted_wait_confirms_only_the_direct_child_stop(tmp_path: Pat
                     sys.executable,
                     "-c",
                     "import pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text('effect'); "
-                    "time.sleep(8)",
+                    "time.sleep(8); pathlib.Path(sys.argv[2]).write_text('finished')",
                     str(effect),
+                    str(finished),
                 ],
                 environ=env,
                 cwd=tmp_path,
@@ -561,6 +566,7 @@ def test_real_interrupted_wait_confirms_only_the_direct_child_stop(tmp_path: Pat
         timer.join(timeout=5)
         assert not timer.is_alive()
     assert ready.is_set() and effect.read_text() == "effect"
+    assert not finished.exists()
     result = read_worker_outcome(report)
     assert result["state"] == result["external_effect"] == "unknown"
     assert result["stop_requested"] and result["stop_confirmed"]

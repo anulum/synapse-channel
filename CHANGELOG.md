@@ -20,6 +20,13 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- `synapse worker-session` raises an interrupt while the provider is still
+  running. Its wait blocked in `waitpid`, which an interrupt does not wake
+  when it is armed on the main thread or delivered to another thread, so
+  the interrupt stayed pending until the provider exited on its own. The
+  stop was then recorded after the fact, or lost under load and reported as
+  an ordinary exit. The wait now looks every 50 ms, and a provider that is
+  not interrupted still reports its own exit.
 - `synapse label`'s refresh no longer covers the agent's pane. The tmux hooks
   it sets on `client-attached` and `client-resized` ran the refresh through
   `run-shell -b`, and tmux shows what such a command prints in view mode over
