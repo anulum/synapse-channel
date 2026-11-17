@@ -23,6 +23,23 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 
+# A hang guard, not a measurement. The CLI process has already exited; the hub
+# drops the name when it finishes the closed socket. A loaded runner can still
+# be in that handler. A name that never leaves still fails the test.
+_SOCKET_RETIRE_SECONDS = 10.0
+
+
+async def _wait_until_the_socket_retires(
+    hub: SynapseHub, name: str, *, seconds: float = _SOCKET_RETIRE_SECONDS
+) -> None:
+    """Wait until ``name`` has left the hub, and fail if it never does."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
+    while name in hub.clients.agent_sockets:
+        assert loop.time() < deadline, f"{name} socket never retired"
+        await asyncio.sleep(0.02)
+    assert name not in hub.clients.agent_sockets
+
 
 @pytest.mark.real_hub
 @pytest.mark.parametrize(
@@ -79,7 +96,7 @@ async def test_lost_task_confirmation_is_unknown_without_repeating_a_write(
                 assert trace.requests.count(request_type) == 1
                 assert trace.replies.count(reply_type) == 1
                 assert trace.connections == 1
-                assert "write-author" not in hub.clients.agent_sockets
+                await _wait_until_the_socket_retires(hub, "write-author")
             with closing(sqlite3.connect(tmp_path / "hub.db")) as db, db:
                 committed = db.execute("SELECT count(*) FROM operations").fetchone()[0]
             assert committed == 1
@@ -120,10 +137,19 @@ async def test_real_query_requires_a_reply_even_when_the_snapshot_is_empty(
             )
             assert trace.replies.count(reply_type) == 1
             assert trace.connections == 1
-            assert "reader" not in hub.clients.agent_sockets
+            await _wait_until_the_socket_retires(hub, "reader")
             assert result.returncode == (1 if lose_reply else 0), result.output
             if lose_reply:
                 assert "no matching reply" in result.stderr
                 assert result.stdout == ""
             else:
                 assert "no matching reply" not in result.output
+
+
+@pytest.mark.real_hub
+async def test_a_name_that_stays_registered_fails_the_retire_guard() -> None:
+    """A name that never leaves the hub fails the retire hang guard."""
+    async with running_hub(SynapseHub()) as (hub, _uri):
+        hub.clients.agent_sockets["stuck"] = object()
+        with pytest.raises(AssertionError, match="stuck socket never retired"):
+            await _wait_until_the_socket_retires(hub, "stuck", seconds=0)
