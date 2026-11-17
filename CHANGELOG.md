@@ -46,6 +46,8 @@ execution evidence when carrying a release claim forward.
   named, and lost those two. Each chat's mentioned names are stored beside the
   journal, so the restart still reads no chat body. A store written by a build
   that keeps no mentions is walked once more at its next start.
+- **Hub start.** The walk that builds the stored mailbox counts reads and
+  decodes only chats and watermarks, not every event in the journal.
 
 ## [0.99.53] - 2026-11-16
 

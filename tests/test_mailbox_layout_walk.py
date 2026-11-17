@@ -116,3 +116,37 @@ def test_a_first_walk_drops_rows_written_before_it(tmp_path: Path) -> None:
         assert tracker.pending_count("P/a") == 1
     finally:
         store.close()
+
+
+def test_the_walk_reads_only_chats_and_watermarks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        for target in _TARGETS:
+            _chat(store, target)
+            store.append("claim", {"task_id": "t", "agent": "P/a"})
+        store.append(
+            EventKind.MAILBOX_WATERMARK, {"identity": "P/a", "through_seq": 3, "source": "cursor"}
+        )
+        read_window = store.read_window
+        kinds_read: list[object] = []
+        kinds_returned: set[str] = set()
+
+        def recorded(**kwargs: Any) -> Any:
+            kinds_read.append(kwargs.get("kinds"))
+            events = read_window(**kwargs)
+            kinds_returned.update(str(event.kind) for event in events)
+            return events
+
+        monkeypatch.setattr(walk, "_PAGE", 3)
+        monkeypatch.setattr(store, "read_window", recorded)
+        tracker = MailboxPendingTracker(store)
+        assert kinds_read
+        assert all(kinds == ("chat", "mailbox_watermark") for kinds in kinds_read)
+        assert kinds_returned == {"chat", "mailbox_watermark"}
+        assert tracker.known_identities == ("P/b", "P/a")
+        assert tracker.pending_count("P/a") == 3
+        assert tracker.pending_count("P/b") == 3
+    finally:
+        store.close()

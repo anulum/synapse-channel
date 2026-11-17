@@ -92,13 +92,17 @@ def _store_counters(connection: Any, counters: tuple[tuple[str, int, int], ...])
 
 
 def _project_pages(store: Any, connection: Any) -> tuple[tuple[str, int, int], ...]:
-    """Insert hits for every counted chat and return one counter per named mailbox."""
+    """Insert hits for every counted chat and return one counter per named mailbox.
+
+    Only chats and watermarks are read and decoded; no other event kind feeds the
+    projection.
+    """
     watermarks: dict[str, int] = {}
     named: list[str] = []
     seen: set[str] = set()
     cursor = 0
     while True:
-        events = store.read_window(min_seq=cursor + 1, limit=_PAGE)
+        events = store.read_window(min_seq=cursor + 1, kinds=(_CHAT, _WATERMARK), limit=_PAGE)
         if not events:
             break
         for event in events:
