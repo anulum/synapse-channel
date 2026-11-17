@@ -228,8 +228,9 @@ does not add agent grades to protocol envelopes.
   detected), `not_approved` (no such declaration
   on the task, no intent, another digest, or the latest approval note on the
   digest is not `approved`), `approval_stale` (the approval is older than the
-  latest stop or resume of a scope that contains the operation, or the verdict
-  gate would refuse that approval now), `approval_expired` (the hub's clock is at or past the
+  latest stop or resume of a scope that contains the operation; or it is
+  automated and older than the latest level change of such a scope; or the
+  verdict gate would refuse that approval now), `approval_expired` (the hub's clock is at or past the
   intent's `deadline`), `approver_unauthorised` (the approver is the actor or of
   another project), `operation_closed` (another identity has verified the
   operation), `attempt_exists` (an attempt is open, or this approval has
@@ -292,6 +293,24 @@ does not add agent grades to protocol envelopes.
   `operation-stop` and a resume without `operation-resume` on the scope before
   the verb, unjournalled, as for every guarded request. Stops are restored from
   the journal at start, and compaction removes none of their rows.
+- **Operation levels:** `operation_level` names a `scope` (as for a stop), a
+  `level` from `A1` to `A5`, a `reason` and `idem_key`, and sets that scope's
+  autonomy level by hand. A scope without a record is at `A1`; an operation's
+  level is the lowest of the scopes that contain it. It needs
+  `operation-level` on the scope (target kind `level-scope`), which the handler
+  enforces also without `--require-acl`. A change is journalled as
+  `operation_level` with `level`, `from`, `cause` (`by_hand`), `granted_by` and
+  the scope's `epoch` plus one; the same level is `already_at_level`; a raise
+  while the scope or one containing it stands stopped is `raise_stopped`; a
+  step down is never refused for a stop. Refusals are journalled as
+  `operation_level_answered`; `invalid_request` and `no_journal` are not.
+  Every admitted `approved` approval of a SHA-256 subject is journalled with
+  an `approval_kind` row beside it: `person` when the hub's role grants allow
+  the approver its project's `person` role (`<project>/person`), otherwise
+  `automated`, fixed at admission and never read from the note; an approval
+  without such a row counts as `automated`. An automated approval older than
+  the latest level change of a scope that contains the operation opens no
+  attempt; a person's does.
 - **Operation state:** `operation_state` names `task_id` and `operation_id` and
   reads that operation's attempts. It is answered only to an identity holding
   `operation-evidence` or `operation-seal` on the task, which the handler
@@ -638,7 +657,11 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   `sealed`, `ended`, `reconciled` or `closed`), and `stopped_by`: the
   narrowest stopped scope that contains the operation as `scope` and `seq`,
   with that stop's computed `state`, `profile`, `profile_says`, `blocking` and
-  `counts`, or `null`.
+  `counts`, or `null`; and `level`: the operation's `level` with the
+  `line_scope` and `line_seq` of its latest level record, or `null` for both.
+  `operation_level_result` answers an `operation_level` with `answer`, the
+  sentence in `payload`, `scope`, `level`, `from`, `epoch`, the journal `seq`
+  of the answer's row, `hub_time` and `request_key`, with `live.replayed`.
   `operation_stop_result` answers an `operation_stop` or `operation_resume`
   with `request` (`stop` or `resume`), `answer`, the sentence in `payload`,
   `scope`, the journal `seq` of the answer's row, `hub_time` and

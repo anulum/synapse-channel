@@ -1667,6 +1667,46 @@ evidence of the isolated profile, which the hub does not keep.
 **Pinned by.** `tests/test_operation_stop_states.py`,
 `tests/test_cli_operation_stop_seal.py`.
 
+### INV-LD-1 — a scope's level is a record with an epoch, and an operation's is the lowest
+
+**Normative.** A scope MUST be at `A1` until an `operation_level` record sets
+it, and each record MUST carry the scope's previous epoch plus one. Only an
+identity holding `operation-level` on the scope MAY set it, which the handler
+MUST enforce also without `--require-acl`. A raise MUST be refused while the
+scope, or a scope containing it, stands stopped. An operation's level MUST be
+the lowest level of the scopes that contain it. The levels MUST be restored
+from the journal at start.
+
+**Implementation.** `core/handlers/operation_levels.py`,
+`core/operation_attempt_ledger.py:AttemptLedger.level_facts`.
+
+**Pinned by.** `tests/test_operation_levels.py`, `tests/test_hub_operation_levels.py`.
+
+### INV-LD-2 — the approver's kind is fixed at admission from the role grants
+
+**Normative.** An admitted `approved` approval of a SHA-256 subject MUST be
+journalled with its approver's kind: `person` when the role grants allow the
+approver `<project>/person`, else `automated`. The kind MUST NOT be read from
+the note, and a later change to the grants MUST NOT change it. An approval
+without a kind row MUST count as `automated`.
+
+**Implementation.** `core/handlers/verdict_admission.py:progress_refusal`,
+`core/operation_attempt_facts.py:current_approval`.
+
+**Pinned by.** `tests/test_operation_attempt_facts.py`, `tests/test_hub_operation_levels.py`.
+
+### INV-LD-3 — an automated approval dies with a change of level, a person's does not
+
+**Normative.** An `automated` approval whose journal sequence is below the
+operation's level line, the latest `operation_level` record of any scope that
+contains it, MUST be answered `approval_stale`, naming the scope and the line.
+A `person` approval MUST NOT be made stale by a change of level; the stop line
+still covers it.
+
+**Implementation.** `core/operation_attempts.py:decide`.
+
+**Pinned by.** `tests/test_operation_levels.py`, `tests/test_hub_operation_levels.py`.
+
 ## Normative constants
 
 These values are part of the contract. The drift guard

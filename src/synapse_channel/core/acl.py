@@ -49,6 +49,7 @@ OPERATION_EVIDENCE = "operation-evidence"
 OPERATION_SEAL = "operation-seal"
 OPERATION_STOP = "operation-stop"
 OPERATION_RESUME = "operation-resume"
+OPERATION_LEVEL = "operation-level"
 IDENTITY_ENROLL = "identity-enroll"
 ENTITLEMENT_ADVERTISE = "entitlement-advertise"
 EVIDENCE = "evidence"
@@ -79,6 +80,7 @@ PERMISSIONS = frozenset(
         OPERATION_SEAL,
         OPERATION_STOP,
         OPERATION_RESUME,
+        OPERATION_LEVEL,
         IDENTITY_ENROLL,
         ENTITLEMENT_ADVERTISE,
         EVIDENCE,
@@ -167,6 +169,11 @@ handler refuses an actor of the scope: an identity that declared an operation
 the stop listed or one open in the scope. A hub started without
 ``--acl-policy`` therefore cannot lift a stop until it is restarted with an
 access file that grants this permission.
+
+``OPERATION_LEVEL`` grants an identity the right to set a scope's autonomy level
+by hand (``operation_level``). Target kind is ``level-scope``, with the scope as
+written. The access gate checks it when ``--require-acl`` is on, and its handler
+checks it also when that is off, so a hub without an access file sets no level.
 
 ``EVIDENCE`` grants an authenticated recorder the right to append a bounded
 enforcement record. The shipped guard-denial target is
@@ -330,12 +337,19 @@ def task_grant(policy: AclPolicy | None, subject: str, task_id: str, permission:
     return decision.decision == WOULD_ALLOW
 
 
-def scope_grant(policy: AclPolicy | None, subject: str, scope: str, permission: str) -> bool:
-    """Return whether ``policy`` grants ``subject`` ``permission`` on the stop scope ``scope``.
+def scope_grant(
+    policy: AclPolicy | None,
+    subject: str,
+    scope: str,
+    permission: str,
+    *,
+    target_kind: str = "stop-scope",
+) -> bool:
+    """Return whether ``policy`` grants ``subject`` ``permission`` on the scope ``scope``.
 
-    The target is kind ``stop-scope`` with the scope as written. No policy
-    grants nothing, so a handler that enforces a permission itself keeps an open
-    hub from lifting a stop.
+    The target is kind ``target_kind`` (``stop-scope`` or ``level-scope``) with
+    the scope as written. No policy grants nothing, so a handler that enforces a
+    permission itself keeps an open hub from lifting a stop or setting a level.
     """
     if policy is None:
         return False
@@ -343,7 +357,7 @@ def scope_grant(policy: AclPolicy | None, subject: str, scope: str, permission: 
         subject=subject,
         project=project_of(subject),
         permission=permission,
-        target=Target("stop-scope", scope),
+        target=Target(target_kind, scope),
         policy=policy,
     )
     return decision.decision == WOULD_ALLOW

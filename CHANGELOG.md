@@ -20,6 +20,18 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Autonomy levels per scope, and the approver's kind: `synapse operation level
+  --scope SCOPE --level A1..A5 --reason TEXT` (`operation_level`) sets a
+  scope's level by hand, with an epoch that rises at each change; it needs the
+  new `operation-level` permission, enforced also without `--require-acl`, and
+  a raise is refused while the scope stands stopped. A scope without a record
+  is at A1, and an operation is at the lowest level of its scopes
+  (`operation_state` reports it). Each admitted approval of an intent is
+  journalled with its approver's kind (`approval_kind`): `person` when the role
+  grants allow the approver `<project>/person`, else `automated`, fixed at
+  admission; an approval from before carries no kind and counts as automated.
+  An automated approval older than the latest level change of a scope that
+  contains the operation is answered `approval_stale`; a person's is not.
 - A stop reports its state: `stop requested`, `no new effect` once every
   listed attempt has a kept `sealed` or `applied` read-back, and `at rest` once
   another identity has also observed each one or verified its operation. The

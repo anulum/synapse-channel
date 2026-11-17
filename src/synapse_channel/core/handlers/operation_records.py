@@ -65,6 +65,7 @@ from synapse_channel.core.authorisation_intent import (
     intent_time_refusal,
 )
 from synapse_channel.core.handlers.operation_attempts import VERB_SPECS as ATTEMPT_VERB_SPECS
+from synapse_channel.core.handlers.operation_levels import VERB_SPECS as LEVEL_VERB_SPECS
 from synapse_channel.core.handlers.operation_state import VERB_SPECS as STATE_VERB_SPECS
 from synapse_channel.core.handlers.operation_stops import VERB_SPECS as STOP_VERB_SPECS
 from synapse_channel.core.journal import EventKind
@@ -402,5 +403,6 @@ VERB_SPECS = (
     *ATTEMPT_VERB_SPECS,
     *STATE_VERB_SPECS,
     *STOP_VERB_SPECS,
+    *LEVEL_VERB_SPECS,
 )
-"""The operation family: records, attempts, reads of its attempts, and stops of its scopes."""
+"""The operation family: records, attempts, reads, and the stops and levels of its scopes."""

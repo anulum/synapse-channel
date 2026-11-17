@@ -37,7 +37,9 @@ The ledger also keeps each scope's stops (:mod:`~synapse_channel.core.operation_
 * the journal sequence of a scope's latest stop or resume is its line;
 * an ``operation_stop_readback`` row records what a stop read back for one
   attempt it listed. Only a ``sealed`` or ``applied`` read-back closes the
-  attempt for that stop; an executor's report never does.
+  attempt for that stop; an executor's report never does;
+* an ``operation_level`` row sets its scope's autonomy level at its epoch; the
+  journal sequence of a scope's latest level row is its level line.
 """
 
 from __future__ import annotations
@@ -48,6 +50,7 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import APPROVED_FRESH, OperationFact
+from synapse_channel.core.operation_levels import DEFAULT_LEVEL, LEVELS, lowest
 from synapse_channel.core.operation_stop_readbacks import CLOSING_RESULTS
 from synapse_channel.core.operation_stop_states import (
     ListedAttempt,
@@ -82,6 +85,7 @@ _RESTORED_KINDS = (
     EventKind.OPERATION_STOPPED,
     EventKind.OPERATION_RESUMED,
     EventKind.OPERATION_STOP_READBACK,
+    EventKind.OPERATION_LEVEL,
 )
 
 
@@ -89,8 +93,18 @@ _STOP_KINDS = (
     EventKind.OPERATION_STOPPED,
     EventKind.OPERATION_RESUMED,
     EventKind.OPERATION_STOP_READBACK,
+    EventKind.OPERATION_LEVEL,
 )
-"""The rows of stops, resumes and read-backs, restored by :meth:`AttemptLedger._restore_stop`."""
+"""The rows of a scope: stops, resumes, read-backs and levels, restored by ``_restore_stop``."""
+
+
+@dataclass
+class _ScopeLevel:
+    """One scope's autonomy level, the epoch of its latest record and its level line."""
+
+    level: str = DEFAULT_LEVEL
+    epoch: int = 0
+    line: int = 0
 
 
 @dataclass
@@ -193,6 +207,7 @@ class AttemptLedger:
         self._operations: dict[str, _Operation] = {}
         self._stops: dict[str, _ScopeStops] = {}
         self._stop_rows: dict[int, _StopRow] = {}
+        self._levels: dict[str, _ScopeLevel] = {}
         if store is not None:
             for event in store.iter_events(kinds=_RESTORED_KINDS):
                 self.apply_event(event)
@@ -212,11 +227,17 @@ class AttemptLedger:
         """Return the live recorded stops by journal sequence, for :meth:`publish_from`."""
         return self._stop_rows
 
+    @property
+    def levels(self) -> dict[str, _ScopeLevel]:
+        """Return the live levels of every scope, for :meth:`publish_from`."""
+        return self._levels
+
     def publish_from(self, other: AttemptLedger) -> None:
         """Install the tables of a candidate that the hub's actor has made durable."""
         self._operations = other.operations
         self._stops = other.stops
         self._stop_rows = other.stop_rows
+        self._levels = other.levels
 
     def apply_event(self, event: StoredEvent) -> None:
         """Apply one journalled row; a row that lacks a field the hub writes is skipped."""
@@ -270,6 +291,11 @@ class AttemptLedger:
         )
 
     def _restore_stop(self, kind: str, seq: int, payload: Mapping[str, Any]) -> None:
+        if kind == EventKind.OPERATION_LEVEL:
+            scope, level, epoch = payload.get("scope"), payload.get("level"), payload.get("epoch")
+            if isinstance(scope, str) and level in LEVELS and type(epoch) is int:
+                self.note_level(scope, seq, level=str(level), epoch=epoch)
+            return
         if kind == EventKind.OPERATION_STOP_READBACK:
             stop_seq, attempt, result = (
                 payload.get("stop_seq"),
@@ -323,6 +349,50 @@ class AttemptLedger:
         """Return the latest kept read-back of an attempt for a stop, or ``None``."""
         row = self._stop_rows.get(stop_seq)
         return None if row is None else row.readbacks.get(attempt_id)
+
+    def note_level(self, scope: str, seq: int, *, level: str, epoch: int) -> None:
+        """Record that the row at ``seq`` set ``scope`` to ``level`` at ``epoch``."""
+        self._levels[scope] = _ScopeLevel(level, epoch, seq)
+
+    def level_of(self, scope: str) -> tuple[str, int]:
+        """Return the level of ``scope`` and its latest record's epoch; ``A1`` and 0 without one."""
+        record = self._levels.get(scope)
+        return (DEFAULT_LEVEL, 0) if record is None else (record.level, record.epoch)
+
+    def level_facts(self, operation_id: str) -> tuple[str, tuple[str, int] | None]:
+        """Return an operation's level, the lowest of its scopes, and its level line.
+
+        Returns
+        -------
+        tuple
+            The lowest level among the scopes that contain the operation, and
+            the scope and sequence of the latest level record of any of them,
+            or ``None`` when none has a record.
+        """
+        scopes = self._scopes_of(operation_id)
+        line: tuple[str, int] | None = None
+        for scope in scopes:
+            record = self._levels.get(scope)
+            if record is not None and (line is None or record.line > line[1]):
+                line = (scope, record.line)
+        return lowest(self.level_of(scope)[0] for scope in scopes), line
+
+    def scopes_containing(self, scope: str) -> tuple[str, ...]:
+        """Return ``scope`` and every scope that contains it, narrowest first."""
+        if scope == "installation":
+            return (scope,)
+        kind, _, name = scope.partition(":")
+        if kind == "operation" and self.operation(name) is not None:
+            return self._scopes_of(name)
+        return (scope, "installation")
+
+    def stopped_within(self, scope: str) -> tuple[str, int] | None:
+        """Return the narrowest standing stop of ``scope`` or of a scope containing it."""
+        for container in self.scopes_containing(scope):
+            standing = self.standing_stop(container)
+            if standing is not None:
+                return container, standing[0]
+        return None
 
     def stop_identity(self, stop_seq: int) -> tuple[str, int] | None:
         """Return the scope and epoch of the stop recorded at ``stop_seq``, or ``None``."""

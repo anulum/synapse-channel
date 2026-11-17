@@ -16,7 +16,10 @@ hub also reads, from the same journal:
   ``verdict_gate_bypass`` row by the same author on the same digest, after that
   author's previous note on it and before this one;
 * why the verdict gate, evaluated now with the hub's own rules, would refuse
-  it, using the approver's project namespace as the gate always does.
+  it, using the approver's project namespace as the gate always does;
+* the approver's kind, ``person`` or ``automated``: the ``approval_kind`` row
+  the hub wrote when it admitted the note, matched as a bypass row is. A note
+  without one, admitted before kinds were recorded, is ``automated``.
 
 Nothing here writes. The caller reads under the hub's mutation lock, so the
 notes cannot change between this reading and the answer it leads to.
@@ -30,6 +33,7 @@ from typing import TYPE_CHECKING
 from synapse_channel.core.approvals import APPROVAL_NOTE_KIND, STATE_APPROVED, parse_approval_note
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import ApprovalFact
+from synapse_channel.core.operation_levels import APPROVER_KINDS, KIND_AUTOMATED
 from synapse_channel.core.verdict_hub import approval_refusal, recorded_notes, subject_digest
 
 if TYPE_CHECKING:
@@ -46,23 +50,28 @@ class _Decision:
 
 def _decisions_and_bypasses(
     store: EventStore, digest: str
-) -> tuple[list[_Decision], list[tuple[int, str]]]:
-    """Return the approval notes on ``digest`` and the gate bypass rows on it, in order."""
+) -> tuple[list[_Decision], list[tuple[int, str]], list[tuple[int, str, str]]]:
+    """Return the approval notes on ``digest``, its gate bypass rows and its kind rows, in order."""
     decisions: list[_Decision] = []
     bypasses: list[tuple[int, str]] = []
-    kinds = (EventKind.LEDGER_PROGRESS, EventKind.VERDICT_GATE_BYPASS)
+    kinds_of: list[tuple[int, str, str]] = []
+    kinds = (EventKind.LEDGER_PROGRESS, EventKind.VERDICT_GATE_BYPASS, EventKind.APPROVAL_KIND)
     for event in store.iter_events(kinds=kinds):
         author = str(event.payload.get("author") or "")
-        if event.kind == EventKind.VERDICT_GATE_BYPASS:
-            if subject_digest(str(event.payload.get("subject") or "")) == digest:
+        if event.kind != EventKind.LEDGER_PROGRESS:
+            if subject_digest(str(event.payload.get("subject") or "")) != digest:
+                continue
+            if event.kind == EventKind.VERDICT_GATE_BYPASS:
                 bypasses.append((event.seq, author))
+            else:
+                kinds_of.append((event.seq, author, str(event.payload.get("kind") or "")))
             continue
         if str(event.payload.get("kind") or "") != APPROVAL_NOTE_KIND:
             continue
         fields = parse_approval_note(str(event.payload.get("text") or ""))
         if fields is not None and subject_digest(fields["subject"]) == digest:
             decisions.append(_Decision(event.seq, author, fields["state"]))
-    return decisions, bypasses
+    return decisions, bypasses, kinds_of
 
 
 def current_approval(
@@ -86,7 +95,7 @@ def current_approval(
         findings, or ``None`` when no note names the digest or the latest one
         is a request or a rejection.
     """
-    decisions, bypasses = _decisions_and_bypasses(store, digest)
+    decisions, bypasses, kinds_of = _decisions_and_bypasses(store, digest)
     if not decisions or decisions[-1].state != STATE_APPROVED:
         return None
     latest = decisions[-1]
@@ -94,6 +103,11 @@ def current_approval(
     bypassed = any(
         earlier < seq < latest.seq and author == latest.author for seq, author in bypasses
     )
+    fixed = [
+        kind
+        for seq, author, kind in kinds_of
+        if earlier < seq < latest.seq and author == latest.author
+    ]
     refusal = approval_refusal(
         recorded_notes(store),
         replace(policy, gate_enabled=True),
@@ -101,4 +115,5 @@ def current_approval(
         approver=latest.author,
     )
     reasons = () if refusal is None else refusal.reasons
-    return ApprovalFact(latest.seq, latest.author, bypassed, reasons)
+    kind = fixed[-1] if fixed and fixed[-1] in APPROVER_KINDS else KIND_AUTOMATED
+    return ApprovalFact(latest.seq, latest.author, bypassed, reasons, kind)

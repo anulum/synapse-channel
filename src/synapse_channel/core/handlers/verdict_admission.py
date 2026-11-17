@@ -20,6 +20,12 @@ is granted while the scope is stopped. The check reads the published
 stops before the note is appended. A stop committed between the two leaves the
 approval older than the stop's resume, which the attempt answer then refuses
 as ``approval_stale``.
+
+An admitted ``approved`` approval of a SHA-256 subject is journalled with the
+approver's kind beside it (``approval_kind``): ``person`` when the hub's role
+grants allow the approver its project's ``person`` role, else ``automated``.
+The kind is the hub's reading at admission; a later change to the grants does
+not change it.
 """
 
 from __future__ import annotations
@@ -33,10 +39,12 @@ from synapse_channel.core.approvals import (
     parse_approval_note,
 )
 from synapse_channel.core.journal import (
+    EventKind,
     record_verdict_gate_bypass,
     record_verdict_record_refused,
     record_verdict_stale,
 )
+from synapse_channel.core.operation_levels import approver_kind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.verdict_hub import (
     admission_refusal,
@@ -53,6 +61,7 @@ if TYPE_CHECKING:
 
     from synapse_channel.core.handler_context import HandlerContext
     from synapse_channel.core.operation_records import OperationLedger
+    from synapse_channel.core.role_grants import RoleGrants
     from synapse_channel.core.verdict_hub import VerdictHubPolicy
 
     class VerdictAdmissionContext(HandlerContext, Protocol):
@@ -66,6 +75,11 @@ if TYPE_CHECKING:
         @property
         def operation_records(self) -> OperationLedger:
             """Return the declared operations, their attempts and the stops."""
+            ...
+
+        @property
+        def role_grants(self) -> RoleGrants | None:
+            """Return the hub's role grants, which tell a person from an automated role."""
             ...
 
 
@@ -95,6 +109,10 @@ def progress_refusal(
         reason = _stopped_refusal(hub, fields["subject"]) or _approval_gate(
             hub, journal, notes, sender=sender, subject=fields["subject"]
         )
+        if reason is None and subject_digest(fields["subject"]) is not None:
+            kind = approver_kind(hub.role_grants, sender)
+            record = {"author": sender, "subject": fields["subject"], "kind": kind}
+            journal.append(EventKind.APPROVAL_KIND, record, durable=True)
     else:
         return None, []
     if reason is not None and journal is not None:

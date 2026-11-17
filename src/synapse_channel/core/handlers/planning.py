@@ -50,6 +50,7 @@ if TYPE_CHECKING:
 
     from synapse_channel.core.handler_context import HandlerContext
     from synapse_channel.core.operation_records import OperationLedger
+    from synapse_channel.core.role_grants import RoleGrants
     from synapse_channel.core.verdict_hub import VerdictHubPolicy
 
     class PlanningContext(HandlerContext, Protocol):
@@ -63,6 +64,11 @@ if TYPE_CHECKING:
         @property
         def operation_records(self) -> OperationLedger:
             """Return the declared operations, their attempts and the stops."""
+            ...
+
+        @property
+        def role_grants(self) -> RoleGrants | None:
+            """Return the hub's role grants, which tell a person from an automated role."""
             ...
 
         @property

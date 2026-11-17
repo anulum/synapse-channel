@@ -128,3 +128,27 @@ def test_a_bypass_by_the_approver_since_its_previous_note_marks_the_approval(
     seq = _decision(store, "approved")
     approval = current_approval(store, POLICY, DIGEST)
     assert approval is not None and (approval.seq, approval.bypassed) == (seq, True)
+
+
+def _kind(store: EventStore, author: str, kind: str, subject: str = f"sha256:{DIGEST}") -> int:
+    payload = {"author": author, "subject": subject, "kind": kind}
+    return store.append(EventKind.APPROVAL_KIND, payload, durable=True)
+
+
+def test_the_kind_fixed_beside_the_note_is_read_and_a_note_without_one_is_automated(
+    store: EventStore,
+) -> None:
+    """An approval from before kinds were recorded counts as automated, the safe reading."""
+    _decision(store, "approved")
+    before = current_approval(store, POLICY, DIGEST)
+    assert before is not None and before.kind == "automated"
+    _kind(store, APPROVER, "person")
+    _kind(store, "P/other", "automated")
+    _kind(store, APPROVER, "automated", subject="e" * 64)
+    seq = _decision(store, "approved")
+    person = current_approval(store, POLICY, DIGEST)
+    assert person is not None and (person.seq, person.kind) == (seq, "person")
+    _kind(store, APPROVER, "someone")
+    _decision(store, "approved")
+    unknown = current_approval(store, POLICY, DIGEST)
+    assert unknown is not None and unknown.kind == "automated"

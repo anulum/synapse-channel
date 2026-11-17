@@ -113,6 +113,7 @@ def _facts(
     approval = current_approval(store, hub.verdict_policy, request.intent_sha256)
     view = attempts.view(request.operation_id, None if approval is None else approval.seq)
     stopped_by, stop_line = attempts.stop_facts(request.operation_id)
+    _level, level_line = attempts.level_facts(request.operation_id)
     return AttemptFacts(
         claim_refusal=declaration_refusal(
             hub.state.claims.get(request.task_id), sender, request.epoch, now
@@ -127,6 +128,7 @@ def _facts(
         now=now,
         stopped_by=stopped_by,
         stop_line=stop_line,
+        level_line=level_line,
     )
 
 

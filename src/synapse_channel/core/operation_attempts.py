@@ -141,12 +141,17 @@ class ApprovalFact:
     gate_reasons : tuple[str, ...]
         Why the verdict gate would refuse this approval now; empty when it
         passes.
+    kind : str, optional
+        ``person`` or ``automated``, as the hub fixed it when it admitted the
+        note; an approval admitted before kinds were recorded is
+        ``automated``.
     """
 
     seq: int
     approver: str
     bypassed: bool
     gate_reasons: tuple[str, ...]
+    kind: str = "automated"
 
 
 @dataclass(frozen=True)
@@ -210,6 +215,9 @@ class AttemptFacts:
     stop_line : tuple of (str, int) or None, optional
         The scope and journal sequence of the latest stop or resume of any
         scope that contains the operation, or ``None`` when there is none.
+    level_line : tuple of (str, int) or None, optional
+        The scope and journal sequence of the latest level record of any scope
+        that contains the operation, or ``None`` when there is none.
     """
 
     claim_refusal: str | None
@@ -223,6 +231,7 @@ class AttemptFacts:
     now: float
     stopped_by: tuple[str, int] | None = None
     stop_line: tuple[str, int] | None = None
+    level_line: tuple[str, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -327,6 +336,14 @@ def _the_approval(
         return Decision(
             APPROVAL_STALE,
             f"the approval is older than the latest stop or resume of scope {scope} "
+            f"(journal seq {seq})",
+        )
+    levels = facts.level_line
+    if levels is not None and approval.kind != "person" and approval.seq < levels[1]:
+        scope, seq = levels
+        return Decision(
+            APPROVAL_STALE,
+            f"an automated approval older than the latest level change of scope {scope} "
             f"(journal seq {seq})",
         )
     if approval.gate_reasons:

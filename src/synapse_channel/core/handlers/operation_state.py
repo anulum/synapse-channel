@@ -21,7 +21,8 @@ is closed, with the declared ``effect``, its ``effect_target`` and the
 ``intent_sha256`` the hub holds, which a stop's seal needs. ``stopped_by``
 names the narrowest stopped scope that contains the operation, with the journal
 sequence of its stop, its computed state, profile, blockers and counts, or is
-``null``. Nothing
+``null``. ``level`` is the operation's autonomy level, the lowest of its
+scopes, with the scope and sequence of its level line. Nothing
 is journalled and nothing changes. A command that seals an
 attempt asks first, and refuses to seal one that is not open; a command that
 removes an applied marker requires the operation closed. A hub that does not
@@ -109,6 +110,16 @@ def _stopped_by(
     }
 
 
+def _level(ledger: OperationLedger, operation_id: str) -> dict[str, Any]:
+    """Return the operation's level, the lowest of its scopes, and its level line."""
+    level, line = ledger.attempts.level_facts(operation_id)
+    return {
+        "level": level,
+        "line_scope": None if line is None else line[0],
+        "line_seq": None if line is None else line[1],
+    }
+
+
 def _answer(
     hub: OperationStateContext, sender: str, task_id: str, operation_id: str
 ) -> dict[str, Any]:
@@ -137,6 +148,7 @@ def _answer(
         "effect_target": ledger.target_of(operation_id),
         "intent_sha256": (None if fact is None else fact.intent_sha256) or "",
         "stopped_by": _stopped_by(ledger, stopped_by),
+        "level": _level(ledger, operation_id),
         "attempts": [
             {"attempt_id": item.attempt_id, "executor": item.executor, "state": item.state}
             for item in attempts

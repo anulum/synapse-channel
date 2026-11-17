@@ -258,6 +258,16 @@ EVENT_WORDS: Mapping[str, Describer] = {
     EventKind.OPERATION_STOP_STATE: lambda p: EventWords(
         "", f"stop of {_text(p, 'scope')}: {_text(p, 'state')} ({_text(p, 'profile')})"
     ),
+    EventKind.OPERATION_LEVEL: lambda p: EventWords(
+        _text(p, "granted_by"),
+        f"scope {_text(p, 'scope')} at {_text(p, 'level')} (from {_text(p, 'from')})",
+    ),
+    EventKind.OPERATION_LEVEL_ANSWERED: lambda p: EventWords(
+        _text(p, "sender"), f"level of {_text(p, 'scope')}: {_text(p, 'answer')}"
+    ),
+    EventKind.APPROVAL_KIND: lambda p: EventWords(
+        _text(p, "author"), f"approval by a {_text(p, 'kind')} approver"
+    ),
     EventKind.ENTITLEMENT_ADVERT: _entitlement_advert,
     EventKind.DELIVERY_INTENT_ACCEPTED: _fixed(lambda _p: "delivery accepted"),
     EventKind.DELIVERY_INTENT_QUEUED: _fixed(lambda _p: "delivery queued"),

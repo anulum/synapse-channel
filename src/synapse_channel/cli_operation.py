@@ -24,6 +24,8 @@ Both evidence commands need the ``operation-evidence`` grant on the hub.
 one and remove an applied marker (:mod:`synapse_channel.cli_operation_seal`,
 with their own exit codes). ``stop`` and ``resume`` stop and resume a scope of
 operations (:mod:`synapse_channel.cli_operation_stop`, with its own exit codes).
+``level`` sets a scope's autonomy level by hand
+(:mod:`synapse_channel.cli_operation_level`, with its own exit codes).
 
 The command never changes the local file; publishing is separate from
 producing the record. Exit codes: 0 accepted, 1 refused, 2 no verdict
@@ -45,6 +47,7 @@ from typing import Any
 from synapse_channel.cli_hub_request import ask_hub
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.cli_operation_attempt import add_attempt_parser
+from synapse_channel.cli_operation_level import add_level_parser
 from synapse_channel.cli_operation_report import add_report_parser
 from synapse_channel.cli_operation_seal import add_seal_parsers
 from synapse_channel.cli_operation_stop import add_stop_parsers
@@ -339,7 +342,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     """Register every ``synapse operation`` subcommand.
 
     The subcommands are ``declare``, ``outcome``, ``verification``, ``attempt``, ``state``,
-    ``seal``, ``unmark``, ``report``, ``stop`` and ``resume``.
+    ``seal``, ``unmark``, ``report``, ``stop``, ``resume`` and ``level``.
 
     Parameters
     ----------
@@ -358,6 +361,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     add_seal_parsers(actions, _add_common)
     add_report_parser(actions)
     add_stop_parsers(actions, _add_connection)
+    add_level_parser(actions, _add_connection)
 
 
 def _add_declare_parser(actions: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
