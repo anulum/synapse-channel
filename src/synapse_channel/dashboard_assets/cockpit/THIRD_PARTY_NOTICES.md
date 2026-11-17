@@ -259,7 +259,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## rolldown 1.2.16 — MIT
+## rolldown 1.2.19 — MIT
 
 ```text
 MIT License
@@ -315,7 +315,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## vite 8.3.6 — MIT
+## vite 8.3.8 — MIT
 
 ```text
 # Vite core license
