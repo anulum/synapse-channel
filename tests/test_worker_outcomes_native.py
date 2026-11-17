@@ -30,6 +30,8 @@ _REFUSAL = "^worker outcome record changed; inquire before continuing$"
 # fresh interpreter, which a loaded host can stretch past several seconds. A
 # launch or readiness wait that truly hangs still fails, after this long.
 _HANG_GUARD_SECONDS = 60
+_SETUP_GUARD_SECONDS = 30
+"""Bound on a child's wait for the launcher's started record, below the hang guard."""
 
 
 def private_environment(root: Path) -> dict[str, str]:
@@ -485,14 +487,35 @@ def test_actual_launch_refusal_remains_not_started_after_launcher_exits(tmp_path
 
 
 def test_real_publication_failure_recovery_is_unknown_without_relaunch(tmp_path: Path) -> None:
-    """A provider replaces the report directory; its joined launcher cannot publish exit."""
+    """A provider replaces the report directory; its joined launcher cannot publish exit.
+
+    The child replaces the directory once the launcher's started record is in
+    it. Without that wait, the rename races the launcher's own publish: on
+    Windows a directory with an open file cannot be renamed, the child fails,
+    and the launcher reports the child's exit instead of the failed publish.
+    The wait is a hang guard on setup, not part of the claim.
+    """
     env = private_environment(tmp_path)
     original, moved = tmp_path / "private", tmp_path / "moved"
     report, effect = original / "outcome.json", tmp_path / "effect"
-    program = (
-        "import pathlib,sys; src=pathlib.Path(sys.argv[1]); "
-        "src.rename(pathlib.Path(sys.argv[2])); src.write_text('controlled replacement'); "
-        "pathlib.Path(sys.argv[3]).write_text('effect completed')"
+    program = "\n".join(
+        [
+            "import json, pathlib, sys, time",
+            "src = pathlib.Path(sys.argv[1])",
+            f"deadline = time.monotonic() + {_SETUP_GUARD_SECONDS}",
+            "while True:",
+            "    try:",
+            "        if json.loads((src / 'outcome.json').read_text())['state'] == 'started':",
+            "            src.rename(pathlib.Path(sys.argv[2]))",
+            "            break",
+            "    except (OSError, ValueError, KeyError):",
+            "        pass",
+            "    if time.monotonic() >= deadline:",
+            "        raise SystemExit('the started record was never replaceable')",
+            "    time.sleep(0.01)",
+            "src.write_text('controlled replacement')",
+            "pathlib.Path(sys.argv[3]).write_text('effect completed')",
+        ]
     )
     run = subprocess.run(
         launch_arguments(report, program, str(original), str(moved), str(effect)),
