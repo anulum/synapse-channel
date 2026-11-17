@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-PROVIDERS = frozenset({"codex", "claude", "kimi", "grok", "gemini", "opencode", "qwen"})
+PROVIDERS = frozenset({"codex", "claude", "kimi", "grok", "gemini", "agy", "opencode", "qwen"})
 
 MetadataStatus = Literal[
     "not_requested", "observed", "unavailable", "denied", "conflicting", "partial", "unsupported"

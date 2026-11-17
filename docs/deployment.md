@@ -453,7 +453,7 @@ Set `SYNAPSE_AUTO_PROJECT_FROM_CWD=1` only when you intentionally want legacy
 CWD-derived project names.
 
 The hook also wraps common provider commands through `synapse worker-session`:
-`codex`, `claude`, `kimi`, `grok`, `gemini`, `agent`, `ask`, and `ollama`. That
+`codex`, `claude`, `kimi`, `grok`, `gemini`, `agy`, `agent`, `ask`, and `ollama`. That
 keeps cloud providers and local LLM entry points on the same identity path from
 process start. In an interactive terminal, Codex/Claude/Kimi/Grok use the
 persistent tmux wake bridge automatically. Disable tmux autostart for terminal

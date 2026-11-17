@@ -903,13 +903,14 @@ def test_default_pane_commands_cover_every_first_class_provider_binary() -> None
         "claude",
         "grok",
         "gemini",
+        "agy",
         "opencode",
         "node",
     } <= DEFAULT_AGENT_PANE_COMMANDS
 
 
 def test_status_detects_non_node_provider_panes_by_default(tmp_path: Path) -> None:
-    for binary in ("grok", "gemini", "opencode"):
+    for binary in ("grok", "gemini", "agy", "opencode"):
         config = _config(tmp_path, agent_command=("codex",))
         runner = RecordingRunner(
             [

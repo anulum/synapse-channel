@@ -666,3 +666,23 @@ else:
             time.sleep(0.01)
     finally:
         subprocess.run(argv + ["kill-server"], check=False, timeout=5)
+
+
+@requires_proc
+def test_an_antigravity_agy_process_is_reported_as_a_provider_session(tmp_path: Path) -> None:
+    """A process whose command name is ``agy`` is a provider row, as ``codex`` is."""
+    sleeper = _codex_sleeper(tmp_path / "agy")
+    child = subprocess.Popen([str(sleeper), "30"], stdin=subprocess.DEVNULL)
+    try:
+        deadline = time.monotonic() + 10
+        while observe_process(child.pid).command_name != "agy":
+            assert time.monotonic() < deadline, "the agy stand-in did not start"
+            time.sleep(0.005)
+        observation = HostSessionMonitor(
+            pids=(child.pid,), tmux_socket=str(tmp_path / "absent")
+        ).snapshot()
+    finally:
+        child.terminate()
+        child.wait(timeout=10)
+    (row,) = [row for row in observation.rows if row.pid == child.pid]
+    assert row.provider == "agy"

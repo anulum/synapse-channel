@@ -73,6 +73,23 @@ def test_render_shell_hook_auto_arms_and_wraps_default_providers() -> None:
     assert "PROMPT_COMMAND" in hook
 
 
+@pytest.mark.parametrize(
+    ("shell", "declaration", "launch"),
+    [
+        ("bash", "agy() {", '-- agy "$@"'),
+        ("zsh", "agy() {", '-- agy "$@"'),
+        ("fish", "function agy --wraps agy", "-- agy $argv"),
+    ],
+)
+def test_every_shell_hook_wraps_antigravity_agy_by_default(
+    shell: str, declaration: str, launch: str
+) -> None:
+    """Antigravity CLI starts under the seat's identity, as the other providers do."""
+    hook = render_shell_hook(shell=shell)
+    assert declaration in hook
+    assert f'worker-session --project="$SYN_PROJECT" --identity="$SYN_IDENTITY" {launch}' in hook
+
+
 def test_shell_hooks_prefer_private_cache_over_shared_tmp() -> None:
     """No world-shared /tmp/synapse-shell when XDG runtime is absent."""
     for shell in ("bash", "zsh", "fish"):

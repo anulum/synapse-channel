@@ -18,6 +18,15 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- Antigravity CLI (`agy`), the successor of Gemini CLI for personal Google
+  accounts, is a recognised provider command: the shell hook wraps `agy`
+  through `synapse worker-session` as it wraps `codex`, `claude`, `kimi`, `grok`
+  and `gemini`; a tmux pane running `agy` counts as a live agent; and the host
+  sessions view shows an `agy` process as a provider session. Its pane wake
+  bridge and a headless driver are not part of this change.
+
 ### Changed
 
 - The hub bounds a progress note's text at 1 MiB of UTF-8

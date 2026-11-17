@@ -22,6 +22,7 @@ DEFAULT_PROVIDER_COMMANDS = (
     "kimi",
     "grok",
     "gemini",
+    "agy",
     "agent",
     "ask",
     "ollama",

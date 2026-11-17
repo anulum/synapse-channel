@@ -63,7 +63,7 @@ _screen_is_safe_for_submit = _pane_classification.screen_is_safe_for_submit
 _staged_wake_was_consumed = _pane_classification.staged_wake_was_consumed
 
 DEFAULT_AGENT_PANE_COMMANDS = frozenset(
-    {"codex", "node", "kimi", "claude", "grok", "gemini", "opencode"}
+    {"codex", "node", "kimi", "claude", "grok", "gemini", "agy", "opencode"}
 )
 """Pane command names that, on their own, indicate a live agent stack.
 
@@ -71,9 +71,9 @@ Terminal agents usually run under a shell (``fish``/``bash``), so the live agent
 is normally identified from the pane's *start* command rather than its current
 command. This set covers the cases where the agent binary is itself the pane
 command — every first-class provider binary (Codex, Kimi, Claude, Grok, Gemini,
-plus ``node`` for Node-launched stacks) — and it is unioned with the per-config
-binary derived from :attr:`AgentTmuxConfig.agent_command`, so a custom or renamed
-binary is always detected too.
+Antigravity's ``agy``, plus ``node`` for Node-launched stacks) — and it is unioned
+with the per-config binary derived from :attr:`AgentTmuxConfig.agent_command`, so a
+custom or renamed binary is always detected too.
 """
 
 DEFAULT_SUBMIT_DELAY = 0.4
