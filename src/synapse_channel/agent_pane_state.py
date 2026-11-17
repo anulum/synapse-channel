@@ -25,8 +25,17 @@ PROVIDER_IDLE_PATTERNS = {
         r"(?im)^\s*(?:›|❯|>)?\s*(?:Type your message|Type a message|Ask Gemini)\b"
     ),
     "opencode": re.compile(r"(?im)^\s*Ask anything\.\.\.\s*(?:\"|$)"),
+    # Antigravity CLI draws its composer as a `>` row between two full-width
+    # rules; the row is empty when the composer is idle.
+    "agy": re.compile(r"(?m)^[ \t]*─{20,}[ \t]*\n>[ \t]*\n[ \t]*─{20,}[ \t]*$"),
 }
 """Provider-specific idle composer markers; unknown providers fail closed."""
+
+_AGY_RULE = re.compile(r"(?m)^[ \t]*─{20,}[ \t]*$")
+"""A horizontal rule row of the Antigravity CLI screen."""
+
+_AGY_BUSY_FOOTER = re.compile(r"(?im)^[ \t]*esc to cancel\b")
+"""The Antigravity CLI footer while a turn runs or a dialog waits for an answer."""
 
 _UNSAFE_PANE_PATTERN = re.compile(
     r"(?im)(?:"
@@ -43,6 +52,53 @@ _CODEX_UPDATE_MODAL_PATTERN = re.compile(
     r"Press enter to continue"
 )
 """Exact Codex update chooser that blocks the interactive composer."""
+
+
+def _agy_live_region(screen: str) -> str | None:
+    """Return the Antigravity CLI's current composer and footer, or None.
+
+    ``agy`` keeps its composer as a ``>`` row between two full-width rules
+    above one footer row, and leaves every earlier turn, thought summary and
+    tip above them. A thought summary may say "thinking" or "approve", so only
+    the screen from the upper composer rule down says what the pane is doing.
+    A permission dialog replaces the composer and its busy footer stays; the
+    region from the second-last rule then holds the dialog and that footer.
+    """
+    rules = list(_AGY_RULE.finditer(screen))
+    if not rules:
+        return None
+    return screen[rules[-2 if len(rules) > 1 else -1].start() :]
+
+
+def _agy_pane_state(screen: str) -> str:
+    """Classify an Antigravity CLI pane from its composer and footer only."""
+    region = _agy_live_region(screen)
+    if region is None:
+        return "unknown"
+    if _UNSAFE_PANE_PATTERN.search(region) or _AGY_BUSY_FOOTER.search(region):
+        return "blocked"
+    if PROVIDER_IDLE_PATTERNS["agy"].search(region):
+        return "idle"
+    return "unknown"
+
+
+def _agy_composer_holds_only(screen: str, required_text: str) -> bool:
+    """Return whether the Antigravity CLI composer row holds exactly the staged hint.
+
+    The hint counts only as the whole content of the ``>`` row between the two
+    composer rules. The same fixed hint left in an earlier turn above them, or
+    an owner's draft in the composer, never counts.
+    """
+    region = _agy_live_region(screen)
+    if region is None:
+        return False
+    match = _rendered_text_match(region, required_text)
+    if match is None:
+        return False
+    return (
+        re.fullmatch(r"[ \t]*─{20,}[ \t]*\n>[ \t]*", region[: match.start()]) is not None
+        and re.match(r"[ \t]*\n[ \t]*─{20,}[ \t]*(?:\n|$)", region[match.end() :]) is not None
+    )
 
 
 def pane_state(provider: str, screen: str) -> str:
@@ -68,6 +124,8 @@ def pane_state(provider: str, screen: str) -> str:
     """
     if provider == "codex" and _CODEX_UPDATE_MODAL_PATTERN.search(screen):
         return "update-required"
+    if provider == "agy":
+        return _agy_pane_state(screen)
     if _UNSAFE_PANE_PATTERN.search(screen):
         return "blocked"
     if PROVIDER_IDLE_PATTERNS[provider].search(screen):
@@ -108,6 +166,37 @@ def _grok_composer_holds_only(screen: str, required_text: str) -> bool:
     )
 
 
+def _staged_composer_holds_only(provider: str, screen: str, required_text: str) -> bool:
+    """Return whether a pane without its idle marker holds exactly the staged hint.
+
+    Three profiles lose their idle marker once the fixed hint is pasted, so
+    Enter would never be sent and the hint would stay queued. Their pasted
+    hint itself is checked instead:
+
+    - OpenCode mini removes its empty-composer placeholder. Only the complete
+      hint immediately followed by the composer footer counts; arbitrary
+      typed text is never an idle marker.
+    - Grok's idle marker matches only an empty composer, including the boxed
+      row the live pane draws. The hint counts only as that row's whole content.
+    - Antigravity CLI's idle marker is an empty composer row. The hint counts
+      only as that row's whole content.
+
+    A busy or modal pane never reaches this check. Every other profile keeps
+    its idle marker after a paste and is never admitted here.
+    """
+    if provider == "opencode":
+        match = _rendered_text_match(screen, required_text)
+        return match is not None and (
+            re.fullmatch(r"\s*(?:BUILD|PLAN)\b[^\n]*\bctrl\+p cmd\s*", screen[match.end() :])
+            is not None
+        )
+    if provider == "grok":
+        return _grok_composer_holds_only(screen, required_text)
+    if provider == "agy":
+        return _agy_composer_holds_only(screen, required_text)
+    return False
+
+
 def screen_is_safe_for_submit(
     provider: str,
     screen: str,
@@ -142,28 +231,16 @@ def screen_is_safe_for_submit(
     if state == "blocked":
         return False, f"{provider} pane is busy, modal, or ambiguous"
     if state != "idle":
-        # OpenCode mini removes its empty-composer placeholder after a paste.
-        # Admit only our complete staged prompt immediately followed by the
-        # actual composer footer; arbitrary typed text is never an idle marker.
-        if provider == "opencode" and required_text is not None:
-            match = _rendered_text_match(screen, required_text)
-            if match is not None and re.fullmatch(
-                r"\s*(?:BUILD|PLAN)\b[^\n]*\bctrl\+p cmd\s*", screen[match.end() :]
-            ):
-                return True, "opencode staged composer verified"
-        # Grok's idle marker matches only an empty composer, including the boxed
-        # row the live pane draws. After the fixed wake is pasted, that marker
-        # is gone, so Enter was never sent and the hint stayed queued. Admit
-        # the exact hint only as the whole content of the live composer row.
-        # A busy or modal pane already returned above.
-        if (
-            provider == "grok"
-            and required_text is not None
-            and _grok_composer_holds_only(screen, required_text)
+        if required_text is not None and _staged_composer_holds_only(
+            provider, screen, required_text
         ):
-            return True, "grok staged composer verified"
+            return True, f"{provider} staged composer verified"
         return False, f"{provider} idle composer marker is absent"
-    if required_text is not None and not _contains_rendered_text(screen, required_text):
+    # An idle Antigravity composer is empty, so a staged hint there was not
+    # accepted, even when an earlier turn above it shows the same hint.
+    if required_text is not None and (
+        provider == "agy" or not _contains_rendered_text(screen, required_text)
+    ):
         return False, "wake prompt was not accepted by the idle composer"
     return True, f"{provider} idle composer verified"
 

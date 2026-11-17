@@ -572,6 +572,25 @@ def test_worker_session_tmux_start_failure_returns_tmux_code(
 
 
 @requires_script_launch
+def test_worker_session_launches_antigravity_agy_through_persistent_tmux(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An ``agy`` session takes the persistent tmux path, as Codex, Claude, Kimi and Grok do."""
+    provider = _write_script(tmp_path / "agy", "raise SystemExit(0)\n")
+
+    code = run_worker_session(
+        identity="repo/agy-main",
+        command=[str(provider)],
+        tmux_bin=str(_failing_tmux(tmp_path / "tmux")),
+        terminal_tmux="on",
+        environ={"XDG_RUNTIME_DIR": str(tmp_path)},
+    )
+
+    assert code == 9
+    assert "tmux new-session failed" in capsys.readouterr().out
+
+
+@requires_script_launch
 def test_worker_session_tmux_autostart_can_be_disabled_by_env(tmp_path: Path) -> None:
     provider_record = tmp_path / "provider.json"
     provider = _write_script(

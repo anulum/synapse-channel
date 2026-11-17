@@ -48,4 +48,19 @@ PROVIDER_SCREENS: dict[str, dict[str, str]] = {
         "busy": "Ask anything...\n\nThinking… esc to interrupt\n",
         "modal": "Permission required\n> 1. Allow once\n  2. Deny\n",
     },
+    "agy": {
+        "idle": (
+            "Antigravity CLI\n" + "─" * 60 + "\n>\n" + "─" * 60 + "\n"
+            "? for shortcuts   Gemini 4 Carbon · high\n"
+        ),
+        "busy": (
+            "> owner task\n⣷  Generating...\n" + "─" * 60 + "\n>\n" + "─" * 60 + "\n"
+            "esc to cancel   Gemini 4 Carbon · high\n"
+        ),
+        "modal": (
+            "Command\n" + "─" * 60 + "\nRequesting permission for:\n   uname -s\n"
+            "Run this command?\n> 1. Yes, run command\n  4. No, cancel\n"
+            "esc to cancel   Gemini 4 Carbon · high\n"
+        ),
+    },
 }

@@ -41,6 +41,25 @@ from synapse_channel.opencode_composer_state import set_stage_verified, stage_is
 
 _HINT = build_wake_prompt("E2E/pane-classification")
 _UPDATE = "Update available! 0.1 -> 0.2\nSkip until next version\nPress enter to continue\n› "
+_AGY_RULE = "─" * 60
+
+
+def _agy(composer: str, *, footer: str = "? for shortcuts", history: str = "") -> str:
+    """An Antigravity CLI screen: earlier turns, the composer row between rules, the footer."""
+    return f"{history}{_AGY_RULE}\n>{composer}\n{_AGY_RULE}\n{footer}   Gemini 4 Carbon · high\n"
+
+
+# A past turn as agy draws it: a narrower separator rule, the turn and a thought summary
+# that names busy and permission words.
+_AGY_PAST_TURN = (
+    "─" * 30 + "\n> earlier question\n"
+    "○ Thought for 19.7s (I'm thinking through whether to approve the permission.)\n"
+)
+_AGY_PERMISSION = (
+    "Command\n" + _AGY_RULE + "\nRequesting permission for:\n   uname -s\nRun this command?\n"
+    "> 1. Yes, run command\n  4. No, cancel\nesc to cancel   Gemini 4 Carbon · high\n"
+)
+_AGY_TRUST = "Do you trust the contents of this project?\n> Yes, I trust this folder\n  No, exit\n"
 
 
 @pytest.mark.parametrize(
@@ -60,6 +79,18 @@ _UPDATE = "Update available! 0.1 -> 0.2\nSkip until next version\nPress enter to
         ("claude", "Allow this tool?\n❯ ", "blocked"),
         ("codex", "1. Continue\n› ", "blocked"),
         ("codex", "session banner", "unknown"),
+        ("agy", _agy(""), "idle"),
+        ("agy", _agy(" " * 59), "idle"),
+        # Only the composer and footer are read: a past thought that says
+        # "thinking" or "approve" leaves an idle composer idle.
+        ("agy", _agy("", history=_AGY_PAST_TURN), "idle"),
+        ("agy", _agy("", footer="esc to cancel"), "blocked"),
+        ("agy", _AGY_PERMISSION, "blocked"),
+        # A chooser drawn in the composer area blocks whatever the footer says.
+        ("agy", _agy(" 1. Yes, run command", footer="↑/↓ Navigate · enter Confirm"), "blocked"),
+        ("agy", _agy(" owner's draft"), "unknown"),
+        # The trust dialog draws no composer rules at all.
+        ("agy", _AGY_TRUST, "unknown"),
     ],
 )
 def test_provider_state_preserves_precedence(provider: str, capture: str, expected: str) -> None:
@@ -103,6 +134,16 @@ def test_provider_state_preserves_precedence(provider: str, capture: str, expect
         ("grok", "  │ ❯ " + _HINT + " and more │", _HINT, False),
         # Rows below the composer that are not prompt rows do not block the wake.
         ("grok", "  │ ❯ " + _HINT + " │\n  ╰─ Grok 4.7 (high) · always-approve ─╯", _HINT, True),
+        ("agy", _agy(" " + _HINT), _HINT, True),
+        ("agy", _agy(" " + _HINT, history=_AGY_PAST_TURN), _HINT, True),
+        ("agy", _agy(" owner's draft"), _HINT, False),
+        ("agy", _agy(" " + _HINT + " and more"), _HINT, False),
+        ("agy", _agy(" owner's draft " + _HINT), _HINT, False),
+        ("agy", _agy(" " + _HINT, footer="esc to cancel"), _HINT, False),
+        # The same hint in an earlier turn, above an empty or drafted composer.
+        ("agy", _agy("", history="> " + _HINT + "\n"), _HINT, False),
+        ("agy", _agy(" owner's draft", history="> " + _HINT + "\n"), _HINT, False),
+        ("agy", _AGY_TRUST + "> " + _HINT + "\n", _HINT, False),
     ],
 )
 def test_submit_readiness_preserves_exact_staged_hint(
@@ -133,6 +174,14 @@ def test_submit_readiness_preserves_exact_staged_hint(
             _HINT + "\nAsk anything...\n" + _HINT + "\nBUILD model ctrl+p cmd",
             False,
         ),
+        ("agy", _agy(" " + _HINT), False),
+        ("agy", _agy("", history="> " + _HINT + "\n"), True),
+        (
+            "agy",
+            _agy("", footer="esc to cancel", history="> " + _HINT + "\n⣷  Generating...\n"),
+            True,
+        ),
+        ("agy", _agy(" " + _HINT, history="> " + _HINT + "\n"), False),
     ],
 )
 def test_staged_hint_observation_uses_last_rendered_occurrence(

@@ -1024,8 +1024,8 @@ For legacy CWD-derived behaviour, set `SYNAPSE_AUTO_PROJECT_FROM_CWD=1` in that
 terminal. The hook also wraps common provider commands (`codex`, `claude`,
 `kimi`, `grok`, `gemini`, `agy`, `agent`, `ask`, `ollama`) through `synapse
 worker-session`, so cloud and local LLM sessions inherit the same Synapse
-identity from process start. In an interactive terminal, Codex/Claude/Kimi/Grok
-launch through a persistent tmux session and directed wake bridge automatically;
+identity from process start. In an interactive terminal, Codex, Claude, Kimi, Grok
+and Antigravity (`agy`) launch through a persistent tmux session and directed wake bridge automatically;
 the user still types only the provider command. Set `SYNAPSE_PROVIDER_TMUX=0` to
 keep those providers on the direct execution path, or `SYNAPSE_AUTO_CONNECT=0` to
 disable the hook for a terminal.
@@ -1947,7 +1947,7 @@ an installed protected runtime or revocation fencing.
 | Classes | 1460 |
 | Wire message types | 122 |
 | CLI subcommands | 310 |
-| Test functions | 14591 |
+| Test functions | 14592 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 99 |
 | GitHub Actions workflows | 29 |

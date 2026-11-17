@@ -33,7 +33,7 @@ from synapse_channel.worker_outcome import OPERATION_ID_ENV, WorkerExit, WorkerO
 SIDECAR_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 """Seconds to wait for a wake sidecar to exit after graceful termination."""
 
-INTERACTIVE_TMUX_PROVIDERS = frozenset({"codex", "claude", "kimi", "grok"})
+INTERACTIVE_TMUX_PROVIDERS = frozenset({"codex", "claude", "kimi", "grok", "agy"})
 """Provider command names that default to persistent tmux-backed terminals."""
 
 TERMINAL_TMUX_MODES = frozenset({"auto", "on", "off"})

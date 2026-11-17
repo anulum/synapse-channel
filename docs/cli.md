@@ -1448,8 +1448,10 @@ permanent mailbox arm's `<identity>-rx`; the split is receiver arbitration, not
 a second agent identity.
 
 Before emitting a key, the bridge captures a bounded pane tail and requires the
-known idle-composer profile for Codex, Claude Code, Kimi, Grok, or Gemini, with
-no modal, approval, or busy marker. Unknown or ambiguous panes receive no key:
+known idle-composer profile for Codex, Claude Code, Kimi, Grok, Gemini, or
+Antigravity CLI (`agy`), with no modal, approval, or busy marker. For `agy`, only
+the composer row, its two rules and the footer are read, because earlier turns
+and thought summaries stay on the screen above them. Unknown or ambiguous panes receive no key:
 the consumed wake is persisted in the owner-only registry and retried after the
 bounded pane-probe interval, including after a bridge restart. For a safe pane,
 the fixed prompt is delivered as one bracketed paste rather than shortcut-capable

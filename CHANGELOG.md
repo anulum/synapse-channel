@@ -24,8 +24,15 @@ execution evidence when carrying a release claim forward.
   accounts, is a recognised provider command: the shell hook wraps `agy`
   through `synapse worker-session` as it wraps `codex`, `claude`, `kimi`, `grok`
   and `gemini`; a tmux pane running `agy` counts as a live agent; and the host
-  sessions view shows an `agy` process as a provider session. Its pane wake
-  bridge and a headless driver are not part of this change.
+  sessions view shows an `agy` process as a provider session.
+- In an interactive terminal, `agy` launches through the persistent tmux
+  session and directed wake bridge, as Codex, Claude, Kimi and Grok do. Its
+  pane is classified from the composer row between its two rules and the
+  footer only: an empty row is idle; an `esc to cancel` footer, a permission
+  dialog or a chooser blocks; a typed draft is never submitted. Earlier turns
+  and thought summaries above the composer are not read, so a past thought
+  that mentions "thinking" or "approve" does not hold a wake back. A headless
+  driver is not part of this change.
 
 ### Changed
 
