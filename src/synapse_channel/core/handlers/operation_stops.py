@@ -15,9 +15,13 @@ requests to open an attempt mutate.
 * A stop of a scope not already stopped is journalled as an
   ``operation_stopped`` row. The row lists every attempt open in the scope when
   it commits: no attempt can open between the list and the row, because both
-  are made under the one mutation lock.
+  are made under the one mutation lock. A stop that lists nothing is at rest at
+  once, and its ``operation_stop_state`` row is committed in the same
+  transaction; it names the stop by its scope and epoch, as the row's own
+  sequence is not known before the commit.
 * A resume that is permitted, of a stopped scope, by a resumer who is not an
-  actor of it, is journalled as an ``operation_resumed`` row.
+  actor of it, is journalled as an ``operation_resumed`` row whose
+  ``resumed_from`` is the stop's state computed at the resume.
 * Every other answer is journalled as an ``operation_stop_answered`` row.
 
 A repeated request with the same ``idem_key`` receives the stored answer.
@@ -46,6 +50,13 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempt_ledger import AttemptLedger, OpenAttempt
 from synapse_channel.core.operation_attempts import INVALID_REQUEST
 from synapse_channel.core.operation_records import VERIFIER_FOR_EFFECT
+from synapse_channel.core.operation_stop_readbacks import CLOSING_RESULTS
+from synapse_channel.core.operation_stop_states import (
+    STATE_AT_REST,
+    STATE_STOP_REQUESTED,
+    compute_stop_state,
+    profile_for,
+)
 from synapse_channel.core.operation_stops import (
     ACTOR_OF_SCOPE,
     ALREADY_STOPPED,
@@ -115,6 +126,8 @@ class _Outcome:
     listed: tuple[OpenAttempt, ...] = ()
     earlier_seq: int | None = None
     """The standing stop's sequence: the one already standing, or the one a resume lifts."""
+    resumed_from: str = RESUMED_FROM_STOP_REQUESTED
+    """For a resume, the lifted stop's state computed at the resume."""
 
 
 @dataclass
@@ -163,7 +176,30 @@ def _decide_resume(
         detail = f"{sender} declared an operation the stop of {scope} covers"
         return _Outcome(ACTOR_OF_SCOPE, detail, now, epoch=standing[1], earlier_seq=standing[0])
     detail = f"the scope {scope} is resumed (the stop at journal seq {standing[0]} is lifted)"
-    return _Outcome(RESUMED, detail, now, epoch=standing[1], earlier_seq=standing[0])
+    computed = ledger.stop_state(standing[0])
+    resumed_from = RESUMED_FROM_STOP_REQUESTED if computed is None else computed.state
+    return _Outcome(
+        RESUMED,
+        detail,
+        now,
+        epoch=standing[1],
+        earlier_seq=standing[0],
+        resumed_from=resumed_from,
+    )
+
+
+def _rows(
+    kind: str, request: StopRequest | ResumeRequest, sender: str, outcome: _Outcome
+) -> tuple[tuple[str, dict[str, Any]], ...]:
+    """Return the journal rows of one answer; a stop listing nothing also reports it at rest."""
+    row = _row(kind, request, sender, outcome)
+    if outcome.answer != STOP_RECORDED or outcome.listed:
+        return (row,)
+    rest = compute_stop_state(
+        (), closing=CLOSING_RESULTS, profile=profile_for((), isolation_evidence=False)
+    )
+    report = {"scope": request.scope, "epoch": outcome.epoch, **rest.to_payload()}
+    return row, (EventKind.OPERATION_STOP_STATE, report)
 
 
 def _row(
@@ -183,7 +219,7 @@ def _row(
         row = {**common, "resumer": sender, "lifts_seq": outcome.earlier_seq}
         return EventKind.OPERATION_RESUMED, {
             **row,
-            "resumed_from": RESUMED_FROM_STOP_REQUESTED,
+            "resumed_from": outcome.resumed_from,
             "case": request.case,
         }
     answered = {**common, "sender": sender, "request": kind, "answer": outcome.answer}
@@ -209,11 +245,12 @@ def _answer_fields(
     if outcome.answer == STOP_RECORDED:
         fields["epoch"] = outcome.epoch
         fields["listed"] = _listed(outcome.listed)
+        fields["state"] = STATE_STOP_REQUESTED if outcome.listed else STATE_AT_REST
         if hub.acl_policy is None:
             fields["warning"] = NO_ACCESS_FILE_WARNING
     elif outcome.answer == RESUMED:
         fields["lifts_seq"] = outcome.earlier_seq
-        fields["resumed_from"] = RESUMED_FROM_STOP_REQUESTED
+        fields["resumed_from"] = outcome.resumed_from
     elif outcome.earlier_seq is not None:
         fields["standing_seq"] = outcome.earlier_seq
     if isinstance(request, ResumeRequest):
@@ -264,7 +301,7 @@ async def _serve(
         )
         return OperationDraft(
             response=stored,
-            events=(_row(kind, request, sender, outcome),),
+            events=_rows(kind, request, sender, outcome),
             intent={"family": "operation_stop"},
             finalize_response=finalize,
         )

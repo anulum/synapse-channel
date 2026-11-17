@@ -45,6 +45,7 @@ approval admits is decided elsewhere.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -206,7 +207,44 @@ def _apply(hub: OperationRecordContext, sender: str, request: OperationRecordReq
     if request.record == RECORD_SEAL:
         return _seal(hub, store, ledger, sender, request)
     if request.record == RECORD_STOP_READBACK:
-        return _stop_readback(hub, store, ledger, sender, request)
+        return _reporting_stops(
+            store, ledger, request, lambda: _stop_readback(hub, store, ledger, sender, request)
+        )
+    return _reporting_stops(
+        store, ledger, request, lambda: _evidence(hub, store, ledger, sender, request)
+    )
+
+
+def _reporting_stops(
+    store: EventStore,
+    ledger: OperationLedger,
+    request: OperationRecordRequest,
+    keep: Callable[[], _Verdict],
+) -> _Verdict:
+    """Keep one record, then journal the state of each stop it advanced, once per advance."""
+    attempts = ledger.attempts
+    before = {seq: attempts.stop_state(seq) for seq in attempts.stops_listing(request.operation_id)}
+    verdict = keep()
+    if verdict.status != STATUS_ACCEPTED:
+        return verdict
+    for seq, earlier in before.items():
+        now, identity = attempts.stop_state(seq), attempts.stop_identity(seq)
+        if earlier is None or now is None or identity is None or now.rank() <= earlier.rank():
+            continue
+        scope, epoch = identity
+        report = {"stop_seq": seq, "scope": scope, "epoch": epoch, **now.to_payload()}
+        store.append(EventKind.OPERATION_STOP_STATE, report, durable=True)
+    return verdict
+
+
+def _evidence(
+    hub: OperationRecordContext,
+    store: EventStore,
+    ledger: OperationLedger,
+    sender: str,
+    request: OperationRecordRequest,
+) -> _Verdict:
+    """Journal an outcome or a verification from a holder of ``operation-evidence``."""
     if not task_grant(hub.acl_policy, sender, request.task_id, OPERATION_EVIDENCE):
         return _refused(
             REFUSED_NOT_AUTHORISED, f"{sender} lacks operation-evidence for {request.task_id}"
@@ -320,6 +358,7 @@ def _declare(
             deadline=None if request.intent is None else request.intent.deadline,
             declared_at=now,
             effect=effect,
+            assurance=None if intent is None else intent.document.get("required_assurance"),
         ),
     )
     digest = "" if intent is None else intent.sha256

@@ -154,6 +154,7 @@ class EventKind:
     OPERATION_RESUMED = "operation_resumed"
     OPERATION_STOP_ANSWERED = "operation_stop_answered"
     OPERATION_STOP_READBACK = "operation_stop_readback"
+    OPERATION_STOP_STATE = "operation_stop_state"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
     IDENTITY_ENROLLMENT = "identity_enrollment"
     ENTITLEMENT_ADVERT = "entitlement_advert"

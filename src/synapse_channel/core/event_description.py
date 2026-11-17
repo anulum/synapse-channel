@@ -255,6 +255,9 @@ EVENT_WORDS: Mapping[str, Describer] = {
     EventKind.OPERATION_STOP_READBACK: lambda p: EventWords(
         _text(p, "sender"), f"stop read-back of {_text(p, 'operation_id')}: {_text(p, 'result')}"
     ),
+    EventKind.OPERATION_STOP_STATE: lambda p: EventWords(
+        "", f"stop of {_text(p, 'scope')}: {_text(p, 'state')} ({_text(p, 'profile')})"
+    ),
     EventKind.ENTITLEMENT_ADVERT: _entitlement_advert,
     EventKind.DELIVERY_INTENT_ACCEPTED: _fixed(lambda _p: "delivery accepted"),
     EventKind.DELIVERY_INTENT_QUEUED: _fixed(lambda _p: "delivery queued"),

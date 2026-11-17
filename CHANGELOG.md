@@ -20,6 +20,15 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- A stop reports its state: `stop requested`, `no new effect` once every
+  listed attempt has a kept `sealed` or `applied` read-back, and `at rest` once
+  another identity has also observed each one or verified its operation. The
+  hub journals `operation_stop_state` on each advance and never otherwise; a
+  stop that lists nothing is at rest in its own transaction. Every report
+  states `profile: cooperative` with "governed effects only"; `isolated` is
+  never written, because the hub keeps no evidence for it. A resume records
+  the state it found as `resumed_from`, and the stop keeps it.
+  `operation_state` reports the stop's state, profile, blockers and counts.
 - A stop can seal what it listed: `synapse operation stop --seal --repository
   PATH` (or `--remote URL`) records the stop, then for each listed attempt
   creates its `sealed` marker, reads it back, and records what it read as a
@@ -48,8 +57,8 @@ execution evidence when carrying a release claim forward.
   scope; `operation-stop` is checked under `--require-acl`. Every answer is a
   journalled row (`operation_stopped`, `operation_resumed`,
   `operation_stop_answered`), the stops are restored at start, and
-  `operation_state` reports `stopped_by`. A stop does not yet seal the listed
-  attempts: its state is "stop requested".
+  `operation_state` reports `stopped_by`. A stop does not end the attempts it
+  lists; `--seal` seals them, as below.
 
 ### Changed
 

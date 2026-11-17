@@ -20,7 +20,8 @@ The answer lists each attempt's id, its executor and its state (``open``,
 is closed, with the declared ``effect``, its ``effect_target`` and the
 ``intent_sha256`` the hub holds, which a stop's seal needs. ``stopped_by``
 names the narrowest stopped scope that contains the operation, with the journal
-sequence of its stop and the state ``stop requested``, or is ``null``. Nothing
+sequence of its stop, its computed state, profile, blockers and counts, or is
+``null``. Nothing
 is journalled and nothing changes. A command that seals an
 attempt asks first, and refuses to seal one that is not open; a command that
 removes an applied marker requires the operation closed. A hub that does not
@@ -91,6 +92,23 @@ def _request(data: dict[str, Any]) -> tuple[str, str] | None:
     return task_id, operation_id
 
 
+def _stopped_by(
+    ledger: OperationLedger, stopped_by: tuple[str, int] | None
+) -> dict[str, Any] | None:
+    """Return the narrowest standing stop with its computed state, profile and blockers."""
+    if stopped_by is None:
+        return None
+    scope, seq = stopped_by
+    computed = ledger.attempts.stop_state(seq)
+    report = {} if computed is None else computed.to_payload()
+    return {
+        **report,
+        "scope": scope,
+        "seq": seq,
+        "state": RESUMED_FROM_STOP_REQUESTED if computed is None else computed.state,
+    }
+
+
 def _answer(
     hub: OperationStateContext, sender: str, task_id: str, operation_id: str
 ) -> dict[str, Any]:
@@ -118,15 +136,7 @@ def _answer(
         "effect": ledger.effect_of(operation_id) or "",
         "effect_target": ledger.target_of(operation_id),
         "intent_sha256": (None if fact is None else fact.intent_sha256) or "",
-        "stopped_by": (
-            None
-            if stopped_by is None
-            else {
-                "scope": stopped_by[0],
-                "seq": stopped_by[1],
-                "state": RESUMED_FROM_STOP_REQUESTED,
-            }
-        ),
+        "stopped_by": _stopped_by(ledger, stopped_by),
         "attempts": [
             {"attempt_id": item.attempt_id, "executor": item.executor, "state": item.state}
             for item in attempts

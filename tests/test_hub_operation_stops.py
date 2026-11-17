@@ -173,7 +173,28 @@ async def test_a_stop_lists_the_open_attempt_and_every_later_request_is_stopped(
     sentence = f"the scope project:P is stopped (journal seq {seq})"
     assert (stopped["answer"], stopped["payload"]) == ("stopped", sentence)
     assert (stranger["answer"], stranger["payload"]) == ("stopped", sentence)
-    assert state["stopped_by"] == {"scope": "project:P", "seq": seq, "state": "stop requested"}
+    by = state["stopped_by"]
+    assert (by["scope"], by["seq"], by["state"], by["profile"]) == (
+        "project:P",
+        seq,
+        "stop requested",
+        "cooperative",
+    )
+    assert by["blocking"] == [
+        {
+            "operation_id": scene.OPERATION,
+            "attempt_id": opened["attempt_id"],
+            "reason": "unknown: no marker read back",
+        }
+    ]
+    assert by["counts"] == {
+        "listed": 1,
+        "sealed": 0,
+        "applied": 0,
+        "unsealable": 0,
+        "unread": 0,
+        "reconciled": 0,
+    }
     assert rows == [
         (
             seq,
@@ -209,7 +230,7 @@ async def test_an_approval_from_before_the_stop_is_stale_after_the_resume_and_a_
     finally:
         store.close()
     assert resumed["answer"] == "resumed"
-    assert (resumed["resumed_from"], resumed["case"]) == ("stop requested", "another_person")
+    assert (resumed["resumed_from"], resumed["case"]) == ("at rest", "another_person")
     line = resumed["seq"]
     assert (stale["answer"], stale["payload"]) == (
         "approval_stale",
@@ -578,12 +599,12 @@ async def test_a_stop_survives_compaction_a_restart_and_the_export(tmp_path: Pat
 
 
 def _held_commit(store: EventStore, kind: str) -> tuple[threading.Event, threading.Event, Any]:
-    """Return events that hold the commit of the first ``kind`` row until released."""
+    """Return events that hold the first commit led by a ``kind`` row until released."""
     entered, release = threading.Event(), threading.Event()
     commit = store.commit_operation
 
     def held(**kwargs: Any) -> Any:
-        if [row_kind for row_kind, _ in kwargs["events"]] == [kind] and not entered.is_set():
+        if kwargs["events"][0][0] == kind and not entered.is_set():
             entered.set()
             release.wait(timeout=scene.WAIT)
         return commit(**kwargs)

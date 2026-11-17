@@ -99,7 +99,7 @@ async def test_a_live_hub_records_a_stop_and_a_resume_and_the_commands_say_so(
     assert resumed == command.EXIT_RECORDED
     assert (answer["answer"], answer["resumed_from"], answer["replayed"]) == (
         "resumed",
-        "stop requested",
+        "at rest",
         False,
     )
     assert answer["lifts_seq"] == int(printed[1].split(": ")[1])

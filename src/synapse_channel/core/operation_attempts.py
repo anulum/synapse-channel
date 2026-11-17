@@ -166,6 +166,8 @@ class OperationFact:
     effect : str or None, optional
         The declared effect, such as ``git_publication``; ``None`` when the
         declaration row does not hold one.
+    assurance : str or None, optional
+        The intent's ``required_assurance``; ``None`` without an intent.
     """
 
     task_id: str
@@ -174,6 +176,7 @@ class OperationFact:
     deadline: int | None
     declared_at: float
     effect: str | None = None
+    assurance: str | None = None
 
 
 @dataclass(frozen=True)

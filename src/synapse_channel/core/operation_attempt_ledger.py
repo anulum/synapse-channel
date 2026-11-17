@@ -49,6 +49,12 @@ from typing import TYPE_CHECKING, Any
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import APPROVED_FRESH, OperationFact
 from synapse_channel.core.operation_stop_readbacks import CLOSING_RESULTS
+from synapse_channel.core.operation_stop_states import (
+    ListedAttempt,
+    StopState,
+    compute_stop_state,
+    profile_for,
+)
 from synapse_channel.core.operation_stops import scopes_of
 
 if TYPE_CHECKING:
@@ -102,8 +108,11 @@ class _StopRow:
     """One recorded stop: its scope, the attempts it listed and what was read back for each."""
 
     scope: str
+    epoch: int
     listed: tuple[tuple[str, str], ...]
     readbacks: dict[str, str]
+    resumed: StopState | None = None
+    """The state computed when a resume lifted this stop; it stands from then on."""
 
 
 @dataclass(frozen=True)
@@ -241,16 +250,22 @@ class AttemptLedger:
         task_id, declared_at = payload.get("task_id"), payload.get("recorded_at")
         if not isinstance(task_id, str) or not isinstance(declared_at, (int, float)):
             return
-        digest, effect = payload.get("intent_sha256"), payload.get("effect")
+        digest, effect, intent = (
+            payload.get("intent_sha256"),
+            payload.get("effect"),
+            payload.get("intent"),
+        )
+        assurance = intent.get("required_assurance") if isinstance(intent, Mapping) else None
         self.note_declaration(
             operation_id,
             OperationFact(
                 task_id=task_id,
                 declarer=sender,
                 intent_sha256=digest if isinstance(digest, str) else None,
-                deadline=_deadline_of(payload.get("intent")),
+                deadline=_deadline_of(intent),
                 declared_at=float(declared_at),
                 effect=effect if isinstance(effect, str) else None,
+                assurance=assurance if isinstance(assurance, str) else None,
             ),
         )
 
@@ -291,7 +306,7 @@ class AttemptLedger:
         stops = self._stops.setdefault(scope, _ScopeStops())
         names = tuple(dict.fromkeys(operation_id for operation_id, _attempt in listed))
         stops.standing, stops.epoch, stops.listed, stops.line = seq, epoch, names, seq
-        self._stop_rows[seq] = _StopRow(scope, listed, {})
+        self._stop_rows[seq] = _StopRow(scope, epoch, listed, {})
 
     def stop_lists(self, stop_seq: int, operation_id: str, attempt_id: str) -> bool:
         """Return whether the stop recorded at ``stop_seq`` listed this attempt."""
@@ -309,6 +324,55 @@ class AttemptLedger:
         row = self._stop_rows.get(stop_seq)
         return None if row is None else row.readbacks.get(attempt_id)
 
+    def stop_identity(self, stop_seq: int) -> tuple[str, int] | None:
+        """Return the scope and epoch of the stop recorded at ``stop_seq``, or ``None``."""
+        row = self._stop_rows.get(stop_seq)
+        return None if row is None else (row.scope, row.epoch)
+
+    def stops_listing(self, operation_id: str) -> tuple[int, ...]:
+        """Return the sequences of the recorded stops that listed an attempt of the operation."""
+        return tuple(
+            seq
+            for seq, row in self._stop_rows.items()
+            if any(listed_op == operation_id for listed_op, _attempt in row.listed)
+        )
+
+    def _reconciled(self, operation_id: str, attempt_id: str) -> bool:
+        entry = self._operations.get(operation_id)
+        if entry is None:
+            return False
+        attempt = next((item for item in entry.attempts if item.attempt_id == attempt_id), None)
+        return entry.closed or (attempt is not None and attempt.reconciled)
+
+    def stop_state(self, stop_seq: int) -> StopState | None:
+        """Return the computed state of the stop recorded at ``stop_seq``, or ``None``.
+
+        The state reads only the kept read-backs and the attempts' reconciliation;
+        an executor's report is never read. The profile is ``cooperative``: the
+        hub keeps no evidence of the isolated profile. A resumed stop keeps the
+        state computed at its resume.
+        """
+        row = self._stop_rows.get(stop_seq)
+        if row is None:
+            return None
+        if row.resumed is not None:
+            return row.resumed
+        facts = [
+            ListedAttempt(
+                operation_id,
+                attempt_id,
+                row.readbacks.get(attempt_id),
+                self._reconciled(operation_id, attempt_id),
+            )
+            for operation_id, attempt_id in row.listed
+        ]
+        assurances = [
+            None if (fact := self.operation(operation_id)) is None else fact.assurance
+            for operation_id, _attempt in row.listed
+        ]
+        profile = profile_for(assurances, isolation_evidence=False)
+        return compute_stop_state(facts, closing=CLOSING_RESULTS, profile=profile)
+
     def stop_closed(self, stop_seq: int) -> bool:
         """Return whether every attempt the stop listed has a ``sealed`` or ``applied`` read-back.
 
@@ -321,8 +385,11 @@ class AttemptLedger:
         return all(row.readbacks.get(attempt) in CLOSING_RESULTS for _op, attempt in row.listed)
 
     def note_resume(self, scope: str, seq: int) -> None:
-        """Record that the row at ``seq`` lifted the stop of ``scope``."""
+        """Record that the row at ``seq`` lifted the stop of ``scope``; its state stands as now."""
         stops = self._stops.setdefault(scope, _ScopeStops())
+        row = None if stops.standing is None else self._stop_rows.get(stops.standing)
+        if row is not None and stops.standing is not None:
+            row.resumed = self.stop_state(stops.standing)
         stops.standing, stops.line = None, seq
 
     def standing_stop(self, scope: str) -> tuple[int, int] | None:

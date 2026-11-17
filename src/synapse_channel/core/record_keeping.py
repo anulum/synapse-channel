@@ -88,6 +88,7 @@ _OPERATION_KINDS = frozenset(
         "operation_resumed",
         "operation_stop_answered",
         "operation_stop_readback",
+        "operation_stop_state",
         "dead_letter_forwarding",
         "delivery_receipt_requested",
         "delivery_receipt_immediate",

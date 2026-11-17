@@ -266,13 +266,29 @@ does not add agent grades to protocol envelopes.
   resumer states it). A resume by an identity holding `operation-resume` on the
   scope, of a stopped scope, by an identity that is not an actor of it (the
   declarer of an operation the stop listed or of one open in the scope), is
-  journalled as `operation_resumed` with `lifts_seq` and `resumed_from` (`stop
-  requested`: nothing seals the listed attempts yet). Otherwise the answer is
+  journalled as `operation_resumed` with `lifts_seq` and `resumed_from`, the
+  stop's state computed at the resume, which the stop keeps from then on.
+  Otherwise the answer is
   `not_stopped`, `not_permitted` or `actor_of_scope`. A stop or resume does
   not end an open attempt. Every answer but `invalid_request` and `no_journal`
   is journalled, a refusal as `operation_stop_answered`, together with the
   stored answer in one transaction under the request key; a repeat returns the
-  stored answer. Under `--require-acl` the access gate refuses a stop without
+  stored answer. A stop is `stop requested`; `no new effect` once every listed
+  attempt has a kept `sealed` or `applied` read-back; and `at rest` once every
+  listed attempt is also reconciled by another identity's observation, or its
+  operation verified. An executor's own report is never read. The hub journals
+  `operation_stop_state` each time a kept read-back or verification advances a
+  stop, and never otherwise: `scope`, `epoch`, `stop_seq`, `state`, `profile`,
+  `profile_says`, `blocking` (each attempt holding the state back, with
+  `unsealable`, `unread`, `unknown: no marker read back` or `awaiting an
+  independent observation`) and `counts` (`listed`, `sealed`, `applied`,
+  `unsealable`, `unread`, `reconciled`). A stop that lists nothing is `at rest`
+  at once: its row is committed in the stop's own transaction and names the
+  stop by `scope` and `epoch` only. Every report states `profile:
+  cooperative`, "governed effects only: a writer that does not ask the hub is
+  not stopped by this stop"; `isolated` needs every listed intent to require it
+  and evidence the hub does not keep, so it is never written.
+  Under `--require-acl` the access gate refuses a stop without
   `operation-stop` and a resume without `operation-resume` on the scope before
   the verb, unjournalled, as for every guarded request. Stops are restored from
   the journal at start, and compaction removes none of their rows.
@@ -620,12 +636,14 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   without an intent), `attempts`, one
   object per attempt with `attempt_id`, `executor` and `state` (`open`,
   `sealed`, `ended`, `reconciled` or `closed`), and `stopped_by`: the
-  narrowest stopped scope that contains the operation as `scope`, `seq` and
-  `state` (`stop requested`), or `null`.
+  narrowest stopped scope that contains the operation as `scope` and `seq`,
+  with that stop's computed `state`, `profile`, `profile_says`, `blocking` and
+  `counts`, or `null`.
   `operation_stop_result` answers an `operation_stop` or `operation_resume`
   with `request` (`stop` or `resume`), `answer`, the sentence in `payload`,
   `scope`, the journal `seq` of the answer's row, `hub_time` and
-  `request_key`; a recorded stop adds `epoch`, `listed` (each with
+  `request_key`; a recorded stop adds `state` (`stop requested`, or `at rest`
+  when it listed nothing), `epoch`, `listed` (each with
   `operation_id`, `attempt_id`, `task_id` and `executor`) and, on a hub without
   an access file, `warning`; a resume adds `lifts_seq` and `resumed_from`;
   `already_stopped` and `actor_of_scope` add `standing_seq`; a resume carries

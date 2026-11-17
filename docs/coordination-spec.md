@@ -1647,6 +1647,26 @@ listed the attempt.
 **Pinned by.** `tests/test_cli_operation_stop_seal.py`,
 `tests/test_operation_seals.py`.
 
+### INV-OS-8 — a stop's state is computed from records, reported on each advance, with its profile
+
+**Normative.** A stop's state MUST be `stop requested` until every listed
+attempt has a kept `sealed` or `applied` read-back, then `no new effect` until
+every listed attempt is reconciled by an identity other than its declarer or
+its operation verified, then `at rest`. A stop that lists nothing MUST be `at
+rest`, and its `operation_stop_state` row MUST be committed in the stop's own
+transaction. The hub MUST journal `operation_stop_state` when a kept record
+advances a stop and MUST NOT journal one otherwise. A resume MUST record the
+state computed at it as `resumed_from`, and the stop MUST keep that state.
+Every report MUST state its profile; it MUST NOT state `isolated` without
+evidence of the isolated profile, which the hub does not keep.
+
+**Implementation.** `core/operation_stop_states.py`,
+`core/operation_attempt_ledger.py:AttemptLedger.stop_state`,
+`core/handlers/operation_records.py`, `core/handlers/operation_stops.py`.
+
+**Pinned by.** `tests/test_operation_stop_states.py`,
+`tests/test_cli_operation_stop_seal.py`.
+
 ## Normative constants
 
 These values are part of the contract. The drift guard
