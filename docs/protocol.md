@@ -203,14 +203,17 @@ does not add agent grades to protocol envelopes.
   declared operation for the exact intent the requester is about to carry out.
   It names `task_id`, `operation_id`, the claim `epoch` and `intent_sha256`, and
   must carry `idem_key`. The hub answers from a closed set, the first that
-  applies: `not_claim_holder` (the requester does not hold the live claim, or
+  applies: `stopped` (a scope that contains the operation is stopped; given to
+  every requester, whatever its claim and the clock), `not_claim_holder`
+  (the requester does not hold the live claim, or
   another identity declared the operation), `stale_epoch`, `unknown` (the
   verdict gate is off, the approval came through a bypassed gate, or the hub's
   clock reads earlier than the declaration; no other loss of the hub's clock is
   detected), `not_approved` (no such declaration
   on the task, no intent, another digest, or the latest approval note on the
-  digest is not `approved`), `approval_stale` (the verdict gate would refuse
-  that approval now), `approval_expired` (the hub's clock is at or past the
+  digest is not `approved`), `approval_stale` (the approval is older than the
+  latest stop or resume of a scope that contains the operation, or the verdict
+  gate would refuse that approval now), `approval_expired` (the hub's clock is at or past the
   intent's `deadline`), `approver_unauthorised` (the approver is the actor or of
   another project), `operation_closed` (another identity has verified the
   operation), `attempt_exists` (an attempt is open, or this approval has
@@ -227,6 +230,36 @@ does not add agent grades to protocol envelopes.
   by a kept seal; nothing else ends it. A malformed request is answered
   `invalid_request` and a hub without a journal `no_journal`; neither is
   journalled.
+- **Operation stops:** `operation_stop` names a `scope` (`installation`,
+  `project:<namespace>`, `effect:<kind>` with a declaration's effect, or
+  `operation:<id>`) and a `reason` of 1 to 512 characters, and must carry
+  `idem_key`. An operation is in `installation`, in the project of its
+  declarer, in the effect class it was declared with and in its own scope; an
+  undeclared id is only in `installation`. A stop of a scope not already
+  stopped is journalled as `operation_stopped` with the stopper, the reason,
+  the scope's `epoch` (one more than its previous stop's) and `listed`: every
+  attempt open in the scope when the row commits, read under the mutation lock
+  that requests to open attempts take, so no attempt opens between the list
+  and the row. A stop of a stopped scope is answered `already_stopped` with the
+  standing stop's sequence and records no new stop. While a scope is stopped
+  every request to open an attempt of an operation in it is answered
+  `stopped`, and an `approved` approval note of an intent that such an
+  operation declares is refused by the verdict admission, with the verdict gate
+  on or off; a rejection is admitted. `operation_resume` names the `scope`, a
+  `reason` and `case` (`another_person` or `only_person`, recorded as the
+  resumer states it). A resume by an identity holding `operation-resume` on the
+  scope, of a stopped scope, by an identity that is not an actor of it (the
+  declarer of an operation the stop listed or of one open in the scope), is
+  journalled as `operation_resumed` with `lifts_seq` and `resumed_from` (`stop
+  requested`: nothing seals the listed attempts yet). Otherwise the answer is
+  `not_stopped`, `not_permitted` or `actor_of_scope`. A stop or resume does
+  not end an open attempt. Every answer but `invalid_request` and `no_journal`
+  is journalled, a refusal as `operation_stop_answered`, together with the
+  stored answer in one transaction under the request key; a repeat returns the
+  stored answer. Under `--require-acl` the access gate refuses a stop without
+  `operation-stop` and a resume without `operation-resume` on the scope before
+  the verb, unjournalled, as for every guarded request. Stops are restored from
+  the journal at start, and compaction removes none of their rows.
 - **Operation state:** `operation_state` names `task_id` and `operation_id` and
   reads that operation's attempts. It is answered only to an identity holding
   `operation-evidence` or `operation-seal` on the task, which the handler
@@ -567,7 +600,18 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   `unknown_operation`), the sentence in `payload`, and the request's `task_id`,
   `operation_id` and `request_id`; when accepted, `closed` and `attempts`, one
   object per attempt with `attempt_id`, `executor` and `state` (`open`,
-  `sealed`, `ended`, `reconciled` or `closed`).
+  `sealed`, `ended`, `reconciled` or `closed`), and `stopped_by`: the
+  narrowest stopped scope that contains the operation as `scope`, `seq` and
+  `state` (`stop requested`), or `null`.
+  `operation_stop_result` answers an `operation_stop` or `operation_resume`
+  with `request` (`stop` or `resume`), `answer`, the sentence in `payload`,
+  `scope`, the journal `seq` of the answer's row, `hub_time` and
+  `request_key`; a recorded stop adds `epoch`, `listed` (each with
+  `operation_id`, `attempt_id`, `task_id` and `executor`) and, on a hub without
+  an access file, `warning`; a resume adds `lifts_seq` and `resumed_from`;
+  `already_stopped` and `actor_of_scope` add `standing_seq`; a resume carries
+  its `case`. These are the stored answer. Beside them `live` holds
+  `replayed`, computed when the frame is sent.
   `identity_enroll_result` and `identity_revoke_result` are the verdicts for
   `identity_enroll` and `identity_revoke`. `entitlement_advert_result` is the
   private verdict for `entitlement_advert`. `spend_result` is the private

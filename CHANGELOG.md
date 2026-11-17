@@ -18,6 +18,27 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- Stopping a scope of governed operations: `synapse operation stop --scope
+  SCOPE --reason TEXT` and `synapse operation resume --scope SCOPE --reason
+  TEXT --case another_person|only_person` (`operation_stop` and
+  `operation_resume`). A scope is `installation`, `project:<namespace>`,
+  `effect:<kind>` or `operation:<id>`. The stop row lists every attempt open in
+  the scope, read and committed under the mutation lock that requests to open
+  attempts take. While a scope is stopped every request to open an attempt in
+  it is answered `stopped`, the new first answer, and an approval of an intent
+  in it is refused, with the verdict gate on or off. An approval older than the
+  latest stop or resume of a scope that contains the operation is answered
+  `approval_stale`, so an approval from before a stop never opens an attempt
+  after it. A resume needs the new `operation-resume` permission, which the hub
+  enforces also without `--require-acl`, and is refused to an actor of the
+  scope; `operation-stop` is checked under `--require-acl`. Every answer is a
+  journalled row (`operation_stopped`, `operation_resumed`,
+  `operation_stop_answered`), the stops are restored at start, and
+  `operation_state` reports `stopped_by`. A stop does not yet seal the listed
+  attempts: its state is "stop requested".
+
 ### Changed
 
 - **Hub stability.** A per-message key set (`--message-auth-key-set`) is no

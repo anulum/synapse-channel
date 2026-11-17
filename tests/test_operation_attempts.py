@@ -28,6 +28,7 @@ from synapse_channel.core.operation_attempts import (
     NOT_CLAIM_HOLDER,
     OPERATION_CLOSED,
     STALE_EPOCH,
+    STOPPED,
     UNKNOWN,
     ApprovalFact,
     AttemptFacts,
@@ -100,8 +101,9 @@ def test_a_malformed_request_is_refused_without_echoing_it(
     assert refused.value.code == "operation_attempt"
 
 
-def test_the_answers_are_eleven_in_their_fixed_order() -> None:
+def test_the_answers_are_twelve_in_their_fixed_order() -> None:
     assert ANSWERS == (
+        "stopped",
         "not_claim_holder",
         "stale_epoch",
         "unknown",
@@ -212,6 +214,31 @@ def test_each_answer_has_its_cause_and_its_whole_sentence(
     assert _answer(facts) == expected
 
 
+def test_a_stopped_scope_answers_every_requester_before_the_claim_is_read() -> None:
+    """A stop needs no claim and no clock: a non-holder hears the same answer."""
+    stopped = replace(FRESH, stopped_by=("effect:git_publication", 7), now=0.0)
+    for requester in (WORKER, "Q/stranger"):
+        decision = decide(REQUEST, stopped, requester=requester)
+        assert (decision.answer, decision.detail) == (
+            STOPPED,
+            "the scope effect:git_publication is stopped (journal seq 7)",
+        )
+
+
+def test_an_approval_older_than_the_stop_line_is_stale_and_a_newer_one_opens() -> None:
+    """The line rises at stops and resumes; only an approval after it opens an attempt."""
+    older = replace(FRESH, stop_line=("project:P", APPROVAL.seq + 1))
+    assert _answer(older) == (
+        APPROVAL_STALE,
+        "the approval is older than the latest stop or resume of scope project:P "
+        f"(journal seq {APPROVAL.seq + 1})",
+    )
+    gated = replace(older, approval=replace(APPROVAL, gate_reasons=("stale",)))
+    assert _answer(gated)[1].startswith("the approval is older")
+    newer = replace(FRESH, stop_line=("project:P", APPROVAL.seq - 1))
+    assert _answer(newer)[0] == APPROVED_FRESH
+
+
 def test_an_intent_without_a_deadline_never_expires() -> None:
     later = replace(FRESH, operation=replace(OPERATION, deadline=None), now=NOW + 10**9)
     assert _answer(later)[0] == APPROVED_FRESH
@@ -221,6 +248,7 @@ def test_the_first_answer_that_applies_wins() -> None:
     """Every cause at once gives the first answer; removing it gives the next."""
     everything = replace(
         FRESH,
+        stopped_by=("project:P", 50),
         claim_refusal=NOT_CLAIM_HOLDER,
         gate_enabled=False,
         approval=replace(APPROVAL, gate_reasons=("stale",), approver=WORKER),
@@ -232,6 +260,7 @@ def test_the_first_answer_that_applies_wins() -> None:
     )
     seen = [_answer(everything)[0]]
     for change in (
+        {"stopped_by": None},
         {"claim_refusal": None},
         {"gate_enabled": True},
         {"approval": replace(APPROVAL, approver=WORKER)},
@@ -245,6 +274,7 @@ def test_the_first_answer_that_applies_wins() -> None:
         everything = replace(everything, **change)
         seen.append(_answer(everything)[0])
     assert seen == [
+        STOPPED,
         NOT_CLAIM_HOLDER,
         UNKNOWN,
         APPROVAL_STALE,

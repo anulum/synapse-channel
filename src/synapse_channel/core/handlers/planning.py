@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from typing import Protocol
 
     from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.operation_records import OperationLedger
     from synapse_channel.core.verdict_hub import VerdictHubPolicy
 
     class PlanningContext(HandlerContext, Protocol):
@@ -57,6 +58,11 @@ if TYPE_CHECKING:
         @property
         def verdict_policy(self) -> VerdictHubPolicy:
             """Return this hub's verdict and correction policy."""
+            ...
+
+        @property
+        def operation_records(self) -> OperationLedger:
+            """Return the declared operations, their attempts and the stops."""
             ...
 
         @property

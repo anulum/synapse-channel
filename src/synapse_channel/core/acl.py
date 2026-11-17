@@ -47,6 +47,8 @@ PIN_RECLAIM = "identity-pin-reclaim"
 MAILBOX_HANDOVER = "mailbox-handover"
 OPERATION_EVIDENCE = "operation-evidence"
 OPERATION_SEAL = "operation-seal"
+OPERATION_STOP = "operation-stop"
+OPERATION_RESUME = "operation-resume"
 IDENTITY_ENROLL = "identity-enroll"
 ENTITLEMENT_ADVERTISE = "entitlement-advertise"
 EVIDENCE = "evidence"
@@ -75,6 +77,8 @@ PERMISSIONS = frozenset(
         MAILBOX_HANDOVER,
         OPERATION_EVIDENCE,
         OPERATION_SEAL,
+        OPERATION_STOP,
+        OPERATION_RESUME,
         IDENTITY_ENROLL,
         ENTITLEMENT_ADVERTISE,
         EVIDENCE,
@@ -145,6 +149,24 @@ identity holds it by default; grant it to a recovery or custody role, not to
 every worker. The handler enforces it even when ``--require-acl`` is off.
 ``operation_state``, which lists an operation's attempts, is answered to holders
 of ``OPERATION_EVIDENCE`` or ``OPERATION_SEAL`` on the task, by its handler.
+
+``OPERATION_STOP`` grants an identity the right to stop a scope of operations
+(``operation_stop``): no new attempt opens and no approval is admitted in it
+until a resume. Target kind is ``stop-scope``; the pattern matches the scope as
+written (``installation``, ``project:<namespace>``, ``effect:<kind>`` or
+``operation:<id>``). The access gate checks it when ``--require-acl`` is on, as
+for every guarded request; on an open hub any authenticated identity may stop,
+because stopping is a step down.
+
+``OPERATION_RESUME`` grants an identity the right to lift a stop
+(``operation_resume``). Target kind is ``stop-scope``, as for ``OPERATION_STOP``.
+Grant it to person principals: until the hub records the kind of each approver,
+the grant is what makes a resume a person's act. The access gate checks it when
+``--require-acl`` is on, and its handler checks it also when that is off. The
+handler refuses an actor of the scope: an identity that declared an operation
+the stop listed or one open in the scope. A hub started without
+``--acl-policy`` therefore cannot lift a stop until it is restarted with an
+access file that grants this permission.
 
 ``EVIDENCE`` grants an authenticated recorder the right to append a bounded
 enforcement record. The shipped guard-denial target is
@@ -303,6 +325,25 @@ def task_grant(policy: AclPolicy | None, subject: str, task_id: str, permission:
         project=project_of(subject),
         permission=permission,
         target=Target("claim", task_id),
+        policy=policy,
+    )
+    return decision.decision == WOULD_ALLOW
+
+
+def scope_grant(policy: AclPolicy | None, subject: str, scope: str, permission: str) -> bool:
+    """Return whether ``policy`` grants ``subject`` ``permission`` on the stop scope ``scope``.
+
+    The target is kind ``stop-scope`` with the scope as written. No policy
+    grants nothing, so a handler that enforces a permission itself keeps an open
+    hub from lifting a stop.
+    """
+    if policy is None:
+        return False
+    decision = evaluate_access(
+        subject=subject,
+        project=project_of(subject),
+        permission=permission,
+        target=Target("stop-scope", scope),
         policy=policy,
     )
     return decision.decision == WOULD_ALLOW

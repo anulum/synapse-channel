@@ -243,6 +243,15 @@ EVENT_WORDS: Mapping[str, Describer] = {
     EventKind.OPERATION_VERIFIED: _operation("verified"),
     EventKind.OPERATION_SEALED: _operation("sealed"),
     EventKind.OPERATION_ATTEMPT_ANSWERED: _attempt_answered,
+    EventKind.OPERATION_STOPPED: lambda p: EventWords(
+        _text(p, "stopper"), f"scope {_text(p, 'scope')} stopped"
+    ),
+    EventKind.OPERATION_RESUMED: lambda p: EventWords(
+        _text(p, "resumer"), f"scope {_text(p, 'scope')} resumed"
+    ),
+    EventKind.OPERATION_STOP_ANSWERED: lambda p: EventWords(
+        _text(p, "sender"), f"{_text(p, 'request')} of {_text(p, 'scope')}: {_text(p, 'answer')}"
+    ),
     EventKind.ENTITLEMENT_ADVERT: _entitlement_advert,
     EventKind.DELIVERY_INTENT_ACCEPTED: _fixed(lambda _p: "delivery accepted"),
     EventKind.DELIVERY_INTENT_QUEUED: _fixed(lambda _p: "delivery queued"),

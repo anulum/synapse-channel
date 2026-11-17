@@ -65,6 +65,7 @@ from synapse_channel.core.authorisation_intent import (
 )
 from synapse_channel.core.handlers.operation_attempts import VERB_SPECS as ATTEMPT_VERB_SPECS
 from synapse_channel.core.handlers.operation_state import VERB_SPECS as STATE_VERB_SPECS
+from synapse_channel.core.handlers.operation_stops import VERB_SPECS as STOP_VERB_SPECS
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import OperationFact
 from synapse_channel.core.operation_records import (
@@ -290,6 +291,7 @@ def _declare(
             intent_sha256=None if intent is None else intent.sha256,
             deadline=None if request.intent is None else request.intent.deadline,
             declared_at=now,
+            effect=effect,
         ),
     )
     digest = "" if intent is None else intent.sha256
@@ -331,5 +333,6 @@ VERB_SPECS = (
     ),
     *ATTEMPT_VERB_SPECS,
     *STATE_VERB_SPECS,
+    *STOP_VERB_SPECS,
 )
-"""The operation family: records, requests to open an attempt, and reads of its attempts."""
+"""The operation family: records, attempts, reads of its attempts, and stops of its scopes."""

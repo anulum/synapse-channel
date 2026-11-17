@@ -1379,7 +1379,7 @@ is not stopped by them.
 ### INV-OA-1 — one journalled answer per request, from a closed order
 
 **Normative.** A well-formed `operation_attempt` request on a journal-backed hub
-MUST receive exactly one answer: the first of `not_claim_holder`,
+MUST receive exactly one answer: the first of `stopped`, `not_claim_holder`,
 `stale_epoch`, `unknown`, `not_approved`, `approval_stale`, `approval_expired`,
 `approver_unauthorised`, `operation_closed`, `attempt_exists`,
 `earlier_attempt_unreconciled` and `approved_fresh` that applies. The answer's
@@ -1532,6 +1532,84 @@ guessed. Without an attempt the verification MUST be unchanged.
 `core/attempt_markers.py:observation`.
 
 **Pinned by.** `tests/test_result_verification_attempt.py`.
+
+### INV-OS-1 — a stop lists every attempt open in its scope when it is recorded
+
+**Normative.** An `operation_stop` of a scope that is not stopped MUST be
+journalled as one `operation_stopped` row whose `listed` names every attempt
+open, at that row's commit, in an operation the scope contains. The hub MUST
+read the open attempts and commit the row while holding the mutation lock that
+requests to open attempts take, so an attempt opened between the list and the
+row cannot exist. A stop of a stopped scope MUST be answered `already_stopped`
+and record no new stop. A stop MUST NOT end an attempt.
+
+**Implementation.** `core/handlers/operation_stops.py` through
+`run_atomic_operation`, `core/operation_attempt_ledger.py:AttemptLedger.open_in`.
+
+**Pinned by.** `tests/test_hub_operation_stops.py`
+(`test_an_attempt_opened_between_the_list_and_its_record_cannot_exist`,
+`test_the_lock_orders_a_stop_and_an_attempt_and_the_list_is_taken_under_it`).
+
+### INV-OS-2 — a stopped scope answers `stopped` first and admits no approval
+
+**Normative.** While a scope that contains an operation is stopped, every
+request to open an attempt of it MUST be answered `stopped`, whatever the
+claim, the clock and the approval say, naming the narrowest stopped scope and
+its stop's journal sequence. An undeclared operation id MUST be contained only by
+`installation`. A resume MUST lift only the scope it names. An `approved`
+approval note of an intent that an operation in a stopped scope declares MUST
+be refused and journalled as `verdict_record_refused`, with the verdict gate on
+or off; a rejection MUST be admitted.
+
+**Implementation.** `core/operation_attempts.py:decide`,
+`core/operation_stops.py:scopes_of`,
+`core/handlers/verdict_admission.py:progress_refusal`.
+
+**Pinned by.** `tests/test_operation_attempts.py`, `tests/test_operation_stops.py`,
+`tests/test_hub_operation_stops.py`.
+
+### INV-OS-3 — no approval older than the stop line opens an attempt
+
+**Normative.** The stop line of an operation is the largest journal sequence of
+any `operation_stopped` or `operation_resumed` row of a scope that contains it.
+An approval whose journal sequence is below the line MUST be answered
+`approval_stale`, naming the scope and the line, so an approval granted before
+a stop, or during it, opens no attempt after the resume.
+
+**Implementation.** `core/operation_attempts.py:decide`,
+`core/operation_attempt_ledger.py:AttemptLedger.stop_facts`.
+
+**Pinned by.** `tests/test_operation_attempts.py`, `tests/test_hub_operation_stops.py`.
+
+### INV-OS-4 — only a non-actor holding `operation-resume` lifts a stop, and every answer is a row
+
+**Normative.** A resume MUST be refused `not_permitted` unless the resumer
+holds `operation-resume` on the scope, which the handler enforces also on a
+hub without `--require-acl`, where without an access file no identity holds
+it. It MUST be refused `actor_of_scope` when the resumer declared an operation
+the stop listed or one open in the scope. The resume's `case` MUST be recorded
+as stated. Every answer except `invalid_request` and `no_journal` MUST be
+journalled with the stored answer in one transaction under the request key; a
+repeat MUST return the stored answer. Under `--require-acl` the access gate
+MUST refuse a stop without `operation-stop` and a resume without
+`operation-resume` on the scope before the verb.
+
+**Implementation.** `core/handlers/operation_stops.py`, `core/acl.py:scope_grant`.
+
+**Pinned by.** `tests/test_hub_operation_stops.py`.
+
+### INV-OS-5 — stops are restored from the journal and survive retention
+
+**Normative.** The hub MUST rebuild every scope's standing stop, epoch, listed
+operations and line from the journal at start, without consulting any clock.
+Compaction removes checkpoints, findings and unreadable rows only, so it MUST
+NOT remove a stop or resume row; an export MUST carry them.
+
+**Implementation.** `core/operation_attempt_ledger.py:AttemptLedger.apply_event`,
+`core/compaction.py:compact`.
+
+**Pinned by.** `tests/test_operation_stops.py`, `tests/test_hub_operation_stops.py`
+(`test_a_stop_survives_compaction_a_restart_and_the_export`).
 
 ## Normative constants
 

@@ -112,6 +112,7 @@ def _facts(
     """Read everything the decision needs, under the mutation lock."""
     approval = current_approval(store, hub.verdict_policy, request.intent_sha256)
     view = attempts.view(request.operation_id, None if approval is None else approval.seq)
+    stopped_by, stop_line = attempts.stop_facts(request.operation_id)
     return AttemptFacts(
         claim_refusal=declaration_refusal(
             hub.state.claims.get(request.task_id), sender, request.epoch, now
@@ -124,6 +125,8 @@ def _facts(
         approval_consumed=view.approval_consumed,
         unreconciled=view.unreconciled,
         now=now,
+        stopped_by=stopped_by,
+        stop_line=stop_line,
     )
 
 

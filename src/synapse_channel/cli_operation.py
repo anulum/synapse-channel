@@ -22,7 +22,8 @@ Both evidence commands need the ``operation-evidence`` grant on the hub.
 (:mod:`synapse_channel.cli_operation_attempt`, with its own exit codes).
 ``state``, ``seal`` and ``unmark`` read an operation's attempts, seal an open
 one and remove an applied marker (:mod:`synapse_channel.cli_operation_seal`,
-with their own exit codes).
+with their own exit codes). ``stop`` and ``resume`` stop and resume a scope of
+operations (:mod:`synapse_channel.cli_operation_stop`, with its own exit codes).
 
 The command never changes the local file; publishing is separate from
 producing the record. Exit codes: 0 accepted, 1 refused, 2 no verdict
@@ -46,6 +47,7 @@ from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.cli_operation_attempt import add_attempt_parser
 from synapse_channel.cli_operation_report import add_report_parser
 from synapse_channel.cli_operation_seal import add_seal_parsers
+from synapse_channel.cli_operation_stop import add_stop_parsers
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.aef_canonical import canonicalize_json
 from synapse_channel.core.protocol import MessageType
@@ -314,8 +316,13 @@ def _non_negative(text: str) -> int:
 
 
 def _add_common(parser: argparse.ArgumentParser) -> None:
-    """Add the arguments every action shares."""
+    """Add the arguments every action on one task shares."""
     parser.add_argument("--task", required=True, help="The claimed task the operation belongs to.")
+    _add_connection(parser)
+
+
+def _add_connection(parser: argparse.ArgumentParser) -> None:
+    """Add the identity and connection arguments every action shares."""
     parser.add_argument("--name", required=True, help="Identity to act as.")
     parser.add_argument("--uri", default=default_hub_uri())
     parser.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
@@ -332,7 +339,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     """Register every ``synapse operation`` subcommand.
 
     The subcommands are ``declare``, ``outcome``, ``verification``, ``attempt``, ``state``,
-    ``seal``, ``unmark`` and ``report``.
+    ``seal``, ``unmark``, ``report``, ``stop`` and ``resume``.
 
     Parameters
     ----------
@@ -350,6 +357,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     add_attempt_parser(actions, _add_common)
     add_seal_parsers(actions, _add_common)
     add_report_parser(actions)
+    add_stop_parsers(actions, _add_connection)
 
 
 def _add_declare_parser(actions: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

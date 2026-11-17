@@ -13,6 +13,13 @@ refusal is journalled as a ``verdict_record_refused`` row (author, kind, task an
 reason, never the body) and reported privately to the sender. A correction that
 turns verdicts stale is journalled as one ``verdict_stale`` row per verdict, and
 the verdict's author and reviewer each get a directed notice when online.
+
+An ``approved`` approval of an intent that a declared operation in a stopped
+scope carries is refused, whether the verdict gate is on or off: no approval
+is granted while the scope is stopped. The check reads the published
+stops before the note is appended. A stop committed between the two leaves the
+approval older than the stop's resume, which the attempt answer then refuses
+as ``approval_stale``.
 """
 
 from __future__ import annotations
@@ -45,6 +52,7 @@ if TYPE_CHECKING:
     from typing import Protocol
 
     from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.operation_records import OperationLedger
     from synapse_channel.core.verdict_hub import VerdictHubPolicy
 
     class VerdictAdmissionContext(HandlerContext, Protocol):
@@ -53,6 +61,11 @@ if TYPE_CHECKING:
         @property
         def verdict_policy(self) -> VerdictHubPolicy:
             """Return this hub's verdict and correction policy."""
+            ...
+
+        @property
+        def operation_records(self) -> OperationLedger:
+            """Return the declared operations, their attempts and the stops."""
             ...
 
 
@@ -79,7 +92,9 @@ def progress_refusal(
         if fields is None or fields["state"] != STATE_APPROVED:
             return None, []
         notes = recorded_notes(journal)
-        reason = _approval_gate(hub, journal, notes, sender=sender, subject=fields["subject"])
+        reason = _stopped_refusal(hub, fields["subject"]) or _approval_gate(
+            hub, journal, notes, sender=sender, subject=fields["subject"]
+        )
     else:
         return None, []
     if reason is not None and journal is not None:
@@ -88,6 +103,17 @@ def progress_refusal(
             {"author": sender, "kind": kind, "task_id": task_id, "reason": reason},
         )
     return reason, notes
+
+
+def _stopped_refusal(hub: VerdictAdmissionContext, subject: str) -> str | None:
+    """Refuse an approval of an intent whose operation is in a stopped scope."""
+    digest = subject_digest(subject)
+    if digest is None:
+        return None
+    stopped = hub.operation_records.attempts.stop_of_intent(digest)
+    if stopped is None:
+        return None
+    return f"approval gate: scope {stopped[0]} is stopped (journal seq {stopped[1]})"
 
 
 def _approval_gate(

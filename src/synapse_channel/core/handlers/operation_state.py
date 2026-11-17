@@ -17,7 +17,9 @@ operations.
 
 The answer lists each attempt's id, its executor and its state (``open``,
 ``sealed``, ``ended``, ``reconciled`` or ``closed``) and whether the operation
-is closed. Nothing is journalled and nothing changes. A command that seals an
+is closed. ``stopped_by`` names the narrowest stopped scope that contains the
+operation, with the journal sequence of its stop and the state ``stop
+requested``, or is ``null``. Nothing is journalled and nothing changes. A command that seals an
 attempt asks first, and refuses to seal one that is not open; a command that
 removes an applied marker requires the operation closed. A hub that does not
 know this request answers with an error, which a command reads as a hub too old
@@ -37,6 +39,7 @@ from synapse_channel.core.operation_records import (
     STATUS_ACCEPTED,
     STATUS_REFUSED,
 )
+from synapse_channel.core.operation_stops import RESUMED_FROM_STOP_REQUESTED
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.verb_registry import VerbSpec
 
@@ -103,11 +106,21 @@ def _answer(
         detail = f"no operation {operation_id} is declared on {task_id}"
         return {"status": STATUS_REFUSED, "reason": REFUSED_UNKNOWN, "detail": detail}
     closed, attempts = summary
+    stopped_by, _line = ledger.attempts.stop_facts(operation_id)
     return {
         "status": STATUS_ACCEPTED,
         "reason": "",
         "detail": f"{len(attempts)} attempt(s)",
         "closed": closed,
+        "stopped_by": (
+            None
+            if stopped_by is None
+            else {
+                "scope": stopped_by[0],
+                "seq": stopped_by[1],
+                "state": RESUMED_FROM_STOP_REQUESTED,
+            }
+        ),
         "attempts": [
             {"attempt_id": item.attempt_id, "executor": item.executor, "state": item.state}
             for item in attempts

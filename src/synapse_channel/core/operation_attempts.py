@@ -11,6 +11,9 @@ An executor that holds the live claim on a task asks the hub to open an
 attempt for the exact intent digest it is about to carry out. The hub answers
 from a closed set, in a fixed order. The first answer that applies wins:
 
+0. ``stopped``: a scope that contains the operation is stopped
+   (:mod:`~synapse_channel.core.operation_stops`). It reads no clock and no
+   claim, so every requester gets the same answer while the stop stands;
 1. ``not_claim_holder``: the requester does not own the live claim on the task,
    or another identity declared the operation;
 2. ``stale_epoch``: the stated epoch is neither the claim's epoch nor its
@@ -21,8 +24,9 @@ from a closed set, in a fixed order. The first answer that applies wins:
 4. ``not_approved``: the operation is not declared on this task, carries no
    intent, its intent is not the one named, or the latest approval decision
    on the intent is not ``approved``;
-5. ``approval_stale``: the verdict gate, evaluated now, would refuse that
-   approval;
+5. ``approval_stale``: the approval is older than the operation's stop line,
+   the latest stop or resume of a scope that contains it; or the verdict
+   gate, evaluated now, would refuse that approval;
 6. ``approval_expired``: the hub's clock is at or past the intent's deadline;
 7. ``approver_unauthorised``: the approver is the intent's actor, or belongs
    to another project;
@@ -51,6 +55,7 @@ from typing import Any
 from synapse_channel.core.aef_canonical import canonical_json
 from synapse_channel.core.errors import SynapseError
 
+STOPPED = "stopped"
 NOT_CLAIM_HOLDER = "not_claim_holder"
 STALE_EPOCH = "stale_epoch"
 UNKNOWN = "unknown"
@@ -63,6 +68,7 @@ ATTEMPT_EXISTS = "attempt_exists"
 EARLIER_ATTEMPT_UNRECONCILED = "earlier_attempt_unreconciled"
 APPROVED_FRESH = "approved_fresh"
 ANSWERS = (
+    STOPPED,
     NOT_CLAIM_HOLDER,
     STALE_EPOCH,
     UNKNOWN,
@@ -157,6 +163,9 @@ class OperationFact:
         The intent's deadline in UNIX seconds, or ``None`` without an intent.
     declared_at : float
         The hub's wall-clock time of the declaration.
+    effect : str or None, optional
+        The declared effect, such as ``git_publication``; ``None`` when the
+        declaration row does not hold one.
     """
 
     task_id: str
@@ -164,6 +173,7 @@ class OperationFact:
     intent_sha256: str | None
     deadline: int | None
     declared_at: float
+    effect: str | None = None
 
 
 @dataclass(frozen=True)
@@ -191,6 +201,12 @@ class AttemptFacts:
         Whether an ended attempt has no independent observation since.
     now : float
         The hub's wall-clock reading used for every time comparison.
+    stopped_by : tuple of (str, int) or None, optional
+        The narrowest stopped scope that contains the operation and its stop's
+        journal sequence, or ``None`` when no such scope is stopped.
+    stop_line : tuple of (str, int) or None, optional
+        The scope and journal sequence of the latest stop or resume of any
+        scope that contains the operation, or ``None`` when there is none.
     """
 
     claim_refusal: str | None
@@ -202,6 +218,8 @@ class AttemptFacts:
     approval_consumed: bool
     unreconciled: bool
     now: float
+    stopped_by: tuple[str, int] | None = None
+    stop_line: tuple[str, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -300,6 +318,14 @@ def _the_approval(
     facts: AttemptFacts, operation: OperationFact, approval: ApprovalFact
 ) -> Decision | None:
     """Apply answers 5 to 7, which judge the approval itself."""
+    line = facts.stop_line
+    if line is not None and approval.seq < line[1]:
+        scope, seq = line
+        return Decision(
+            APPROVAL_STALE,
+            f"the approval is older than the latest stop or resume of scope {scope} "
+            f"(journal seq {seq})",
+        )
     if approval.gate_reasons:
         return Decision(APPROVAL_STALE, "approval gate: " + "; ".join(approval.gate_reasons))
     if operation.deadline is not None and facts.now >= operation.deadline:
@@ -344,6 +370,9 @@ def decide(request: AttemptRequest, facts: AttemptFacts, *, requester: str) -> D
     Decision
         The first answer of :data:`ANSWERS` that applies, with its sentence.
     """
+    if facts.stopped_by is not None:
+        scope, seq = facts.stopped_by
+        return Decision(STOPPED, f"the scope {scope} is stopped (journal seq {seq})")
     early = _before_the_approval(request, facts, requester)
     if isinstance(early, Decision):
         return early

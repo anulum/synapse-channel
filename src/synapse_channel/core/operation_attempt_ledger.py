@@ -28,6 +28,13 @@ under the hub's mutation actor, in journal order:
 
 A verification by the declarer is kept by the journal and counts for nothing
 here. Restoring checks no time.
+
+The ledger also keeps each scope's stops (:mod:`~synapse_channel.core.operation_stops`):
+
+* an ``operation_stopped`` row stops its scope, at its epoch, and names the
+  operations whose attempts were open in it;
+* an ``operation_resumed`` row lifts the stop of its scope;
+* the journal sequence of a scope's latest stop or resume is its line.
 """
 
 from __future__ import annotations
@@ -38,6 +45,7 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import APPROVED_FRESH, OperationFact
+from synapse_channel.core.operation_stops import scopes_of
 
 if TYPE_CHECKING:
     from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -61,7 +69,29 @@ _RESTORED_KINDS = (
     EventKind.OPERATION_VERIFIED,
     EventKind.OPERATION_ATTEMPT_ANSWERED,
     EventKind.OPERATION_SEALED,
+    EventKind.OPERATION_STOPPED,
+    EventKind.OPERATION_RESUMED,
 )
+
+
+@dataclass
+class _ScopeStops:
+    """One scope's stops: the standing stop, its epoch, its listed operations and the line."""
+
+    standing: int | None = None
+    epoch: int = 0
+    listed: tuple[str, ...] = ()
+    line: int = 0
+
+
+@dataclass(frozen=True)
+class OpenAttempt:
+    """One attempt open in a scope, as a stop record lists it."""
+
+    operation_id: str
+    attempt_id: str
+    task_id: str
+    executor: str
 
 
 @dataclass
@@ -130,6 +160,7 @@ class AttemptLedger:
 
     def __init__(self, store: EventStore | None) -> None:
         self._operations: dict[str, _Operation] = {}
+        self._stops: dict[str, _ScopeStops] = {}
         if store is not None:
             for event in store.iter_events(kinds=_RESTORED_KINDS):
                 self.apply_event(event)
@@ -139,13 +170,22 @@ class AttemptLedger:
         """Return the live table, for :meth:`publish_from` of the hub's actor."""
         return self._operations
 
+    @property
+    def stops(self) -> dict[str, _ScopeStops]:
+        """Return the live stops of every scope, for :meth:`publish_from`."""
+        return self._stops
+
     def publish_from(self, other: AttemptLedger) -> None:
-        """Install the table of a candidate that the hub's actor has made durable."""
+        """Install the tables of a candidate that the hub's actor has made durable."""
         self._operations = other.operations
+        self._stops = other.stops
 
     def apply_event(self, event: StoredEvent) -> None:
         """Apply one journalled row; a row that lacks a field the hub writes is skipped."""
         payload = event.payload
+        if event.kind in (EventKind.OPERATION_STOPPED, EventKind.OPERATION_RESUMED):
+            self._restore_stop(event.kind, event.seq, payload)
+            return
         operation_id, sender = payload.get("operation_id"), payload.get("sender")
         if not isinstance(operation_id, str) or not isinstance(sender, str):
             return
@@ -172,7 +212,7 @@ class AttemptLedger:
         task_id, declared_at = payload.get("task_id"), payload.get("recorded_at")
         if not isinstance(task_id, str) or not isinstance(declared_at, (int, float)):
             return
-        digest = payload.get("intent_sha256")
+        digest, effect = payload.get("intent_sha256"), payload.get("effect")
         self.note_declaration(
             operation_id,
             OperationFact(
@@ -181,8 +221,122 @@ class AttemptLedger:
                 intent_sha256=digest if isinstance(digest, str) else None,
                 deadline=_deadline_of(payload.get("intent")),
                 declared_at=float(declared_at),
+                effect=effect if isinstance(effect, str) else None,
             ),
         )
+
+    def _restore_stop(self, kind: str, seq: int, payload: Mapping[str, Any]) -> None:
+        scope = payload.get("scope")
+        if not isinstance(scope, str):
+            return
+        if kind == EventKind.OPERATION_RESUMED:
+            self.note_resume(scope, seq)
+            return
+        epoch, listed = payload.get("epoch"), payload.get("listed")
+        names = (
+            tuple(
+                str(item["operation_id"])
+                for item in listed
+                if isinstance(item, Mapping) and isinstance(item.get("operation_id"), str)
+            )
+            if isinstance(listed, list)
+            else ()
+        )
+        self.note_stop(scope, seq, epoch=epoch if type(epoch) is int else 0, listed=names)
+
+    def note_stop(self, scope: str, seq: int, *, epoch: int, listed: tuple[str, ...]) -> None:
+        """Record that ``scope`` is stopped by the row at ``seq``."""
+        stops = self._stops.setdefault(scope, _ScopeStops())
+        stops.standing, stops.epoch, stops.listed, stops.line = seq, epoch, listed, seq
+
+    def note_resume(self, scope: str, seq: int) -> None:
+        """Record that the row at ``seq`` lifted the stop of ``scope``."""
+        stops = self._stops.setdefault(scope, _ScopeStops())
+        stops.standing, stops.line = None, seq
+
+    def standing_stop(self, scope: str) -> tuple[int, int] | None:
+        """Return the standing stop of ``scope`` as (journal sequence, epoch), or ``None``."""
+        stops = self._stops.get(scope)
+        if stops is None or stops.standing is None:
+            return None
+        return stops.standing, stops.epoch
+
+    def epoch(self, scope: str) -> int:
+        """Return the epoch of the latest stop of ``scope``; 0 when it was never stopped."""
+        stops = self._stops.get(scope)
+        return 0 if stops is None else stops.epoch
+
+    def _scopes_of(self, operation_id: str) -> tuple[str, ...]:
+        fact = self.operation(operation_id)
+        if fact is None:
+            return scopes_of(operation_id, None, None)
+        return scopes_of(operation_id, fact.declarer, fact.effect)
+
+    def stop_facts(
+        self, operation_id: str
+    ) -> tuple[tuple[str, int] | None, tuple[str, int] | None]:
+        """Return what a stop means for ``operation_id``.
+
+        Returns
+        -------
+        tuple
+            The narrowest stopped scope containing it with its stop's sequence,
+            or ``None``; and the scope and sequence of the latest stop or resume
+            of any scope containing it, or ``None``.
+        """
+        stopped_by: tuple[str, int] | None = None
+        line: tuple[str, int] | None = None
+        for scope in self._scopes_of(operation_id):
+            stops = self._stops.get(scope)
+            if stops is None:
+                continue
+            if stopped_by is None and stops.standing is not None:
+                stopped_by = (scope, stops.standing)
+            if stops.line and (line is None or stops.line > line[1]):
+                line = (scope, stops.line)
+        return stopped_by, line
+
+    def stop_of_intent(self, digest: str) -> tuple[str, int] | None:
+        """Return a standing stop that covers an operation declared with intent ``digest``.
+
+        When several operations declare the digest, the first one in operation-id
+        order that is stopped gives its narrowest stopped scope and that stop's
+        sequence. ``None`` when no such operation is stopped or none declares it.
+        """
+        for operation_id in sorted(self._operations):
+            if self._operations[operation_id].fact.intent_sha256 != digest:
+                continue
+            stopped_by, _line = self.stop_facts(operation_id)
+            if stopped_by is not None:
+                return stopped_by
+        return None
+
+    def open_in(self, scope: str) -> tuple[OpenAttempt, ...]:
+        """Return every attempt open in an operation that ``scope`` contains."""
+        found: list[OpenAttempt] = []
+        for operation_id, entry in self._operations.items():
+            if scope not in self._scopes_of(operation_id):
+                continue
+            found.extend(
+                OpenAttempt(operation_id, attempt.attempt_id, entry.fact.task_id, attempt.executor)
+                for attempt in entry.attempts
+                if not attempt.ended
+            )
+        return tuple(found)
+
+    def actors(self, scope: str) -> frozenset[str]:
+        """Return the actors of ``scope``: the declarers of its listed or open operations."""
+        stops = self._stops.get(scope)
+        listed = () if stops is None else stops.listed
+        declarers = {
+            entry.fact.declarer
+            for operation_id, entry in self._operations.items()
+            if operation_id in listed
+        }
+        declarers.update(
+            self._operations[attempt.operation_id].fact.declarer for attempt in self.open_in(scope)
+        )
+        return frozenset(declarers)
 
     def note_declaration(self, operation_id: str, fact: OperationFact) -> None:
         """Record a declaration; the first declaration of an id stands."""

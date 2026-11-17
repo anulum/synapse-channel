@@ -94,6 +94,13 @@ The gate is on by default. `synapse hub --verdict-gate off` switches it off;
 each approval of a SHA-256 subject is then journalled as a `verdict_gate_bypass`
 row with what the gate would have decided.
 
+With the gate on or off, an `approved` decision on the intent of an operation
+in a stopped scope (`synapse operation stop`) is refused as "approval gate:
+scope S is stopped (journal seq N)" and journalled as `verdict_record_refused`.
+A rejection is still admitted. An approval of a digest no operation declares
+yet is admitted; a request to open an attempt with it after the resume is
+answered `approval_stale`, because the approval is older than the resume.
+
 ## Status
 
 ```bash
