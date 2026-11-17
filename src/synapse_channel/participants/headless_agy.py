@@ -44,12 +44,11 @@ an error result, never a raised exception.
 
 from __future__ import annotations
 
-import subprocess  # nosec B404 # fixed argument vectors only, never a shell
-
 from synapse_channel.participants.agy_stream import parse_agy_stream
 from synapse_channel.participants.envelope import TurnRequest, TurnResult
 from synapse_channel.participants.headless_gemini import compose_gemini_prompt
 from synapse_channel.participants.headless_kernel import (
+    DEFAULT_COMMAND_RUNNER,
     CommandRunner,
     HeadlessExecutionKernel,
 )
@@ -120,8 +119,9 @@ class AgyParticipant:
     binary : str, optional
         ``agy`` executable name or path.
     runner : CommandRunner, optional
-        Subprocess runner; injectable so tests drive turns with a fake, never a real
-        model call.
+        Subprocess runner, :func:`subprocess.run` by default; injectable so tests drive
+        turns with a fake, never a real model call. The driver itself never starts a
+        shell: every argument vector is fixed.
     timeout : float, optional
         Per-turn wall-clock ceiling, in seconds.
     mode : str, optional
@@ -134,7 +134,7 @@ class AgyParticipant:
         *,
         model: str = "",
         binary: str = DEFAULT_BINARY,
-        runner: CommandRunner = subprocess.run,
+        runner: CommandRunner = DEFAULT_COMMAND_RUNNER,
         timeout: float = DEFAULT_TIMEOUT,
         mode: str = DEFAULT_MODE,
     ) -> None:

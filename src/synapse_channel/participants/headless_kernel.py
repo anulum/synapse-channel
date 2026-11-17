@@ -40,6 +40,9 @@ from synapse_channel.participants.stream_json import StreamOutcome
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
 """Callable compatible with :func:`subprocess.run` for injectable tests."""
 
+DEFAULT_COMMAND_RUNNER: CommandRunner = subprocess.run
+"""The production runner, :func:`subprocess.run`, for a driver that needs no import of its own."""
+
 
 CompletedParser = Callable[[subprocess.CompletedProcess[str]], StreamOutcome]
 """Provider-owned adapter from a completed process to one stream outcome."""

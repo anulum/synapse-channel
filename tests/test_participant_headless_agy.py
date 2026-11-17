@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import inspect
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -102,6 +103,11 @@ def test_health_reports_missing_and_resolved_binary(monkeypatch: pytest.MonkeyPa
     assert found.available
     assert found.detail == "agy binary at /usr/bin/agy; account entitlement not probed"
     assert found.channel is ParticipantChannel.HEADLESS
+
+
+def test_the_default_runner_is_subprocess_run() -> None:
+    default = inspect.signature(AgyParticipant).parameters["runner"].default
+    assert default is subprocess.run
 
 
 def test_identity_and_channel_properties() -> None:
