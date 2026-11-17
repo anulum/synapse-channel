@@ -34,7 +34,10 @@ The ledger also keeps each scope's stops (:mod:`~synapse_channel.core.operation_
 * an ``operation_stopped`` row stops its scope, at its epoch, and names the
   operations whose attempts were open in it;
 * an ``operation_resumed`` row lifts the stop of its scope;
-* the journal sequence of a scope's latest stop or resume is its line.
+* the journal sequence of a scope's latest stop or resume is its line;
+* an ``operation_stop_readback`` row records what a stop read back for one
+  attempt it listed. Only a ``sealed`` or ``applied`` read-back closes the
+  attempt for that stop; an executor's report never does.
 """
 
 from __future__ import annotations
@@ -45,6 +48,7 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import APPROVED_FRESH, OperationFact
+from synapse_channel.core.operation_stop_readbacks import CLOSING_RESULTS
 from synapse_channel.core.operation_stops import scopes_of
 
 if TYPE_CHECKING:
@@ -71,7 +75,16 @@ _RESTORED_KINDS = (
     EventKind.OPERATION_SEALED,
     EventKind.OPERATION_STOPPED,
     EventKind.OPERATION_RESUMED,
+    EventKind.OPERATION_STOP_READBACK,
 )
+
+
+_STOP_KINDS = (
+    EventKind.OPERATION_STOPPED,
+    EventKind.OPERATION_RESUMED,
+    EventKind.OPERATION_STOP_READBACK,
+)
+"""The rows of stops, resumes and read-backs, restored by :meth:`AttemptLedger._restore_stop`."""
 
 
 @dataclass
@@ -82,6 +95,15 @@ class _ScopeStops:
     epoch: int = 0
     listed: tuple[str, ...] = ()
     line: int = 0
+
+
+@dataclass
+class _StopRow:
+    """One recorded stop: its scope, the attempts it listed and what was read back for each."""
+
+    scope: str
+    listed: tuple[tuple[str, str], ...]
+    readbacks: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -161,6 +183,7 @@ class AttemptLedger:
     def __init__(self, store: EventStore | None) -> None:
         self._operations: dict[str, _Operation] = {}
         self._stops: dict[str, _ScopeStops] = {}
+        self._stop_rows: dict[int, _StopRow] = {}
         if store is not None:
             for event in store.iter_events(kinds=_RESTORED_KINDS):
                 self.apply_event(event)
@@ -175,15 +198,21 @@ class AttemptLedger:
         """Return the live stops of every scope, for :meth:`publish_from`."""
         return self._stops
 
+    @property
+    def stop_rows(self) -> dict[int, _StopRow]:
+        """Return the live recorded stops by journal sequence, for :meth:`publish_from`."""
+        return self._stop_rows
+
     def publish_from(self, other: AttemptLedger) -> None:
         """Install the tables of a candidate that the hub's actor has made durable."""
         self._operations = other.operations
         self._stops = other.stops
+        self._stop_rows = other.stop_rows
 
     def apply_event(self, event: StoredEvent) -> None:
         """Apply one journalled row; a row that lacks a field the hub writes is skipped."""
         payload = event.payload
-        if event.kind in (EventKind.OPERATION_STOPPED, EventKind.OPERATION_RESUMED):
+        if event.kind in _STOP_KINDS:
             self._restore_stop(event.kind, event.seq, payload)
             return
         operation_id, sender = payload.get("operation_id"), payload.get("sender")
@@ -226,6 +255,15 @@ class AttemptLedger:
         )
 
     def _restore_stop(self, kind: str, seq: int, payload: Mapping[str, Any]) -> None:
+        if kind == EventKind.OPERATION_STOP_READBACK:
+            stop_seq, attempt, result = (
+                payload.get("stop_seq"),
+                payload.get("attempt_id"),
+                payload.get("result"),
+            )
+            if type(stop_seq) is int and isinstance(attempt, str) and isinstance(result, str):
+                self.note_readback(stop_seq, attempt, result)
+            return
         scope = payload.get("scope")
         if not isinstance(scope, str):
             return
@@ -233,21 +271,54 @@ class AttemptLedger:
             self.note_resume(scope, seq)
             return
         epoch, listed = payload.get("epoch"), payload.get("listed")
-        names = (
+        pairs = (
             tuple(
-                str(item["operation_id"])
+                (str(item["operation_id"]), str(item["attempt_id"]))
                 for item in listed
-                if isinstance(item, Mapping) and isinstance(item.get("operation_id"), str)
+                if isinstance(item, Mapping)
+                and isinstance(item.get("operation_id"), str)
+                and isinstance(item.get("attempt_id"), str)
             )
             if isinstance(listed, list)
             else ()
         )
-        self.note_stop(scope, seq, epoch=epoch if type(epoch) is int else 0, listed=names)
+        self.note_stop(scope, seq, epoch=epoch if type(epoch) is int else 0, listed=pairs)
 
-    def note_stop(self, scope: str, seq: int, *, epoch: int, listed: tuple[str, ...]) -> None:
-        """Record that ``scope`` is stopped by the row at ``seq``."""
+    def note_stop(
+        self, scope: str, seq: int, *, epoch: int, listed: tuple[tuple[str, str], ...]
+    ) -> None:
+        """Record that ``scope`` is stopped by the row at ``seq``, listing (operation, attempt)."""
         stops = self._stops.setdefault(scope, _ScopeStops())
-        stops.standing, stops.epoch, stops.listed, stops.line = seq, epoch, listed, seq
+        names = tuple(dict.fromkeys(operation_id for operation_id, _attempt in listed))
+        stops.standing, stops.epoch, stops.listed, stops.line = seq, epoch, names, seq
+        self._stop_rows[seq] = _StopRow(scope, listed, {})
+
+    def stop_lists(self, stop_seq: int, operation_id: str, attempt_id: str) -> bool:
+        """Return whether the stop recorded at ``stop_seq`` listed this attempt."""
+        row = self._stop_rows.get(stop_seq)
+        return row is not None and (operation_id, attempt_id) in row.listed
+
+    def note_readback(self, stop_seq: int, attempt_id: str, result: str) -> None:
+        """Record a kept read-back of ``attempt_id`` for the stop at ``stop_seq``."""
+        row = self._stop_rows.get(stop_seq)
+        if row is not None:
+            row.readbacks[attempt_id] = result
+
+    def readback_of(self, stop_seq: int, attempt_id: str) -> str | None:
+        """Return the latest kept read-back of an attempt for a stop, or ``None``."""
+        row = self._stop_rows.get(stop_seq)
+        return None if row is None else row.readbacks.get(attempt_id)
+
+    def stop_closed(self, stop_seq: int) -> bool:
+        """Return whether every attempt the stop listed has a ``sealed`` or ``applied`` read-back.
+
+        An executor's own report is not read: a stop trusts markers, not reports.
+        A stop that listed nothing is closed; an unknown sequence is not.
+        """
+        row = self._stop_rows.get(stop_seq)
+        if row is None:
+            return False
+        return all(row.readbacks.get(attempt) in CLOSING_RESULTS for _op, attempt in row.listed)
 
     def note_resume(self, scope: str, seq: int) -> None:
         """Record that the row at ``seq`` lifted the stop of ``scope``."""

@@ -123,8 +123,8 @@ def _ledger() -> AttemptLedger:
 def test_a_stop_covers_the_operations_its_scope_contains_and_names_the_narrowest() -> None:
     ledger = _ledger()
     assert ledger.stop_facts("git-op") == (None, None)
-    ledger.note_stop("project:P", 20, epoch=1, listed=("git-op",))
-    ledger.note_stop("effect:git_publication", 21, epoch=1, listed=("git-op",))
+    ledger.note_stop("project:P", 20, epoch=1, listed=(("git-op", "a1"),))
+    ledger.note_stop("effect:git_publication", 21, epoch=1, listed=(("git-op", "a1"),))
     assert ledger.stop_facts("git-op") == (
         ("effect:git_publication", 21),
         ("effect:git_publication", 21),
@@ -151,7 +151,7 @@ def test_a_resume_of_an_operation_leaves_its_project_stop_standing() -> None:
 def test_an_intent_is_stopped_when_an_operation_declaring_it_is() -> None:
     ledger = _ledger()
     assert ledger.stop_of_intent("e" * 64) is None
-    ledger.note_stop("project:Q", 30, epoch=1, listed=("file-op",))
+    ledger.note_stop("project:Q", 30, epoch=1, listed=(("file-op", "b2"),))
     assert ledger.stop_of_intent("e" * 64) == ("project:Q", 30)
     assert ledger.stop_of_intent("d" * 64) is None
     assert ledger.stop_of_intent("f" * 64) is None
@@ -164,7 +164,7 @@ def test_the_open_attempts_of_a_scope_and_its_actors() -> None:
     assert {item.attempt_id for item in ledger.open_in("installation")} == {"a1", "b2"}
     assert ledger.open_in("operation:missing") == ()
     assert ledger.actors("project:P") == frozenset({WORKER})
-    ledger.note_stop("installation", 50, epoch=1, listed=("git-op", "file-op"))
+    ledger.note_stop("installation", 50, epoch=1, listed=(("git-op", "a1"), ("file-op", "b2")))
     ledger.note_outcome("git-op", WORKER, "confirmed_done")
     ledger.note_outcome("file-op", "Q/worker", "confirmed_done")
     assert ledger.actors("installation") == frozenset({WORKER, "Q/worker"})
@@ -184,7 +184,7 @@ def test_the_epoch_counts_the_stops_of_a_scope() -> None:
 def test_a_published_candidate_carries_its_stops() -> None:
     ledger = _ledger()
     candidate = copy.deepcopy(ledger)
-    candidate.note_stop("project:P", 20, epoch=1, listed=("git-op",))
+    candidate.note_stop("project:P", 20, epoch=1, listed=(("git-op", "a1"),))
     assert ledger.standing_stop("project:P") is None
     ledger.publish_from(candidate)
     assert ledger.standing_stop("project:P") == (20, 1)
@@ -198,7 +198,12 @@ def test_the_stops_are_restored_from_the_journal_and_a_malformed_row_is_skipped(
         base = {"task_id": "T1", "sender": WORKER, "recorded_at": 1_800_000_000.0}
         store.append(EventKind.OPERATION_DECLARED, {**base, "operation_id": "git-op"})
         stop = {"scope": "project:P", "stopper": "P/person", "epoch": 1}
-        listed = [{"operation_id": "git-op"}, {"operation_id": 7}, "not a row"]
+        listed = [
+            {"operation_id": "git-op", "attempt_id": "a1"},
+            {"operation_id": "git-op"},
+            {"operation_id": 7, "attempt_id": "a2"},
+            "not a row",
+        ]
         stopped = store.append(EventKind.OPERATION_STOPPED, {**stop, "listed": listed})
         store.append(EventKind.OPERATION_STOPPED, {"stopper": "P/person"})
         store.append(EventKind.OPERATION_STOPPED, {"scope": "effect:file", "epoch": True})

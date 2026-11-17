@@ -17,9 +17,11 @@ operations.
 
 The answer lists each attempt's id, its executor and its state (``open``,
 ``sealed``, ``ended``, ``reconciled`` or ``closed``) and whether the operation
-is closed. ``stopped_by`` names the narrowest stopped scope that contains the
-operation, with the journal sequence of its stop and the state ``stop
-requested``, or is ``null``. Nothing is journalled and nothing changes. A command that seals an
+is closed, with the declared ``effect``, its ``effect_target`` and the
+``intent_sha256`` the hub holds, which a stop's seal needs. ``stopped_by``
+names the narrowest stopped scope that contains the operation, with the journal
+sequence of its stop and the state ``stop requested``, or is ``null``. Nothing
+is journalled and nothing changes. A command that seals an
 attempt asks first, and refuses to seal one that is not open; a command that
 removes an applied marker requires the operation closed. A hub that does not
 know this request answers with an error, which a command reads as a hub too old
@@ -107,11 +109,15 @@ def _answer(
         return {"status": STATUS_REFUSED, "reason": REFUSED_UNKNOWN, "detail": detail}
     closed, attempts = summary
     stopped_by, _line = ledger.attempts.stop_facts(operation_id)
+    fact = ledger.attempts.operation(operation_id)
     return {
         "status": STATUS_ACCEPTED,
         "reason": "",
         "detail": f"{len(attempts)} attempt(s)",
         "closed": closed,
+        "effect": ledger.effect_of(operation_id) or "",
+        "effect_target": ledger.target_of(operation_id),
+        "intent_sha256": (None if fact is None else fact.intent_sha256) or "",
         "stopped_by": (
             None
             if stopped_by is None

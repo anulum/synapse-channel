@@ -20,6 +20,18 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- A stop can seal what it listed: `synapse operation stop --seal --repository
+  PATH` (or `--remote URL`) records the stop, then for each listed attempt
+  creates its `sealed` marker, reads it back, and records what it read as a
+  new `stop_readback` operation record (`operation_stop_readback`): `sealed`,
+  `applied` (the effect landed first), `unsealable` (an effect without a
+  marker, decided by the hub from the declaration) or `unread`. The hub
+  recomputes every marker it is told of. Only `sealed` and `applied` close an
+  attempt for its stop; an executor's own report never does, so an attempt
+  whose executor reported "nothing applied" is still sealed, and its late push
+  is refused at the repository. A `seal` record may name the stop it was made
+  for (`stop_seq`), and `operation_state` now answers the declared effect, its
+  target and the intent digest.
 - Stopping a scope of governed operations: `synapse operation stop --scope
   SCOPE --reason TEXT` and `synapse operation resume --scope SCOPE --reason
   TEXT --case another_person|only_person` (`operation_stop` and

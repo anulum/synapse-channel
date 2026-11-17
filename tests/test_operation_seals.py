@@ -78,8 +78,10 @@ ANSWERS = "['base_gone', 'landed', 'landed_earlier', 'not_reached', 'other_party
     ("body", "message"),
     [
         ("x", "seal must be an object"),
-        ({"attempt_id": ATTEMPT}, f"seal names exactly {FIELDS}"),
-        ({**_body(), "extra": 1}, f"seal names exactly {FIELDS}"),
+        ({"attempt_id": ATTEMPT}, f"seal names exactly {FIELDS}, and may name stop_seq"),
+        ({**_body(), "extra": 1}, f"seal names exactly {FIELDS}, and may name stop_seq"),
+        ({**_body(), "stop_seq": 0}, "seal stop_seq must be a journal sequence"),
+        ({**_body(), "stop_seq": True}, "seal stop_seq must be a journal sequence"),
         (
             {**_body(), "object_format": "md5"},
             "seal object_format must be one of ['sha1', 'sha256']",
@@ -94,6 +96,13 @@ def test_a_malformed_seal_is_refused_with_its_reason(body: object, message: str)
     with pytest.raises(ValueError) as refused:
         decode_seal(body)
     assert str(refused.value) == message
+
+
+def test_a_seal_for_a_stop_keeps_the_stop_s_sequence() -> None:
+    plain = decode_seal(_body())
+    assert plain.stop_seq is None and "stop_seq" not in plain.to_payload()
+    joined = decode_seal({**_body(), "stop_seq": 41})
+    assert joined.stop_seq == 41 and joined.to_payload()["stop_seq"] == 41
 
 
 @pytest.mark.parametrize(
@@ -124,9 +133,8 @@ def test_a_seal_record_frame_decodes_and_a_bad_body_is_an_operation_record_error
     assert str(refused.value).startswith("seal observation must be one of")
     with pytest.raises(OperationRecordError) as kinds:
         decode_operation_record({**frame, "record": "sealed"})
-    assert (
-        str(kinds.value) == "record must be one of ['declare', 'outcome', 'seal', 'verification']"
-    )
+    kinds_named = "['declare', 'outcome', 'seal', 'stop_readback', 'verification']"
+    assert str(kinds.value) == f"record must be one of {kinds_named}"
 
 
 def _ledger(*, opened: bool = True) -> OperationLedger:

@@ -16,6 +16,9 @@ seal: the hub recomputes, with :mod:`synapse_channel.core.attempt_markers`, the
 and the intent digest it already holds, and compares. A record that names any
 other object, ref or reading is refused as ``seal_not_observed``.
 
+A seal made for a stop names the stop's journal sequence in ``stop_seq``; the
+hub keeps it only when that stop listed the attempt.
+
 This module is pure; the hub's handler applies the ledger's checks.
 """
 
@@ -61,6 +64,8 @@ class SealRecord:
         The object the marker ref held when read back.
     observation : str
         The read-back answer of the seal: ``landed`` or ``landed_earlier``.
+    stop_seq : int or None
+        The journal sequence of the stop this seal was made for, or ``None``.
     """
 
     attempt_id: str
@@ -68,16 +73,20 @@ class SealRecord:
     object_format: str
     marker_object: str
     observation: str
+    stop_seq: int | None = None
 
-    def to_payload(self) -> dict[str, str]:
+    def to_payload(self) -> dict[str, Any]:
         """Return the fields the journal row keeps."""
-        return {
+        payload: dict[str, Any] = {
             "attempt_id": self.attempt_id,
             "marker_ref": self.marker_ref,
             "object_format": self.object_format,
             "marker_object": self.marker_object,
             "observation": self.observation,
         }
+        if self.stop_seq is not None:
+            payload["stop_seq"] = self.stop_seq
+        return payload
 
 
 def _field(value: Mapping[str, Any], name: str, pattern: re.Pattern[str]) -> str:
@@ -98,8 +107,11 @@ def decode_seal(value: object) -> SealRecord:
     if not isinstance(value, Mapping):
         raise ValueError("seal must be an object")
     fields = {"attempt_id", "marker_ref", "object_format", "marker_object", "observation"}
-    if set(value) != fields:
-        raise ValueError(f"seal names exactly {sorted(fields)}")
+    if set(value) - {"stop_seq"} != fields:
+        raise ValueError(f"seal names exactly {sorted(fields)}, and may name stop_seq")
+    stop_seq = value.get("stop_seq")
+    if stop_seq is not None and (type(stop_seq) is not int or not 0 < stop_seq < 2**53):
+        raise ValueError("seal stop_seq must be a journal sequence")
     object_format = value.get("object_format")
     if object_format not in OBJECT_ID_LENGTHS:
         raise ValueError(f"seal object_format must be one of {sorted(OBJECT_ID_LENGTHS)}")
@@ -113,6 +125,7 @@ def decode_seal(value: object) -> SealRecord:
         object_format=str(object_format),
         marker_object=_field(value, "marker_object", object_id),
         observation=str(observation),
+        stop_seq=stop_seq,
     )
 
 

@@ -71,6 +71,7 @@ from synapse_channel.core.operation_attempts import OperationFact
 from synapse_channel.core.operation_records import (
     RECORD_DECLARE,
     RECORD_SEAL,
+    RECORD_STOP_READBACK,
     REFUSED_DUPLICATE,
     REFUSED_INVALID,
     REFUSED_NO_JOURNAL,
@@ -81,10 +82,12 @@ from synapse_channel.core.operation_records import (
     OperationRecordError,
     OperationRecordRequest,
     declaration_refusal,
+    declared_target,
     decode_operation_record,
     evidence_refusal,
     record_operation,
     seal_refusal,
+    stop_readback_refusal,
 )
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.verb_registry import VerbSpec
@@ -202,6 +205,8 @@ def _apply(hub: OperationRecordContext, sender: str, request: OperationRecordReq
         return _declare(store, ledger, hub.state.claims.get(request.task_id), sender, request)
     if request.record == RECORD_SEAL:
         return _seal(hub, store, ledger, sender, request)
+    if request.record == RECORD_STOP_READBACK:
+        return _stop_readback(hub, store, ledger, sender, request)
     if not task_grant(hub.acl_policy, sender, request.task_id, OPERATION_EVIDENCE):
         return _refused(
             REFUSED_NOT_AUTHORISED, f"{sender} lacks operation-evidence for {request.task_id}"
@@ -245,6 +250,29 @@ def _seal(
     return _Verdict(STATUS_ACCEPTED, "seal recorded", seq=seq)
 
 
+def _stop_readback(
+    hub: OperationRecordContext,
+    store: EventStore,
+    ledger: OperationLedger,
+    sender: str,
+    request: OperationRecordRequest,
+) -> _Verdict:
+    """Journal what a stop read back for one listed attempt; it ends nothing."""
+    if not task_grant(hub.acl_policy, sender, request.task_id, OPERATION_SEAL):
+        return _refused(
+            REFUSED_NOT_AUTHORISED, f"{sender} lacks operation-seal for {request.task_id}"
+        )
+    refusal = stop_readback_refusal(ledger, request)
+    if refusal is not None:
+        return _refused(refusal, f"the stop read-back cannot be kept: {refusal}")
+    seq = record_operation(store, request, sender=sender)
+    ledger.add_record(request.operation_id)
+    readback = request.readback
+    assert readback is not None, "stop_readback_refusal kept a read-back with its body"
+    ledger.attempts.note_readback(readback.stop_seq, readback.attempt_id, readback.result)
+    return _Verdict(STATUS_ACCEPTED, f"stop read-back {readback.result} recorded", seq=seq)
+
+
 def _declare(
     store: EventStore,
     ledger: OperationLedger,
@@ -282,7 +310,7 @@ def _declare(
     seq = record_operation(
         store, request, sender=sender, snapshot_epoch=claim.epoch, now=now, intent=intent
     )
-    ledger.declare(request.operation_id, request.task_id, effect)
+    ledger.declare(request.operation_id, request.task_id, effect, declared_target(request))
     ledger.attempts.note_declaration(
         request.operation_id,
         OperationFact(
@@ -301,14 +329,14 @@ def _declare(
 def operation_record_access(data: dict[str, Any]) -> list[tuple[str, AclTarget]]:
     """Keep a loaded policy's claim rule in force for declarations.
 
-    Evidence and seal records are checked by the handler itself against
-    ``operation-evidence`` and ``operation-seal``, which no open-hub posture
-    can waive.
+    Evidence records are checked by the handler itself against
+    ``operation-evidence``, and seal and stop read-back records against
+    ``operation-seal``; no open-hub posture can waive either.
     """
     task_id = str(data.get("task_id") or "")
     if data.get("record") == RECORD_DECLARE:
         return [(CLAIM, Target("claim", task_id))]
-    if data.get("record") == RECORD_SEAL:
+    if data.get("record") in (RECORD_SEAL, RECORD_STOP_READBACK):
         return [(OPERATION_SEAL, Target("claim", task_id))]
     return [(OPERATION_EVIDENCE, Target("claim", task_id))]
 
@@ -327,6 +355,7 @@ VERB_SPECS = (
             EventKind.OPERATION_OUTCOME,
             EventKind.OPERATION_VERIFIED,
             EventKind.OPERATION_SEALED,
+            EventKind.OPERATION_STOP_READBACK,
         ),
         minimum_wire_version=7,
         commands=("operation",),

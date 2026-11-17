@@ -274,8 +274,8 @@ async def _serve(
         outcome, seq = committed.outcome, committed.seq
         assert outcome is not None and seq is not None
         if outcome.answer == STOP_RECORDED:
-            names = tuple(dict.fromkeys(item.operation_id for item in outcome.listed))
-            candidate.note_stop(request.scope, seq, epoch=outcome.epoch, listed=names)
+            pairs = tuple((item.operation_id, item.attempt_id) for item in outcome.listed)
+            candidate.note_stop(request.scope, seq, epoch=outcome.epoch, listed=pairs)
         elif outcome.answer == RESUMED:
             candidate.note_resume(request.scope, seq)
         ledger.publish_from(candidate)

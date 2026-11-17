@@ -1611,6 +1611,42 @@ NOT remove a stop or resume row; an export MUST carry them.
 **Pinned by.** `tests/test_operation_stops.py`, `tests/test_hub_operation_stops.py`
 (`test_a_stop_survives_compaction_a_restart_and_the_export`).
 
+### INV-OS-6 — a stop trusts markers, not reports
+
+**Normative.** An attempt a stop listed MUST count as closed for that stop
+only through a kept `stop_readback` of `sealed` or `applied`. An executor's
+outcome, a verification and an `unsealable` or `unread` read-back MUST NOT
+close it. The hub MUST keep `unsealable` only for an operation whose declared
+effect has no marker at a system of record, decided from the declaration, and
+MUST keep at most one closing read-back per attempt and stop. A read-back MUST
+NOT end an attempt and grants nothing.
+
+**Implementation.** `core/operation_attempt_ledger.py:AttemptLedger.stop_closed`,
+`core/operation_records.py:stop_readback_refusal`,
+`core/operation_stop_readbacks.py:readback_mismatch`.
+
+**Pinned by.** `tests/test_operation_stop_readbacks.py`,
+`tests/test_cli_operation_stop_seal.py`
+(`test_a_reported_attempt_is_sealed_anyway_and_the_late_effect_is_refused`).
+
+### INV-OS-7 — the seal first, then its record
+
+**Normative.** `synapse operation stop --seal` MUST create each listed
+attempt's `sealed` marker at the system of record and read it back before it
+sends any record for that attempt. The hub MUST recompute the `sealed` or
+`applied` blob and the marker ref from the operation, the attempt and the
+intent digest it holds, and refuse a read-back that names any other. A
+`sealed` read-back of an attempt that is still open MUST wait for the seal
+record, which names the stop's `stop_seq` and is kept only when that stop
+listed the attempt.
+
+**Implementation.** `cli_operation_stop_seal.py`,
+`core/operation_records.py:seal_refusal`,
+`core/operation_stop_readbacks.py:readback_mismatch`.
+
+**Pinned by.** `tests/test_cli_operation_stop_seal.py`,
+`tests/test_operation_seals.py`.
+
 ## Normative constants
 
 These values are part of the contract. The drift guard

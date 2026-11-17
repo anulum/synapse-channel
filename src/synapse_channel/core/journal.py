@@ -153,6 +153,7 @@ class EventKind:
     OPERATION_STOPPED = "operation_stopped"
     OPERATION_RESUMED = "operation_resumed"
     OPERATION_STOP_ANSWERED = "operation_stop_answered"
+    OPERATION_STOP_READBACK = "operation_stop_readback"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
     IDENTITY_ENROLLMENT = "identity_enrollment"
     ENTITLEMENT_ADVERT = "entitlement_advert"

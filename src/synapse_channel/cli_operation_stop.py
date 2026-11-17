@@ -19,8 +19,13 @@ Every call carries a request key. Without ``--idem-key`` the command makes a
 new one and prints it, so that a request whose answer was lost can be asked
 again with the same key and receive the stored answer.
 
+``stop --seal --repository PATH`` (and ``--remote URL`` to push) also seals
+each attempt the stop listed and records what it read back
+(:mod:`synapse_channel.cli_operation_stop_seal`, with its own exit codes).
+
 Exit codes: 0 the stop or resume is recorded; 1 any other answer; 2 no verdict
-(hub unreachable or silent); 4 the hub does not know the request.
+(hub unreachable or silent); 4 the hub does not know the request; 5 ``--seal``
+without ``--repository``.
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ from typing import Any
 
 from synapse_channel.cli_hub_request import ask_hub
 from synapse_channel.cli_messaging_types import AgentFactory
+from synapse_channel.cli_operation_stop_seal import stop_and_seal
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.operation_stops import RESUME_CASES, RESUMED, STOP_RECORDED
 from synapse_channel.core.protocol import MessageType
@@ -43,6 +49,7 @@ EXIT_RECORDED = 0
 EXIT_REFUSED = 1
 EXIT_NO_VERDICT = 2
 EXIT_UNSUPPORTED = 4
+EXIT_UNUSABLE = 5
 
 _UNKNOWN_TYPE_MARKERS = ("unknown message type", "unsupported message type")
 _RECORDED = (STOP_RECORDED, RESUMED)
@@ -180,8 +187,15 @@ def _run(args: argparse.Namespace, message_type: str, fields: dict[str, Any]) ->
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    """Dispatch ``synapse operation stop``."""
-    return _run(args, MessageType.OPERATION_STOP, {"scope": args.scope, "reason": args.reason})
+    """Dispatch ``synapse operation stop``; with ``--seal``, seal each listed attempt too."""
+    if not args.seal:
+        fields = {"scope": args.scope, "reason": args.reason}
+        return _run(args, MessageType.OPERATION_STOP, fields)
+    if not args.repository:
+        print("refused before contacting the hub: --seal needs --repository")
+        return EXIT_UNUSABLE
+    args.idem_key = args.idem_key or uuid.uuid4().hex
+    return asyncio.run(stop_and_seal(args))
 
 
 def cmd_resume(args: argparse.Namespace) -> int:
@@ -219,6 +233,17 @@ def add_stop_parsers(
             default=None,
             help="Repeat a request whose answer was lost; by default a new key is made.",
         )
+    stop.add_argument(
+        "--seal",
+        action="store_true",
+        help="Also seal each listed attempt in --repository and record what was read back.",
+    )
+    stop.add_argument(
+        "--repository", default=None, help="With --seal: the repository holding the markers."
+    )
+    stop.add_argument(
+        "--remote", default=None, help="With --seal: push the seals to this remote instead."
+    )
     resume.add_argument(
         "--case",
         required=True,

@@ -32,6 +32,13 @@ Rules (recovery console design, rev 2):
   The handler checks it against ``operation-seal``; the hub keeps it only for an
   open attempt of a declared operation on the same task, and only when it names
   exactly that attempt's seal. It counts toward the record limit.
+* A stop read-back record reports what a stop read back from the system of
+  record for one attempt it listed
+  (:mod:`synapse_channel.core.operation_stop_readbacks`). The handler checks
+  it against ``operation-seal``; the hub keeps it only for an attempt the named
+  stop listed, recomputes any marker it names, decides ``unsealable`` from the
+  declared effect, and keeps at most one closing read-back per attempt and
+  stop. It counts toward the record limit, grants nothing and ends no attempt.
 * A declaration may carry an authorisation intent
   (:mod:`synapse_channel.core.authorisation_intent`). Its row then keeps the
   composed intent and its digest; a declaration without one is unchanged.
@@ -66,6 +73,14 @@ from synapse_channel.core.operation_seals import (
     decode_seal,
     seal_mismatch,
 )
+from synapse_channel.core.operation_stop_readbacks import (
+    CLOSING_RESULTS,
+    REFUSED_READBACK_CLOSED,
+    REFUSED_STOP_UNKNOWN,
+    StopReadback,
+    decode_stop_readback,
+    readback_mismatch,
+)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.result_verification_record import (
     ResultVerification,
@@ -77,7 +92,10 @@ RECORD_DECLARE = "declare"
 RECORD_OUTCOME = "outcome"
 RECORD_VERIFICATION = "verification"
 RECORD_SEAL = "seal"
-RECORD_KINDS = frozenset({RECORD_DECLARE, RECORD_OUTCOME, RECORD_VERIFICATION, RECORD_SEAL})
+RECORD_STOP_READBACK = "stop_readback"
+RECORD_KINDS = frozenset(
+    {RECORD_DECLARE, RECORD_OUTCOME, RECORD_VERIFICATION, RECORD_SEAL, RECORD_STOP_READBACK}
+)
 
 EFFECT_FILE = "file"
 EFFECT_GIT = "git_publication"
@@ -152,6 +170,8 @@ class OperationRecordRequest:
         For a declaration, the validated statement of its authorisation intent.
     seal : SealRecord or None
         For a seal record, what the sealer read back.
+    readback : StopReadback or None
+        For a stop read-back record, what the stop read back for one attempt.
     """
 
     record: str
@@ -165,6 +185,7 @@ class OperationRecordRequest:
     verification: ResultVerification | None = None
     intent: IntentStatement | None = None
     seal: SealRecord | None = None
+    readback: StopReadback | None = None
 
 
 def _bounded_text(value: object, label: str, limit: int) -> str:
@@ -290,6 +311,9 @@ def decode_operation_record(data: Mapping[str, Any]) -> OperationRecordRequest:
         if record == RECORD_SEAL:
             seal = decode_seal(data.get("seal"))
             return OperationRecordRequest(record, task_id, operation_id, seal=seal)
+        if record == RECORD_STOP_READBACK:
+            readback = decode_stop_readback(data.get("readback"))
+            return OperationRecordRequest(record, task_id, operation_id, readback=readback)
         if record == RECORD_OUTCOME:
             outcome = outcome_from_json(data.get("report"))
             return OperationRecordRequest(record, task_id, operation_id, outcome=outcome)
@@ -316,7 +340,26 @@ def declaration_refusal(claim: TaskClaim | None, sender: str, epoch: int, now: f
 class _Entry:
     task_id: str
     effect: str
+    target: Mapping[str, str] = field(default_factory=dict)
     records: int = 0
+
+
+_TARGET_KEYS = {
+    EFFECT_FILE: ("path", "sha256"),
+    EFFECT_GIT: ("repository", "branch", "revision", "object_format"),
+    EFFECT_DEPLOYMENT: ("report", "revision"),
+    EFFECT_MIGRATION: ("database", "migration", "schema_sha256"),
+}
+"""The declaration row's fields that name each effect's target."""
+
+
+def _target_of(effect: str, payload: Mapping[str, Any]) -> dict[str, str]:
+    """Return the target fields a declaration row keeps for its effect."""
+    return {
+        key: value
+        for key in _TARGET_KEYS.get(effect, ())
+        if isinstance(value := payload.get(key), str)
+    }
 
 
 class OperationLedger:
@@ -332,6 +375,7 @@ class OperationLedger:
             EventKind.OPERATION_OUTCOME,
             EventKind.OPERATION_VERIFIED,
             EventKind.OPERATION_SEALED,
+            EventKind.OPERATION_STOP_READBACK,
         )
         for event in store.iter_events(kinds=kinds):
             operation_id = event.payload.get("operation_id")
@@ -340,7 +384,8 @@ class OperationLedger:
             if event.kind == EventKind.OPERATION_DECLARED:
                 task_id, effect = event.payload.get("task_id"), event.payload.get("effect")
                 if isinstance(task_id, str) and isinstance(effect, str):
-                    self._entries.setdefault(operation_id, _Entry(task_id, effect))
+                    target = _target_of(effect, event.payload)
+                    self._entries.setdefault(operation_id, _Entry(task_id, effect, target))
             elif operation_id in self._entries:
                 self._entries[operation_id].records += 1
 
@@ -359,17 +404,28 @@ class OperationLedger:
         entry = self._entries.get(operation_id)
         return None if entry is None else entry.effect
 
+    def target_of(self, operation_id: str) -> Mapping[str, str]:
+        """Return the declared target of an operation; empty when it is not declared."""
+        entry = self._entries.get(operation_id)
+        return {} if entry is None else dict(entry.target)
+
     def records_of(self, operation_id: str) -> int:
-        """Return the number of outcome, verification and seal rows kept for it."""
+        """Return the number of outcome, verification, seal and read-back rows kept for it."""
         entry = self._entries.get(operation_id)
         return 0 if entry is None else entry.records
 
-    def declare(self, operation_id: str, task_id: str, effect: str) -> None:
-        """Remember one journalled declaration."""
-        self._entries[operation_id] = _Entry(task_id, effect)
+    def declare(
+        self,
+        operation_id: str,
+        task_id: str,
+        effect: str,
+        target: Mapping[str, str] | None = None,
+    ) -> None:
+        """Remember one journalled declaration and its target."""
+        self._entries[operation_id] = _Entry(task_id, effect, dict(target or {}))
 
     def add_record(self, operation_id: str) -> None:
-        """Count one journalled outcome, verification or seal row."""
+        """Count one journalled outcome, verification, seal or read-back row."""
         self._entries[operation_id].records += 1
 
 
@@ -414,9 +470,60 @@ def seal_refusal(ledger: OperationLedger, request: OperationRecordRequest) -> st
         return REFUSED_ATTEMPT_UNKNOWN
     if state != STATE_OPEN:
         return REFUSED_ATTEMPT_ENDED
+    if seal.stop_seq is not None and not ledger.attempts.stop_lists(
+        seal.stop_seq, request.operation_id, seal.attempt_id
+    ):
+        return REFUSED_STOP_UNKNOWN
     fact = ledger.attempts.operation(request.operation_id)
     digest = None if fact is None else fact.intent_sha256
     return seal_mismatch(seal, operation_id=request.operation_id, intent_sha256=digest)
+
+
+def declared_target(request: OperationRecordRequest) -> dict[str, str]:
+    """Return a declaration's target as its row keeps it: a Git target adds its object format."""
+    target = dict(request.target)
+    if request.effect == EFFECT_GIT:
+        revision = target["revision"]
+        target["object_format"] = commit_object_format(commit_id_length(revision, revision))
+    return target
+
+
+MARKED_EFFECTS = frozenset({EFFECT_GIT})
+"""The declared effects whose attempts have a marker at a system of record."""
+
+
+def stop_readback_refusal(ledger: OperationLedger, request: OperationRecordRequest) -> str | None:
+    """Return why a stop read-back record cannot be kept, or ``None``.
+
+    The operation must be declared on the same task, below the record limit;
+    the named stop must have listed the attempt; no ``sealed`` or ``applied``
+    read-back of that attempt may be kept for that stop yet; and the record
+    must agree with what the hub recomputes
+    (:func:`synapse_channel.core.operation_stop_readbacks.readback_mismatch`).
+    """
+    task = ledger.task_of(request.operation_id)
+    if task is None:
+        return REFUSED_UNKNOWN
+    if task != request.task_id:
+        return REFUSED_TASK_MISMATCH
+    if ledger.records_of(request.operation_id) >= MAX_RECORDS_PER_OPERATION:
+        return REFUSED_RECORD_LIMIT
+    readback = request.readback
+    assert readback is not None, "decode_operation_record gives every read-back record its body"
+    attempts = ledger.attempts
+    if not attempts.stop_lists(readback.stop_seq, request.operation_id, readback.attempt_id):
+        return REFUSED_STOP_UNKNOWN
+    if attempts.readback_of(readback.stop_seq, readback.attempt_id) in CLOSING_RESULTS:
+        return REFUSED_READBACK_CLOSED
+    fact = attempts.operation(request.operation_id)
+    state = attempts.attempt_state(request.operation_id, readback.attempt_id)
+    return readback_mismatch(
+        readback,
+        operation_id=request.operation_id,
+        intent_sha256=None if fact is None else fact.intent_sha256,
+        marked=ledger.effect_of(request.operation_id) in MARKED_EFFECTS,
+        attempt_open=state == STATE_OPEN,
+    )
 
 
 def _digests(evidence: Mapping[str, str]) -> dict[str, str]:
@@ -475,11 +582,7 @@ def record_operation(
         "recorded_at": at,
     }
     if request.record == RECORD_DECLARE:
-        payload = {**base, "effect": request.effect, **request.target}
-        if request.effect == EFFECT_GIT:
-            payload["object_format"] = commit_object_format(
-                commit_id_length(payload["revision"], payload["revision"])
-            )
+        payload = {**base, "effect": request.effect, **declared_target(request)}
         payload["snapshot_epoch"] = snapshot_epoch
         if request.budget_remaining is not None:
             payload["budget_remaining"] = request.budget_remaining
@@ -490,6 +593,9 @@ def record_operation(
     if request.seal is not None:
         payload = {**base, **request.seal.to_payload()}
         return store.append(EventKind.OPERATION_SEALED, payload, durable=True)
+    if request.readback is not None:
+        payload = {**base, **request.readback.to_payload()}
+        return store.append(EventKind.OPERATION_STOP_READBACK, payload, durable=True)
     if request.outcome is not None:
         outcome = request.outcome
         payload = {

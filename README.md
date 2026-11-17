@@ -1943,11 +1943,11 @@ an installed protected runtime or revocation fencing.
 |---|---:|
 | Package version | 0.99.54 |
 | Public API exports | 70 |
-| Package modules | 1037 |
-| Classes | 1471 |
+| Package modules | 1039 |
+| Classes | 1473 |
 | Wire message types | 125 |
 | CLI subcommands | 312 |
-| Test functions | 14683 |
+| Test functions | 14699 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 99 |
 | GitHub Actions workflows | 29 |

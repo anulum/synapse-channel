@@ -190,7 +190,8 @@ does not add agent grades to protocol envelopes.
   digest-shaped values. A `seal` carries one `seal` object naming exactly
   `attempt_id`, `marker_ref`, `object_format` (`sha1` or `sha256`),
   `marker_object` and `observation`, the answer read back after the sealed
-  marker was written. It needs the `operation-seal` grant, which no identity
+  marker was written, and may name `stop_seq`, the stop it was made for, which
+  must have listed the attempt (`stop_unknown`). It needs the `operation-seal` grant, which no identity
   holds unless a policy grants it, also on a hub without an ACL policy; the
   named attempt must be open (`attempt_unknown`, `attempt_ended`), and the hub
   recomputes the `sealed` marker blob of that operation, attempt and intent
@@ -198,6 +199,21 @@ does not add agent grades to protocol envelopes.
   `landed` or `landed_earlier`, or an operation without an intent
   (`seal_not_observed`). A kept seal is journalled as `operation_sealed`,
   counts towards the 32 rows and ends the attempt without reconciling it.
+  A `stop_readback` carries one `readback` object: `stop_seq`, `attempt_id`,
+  `result` (`sealed`, `applied`, `unsealable` or `unread`), `reason` for
+  `unread` (`not_reached`, `base_gone` or `unknown`), and `marker_ref`,
+  `object_format` and `marker_object` as read back, required for `sealed` and
+  `applied`. It needs `operation-seal` as a seal does. The named stop must have
+  listed the attempt (`stop_unknown`); the hub recomputes the `sealed` or
+  `applied` blob and the ref, keeps `unsealable` only for an effect without a
+  marker (today every effect but `git_publication`) and any other result only
+  for one with a marker (`readback_mismatch`); a `sealed` read-back of an
+  attempt that is still open waits for its seal record (`attempt_open`); and
+  once a `sealed` or `applied` read-back of an attempt is kept for a stop, no
+  further one is (`readback_closed`). A kept read-back is journalled as
+  `operation_stop_readback` and counts towards the 32 rows. It ends no attempt:
+  only `sealed` and `applied` close an attempt for its stop, and an executor's
+  own outcome never does.
   Records are observations and grant no authority.
 - **Operation attempts:** `operation_attempt` asks to open an attempt of a
   declared operation for the exact intent the requester is about to carry out.
@@ -585,8 +601,9 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   (`accepted` or `refused`), `reason` (`invalid_request`, `no_journal`,
   `not_claim_holder`, `stale_epoch`, `duplicate_operation`, `not_authorised`,
   `unknown_operation`, `task_mismatch`, `operation_mismatch`,
-  `verifier_mismatch`, `record_limit`, `attempt_unknown`, `attempt_ended` or
-  `seal_not_observed`), the journal `seq` when accepted, and the request's
+  `verifier_mismatch`, `record_limit`, `attempt_unknown`, `attempt_ended`,
+  `seal_not_observed`, `stop_unknown`, `readback_mismatch`, `readback_closed`
+  or `attempt_open`), the journal `seq` when accepted, and the request's
   `record`, `task_id`, `operation_id` and `request_id`.
   `operation_attempt_result` answers an `operation_attempt` with `answer`, the
   sentence in `payload`, the journal `seq`, `attempt_id` (32 lower-case
@@ -598,7 +615,9 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   `operation_state_result` answers an `operation_state` with `status`
   (`accepted` or `refused`), `reason` (`invalid_request`, `not_authorised` or
   `unknown_operation`), the sentence in `payload`, and the request's `task_id`,
-  `operation_id` and `request_id`; when accepted, `closed` and `attempts`, one
+  `operation_id` and `request_id`; when accepted, `closed`, the declared
+  `effect`, its `effect_target` and the `intent_sha256` the hub holds (empty
+  without an intent), `attempts`, one
   object per attempt with `attempt_id`, `executor` and `state` (`open`,
   `sealed`, `ended`, `reconciled` or `closed`), and `stopped_by`: the
   narrowest stopped scope that contains the operation as `scope`, `seq` and

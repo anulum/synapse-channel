@@ -112,17 +112,35 @@ class _HubLink:
         with contextlib.suppress(asyncio.CancelledError):
             await self._connection
 
-    async def ask(self, msg_type: str, reply_type: str, **fields: Any) -> dict[str, Any] | None:
-        """Send one request and return its answer or a hub error, or ``None`` when silent."""
+    async def ask(
+        self, msg_type: str, reply_type: str, *, key: str | None = None, **fields: Any
+    ) -> dict[str, Any] | None:
+        """Send one request and return its answer or a hub error, or ``None`` when silent.
+
+        The answer is matched by the request id the link sends, or, with
+        ``key``, by the request key a stored answer carries. A keyed request
+        carries no request id, so that a repeat is the same request and
+        receives the stored answer.
+        """
         request_id = uuid.uuid4().hex
         mark = len(self._replies)
-        await self._agent.send_message(msg_type, target="System", request_id=request_id, **fields)
+        if key is None:
+            await self._agent.send_message(
+                msg_type, target="System", request_id=request_id, **fields
+            )
+        else:
+            await self._agent.send_message(msg_type, target="System", **fields)
         loop = asyncio.get_running_loop()
         deadline = loop.time() + max(float(self._args.timeout), 0.0)
         while loop.time() <= deadline:
             for reply in self._replies[mark:]:
+                matched = (
+                    reply.get("request_id") == request_id
+                    if key is None
+                    else reply.get("request_key") == key
+                )
                 if reply.get("type") == MessageType.ERROR or (
-                    reply.get("type") == reply_type and reply.get("request_id") == request_id
+                    reply.get("type") == reply_type and matched
                 ):
                     return reply
             await asyncio.sleep(0.01)
