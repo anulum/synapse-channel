@@ -116,7 +116,9 @@ does not add agent grades to protocol envelopes.
   `checkpoint`, `wait_request`.
 - **Resources:** `resource`.
 - **Shared blackboard:** `ledger_task`, `ledger_task_update`, `ledger_progress`,
-  `board_request`.
+  `board_request`. A `ledger_progress` note's text is at most 1 MiB of UTF-8
+  (`MAX_PROGRESS_NOTE_BYTES`); a longer note is refused with an `error` naming
+  the bound and is never trimmed, journalled or broadcast.
 - **Capabilities:** `advertise`, `manifest_request`.
 - **Scoped attachments (v4):** `attachment_begin`, `attachment_chunk`,
   `attachment_commit`, `attachment_abort`, `attachment_info`,

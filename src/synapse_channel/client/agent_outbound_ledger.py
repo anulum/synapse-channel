@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
+from synapse_channel.core.ledger import progress_note_refusal
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.task_causality import TaskCausalParent
 
@@ -87,7 +88,18 @@ class AgentLedgerMixin:
         kind: str = "note",
         idem_key: str | None = None,
     ) -> None:
-        """Append a structured progress note to the progress ledger."""
+        """Append a structured progress note to the progress ledger.
+
+        Raises
+        ------
+        ValueError
+            When ``text`` is longer than the hub accepts
+            (:data:`~synapse_channel.core.ledger.MAX_PROGRESS_NOTE_BYTES`); nothing
+            is sent.
+        """
+        too_long = progress_note_refusal(text)
+        if too_long is not None:
+            raise ValueError(too_long)
         extra = {"task_id": task_id.strip(), "kind": kind}
         if idem_key:
             extra["idem_key"] = idem_key

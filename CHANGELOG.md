@@ -20,6 +20,13 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- The hub bounds a progress note's text at 1 MiB of UTF-8
+  (`MAX_PROGRESS_NOTE_BYTES`, the default frame limit, so a raised frame limit
+  does not raise it). A longer `ledger_progress` note is refused with an
+  `error` naming the bound before anything is read or journalled, never
+  trimmed. The Python SDK's `post_progress` raises `ValueError` and sends
+  nothing; `task progress`, `approval request`, `approval decide` and the
+  `verdict` commands refuse it before connecting, with exit status 2.
 - Every dashboard write needs exactly one `Origin` header, the dashboard's own
   (`http://<Host>`), as `POST /setup/plan` already did: `/message`,
   `/message/respond`, `/task`, `/task/update` and `/approval/decide` answer 403

@@ -3363,6 +3363,10 @@ An empty snapshot is a valid reply. A missing reply exits `1` and prints
 request. The shared reply deadline is 50 polls of 50 ms (2.5 seconds), separate
 from the welcome-handshake deadline.
 
+`task progress`, `approval request`, `approval decide` and the `verdict`
+commands refuse a note longer than the hub accepts (1 MiB of UTF-8,
+`MAX_PROGRESS_NOTE_BYTES`) before connecting, with exit status 2.
+
 `task declare`, `task update` and `task progress` wait for their matching
 confirmation for 60 polls of 50 ms (3 seconds). They return `0` only after
 printing that confirmation; unreachable hubs, refusals and missing confirmations

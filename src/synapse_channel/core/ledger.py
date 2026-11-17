@@ -70,8 +70,38 @@ DEFAULT_MAX_PROGRESS_PER_AUTHOR = 1000
 DEFAULT_MAX_PROGRESS_PER_TASK = 1000
 """Default cap on retained progress notes per task."""
 
+MAX_PROGRESS_NOTE_BYTES = 1024 * 1024
+"""The longest progress-note text the hub accepts, in UTF-8 bytes.
+
+A longer note is refused, never trimmed. The hub, the Python SDK and the
+commands that post notes all check this one bound. It equals the default frame
+limit, so raising a hub's frame limit (``--max-msg-bytes``) does not let notes
+grow with it. It holds every verdict record within its own limits (1,024 inputs
+and 1,024 acknowledged corrections) and an evidence manifest of about 15,000
+members; the largest note a working installation had journalled was about
+16 KiB.
+"""
+
 TERMINAL_LEDGER_STATUSES = frozenset({"done", "cancelled"})
 """Planning statuses that satisfy a dependency edge (the task is finished)."""
+
+
+def progress_note_refusal(text: str) -> str | None:
+    """Return why ``text`` is too long for a progress note, or ``None`` when it fits.
+
+    Parameters
+    ----------
+    text : str
+        The note's text as it would be posted.
+
+    Returns
+    -------
+    str or None
+        The refusal naming :data:`MAX_PROGRESS_NOTE_BYTES`, or ``None``.
+    """
+    if len(text.encode("utf-8")) > MAX_PROGRESS_NOTE_BYTES:
+        return f"progress note text exceeds {MAX_PROGRESS_NOTE_BYTES} UTF-8 bytes"
+    return None
 
 
 @dataclass

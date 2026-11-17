@@ -30,7 +30,12 @@ from synapse_channel.core.handlers.verdict_admission import (
     progress_refusal,
 )
 from synapse_channel.core.journal import EventKind, record_ledger_progress
-from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
+from synapse_channel.core.ledger import (
+    Blackboard,
+    LedgerTask,
+    ProgressNote,
+    progress_note_refusal,
+)
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.task_causality import (
     TaskCausalParent,
@@ -304,12 +309,20 @@ async def handle_ledger_progress(
 ) -> None:
     """Append a structured progress note and broadcast it, or reject the kind.
 
-    Evidence, verdict and correction notes, and approvals of SHA-256 subjects,
-    pass the verdict admission first; a refused note is never appended.
+    A note longer than :data:`~synapse_channel.core.ledger.MAX_PROGRESS_NOTE_BYTES`
+    is refused before anything is read or appended, never trimmed. Evidence,
+    verdict and correction notes, and approvals of SHA-256 subjects, pass the
+    verdict admission first; a refused note is never appended.
     """
     task_id = str(data.get("task_id") or "")
     text = str(data.get("text") or data.get("payload") or "")
     kind = str(data.get("kind") or "note")
+    too_long = progress_note_refusal(text)
+    if too_long is not None:
+        await hub.send_json(
+            websocket, hub.system(too_long, msg_type=MessageType.ERROR, target=sender)
+        )
+        return
     refusal, recorded = progress_refusal(hub, sender=sender, task_id=task_id, kind=kind, text=text)
     if refusal is not None:
         await hub.send_json(

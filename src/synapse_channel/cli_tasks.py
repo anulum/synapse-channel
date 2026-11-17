@@ -26,11 +26,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.cli_queries import _query_hub
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
+from synapse_channel.core.ledger import progress_note_refusal
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.task_causality import (
     TaskCausalParent,
@@ -167,7 +169,15 @@ def _cmd_task_update(
 def _cmd_task_progress(
     args: argparse.Namespace, *, agent_factory: AgentFactory = SynapseAgent
 ) -> int:
-    """Post a progress note against a task on the blackboard."""
+    """Post a progress note against a task on the blackboard.
+
+    A note longer than the hub accepts is refused here, before connecting, with
+    exit status 2.
+    """
+    too_long = progress_note_refusal(args.text)
+    if too_long is not None:
+        print(too_long, file=sys.stderr)
+        return 2
 
     async def send(agent: SynapseAgent) -> None:
         await agent.post_progress(

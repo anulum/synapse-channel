@@ -34,6 +34,7 @@ from synapse_channel.core.approvals import (
     render_human,
     run_approval_report,
 )
+from synapse_channel.core.ledger import progress_note_refusal
 from synapse_channel.waiter_identity import waiter_owner
 
 
@@ -91,9 +92,13 @@ async def _emit_approval(
 def _emit(args: argparse.Namespace, *, state: str, reason: str) -> int:
     """Validate and post one approval note, returning a process exit code."""
     try:
-        format_approval_note(subject=args.subject, state=state, reason=reason)
+        note = format_approval_note(subject=args.subject, state=state, reason=reason)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
+        return 2
+    too_long = progress_note_refusal(note)
+    if too_long is not None:
+        print(too_long, file=sys.stderr)
         return 2
     return asyncio.run(
         _emit_approval(

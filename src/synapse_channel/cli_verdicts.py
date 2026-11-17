@@ -27,6 +27,7 @@ from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
+from synapse_channel.core.ledger import progress_note_refusal
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.verdict_hub import VerdictHubPolicy, parse_verdict_authority
 from synapse_channel.core.verdict_records import (
@@ -140,6 +141,10 @@ def _cmd_post(args: argparse.Namespace) -> int:
         validate_record_body(kind, text)
     except VerdictRecordError as exc:
         print(str(exc), file=sys.stderr)
+        return 2
+    too_long = progress_note_refusal(text)
+    if too_long is not None:
+        print(too_long, file=sys.stderr)
         return 2
     return asyncio.run(
         post_record(
