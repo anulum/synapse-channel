@@ -687,6 +687,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22.23.4"
+      # Every advisory fails the audit, except one listed in
+      # .github/npm-audit-exceptions.json for development dependencies only,
+      # for at most seven days (tools/npm_audit_gate.py; SECURITY.md).
       - name: Audit every committed npm lock without installing packages
         shell: bash
         run: |
@@ -695,7 +698,7 @@ jobs:
           test -s "$RUNNER_TEMP/node-locks.list"
           audit_status=0
           while IFS= read -r -d '' lock; do
-            if ! (cd "$(dirname "$lock")" && npm audit --package-lock-only); then
+            if ! python3 tools/npm_audit_gate.py --exceptions .github/npm-audit-exceptions.json "$lock"; then
               audit_status=1
             fi
           done < "$RUNNER_TEMP/node-locks.list"

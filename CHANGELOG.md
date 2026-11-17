@@ -98,6 +98,20 @@ the hub's mailbox counts cheaper per chat and exact again after a restart.
   reading a pending count no longer recreate the count tables each time. The
   event store creates them once, when it opens.
 
+### Security
+
+- GHSA-fc5q-39xc-vjpf, a ReDoS in picomatch, was widened on 2026-11-17 to
+  every release through 4.0.7, and no patched release exists yet. The
+  cockpit, JavaScript client and VS Code extension locks install picomatch
+  4.0.7 only as a development dependency, through vite, vitest, tinyglobby and
+  `@vscode/vsce`. No package or extension this project ships contains it, and
+  it matches only the repository's own glob patterns. The npm lock audit now
+  runs through `tools/npm_audit_gate.py`. Every advisory still fails it, except
+  one listed in `.github/npm-audit-exceptions.json` for development
+  dependencies only, for at most seven days. This one is granted from
+  2026-11-17 and fails the audit again from 2026-11-24. The locks move to a
+  patched picomatch once one is released.
+
 ## [0.99.53] - 2026-11-16
 
 Core 0.99.53 lets an operator follow and approve governed operations in the

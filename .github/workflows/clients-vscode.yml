@@ -5,10 +5,14 @@ on:
     paths:
       - "clients/vscode/**"
       - ".github/workflows/clients-vscode.yml"
+      - ".github/npm-audit-exceptions.json"
+      - "tools/npm_audit_gate.py"
   pull_request:
     paths:
       - "clients/vscode/**"
       - ".github/workflows/clients-vscode.yml"
+      - ".github/npm-audit-exceptions.json"
+      - "tools/npm_audit_gate.py"
 
 permissions:
   contents: read
@@ -47,7 +51,7 @@ jobs:
         run: |
           npm exec -- vsce --version
           npm exec -- ovsx --version
-          npm audit --audit-level=low
+          python ../../tools/npm_audit_gate.py --exceptions ../../.github/npm-audit-exceptions.json package-lock.json
       - name: Install the real hub for Extension Development Host acceptance
         run: |
           python -m pip install --require-hashes -r ../../.github/requirements/requirements.txt

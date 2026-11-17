@@ -12,8 +12,14 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from tools.npm_audit_gate import AUDIT_COMMAND
+
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/ci.yml"
+NODE_GATE = (
+    "python3 {prefix}tools/npm_audit_gate.py"
+    " --exceptions {prefix}.github/npm-audit-exceptions.json {lock}"
+)
 
 
 def test_lock_audits_discover_tracked_python_and_node_inputs() -> None:
@@ -60,6 +66,25 @@ def test_lock_audit_commands_inspect_pins_without_package_installation() -> None
     assert "if grep -q -- '--hash=' \"$lock\"; then" in text
     assert 'python -m pip_audit "${audit_flags[@]}"' in text
     assert '-r "$lock" --desc --progress-spinner=off' in text
-    assert "npm audit --package-lock-only" in text
+    assert NODE_GATE.format(prefix="", lock='"$lock"') in text
     assert 'done < "$RUNNER_TEMP/python-locks.list"' in text
     assert 'done < "$RUNNER_TEMP/node-locks.list"' in text
+
+
+def test_every_npm_audit_goes_through_the_expiring_exception_gate() -> None:
+    """No workflow calls npm audit directly, so the gate's exception rules cannot be bypassed."""
+    assert AUDIT_COMMAND == ("npm", "audit", "--package-lock-only", "--json")
+    vscode = (ROOT / ".github/workflows/clients-vscode.yml").read_text(encoding="utf-8")
+    assert (
+        NODE_GATE.format(prefix="../../", lock="package-lock.json").replace("python3 ", "python ")
+        in vscode
+    )
+    gate_calls = 0
+    for workflow in sorted((ROOT / ".github/workflows").glob("*.yml")):
+        text = workflow.read_text(encoding="utf-8")
+        assert "npm audit" not in text, workflow.name
+        for line in text.splitlines():
+            if "tools/npm_audit_gate.py" in line and not line.lstrip().startswith(("- ", "#")):
+                gate_calls += 1
+                assert "--audit-level" not in line and "--omit" not in line, workflow.name
+    assert gate_calls == 2

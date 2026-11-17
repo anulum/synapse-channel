@@ -1061,6 +1061,18 @@ identifiers and actual receipts to resolve ambiguous outcomes.
   Hypothesis database. This automated property-based fuzzing is not an external
   protocol-conformance certification.
 
+## Dependency advisory exceptions
+
+Every committed npm lock is audited in CI without installing packages, and
+every advisory fails that audit. The only exception is an entry in
+[`.github/npm-audit-exceptions.json`](.github/npm-audit-exceptions.json),
+checked by `tools/npm_audit_gate.py`. An entry names one advisory and one
+package, covers it only where the lock installs that package as a development
+dependency, gives its reason, and lasts at most seven days from its grant. On
+its expiry date the audit fails again, whether or not the advisory is still
+reported, until the entry is removed or granted anew. An advisory reaching a
+production dependency, or any advisory without an entry, fails as before.
+
 ## Licensing
 
 SYNAPSE CHANNEL is AGPL-3.0-or-later with a commercial licence available; see
