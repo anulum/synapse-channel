@@ -82,6 +82,39 @@ def test_password_file_is_owner_only_bounded_and_newline_tolerant(tmp_path: Path
         load_password_file(path)
 
 
+def _owner_only(path: Path, data: bytes) -> None:
+    path.write_bytes(data)
+    if os.name == "nt":
+        apply_owner_only_file(path)
+    else:
+        os.chmod(path, 0o600)
+
+
+def test_password_file_replaced_while_it_is_opened_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The file whose owner and mode were checked must be the file that is read."""
+    path = tmp_path / "password"
+    replacement = tmp_path / "replacement"
+    _owner_only(path, b"checked")
+    _owner_only(replacement, b"swapped")
+    real_open = os.open
+    swapped: list[str] = []
+
+    def swap_then_open(target: str | os.PathLike[str], flags: int, mode: int = 0o777) -> int:
+        """Replace the checked file in the window between its checks and its open."""
+        if os.fspath(target) == os.fspath(path) and not swapped:
+            os.replace(replacement, path)
+            swapped.append(os.fspath(path))
+        return real_open(target, flags, mode)
+
+    monkeypatch.setattr(os, "open", swap_then_open)
+    with pytest.raises(OpenCodeAuthError, match="changed while opening"):
+        load_password_file(path)
+    assert swapped == [os.fspath(path)]
+    assert path.read_bytes() == b"swapped"
+
+
 def test_password_file_refuses_symlink_and_empty_secret(tmp_path: Path) -> None:
     target = tmp_path / "target"
     target.write_text("\n")
