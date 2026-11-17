@@ -58,6 +58,10 @@ def ensure_mailbox_schema(connection: Any) -> None:
         "identity TEXT PRIMARY KEY, pending INTEGER NOT NULL, watermark INTEGER NOT NULL)"
     )
     connection.execute(
+        "CREATE INDEX IF NOT EXISTS mailbox_pending_counts_role "
+        "ON mailbox_pending_counts(identity) WHERE lower(substr(identity, 1, 5)) = 'role:'"
+    )
+    connection.execute(
         "CREATE TABLE IF NOT EXISTS mailbox_pending_layout ("
         "version INTEGER NOT NULL, projected_through INTEGER NOT NULL DEFAULT 0, "
         "chat_rows INTEGER NOT NULL DEFAULT 0)"

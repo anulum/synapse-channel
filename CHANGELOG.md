@@ -33,6 +33,13 @@ execution evidence when carrying a release claim forward.
   and encoded again, so the header holds only URL-safe characters and an
   encoded line break stays encoded. `?lang=sk` passes through unchanged.
 
+- **Hub stability.** Storing or deleting a chat reads only the mailbox
+  counters its target can reach: the mailbox it names, the personal mailboxes
+  of a bare project it names, and the role mailboxes. Before, each chat read
+  every counter the journal had ever named, on the hub's serving loop, so its
+  cost grew with every mailbox ever addressed. A target with a glob part still
+  reads every counter.
+
 ## [0.99.53] - 2026-11-16
 
 Core 0.99.53 lets an operator follow and approve governed operations in the

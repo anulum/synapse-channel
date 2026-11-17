@@ -5,14 +5,27 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — mailbox hits written with each chat, watermark, and deletion
-"""Update mailbox hits and existing counters inside the caller's transaction."""
+"""Update mailbox hits and existing counters inside the caller's transaction.
+
+A chat or a deletion reads only the counters its target parts can reach, so its
+cost does not grow with every mailbox the journal has ever named. An exact part
+reaches the mailbox of that name, the personal mailboxes of the bare project it
+names, and role mailboxes; the address rules still decide each one. A glob part
+can reach any mailbox, so a target with one reads every counter.
+"""
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from synapse_channel.core.mailbox_addresses import any_reaches, counts_at_all, parts, reaches
+from synapse_channel.core.mailbox_addresses import (
+    any_reaches,
+    counts_at_all,
+    is_glob,
+    parts,
+    reaches,
+)
 from synapse_channel.core.mailbox_layout_counts import count_after, remember_count, stored_count
 from synapse_channel.core.mailbox_layout_schema import (
     _advance_layout_extent,
@@ -23,6 +36,15 @@ from synapse_channel.core.mailbox_layout_schema import (
 _CHAT = "chat"
 _WATERMARK = "mailbox_watermark"
 _CHUNK = 400
+_EVERY_COUNTER = "SELECT identity, pending, watermark FROM mailbox_pending_counts"
+_NAME_OR_PROJECT_COUNTERS = (
+    "SELECT identity, pending, watermark FROM mailbox_pending_counts "
+    "WHERE identity = ? OR (identity >= ? AND identity < ?)"
+)
+_ROLE_COUNTERS = (
+    "SELECT identity, pending, watermark FROM mailbox_pending_counts "
+    "WHERE lower(substr(identity, 1, 5)) = 'role:'"
+)
 
 
 def record_inserted_event(connection: Any, seq: int, kind: str, payload: str) -> None:
@@ -95,8 +117,7 @@ def _record_chat(connection: Any, seq: int, payload: str) -> None:
 def _bump_existing(connection: Any, seq: int, sender: str, addresses: tuple[str, ...]) -> None:
     if not addresses:
         return
-    rows = connection.execute("SELECT identity, watermark FROM mailbox_pending_counts").fetchall()
-    for identity, watermark in rows:
+    for identity, _pending, watermark in _reachable_counters(connection, addresses):
         name = str(identity)
         if int(seq) <= int(watermark) or sender == name:
             continue
@@ -105,6 +126,29 @@ def _bump_existing(connection: Any, seq: int, sender: str, addresses: tuple[str,
                 "UPDATE mailbox_pending_counts SET pending = pending + 1 WHERE identity = ?",
                 (name,),
             )
+
+
+def _reachable_counters(connection: Any, addresses: tuple[str, ...]) -> list[tuple[Any, ...]]:
+    """Return each counter some part of ``addresses`` may reach, once, by index.
+
+    The result is a superset: the caller still applies the address rules. A
+    personal mailbox is reached by an exact part only through its own name or
+    its bare project, and a name inside project ``p`` sorts from ``p/`` up to,
+    but not including, ``p0``, because ``0`` follows ``/``. Role mailboxes are
+    few and are all returned, so a role key of any spelling is still judged.
+    """
+    if any(is_glob(address) for address in addresses):
+        return list(connection.execute(_EVERY_COUNTER))
+    found: dict[str, tuple[Any, ...]] = {}
+    for address in addresses:
+        rows = connection.execute(
+            _NAME_OR_PROJECT_COUNTERS, (address, f"{address}/", f"{address}0")
+        )
+        for row in rows:
+            found.setdefault(str(row[0]), tuple(row))
+    for row in connection.execute(_ROLE_COUNTERS):
+        found.setdefault(str(row[0]), tuple(row))
+    return list(found.values())
 
 
 def _record_watermark(connection: Any, seq: int, payload: str) -> None:
@@ -126,9 +170,8 @@ def _record_watermark(connection: Any, seq: int, payload: str) -> None:
 
 
 def _decrement_deleted(connection: Any, hits: list[tuple[Any, Any, Any]]) -> None:
-    counters = connection.execute(
-        "SELECT identity, pending, watermark FROM mailbox_pending_counts"
-    ).fetchall()
+    addresses = tuple(dict.fromkeys(str(address) for _seq, address, _sender in hits))
+    counters = _reachable_counters(connection, addresses) if addresses else []
     removed: dict[str, int] = {}
     seen: set[tuple[int, str]] = set()
     for seq, address, sender in hits:
