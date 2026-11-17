@@ -567,6 +567,26 @@ def test_real_interrupted_wait_confirms_only_the_direct_child_stop(tmp_path: Pat
     assert not result["effects_undone"]
 
 
+def test_a_provider_that_outlives_one_wait_still_reports_its_exit(tmp_path: Path) -> None:
+    """A child that keeps running past one wait still reports its own exit code.
+
+    The wait looks again until the child exits. One look expiring is not a
+    failure and not an interrupt.
+    """
+    result = run_worker_session(
+        identity="TEST/worker",
+        command=[sys.executable, "-c", "import time; time.sleep(0.15); raise SystemExit(0)"],
+        arm=False,
+        terminal_tmux="off",
+        environ=private_environment(tmp_path),
+        cwd=tmp_path,
+    )
+    assert isinstance(result, WorkerExit) and result == 0
+    assert result.outcome.state.value == "confirmed_done"
+    assert result.outcome.external_effect.value == "unknown"
+    assert not result.outcome.stop_requested
+
+
 def test_public_api_keeps_integer_result_with_scoped_observation(tmp_path: Path) -> None:
     """Existing integer callers keep their exit code and typed clients get the outcome."""
     result = run_worker_session(

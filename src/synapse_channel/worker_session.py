@@ -33,6 +33,14 @@ from synapse_channel.worker_outcome import OPERATION_ID_ENV, WorkerExit, WorkerO
 SIDECAR_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 """Seconds to wait for a wake sidecar to exit after graceful termination."""
 
+_PROVIDER_WAIT_SLICE_SECONDS = 0.05
+"""How long one provider wait sleeps before looking again.
+
+A main-thread interrupt is reported during the sleep, while the child is
+still alive. This is not a deadline: the wait repeats until the child exits
+or that interrupt arrives.
+"""
+
 INTERACTIVE_TMUX_PROVIDERS = frozenset({"codex", "claude", "kimi", "grok", "agy"})
 """Provider command names that default to persistent tmux-backed terminals."""
 
@@ -270,6 +278,22 @@ def _record_launch(
         print(f"synapse worker-session: launch record not written: {exc}", file=sys.stderr)
 
 
+def _wait_for_provider(provider: subprocess.Popen[bytes]) -> int:
+    """Return the child's exit code unless a pending interrupt arrives first.
+
+    ``Popen.wait`` without a timeout blocks in ``waitpid``. That call is
+    restarted when a signal arrives, so an interrupt armed on the main thread
+    stays pending until the child exits. The exit is then observed and the
+    interrupt is lost. A short wait sleeps in a way the armed interrupt wakes,
+    so it is raised while the child is still alive.
+    """
+    while True:
+        try:
+            return provider.wait(timeout=_PROVIDER_WAIT_SLICE_SECONDS)
+        except subprocess.TimeoutExpired:
+            continue
+
+
 def _run_provider(
     command: Sequence[str], env: Mapping[str, str], *, cwd: Path, outcome: WorkerObservation
 ) -> WorkerExit:
@@ -286,7 +310,7 @@ def _run_provider(
         try:
             outcome.observe(OutcomeState.STARTED, "provider_started")
             _record_launch(env["SYN_IDENTITY"], command, provider.pid, env, cwd=cwd)
-            returncode = provider.wait()
+            returncode = _wait_for_provider(provider)
         except BaseException:
             # An interrupted wait must not leave the provider behind, running or unreaped.
             provider.kill()
