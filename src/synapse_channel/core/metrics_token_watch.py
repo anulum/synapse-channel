@@ -154,6 +154,9 @@ class MetricsTokenWatch:
             except Exception:
                 _LOG.exception("cannot check the metrics token-set file")
 
+    def flush(self) -> None:
+        """Write nothing: this watch holds no row, it writes each one as it arises."""
+
     def _observed(self, outcome: TokenOutcome) -> None:
         """Record expiries seen at a request and an admission by a retiring entry."""
         self._record_expired("request")

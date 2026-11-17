@@ -61,6 +61,7 @@ _RISK_KINDS = frozenset(
         "metrics_token_retiring_admission",
         "message_auth_key_set_rejected",
         "message_auth_key_retiring_admission",
+        "message_auth_key_audit_overflow",
     }
 )
 _OPERATION_KINDS = frozenset(

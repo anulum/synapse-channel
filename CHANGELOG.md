@@ -18,6 +18,23 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- **Hub stability.** A per-message key set (`--message-auth-key-set`) is no
+  longer read on the hub's serving loop. A verification looks the key up in the
+  set in force and reads no file; the hub's once-a-second check reads the files
+  in a worker thread and replaces the set in one step, so a rotation, a
+  replacement or a removal is in force from the next check, within about one
+  second, instead of at the next verification. The key-set audit rows are
+  queued where they arise and written by that check in a worker thread, so no
+  verification waits for the journal. A row the journal refuses stays queued for
+  the next check, the hub writes the queue once more when it stops serving, and
+  the queue holds at most 4096 rows: rows past that are counted, and the new
+  `message_auth_key_audit_overflow` row records the count when the journal
+  takes rows again. `benchmarks/frame_signature_benchmark.py --workload
+  key-set` measures the serving loop's lateness while a key set rotates; on
+  healthy storage the two designs do not differ measurably (`docs/benchmarks.md`).
+
 ### Fixed
 
 - `synapse worker-session` raises an interrupt while the provider is still

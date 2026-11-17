@@ -22,6 +22,14 @@ change time), so replacing only a secret file rotates that key. A set that fails
 validation is not applied: the last accepted set stays in force and observers
 are told why.
 
+The set in force is one immutable snapshot, and a lookup reads it and nothing
+else: no file status, no file and no observer that writes. Checking the files
+is a separate step. :meth:`MessageAuthKeySet.prepare` reads them and returns
+what it found without changing the set in force, so the hub runs it in a worker
+thread; :meth:`MessageAuthKeySet.apply` then puts the result in force in one
+assignment. A lookup therefore sees the old snapshot or the new one, never a
+mixture, and a change takes effect at the next check.
+
 As a mapping from key id to :class:`~synapse_channel.core.message_auth.MessageAuthKey`
 the set offers every key whose ``not_before`` has passed. A key past its
 ``not_after`` is still offered, carrying that end, so verification refuses it
@@ -37,6 +45,7 @@ import time
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Protocol
 
 from synapse_channel.core.errors import SynapseError
@@ -97,6 +106,48 @@ class MessageAuthKeySetObserver(Protocol):
 
     def set_rejected(self, path: Path, reason: str) -> None:
         """Report that the set at ``path`` was not applied and why."""
+
+
+@dataclass(frozen=True)
+class _KeySnapshot:
+    """The set in force: its entries in file order and each entry's secret."""
+
+    entries: tuple[MessageAuthKeyEntry, ...]
+    secrets: Mapping[str, bytes]
+
+
+def _snapshot(entries: tuple[MessageAuthKeyEntry, ...], secrets: dict[str, bytes]) -> _KeySnapshot:
+    """Freeze ``entries`` and a read-only view of ``secrets`` into one snapshot."""
+    return _KeySnapshot(entries, MappingProxyType(dict(secrets)))
+
+
+@dataclass(frozen=True)
+class PreparedKeySet:
+    """What one check of the files found, before it is put in force.
+
+    Parameters
+    ----------
+    signature : tuple of str
+        The status digests of the set file and the secret files to watch from
+        now on; the next check compares against them.
+    watched : tuple of pathlib.Path
+        The secret files watched from now on.
+    snapshot : _KeySnapshot or None
+        The new set, or ``None`` when the files on disk cannot be put in force.
+    reason : str or None
+        Why the files on disk cannot be put in force, when ``snapshot`` is
+        ``None``.
+    """
+
+    signature: tuple[str, ...]
+    watched: tuple[Path, ...]
+    snapshot: _KeySnapshot | None
+    reason: str | None
+
+
+def _status_of(path: Path, watched: tuple[Path, ...]) -> tuple[str, ...]:
+    """Return the status digests of the set file and every watched secret file."""
+    return (status_digest(path), *(status_digest(secret) for secret in watched))
 
 
 def message_auth_key_configured(args: Any) -> bool:
@@ -236,10 +287,10 @@ class MessageAuthKeySet(Mapping[str, MessageAuthKey]):
     def __init__(self, path: str | Path, *, clock: Callable[[], float] = time.time) -> None:
         self._path = Path(path).expanduser()
         self._clock = clock
-        self._entries = _read_manifest(self._path)
-        self._secrets = _read_secrets(self._entries)
-        self._watched = tuple(entry.secret_file for entry in self._entries)
-        self._signature = self._status()
+        entries = _read_manifest(self._path)
+        self._snapshot = _snapshot(entries, _read_secrets(entries))
+        self._watched = tuple(entry.secret_file for entry in entries)
+        self._signature = _status_of(self._path, self._watched)
         self._stale_reason: str | None = None
         self._observers: list[MessageAuthKeySetObserver] = []
         self._lookup_observers: list[Callable[[], None]] = []
@@ -253,7 +304,7 @@ class MessageAuthKeySet(Mapping[str, MessageAuthKey]):
     @property
     def entries(self) -> tuple[MessageAuthKeyEntry, ...]:
         """The set in force (the last accepted file), in file order."""
-        return self._entries
+        return self._snapshot.entries
 
     @property
     def stale_reason(self) -> str | None:
@@ -272,7 +323,10 @@ class MessageAuthKeySet(Mapping[str, MessageAuthKey]):
             observer.set_rejected(self._path, self._stale_reason)
 
     def observe_lookups(self, observer: Callable[[], None]) -> None:
-        """Call ``observer`` at every key lookup, after the files were checked."""
+        """Call ``observer`` at every key lookup.
+
+        It runs inside a verification, so it must not block.
+        """
         self._lookup_observers.append(observer)
 
     def observe_admissions(self, observer: Callable[[MessageAuthKeyEntry, str], None]) -> None:
@@ -282,9 +336,10 @@ class MessageAuthKeySet(Mapping[str, MessageAuthKey]):
     def admitted(self, key_id: str, sender: str) -> None:
         """Report that a frame from ``sender`` signed with ``key_id`` was verified.
 
-        A failing observer is logged; the frame stays admitted.
+        A failing observer is logged; the frame stays admitted. The observers run
+        inside the frame's verification, so they must not block.
         """
-        entry = next((item for item in self._entries if item.key_id == key_id), None)
+        entry = next((item for item in self._snapshot.entries if item.key_id == key_id), None)
         if entry is None:
             return
         for observer in self._admission_observers:
@@ -295,40 +350,67 @@ class MessageAuthKeySet(Mapping[str, MessageAuthKey]):
 
     def _key_ids(self) -> tuple[str, ...]:
         """Return the key ids of the set in force, in file order."""
-        return tuple(entry.key_id for entry in self._entries)
+        return tuple(entry.key_id for entry in self._snapshot.entries)
 
-    def _status(self) -> tuple[str, ...]:
-        """Return the status digests of the set file and every watched secret file."""
-        return (status_digest(self._path), *(status_digest(path) for path in self._watched))
+    def prepare(self) -> PreparedKeySet | None:
+        """Check the files and read them if they changed, without changing the set in force.
 
-    def refresh(self) -> None:
-        """Reload the set if the set file or a secret file changed; keep it if that fails.
+        It reads only the set's path, the secret files it watches and the
+        status it last saw, and mutates nothing, so the hub runs it in a
+        worker thread while lookups go on. One check runs at a time: the
+        caller passes its result to :meth:`apply` before the next one.
 
-        A set file that parses names the secret files watched from then on, even
-        if one of them cannot be read yet, so repairing that file is noticed.
+        Returns
+        -------
+        PreparedKeySet or None
+            ``None`` when no file changed; otherwise the new set, or why the
+            files on disk cannot be put in force. A set file that parses names
+            the secret files watched from then on, even if one of them cannot
+            be read yet, so repairing that file is noticed.
         """
-        current = self._status()
+        current = _status_of(self._path, self._watched)
         if current == self._signature:
-            return
+            return None
         try:
             entries = _read_manifest(self._path)
         except (SecretFileError, MessageAuthKeySetError) as exc:
-            self._signature = current
-            self._mark_stale(str(exc))
-            return
-        self._watched = tuple(entry.secret_file for entry in entries)
-        self._signature = self._status()
+            return PreparedKeySet(current, self._watched, None, str(exc))
+        watched = tuple(entry.secret_file for entry in entries)
+        signature = _status_of(self._path, watched)
         try:
             secrets = _read_secrets(entries)
         except SecretFileError as exc:
-            self._mark_stale(str(exc))
+            return PreparedKeySet(signature, watched, None, str(exc))
+        return PreparedKeySet(signature, watched, _snapshot(entries, secrets), None)
+
+    def apply(self, prepared: PreparedKeySet | None) -> None:
+        """Put what :meth:`prepare` found in force; call it where lookups run.
+
+        A new set replaces the snapshot in one assignment and is announced to
+        the observers. Files that cannot be put in force keep the last set and
+        are announced with their reason.
+        """
+        if prepared is None:
             return
-        self._entries, self._secrets, self._stale_reason = entries, secrets, None
+        self._watched, self._signature = prepared.watched, prepared.signature
+        if prepared.snapshot is None:
+            self._mark_stale(str(prepared.reason))
+            return
+        self._snapshot, self._stale_reason = prepared.snapshot, None
         for observer in self._observers:
             try:
                 observer.set_applied(self._path, self._key_ids())
             except Exception:
                 _LOG.exception("a message-auth key-set observer failed on an applied set")
+
+    def refresh(self) -> None:
+        """Check the files and put any change in force now, on the calling thread.
+
+        This is :meth:`prepare` followed by :meth:`apply`, for callers that may
+        block; the hub's watcher runs the two apart so the read stays off its
+        serving loop.
+        """
+        self.apply(self.prepare())
 
     def _mark_stale(self, reason: str) -> None:
         """Record and log that the files on disk are not in force."""
@@ -340,37 +422,37 @@ class MessageAuthKeySet(Mapping[str, MessageAuthKey]):
             except Exception:
                 _LOG.exception("a message-auth key-set observer failed on a rejected set")
 
-    def _offered(self) -> list[MessageAuthKeyEntry]:
-        """Return the entries whose ``not_before`` has passed."""
+    def _offered(self, snapshot: _KeySnapshot) -> list[MessageAuthKeyEntry]:
+        """Return the entries of ``snapshot`` whose ``not_before`` has passed."""
         now = self._clock()
         return [
-            entry for entry in self._entries if entry.not_before is None or now >= entry.not_before
+            entry
+            for entry in snapshot.entries
+            if entry.not_before is None or now >= entry.not_before
         ]
 
     def __getitem__(self, key_id: str) -> MessageAuthKey:
-        """Return the key ``key_id`` after picking up any change to the files."""
-        self.refresh()
+        """Return the key ``key_id`` from the set in force; no file is read."""
+        snapshot = self._snapshot
         for observer in self._lookup_observers:
             try:
                 observer()
             except Exception:
                 _LOG.exception("a message-auth key-set lookup observer failed")
-        for entry in self._offered():
+        for entry in self._offered(snapshot):
             if entry.key_id == key_id:
                 return MessageAuthKey(
                     key_id=entry.key_id,
-                    secret=self._secrets[entry.key_id],
+                    secret=snapshot.secrets[entry.key_id],
                     senders=entry.senders,
                     not_after=entry.not_after,
                 )
         raise KeyError(key_id)
 
     def __iter__(self) -> Iterator[str]:
-        """Iterate the key ids offered now, in file order, after picking up any change."""
-        self.refresh()
-        return iter([entry.key_id for entry in self._offered()])
+        """Iterate the key ids the set in force offers now, in file order."""
+        return iter([entry.key_id for entry in self._offered(self._snapshot)])
 
     def __len__(self) -> int:
-        """Return how many keys are offered now, after picking up any change."""
-        self.refresh()
-        return len(self._offered())
+        """Return how many keys the set in force offers now."""
+        return len(self._offered(self._snapshot))

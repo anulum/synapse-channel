@@ -1,0 +1,413 @@
+{
+  "benchmark": "benchmarks/frame_signature_benchmark.py --workload key-set",
+  "host": "one shared Linux server, Python 3.12.16, CI's hashed requirements",
+  "method": "base (the parent commit) and change interleaved round by round; each invocation runs the no-rotation workload first, then the rotating one",
+  "disk": {
+    "storage": "temporary directory on a SAS disk (ext4)",
+    "arguments": "--key-set-seconds 8 --key-set-pace-ms 20 --rotate-every 0.5",
+    "base": [
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4756.036505568773,
+          "claim_p99_us": 7162.8669975325465,
+          "lag_samples": 1412,
+          "lag_max_ms": 6.803110013715923,
+          "lag_p99_ms": 2.212878088466823,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4614.674020558596,
+          "claim_p99_us": 7034.200010821223,
+          "lag_samples": 1403,
+          "lag_max_ms": 37.6882499596104,
+          "lag_p99_ms": 2.554035051725805,
+          "rotations": 16,
+          "applied_sets": 16
+        }
+      ],
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4743.161553051323,
+          "claim_p99_us": 5479.920073412359,
+          "lag_samples": 1417,
+          "lag_max_ms": 7.57790089584887,
+          "lag_p99_ms": 2.098848931491375,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4604.673478752375,
+          "claim_p99_us": 7065.072073601186,
+          "lag_samples": 1400,
+          "lag_max_ms": 32.580425036139786,
+          "lag_p99_ms": 2.5633260421454906,
+          "rotations": 16,
+          "applied_sets": 16
+        }
+      ],
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4710.048553533852,
+          "claim_p99_us": 6996.047915890813,
+          "lag_samples": 1422,
+          "lag_max_ms": 6.201513931155205,
+          "lag_p99_ms": 2.176258019171655,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 2830.251003615558,
+          "claim_p99_us": 6914.41900562495,
+          "lag_samples": 1449,
+          "lag_max_ms": 36.69019393157214,
+          "lag_p99_ms": 2.0409770123660564,
+          "rotations": 16,
+          "applied_sets": 16
+        }
+      ],
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4598.148516379297,
+          "claim_p99_us": 6329.380092211068,
+          "lag_samples": 1438,
+          "lag_max_ms": 12.41581200622022,
+          "lag_p99_ms": 2.0923808962106705,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4271.805519238114,
+          "claim_p99_us": 6911.95810213685,
+          "lag_samples": 1432,
+          "lag_max_ms": 59.12050407379866,
+          "lag_p99_ms": 2.453116006217897,
+          "rotations": 16,
+          "applied_sets": 16
+        }
+      ]
+    ],
+    "change": [
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4583.391477353871,
+          "claim_p99_us": 7131.617981940508,
+          "lag_samples": 1425,
+          "lag_max_ms": 6.899988050572574,
+          "lag_p99_ms": 2.011274923570454,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4387.150052934885,
+          "claim_p99_us": 6538.760964758694,
+          "lag_samples": 1415,
+          "lag_max_ms": 54.77640894707292,
+          "lag_p99_ms": 2.32263398822397,
+          "rotations": 16,
+          "applied_sets": 8
+        }
+      ],
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4713.333502877504,
+          "claim_p99_us": 6998.448981903493,
+          "lag_samples": 1423,
+          "lag_max_ms": 3.7395289447158575,
+          "lag_p99_ms": 2.0306179113686085,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4398.040007799864,
+          "claim_p99_us": 6524.167023599148,
+          "lag_samples": 1414,
+          "lag_max_ms": 40.0189090333879,
+          "lag_p99_ms": 2.4158520437777042,
+          "rotations": 16,
+          "applied_sets": 8
+        }
+      ],
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 3428.79252275452,
+          "claim_p99_us": 9079.225943423808,
+          "lag_samples": 1456,
+          "lag_max_ms": 8.328362954780458,
+          "lag_p99_ms": 2.0150051033124328,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 2681.7794423550367,
+          "claim_p99_us": 5680.514965206385,
+          "lag_samples": 1454,
+          "lag_max_ms": 38.20747801102698,
+          "lag_p99_ms": 2.1515749441459775,
+          "rotations": 16,
+          "applied_sets": 7
+        }
+      ],
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 3876.398433931172,
+          "claim_p99_us": 5705.663003027439,
+          "lag_samples": 1439,
+          "lag_max_ms": 19.13939801044762,
+          "lag_p99_ms": 2.120343972928822,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 400,
+          "granted": 400,
+          "claim_p50_us": 4366.530978586525,
+          "claim_p99_us": 8261.444978415966,
+          "lag_samples": 1417,
+          "lag_max_ms": 41.99945391621441,
+          "lag_p99_ms": 2.338747032918036,
+          "rotations": 16,
+          "applied_sets": 8
+        }
+      ]
+    ]
+  },
+  "tmpfs": {
+    "storage": "temporary directory on tmpfs",
+    "arguments": "--key-set-seconds 4 --key-set-pace-ms 20 --rotate-every 0.5",
+    "base": [
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 4129.8409923911095,
+          "claim_p99_us": 6988.278008066118,
+          "lag_samples": 711,
+          "lag_max_ms": 10.225077047944067,
+          "lag_p99_ms": 2.1750429924577475,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 3926.1074853129685,
+          "claim_p99_us": 5637.519992887974,
+          "lag_samples": 711,
+          "lag_max_ms": 3.2375039346516132,
+          "lag_p99_ms": 2.1246339939534664,
+          "rotations": 8,
+          "applied_sets": 8
+        }
+      ],
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 4218.52502040565,
+          "claim_p99_us": 6658.266065642238,
+          "lag_samples": 700,
+          "lag_max_ms": 8.774306047707794,
+          "lag_p99_ms": 2.1768040070310235,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 4027.948947623372,
+          "claim_p99_us": 6125.306012108922,
+          "lag_samples": 708,
+          "lag_max_ms": 3.7823199573904276,
+          "lag_p99_ms": 2.181182038038969,
+          "rotations": 8,
+          "applied_sets": 8
+        }
+      ],
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 4245.450021699071,
+          "claim_p99_us": 6697.317003272474,
+          "lag_samples": 703,
+          "lag_max_ms": 14.845694070681928,
+          "lag_p99_ms": 2.194463978521526,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 3942.37699219957,
+          "claim_p99_us": 5678.600980900228,
+          "lag_samples": 712,
+          "lag_max_ms": 4.1200219467282295,
+          "lag_p99_ms": 2.106442004442215,
+          "rotations": 8,
+          "applied_sets": 8
+        }
+      ]
+    ],
+    "change": [
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 4052.513453643769,
+          "claim_p99_us": 10715.164011344314,
+          "lag_samples": 707,
+          "lag_max_ms": 16.43856603652239,
+          "lag_p99_ms": 2.2095090290531516,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 3859.0654730796814,
+          "claim_p99_us": 5282.802972942591,
+          "lag_samples": 710,
+          "lag_max_ms": 3.36955604609102,
+          "lag_p99_ms": 1.9134050281718373,
+          "rotations": 8,
+          "applied_sets": 4
+        }
+      ],
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 4073.3939968049526,
+          "claim_p99_us": 6285.585928708315,
+          "lag_samples": 709,
+          "lag_max_ms": 7.710134964436293,
+          "lag_p99_ms": 2.0000910200178623,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 3889.9219362065196,
+          "claim_p99_us": 5209.20695271343,
+          "lag_samples": 712,
+          "lag_max_ms": 2.1276150410994887,
+          "lag_p99_ms": 1.9294690620154142,
+          "rotations": 8,
+          "applied_sets": 4
+        }
+      ],
+      [
+        {
+          "workload": "key_set",
+          "rotate_every_s": null,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 4096.90395463258,
+          "claim_p99_us": 6548.612960614264,
+          "lag_samples": 705,
+          "lag_max_ms": 15.454262034036217,
+          "lag_p99_ms": 2.168726995587349,
+          "rotations": 0,
+          "applied_sets": 1
+        },
+        {
+          "workload": "key_set",
+          "rotate_every_s": 0.5,
+          "claims": 200,
+          "granted": 200,
+          "claim_p50_us": 3993.99601155892,
+          "claim_p99_us": 5342.265008948743,
+          "lag_samples": 709,
+          "lag_max_ms": 2.371247047558427,
+          "lag_p99_ms": 2.032735040411353,
+          "rotations": 8,
+          "applied_sets": 4
+        }
+      ]
+    ]
+  }
+}

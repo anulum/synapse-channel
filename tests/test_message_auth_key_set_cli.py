@@ -139,6 +139,7 @@ async def test_one_sender_moves_to_a_new_key_while_another_sender_continues(
             await _claim(hub.uri, "P/a", "new-a", "secret-new-a", "T3"),
         ]
         write_key_set(key_set, new_a, key_b)
+        await _wait_until_the_hub_applies_the_key_set(hub.db_path, 2)
         after = [
             await _claim(hub.uri, "P/a", "old-a", "secret-old-a", "T4"),
             await _claim(hub.uri, "P/a", "new-a", "secret-new-a", "T5"),
@@ -256,6 +257,7 @@ async def test_a_captured_frame_stays_refused_after_its_key_is_removed_and_resto
             )
             for number, entries in enumerate(sets, start=1):
                 write_key_set(key_set, *entries)
+                await _wait_until_the_hub_applies_the_key_set(hub.db_path, 1 + number)
                 await agent.connection.send(json.dumps(frame))
                 answer = await _answer(recorder, number)
                 verdicts.append(str(answer.get("verification_result") or answer["type"]))

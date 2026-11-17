@@ -253,11 +253,17 @@ validity window; the set file itself holds no secret:
 ]}
 ```
 
-- The hub checks the set file and every secret file it names every second and
-  again at each verification. Replacing the set file, or only a secret file,
-  rotates the keys without a restart. A file that fails validation, or a
-  secret file that is missing, empty, linked or readable by others, is not
-  applied: the last accepted keys stay in force.
+- The hub checks the set file and every secret file it names every second.
+  Replacing the set file, or only a secret file, rotates the keys without a
+  restart; the change is in force from the next check, so within about one
+  second. A file that fails validation, or a secret file that is missing,
+  empty, linked or readable by others, is not applied: the last accepted keys
+  stay in force.
+- A verification never reads a file or waits for the journal. It looks the key
+  up in the set in force, which a check replaces whole, so it sees the old set
+  or the new one, never a mixture. The files are read and the audit rows are
+  written in worker threads, off the hub's serving loop. A key revoked by
+  editing the file therefore stays usable until the next check.
 - A key before its `not_before` is unknown (`unknown_key`); a key at or past
   its `not_after` is refused `expired`; a key removed from the file is unknown.
 - The replay cache, and its durable ledger when configured, is never reset by a
@@ -272,6 +278,13 @@ validity window; the set file itself holds no secret:
   `message_auth_key_retiring_admission` (once per key, sender and hour while
   one hub process runs, when a frame is verified with a key that a newer key
   valid for the same sender is meant to replace).
+- Those rows are queued where they arise and written at the next check, so an
+  expiry or a retiring admission is journalled up to about one second after the
+  verification that saw it. A row the journal refuses stays queued for the next
+  check, and the hub writes the queue once more when it stops serving. The
+  queue holds at most 4096 rows; if the journal stays unavailable longer, the
+  rows past that are counted, and `message_auth_key_audit_overflow` records the
+  count once the journal takes rows again.
 - It cannot be combined with `--message-auth-key` or `--message-auth-key-file`.
   The secure, team-secure and paranoid presets and the attachment posture
   accept it as per-message authentication. Embedded hubs pass

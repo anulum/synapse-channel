@@ -282,6 +282,9 @@ EVENT_WORDS: Mapping[str, Describer] = {
     EventKind.MESSAGE_AUTH_KEY_RETIRING_ADMISSION: lambda p: EventWords(
         _text(p, "sender"), f"message signed with retiring key {_text(p, 'key_id')}"
     ),
+    EventKind.MESSAGE_AUTH_KEY_AUDIT_OVERFLOW: _fixed(
+        lambda p: f"message key audit queue overflowed{_count(p, 'dropped', 'rows not kept')}"
+    ),
     **{
         kind: _receipt(kind)
         for kind in (

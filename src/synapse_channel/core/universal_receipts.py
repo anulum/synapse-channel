@@ -102,6 +102,7 @@ NON_RECEIPT_EVENT_KINDS = frozenset(
         EventKind.MESSAGE_AUTH_KEY_SET_REJECTED,
         EventKind.MESSAGE_AUTH_KEY_EXPIRED,
         EventKind.MESSAGE_AUTH_KEY_RETIRING_ADMISSION,
+        EventKind.MESSAGE_AUTH_KEY_AUDIT_OVERFLOW,
     }
 )
 """Event kinds outside the universal receipt projection.

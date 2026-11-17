@@ -1944,10 +1944,10 @@ an installed protected runtime or revocation fencing.
 | Package version | 0.99.54 |
 | Public API exports | 70 |
 | Package modules | 1034 |
-| Classes | 1461 |
+| Classes | 1463 |
 | Wire message types | 122 |
 | CLI subcommands | 310 |
-| Test functions | 14641 |
+| Test functions | 14650 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 99 |
 | GitHub Actions workflows | 29 |

@@ -141,6 +141,42 @@ Raw results are in `benchmarks/results/frame_signature_benchmark.json`. The
 numbers establish no production throughput claim. Reproduce with
 `PYTHONPATH=src python benchmarks/frame_signature_benchmark.py`.
 
+### Key-set rotation and the serving loop
+
+`--workload key-set` runs a real hub with a journal and a per-message key set.
+- **Load:** claims signed with one key arrive every 20 ms, each released after its grant.
+- **Probe:** a loop-lag probe sleeps 5 ms and records how late it wakes.
+- **Runs:** once with no key change, and once while another key's secret file is
+  replaced every 0.5 s.
+
+**The comparison:** the version that checks the files at each verification and journals the audit
+rows on the loop, against the version that reads them and writes the rows in worker threads. Rounds
+alternate between the two, on one shared Linux server (Python 3.12). Medians:
+
+| Storage | Version | Rotation | Loop lag, largest (ms) | Loop lag, p99 (ms) | Claim p50 (ms) | Claim p99 (ms) |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| SAS disk, 4 rounds | checks at verification | no | 7.2 | 2.14 | 4.73 | 6.66 |
+| SAS disk, 4 rounds | checks at verification | yes | 37.2 | 2.50 | 4.44 | 6.97 |
+| SAS disk, 4 rounds | worker threads | no | 7.6 | 2.02 | 4.23 | 7.07 |
+| SAS disk, 4 rounds | worker threads | yes | 41.0 | 2.33 | 4.38 | 6.53 |
+| tmpfs, 3 rounds | checks at verification | yes | 3.8 | 2.12 | 3.94 | 5.68 |
+| tmpfs, 3 rounds | worker threads | yes | 2.4 | 1.93 | 3.89 | 5.28 |
+
+**On healthy storage the two versions do not differ measurably.** A key change
+on the SAS disk adds a stall of about 35 ms to the loop in both versions, and none on tmpfs.
+
+**Where the stall is not:** asyncio's debug mode, at a 20 ms threshold, finds no
+callback that long while claims run. A writer replacing a file the hub does not
+watch causes no stall either. The stall lies outside the loop's callbacks, and
+moving the key-set work to worker threads does not remove it.
+
+**What the worker threads do guarantee:** a verification never waits for a file or
+the journal, whatever they cost. Tests that slow the read or the journal to one
+second show the verification answering at once.
+
+Raw results are in `benchmarks/results/frame_signature_key_set_benchmark.json`.
+Reproduce with `PYTHONPATH=src python benchmarks/frame_signature_benchmark.py --workload key-set`.
+
 ## Relay token benchmark
 
 `relay_token_benchmark.py` measures how much the lite relay encoding shrinks a

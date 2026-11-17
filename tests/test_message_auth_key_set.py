@@ -197,15 +197,18 @@ def test_replacing_only_a_secret_file_rotates_that_key(tmp_path: Path) -> None:
     manifest = (tmp_path / "keys.json").read_bytes()
     cache = _cache()
     write_secret(tmp_path, "a", "fresh-secret")
+    keys.refresh()
     old = _signed("a", "secret-a", "P/a", nonce="old", at=_BASE)
     new = _signed("a", "fresh-secret", "P/a", nonce="new", at=_BASE)
     assert _verify(keys, old, cache, _BASE) is VerificationResult.BAD_AUTHENTICATION
     assert _verify(keys, new, cache, _BASE) is VerificationResult.OK
     replace_owner_only(tmp_path / "a.key", "\n")  # empty: not a usable secret
+    keys.refresh()
     still = _signed("a", "fresh-secret", "P/a", nonce="still", at=_BASE)
     assert _verify(keys, still, cache, _BASE) is VerificationResult.OK
     assert keys.stale_reason is not None and "a.key" in keys.stale_reason
     write_secret(tmp_path, "a", "repaired-secret")
+    keys.refresh()
     repaired = _signed("a", "repaired-secret", "P/a", nonce="repaired", at=_BASE)
     assert _verify(keys, repaired, cache, _BASE) is VerificationResult.OK
     assert keys.stale_reason is None
@@ -217,10 +220,13 @@ def test_a_broken_set_file_keeps_the_last_set_and_a_new_secret_file_is_watched(
 ) -> None:
     keys = _set(tmp_path, key_entry("a", ["P/a"]))
     replace_owner_only(tmp_path / "keys.json", "{not json")
+    keys.refresh()
     assert list(keys) == ["a"] and "not valid JSON" in str(keys.stale_reason)
     write_key_set(tmp_path / "keys.json", key_entry("a", ["P/a"]), key_entry("b", ["P/b"]))
+    keys.refresh()
     assert list(keys) == ["a"] and "key b" in str(keys.stale_reason)  # b.key is missing
     write_secret(tmp_path, "b", "secret-b")
+    keys.refresh()
     assert list(keys) == ["a", "b"] and keys.stale_reason is None
 
 
@@ -230,8 +236,10 @@ def test_a_removed_and_readded_key_never_readmits_a_replay(tmp_path: Path) -> No
     frame = _signed("a", "secret-a", "P/a", nonce="once", at=_BASE)
     assert _verify(keys, frame, cache, _BASE) is VerificationResult.OK
     write_key_set(tmp_path / "keys.json", key_entry("b", ["P/b"]))
+    keys.refresh()
     assert _verify(keys, frame, cache, _BASE) is VerificationResult.UNKNOWN_KEY
     write_key_set(tmp_path / "keys.json", key_entry("a", ["P/a"]), key_entry("b", ["P/b"]))
+    keys.refresh()
     assert _verify(keys, frame, cache, _BASE) is VerificationResult.REPLAYED
 
 
@@ -259,6 +267,7 @@ def test_observers_hear_changes_and_their_failures_change_nothing(
     caplog.set_level(logging.ERROR, logger="synapse_channel.core.message_auth_key_set")
     write_key_set(tmp_path / "keys.json", key_entry("a", ["P/a"]), key_entry("a2", ["P/a"]))
     write_secret(tmp_path, "a2", "secret-a2")
+    keys.refresh()
     assert "a" in keys
     replace_owner_only(tmp_path / "keys.json", "[]")
     keys.refresh()
@@ -348,7 +357,8 @@ def test_a_retiring_key_is_judged_per_sender_and_hour(tmp_path: Path, store: Eve
         key_entry("shared", ["P/a", "P/c"], not_before=instant(_BASE - 4 * 3600)),
         clock=clock,
     )
-    assert message_auth_key_watch_for(keys, store) is not None
+    watch = message_auth_key_watch_for(keys, store)
+    assert watch is not None
     for _ in range(2):
         keys.admitted("old-a", "P/a")
         keys.admitted("new-a", "P/a")
@@ -357,6 +367,8 @@ def test_a_retiring_key_is_judged_per_sender_and_hour(tmp_path: Path, store: Eve
     keys.admitted("shared", "P/a")
     clock.now = _BASE + HOUR_SECONDS + 10
     keys.admitted("old-a", "P/a")
+    assert _rows(store, MESSAGE_KEY_RETIRING_ADMISSION_KIND) == []  # queued, not yet written
+    watch.flush()
     rows = [payload for _, payload in _rows(store, MESSAGE_KEY_RETIRING_ADMISSION_KIND)]
     assert rows == [
         {"key_id": "old-a", "sender": "P/a", "newest_key_id": "new-a", "hour_start": _BASE},

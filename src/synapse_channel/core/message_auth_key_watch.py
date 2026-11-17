@@ -9,9 +9,15 @@
 
 A hub that verifies signed frames against a key set
 (:class:`~synapse_channel.core.message_auth_key_set.MessageAuthKeySet`) checks
-its files every :data:`WATCH_INTERVAL_SECONDS` as well as at each verification,
-and, with a journal, writes four audit-only kinds. They hold key ids and names,
-never a secret, a digest or a signature:
+its files every :data:`WATCH_INTERVAL_SECONDS`, off its serving loop: the files
+are read in a worker thread and a change is put in force on the loop in one
+assignment, so a verification never waits for a read. With a journal it writes
+five audit-only kinds. A row is queued in memory where it arises, also inside a
+verification, and the next check writes the queue in a worker thread, so no
+verification waits for the journal either. A row that cannot be written stays
+queued for the next check, the queue holds at most :data:`AUDIT_QUEUE_LIMIT`
+rows, and the hub writes it once more when it stops serving. The rows hold key
+ids and names, never a secret, a digest or a signature:
 
 ``message_auth_key_set_applied``
     The key-set file now in force, with its key ids.
@@ -27,6 +33,9 @@ never a secret, a digest or a signature:
     the newest key id for that sender and the start of the hour. One row per
     key, sender and hour while one hub process runs; the hours recorded are
     kept for :data:`RETIRING_MEMORY_HOURS` behind the latest one.
+``message_auth_key_audit_overflow``
+    How many rows were not kept because the queue was full while the journal
+    could not take them; written when the journal takes rows again.
 
 A key K is retiring for sender S when another key F is valid now, names S among
 its senders and is newer than K: ``F.not_before`` is later, an open
@@ -39,7 +48,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Mapping
+import threading
+from collections import deque
+from collections.abc import Callable, Mapping
+from functools import partial
 from pathlib import Path
 
 from synapse_channel.core.hourly_once import HOUR_SECONDS, HourlyOnce, hour_of
@@ -53,9 +65,13 @@ MESSAGE_KEY_SET_APPLIED_KIND = "message_auth_key_set_applied"
 MESSAGE_KEY_SET_REJECTED_KIND = "message_auth_key_set_rejected"
 MESSAGE_KEY_EXPIRED_KIND = "message_auth_key_expired"
 MESSAGE_KEY_RETIRING_ADMISSION_KIND = "message_auth_key_retiring_admission"
+MESSAGE_KEY_AUDIT_OVERFLOW_KIND = "message_auth_key_audit_overflow"
 
 RETIRING_MEMORY_HOURS = 24
 """How many hours behind its latest recorded hour a key and sender's hours are kept."""
+
+AUDIT_QUEUE_LIMIT = 4096
+"""Most rows a watch holds while its journal cannot take them; further rows are counted."""
 
 _LOG = logging.getLogger(__name__)
 
@@ -131,6 +147,10 @@ class MessageAuthKeyAudit:
             durable=True,
         )
 
+    def overflow(self, dropped: int) -> None:
+        """Record that ``dropped`` rows were not kept because the queue was full."""
+        self._journal.append(MESSAGE_KEY_AUDIT_OVERFLOW_KIND, {"dropped": dropped}, durable=True)
+
 
 def _start(entry: MessageAuthKeyEntry) -> float:
     """Return the entry's ``not_before`` for ordering; an open one is the earliest."""
@@ -169,8 +189,18 @@ def newest_for_sender(
     return newest
 
 
+_Row = Callable[[MessageAuthKeyAudit], None]
+"""One queued audit row: the write it stands for, given the audit."""
+
+
 class MessageAuthKeyWatch:
-    """Check one key set periodically and record its expiries and overlaps.
+    """Check one key set periodically and record its life, off the serving loop.
+
+    Every row is queued where it arises: when a check puts a change in force,
+    when a verification sees an expired key, when a retiring key admits a
+    frame. :meth:`flush` writes the queue in order. The hub's check runs the
+    file read and the writes in worker threads (:meth:`tick`), so neither a
+    verification nor the loop waits for a file or the journal.
 
     Parameters
     ----------
@@ -185,16 +215,47 @@ class MessageAuthKeyWatch:
         self._audit = audit
         self._expired: set[str] = set()
         self._retiring = HourlyOnce(RETIRING_MEMORY_HOURS)
-        keys.observe_lookups(lambda: self._record_expired("verification"))
-        keys.observe_admissions(self._record_retiring)
+        self._queue: deque[_Row] = deque()
+        self._dropped = 0
+        self._counting = threading.Lock()
+        self._writing = threading.Lock()
+        keys.observe_lookups(lambda: self._note_expired("verification"))
+        keys.observe_admissions(self._note_retiring)
+        if audit is not None:
+            keys.observe(self)
+
+    def set_applied(self, path: Path, key_ids: tuple[str, ...]) -> None:
+        """Queue the row of the key set now in force."""
+        self._enqueue(partial(MessageAuthKeyAudit.set_applied, path=path, key_ids=key_ids))
+
+    def set_rejected(self, path: Path, reason: str) -> None:
+        """Queue the row of a key set that was not applied."""
+        self._enqueue(partial(MessageAuthKeyAudit.set_rejected, path=path, reason=reason))
 
     def check(self) -> None:
-        """Re-read the files if they changed, then record keys that expired."""
+        """Check the files, note expiries and write the queue, all on the calling thread.
+
+        This is the synchronous form of :meth:`tick`, for callers that may block.
+        """
         self._keys.refresh()
-        self._record_expired("watcher")
+        self._note_expired("watcher")
+        self.flush()
+
+    async def tick(self) -> None:
+        """Check the files and write the queue in worker threads; put changes in force here.
+
+        The read runs in a worker thread and returns what it found; it is put in
+        force on this thread, the one that serves lookups. The queue is then
+        written in a worker thread, so a slow file or a slow journal never holds
+        the caller's loop.
+        """
+        prepared = await asyncio.to_thread(self._keys.prepare)
+        self._keys.apply(prepared)
+        self._note_expired("watcher")
+        await asyncio.to_thread(self.flush)
 
     async def run(self, interval: float = WATCH_INTERVAL_SECONDS) -> None:
-        """Call :meth:`check` every ``interval`` seconds while the hub serves.
+        """Run :meth:`tick` every ``interval`` seconds while the hub serves.
 
         A failed check is logged and the next one runs; the loop never ends on
         its own, so it cannot stop the hub.
@@ -202,12 +263,53 @@ class MessageAuthKeyWatch:
         while True:
             await asyncio.sleep(interval)
             try:
-                self.check()
+                await self.tick()
             except Exception:
                 _LOG.exception("cannot check the message-auth key-set files")
 
-    def _record_expired(self, observed: str) -> None:
-        """Write one row for each key in force that passed its end of validity."""
+    def flush(self) -> None:
+        """Write every queued row in order, then how many rows were not kept.
+
+        One writer runs at a time. A row that cannot be written stays first in
+        the queue and its error is raised, so the next flush writes it before
+        the rows queued after it. The hub calls this once more when it stops
+        serving.
+        """
+        audit = self._audit
+        if audit is None:
+            return
+        with self._writing:
+            while self._queue:
+                self._queue[0](audit)
+                self._queue.popleft()
+            with self._counting:
+                dropped = self._dropped
+            if dropped:
+                audit.overflow(dropped)
+                with self._counting:
+                    self._dropped -= dropped
+
+    def _enqueue(self, row: _Row) -> None:
+        """Queue ``row``, or count it when the queue is full; never block.
+
+        Only a watch with an audit queues: the set is observed only then, and
+        the notes return first without one.
+        """
+        with self._counting:
+            if len(self._queue) < AUDIT_QUEUE_LIMIT:
+                self._queue.append(row)
+                return
+            self._dropped += 1
+            first = self._dropped == 1
+        if first:
+            _LOG.error(
+                "the message-auth key-set audit queue is full (%d rows); "
+                "further rows are counted and the count is journalled later",
+                AUDIT_QUEUE_LIMIT,
+            )
+
+    def _note_expired(self, observed: str) -> None:
+        """Queue one row for each key in force that passed its end of validity."""
         if self._audit is None:
             return
         now = self._keys.now()
@@ -215,11 +317,18 @@ class MessageAuthKeyWatch:
             not_after = entry.not_after
             if not_after is None or now < not_after or entry.key_id in self._expired:
                 continue
-            self._audit.expired(entry.key_id, not_after, observed)
             self._expired.add(entry.key_id)
+            self._enqueue(
+                partial(
+                    MessageAuthKeyAudit.expired,
+                    key_id=entry.key_id,
+                    not_after=not_after,
+                    observed=observed,
+                )
+            )
 
-    def _record_retiring(self, entry: MessageAuthKeyEntry, sender: str) -> None:
-        """Write the first verification per hour by a retiring key for ``sender``."""
+    def _note_retiring(self, entry: MessageAuthKeyEntry, sender: str) -> None:
+        """Queue the first verification per hour by a retiring key for ``sender``."""
         if self._audit is None:
             return
         now = self._keys.now()
@@ -229,8 +338,16 @@ class MessageAuthKeyWatch:
         hour = hour_of(now)
         if not self._retiring.is_new((entry.key_id, sender), hour):
             return
-        self._audit.retiring_admission(entry.key_id, sender, newest.key_id, hour * HOUR_SECONDS)
         self._retiring.mark((entry.key_id, sender), hour)
+        self._enqueue(
+            partial(
+                MessageAuthKeyAudit.retiring_admission,
+                key_id=entry.key_id,
+                sender=sender,
+                newest_key_id=newest.key_id,
+                hour_start=hour * HOUR_SECONDS,
+            )
+        )
 
 
 def message_auth_key_watch_for(
@@ -250,11 +367,13 @@ def message_auth_key_watch_for(
     Returns
     -------
     MessageAuthKeyWatch or None
-        The watch, already observing the set; ``None`` for static keys.
+        The watch, already observing the set; ``None`` for static keys. The
+        rows of the set in force at start are written before it is returned,
+        before the hub serves.
     """
     if not isinstance(keys, MessageAuthKeySet):
         return None
     audit = None if journal is None else MessageAuthKeyAudit(journal)
-    if audit is not None:
-        keys.observe(audit)
-    return MessageAuthKeyWatch(keys, audit)
+    watch = MessageAuthKeyWatch(keys, audit)
+    watch.flush()
+    return watch

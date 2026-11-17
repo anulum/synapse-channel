@@ -58,6 +58,9 @@ class SecretWatch(Protocol):
     def run(self) -> Coroutine[Any, Any, None]:
         """Return the check loop; it never ends on its own."""
 
+    def flush(self) -> None:
+        """Write what the check still holds; called once more when serving stops."""
+
 
 async def _run_together(loops: list[Coroutine[Any, Any, None]]) -> None:
     """Run every check loop until all end; cancelling this cancels each of them."""
@@ -226,12 +229,22 @@ class HubIngress:
         return _run_together(loops)
 
     def flush_audit(self) -> None:
-        """Write the counts of refusal windows still open; called when serving stops."""
+        """Write what the audits still hold; called when serving stops.
+
+        That is the counts of refusal windows still open, and the rows each
+        secret watch has queued but not yet written. A failure is logged and
+        the others are still written.
+        """
         if self._token_audit is not None:
             try:
                 self._token_audit.flush()
             except Exception:
                 logger.exception("cannot record the last connect-token refusal counts")
+        for watch in self._secret_watches:
+            try:
+                watch.flush()
+            except Exception:
+                logger.exception("cannot record the last rows of a rotating secret file")
 
     async def resolve_sender(
         self,
