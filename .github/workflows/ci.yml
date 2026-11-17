@@ -384,6 +384,7 @@ jobs:
           tests/test_cli_encrypt_key.py
           tests/test_cli_fleet_scorecard.py
           tests/test_cli_kimi_claim_hook.py
+          tests/test_cli_lock_git_hooks.py
           tests/test_cli_lock_process.py
           tests/test_cli_lock_process_cancellation.py
           tests/test_cli_native_hook.py
