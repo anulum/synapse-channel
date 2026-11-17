@@ -102,6 +102,15 @@ Every runner keeps the same native backends and interpreter-specific host
 prerequisites. Shard zero also executes the explicit Linux metadata-refusal
 follow-up; each interpreter runs it once.
 
+The Python 3.12 shards also install two exact agent hosts, so that their
+real-host tests run instead of skipping. Under Node 22.23.4, they run
+`npm ci --ignore-scripts` in `integrations/codex-cli` (Codex CLI) and in
+`integrations/pi` (Pi). `SYNAPSE_TEST_CODEX_BIN` and `SYNAPSE_TEST_PI_BIN` point
+at the installed `node_modules/.bin/codex` and `node_modules/.bin/pi`. Without
+them a run skips those tests, for example "exact Codex 0.156.0 binary
+unavailable", and leaves their lines unmeasured. To reproduce a shard's coverage
+on another host, install the same two packages and set the same two variables.
+
 `tools.pytest_shard` records the complete inventory, selected IDs and actual
 completed outcomes, bound to the source SHA, run, interpreter and configuration.
 `tools/ci_shard_artifacts.py pack` refuses unsuccessful or incomplete receipts.
