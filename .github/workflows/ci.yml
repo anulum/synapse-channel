@@ -379,6 +379,7 @@ jobs:
           tests/test_cli.py
           tests/test_cli_capability_cards.py
           tests/test_cli_deliberate.py
+          tests/test_cli_doctor_mcp_hosts.py
           tests/test_cli_doctor_token_set.py
           tests/test_cli_encrypt_key.py
           tests/test_cli_fleet_scorecard.py
@@ -386,12 +387,14 @@ jobs:
           tests/test_cli_lock_process.py
           tests/test_cli_lock_process_cancellation.py
           tests/test_cli_native_hook.py
+          tests/test_cli_pid_monitor.py
           tests/test_cli_token_set.py
           tests/test_codex_mcp_package.py
           tests/test_core_errors.py
           tests/test_dashboard_host_sessions.py
           tests/test_durable_dir.py
           tests/test_host_sessions.py
+          tests/test_host_sessions_proc.py
           tests/test_host_sessions_tree.py
           tests/test_identity_keys.py
           tests/test_identity_keys_secret_floor.py
@@ -401,6 +404,7 @@ jobs:
           tests/test_leasing_drafts.py
           tests/test_mailbox_cursor.py
           tests/test_mcp_inbox.py
+          tests/test_mcp_server_bridge.py
           tests/test_mcp_wake_ledger.py
           tests/test_mcp_wake_root_archive.py
           tests/test_mcp_wake_root_initialization.py
@@ -432,6 +436,7 @@ jobs:
           tests/test_wake_relay.py
           tests/test_worker_outcome_interrupt.py
           tests/test_worker_outcome_publication.py
+          tests/test_worker_outcome_report_fields.py
           tests/test_worker_outcomes_native.py
       - name: Bind the successful Windows part into its artifact
         run: >-
