@@ -118,6 +118,27 @@ def test_password_file_replaced_while_it_is_opened_is_refused(
     assert path.read_bytes() == b"swapped"
 
 
+def test_password_file_on_a_host_neither_posix_nor_windows_is_refused_unread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host with no POSIX owner check and no Windows access check cannot prove owner-only."""
+    path = tmp_path / "password"
+    _owner_only(path, b"never read")
+    real_open = os.open
+    opened: list[str] = []
+
+    def recording_open(target: str | os.PathLike[str], flags: int, mode: int = 0o777) -> int:
+        opened.append(os.fspath(target))
+        return real_open(target, flags, mode)
+
+    monkeypatch.delattr(os, "getuid", raising=False)
+    monkeypatch.setattr(os, "name", "unsupported")
+    monkeypatch.setattr(os, "open", recording_open)
+    with pytest.raises(OpenCodeAuthError, match=r"^OpenCode password file must be a user-owned"):
+        load_password_file(path)
+    assert opened == []
+
+
 def test_password_file_refuses_symlink_and_empty_secret(tmp_path: Path) -> None:
     target = tmp_path / "target"
     target.write_text("\n")
