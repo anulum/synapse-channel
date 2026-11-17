@@ -26,6 +26,10 @@ from synapse_channel.worker_outcome import WorkerExit, WorkerObservation, read_w
 from synapse_channel.worker_session import run_worker_session
 
 _REFUSAL = "^worker outcome record changed; inquire before continuing$"
+# A hang guard, not a measurement: a real CLI launch imports the package in a
+# fresh interpreter, which a loaded host can stretch past several seconds. A
+# launch or readiness wait that truly hangs still fails, after this long.
+_HANG_GUARD_SECONDS = 60
 
 
 def private_environment(root: Path) -> dict[str, str]:
@@ -83,7 +87,7 @@ def inquire(report: Path, env: dict[str, str]) -> dict[str, object]:
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=_HANG_GUARD_SECONDS,
     )
     assert query.returncode == 0, query.stderr + query.stdout
     result = json.loads(query.stdout)
@@ -130,7 +134,7 @@ def test_real_cli_refuses_malformed_report_without_echoing_contents(
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=_HANG_GUARD_SECONDS,
     )
     assert launch.returncode == 0, launch.stderr + launch.stdout
     document = json.loads(report.read_bytes())
@@ -150,7 +154,7 @@ def test_real_cli_refuses_malformed_report_without_echoing_contents(
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=_HANG_GUARD_SECONDS,
     )
     assert query.returncode == 2
     assert query.stdout == "worker-session: outcome report unavailable (ValueError)\n"
@@ -175,7 +179,7 @@ def test_real_cli_process_exit_does_not_verify_external_effects(
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=_HANG_GUARD_SECONDS,
     )
     assert run.returncode == exitcode, run.stderr + run.stdout
     result = inquire(report, env)
@@ -202,7 +206,7 @@ def test_the_provider_is_told_the_operation_its_report_carries(tmp_path: Path) -
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=_HANG_GUARD_SECONDS,
     )
     assert run.returncode == 0, run.stderr + run.stdout
     operation_id = inquire(report, env)["operation_id"]
@@ -378,7 +382,7 @@ def test_actual_cli_refuses_ambiguous_launch_and_query_modes(tmp_path: Path, mod
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=_HANG_GUARD_SECONDS,
     )
     assert result.returncode == 2
     assert not effect.exists() and not report.exists()
@@ -405,7 +409,7 @@ def test_read_only_inquiry_observes_real_inflight_launcher_then_exit(tmp_path: P
         stderr=subprocess.PIPE,
     ) as child:
         try:
-            deadline = time.monotonic() + 4
+            deadline = time.monotonic() + _HANG_GUARD_SECONDS
             while not ready.exists():
                 assert child.poll() is None
                 assert time.monotonic() < deadline
@@ -420,7 +424,7 @@ def test_read_only_inquiry_observes_real_inflight_launcher_then_exit(tmp_path: P
                 assert declared["launcher"]["started"] == ""
                 assert inflight["state"] == "unknown"
                 assert inflight["observation"] == "launcher_unconfirmed"
-            stdout, stderr = child.communicate(input=b"finish\n", timeout=5)
+            stdout, stderr = child.communicate(input=b"finish\n", timeout=_HANG_GUARD_SECONDS)
             assert child.returncode == 0, stdout + stderr
         finally:
             if child.poll() is None:
@@ -445,7 +449,7 @@ def test_existing_report_refuses_before_actual_provider_launch(tmp_path: Path) -
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=_HANG_GUARD_SECONDS,
     )
     assert run.returncode == 2
     assert report.read_bytes() == b"owner original bytes"
@@ -471,7 +475,9 @@ def test_actual_launch_refusal_remains_not_started_after_launcher_exits(tmp_path
         "--",
         str(tmp_path / "no-such-program"),
     ]
-    run = subprocess.run(argv, env=env, capture_output=True, text=True, check=False, timeout=5)
+    run = subprocess.run(
+        argv, env=env, capture_output=True, text=True, check=False, timeout=_HANG_GUARD_SECONDS
+    )
     assert run.returncode == 2
     result = inquire(report, env)
     assert result["state"] == result["external_effect"] == "not_started"
@@ -494,7 +500,7 @@ def test_real_publication_failure_recovery_is_unknown_without_relaunch(tmp_path:
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=_HANG_GUARD_SECONDS,
     )
     assert run.returncode == 2
     recovered = moved / "outcome.json"
@@ -523,7 +529,7 @@ def test_real_interrupted_wait_confirms_only_the_direct_child_stop(tmp_path: Pat
 
     def interrupt_after_effect() -> None:
         """Interrupt only this bounded API call once its real child has written."""
-        deadline = time.monotonic() + 4
+        deadline = time.monotonic() + _HANG_GUARD_SECONDS
         while not effect.exists():
             if time.monotonic() >= deadline:
                 ready.set()
@@ -592,7 +598,7 @@ def test_windows_report_dacl_is_owner_only_until_everyone_can_read(tmp_path: Pat
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=_HANG_GUARD_SECONDS,
     )
     assert launch.returncode == 0, launch.stderr + launch.stdout
     assert_owner_only_file_path(report, purpose="worker outcome")
@@ -616,7 +622,7 @@ def test_windows_report_dacl_is_owner_only_until_everyone_can_read(tmp_path: Pat
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=_HANG_GUARD_SECONDS,
     )
     assert refused.returncode == 2
     assert refused.stdout == "worker-session: outcome report unavailable (SecurePathError)\n"
