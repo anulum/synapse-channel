@@ -18,6 +18,11 @@ from mcp_server_helpers import start_bridge
 from synapse_channel.mcp.bridge import SynapseHubBridge
 from synapse_channel.mcp.http_views import ProjectMcpViews
 
+# A hang guard, not a measurement: each view asks the live hub for a snapshot
+# after a long setup, and a loaded runner can stretch the reply past the
+# helper's half-second default. A reply that never comes still fails the test.
+_REPLY_BUDGET_SECONDS = 10.0
+
 
 async def post_task(
     handle: AgentHandle, task: str, project: str, *, dependencies: tuple[str, ...] = ()
@@ -59,7 +64,7 @@ async def test_project_views_hide_foreign_and_unscoped_hub_data() -> None:
     async with running_hub() as (_, uri):
         alpha = await connect_agent("ALPHA/worker", uri)
         beta = await connect_agent("BETA/worker", uri)
-        bridge = await start_bridge(uri, name="ALPHA/remote")
+        bridge = await start_bridge(uri, name="ALPHA/remote", request_timeout=_REPLY_BUDGET_SECONDS)
         views = ProjectMcpViews(bridge.bridge, "ALPHA")
         try:
             await post_task(beta, "BETA_PRIVATE", "BETA")
@@ -147,7 +152,7 @@ async def test_project_views_hide_foreign_and_unscoped_hub_data() -> None:
 async def test_project_views_require_a_bound_project_identity() -> None:
     """Constructor cannot bind a foreign seat to a granted project."""
     async with running_hub() as (_, uri):
-        bridge = await start_bridge(uri, name="BETA/remote")
+        bridge = await start_bridge(uri, name="BETA/remote", request_timeout=_REPLY_BUDGET_SECONDS)
         try:
             for project in ("", "ALPHA", "BETA/alias"):
                 with pytest.raises(ValueError, match="outside its granted project"):
