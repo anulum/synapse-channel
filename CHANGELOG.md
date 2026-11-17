@@ -18,6 +18,15 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Fixed
+
+- `synapse label`'s refresh no longer covers the agent's pane. The tmux hooks
+  it sets on `client-attached` and `client-resized` ran the refresh through
+  `run-shell -b`, and tmux shows what such a command prints in view mode over
+  the session's active pane: every attach or resize covered the agent until
+  someone pressed `q`. The hooks now discard the refresh's output, on success
+  and on failure.
+
 ## [0.99.54] - 2026-11-17
 
 Core 0.99.54 makes Antigravity CLI a first-class provider, bounds every

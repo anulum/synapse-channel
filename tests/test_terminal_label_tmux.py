@@ -304,6 +304,34 @@ def test_a_resize_of_the_client_lays_the_lines_out_again(server: Server) -> None
     assert stored_details(server.tmux_bin, name, runner=subprocess.run) == _DETAILS
 
 
+def test_a_refresh_that_prints_leaves_the_active_pane_out_of_view_mode(
+    server: Server, tmp_path: Path
+) -> None:
+    # tmux shows what a run-shell -b command prints in view mode over the
+    # active pane. The refresh prints on success, so the hook must discard it.
+    name = server.session("quiet", 125)
+    master = server.attach(name, 125)
+    marker = tmp_path / "refreshed"
+    script = (
+        "import pathlib, sys; print('label and 3 status line(s) set');"
+        " print('a warning', file=sys.stderr); pathlib.Path(sys.argv[1]).touch()"
+    )
+    refresh = [sys.executable, "-c", script, str(marker)]
+    assert apply(
+        server.tmux_bin, name, _DETAILS, runner=subprocess.run, refresh_command=refresh
+    ).applied
+
+    server.resize(master, 90)
+
+    deadline = time.monotonic() + 20.0
+    while time.monotonic() < deadline and not marker.exists():
+        time.sleep(0.2)
+    assert marker.exists()
+    time.sleep(1.0)
+    in_mode = server.tmux("display-message", "-p", "-t", f"={name}:", "#{pane_in_mode}")
+    assert in_mode.strip() == "0"
+
+
 def test_the_hook_passes_format_characters_on_without_expanding_them(
     server: Server, tmp_path: Path
 ) -> None:

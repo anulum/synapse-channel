@@ -238,7 +238,12 @@ def apply(
             return LabelResult(False, f"tmux refused {name}", label, tuple(lines))
     for index in range(len(lines), MAX_STATUS_LINES):
         tmux.unset(f"status-format[{index}]")
-    hook = "run-shell -b " + shlex.quote(inert(shlex.join(refresh_command)))
+    # tmux shows what a ``run-shell -b`` command prints in view mode over the
+    # session's active pane, so a refresh that printed anything would cover
+    # the agent until someone pressed q. The hook therefore discards the
+    # refresh's output, success and failure alike.
+    silent = shlex.join(refresh_command) + " >/dev/null 2>&1"
+    hook = "run-shell -b " + shlex.quote(inert(silent))
     for name in HOOKS:
         if not tmux.ok("set-hook", "-t", tmux.target, name, hook):
             return LabelResult(False, f"tmux refused the {name} hook", label, tuple(lines))
