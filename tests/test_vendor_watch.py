@@ -14,7 +14,9 @@ import json
 import subprocess
 import sys
 from datetime import UTC, datetime
+from email.message import Message
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request
 
 import pytest
@@ -282,6 +284,48 @@ def test_source_fetch_rejects_redirect_and_oversize(monkeypatch: pytest.MonkeyPa
     )
     with pytest.raises(VendorWatchError):
         fetch_source(url)
+
+
+def test_the_workflow_token_goes_to_the_github_api_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A set token is sent to the GitHub API host and to no other allowlisted source."""
+    github_url = SOURCES["claude-code"][1]
+    other_url = "https://releases.example.org/notes"
+    monkeypatch.setitem(watch.SOURCES, "other-host", ("github-release", other_url, None))
+    seen: list[Request] = []
+
+    def fake_open(request: Request, timeout: int) -> _Response:
+        seen.append(request)
+        return _Response(request.full_url, b"valid")
+
+    monkeypatch.setattr(watch, "urlopen", fake_open)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    fetch_source(github_url)
+    monkeypatch.setenv("GITHUB_TOKEN", " workflow-token ")
+    fetch_source(github_url)
+    fetch_source(other_url)
+
+    assert [request.get_header("Authorization") for request in seen] == [
+        None,
+        "Bearer workflow-token",
+        None,
+    ]
+
+
+def test_a_refused_source_records_its_http_status() -> None:
+    """A source answering with an HTTP error is reported with the status, not only its class."""
+
+    def refuse(url: str) -> bytes:
+        raise HTTPError(url, 403, "rate limit exceeded", Message(), None)
+
+    report = build_report(
+        load_matrix(DEFAULT_MATRIX),
+        fetch=refuse,
+        probe=lambda command: None,
+        now=datetime(2026, 11, 17, tzinfo=UTC),
+    )
+
+    assert {row["error"] for row in report["surfaces"].values()} == {"HTTPError 403"}
+    assert {row["status"] for row in report["surfaces"].values()} == {"source_unavailable"}
 
 
 def test_installed_probe_and_strict_report_cli(

@@ -26,6 +26,11 @@ execution evidence when carrying a release claim forward.
   the session's active pane: every attach or resize covered the agent until
   someone pressed `q`. The hooks now discard the refresh's output, on success
   and on failure.
+- The daily vendor watch reads the GitHub API with the job's read-only token.
+  Unauthenticated calls share a per-address limit of 60 an hour, and on a
+  hosted runner every source answered with an HTTP error, so the scheduled
+  run failed. The token goes to `api.github.com` only. A failed source now
+  records its HTTP status code, not only the error's class.
 
 ## [0.99.54] - 2026-11-17
 

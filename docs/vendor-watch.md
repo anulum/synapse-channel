@@ -27,7 +27,8 @@ The command probes installed host `--version` flags without a model turn and
 fetches only the six allowlisted official HTTPS sources. It writes a dated JSON
 report with source URL, publication date, latest stable version, installed and
 verified versions, notes digest and changed-notes signal, status and review priority. Source failure is
-`source_unavailable`, never `current`. `--strict` exits nonzero if a source is
+`source_unavailable`, never `current`, and an HTTP failure records its status
+code, such as `HTTPError 403`. `--strict` exits nonzero if a source is
 unavailable, the named manual review is overdue, or the latest unverified notes
 flag possible security or breaking changes. Release-note keyword
 priority is an advisory triage hint, not proof of a security vulnerability.
@@ -41,7 +42,11 @@ The exact URL allowlist, redirect-host check, size bound and prerelease refusal
 remain enforced.
 
 The daily `.github/workflows/vendor-watch.yml` workflow publishes
-the same report as a short-lived Actions artifact and job summary. The Core
+the same report as a short-lived Actions artifact and job summary. It passes
+the job's own read-only token as `GITHUB_TOKEN`. Unauthenticated GitHub API
+calls share a per-address limit of 60 an hour, which a hosted runner's
+address may already have spent. The watch sends the token only to
+`api.github.com`, never to another source, and runs without it locally. The Core
 maintenance seat reviews the report at least weekly and before each integration
 release. A breaking, permission, hook or security change gets immediate
 triage. The existing OpenCode compatibility workflow separately runs its

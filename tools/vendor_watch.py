@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import html
 import json
+import os
 import re
 import subprocess  # fixed version-only commands, never a shell
 import sys
@@ -20,6 +21,7 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
@@ -76,13 +78,17 @@ def fetch_source(url: str) -> bytes:
     """Fetch only a declared HTTPS source with a size and final-host bound."""
     if url not in {source[1] for source in SOURCES.values()}:
         raise VendorWatchError("source URL is not in the official allowlist")
-    request = Request(
-        url,
-        headers={
-            "User-Agent": "Synapse-Channel-Vendor-Watch/0.1",
-            "Accept": "application/json,text/markdown,text/html",
-        },
-    )
+    headers = {
+        "User-Agent": "Synapse-Channel-Vendor-Watch/0.1",
+        "Accept": "application/json,text/markdown,text/html",
+    }
+    # Unauthenticated GitHub API calls share a per-IP limit of 60 an hour, which
+    # a hosted runner's address can have spent already. The workflow's own
+    # read-only token lifts it; it is sent to the GitHub API host only.
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    if token and urlsplit(url).hostname == "api.github.com":
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(url, headers=headers)
     with urlopen(request, timeout=15) as response:  # exact HTTPS allowlist
         final = urlsplit(response.geturl())
         if final.scheme != "https" or final.hostname != urlsplit(url).hostname:
@@ -243,7 +249,7 @@ def build_report(
             row.update(
                 status="source_unavailable",
                 priority="source_failure",
-                error=type(exc).__name__,
+                error=f"HTTPError {exc.code}" if isinstance(exc, HTTPError) else type(exc).__name__,
             )
         rows[name] = row
     return {

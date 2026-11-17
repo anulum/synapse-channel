@@ -31,6 +31,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Check official releases against the reviewed matrix
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python tools/vendor_watch.py --strict --report "$RUNNER_TEMP/vendor-watch.json"
       - name: Summarize the dated result
         if: always()
