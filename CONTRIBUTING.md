@@ -102,14 +102,22 @@ Every runner keeps the same native backends and interpreter-specific host
 prerequisites. Shard zero also executes the explicit Linux metadata-refusal
 follow-up; each interpreter runs it once.
 
-The Python 3.12 shards also install two exact agent hosts, so that their
-real-host tests run instead of skipping. Under Node 22.23.4, they run
-`npm ci --ignore-scripts` in `integrations/codex-cli` (Codex CLI) and in
-`integrations/pi` (Pi). `SYNAPSE_TEST_CODEX_BIN` and `SYNAPSE_TEST_PI_BIN` point
-at the installed `node_modules/.bin/codex` and `node_modules/.bin/pi`. Without
-them a run skips those tests, for example "exact Codex 0.156.0 binary
+The Python 3.12 shards also install four exact agent hosts, so that their
+real-host tests run instead of skipping:
+
+- Codex CLI: `npm ci --ignore-scripts` in `integrations/codex-cli` under Node
+  22.23.4, with `SYNAPSE_TEST_CODEX_BIN` at its `node_modules/.bin/codex`;
+- Pi: the same in `integrations/pi`, then `tools/sync_pi_dependency_pins.py`,
+  with `SYNAPSE_TEST_PI_BIN` at its `node_modules/.bin/pi`;
+- Claude Code 2.1.311: the same in `integrations/claude-code`, with a `claude`
+  wrapper on `PATH`;
+- OpenCode 1.18.32: the release archive, checked against its pinned SHA-256
+  digests, with `OPENCODE_BIN` at the binary.
+
+Without them a run skips those tests, for example "exact Codex 0.156.0 binary
 unavailable", and leaves their lines unmeasured. To reproduce a shard's coverage
-on another host, install the same two packages and set the same two variables.
+on another host, install the same hosts the way `.github/workflows/ci.yml` does
+and set the same variables.
 
 `tools.pytest_shard` records the complete inventory, selected IDs and actual
 completed outcomes, bound to the source SHA, run, interpreter and configuration.
