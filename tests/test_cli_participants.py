@@ -29,6 +29,7 @@ from synapse_channel.cli_participants import (
     _cmd_list,
     build_participant,
 )
+from synapse_channel.participants.agy_stream import AGY_SCHEMA_VERIFIED
 from synapse_channel.participants.envelope import TurnRequest
 from synapse_channel.participants.gemini_stream import GEMINI_SCHEMA_VERIFIED
 from synapse_channel.participants.grok_stream import GROK_SCHEMA_VERIFIED
@@ -128,6 +129,7 @@ def scripted(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 def test_registry_names_every_shipped_provider() -> None:
     assert set(PROVIDERS) >= {
+        "agy",
         "claude",
         "codex",
         "gemini",
@@ -169,6 +171,7 @@ def test_list_reports_every_provider_without_stale_schema_caveats(
 ) -> None:
     assert GROK_SCHEMA_VERIFIED is True
     assert GEMINI_SCHEMA_VERIFIED is True
+    assert AGY_SCHEMA_VERIFIED is True
     parser = build_parser()
     args = parser.parse_args(["participant", "list"])
     assert args.func is _cmd_list
@@ -271,6 +274,18 @@ def test_grok_turns_are_enabled_after_real_emitter_capture() -> None:
 
 def test_gemini_turns_are_enabled_after_real_emitter_capture() -> None:
     assert cli_participants.refusal_for("gemini") is None
+
+
+def test_agy_turns_are_enabled_after_real_turn_captures() -> None:
+    assert cli_participants.refusal_for("agy") is None
+
+
+def test_agy_refusal_returns_if_the_schema_flag_drops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli_participants, "AGY_SCHEMA_VERIFIED", False)
+    assert cli_participants.refusal_for("agy") == cli_participants._AGY_REFUSAL
+    assert "AGY_SCHEMA_VERIFIED" in cli_participants._AGY_REFUSAL
 
 
 def test_gemini_refusal_returns_if_the_schema_flag_drops(

@@ -3991,13 +3991,17 @@ the workflow are counted in a trailing note instead of shown, the exit code
 signals scoped collisions only (`0` none, `1` at least one, `2` on an invalid
 workflow, missing store, or the `--max-nodes` ceiling); `participant`
 is the operator surface over the Participant Fabric — `list` probes each
-registered provider driver (claude, codex, gemini, grok, kimi, ollama,
+registered provider driver (agy, claude, codex, gemini, grok, kimi, ollama,
 ollama-api) without taking a turn, and `ask` runs exactly one turn against one
 provider and prints the answer, or the full typed turn result with `--json`.
 Grok turns are enabled after the native `thought` / `text` / `end` stream was
 captured from stable Grok 0.2.93; Gemini turns are likewise enabled from its
-real-emitter capture. Both schema flags remain wired as fail-closed gates for a
-future wire change. Grok coordination installs through
+real-emitter capture, and Antigravity CLI (`agy`) turns from captures of real
+1.5.10 turns. The three schema flags remain wired as fail-closed gates for a
+future wire change. An `agy` turn runs `agy --print … --output-format
+stream-json --mode plan`, never with `--dangerously-skip-permissions`; headless
+mode cannot ask for a permission, so a turn that ends without an answer after a
+tool was denied is an error that names the denied actions. Grok coordination installs through
 `synapse adapters install grok`, while
 `synapse adapters grok-claim-hook --print-config` emits its native file-edit
 guard recipe.

@@ -31,8 +31,14 @@ execution evidence when carrying a release claim forward.
   footer only: an empty row is idle; an `esc to cancel` footer, a permission
   dialog or a chooser blocks; a typed draft is never submitted. Earlier turns
   and thought summaries above the composer are not read, so a past thought
-  that mentions "thinking" or "approve" does not hold a wake back. A headless
-  driver is not part of this change.
+  that mentions "thinking" or "approve" does not hold a wake back.
+- `synapse participant ask agy` drives Antigravity CLI headlessly:
+  `agy --print … --output-format stream-json --mode plan`, resuming with
+  `--conversation=<id>`. The stream parser was built from real 1.5.10 turns: a
+  reply, a resumed turn, and a turn whose only command headless mode denied.
+  Such a turn reports `SUCCESS` with an empty response; it is an error here,
+  naming the denied actions and keeping its token counts. The driver never
+  passes `--dangerously-skip-permissions`.
 
 ### Changed
 

@@ -25,7 +25,10 @@ Gemini carries the same gate on
 :data:`~synapse_channel.participants.gemini_stream.GEMINI_SCHEMA_VERIFIED`; that
 flag is now true — the envelope was captured from the installed 0.47.0 binary's
 real emitter — so Gemini turns are enabled, and the gate stays in place to refuse
-them again should a future release change the wire shape.
+them again should a future release change the wire shape. Antigravity CLI
+(``agy``), Gemini CLI's successor for personal Google accounts, carries the same
+gate on :data:`~synapse_channel.participants.agy_stream.AGY_SCHEMA_VERIFIED`,
+true since its stream was captured from real turns of ``agy`` 1.5.10.
 """
 
 from __future__ import annotations
@@ -45,10 +48,12 @@ from synapse_channel.cli_participants_pi import (
     add_pi_connection_arguments,
     build_cli_participant,
 )
+from synapse_channel.participants.agy_stream import AGY_SCHEMA_VERIFIED
 from synapse_channel.participants.api_ollama import OllamaApiParticipant
 from synapse_channel.participants.envelope import TurnRequest
 from synapse_channel.participants.gemini_stream import GEMINI_SCHEMA_VERIFIED
 from synapse_channel.participants.grok_stream import GROK_SCHEMA_VERIFIED
+from synapse_channel.participants.headless_agy import AgyParticipant
 from synapse_channel.participants.headless_claude import HeadlessClaudeParticipant
 from synapse_channel.participants.headless_codex import CodexParticipant
 from synapse_channel.participants.headless_gemini import GeminiParticipant
@@ -70,6 +75,7 @@ _MODEL_REQUIRED = frozenset({"ollama", "ollama-api", "pi"})
 """Providers whose driver has no configured default model, so ``--model`` is mandatory."""
 
 PROVIDERS: dict[str, ParticipantBuilder] = {
+    "agy": AgyParticipant,
     "claude": HeadlessClaudeParticipant,
     "codex": CodexParticipant,
     "gemini": GeminiParticipant,
@@ -95,6 +101,12 @@ _GEMINI_REFUSAL = (
     "Use another provider, or re-capture and verify the schema first."
 )
 
+_AGY_REFUSAL = (
+    "agy turns are disabled: AGY_SCHEMA_VERIFIED=False (stream schema not captured "
+    "from the current Antigravity CLI). A turn could silently misparse. Use another "
+    "provider, or capture and verify the schema first."
+)
+
 _OPENCODE_REFUSAL = (
     "opencode turns are disabled: OPENCODE_SCHEMA_VERIFIED=False (the installed CLI/server "
     "contract is not pinned to a verified source and real-process capture). Use another "
@@ -112,6 +124,8 @@ def refusal_for(provider: str) -> str | None:
         return _GROK_REFUSAL
     if provider == "gemini" and not GEMINI_SCHEMA_VERIFIED:
         return _GEMINI_REFUSAL
+    if provider == "agy" and not AGY_SCHEMA_VERIFIED:
+        return _AGY_REFUSAL
     if provider in {"opencode", "opencode-api"} and not OPENCODE_SCHEMA_VERIFIED:
         return _OPENCODE_REFUSAL
     return None
