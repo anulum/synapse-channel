@@ -390,7 +390,11 @@ expected projection is the declaration's `expected_sha256`. A state the read
 cannot project (a path the output lacks, for one) is refused before the hub is
 asked. `--intent-sha256` runs the read again, so a state changed since the
 declaration changes the digest and is refused before the hub is asked, as a
-changed file is. Another identity verifies the run with
+changed file is. That second read covers the time from the declaration to the
+attempt, not the time from the read to the change itself: the claim fences the
+operation on the hub, not the component, so another writer can still change the
+component in between, as it can change a file after its pre-state check.
+Another identity verifies the run with
 `synapse verify-result component` ([execution outcomes](execution-outcomes.md)),
 under its own grants, and publishes that record; the executor's own reading
 closes nothing.
