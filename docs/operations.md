@@ -375,7 +375,12 @@ on the hub; it defaults to `--subject`.
    approval. The hub is then asked for one attempt of that exact intent
    (`--idem-key` asks again after a lost answer), and the run starts only when
    the attempt is open. Its outcome is published on the task, which ends the
-   attempt.
+   attempt. Ending the attempt by its own report does not take it off an
+   `operation_stop`'s list: because `file` and `component_state` runs have no
+   marker at a system of record, a stop still lists such an attempt (`unsealable`
+   under `stop --seal`), keeps the stop at `stop requested`, and counts the
+   declarer as an actor of the scope until another identity publishes a
+   verification.
 
 **A component's own state.** A row that names `observed_by` (a setting, a
 plugin, a policy of the component itself) goes through with the effect

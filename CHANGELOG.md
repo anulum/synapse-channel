@@ -62,6 +62,15 @@ execution evidence when carrying a release claim forward.
   creates its missing parents now creates each one `0700`, whatever the umask;
   a directory that already exists is not changed, so a group-writable
   `~/.local` the person already has is still refused.
+- `operation_stop` now lists every attempt in an unclosed operation of the
+  stopped scope that is neither `sealed` nor independently `reconciled`, rather
+  than omitting attempts ended by their executor's own outcome report. An
+  attempt whose executor reported `not_started`, `confirmed_failed` or
+  `confirmed_done` before the stop is therefore still listed, sealed by
+  `synapse operation stop --seal` for marker-bearing effects (preventing a late
+  or in-flight push from landing after `at rest`), held at `stop requested` as
+  `unsealable` for unmarked effects until another identity observes it, and
+  counted towards `actor_of_scope` on `operation_resume`.
 
 ## [0.99.55] - 2026-11-18
 

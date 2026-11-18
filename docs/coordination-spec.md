@@ -1533,15 +1533,17 @@ guessed. Without an attempt the verification MUST be unchanged.
 
 **Pinned by.** `tests/test_result_verification_attempt.py`.
 
-### INV-OS-1 — a stop lists every attempt open in its scope when it is recorded
+### INV-OS-1 — a stop lists every unsealed, unreconciled attempt in its scope when it is recorded
 
 **Normative.** An `operation_stop` of a scope that is not stopped MUST be
-journalled as one `operation_stopped` row whose `listed` names every attempt
-open, at that row's commit, in an operation the scope contains. The hub MUST
-read the open attempts and commit the row while holding the mutation lock that
-requests to open attempts take, so an attempt opened between the list and the
-row cannot exist. A stop of a stopped scope MUST be answered `already_stopped`
-and record no new stop. A stop MUST NOT end an attempt.
+journalled as one `operation_stopped` row whose `listed` names every attempt,
+in each unclosed operation the scope contains, that is neither `sealed` nor
+independently `reconciled` at that row's commit — including an attempt whose
+executor already reported a terminal outcome. The hub MUST read those attempts
+and commit the row while holding the mutation lock that requests to open
+attempts take, so an attempt opened between the list and the row cannot exist.
+A stop of a stopped scope MUST be answered `already_stopped` and record no new
+stop. A stop MUST NOT end an attempt.
 
 **Implementation.** `core/handlers/operation_stops.py` through
 `run_atomic_operation`, `core/operation_attempt_ledger.py:AttemptLedger.open_in`.
@@ -1587,7 +1589,7 @@ a stop, or during it, opens no attempt after the resume.
 holds `operation-resume` on the scope, which the handler enforces also on a
 hub without `--require-acl`, where without an access file no identity holds
 it. It MUST be refused `actor_of_scope` when the resumer declared an operation
-the stop listed or one open in the scope. The resume's `case` MUST be recorded
+the stop listed or one with an unsealed, unreconciled attempt in the scope. The resume's `case` MUST be recorded
 as stated. Every answer except `invalid_request` and `no_journal` MUST be
 journalled with the stored answer in one transaction under the request key; a
 repeat MUST return the stored answer. Under `--require-acl` the access gate
@@ -1613,21 +1615,27 @@ NOT remove a stop or resume row; an export MUST carry them.
 
 ### INV-OS-6 — a stop trusts markers, not reports
 
-**Normative.** An attempt a stop listed MUST count as closed for that stop
-only through a kept `stop_readback` of `sealed` or `applied`. An executor's
-outcome, a verification and an `unsealable` or `unread` read-back MUST NOT
-close it. The hub MUST keep `unsealable` only for an operation whose declared
-effect has no marker at a system of record, decided from the declaration, and
-MUST keep at most one closing read-back per attempt and stop. A read-back MUST
-NOT end an attempt and grants nothing.
+**Normative.** An attempt leaves a stop's list only through its marker at the
+system of record or an independent observation: an executor's outcome report
+MUST NOT omit an attempt from `listed` when a stop is recorded, and an attempt
+a stop listed MUST count as closed for that stop only through a kept
+`stop_readback` of `sealed` or `applied`. An executor's outcome, a verification
+and an `unsealable` or `unread` read-back MUST NOT close it. The hub MUST keep
+`unsealable` only for an operation whose declared effect has no marker at a
+system of record, decided from the declaration, and MUST keep at most one
+closing read-back per attempt and stop. A read-back MUST NOT end an attempt and
+grants nothing.
 
-**Implementation.** `core/operation_attempt_ledger.py:AttemptLedger.stop_closed`,
+**Implementation.** `core/operation_attempt_ledger.py:AttemptLedger.open_in`,
+`core/operation_attempt_ledger.py:AttemptLedger.stop_closed`,
 `core/operation_records.py:stop_readback_refusal`,
 `core/operation_stop_readbacks.py:readback_mismatch`.
 
-**Pinned by.** `tests/test_operation_stop_readbacks.py`,
+**Pinned by.** `tests/test_operation_stops.py`,
+`tests/test_operation_stop_readbacks.py`,
 `tests/test_cli_operation_stop_seal.py`
-(`test_a_reported_attempt_is_sealed_anyway_and_the_late_effect_is_refused`).
+(`test_an_attempt_reported_before_the_stop_is_listed_sealed_and_its_late_effect_refused`,
+`test_a_reported_attempt_is_sealed_anyway_and_the_late_effect_is_refused`).
 
 ### INV-OS-7 — the seal first, then its record
 

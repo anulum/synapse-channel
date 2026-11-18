@@ -32,7 +32,7 @@ here. Restoring checks no time.
 The ledger also keeps each scope's stops (:mod:`~synapse_channel.core.operation_stops`):
 
 * an ``operation_stopped`` row stops its scope, at its epoch, and names the
-  operations whose attempts were open in it;
+  operations whose attempts were neither sealed nor reconciled in it;
 * an ``operation_resumed`` row lifts the stop of its scope;
 * the journal sequence of a scope's latest stop or resume is its line;
 * an ``operation_stop_readback`` row records what a stop read back for one
@@ -820,20 +820,20 @@ class AttemptLedger:
         return None
 
     def open_in(self, scope: str) -> tuple[OpenAttempt, ...]:
-        """Return every attempt open in an operation that ``scope`` contains."""
+        """Return every attempt in ``scope`` that is neither sealed nor reconciled."""
         found: list[OpenAttempt] = []
         for operation_id, entry in self._operations.items():
-            if scope not in self._scopes_of(operation_id):
+            if entry.closed or scope not in self._scopes_of(operation_id):
                 continue
             found.extend(
                 OpenAttempt(operation_id, attempt.attempt_id, entry.fact.task_id, attempt.executor)
                 for attempt in entry.attempts
-                if not attempt.ended
+                if not (attempt.sealed or attempt.reconciled)
             )
         return tuple(found)
 
     def actors(self, scope: str) -> frozenset[str]:
-        """Return the actors of ``scope``: the declarers of its listed or open operations."""
+        """Return the actors of ``scope``: declarers of operations it lists or would list."""
         stops = self._stops.get(scope)
         listed = () if stops is None else stops.listed
         declarers = {

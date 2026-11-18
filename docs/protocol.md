@@ -263,7 +263,9 @@ does not add agent grades to protocol envelopes.
   undeclared id is only in `installation`. A stop of a scope not already
   stopped is journalled as `operation_stopped` with the stopper, the reason,
   the scope's `epoch` (one more than its previous stop's) and `listed`: every
-  attempt open in the scope when the row commits, read under the mutation lock
+  attempt in an unclosed operation of the scope that is neither `sealed` nor
+  independently `reconciled` when the row commits (including one ended only by
+  its executor's outcome report), read under the mutation lock
   that requests to open attempts take, so no attempt opens between the list
   and the row. A stop of a stopped scope is answered `already_stopped` with the
   standing stop's sequence and records no new stop. While a scope is stopped
@@ -274,7 +276,8 @@ does not add agent grades to protocol envelopes.
   `reason` and `case` (`another_person` or `only_person`, recorded as the
   resumer states it). A resume by an identity holding `operation-resume` on the
   scope, of a stopped scope, by an identity that is not an actor of it (the
-  declarer of an operation the stop listed or of one open in the scope), is
+  declarer of an operation the stop listed or of one with an unsealed,
+  unreconciled attempt in the scope), is
   journalled as `operation_resumed` with `lifts_seq` and `resumed_from`, the
   stop's state computed at the resume, which the stop keeps from then on.
   Otherwise the answer is

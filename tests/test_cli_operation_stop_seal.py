@@ -249,6 +249,163 @@ async def test_a_reported_attempt_is_sealed_anyway_and_the_late_effect_is_refuse
     assert late.answer == OTHER_PARTY_FIRST and branch == b
 
 
+async def test_an_attempt_reported_before_the_stop_is_listed_sealed_and_its_late_effect_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An outcome sent before the stop does not drop the attempt from listed; the seal stops it."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (hub, uri):
+            [(_task, operation_id, digest, attempt)] = await _opened(uri, b, x)
+            worker = await connect_agent(scene.WORKER, uri)
+            try:
+                reported = await scene.record(
+                    worker, **scene.outcome(OutcomeState.NOT_STARTED, operation_id)
+                )
+            finally:
+                await close_agents(worker)
+            ledger = hub.operation_records.attempts
+            state_before_stop = ledger.attempt_state(operation_id, attempt)
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                capsys.readouterr()
+                sealed = await _command(watcher, command.stop_and_seal(_args(uri, work)))
+                printed = capsys.readouterr().out.splitlines()
+            finally:
+                await close_agents(watcher)
+            seq = _stop_seq(store)
+            closed = ledger.stop_closed(seq)
+            after_seal_states = [row["state"] for row in _states(store)]
+            checker = await connect_agent(scene.CHECKER, uri)
+            try:
+                reconciled = await scene.record(checker, **_observed(operation_id))
+            finally:
+                await close_agents(checker)
+        stopped_rows = _rows(store, EventKind.OPERATION_STOPPED)
+        readbacks = _rows(store, EventKind.OPERATION_STOP_READBACK)
+        seals = _rows(store, EventKind.OPERATION_SEALED)
+        final_states = [row["state"] for row in _states(store)]
+    finally:
+        store.close()
+    git = git_executable()
+    marker = AttemptMarker(operation_id, attempt, digest)
+    late = apply_effect(Target(work, "main", b), marker, candidate=x, git=git)
+    branch = run_git(git, work, ["rev-parse", "refs/heads/main"]).stdout.strip()
+    assert (reported["status"], state_before_stop) == ("accepted", "ended")
+    assert late.answer == OTHER_PARTY_FIRST and branch == b
+    assert [item["attempt_id"] for item in stopped_rows[0]["listed"]] == [attempt]
+    assert sealed == seal_command.EXIT_DONE, printed
+    assert printed[0] == (
+        f"operation stop stop_recorded for {SCOPE}: "
+        f"the scope {SCOPE} is stopped; 1 open attempt(s) listed"
+    )
+    assert closed is True and seals == []
+    assert [(row["stop_seq"], row["result"], row["marker_object"]) for row in readbacks] == [
+        (seq, "sealed", marker.objects("sha1").sealed)
+    ]
+    assert after_seal_states == ["no new effect"]
+    assert reconciled["status"] == "accepted" and final_states == ["no new effect", "at rest"]
+
+
+async def test_an_unmarked_attempt_reported_before_the_stop_holds_stop_requested_and_keeps_actor(
+    tmp_path: Path,
+) -> None:
+    """A file attempt ended by report keeps the stop at stop requested and blocks self-resume."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    project_resumes = AclRule(OPERATION_RESUME, "stop-scope", "project:*", "P", "project")
+    policy = AclPolicy([*_policy().rules, project_resumes])
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=policy)) as (hub, uri):
+            [(_task, operation_id, _digest, attempt)] = await _opened(
+                uri, b, x, (("T1", "op-file", False),)
+            )
+            worker = await connect_agent(scene.WORKER, uri)
+            try:
+                reported = await scene.record(
+                    worker, **scene.outcome(OutcomeState.CONFIRMED_DONE, operation_id)
+                )
+            finally:
+                await close_agents(worker)
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                code = await _command(watcher, command.stop_and_seal(_args(uri, work)))
+            finally:
+                await close_agents(watcher)
+            seq = _stop_seq(store)
+            stop_state = hub.operation_records.attempts.stop_state(seq)
+            worker = await connect_agent(scene.WORKER, uri)
+            operator = await connect_agent("H/operator", uri)
+            checker = await connect_agent(scene.CHECKER, uri)
+            try:
+                self_resume = await scene.answer(
+                    worker,
+                    lambda: worker.agent.send_message(
+                        MessageType.OPERATION_RESUME,
+                        scope=SCOPE,
+                        reason="self",
+                        case="only_person",
+                        idem_key="r-self",
+                    ),
+                    lambda frame: frame.get("type") == MessageType.OPERATION_STOP_RESULT,
+                )
+                lifted = await scene.answer(
+                    operator,
+                    lambda: operator.agent.send_message(
+                        MessageType.OPERATION_RESUME,
+                        scope=SCOPE,
+                        reason="operator",
+                        case="another_person",
+                        idem_key="r-op",
+                    ),
+                    lambda frame: frame.get("type") == MessageType.OPERATION_STOP_RESULT,
+                )
+                file_obs = ResultVerification(
+                    operation_id,
+                    "file_change",
+                    "confirmed_done",
+                    "absent",
+                    "not_verified",
+                    "checked",
+                ).to_json()
+                observed = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id="T1",
+                    operation_id=operation_id,
+                    verification=file_obs,
+                )
+                after_obs = await scene.answer(
+                    operator,
+                    lambda: operator.agent.send_message(
+                        MessageType.OPERATION_STOP,
+                        scope=SCOPE,
+                        reason="after reconciliation",
+                        idem_key="s2",
+                    ),
+                    lambda frame: frame.get("type") == MessageType.OPERATION_STOP_RESULT,
+                )
+            finally:
+                await close_agents(worker, operator, checker)
+        states_during_first = _states(store)
+    finally:
+        store.close()
+    assert reported["status"] == "accepted"
+    assert code == seal_command.EXIT_REFUSED
+    assert stop_state is not None and stop_state.state == "stop requested"
+    assert stop_state.blocking == ((operation_id, attempt, "unsealable"),)
+    assert self_resume["answer"] == "actor_of_scope"
+    assert (lifted["answer"], lifted["resumed_from"]) == ("resumed", "stop requested")
+    assert observed["status"] == "accepted"
+    assert (after_obs["answer"], after_obs["state"], after_obs["listed"]) == (
+        "stop_recorded",
+        "at rest",
+        [],
+    )
+    assert [row["state"] for row in states_during_first] == ["at rest"]
+
+
 async def test_an_open_attempt_is_sealed_with_the_stop_s_sequence_then_read_back(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

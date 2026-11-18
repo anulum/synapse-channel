@@ -160,15 +160,25 @@ def test_an_intent_is_stopped_when_an_operation_declaring_it_is() -> None:
 def test_the_open_attempts_of_a_scope_and_its_actors() -> None:
     ledger = _ledger()
     assert ledger.open_in("project:P") == (OpenAttempt("git-op", "a1", "T1", WORKER),)
-    assert ledger.open_in("effect:file") == (OpenAttempt("file-op", "b2", "T2", "Q/worker"),)
-    assert {item.attempt_id for item in ledger.open_in("installation")} == {"a1", "b2"}
+    assert ledger.open_in("effect:file") == (
+        OpenAttempt("file-op", "b1", "T2", "Q/worker"),
+        OpenAttempt("file-op", "b2", "T2", "Q/worker"),
+    )
+    assert {item.attempt_id for item in ledger.open_in("installation")} == {"a1", "b1", "b2"}
     assert ledger.open_in("operation:missing") == ()
     assert ledger.actors("project:P") == frozenset({WORKER})
+    assert ledger.actors("project:Q") == frozenset({"Q/worker"})
+    ledger.note_verification("file-op", WORKER, effect="absent", result="not_verified")
+    assert ledger.open_in("effect:file") == (OpenAttempt("file-op", "b2", "T2", "Q/worker"),)
     ledger.note_stop("installation", 50, epoch=1, listed=(("git-op", "a1"), ("file-op", "b2")))
-    ledger.note_outcome("git-op", WORKER, "confirmed_done")
+    ledger.note_seal("git-op", "a1")
+    assert ledger.open_in("project:P") == ()
     ledger.note_outcome("file-op", "Q/worker", "confirmed_done")
     assert ledger.actors("installation") == frozenset({WORKER, "Q/worker"})
     assert ledger.actors("project:none") == frozenset()
+    ledger.open_attempt("file-op", "b3", executor="Q/worker", approval_seq=10)
+    ledger.note_verification("file-op", WORKER, effect="observed", result="verified")
+    assert ledger.open_in("effect:file") == ()
 
 
 def test_the_epoch_counts_the_stops_of_a_scope() -> None:
