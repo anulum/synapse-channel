@@ -50,6 +50,12 @@ def test_link_check_is_fail_visible_without_accepting_server_errors() -> None:
     assert "--exclude-all-private" in text
     assert "--min-tls TLSv1_2" in text
     assert "--max-concurrency 32" in text
+    # lychee 0.24.2: --host-concurrency is the per-host cap (default 10) and
+    # --host-request-interval is the minimum gap on that host (default 50ms).
+    # Both attempts must keep github.com off the global burst of 32. A revert
+    # to the old flags fails here. 503 stays outside --accept.
+    assert text.count("--host-concurrency 2") == 2
+    assert text.count("--host-request-interval 250ms") == 2
     assert "--max-redirects 10" in text
     assert "--max-retries 3" in text
     assert "--retry-wait-time 5" in text

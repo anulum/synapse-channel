@@ -51,6 +51,11 @@ jobs:
       # Attempt 1 may fail on transient network (ECONNRESET, flaky CDN) and
       # continues only so a single full retry can run. Server errors stay
       # non-accepted; badge *targets* remain checked.
+      # lychee 0.24.2 (the action's default) caps one host with
+      # --host-concurrency and spaces that host with --host-request-interval.
+      # The global --max-concurrency 32 is what burst github.com blob pages
+      # into 503s. Two in flight, 250 ms apart, is the host limit. 503 is
+      # still a failure.
       - name: Check tracked Markdown links (attempt 1)
         id: lychee_attempt_1
         continue-on-error: true
@@ -73,6 +78,8 @@ jobs:
             --exclude '^https?://(static\.)?pepy\.tech/'
             --min-tls TLSv1_2
             --max-concurrency 32
+            --host-concurrency 2
+            --host-request-interval 250ms
             --max-redirects 10
             --max-retries 3
             --retry-wait-time 5
@@ -112,6 +119,8 @@ jobs:
             --exclude '^https?://(static\.)?pepy\.tech/'
             --min-tls TLSv1_2
             --max-concurrency 32
+            --host-concurrency 2
+            --host-request-interval 250ms
             --max-redirects 10
             --max-retries 3
             --retry-wait-time 5
