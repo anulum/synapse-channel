@@ -139,6 +139,13 @@ on the task, usually a checker separate from the worker; an open hub keeps the
 declaration but refuses unauthorised evidence. In Python: `read_outcome`,
 `verify_file_change`, and an `operation_record` frame.
 
+A change to a component's own state, declared with the effect
+`component_state`, is followed the same way with
+`synapse verify-result component`: the checker runs, under its own grants, the
+catalogue read row that observes the state and compares the digest of its
+projection with the declared `expected_sha256`
+([execution outcomes](execution-outcomes.md)).
+
 ## 6. Recover after an unknown outcome
 
 ```bash

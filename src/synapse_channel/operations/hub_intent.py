@@ -20,7 +20,12 @@ from the caller's words, so any change to what would run changes the digest:
   was admitted under;
 * the effect is one file: its path and the content it must hold afterwards form
   the declaration's effect target, and the content it holds now (or
-  ``absent``) is the intent's pre-state.
+  ``absent``) is the intent's pre-state;
+* or, for a row that names ``observed_by``, the effect is the component's own
+  state (``component_state``): its target is the component's identity, the
+  observing read row and the digest of that read's projection after the run,
+  and the digest of the projection now is the intent's pre-state
+  (:mod:`~synapse_channel.operations.component_state`).
 
 Only rows whose effects are ``read``, ``change`` or ``destroy``, with at least
 one that changes something, have such an intent. ``execute`` is refused because
@@ -43,6 +48,7 @@ from synapse_channel.core.authorisation_intent import (
     AuthorisationIntentError,
     parse_intent_statement,
 )
+from synapse_channel.operations.row import OperationRow
 from synapse_channel.operations.runner import OperationRunRefused, RunPlan
 
 HUB_PATH_EFFECTS = frozenset({"read", "change", "destroy"})
@@ -62,12 +68,16 @@ class HubIntent:
     statement : dict[str, Any]
         The validated intent statement, for ``synapse operation declare --intent``.
     effect_target : dict[str, str]
-        The file effect's target: its absolute ``path`` and the ``sha256`` it must
-        hold after the run.
+        The effect's target: for a file, its absolute ``path`` and the ``sha256``
+        it must hold after the run; for a component's own state, as
+        :func:`component_target` builds it.
+    effect : str
+        ``file`` or ``component_state``.
     """
 
     statement: dict[str, Any]
     effect_target: dict[str, str]
+    effect: str = "file"
 
 
 def _refused_effects(run: RunPlan) -> None:
@@ -111,6 +121,71 @@ def _arguments_digest(run: RunPlan) -> str:
         raise OperationRunRefused("the run's command line cannot be written canonically") from exc
 
 
+def component_target(row: OperationRow, expected_sha256: str) -> dict[str, str]:
+    """Return a component's own state as a declaration names it: identity, observer, digest."""
+    return {
+        "host": row.host,
+        "vendor": row.vendor,
+        "component": row.component,
+        "component_version": row.component_version,
+        "os": row.os,
+        "transport": row.transport,
+        "observed_by": row.observed_by,
+        "expected_sha256": expected_sha256,
+    }
+
+
+def _statement(run: RunPlan, *, before: str, deadline: int, effect: str) -> dict[str, Any]:
+    """Return the validated intent statement of ``run`` for ``effect``."""
+    row = run.row
+    statement: dict[str, Any] = {
+        "schema": INTENT_SCHEMA,
+        "pre_state": before,
+        "recovery_class": "one_way" if "destroy" in row.effects else "reversible",
+        "deadline": deadline,
+        "budget": "not_applicable",
+        "egress": [],
+        "tool": {"name": f"{row.vendor}/{row.component}", "version": row.component_version},
+        "tool_descriptor_sha256": run.fingerprint.removeprefix("sha256:"),
+        "arguments_sha256": _arguments_digest(run),
+        "rule_generation": row.binding_digest,
+        "required_assurance": "cooperative",
+    }
+    try:
+        parsed = parse_intent_statement(statement, effect)
+    except AuthorisationIntentError as exc:
+        raise OperationRunRefused(str(exc)) from exc
+    return dict(parsed.document)
+
+
+def component_hub_intent(
+    run: RunPlan, *, before: str, expected_sha256: str, deadline: int
+) -> HubIntent:
+    """Return the intent and the ``component_state`` target of ``run`` for a hub declaration.
+
+    Parameters
+    ----------
+    run : RunPlan
+        The planned change of a row that names ``observed_by``.
+    before : str
+        The digest of the observing read's projection now.
+    expected_sha256 : str
+        The digest of the projection the read must give after the run.
+    deadline : int
+        The intent's deadline, in whole UNIX seconds.
+
+    Raises
+    ------
+    OperationRunRefused
+        For a row whose effects the hub path refuses, or a statement the intent
+        schema refuses; the message says which.
+    """
+    _refused_effects(run)
+    target = component_target(run.row, expected_sha256)
+    statement = _statement(run, before=before, deadline=deadline, effect="component_state")
+    return HubIntent(statement, target, "component_state")
+
+
 def hub_intent(
     run: RunPlan, *, path: str, before: str, after_sha256: str, deadline: int
 ) -> HubIntent:
@@ -137,22 +212,4 @@ def hub_intent(
     """
     _refused_effects(run)
     target = _file_target(path, after_sha256)
-    row = run.row
-    statement: dict[str, Any] = {
-        "schema": INTENT_SCHEMA,
-        "pre_state": before,
-        "recovery_class": "one_way" if "destroy" in row.effects else "reversible",
-        "deadline": deadline,
-        "budget": "not_applicable",
-        "egress": [],
-        "tool": {"name": f"{row.vendor}/{row.component}", "version": row.component_version},
-        "tool_descriptor_sha256": run.fingerprint.removeprefix("sha256:"),
-        "arguments_sha256": _arguments_digest(run),
-        "rule_generation": row.binding_digest,
-        "required_assurance": "cooperative",
-    }
-    try:
-        parsed = parse_intent_statement(statement, "file")
-    except AuthorisationIntentError as exc:
-        raise OperationRunRefused(str(exc)) from exc
-    return HubIntent(dict(parsed.document), target)
+    return HubIntent(_statement(run, before=before, deadline=deadline, effect="file"), target)

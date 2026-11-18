@@ -51,6 +51,20 @@ execution evidence when carrying a release claim forward.
   Core's canonical JSON. An observing row must now name `projection_paths`.
   The field is part of the qualified binding when set, and it also makes a
   catalogue `operation-catalogue-v3`.
+- `synapse ops run --hub` changes a component's own state through the hub: for
+  a row that names `observed_by`, `--declare` runs only the observing read row,
+  under the operator's own `operation-read` grant, and declares the effect
+  `component_state` with the digest of that read's projection now as the
+  intent's pre-state and the digest of `--expect-projection FILE` (the read's
+  projection expected after the run) as `expected_sha256`; `--intent-sha256`
+  runs the read again, so a state changed since the declaration is refused
+  before the hub is asked. `synapse verify-result component` is the
+  `component_read` verifier: another identity runs the same read under its own
+  grants and compares the digests (`verified`, `not_verified`, or
+  `not_checked` with `read_refused` or `read_not_projected`); the evidence
+  names the read, the executable's fingerprint and `observed_sha256`, never the
+  projected value. `synapse_channel.operations.component_state` holds both
+  sides.
 - A component's own state is a declared effect kind: `operation_record`
   accepts `effect: component_state`, whose target names the component's
   identity (`host`, `vendor`, `component`, `component_version`, `os`,

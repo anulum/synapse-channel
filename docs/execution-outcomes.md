@@ -77,6 +77,9 @@ synapse verify-result git --operation-id publish-1 --remote origin --branch main
   --attempt-id <attempt id> --intent-sha256 <hex> --base <hex>
 synapse verify-result deployment --operation-id deploy-1 --revision abc123 --report health.json
 synapse verify-result migration --operation-id migrate-1 --database app.db --migration 0001_init --schema-sha256 <hex>
+synapse verify-result component --operation-id op-1 --observed-by setting.read \
+  --host ws --vendor acme --component cli --component-version 1.0.0 --os linux \
+  --expect-sha256 <hex> --subject P/reviewer --grants grants.json --profile personal
 ```
 
 `file` reads the file without following a final symbolic link and compares
@@ -98,6 +101,16 @@ table and column). A missing column is `migration_column_absent` and
 each `sqlite_master` row with SQL, excluding names that start with `sqlite_`,
 ordered by type then name, one block `{type}\t{name}\n{sql}\n`. The SQL is
 copied as SQLite stored it, so different whitespace is a different digest.
+`component` runs the catalogue read row that observes a component's own state
+(`--observed-by` and the component's identity), under the verifier's own
+grants and in the run journal, and digests its projection as Core applies it
+([operations](operations.md)). The verifier is `component_read`: `verified` when
+the digest equals `--expect-sha256`, the one the declaration names, and
+`not_verified` when it differs; `not_checked` with `read_refused` or
+`read_not_projected` when the read could not run or its output gave no
+projection. The evidence names the read operation, the executable's
+fingerprint and `observed_sha256`, never the projected value. The read writes,
+retries and repairs nothing.
 `synapse verify-result migration --print-schema-sha256 --database ref.db`
 prints that digest and exits 0 with no verdict. A WAL database in a directory
 the reader cannot write may fail to open, or may miss frames that need a

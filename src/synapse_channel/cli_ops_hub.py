@@ -12,8 +12,11 @@ With ``--hub``, a run goes through the hub's governed operations in two calls:
 1. ``--declare`` plans the row, builds its authorisation intent from the plan
    (:mod:`synapse_channel.operations.hub_intent`) and declares the operation on
    the seat's claimed task. It prints the hub's answer with the intent's digest,
-   which another identity of the project approves. Nothing runs.
-2. ``--intent-sha256`` plans again and composes the whole intent locally. A digest
+   which another identity of the project approves. Nothing changes: a row that
+   names ``observed_by`` runs only its observing read, whose projection's digest
+   is the pre-state (:mod:`synapse_channel.operations.component_state`).
+2. ``--intent-sha256`` plans again and composes the whole intent locally, reading
+   the file or running the observing read again. A digest
    other than the approved one is refused before the hub is asked. The local
    grants are checked, so a missing permission never consumes an approval. Then
    the hub is asked for one attempt of that exact intent, and the run starts only
@@ -41,7 +44,8 @@ from synapse_channel.cli_hub_request import HubReply, ask_hub
 from synapse_channel.core.authorisation_intent import compose_intent, parse_intent_statement
 from synapse_channel.core.execution_outcome import ExecutionOutcome, OutcomeState
 from synapse_channel.core.protocol import MessageType
-from synapse_channel.operations.hub_intent import HubIntent, hub_intent
+from synapse_channel.operations.component_state import expected_digest, observe
+from synapse_channel.operations.hub_intent import HubIntent, component_hub_intent, hub_intent
 from synapse_channel.operations.runner import (
     OperationRunRefused,
     RunPlan,
@@ -83,8 +87,40 @@ def _actor(args: argparse.Namespace) -> str:
     return str(args.name or args.subject)
 
 
-def _intent(args: argparse.Namespace, run: RunPlan) -> HubIntent:
-    """Build the run's intent from the plan and the file as it is now."""
+def _observation_id(operation_id: str) -> str:
+    """Return a fresh run id for one observing read of the operation ``operation_id``."""
+    return f"{operation_id[:80]}.observe-{uuid.uuid4().hex[:16]}"
+
+
+def _component_intent(
+    args: argparse.Namespace, run: RunPlan, observer: RunPlan, journal: Path
+) -> HubIntent:
+    """Build the run's intent from the plan and the component's state as its read shows it now."""
+    if args.expect_projection is None or args.intent_deadline is None:
+        raise OperationRunRefused(
+            "the hub path of a component's own state needs --expect-projection and "
+            "--intent-deadline"
+        )
+    expected = expected_digest(args.expect_projection, observer.row)
+    before = observe(
+        observer,
+        operation_id=_observation_id(args.operation_id),
+        subject=args.subject,
+        grants_path=args.grants,
+        journal=journal,
+        timeout=args.timeout,
+    )
+    return component_hub_intent(
+        run, before=before, expected_sha256=expected, deadline=args.intent_deadline
+    )
+
+
+def _intent(
+    args: argparse.Namespace, run: RunPlan, observer: RunPlan | None, journal: Path
+) -> HubIntent:
+    """Build the run's intent from the plan and the file, or the component's state, as it is now."""
+    if observer is not None:
+        return _component_intent(args, run, observer, journal)
     if args.verify_file is None or args.verify_sha256 is None or args.intent_deadline is None:
         raise OperationRunRefused(
             "the hub path needs --verify-file, --verify-sha256 and --intent-deadline"
@@ -125,20 +161,29 @@ def _print(document: dict[str, Any]) -> None:
     print(json.dumps(document, sort_keys=True))
 
 
-def declare(args: argparse.Namespace, run: RunPlan) -> int:
-    """Declare the planned run with its intent; print the hub's answer and run nothing.
+def declare(
+    args: argparse.Namespace,
+    run: RunPlan,
+    *,
+    journal: Path,
+    observer: RunPlan | None = None,
+) -> int:
+    """Declare the planned run with its intent; print the hub's answer and change nothing.
+
+    ``observer`` is the planned read that observes a component's own state, for a
+    row that names ``observed_by``; it runs once here, in ``journal``.
 
     Returns 0 when the hub kept the declaration and its intent, 1 for any other
     answer, and 2 when no answer came.
     """
-    intent = _intent(args, run)
+    intent = _intent(args, run, observer, journal)
     request_id = uuid.uuid4().hex
     fields = {
         "record": "declare",
         "task_id": args.task,
         "operation_id": args.operation_id,
         "epoch": args.epoch,
-        "effect": "file",
+        "effect": intent.effect,
         "effect_target": intent.effect_target,
         "intent": intent.statement,
         "request_id": request_id,
@@ -172,21 +217,23 @@ def declare(args: argparse.Namespace, run: RunPlan) -> int:
 def _composed_digest(args: argparse.Namespace, intent: HubIntent) -> str:
     """Return the digest the hub composes for this intent, task, operation and identity."""
     return compose_intent(
-        parse_intent_statement(intent.statement, "file"),
+        parse_intent_statement(intent.statement, intent.effect),
         task_id=args.task,
         operation_id=args.operation_id,
-        effect="file",
+        effect=intent.effect,
         target=intent.effect_target,
         actor=_actor(args),
     ).sha256
 
 
-def _check_before_attempt(args: argparse.Namespace, run: RunPlan) -> None:
+def _check_before_attempt(
+    args: argparse.Namespace, run: RunPlan, observer: RunPlan | None, journal: Path
+) -> None:
     """Refuse, before the hub is asked, a changed plan or a run the grants do not cover."""
-    if _composed_digest(args, _intent(args, run)) != args.intent_sha256:
+    if _composed_digest(args, _intent(args, run, observer, journal)) != args.intent_sha256:
         raise OperationRunRefused(
-            "the plan, the file or the identity changed since the intent was declared; "
-            "declare again"
+            "the plan, the file, the component's state or the identity changed since the "
+            "intent was declared; declare again"
         )
     grants = load_grants(args.grants)
     if not authorised(grants, subject=args.subject, row=run.row, now=time.time()):
@@ -283,6 +330,7 @@ def run_attempt(
     *,
     journal: Path,
     status: Callable[[RunReport], int],
+    observer: RunPlan | None = None,
 ) -> int:
     """Check, ask for one attempt, run inside it, and publish the outcome.
 
@@ -294,10 +342,10 @@ def run_attempt(
     Raises
     ------
     OperationRunRefused
-        Before the hub is asked: a changed plan, file or identity, or grants that
-        do not cover the run.
+        Before the hub is asked: a changed plan, file, component state or
+        identity, or grants that do not cover the run.
     """
-    _check_before_attempt(args, run)
+    _check_before_attempt(args, run, observer, journal)
     answer, refused = _attempt(args, args.idem_key or uuid.uuid4().hex)
     if refused is not None:
         _print({"attempt": answer})

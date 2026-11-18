@@ -357,9 +357,9 @@ The report is one JSON object with `state` (`confirmed_done`,
 With `--hub URI`, a run goes through the hub's governed operations as well as
 the local grants ([integrator contract](integrator-contract.md)). It takes two
 calls. Both need `--task` (the claimed task), `--epoch` (the claim's epoch),
-`--intent-deadline` (UNIX seconds, at most 366 days ahead), `--verify-file` and
-`--verify-sha256`. `--name` is the identity on the hub; it defaults to
-`--subject`.
+`--intent-deadline` (UNIX seconds, at most 366 days ahead), and `--verify-file`
+and `--verify-sha256` for a row that changes one file. `--name` is the identity
+on the hub; it defaults to `--subject`.
 
 1. `--declare` plans the row and declares the operation with an authorisation
    intent built from the plan: the tool and its version, the executable's
@@ -377,9 +377,27 @@ calls. Both need `--task` (the claimed task), `--epoch` (the claim's epoch),
    the attempt is open. Its outcome is published on the task, which ends the
    attempt.
 
+**A component's own state.** A row that names `observed_by` (a setting, a
+plugin, a policy of the component itself) goes through with the effect
+`component_state` instead of a file. Its observing read row is planned with it
+and must be able to observe a change (above). `--expect-projection FILE` takes
+the place of `--verify-file`: a JSON object of exactly the read row's
+`projection_paths` and what each must select after the run, for example
+`{"mode": "strict"}`. `--declare` runs the observing read once, under the
+operator's own `operation-read` grant and in the run journal, and nothing else.
+The digest of its projection is the intent's pre-state, and the digest of the
+expected projection is the declaration's `expected_sha256`. A state the read
+cannot project (a path the output lacks, for one) is refused before the hub is
+asked. `--intent-sha256` runs the read again, so a state changed since the
+declaration changes the digest and is refused before the hub is asked, as a
+changed file is. Another identity verifies the run with
+`synapse verify-result component` ([execution outcomes](execution-outcomes.md)),
+under its own grants, and publishes that record; the executor's own reading
+closes nothing.
+
 Both authorities are required, and `authority` names both
-(`…; hub_attempt:<attempt id>`). Only a row that changes one file goes through:
-an `execute` row is refused, and so are `extend` and `approve` rows, because an
+(`…; hub_attempt:<attempt id>`). Only a row that changes one file, or a
+component's own state as above, goes through: an `execute` row is refused, and so are `extend` and `approve` rows, because an
 approval on the hub is not a named person's consent. A report says
 `hub_governed: true` for a run through the hub and `false` otherwise. After
 `--intent-sha256`, exit 1 with an `attempt` object means that the attempt did not

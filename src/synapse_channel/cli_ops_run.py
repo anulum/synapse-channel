@@ -31,6 +31,7 @@ from pathlib import Path
 
 from synapse_channel.cli_ops_qualification import json_file, trusted_keys
 from synapse_channel.operations.catalogue import Catalogue
+from synapse_channel.operations.component_state import plan_observer
 from synapse_channel.operations.qualification_bundle import PROFILES
 from synapse_channel.operations.runner import (
     OperationRunRefused,
@@ -128,7 +129,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
         )
         _check_hub_options(args)
         prepared = plan(catalogue, target, arguments, profile=profile)
-        return _hub_path(args, prepared, verifier) if args.hub else _local(args, prepared, verifier)
+        if not args.hub:
+            return _local(args, prepared, verifier)
+        if args.expect_projection is not None and not prepared.row.observed_by:
+            raise OperationRunRefused("--expect-projection belongs to a row that names observed_by")
+        observer = (
+            plan_observer(catalogue, prepared.row, profile) if prepared.row.observed_by else None
+        )
+        return _hub_path(args, prepared, verifier, observer)
     except (OSError, ValueError, OperationSpecError) as exc:
         print(f"synapse ops run: refused: {exc}", file=sys.stderr)
         return 2
@@ -155,7 +163,16 @@ def _local(args: argparse.Namespace, prepared: RunPlan, verifier: Verifier | Non
 
 def _check_hub_options(args: argparse.Namespace) -> None:
     """Refuse hub options without ``--hub``, and an incomplete hub request."""
-    hub_only = ("task", "epoch", "intent_deadline", "intent_sha256", "idem_key", "name", "token")
+    hub_only = (
+        "task",
+        "epoch",
+        "intent_deadline",
+        "intent_sha256",
+        "idem_key",
+        "name",
+        "token",
+        "expect_projection",
+    )
     if not args.hub:
         named = [name for name in hub_only if getattr(args, name) is not None] + (
             ["declare"] if args.declare else []
@@ -169,15 +186,23 @@ def _check_hub_options(args: argparse.Namespace) -> None:
         raise OperationRunRefused("the hub path takes exactly one of --declare and --intent-sha256")
 
 
-def _hub_path(args: argparse.Namespace, prepared: RunPlan, verifier: Verifier | None) -> int:
-    """Declare the planned run on the hub, or run it inside one approved attempt."""
+def _hub_path(
+    args: argparse.Namespace,
+    prepared: RunPlan,
+    verifier: Verifier | None,
+    observer: RunPlan | None,
+) -> int:
+    """Declare the planned run on the hub, or run it inside one approved attempt.
+
+    ``observer`` is the planned read of a row that names ``observed_by``: its
+    projection is the component's state the declaration and the attempt name.
+    """
     from synapse_channel.cli_ops_hub import declare, run_attempt
 
+    journal = args.journal or default_journal()
     if args.declare:
-        return declare(args, prepared)
-    return run_attempt(
-        args, prepared, verifier, journal=args.journal or default_journal(), status=_status
-    )
+        return declare(args, prepared, journal=journal, observer=observer)
+    return run_attempt(args, prepared, verifier, journal=journal, status=_status, observer=observer)
 
 
 def _cmd_inquire(args: argparse.Namespace) -> int:
@@ -211,6 +236,12 @@ def _hub_arguments(parser: argparse.ArgumentParser) -> None:
         "--intent-deadline", type=int, default=None, help="The intent's deadline, UNIX seconds."
     )
     hub.add_argument("--idem-key", default=None, help="Key to ask again for a lost attempt answer.")
+    hub.add_argument(
+        "--expect-projection",
+        type=Path,
+        default=None,
+        help="For a row that names observed_by: JSON of its read's projection after the run.",
+    )
     step = hub.add_mutually_exclusive_group()
     step.add_argument("--declare", action="store_true", help="Declare the run; run nothing.")
     step.add_argument("--intent-sha256", default=None, help="Run inside an approved attempt.")

@@ -13,15 +13,19 @@ could not decide, and 2 on unusable input. ``--outcome`` reads the boundary
 state and operation identity from an execution-outcome report, so a worker
 that exited 0 next to a wrong or absent effect is shown as exactly that.
 ``git`` with ``--attempt-id``, ``--intent-sha256`` and ``--base`` also reads
-that attempt's marker beside the branch.
+that attempt's marker beside the branch. ``component`` runs a catalogue read row
+that observes a component's own state, under the verifier's own grants, and
+compares the digest of its projection (:mod:`synapse_channel.operations.component_state`).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess  # nosec B404 # fixed argv only, never a shell
 import sys
+import uuid
 from pathlib import Path
 
 from synapse_channel.result_verification import (
@@ -38,6 +42,7 @@ from synapse_channel.result_verification_effects import (
 )
 
 _EXIT = {"verified": 0, "not_verified": 1, "not_checked": 3}
+_HEX64 = re.compile(r"[0-9a-f]{64}")
 
 
 def _identity(args: argparse.Namespace) -> tuple[str, str]:
@@ -131,6 +136,52 @@ def _migration(args: argparse.Namespace) -> int:
     )
 
 
+def _component(args: argparse.Namespace) -> int:
+    """Run the observing read row and compare the digest of its projection."""
+    from synapse_channel.cli_ops import default_catalogue_path, load_catalogue
+    from synapse_channel.cli_ops_qualification import json_file, trusted_keys
+    from synapse_channel.cli_ops_run import default_journal
+    from synapse_channel.operations.catalogue import Catalogue
+    from synapse_channel.operations.component_state import plan_read, verify_component
+    from synapse_channel.operations.runner import OperationTarget, RunProfile
+
+    if _HEX64.fullmatch(args.expect_sha256) is None:
+        raise ValueError("--expect-sha256 is 64 lower-case hex digits")
+    operation_id, communication = _identity(args)
+    catalogue = load_catalogue(Path(args.catalogue) if args.catalogue else default_catalogue_path())
+    if not isinstance(catalogue, Catalogue):
+        raise ValueError("a catalogue of the earlier schema observes nothing")
+    profile = RunProfile(
+        args.profile,
+        json_file(args.bundle) if args.bundle else None,
+        trusted_keys(args.trust),
+        tuple(args.require_environment),
+    )
+    target = OperationTarget(
+        args.observed_by,
+        args.host,
+        args.vendor,
+        args.component,
+        args.component_version,
+        args.os,
+        args.transport,
+        args.variant,
+    )
+    return _report(
+        verify_component(
+            plan_read(catalogue, target, profile),
+            args.expect_sha256,
+            operation_id=operation_id,
+            communication=communication,
+            read_id=f"{operation_id[:80]}.verify-{uuid.uuid4().hex[:16]}",
+            subject=args.subject,
+            grants_path=args.grants,
+            journal=args.journal or default_journal(),
+            timeout=args.timeout,
+        )
+    )
+
+
 def _command(args: argparse.Namespace) -> int:
     """Run the selected verifier and map refusals to exit status 2."""
     try:
@@ -169,8 +220,44 @@ def _add_git_parser(nested: argparse._SubParsersAction[argparse.ArgumentParser])
     _common(git_parser)
 
 
+def _add_component_parser(nested: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register ``verify-result component``: a read row observes a component's own state."""
+    from synapse_channel.operations.qualification_bundle import PROFILES
+
+    parser = nested.add_parser(
+        "component",
+        help="Run the read row that observes a component's own state and compare its digest.",
+    )
+    parser.add_argument("--observed-by", required=True, help="The observing read operation.")
+    for name in ("host", "vendor", "component", "component-version", "os"):
+        parser.add_argument(f"--{name}", required=True, help=f"Exact {name} of the row.")
+    parser.add_argument("--transport", default="cli", help="Transport of the row (cli).")
+    parser.add_argument("--variant", default="default", help="Variant of the row.")
+    parser.add_argument(
+        "--expect-sha256", required=True, help="Declared digest of the projection after the change."
+    )
+    parser.add_argument("--subject", required=True, help="Seat whose grants authorise the read.")
+    parser.add_argument("--grants", required=True, type=Path, help="Operator grants file.")
+    parser.add_argument("--profile", required=True, choices=sorted(PROFILES))
+    parser.add_argument("--bundle", type=Path, help="Signed qualification bundle (production).")
+    parser.add_argument("--trust", type=Path, help="Trusted qualifier keys (production).")
+    parser.add_argument(
+        "--require-environment",
+        action="append",
+        default=[],
+        help="Environment component the profile names; repeat for each.",
+    )
+    parser.add_argument("--catalogue", default=None, help="Catalogue file to read.")
+    parser.add_argument("--journal", type=Path, help="Run journal directory.")
+    parser.add_argument(
+        "--timeout", type=float, default=60.0, help="Deadline of the read, seconds."
+    )
+    parser.set_defaults(verify=_component)
+    _common(parser)
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register ``verify-result`` with file, git, deployment and migration.
+    """Register ``verify-result`` with file, git, deployment, migration and component.
 
     Parameters
     ----------
@@ -179,7 +266,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     """
     group = subparsers.add_parser(
         "verify-result",
-        help=("Verify a requested result (file, git, deployment, migration); never redoes work."),
+        help=(
+            "Verify a requested result (file, git, deployment, migration, component); "
+            "never redoes work."
+        ),
     )
     nested = group.add_subparsers(dest="verify_result_command", required=True)
 
@@ -229,3 +319,5 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     migration_parser.set_defaults(verify=_migration)
     _common(migration_parser)
+
+    _add_component_parser(nested)
