@@ -114,6 +114,11 @@ execution evidence when carrying a release claim forward.
   expired under load before the welcome arrived, and the read failed with
   no close code. A welcome
   that never arrives still fails on that one attempt.
+- `synapse hub --port 0` listens on one port for every address its host name
+  resolves to. A name such as `localhost` could bind each address on its own
+  ephemeral port and publish only the first, so a client that dialled the
+  other address found nothing. The first address still receives the kernel
+  port; the rest bind that same port. A fixed port is unchanged.
 
 ## [0.99.55] - 2026-11-18
 

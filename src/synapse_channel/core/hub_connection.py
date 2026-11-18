@@ -32,8 +32,9 @@ import asyncio
 import contextlib
 import logging
 import signal
+import socket
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 from websockets.exceptions import ConnectionClosed
@@ -300,3 +301,113 @@ class HubConnection:
         for sig in (signal.SIGTERM, signal.SIGINT):
             with contextlib.suppress(NotImplementedError):
                 loop.add_signal_handler(sig, stop.set)
+
+
+_BACKLOG = 100
+
+
+def shared_port_sockets(host: str, port: int) -> list[socket.socket] | None:
+    """Bind every address of ``host`` to one port when ``port`` is zero.
+
+    A fixed port is already shared by the server. Port zero is not: each
+    resolved address would otherwise receive its own ephemeral port, and a
+    client that dials another address of the same name would find nothing at
+    the port the hub records.
+
+    Parameters
+    ----------
+    host : str
+        The name the hub was asked to serve.
+    port : int
+        Requested port. Zero asks the kernel for a port.
+
+    Returns
+    -------
+    list of socket.socket or None
+        Listening sockets that share one port, or ``None`` when the server
+        should bind ``host`` and ``port`` itself. A name that resolves once,
+        and any fixed port, take that path.
+
+    Raises
+    ------
+    OSError
+        A later address could not take the port the first address received.
+        Sockets opened before that failure are closed.
+    """
+    if int(port) != 0:
+        return None
+    addresses = _unique_addresses(host, 0)
+    if len(addresses) < 2:
+        return None
+    opened: list[socket.socket] = []
+    try:
+        first = _listen(addresses[0], 0)
+        opened.append(first)
+        assigned = int(first.getsockname()[1])
+        for address in addresses[1:]:
+            opened.append(_listen(address, assigned))
+    except OSError:
+        for listening in opened:
+            listening.close()
+        raise
+    return opened
+
+
+def _unique_addresses(host: str, port: int) -> list[tuple[int, tuple[object, ...]]]:
+    """Return one passive stream address per family and host."""
+    found: list[tuple[int, tuple[object, ...]]] = []
+    seen: set[tuple[int, str, int]] = set()
+    for family, _type, _proto, _canon, sockaddr in socket.getaddrinfo(
+        host,
+        port,
+        type=socket.SOCK_STREAM,
+        flags=socket.AI_PASSIVE,
+    ):
+        key = _address_key(int(family), sockaddr)
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append((int(family), sockaddr))
+    return found
+
+
+def _integer(value: object) -> int:
+    """Return ``value`` when it is an integer address field."""
+    if isinstance(value, int):
+        return value
+    raise OSError("address info did not carry an integer field")
+
+
+def _address_key(family: int, sockaddr: Sequence[object]) -> tuple[int, str, int]:
+    """Identify an address without the port the kernel will assign."""
+    scope = _integer(sockaddr[3]) if family == socket.AF_INET6 and len(sockaddr) > 3 else 0
+    return (family, str(sockaddr[0]), scope)
+
+
+def _listen(address: tuple[int, tuple[object, ...]], port: int) -> socket.socket:
+    """Open one listening socket for ``address`` on ``port``."""
+    family, sockaddr = address
+    listening = socket.socket(family, socket.SOCK_STREAM)
+    try:
+        if family == socket.AF_INET6 and hasattr(socket, "IPV6_V6ONLY"):
+            listening.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        listening.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listening.bind(_bind_argument(family, sockaddr, port))
+        listening.listen(_BACKLOG)
+        listening.setblocking(False)
+    except OSError:
+        listening.close()
+        raise
+    return listening
+
+
+def _bind_argument(
+    family: int, sockaddr: tuple[object, ...], port: int
+) -> tuple[str, int] | tuple[str, int, int, int]:
+    """Replace the unresolved port in ``sockaddr`` with ``port``."""
+    host = str(sockaddr[0])
+    if family == socket.AF_INET6:
+        flow = _integer(sockaddr[2]) if len(sockaddr) > 2 else 0
+        scope = _integer(sockaddr[3]) if len(sockaddr) > 3 else 0
+        return (host, port, flow, scope)
+    return (host, port)

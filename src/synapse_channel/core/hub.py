@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 import ssl
-from collections.abc import Callable, Coroutine, Iterable, Mapping
+from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
+from contextlib import AsyncExitStack
 from typing import Any, Unpack
 
 from websockets.asyncio.server import Server, serve
@@ -52,7 +54,7 @@ from synapse_channel.core.hub_component_callbacks import HubComponentCallbacks
 from synapse_channel.core.hub_components import HubComponents
 from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 from synapse_channel.core.hub_config_view import HubConfigView
-from synapse_channel.core.hub_connection import HubConnection
+from synapse_channel.core.hub_connection import HubConnection, shared_port_sockets
 from synapse_channel.core.hub_constructor_options import HubLegacyOptions, resolve_hub_config
 from synapse_channel.core.hub_defaults import (
     DEFAULT_AUTH_TIMEOUT,
@@ -1485,7 +1487,8 @@ class SynapseHub(HubConfigView):
         The value is ``None`` before :meth:`serve` has bound its socket and
         after that server stops. In particular, callers that request port
         ``0`` receive the kernel-assigned port instead of having to perform a
-        racy reserve-and-release probe.
+        racy reserve-and-release probe. Every address the host name resolves
+        to listens on that same port.
         """
         return self._bound_address
 
@@ -1660,28 +1663,27 @@ class SynapseHub(HubConfigView):
         stop = self._prepare_serving(host, port, ssl_context)
         started = False
         services = self._service_lifetime()
+        listener = shared_port_sockets(host, int(port))
+        adopted = 0
         try:
-            async with (
-                services.monitoring(),
-                serve(
-                    self.handler,
-                    host,
-                    port,
-                    max_size=self.max_msg_bytes,
-                    max_queue=DEFAULT_MAX_QUEUE,
-                    ping_interval=DEFAULT_PING_INTERVAL,
-                    ping_timeout=DEFAULT_PING_TIMEOUT,
-                    close_timeout=self.shutdown_close_timeout,
-                    process_request=self._process_request,
-                    ssl=ssl_context,
-                    logger=ws_server_logger,
-                    # Accepting starts inside this block, so a cancellation that
-                    # arrives while the listener opens still closes its socket.
-                    start_serving=False,
-                ) as server,
-            ):
-                await server.start_serving()
-                self._record_server_address(server, host)
+            async with AsyncExitStack() as stack:
+                await stack.enter_async_context(services.monitoring())
+                if listener is None:
+                    server = await stack.enter_async_context(
+                        self._open_server(host, port, ssl_context, None)
+                    )
+                    await server.start_serving()
+                    self._record_bound_sockets(server.sockets, host)
+                else:
+                    bound: list[socket.socket] = []
+                    for listening in listener:
+                        server = await stack.enter_async_context(
+                            self._open_server(host, port, ssl_context, listening)
+                        )
+                        adopted += 1
+                        await server.start_serving()
+                        bound.extend(server.sockets)
+                    self._record_bound_sockets(bound, host)
                 started = True
                 self._serving.set()
                 self._log_server_address(host, ssl_context)
@@ -1689,6 +1691,9 @@ class SynapseHub(HubConfigView):
                 await stop.wait()
                 services.check_completed()
         except BaseException:
+            if listener is not None:
+                for leftover in listener[adopted:]:
+                    leftover.close()
             if not started:
                 # A startup waiter must report a failed bind instead of a readiness timeout.
                 self._serving.set()
@@ -1722,13 +1727,56 @@ class SynapseHub(HubConfigView):
         self._install_signal_handlers(asyncio.get_running_loop(), stop)
         return stop
 
-    def _record_server_address(self, server: Server, host: str) -> None:
-        """Record the listening socket before publishing successful readiness."""
-        sockets = server.sockets
+    def _open_server(
+        self,
+        host: str,
+        port: int,
+        ssl_context: ssl.SSLContext | None,
+        listening: socket.socket | None,
+    ) -> Server:
+        """Open one listener. Accepting waits for the caller's ``start_serving``.
+
+        A cancellation that arrives while the listener opens still closes its
+        socket. ``listening`` is one already bound socket that shares its port
+        with the hub's other addresses.
+        """
+        if listening is None:
+            return serve(
+                self.handler,
+                host,
+                port,
+                max_size=self.max_msg_bytes,
+                max_queue=DEFAULT_MAX_QUEUE,
+                ping_interval=DEFAULT_PING_INTERVAL,
+                ping_timeout=DEFAULT_PING_TIMEOUT,
+                close_timeout=self.shutdown_close_timeout,
+                process_request=self._process_request,
+                ssl=ssl_context,
+                logger=ws_server_logger,
+                start_serving=False,
+            )
+        return serve(
+            self.handler,
+            sock=listening,
+            max_size=self.max_msg_bytes,
+            max_queue=DEFAULT_MAX_QUEUE,
+            ping_interval=DEFAULT_PING_INTERVAL,
+            ping_timeout=DEFAULT_PING_TIMEOUT,
+            close_timeout=self.shutdown_close_timeout,
+            process_request=self._process_request,
+            ssl=ssl_context,
+            logger=ws_server_logger,
+            start_serving=False,
+        )
+
+    def _record_bound_sockets(self, sockets: Sequence[socket.socket], host: str) -> None:
+        """Record the listening sockets before publishing successful readiness."""
         if not sockets:
             raise RuntimeError("hub server bound without a listening socket")
-        socket_name = sockets[0].getsockname()
-        self._bind_port = int(socket_name[1])
+        ports = {int(listening.getsockname()[1]) for listening in sockets}
+        if len(ports) != 1:
+            raise RuntimeError("hub server bound different ports for one name")
+        self._bind_port = next(iter(ports))
         self._bound_address = (host, self._bind_port)
 
     def _log_server_address(self, host: str, ssl_context: ssl.SSLContext | None) -> None:
