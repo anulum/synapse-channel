@@ -487,6 +487,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "operation_level",
         ValueError,
     ),
+    "LevelCriteriaError": (
+        "synapse_channel.core.operation_level_criteria",
+        "level_criteria",
+        ValueError,
+    ),
     "EffectSuiteKeyError": (
         "synapse_channel.effect_suite.record",
         "effect_suite_key",

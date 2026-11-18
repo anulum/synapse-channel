@@ -65,6 +65,7 @@ from synapse_channel.core.authorisation_intent import (
     intent_time_refusal,
 )
 from synapse_channel.core.handlers.operation_attempts import VERB_SPECS as ATTEMPT_VERB_SPECS
+from synapse_channel.core.handlers.operation_level_raise import VERB_SPECS as RAISE_VERB_SPECS
 from synapse_channel.core.handlers.operation_levels import VERB_SPECS as LEVEL_VERB_SPECS
 from synapse_channel.core.handlers.operation_state import VERB_SPECS as STATE_VERB_SPECS
 from synapse_channel.core.handlers.operation_stops import VERB_SPECS as STOP_VERB_SPECS
@@ -256,12 +257,18 @@ def _evidence(
     seq = record_operation(store, request, sender=sender)
     ledger.add_record(request.operation_id)
     if request.outcome is not None:
-        ledger.attempts.note_outcome(request.operation_id, sender, request.outcome.state.value)
+        ledger.attempts.note_outcome(
+            request.operation_id, sender, request.outcome.state.value, seq=seq
+        )
     else:
         verification = request.verification
         assert verification is not None, "record_operation keeps only outcomes and verifications"
         ledger.attempts.note_verification(
-            request.operation_id, sender, effect=verification.effect, result=verification.result
+            request.operation_id,
+            sender,
+            effect=verification.effect,
+            result=verification.result,
+            seq=seq,
         )
     return _Verdict(STATUS_ACCEPTED, f"{request.record} recorded", seq=seq)
 
@@ -404,5 +411,6 @@ VERB_SPECS = (
     *STATE_VERB_SPECS,
     *STOP_VERB_SPECS,
     *LEVEL_VERB_SPECS,
+    *RAISE_VERB_SPECS,
 )
 """The operation family: records, attempts, reads, and the stops and levels of its scopes."""

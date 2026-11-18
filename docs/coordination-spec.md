@@ -1707,6 +1707,50 @@ still covers it.
 
 **Pinned by.** `tests/test_operation_levels.py`, `tests/test_hub_operation_levels.py`.
 
+### INV-LD-4 — a raise's count is computed, countable, and read only after its window
+
+**Normative.** Criteria MUST name only countable items, and an item outside
+the vocabulary MUST be refused at declaration. The count MUST be computed from
+the ledger at each request and never stored, and MUST read only what happened
+after both the criteria's journal sequence and the scope's latest step down.
+A verification by an operation's declarer, and any outcome report, MUST NOT
+count as a verified effect. Criteria and judgements MUST be restored from the
+journal at start.
+
+**Implementation.** `core/operation_level_criteria.py`,
+`core/operation_attempt_ledger.py:AttemptLedger.level_counts`.
+
+**Pinned by.** `tests/test_operation_level_criteria.py`,
+`tests/test_hub_operation_level_raise.py`.
+
+### INV-LD-5 — no actor judges its own count
+
+**Normative.** A judgement MUST be refused `judge_is_actor` to the criteria's
+author and to the declarer or executor of any operation the count reads, and a
+raise MUST be refused on a judgement whose judge has since become one. The
+judge's independence class MUST be recorded as `unassessed` while the hub
+holds no facts to assess it.
+
+**Implementation.** `core/handlers/operation_level_raise.py`,
+`core/operation_attempt_ledger.py:AttemptLedger.level_actors`.
+
+**Pinned by.** `tests/test_operation_level_criteria.py`,
+`tests/test_hub_operation_level_raise.py`.
+
+### INV-LD-6 — a person raises one level on a met judgement and a count taken again
+
+**Normative.** A raise by judgement MUST be one level, MUST be granted by a
+person holding `operation-level`, MUST NOT be kept while the scope or a scope
+containing it is stopped, and MUST rest on a `met` judgement of the same
+criteria made inside the count's window. The count MUST be taken again at the
+raise, not at the judgement, and MUST meet every item. The record MUST name
+the judgement, the criteria's digest, the counts and what the hub could not
+count.
+
+**Implementation.** `core/handlers/operation_level_raise.py`.
+
+**Pinned by.** `tests/test_hub_operation_level_raise.py`.
+
 ## Normative constants
 
 These values are part of the contract. The drift guard

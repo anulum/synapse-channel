@@ -20,6 +20,21 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- A scope's level can be raised by a judged count: an identity holding
+  `operation-level` declares the criteria of a raise to the next level
+  (`operation_level_criteria`, journalled as `level_criteria`), as countable
+  items only: verified effects of a kind, incorrect acceptances, unknown
+  outcomes and stops at rest. A judge who is not an actor of the count records
+  whether they are met (`operation_level_judgement`, `level_judgement`, with
+  independence `unassessed`); it needs the new `operation-judge` permission
+  under `--require-acl`. A person holding `operation-level` then raises the
+  scope one level (`operation_level_raise`), recorded as `operation_level`
+  with cause `judgement:<seq>`, only while no containing scope is stopped and
+  the count, taken again at the raise, still meets every item. The hub
+  computes the count from the journal each time, reading only what happened
+  after the criteria and the scope's latest step down; a declarer's own
+  verification and any outcome report never count as verified. What the hub
+  cannot count is named in the record for the person who grants the raise.
 - Autonomy levels per scope, and the approver's kind: `synapse operation level
   --scope SCOPE --level A1..A5 --reason TEXT` (`operation_level`) sets a
   scope's level by hand, with an epoch that rises at each change; it needs the

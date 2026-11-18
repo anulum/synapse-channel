@@ -268,6 +268,12 @@ EVENT_WORDS: Mapping[str, Describer] = {
     EventKind.APPROVAL_KIND: lambda p: EventWords(
         _text(p, "author"), f"approval by a {_text(p, 'kind')} approver"
     ),
+    EventKind.LEVEL_CRITERIA: lambda p: EventWords(
+        _text(p, "declared_by"), f"criteria for {_text(p, 'scope')} at {_text(p, 'target')}"
+    ),
+    EventKind.LEVEL_JUDGEMENT: lambda p: EventWords(
+        _text(p, "judge"), f"criteria judged {_text(p, 'verdict')}"
+    ),
     EventKind.ENTITLEMENT_ADVERT: _entitlement_advert,
     EventKind.DELIVERY_INTENT_ACCEPTED: _fixed(lambda _p: "delivery accepted"),
     EventKind.DELIVERY_INTENT_QUEUED: _fixed(lambda _p: "delivery queued"),

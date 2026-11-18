@@ -91,6 +91,8 @@ _OPERATION_KINDS = frozenset(
         "operation_stop_state",
         "operation_level",
         "operation_level_answered",
+        "level_criteria",
+        "level_judgement",
         "dead_letter_forwarding",
         "delivery_receipt_requested",
         "delivery_receipt_immediate",

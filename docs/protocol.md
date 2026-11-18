@@ -311,6 +311,38 @@ does not add agent grades to protocol envelopes.
   without such a row counts as `automated`. An automated approval older than
   the latest level change of a scope that contains the operation opens no
   attempt; a person's does.
+- **Raising a level by judgement:** three requests, each with `idem_key`.
+  `operation_level_criteria` names a `scope`, a `target` (the scope's current
+  level plus one) and `items`, each a countable item with its bound:
+  `verified_effects:<effect>` with `min`, `incorrect_acceptances` with `max`,
+  `unknown_outcomes` with `max`, `stops_at_rest` with `min`. An item outside
+  this vocabulary is `invalid_request`. It needs `operation-level` on the scope,
+  enforced also without `--require-acl`, and is journalled as `level_criteria`
+  with `items`, `digest` (the SHA-256 of the canonical criteria) and
+  `declared_by`. `operation_level_judgement` names the criteria's `scope` and
+  `digest` and a `verdict`, `met` or `not_met`; it is journalled as
+  `level_judgement` with `criteria_seq`, `judge`, `independence:
+  "unassessed"` and `evidence` (`from_seq`, `to_seq`), and refused
+  `judge_is_actor` to the criteria's author and to the declarer or executor of
+  anything the count reads. Under `--require-acl` it needs `operation-judge` on
+  the scope. `operation_level_raise` names `scope`, `target`, `digest` and
+  `judgement_seq`. The hub raises the scope one level, as `operation_level`
+  with cause `judgement:<seq>`, `criteria_digest`, the `counts` it found and
+  what it could not count (`uncounted`), only when the requester holds
+  `operation-level` and is a person, the target is one level up, no scope
+  containing it is stopped, the judgement is `met` for this criteria and
+  inside the count's window, its judge is not an actor, and the count taken
+  again now meets every item. The refusals are `not_permitted`,
+  `not_a_person`, `not_one_level`, `scope_stopped`, `judgement_missing`,
+  `judge_is_actor` and `criteria_unmet`, plus `criteria_unknown` for a
+  judgement; all are journalled as `operation_level_answered`.
+  The count is computed from the ledger at each request, never stored, and
+  reads only what happened after both the criteria's sequence and the scope's
+  latest step down: operations closed by an independent `verified`
+  verification, such operations later read `not_verified` by an independent
+  verification, executors' `unknown` outcome reports and attempts past their
+  intent's deadline while unverified, and stops of a containing scope at rest.
+  A declarer's own verification and any outcome report never count as verified.
 - **Operation state:** `operation_state` names `task_id` and `operation_id` and
   reads that operation's attempts. It is answered only to an identity holding
   `operation-evidence` or `operation-seal` on the task, which the handler
@@ -662,6 +694,11 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   `operation_level_result` answers an `operation_level` with `answer`, the
   sentence in `payload`, `scope`, `level`, `from`, `epoch`, the journal `seq`
   of the answer's row, `hub_time` and `request_key`, with `live.replayed`.
+  It also answers `operation_level_criteria`, `operation_level_judgement` and
+  `operation_level_raise`, with `request` (`criteria`, `judgement` or `raise`),
+  `answer`, the sentence in `payload`, `scope`, the journal `seq`, `hub_time` and
+  `request_key`, with `live.replayed`; a kept request adds `record`, the row it
+  journalled.
   `operation_stop_result` answers an `operation_stop` or `operation_resume`
   with `request` (`stop` or `resume`), `answer`, the sentence in `payload`,
   `scope`, the journal `seq` of the answer's row, `hub_time` and

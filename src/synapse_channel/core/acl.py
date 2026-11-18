@@ -50,6 +50,7 @@ OPERATION_SEAL = "operation-seal"
 OPERATION_STOP = "operation-stop"
 OPERATION_RESUME = "operation-resume"
 OPERATION_LEVEL = "operation-level"
+OPERATION_JUDGE = "operation-judge"
 IDENTITY_ENROLL = "identity-enroll"
 ENTITLEMENT_ADVERTISE = "entitlement-advertise"
 EVIDENCE = "evidence"
@@ -81,6 +82,7 @@ PERMISSIONS = frozenset(
         OPERATION_STOP,
         OPERATION_RESUME,
         OPERATION_LEVEL,
+        OPERATION_JUDGE,
         IDENTITY_ENROLL,
         ENTITLEMENT_ADVERTISE,
         EVIDENCE,
@@ -174,6 +176,14 @@ access file that grants this permission.
 by hand (``operation_level``). Target kind is ``level-scope``, with the scope as
 written. The access gate checks it when ``--require-acl`` is on, and its handler
 checks it also when that is off, so a hub without an access file sets no level.
+It also lets an identity declare the criteria of a raise
+(``operation_level_criteria``) and raise a level on a judgement
+(``operation_level_raise``); a raise also needs a person.
+
+``OPERATION_JUDGE`` grants an identity the right to judge a raise's criteria
+(``operation_level_judgement``). Target kind is ``level-scope``. The access gate
+checks it when ``--require-acl`` is on; on an open hub any identity may judge.
+In either case the handler refuses an actor of the count.
 
 ``EVIDENCE`` grants an authenticated recorder the right to append a bounded
 enforcement record. The shipped guard-denial target is

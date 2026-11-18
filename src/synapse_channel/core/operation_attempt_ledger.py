@@ -39,7 +39,10 @@ The ledger also keeps each scope's stops (:mod:`~synapse_channel.core.operation_
   attempt it listed. Only a ``sealed`` or ``applied`` read-back closes the
   attempt for that stop; an executor's report never does;
 * an ``operation_level`` row sets its scope's autonomy level at its epoch; the
-  journal sequence of a scope's latest level row is its level line.
+  journal sequence of a scope's latest level row is its level line;
+* a ``level_criteria`` row states what a raise of a scope must show, and a
+  ``level_judgement`` row whether a judge found it met. The counts they rely on
+  are computed from the facts above each time they are asked for.
 """
 
 from __future__ import annotations
@@ -50,9 +53,17 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import APPROVED_FRESH, OperationFact
+from synapse_channel.core.operation_level_criteria import (
+    ITEM_INCORRECT_ACCEPTANCES,
+    ITEM_STOPS_AT_REST,
+    ITEM_UNKNOWN_OUTCOMES,
+    ITEM_VERIFIED_EFFECTS,
+    CriteriaItem,
+)
 from synapse_channel.core.operation_levels import DEFAULT_LEVEL, LEVELS, lowest
 from synapse_channel.core.operation_stop_readbacks import CLOSING_RESULTS
 from synapse_channel.core.operation_stop_states import (
+    STATE_AT_REST,
     ListedAttempt,
     StopState,
     compute_stop_state,
@@ -86,6 +97,8 @@ _RESTORED_KINDS = (
     EventKind.OPERATION_RESUMED,
     EventKind.OPERATION_STOP_READBACK,
     EventKind.OPERATION_LEVEL,
+    EventKind.LEVEL_CRITERIA,
+    EventKind.LEVEL_JUDGEMENT,
 )
 
 
@@ -94,8 +107,33 @@ _STOP_KINDS = (
     EventKind.OPERATION_RESUMED,
     EventKind.OPERATION_STOP_READBACK,
     EventKind.OPERATION_LEVEL,
+    EventKind.LEVEL_CRITERIA,
+    EventKind.LEVEL_JUDGEMENT,
 )
 """The rows of a scope: stops, resumes, read-backs and levels, restored by ``_restore_stop``."""
+
+_LEVEL_KINDS = (EventKind.OPERATION_LEVEL, EventKind.LEVEL_CRITERIA, EventKind.LEVEL_JUDGEMENT)
+"""The rows of a scope's level: its records, criteria and judgements."""
+
+
+@dataclass(frozen=True)
+class LevelCriteria:
+    """One recorded criteria: what a raise of ``scope`` to ``target`` must show."""
+
+    seq: int
+    scope: str
+    target: str
+    items: tuple[CriteriaItem, ...]
+    declared_by: str
+
+
+@dataclass(frozen=True)
+class LevelJudgement:
+    """One recorded judgement of a criteria."""
+
+    digest: str
+    verdict: str
+    judge: str
 
 
 @dataclass
@@ -105,6 +143,8 @@ class _ScopeLevel:
     level: str = DEFAULT_LEVEL
     epoch: int = 0
     line: int = 0
+    step_down: int = 0
+    """The sequence of the scope's latest record that lowered its level; 0 when none."""
 
 
 @dataclass
@@ -154,6 +194,12 @@ class _Operation:
     fact: OperationFact
     attempts: list[_Attempt] = field(default_factory=list)
     closed: bool = False
+    closed_seq: int = 0
+    """The journal sequence of the independent verification that closed it; 0 while open."""
+    contradicted_seq: int = 0
+    """The sequence of the first independent ``not_verified`` after it closed; 0 when none."""
+    unknown_seqs: list[int] = field(default_factory=list)
+    """The sequences of its executors' reports of an ``unknown`` outcome."""
 
 
 @dataclass(frozen=True)
@@ -194,6 +240,12 @@ def _deadline_of(intent: object) -> int | None:
     return deadline if isinstance(deadline, int) and not isinstance(deadline, bool) else None
 
 
+def _bound(entry: Mapping[str, Any]) -> int:
+    """Return a criteria item's bound as a row states it; a malformed one reads 0."""
+    bound = entry.get("max", entry.get("min", 0))
+    return bound if type(bound) is int else 0
+
+
 class AttemptLedger:
     """The attempts of every declared operation, restored from ``store``.
 
@@ -208,6 +260,8 @@ class AttemptLedger:
         self._stops: dict[str, _ScopeStops] = {}
         self._stop_rows: dict[int, _StopRow] = {}
         self._levels: dict[str, _ScopeLevel] = {}
+        self._criteria: dict[str, LevelCriteria] = {}
+        self._judgements: dict[int, LevelJudgement] = {}
         if store is not None:
             for event in store.iter_events(kinds=_RESTORED_KINDS):
                 self.apply_event(event)
@@ -232,12 +286,24 @@ class AttemptLedger:
         """Return the live levels of every scope, for :meth:`publish_from`."""
         return self._levels
 
+    @property
+    def criteria(self) -> dict[str, LevelCriteria]:
+        """Return the recorded criteria by digest, for :meth:`publish_from`."""
+        return self._criteria
+
+    @property
+    def judgements(self) -> dict[int, LevelJudgement]:
+        """Return the recorded judgements by sequence, for :meth:`publish_from`."""
+        return self._judgements
+
     def publish_from(self, other: AttemptLedger) -> None:
         """Install the tables of a candidate that the hub's actor has made durable."""
         self._operations = other.operations
         self._stops = other.stops
         self._stop_rows = other.stop_rows
         self._levels = other.levels
+        self._criteria = other.criteria
+        self._judgements = other.judgements
 
     def apply_event(self, event: StoredEvent) -> None:
         """Apply one journalled row; a row that lacks a field the hub writes is skipped."""
@@ -251,10 +317,12 @@ class AttemptLedger:
         if event.kind == EventKind.OPERATION_DECLARED:
             self._restore_declaration(operation_id, sender, payload)
         elif event.kind == EventKind.OPERATION_OUTCOME:
-            self.note_outcome(operation_id, sender, str(payload.get("state") or ""))
+            self.note_outcome(operation_id, sender, str(payload.get("state") or ""), seq=event.seq)
         elif event.kind == EventKind.OPERATION_VERIFIED:
             effect, result = str(payload.get("effect") or ""), str(payload.get("result") or "")
-            self.note_verification(operation_id, sender, effect=effect, result=result)
+            self.note_verification(
+                operation_id, sender, effect=effect, result=result, seq=event.seq
+            )
         elif (
             event.kind == EventKind.OPERATION_ATTEMPT_ANSWERED
             and payload.get("answer") == APPROVED_FRESH
@@ -291,10 +359,8 @@ class AttemptLedger:
         )
 
     def _restore_stop(self, kind: str, seq: int, payload: Mapping[str, Any]) -> None:
-        if kind == EventKind.OPERATION_LEVEL:
-            scope, level, epoch = payload.get("scope"), payload.get("level"), payload.get("epoch")
-            if isinstance(scope, str) and level in LEVELS and type(epoch) is int:
-                self.note_level(scope, seq, level=str(level), epoch=epoch)
+        if kind in _LEVEL_KINDS:
+            self._restore_level(kind, seq, payload)
             return
         if kind == EventKind.OPERATION_STOP_READBACK:
             stop_seq, attempt, result = (
@@ -352,7 +418,10 @@ class AttemptLedger:
 
     def note_level(self, scope: str, seq: int, *, level: str, epoch: int) -> None:
         """Record that the row at ``seq`` set ``scope`` to ``level`` at ``epoch``."""
-        self._levels[scope] = _ScopeLevel(level, epoch, seq)
+        previous = self._levels.get(scope) or _ScopeLevel()
+        lowered = LEVELS.index(level) < LEVELS.index(previous.level)
+        step_down = seq if lowered else previous.step_down
+        self._levels[scope] = _ScopeLevel(level, epoch, seq, step_down)
 
     def level_of(self, scope: str) -> tuple[str, int]:
         """Return the level of ``scope`` and its latest record's epoch; ``A1`` and 0 without one."""
@@ -393,6 +462,96 @@ class AttemptLedger:
             if standing is not None:
                 return container, standing[0]
         return None
+
+    def _restore_level(self, kind: str, seq: int, payload: Mapping[str, Any]) -> None:
+        if kind == EventKind.OPERATION_LEVEL:
+            scope, level, epoch = payload.get("scope"), payload.get("level"), payload.get("epoch")
+            if isinstance(scope, str) and level in LEVELS and type(epoch) is int:
+                self.note_level(scope, seq, level=str(level), epoch=epoch)
+            return
+        digest = payload.get("digest")
+        if not isinstance(digest, str):
+            return
+        if kind == EventKind.LEVEL_JUDGEMENT:
+            verdict, judge = payload.get("verdict"), payload.get("judge")
+            if isinstance(verdict, str) and isinstance(judge, str):
+                self.note_judgement(seq, LevelJudgement(digest, verdict, judge))
+            return
+        scope, target, raw = payload.get("scope"), payload.get("target"), payload.get("items")
+        declared_by = payload.get("declared_by")
+        if not (isinstance(scope, str) and isinstance(target, str) and isinstance(raw, list)):
+            return
+        items = tuple(
+            CriteriaItem(str(entry["item"]), _bound(entry), "max" in entry)
+            for entry in raw
+            if isinstance(entry, Mapping) and isinstance(entry.get("item"), str)
+        )
+        self.note_criteria(digest, LevelCriteria(seq, scope, target, items, str(declared_by or "")))
+
+    def note_criteria(self, digest: str, criteria: LevelCriteria) -> None:
+        """Record a criteria under its digest; the first record of a digest stands."""
+        self._criteria.setdefault(digest, criteria)
+
+    def note_judgement(self, seq: int, judgement: LevelJudgement) -> None:
+        """Record the judgement journalled at ``seq``."""
+        self._judgements[seq] = judgement
+
+    def window_start(self, scope: str, criteria_seq: int) -> int:
+        """Return where a count of ``scope`` starts: after its criteria and its latest step down."""
+        record = self._levels.get(scope)
+        return max(criteria_seq, 0 if record is None else record.step_down)
+
+    def _in_scope(self, scope: str) -> list[_Operation]:
+        return [
+            entry
+            for operation_id, entry in self._operations.items()
+            if scope in self._scopes_of(operation_id)
+        ]
+
+    def level_counts(self, scope: str, since: int, now: float) -> dict[str, int]:
+        """Count every criteria item in ``scope`` from the facts after ``since``.
+
+        Nothing is stored: each call reads the ledger as it stands. A report
+        or verification by an operation's declarer never counts.
+        """
+        counts: dict[str, int] = {
+            ITEM_INCORRECT_ACCEPTANCES: 0,
+            ITEM_UNKNOWN_OUTCOMES: 0,
+            ITEM_STOPS_AT_REST: 0,
+        }
+        for entry in self._in_scope(scope):
+            if entry.closed_seq > since:
+                key = f"{ITEM_VERIFIED_EFFECTS}:{entry.fact.effect}"
+                counts[key] = counts.get(key, 0) + 1
+            if entry.contradicted_seq > since:
+                counts[ITEM_INCORRECT_ACCEPTANCES] += 1
+            counts[ITEM_UNKNOWN_OUTCOMES] += sum(seq > since for seq in entry.unknown_seqs)
+            deadline = entry.fact.deadline
+            if deadline is not None and deadline <= now and not entry.closed:
+                counts[ITEM_UNKNOWN_OUTCOMES] += sum(
+                    attempt.approval_seq > since for attempt in entry.attempts
+                )
+        containing = self.scopes_containing(scope)
+        for seq, row in self._stop_rows.items():
+            computed = self.stop_state(seq) if seq > since and row.scope in containing else None
+            if computed is not None and computed.state == STATE_AT_REST:
+                counts[ITEM_STOPS_AT_REST] += 1
+        return counts
+
+    def level_actors(self, scope: str, since: int) -> frozenset[str]:
+        """Return the actors of a count: the declarers and executors of what it counts."""
+        actors: set[str] = set()
+        for entry in self._in_scope(scope):
+            active = (
+                entry.closed_seq > since
+                or entry.contradicted_seq > since
+                or any(seq > since for seq in entry.unknown_seqs)
+                or any(attempt.approval_seq > since for attempt in entry.attempts)
+            )
+            if active:
+                actors.add(entry.fact.declarer)
+                actors.update(attempt.executor for attempt in entry.attempts)
+        return frozenset(actors)
 
     def stop_identity(self, stop_seq: int) -> tuple[str, int] | None:
         """Return the scope and epoch of the stop recorded at ``stop_seq``, or ``None``."""
@@ -550,24 +709,40 @@ class AttemptLedger:
         """Record a declaration; the first declaration of an id stands."""
         self._operations.setdefault(operation_id, _Operation(fact))
 
-    def note_outcome(self, operation_id: str, sender: str, state: str) -> None:
-        """End the open attempt when its own executor reports a terminal state."""
+    def note_outcome(self, operation_id: str, sender: str, state: str, *, seq: int = 0) -> None:
+        """End the open attempt when its own executor reports a terminal state.
+
+        An executor's report of an ``unknown`` outcome ends nothing; its
+        sequence is kept, as the level criteria count unknown outcomes.
+        """
         entry = self._operations.get(operation_id)
-        if entry is None or state not in TERMINAL_OUTCOME_STATES:
+        if entry is None:
+            return
+        executors = {attempt.executor for attempt in entry.attempts}
+        if state == "unknown" and sender in executors:
+            entry.unknown_seqs.append(seq)
+        if state not in TERMINAL_OUTCOME_STATES:
             return
         for attempt in entry.attempts:
             if not attempt.ended and attempt.executor == sender:
                 attempt.ended = True
 
     def note_verification(
-        self, operation_id: str, sender: str, *, effect: str, result: str
+        self, operation_id: str, sender: str, *, effect: str, result: str, seq: int = 0
     ) -> None:
-        """Reconcile ended attempts, and close the operation when it is verified."""
+        """Reconcile ended attempts, and close the operation when it is verified.
+
+        The sequence of the closing verification is kept, and so is the first
+        later ``not_verified`` by an identity other than the declarer, which
+        contradicts the acceptance.
+        """
         entry = self._operations.get(operation_id)
         if entry is None or sender == entry.fact.declarer:
             return
-        if result == "verified":
-            entry.closed = True
+        if result == "verified" and not entry.closed:
+            entry.closed, entry.closed_seq = True, seq
+        elif result == "not_verified" and entry.closed and not entry.contradicted_seq:
+            entry.contradicted_seq = seq
         if effect in OBSERVED_EFFECTS:
             for attempt in entry.attempts:
                 if attempt.ended:
