@@ -26,14 +26,18 @@ accidental bypass, not a determined forger.
 
 A commit message is a public surface, so its body is checked as well. It may
 not carry an attribution trailer that a vendor tool injects, an agent seat
-identifier, a coordination record name or a hub event citation. Review
+identifier, a coordination record name or a hub event citation. A record name
+is any capitalised record prefix (``HANDOVER``, ``ANSWER``, ``DESIGN_NOTE``,
+``R20`` and so on) joined by ``_`` to a dated stamp, in either the dashed
+(``2026-11-18``) or the compact (``20261118T181923Z``) form. Review
 provenance belongs in the private coordination records. Planning codes are not
 matched: their set changes with every programme, so keeping them out of public
 messages is left to the commit rules and the review before each commit.
 Product names in prose (for example an integration's name) stay allowed. The
-hook applies this rule to every new message. The history audit applies it
-only to commits whose own copy of this tool carries the rule, so history
-published before the rule existed stays valid.
+hook applies the current rule to every new message. The history audit applies
+to each commit the rule version that its own copy of this tool carries, and no
+body rule when the copy carries none, so history published under an earlier
+rule stays valid.
 """
 
 from __future__ import annotations
@@ -109,19 +113,24 @@ FORBIDDEN_SUBJECT_RE = re.compile(
     re.IGNORECASE,
 )
 TOOL_PATH = "tools/check_commit_trailers.py"
-# The audit applies the body rule to a commit only when that commit's own copy
-# of this tool contains this exact marker text.
-BODY_POLICY_MARKER = "commit-body-policy-v1"
+# The audit applies to a commit the body rules whose marker text that commit's
+# own copy of this tool contains: the current marker first, then the first one.
+BODY_POLICY_MARKER = "commit-body-policy-v2"
+FIRST_BODY_POLICY_MARKER = "commit-body-policy-v1"
 INJECTED_TRAILER_RE = re.compile(
     r"^\s*(Co-Authored-By|Claude-Session|Signed-Off-By-Agent|Generated with \[?Claude"
     r"|\N{ROBOT FACE} Generated with)",
     re.IGNORECASE,
 )
-BODY_TOKEN_RULES = (
-    (
-        "agent seat identifier",
-        re.compile(r"\b(?:claude|codex|grok|gemini|kimi|qwen|llama)-[0-9a-f]{4,}\b", re.I),
-    ),
+SEAT_IDENTIFIER_RULE = (
+    "agent seat identifier",
+    re.compile(r"\b(?:claude|codex|grok|gemini|kimi|qwen|llama)-[0-9a-f]{4,}\b", re.I),
+)
+REVIEWER_NAME_RULE = ("internal reviewer name", re.compile(r"\bRIGOR\b"))
+HUB_CITATION_RULE = ("hub event citation", re.compile(r"\b(?:hub|event|seq)\s+#?\d{5,}\b", re.I))
+# The rules under the first marker: eight record prefixes with a dashed date only.
+FIRST_BODY_TOKEN_RULES = (
+    SEAT_IDENTIFIER_RULE,
     (
         "coordination record name",
         re.compile(
@@ -129,8 +138,23 @@ BODY_TOKEN_RULES = (
             r"_\d{4}-\d{2}-\d{2}"
         ),
     ),
-    ("internal reviewer name", re.compile(r"\bRIGOR\b")),
-    ("hub event citation", re.compile(r"\b(?:hub|event|seq)\s+#?\d{5,}\b", re.I)),
+    REVIEWER_NAME_RULE,
+    HUB_CITATION_RULE,
+)
+# The current rules: any capitalised record prefix, one or more segments joined by
+# "_", then "_" and a dashed date or a compact stamp. The prefix set is open, so it
+# is matched by shape instead of by a list that would fall behind the records.
+BODY_TOKEN_RULES = (
+    SEAT_IDENTIFIER_RULE,
+    (
+        "coordination record name",
+        re.compile(
+            r"(?<![A-Za-z0-9])[A-Z][A-Z0-9]*(?:_[A-Z][A-Z0-9]*)*"
+            r"_(?:\d{4}-\d{2}-\d{2}(?:T\d{4,6}Z?)?|\d{8}T\d{4,6}Z?)"
+        ),
+    ),
+    REVIEWER_NAME_RULE,
+    HUB_CITATION_RULE,
 )
 
 
@@ -197,11 +221,15 @@ def _vendor_seat(seat: str) -> bool:
     return any(name == vendor or name.startswith(f"{vendor}-") for vendor in FORBIDDEN_SEAT_VENDORS)
 
 
-def body_violations(message: str) -> list[str]:
+def body_violations(
+    message: str,
+    rules: tuple[tuple[str, re.Pattern[str]], ...] = BODY_TOKEN_RULES,
+) -> list[str]:
     """Return why a message body exposes injected trailers or internal identifiers.
 
     The ``Seat:``, authorship and ``Hooks-Verified:`` trailers are checked by
-    their own rules and are skipped here.
+    their own rules and are skipped here. ``rules`` are the identifier rules of
+    one policy version; the current ones by default.
     """
     lines = [
         line
@@ -219,7 +247,7 @@ def body_violations(message: str) -> list[str]:
     if injected:
         violations.append(f"vendor-injected trailer is forbidden: {', '.join(injected)}")
     text = "\n".join(lines)
-    for label, pattern in BODY_TOKEN_RULES:
+    for label, pattern in rules:
         found = list(dict.fromkeys(match.group(0) for match in pattern.finditer(text)))
         if found:
             violations.append(f"{label} in the message: {', '.join(found)}")
@@ -328,15 +356,19 @@ def _stamp_violations(git: str, root: Path, commit: str, message: str) -> list[s
 
 
 def _body_policy_violations(git: str, root: Path, commit: str, message: str) -> list[str]:
-    """Return body violations for ``commit`` when its own tool copy carries the rule."""
+    """Return body violations under the rule version ``commit``'s own tool copy carries."""
     tool = subprocess.run(
         [git, "-C", str(root), "show", f"{commit}:{TOOL_PATH}"],
         check=False,
         capture_output=True,
     )
-    if tool.returncode != 0 or BODY_POLICY_MARKER.encode() not in tool.stdout:
+    if tool.returncode != 0:
         return []
-    return body_violations(message)
+    if BODY_POLICY_MARKER.encode() in tool.stdout:
+        return body_violations(message)
+    if FIRST_BODY_POLICY_MARKER.encode() in tool.stdout:
+        return body_violations(message, FIRST_BODY_TOKEN_RULES)
+    return []
 
 
 def _audit_range(range_spec: str, *, repo: Path | None = None) -> int:

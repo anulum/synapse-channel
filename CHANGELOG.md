@@ -78,6 +78,11 @@ execution evidence when carrying a release claim forward.
   executor's lock, ledger or platform refusing before any effect, never `effect_failed`. A receipt's
   configuration generation may be absent only in a refusal. An apply refused before the plan's one use
   names the plan the request named, and no generation.
+- The commit-message gate matches a coordination record name by its shape: any capitalised record
+  prefix, one or more segments joined by `_`, then `_` and a dashed date or a compact stamp such as
+  `20261118T181923Z`. The first rule knew eight prefixes and the dashed date only, so a compact stamp
+  or another prefix passed. The history audit applies to each commit the rule version its own copy of
+  the gate carries (`commit-body-policy-v2`, else `-v1`), so published history stays valid.
 
 ### Fixed
 

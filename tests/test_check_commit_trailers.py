@@ -421,6 +421,8 @@ def _with_body(body: str, *, subject: str = "ci: enforce commit policy") -> str:
         "Ruff F401 and UP017 are lint rule codes, not planning codes.",
         "Published names INV-12, ML-DSA-65 and RFC 8032 stay in the message.",
         "The hub refuses an event whose sequence is not the next one.",
+        "Released 2026-11-18; SYNAPSE_HOME and MAX_REQUEST_BYTES keep their meaning.",
+        "The 2026-11-18 release reads SYN_INBOX_SOURCE once, at start.",
     ],
 )
 def test_hook_accepts_product_names_and_public_identifiers_in_the_body(
@@ -440,6 +442,16 @@ def test_hook_accepts_product_names_and_public_identifiers_in_the_body(
         ("Asked codex-01a1824d.", "seat identifier in the message: codex-01a1824d"),
         ("See REVIEW_2026-10-31T085353Z for details.", "coordination record name"),
         ("Recorded in HANDOVER_2026-11-03T012903Z.", "coordination record name"),
+        ("Recorded in HANDOVER_20261118T181923Z.", "HANDOVER_20261118T181923Z"),
+        ("Answers ANSWER_20261118T191558Z_x.md.", "ANSWER_20261118T191558Z"),
+        ("Per PROPOSAL_20261118T195300Z.", "PROPOSAL_20261118T195300Z"),
+        ("From CALL_20261118T182707Z.", "CALL_20261118T182707Z"),
+        ("See NOTE_2026-11-18.", "NOTE_2026-11-18"),
+        ("Rows in LEDGER_20261118T194521Z.", "LEDGER_20261118T194521Z"),
+        ("Counts in INVENTORY_20261118T195246Z.", "INVENTORY_20261118T195246Z"),
+        ("As DESIGN_NOTE_20261118T193337Z says.", "DESIGN_NOTE_20261118T193337Z"),
+        ("Evidence R20_2026-11-18T194715Z_X.json.", "R20_2026-11-18T194715Z"),
+        ("Folder x/REVIEW_REQUEST_20261118T1200Z.", "REVIEW_REQUEST_20261118T1200Z"),
         ("Review: RIGOR CLEAR.", "internal reviewer name in the message: RIGOR"),
         ("Routed at hub 227079.", "hub event citation in the message: hub 227079"),
     ],
@@ -497,3 +509,43 @@ def test_history_audit_applies_the_body_rule_only_where_the_commit_carries_it(
 
 def test_the_repository_tool_carries_the_body_rule_marker() -> None:
     assert GATE.BODY_POLICY_MARKER in TOOL_PATH.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Recorded in HANDOVER_20261118T181923Z.",
+        "Answers ANSWER_20261118T191558Z.",
+        "As DESIGN_NOTE_20261118T193337Z says.",
+    ],
+)
+def test_names_the_first_rule_missed_are_caught_only_by_the_current_rule(body: str) -> None:
+    message = _with_body(body)
+
+    assert GATE.body_violations(message, GATE.FIRST_BODY_TOKEN_RULES) == []
+    assert GATE.body_violations(message) != []
+
+
+def test_history_audit_applies_each_commit_its_own_rule_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A commit under the first rule keeps it; a commit under the current rule gets it."""
+    repo = _repo(tmp_path)
+    baseline = _commit(repo, "historical baseline", "base")
+    _commit_tool(repo, f"# carries {GATE.FIRST_BODY_POLICY_MARKER}\n")
+    first = _commit(repo, _with_body("Recorded in HANDOVER_20261118T181923Z."), "first")
+    first_bad = _commit(repo, _with_body("Recorded in HANDOVER_2026-11-03T012903Z."), "bad")
+    _commit_tool(
+        repo,
+        f"# carries {GATE.FIRST_BODY_POLICY_MARKER} and {GATE.BODY_POLICY_MARKER}\n",
+    )
+    current = _commit(repo, _with_body("Recorded in HANDOVER_20261118T181923Z."), "current")
+
+    assert GATE._audit_range(f"{baseline}..{first}", repo=repo) == 0
+    capsys.readouterr()
+    assert GATE._audit_range(f"{first}..{first_bad}", repo=repo) == 1
+    assert "HANDOVER_2026-11-03" in capsys.readouterr().out
+    assert GATE._audit_range(f"{first_bad}..{current}", repo=repo) == 1
+    output = capsys.readouterr().out
+    assert current[:12] in output
+    assert "coordination record name in the message: HANDOVER_20261118T181923Z" in output
