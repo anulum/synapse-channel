@@ -22,9 +22,9 @@ const BAND = "advisory · Fleet mirror fleet-e2e";
 /** What the Fleet scope may read: the mirror, its grant, and the login's own access check. */
 const MIRROR_PATHS = new Set(["/fleet-observed.json", "/fleet-observed-access.json", "/dashboard-access.json"]);
 /**
- * How long after the scope is chosen the network is watched: past the 20 s after which this hub's
- * other feeds start without a live stream (AUXILIARY_FEED_START_FALLBACK_MS), had the scope left them
- * open, and past one more read of the mirror.
+ * How long the network is watched once the switch to the Fleet scope has committed: past the 20 s
+ * after which this hub's other feeds start without a live stream (AUXILIARY_FEED_START_FALLBACK_MS),
+ * had the scope left them open, and past two more reads of the mirror (every 10 s).
  */
 const WATCHED_MS = 25_000;
 
@@ -102,21 +102,23 @@ test("the Fleet mirror is a scope for its observers alone: advisory, read only, 
     expect(await writeCount(page)).toBeGreaterThan(0);
     const select = page.getByRole("banner").getByRole("combobox", { name: SCOPE_LABEL });
     await expect(select.locator('option[value="fleet"]')).toHaveText("Fleet mirror (advisory)", { timeout: 20_000 });
-    // From the moment the scope is chosen, the cockpit reads the mirror, its grant and the login's
-    // access check, and nothing else of this hub: neither a feed's first read nor one more poll.
     const asked = new Set<string>();
-    let choosing = false;
+    let recording = false;
     page.on("request", request => {
       const path = new URL(request.url()).pathname;
-      if (choosing && !path.startsWith("/cockpit/")) asked.add(path);
+      if (recording && !path.startsWith("/cockpit/")) asked.add(path);
     });
-    choosing = true;
-    const chosenAt = Date.now();
     await select.selectOption("fleet");
     await expect(page).toHaveURL(/[?&]scope=fleet(?:&|$)/u);
 
     const band = page.locator(".fleet-band");
     await expect(band).toContainText(BAND, { timeout: 20_000 });
+    // The switch has committed: from here the cockpit reads the mirror, its grant and the login's
+    // access check, and nothing else of this hub, neither a feed's first read nor one more poll. A
+    // read the whole-hub scope began before the switch committed is not this scope's, so it is not
+    // counted.
+    recording = true;
+    const recordedFrom = Date.now();
     await expect(band).toContainText("not this hub's state · writes off");
     await expect(band).not.toContainText("stale");
     await expect(page.getByRole("banner").getByLabel("Live transport: observed · polled")).toBeVisible();
@@ -135,7 +137,7 @@ test("the Fleet mirror is a scope for its observers alone: advisory, read only, 
     await band.getByText(/Hub health/u).click();
     await expect(band.getByRole("row", { name: /lighthouse-hub/u })).toContainText("pages");
     expect(await writeCount(page)).toBe(0);
-    await page.waitForTimeout(Math.max(11_000, WATCHED_MS - (Date.now() - chosenAt)));
+    await page.waitForTimeout(Math.max(11_000, WATCHED_MS - (Date.now() - recordedFrom)));
     expect([...asked].filter(path => !MIRROR_PATHS.has(path))).toEqual([]);
     expect(asked.has("/fleet-observed.json")).toBe(true);
 
