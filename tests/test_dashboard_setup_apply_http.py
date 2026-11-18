@@ -233,6 +233,23 @@ def test_a_failed_effect_that_was_recovered_is_refused_effect_failed(tmp_path: P
     assert not (host.home / ".config" / "systemd" / "user" / "synapse-hub.service").exists()
 
 
+def test_a_refused_directory_is_never_read_as_a_success(tmp_path: Path) -> None:
+    """The executor's version-2 receipt names the directory; the route still refuses the apply."""
+    host = Host(tmp_path, fixture.HUB_AND_WAITER_DOWN)
+    plan = _plan(host)
+    unsafe = host.home / "synapse"
+    unsafe.mkdir(mode=0o770)
+    unsafe.chmod(0o770)
+
+    status, body = _apply(host, _confirm(plan))
+
+    receipt = json.loads(body)
+    assert status == 200, body
+    assert (receipt["outcome"], receipt["reason"]) == ("refused", "effect_failed")
+    assert str(host.home) not in body
+    assert unsafe.stat().st_mode & 0o777 == 0o770
+
+
 def test_a_recovery_that_failed_is_partial_effects(tmp_path: Path) -> None:
     host = Host(tmp_path, fixture.HUB_AND_WAITER_DOWN)
     plan = _plan(host)

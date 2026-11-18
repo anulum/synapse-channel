@@ -24,7 +24,20 @@ from typing import Literal, cast
 from urllib.parse import urlsplit
 
 SETUP_SCHEMA_VERSION = "synapse-setup.v1"
+SETUP_RECEIPT_SCHEMA_VERSION = "synapse-setup-receipt.v2"
+"""The application receipt's own version: v2 adds ``refusal``.
+
+Every other setup document stays at :data:`SETUP_SCHEMA_VERSION`.
+"""
 SETUP_SCHEMA_RESOURCE = "schemas/synapse-setup-v1.schema.json"
+
+DirectoryRefusalReason = Literal["not_a_directory", "foreign_owner", "group_or_world_writable"]
+"""Why a required directory was refused; the first that holds, in this order."""
+DirectoryRemedy = Literal["remove_group_other_write", "none"]
+"""The one safe fix for a refused directory.
+
+It is offered only for a writable directory that the runner owns.
+"""
 
 SetupCheckStatus = Literal["pass", "warn", "fail", "unavailable"]
 SetupEffectDisposition = Literal["planned", "blocked"]

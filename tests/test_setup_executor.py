@@ -30,6 +30,9 @@ from synapse_channel.setup_contract import setup_schema
 from synapse_channel.setup_executor import (
     SetupExecutionError,
     SetupInspectionRunner,
+    _directory_refusal,
+    _directory_refusal_reason,
+    _non_directory_refusal,
     apply_setup,
     write_setup_receipt,
 )
@@ -405,6 +408,7 @@ def test_apply_executes_both_allowlisted_effects_and_replay_is_inert(tmp_path: P
             )
             assert protected.poll() is None
         assert receipt["outcome"] == "applied"
+        assert (receipt["schema_version"], receipt["refusal"]) == ("synapse-setup-receipt.v2", None)
         effects = cast(list[dict[str, object]], receipt["effects"])
         assert [item["id"] for item in effects] == [
             "establish_local_loopback_hub",
@@ -858,6 +862,12 @@ def test_apply_refuses_a_symlinked_service_directory_ancestor_without_traversal(
 
     assert receipt["outcome"] == "recovered"
     assert list(outside.iterdir()) == []
+    assert receipt["refusal"] == {
+        "path": str(home / ".config"),
+        "reason": "not_a_directory",
+        "mode": "0777",
+        "remedy": "none",
+    }
 
 
 @pytest.mark.parametrize("unsafe_kind", ["symlink", "oversized"])
@@ -1071,6 +1081,13 @@ def test_apply_recovers_without_effect_when_a_required_directory_is_group_writab
     assert receipt["outcome"] == "recovered"
     assert receipt["effects"] == []
     assert unsafe.exists()
+    assert receipt["refusal"] == {
+        "path": str(unsafe),
+        "reason": "group_or_world_writable",
+        "mode": "0770",
+        "remedy": "remove_group_other_write",
+    }
+    assert stat.S_IMODE(unsafe.stat().st_mode) == 0o770
 
 
 def test_apply_under_a_group_umask_creates_the_ledgers_parents_owner_only(
@@ -1122,6 +1139,7 @@ def test_apply_recovers_without_effect_when_home_directory_is_missing(tmp_path: 
 
     assert receipt["outcome"] == "recovered"
     assert receipt["effects"] == []
+    assert receipt["refusal"] is None
     assert not home.exists()
 
 
@@ -1436,6 +1454,8 @@ def test_apply_recovers_when_home_belongs_to_another_user(
     assert receipt["outcome"] == "recovered"
     assert receipt["effects"] == []
     assert created == []
+    refusal = cast(dict[str, str], receipt["refusal"])
+    assert (refusal["path"], refusal["reason"], refusal["remedy"]) == ("/", "foreign_owner", "none")
 
 
 def test_apply_recovers_when_a_unit_inode_changes_after_it_is_opened(
@@ -1571,3 +1591,147 @@ def test_apply_refuses_when_the_host_lock_mode_cannot_be_set(
     with pytest.raises(SetupExecutionError, match="application_lock_unavailable"):
         _pending_receipt(tmp_path, f"{NONCE}_lock_mode", home=home)
     assert not (home / ".config").exists()
+
+
+# --- a refused directory is named, with its mode and the one fix -------------------
+
+
+def test_apply_under_a_group_umask_names_an_existing_writable_local_and_changes_nothing(
+    tmp_path: Path,
+) -> None:
+    """Ubuntu's umask 0002 leaves ``~/.local`` at 0775: the receipt names it and its one fix."""
+    jsonschema = pytest.importorskip("jsonschema")
+    systemctl = _manager(tmp_path)
+    inspection = _inspection(systemctl, {"waiter": "fail"})
+    plan = build_setup_plan(_profile(), inspection)
+    authorization = _authorization(plan, nonce=f"{NONCE}_writable_local")
+    home = tmp_path / "home"
+    home.mkdir()
+    local = home / ".local"
+    previous = os.umask(0o002)
+    try:
+        local.mkdir(mode=0o775)
+        receipt = _run_apply(
+            plan,
+            authorization,
+            inspection=inspection,
+            home=home,
+            ledger=tmp_path / "ledger",
+        )
+    finally:
+        os.umask(previous)
+    assert receipt["outcome"] == "recovered"
+    assert receipt["schema_version"] == "synapse-setup-receipt.v2"
+    assert receipt["refusal"] == {
+        "path": str(local),
+        "reason": "group_or_world_writable",
+        "mode": "0775",
+        "remedy": "remove_group_other_write",
+    }
+    jsonschema.validate(receipt, setup_schema())
+    assert stat.S_IMODE(local.stat().st_mode) == 0o775
+    assert sorted(path.name for path in home.iterdir()) == [".local"]
+    assert list(local.iterdir()) == []
+
+
+def test_apply_names_a_regular_file_where_a_directory_belongs_without_a_remedy(
+    tmp_path: Path,
+) -> None:
+    systemctl = _manager(tmp_path)
+    inspection = _inspection(systemctl, {"waiter": "fail"})
+    plan = build_setup_plan(_profile(), inspection)
+    authorization = _authorization(plan, nonce=f"{NONCE}_file_component")
+    home = tmp_path / "home"
+    home.mkdir()
+    blocker = home / "synapse"
+    blocker.write_text("not a directory\n", encoding="utf-8")
+    blocker.chmod(0o640)
+    receipt = _run_apply(
+        plan,
+        authorization,
+        inspection=inspection,
+        home=home,
+        ledger=tmp_path / "ledger",
+    )
+    assert receipt["outcome"] == "recovered"
+    assert receipt["refusal"] == {
+        "path": str(blocker),
+        "reason": "not_a_directory",
+        "mode": "0640",
+        "remedy": "none",
+    }
+    assert blocker.read_text(encoding="utf-8") == "not a directory\n"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root opens any directory")
+def test_apply_names_nothing_when_a_directory_cannot_be_opened_for_another_reason(
+    tmp_path: Path,
+) -> None:
+    """A non-directory, a foreign owner or an unsafe mode is named; other errors stay value-free."""
+    systemctl = _manager(tmp_path)
+    inspection = _inspection(systemctl, {"waiter": "fail"})
+    plan = build_setup_plan(_profile(), inspection)
+    authorization = _authorization(plan, nonce=f"{NONCE}_unreadable_component")
+    home = tmp_path / "home"
+    home.mkdir()
+    closed = home / "synapse"
+    closed.mkdir(mode=0o700)
+    closed.chmod(0o000)
+    try:
+        receipt = _run_apply(
+            plan,
+            authorization,
+            inspection=inspection,
+            home=home,
+            ledger=tmp_path / "ledger",
+        )
+    finally:
+        closed.chmod(0o700)
+    assert receipt["outcome"] == "recovered"
+    assert receipt["refusal"] is None
+
+
+def _stat_of(mode: int, uid: int) -> os.stat_result:
+    return os.stat_result((mode, 1, 1, 1, uid, 0, 0, 0, 0, 0))
+
+
+@pytest.mark.parametrize(
+    ("mode", "owner", "reason", "remedy"),
+    [
+        (stat.S_IFREG | 0o775, "self", "not_a_directory", "none"),
+        (stat.S_IFREG | 0o775, "other", "not_a_directory", "none"),
+        (stat.S_IFDIR | 0o775, "other", "foreign_owner", "none"),
+        (stat.S_IFDIR | 0o700, "other", "foreign_owner", "none"),
+        (stat.S_IFDIR | 0o775, "self", "group_or_world_writable", "remove_group_other_write"),
+        (stat.S_IFDIR | 0o702, "self", "group_or_world_writable", "remove_group_other_write"),
+    ],
+)
+def test_the_first_reason_that_holds_wins_and_only_the_runners_own_directory_gets_a_fix(
+    mode: int, owner: str, reason: str, remedy: str
+) -> None:
+    """A root-owned directory of mode 0775 is ``foreign_owner``: no fix is ever offered for it."""
+    euid = os.geteuid()
+    uid = euid if owner == "self" else (0 if euid else 1)
+    info = _stat_of(mode, uid)
+    assert _directory_refusal_reason(info, euid=euid) == reason
+    refusal = _directory_refusal(Path("/somewhere/.local"), info, reason)
+    assert refusal == {
+        "path": "/somewhere/.local",
+        "reason": reason,
+        "mode": f"{stat.S_IMODE(mode):04o}",
+        "remedy": remedy,
+    }
+
+
+def test_a_private_directory_has_no_refusal_reason() -> None:
+    euid = os.geteuid()
+    assert _directory_refusal_reason(_stat_of(stat.S_IFDIR | 0o700, euid), euid=euid) is None
+    assert _directory_refusal_reason(_stat_of(stat.S_IFDIR | 0o755, euid), euid=euid) is None
+
+
+def test_a_component_that_vanished_before_it_was_read_is_not_named(tmp_path: Path) -> None:
+    descriptor = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        assert _non_directory_refusal("missing", descriptor, tmp_path / "missing") is None
+    finally:
+        os.close(descriptor)

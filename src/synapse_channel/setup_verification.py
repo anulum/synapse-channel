@@ -33,6 +33,7 @@ from synapse_channel.setup_authorization import (
 )
 from synapse_channel.setup_contract import (
     LOCAL_SINGLE_USER_URIS,
+    SETUP_RECEIPT_SCHEMA_VERSION,
     SETUP_SCHEMA_VERSION,
     SetupErrorCode,
     document_digest,
@@ -61,6 +62,14 @@ _APPLICATION_KEYS = {
     "recovery",
     "effect_receipt_digest",
 }
+_RECEIPT_KEYS = {
+    SETUP_SCHEMA_VERSION: frozenset(_APPLICATION_KEYS),
+    SETUP_RECEIPT_SCHEMA_VERSION: frozenset({*_APPLICATION_KEYS, "refusal"}),
+}
+"""A v1 receipt is read under v1's fields.
+
+A v2 receipt adds ``refusal``, which a successful application leaves null.
+"""
 _VERIFICATION_PLAN_KEYS = {
     "schema_version",
     "document_kind",
@@ -187,10 +196,10 @@ def validate_application_receipt(
             authorization,
             now=issued_at,
         )
-        if set(receipt) != _APPLICATION_KEYS:
-            raise ValueError("unexpected application receipt fields")
+        if frozenset(receipt) != _RECEIPT_KEYS.get(cast(str, receipt.get("schema_version"))):
+            raise ValueError("unexpected application receipt version or fields")
         if (
-            receipt.get("schema_version") != SETUP_SCHEMA_VERSION
+            receipt.get("refusal") is not None
             or receipt.get("document_kind") != "application_receipt"
             or receipt.get("profile") != validated_plan["profile"]
             or receipt.get("profile_version") != validated_plan["profile_version"]

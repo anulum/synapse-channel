@@ -8,6 +8,7 @@
     { "$ref": "#/$defs/plan" },
     { "$ref": "#/$defs/authorization" },
     { "$ref": "#/$defs/application_receipt" },
+    { "$ref": "#/$defs/application_receipt_v2" },
     { "$ref": "#/$defs/verification_plan" },
     { "$ref": "#/$defs/verification_authorization" },
     { "$ref": "#/$defs/verification_receipt" },
@@ -414,6 +415,121 @@
           ]
         }
       ]
+    },
+    "application_receipt_v2": {
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": { "const": "synapse-setup-receipt.v2" },
+            "document_kind": { "const": "application_receipt" },
+            "profile": { "const": "local-single-user" },
+            "profile_version": { "const": 1 },
+            "plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "authorization_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "receipt_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "target": { "$ref": "#/$defs/target" },
+            "started_at": { "type": "integer", "minimum": 0 },
+            "completed_at": { "type": "integer", "minimum": 0 },
+            "outcome": { "enum": ["applied", "recovered", "recovery_failed"] },
+            "ledger_state": { "enum": ["applied", "recovered", "failed"] },
+            "effects": {
+              "type": "array",
+              "maxItems": 2,
+              "items": { "$ref": "#/$defs/application_effect_receipt" }
+            },
+            "protected_processes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/protected_process" }
+            },
+            "recovery": { "enum": ["not_required", "complete", "failed"] },
+            "effect_receipt_digest": {
+              "oneOf": [
+                { "type": "null" },
+                { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+              ]
+            },
+            "refusal": {
+              "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/directory_refusal" }]
+            }
+          },
+          "required": [
+            "schema_version", "document_kind", "profile", "profile_version", "plan_digest",
+            "authorization_digest", "receipt_digest", "target", "started_at", "completed_at",
+            "outcome", "ledger_state", "effects", "protected_processes", "recovery",
+            "effect_receipt_digest", "refusal"
+          ],
+          "allOf": [
+            {
+              "if": { "properties": { "outcome": { "const": "applied" } } },
+              "then": {
+                "properties": {
+                  "ledger_state": { "const": "applied" },
+                  "recovery": { "const": "not_required" },
+                  "effect_receipt_digest": { "type": "null" },
+                  "refusal": { "type": "null" },
+                  "effects": {
+                    "items": {
+                      "properties": {
+                        "outcome": { "enum": ["applied", "already_satisfied"] }
+                      }
+                    }
+                  },
+                  "protected_processes": {
+                    "items": { "properties": { "after_alive": { "const": true } } }
+                  }
+                }
+              }
+            },
+            {
+              "if": { "properties": { "outcome": { "const": "recovered" } } },
+              "then": {
+                "properties": {
+                  "ledger_state": { "const": "recovered" },
+                  "recovery": { "const": "complete" },
+                  "effect_receipt_digest": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "protected_processes": {
+                    "items": { "properties": { "after_alive": { "const": true } } }
+                  }
+                }
+              }
+            },
+            {
+              "if": { "properties": { "outcome": { "const": "recovery_failed" } } },
+              "then": {
+                "properties": {
+                  "ledger_state": { "const": "failed" },
+                  "recovery": { "const": "failed" },
+                  "effect_receipt_digest": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "directory_refusal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^/" },
+        "reason": { "enum": ["not_a_directory", "foreign_owner", "group_or_world_writable"] },
+        "mode": { "type": "string", "pattern": "^[0-7]{4}$" },
+        "remedy": { "enum": ["remove_group_other_write", "none"] }
+      },
+      "required": ["path", "reason", "mode", "remedy"],
+      "if": { "properties": { "reason": { "const": "group_or_world_writable" } } },
+      "then": { "properties": { "remedy": { "const": "remove_group_other_write" } } },
+      "else": { "properties": { "remedy": { "const": "none" } } }
     },
     "verification_plan": {
       "allOf": [

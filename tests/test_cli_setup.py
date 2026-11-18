@@ -581,6 +581,25 @@ def test_apply_cli_projects_success_and_recovery_exit_codes(
     assert cli_setup._cmd_apply(args) == 1
     assert json.loads(capsys.readouterr().out)["outcome"] == "recovered"
 
+    async def refused(*_args: object, **_kwargs: object) -> dict[str, object]:
+        document = await recovered()
+        document["refusal"] = {
+            "path": "/home/you/.local",
+            "reason": "group_or_world_writable",
+            "mode": "0775",
+            "remedy": "remove_group_other_write",
+        }
+        return document
+
+    monkeypatch.setattr(cli_setup, "apply_setup", refused)
+    assert cli_setup._cmd_apply(args) == 1
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["refusal"]["path"] == "/home/you/.local"
+    assert captured.err == (
+        "refused: /home/you/.local is writable by group or others (mode 0775); "
+        "fix: chmod go-w -- /home/you/.local\n"
+    )
+
 
 def test_apply_cli_bounds_executor_authorization_and_unexpected_failures(
     monkeypatch: pytest.MonkeyPatch,

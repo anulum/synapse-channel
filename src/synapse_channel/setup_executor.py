@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import os
 import platform
 import stat
@@ -32,7 +33,9 @@ from synapse_channel.setup_authorization import (
     validate_setup_plan,
 )
 from synapse_channel.setup_contract import (
-    SETUP_SCHEMA_VERSION,
+    SETUP_RECEIPT_SCHEMA_VERSION,
+    DirectoryRefusalReason,
+    DirectoryRemedy,
     SetupErrorCode,
     canonical_json,
     document_digest,
@@ -88,7 +91,19 @@ class SetupExecutionError(SetupAuthorizationError):
 
 
 class _EffectFailure(RuntimeError):
-    """Internal value-free marker for a failed allow-listed effect."""
+    """Internal marker for a failed allow-listed effect.
+
+    It carries no value, except the refused directory that :func:`_ensure_directory`
+    names when a component of a required path is not private to the runner.
+    """
+
+    def __init__(self, refused_directory: dict[str, str] | None = None) -> None:
+        super().__init__()
+        self.refused_directory = refused_directory
+
+
+_APPLY_FAILURES = (SetupAuthorizationError, SetupLedgerError, _EffectFailure, OSError, ValueError)
+"""What the apply recovers from; an :class:`_EffectFailure` may name a refused directory."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,29 +220,70 @@ def _escaped_waiter_unit(
     return unit
 
 
-def _require_private_directory(info: os.stat_result) -> None:
-    if (
-        not stat.S_ISDIR(info.st_mode)
-        or info.st_uid != os.geteuid()  # pragma: no branch - foreign UID needs privilege
-        or info.st_mode & 0o022
-    ):
-        raise _EffectFailure
+def _directory_refusal_reason(info: os.stat_result, *, euid: int) -> DirectoryRefusalReason | None:
+    """Return why a directory is not private to ``euid``, or ``None`` when it is.
+
+    The first reason that holds wins: ``not_a_directory``, then ``foreign_owner``,
+    then ``group_or_world_writable``. A root-owned directory of mode 0775 is
+    therefore ``foreign_owner``, and no remedy is offered for it.
+    """
+    if not stat.S_ISDIR(info.st_mode):
+        return "not_a_directory"
+    if info.st_uid != euid:
+        return "foreign_owner"
+    if info.st_mode & 0o022:
+        return "group_or_world_writable"
+    return None
+
+
+def _directory_refusal(
+    path: Path, info: os.stat_result, reason: DirectoryRefusalReason
+) -> dict[str, str]:
+    """Return the receipt's ``refusal`` object for one refused directory.
+
+    The path is absolute: it belongs to the command line and the versioned receipt.
+    The one remedy, removing group and world write, is offered only for a writable
+    directory the runner owns, which ``reason`` already implies by its order.
+    """
+    remedy: DirectoryRemedy = (
+        "remove_group_other_write" if reason == "group_or_world_writable" else "none"
+    )
+    return {
+        "path": str(path),
+        "reason": reason,
+        "mode": f"{stat.S_IMODE(info.st_mode):04o}",
+        "remedy": remedy,
+    }
+
+
+def _non_directory_refusal(component: str, parent: int, path: Path) -> dict[str, str] | None:
+    """Name a component that cannot be opened as a directory without following a link."""
+    try:
+        info = os.stat(component, dir_fd=parent, follow_symlinks=False)
+    except OSError:
+        return None
+    return _directory_refusal(path, info, "not_a_directory")
 
 
 def _ensure_directory(root: Path, parts: tuple[str, ...], *, created: list[Path]) -> None:
-    """Open and create an owner-controlled path without following symlink leaves."""
+    """Open and create an owner-controlled path without following symlink leaves.
+
+    An unsafe component is refused with its path, the reason, its mode and the one
+    remedy where one exists; nothing is changed on a directory that already exists.
+    """
     flags = (
         os.O_RDONLY
         | getattr(os, "O_DIRECTORY", 0)
         | getattr(os, "O_NOFOLLOW", 0)
         | getattr(os, "O_CLOEXEC", 0)
     )
+    euid = os.geteuid()
     descriptor = -1
     try:
         descriptor = os.open(root, flags)
         root_info = os.fstat(descriptor)
-        if root_info.st_uid != os.geteuid():
-            raise _EffectFailure
+        if root_info.st_uid != euid:
+            raise _EffectFailure(_directory_refusal(root, root_info, "foreign_owner"))
         cursor = root
         for component in parts:
             was_created = False
@@ -239,10 +295,20 @@ def _ensure_directory(root: Path, parts: tuple[str, ...], *, created: list[Path]
             cursor /= component
             if was_created:
                 created.append(cursor)
-            child = os.open(component, flags, dir_fd=descriptor)
+            try:
+                child = os.open(component, flags, dir_fd=descriptor)
+            except OSError as exc:
+                if exc.errno in {errno.ENOTDIR, errno.ELOOP}:
+                    raise _EffectFailure(
+                        _non_directory_refusal(component, descriptor, cursor)
+                    ) from exc
+                raise
             os.close(descriptor)
             descriptor = child
-            _require_private_directory(os.fstat(descriptor))
+            info = os.fstat(descriptor)
+            reason = _directory_refusal_reason(info, euid=euid)
+            if reason is not None:
+                raise _EffectFailure(_directory_refusal(cursor, info, reason))
     except OSError as exc:
         raise _EffectFailure from exc
     finally:
@@ -490,9 +556,10 @@ def _receipt(
     protected_after: bool,
     recovery: str,
     effect_receipt_digest: str | None = None,
+    refusal: dict[str, str] | None = None,
 ) -> dict[str, object]:
     document: dict[str, object] = {
-        "schema_version": SETUP_SCHEMA_VERSION,
+        "schema_version": SETUP_RECEIPT_SCHEMA_VERSION,
         "document_kind": "application_receipt",
         "profile": plan["profile"],
         "profile_version": plan["profile_version"],
@@ -509,6 +576,7 @@ def _receipt(
         ],
         "recovery": recovery,
         "effect_receipt_digest": effect_receipt_digest,
+        "refusal": refusal,
     }
     document["receipt_digest"] = document_digest(document)
     return document
@@ -717,13 +785,8 @@ async def apply_setup(
                 outcome="applied",
                 receipt_digest=cast(str, receipt["receipt_digest"]),
             )
-        except (
-            SetupAuthorizationError,
-            SetupLedgerError,
-            _EffectFailure,
-            OSError,
-            ValueError,
-        ):
+        except _APPLY_FAILURES as failure:
+            refusal = getattr(failure, "refused_directory", None)
             if current_effect_id is not None:
                 effect_receipts.append(
                     {"id": current_effect_id, "unit": current_unit, "outcome": "failed"}
@@ -740,6 +803,7 @@ async def apply_setup(
                 protected=protected,
                 protected_after=all(probe(pid) for pid in protected),
                 recovery="pending",
+                refusal=refusal,
             )
             failure_digest = cast(str, failed["receipt_digest"])
             try:
@@ -767,13 +831,14 @@ async def apply_setup(
                     protected_after=True,
                     recovery="complete",
                     effect_receipt_digest=failure_digest,
+                    refusal=refusal,
                 )
                 ledger.recover(
                     cast(str, validated_authorization["authorization_digest"]),
                     receipt_digest=cast(str, recovered["receipt_digest"]),
                 )
                 receipt = recovered
-            except (SetupAuthorizationError, SetupLedgerError, _EffectFailure, OSError, ValueError):
+            except _APPLY_FAILURES:
                 receipt = _receipt(
                     plan=validated_plan,
                     authorization=validated_authorization,
@@ -786,6 +851,7 @@ async def apply_setup(
                     protected_after=all(probe(pid) for pid in protected),
                     recovery="failed",
                     effect_receipt_digest=failure_digest,
+                    refusal=refusal,
                 )
 
     if receipt_path is not None:

@@ -13,7 +13,9 @@ Contact: www.anulum.li | protoscience@anulum.li
 needs, a read-only host inspection, an immutable plan, a short-lived
 authorization, a fail-closed executor for the initial package-owned Linux
 service effects, and strict end-to-end verification. The initial contract is
-`synapse-setup.v1`; its first profile is `local-single-user`.
+`synapse-setup.v1`; its first profile is `local-single-user`. The application
+receipt carries its own version, `synapse-setup-receipt.v2`, because it adds one
+field, `refusal` (below); every other setup document stays `synapse-setup.v1`.
 
 `spec`, `inspect`, `plan`, `authorize`, `verification-plan`, and
 `authorize-verification` do not mutate the host. `apply` and `verify` are
@@ -169,6 +171,27 @@ The initial adapter is deliberately narrow:
   not be group- or world-writable;
 - existing unit leaves must be bounded, regular, owner-controlled files.
 
+When a required directory is refused, the receipt names it in `refusal`, and
+`apply` prints one line on standard error, in both its human and its `--json`
+form. `refusal` is `null` on success. Otherwise it holds:
+
+- `path`: the absolute path of the refused directory or component;
+- `reason`: the first that holds, in this order: `not_a_directory` (a file or a
+  symbolic link where a directory belongs), `foreign_owner` (another user owns
+  it), `group_or_world_writable`;
+- `mode`: its four-digit octal permission bits, for example `0775`;
+- `remedy`: `remove_group_other_write` for a writable directory you own, and
+  `none` otherwise. Nothing is ever changed on a directory that already exists.
+
+For example, on a host whose umask 0002 left `~/.local` at mode 0775:
+
+```text
+refused: /home/you/.local is writable by group or others (mode 0775); fix: chmod go-w -- /home/you/.local
+```
+
+A directory owned by another user, root included, is never offered a fix, even
+when it is also writable.
+
 The owner-only SQLite ledger stores a domain-separated SHA-256 nonce digest,
 never the nonce. `BEGIN IMMEDIATE` reserves the nonce and authorization/plan
 digests after fresh validation and before the first service-file write. Replay
@@ -273,7 +296,10 @@ and `2` for a precondition, authorization, receipt, or unrecoverable executor
 error. `verify` exits `0` only for `verified`, `1` for a recorded verification
 failure, and `2` for an invalid document, rejected precondition, or unavailable
 receipt. Consumers should parse `schema_version`, `document_kind`, `code`,
-`outcome`, and per-check status, not human text.
+`outcome`, `refusal`, and per-check status, not human text. The strict
+verification reads a successful application receipt of either version: a
+`synapse-setup.v1` receipt under its own fields, and a `synapse-setup-receipt.v2`
+receipt whose `refusal` is `null`.
 
 ## Validate output from an installed wheel
 

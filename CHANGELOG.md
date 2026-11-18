@@ -20,6 +20,13 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- `synapse setup apply` names a directory it refuses. The application receipt gains `refusal`: the absolute
+  path, the reason (`not_a_directory`, `foreign_owner` or `group_or_world_writable`, the first that holds),
+  the mode and the one remedy, `remove_group_other_write`, offered only for a writable directory the runner
+  owns. `apply` prints one line on standard error with the fix, for example
+  `fix: chmod go-w -- /home/you/.local`, and changes nothing on the directory. The receipt carries its own
+  version for this field, `synapse-setup-receipt.v2`; every other setup document stays `synapse-setup.v1`,
+  and strict verification reads a successful receipt of either version.
 - With setup served, the cockpit's setup assistant offers an **Apply** step to a login holding
   `setup_plan` and `setup_apply`, outside a peer scope. It previews the plan the dashboard issues (each
   change, its disruption and reversibility, and "the hub (process N) is restarted" for a restart), applies

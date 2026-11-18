@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import shlex
 import sys
 import time
 from collections.abc import Callable, Coroutine
@@ -41,6 +42,35 @@ from synapse_channel.setup_verification import (
     load_verification_plan,
 )
 from synapse_channel.setup_verifier import verify_setup
+from synapse_channel.terminal_text import terminal_text
+
+
+def _refusal_line(refusal: dict[str, object]) -> str:
+    """Return the one stderr line that names a refused directory and its fix, if any.
+
+    The path is absolute: the command line is where it belongs. Only the writable
+    directory the runner owns gets a fix, and the fix quotes the path for a shell.
+    """
+    path = str(refusal.get("path"))
+    shown = terminal_text(path)
+    mode = terminal_text(refusal.get("mode"))
+    reason = refusal.get("reason")
+    if reason == "group_or_world_writable" and refusal.get("remedy") == "remove_group_other_write":
+        fix = terminal_text(f"chmod go-w -- {shlex.quote(path)}")
+        return f"refused: {shown} is writable by group or others (mode {mode}); fix: {fix}"
+    if reason == "foreign_owner":
+        return (
+            f"refused: {shown} belongs to another user (mode {mode}); setup changes nothing there"
+        )
+    return f"refused: {shown} is not a plain directory (mode {mode}); setup changes nothing there"
+
+
+def _print_receipt(document: dict[str, object], *, as_json: bool) -> None:
+    """Print an application receipt, with the stderr line of a refused directory first."""
+    refusal = document.get("refusal")
+    if isinstance(refusal, dict):
+        print(_refusal_line(refusal), file=sys.stderr)
+    _print_document(document, as_json=as_json)
 
 
 def _print_document(document: dict[str, object], *, as_json: bool) -> None:
@@ -276,7 +306,7 @@ def _cmd_apply(
         )
     except SetupExecutionError as exc:
         if exc.receipt is not None:
-            _print_document(exc.receipt, as_json=args.json)
+            _print_receipt(exc.receipt, as_json=args.json)
         else:
             _print_document(
                 setup_error_document(command="apply", profile=profile, code=exc.code),
@@ -299,7 +329,7 @@ def _cmd_apply(
             as_json=args.json,
         )
         return 2
-    _print_document(document, as_json=args.json)
+    _print_receipt(document, as_json=args.json)
     if document["outcome"] == "applied":
         return 0
     return 1 if document["outcome"] == "recovered" else 2
