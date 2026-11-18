@@ -87,13 +87,14 @@ def _body() -> bytes:
 def _request(
     *,
     token: str | None = ADMIN,
+    host: str = HOST,
     origins: tuple[str, ...] = (ORIGIN,),
     content_type: str = "application/json",
     body: bytes | None = None,
 ) -> SetupWriteRequest:
     return SetupWriteRequest(
         authorization=None if token is None else f"Bearer {token}",
-        host=HOST,
+        host=host,
         origins=origins,
         content_type=content_type,
         body=_body() if body is None else body,
@@ -160,6 +161,18 @@ def test_a_write_without_exactly_this_dashboards_origin_is_refused_unrecorded(
     receipts = _receipts(tmp_path)
 
     decision = setup_plan_response(_request(origins=origins), _bindings(_serving(receipts)))
+
+    assert decision.status == 403
+    assert _text(decision) == "setup writes require this dashboard's own Origin"
+    assert _chain(receipts) == ()
+
+
+def test_a_write_with_an_empty_host_is_refused_unrecorded(tmp_path: Path) -> None:
+    """The setup writes share every dashboard write's Origin check, which needs a Host."""
+    receipts = _receipts(tmp_path)
+
+    request = _request(host="", origins=("http://",))
+    decision = setup_plan_response(request, _bindings(_serving(receipts)))
 
     assert decision.status == 403
     assert _text(decision) == "setup writes require this dashboard's own Origin"

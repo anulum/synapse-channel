@@ -12,7 +12,8 @@ write nothing before the caller is known:
 
 1. 404 naming the reason, when this start does not serve setup;
 2. 403 without exactly one ``Origin`` that is this dashboard's own
-   (``http://<Host>``, compared without case);
+   (``http://<Host>``, compared without case), the check every dashboard write
+   shares (:func:`~synapse_channel.dashboard_access_http.is_own_origin`);
 3. 401 without a recognised bearer; 415 without ``application/json``.
 
 Each route then parses its own body. From there every answer is a receipt,
@@ -31,7 +32,7 @@ from typing import Final, cast, get_args
 
 from synapse_channel import __version__
 from synapse_channel.dashboard_access import DashboardAccessPolicy, DashboardPrincipal
-from synapse_channel.dashboard_access_http import AccessHttpDecision
+from synapse_channel.dashboard_access_http import AccessHttpDecision, is_own_origin
 from synapse_channel.dashboard_operator_writes import is_json_media_type
 from synapse_channel.dashboard_setup_contract import MAX_SETUP_REQUEST_BYTES
 from synapse_channel.dashboard_setup_http import SetupServing
@@ -154,9 +155,9 @@ def admit_setup_write(
     profile, plans, receipts = serving.profile, serving.plans, serving.receipts
     if profile is None or plans is None or receipts is None:
         return plain(HTTPStatus.NOT_FOUND, f"setup not served: {serving.decision.reason}")
-    expected = f"http://{request.host}".lower()
-    if len(request.origins) != 1 or request.origins[0].lower() != expected:
+    if not is_own_origin(request.host, request.origins):
         return plain(HTTPStatus.FORBIDDEN, "setup writes require this dashboard's own Origin")
+    expected = f"http://{request.host}".lower()
     principal = policy.resolve_credential(request.authorization)
     if principal is None:
         return plain(HTTPStatus.UNAUTHORIZED, "bearer required", authenticate=True)
