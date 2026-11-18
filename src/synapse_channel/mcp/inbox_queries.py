@@ -98,7 +98,8 @@ class _McpInboxQueries(McpReplyExchange):
         Parameters
         ----------
         hub_id : str, optional
-            Hub identifier from an accepted page; empty only for the initial read.
+            Hub identifier from an accepted page. Empty, and only on the initial
+            read, names the admitted connection's hub and starts at the beginning.
         after_seq : int, optional
             Last accepted scanned journal sequence, initially zero.
         limit : int, optional

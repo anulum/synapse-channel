@@ -102,7 +102,9 @@ execution evidence when carrying a release claim forward.
   most 100 messages, so the first page was the oldest window of the log.
   A stored cursor still pages forward. An explicit `--since`, including
   `--since 0`, names the known hub and pages forward from that sequence.
-  Sequence 0 with an empty hub id remains the newest page. The connection
+  Sequence 0 with an empty hub id remains the newest page. A caller that
+  means the beginning, including an MCP inbox page with no hub id, names the
+  known hub and pages forward. The connection
   waits 30 seconds for the hub's welcome, on one attempt. Five seconds
   expired under load before the welcome arrived, and the read failed with
   no close code. A welcome

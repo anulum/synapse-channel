@@ -45,10 +45,18 @@ async def test_cli_reader_persists_independent_cursor_and_does_not_replay(
                     await publisher.agent.chat(f"message {number}", target="P/reader")
                 await fence(publisher)
                 home = tmp_path / "reader"
-                for expected in [2, 1, 0]:
+                for index, expected in enumerate([2, 1, 0]):
+                    # The first read means the beginning, so it names a sequence.
+                    # Later reads resume the stored cursor and do not replay it.
+                    since = 0 if index == 0 else None
                     assert (
                         await read_hub_inbox(
-                            uri=uri, identity="P/reader", home=home, limit=2, timeout=5
+                            uri=uri,
+                            identity="P/reader",
+                            home=home,
+                            limit=2,
+                            timeout=5,
+                            since=since,
                         )
                         == 0
                     )

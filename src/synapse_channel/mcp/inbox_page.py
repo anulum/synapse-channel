@@ -21,6 +21,21 @@ from synapse_channel.hub_inbox_cursor import HubInboxCursor
 from synapse_channel.mcp.hub_inbox import AwaitReply
 
 
+def _admitted_hub(agent: SynapseAgent, hub_id: str) -> str:
+    """Return the hub this page is bound to.
+
+    A supplied identifier is kept. An empty identifier means the hub that
+    admitted this connection, so the first page is an explicit start at
+    ``after_seq`` rather than the newest page.
+    """
+    if hub_id:
+        return hub_id
+    connected = str(agent.hub_id or "")
+    if not connected or connected == "unknown":
+        raise ValueError("durable inbox page has no hub")
+    return connected
+
+
 async def read_inbox_page(
     agent: SynapseAgent,
     await_reply: AwaitReply,
@@ -38,7 +53,9 @@ async def read_inbox_page(
     await_reply : AwaitReply
         Existing correlated exchange, with its finite response deadline.
     hub_id : str, optional
-        Hub identifier from the last accepted page; empty only for an initial read.
+        Hub identifier from the last accepted page. Empty means the admitted
+        connection's hub, so the first page starts at the beginning of that
+        hub rather than selecting the newest page.
     after_seq : int, optional
         Last accepted scanned sequence, from zero through the signed 64-bit maximum.
     limit : int, optional
@@ -69,6 +86,7 @@ async def read_inbox_page(
         or not 1 <= limit <= 100
     ):
         raise ValueError("invalid durable inbox page cursor or limit")
+    hub_id = _admitted_hub(agent, hub_id)
     cursor = HubInboxCursor(hub_id, after_seq)
     request_id = uuid.uuid4().hex
 
