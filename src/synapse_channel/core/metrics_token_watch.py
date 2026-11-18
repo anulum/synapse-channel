@@ -7,13 +7,15 @@
 # SYNAPSE CHANNEL — periodic check, expiry and overlap audit of a metrics token set
 """Watch the metrics token set while the hub serves, not only when a request arrives.
 
-A hub whose metrics bearer follows a token set (``--metrics-token-set``) re-reads
-the file at each metrics or health request. :class:`MetricsTokenWatch` adds the
-rest of the set's life:
+A hub whose metrics bearer follows a token set (``--metrics-token-set``) judges
+each metrics or health request against the set in force and reads no file.
+:class:`MetricsTokenWatch` follows the rest of the set's life:
 
-* the file is also checked every :data:`WATCH_INTERVAL_SECONDS`, the interval of
-  the connect-token set, so an idle hub applies or rejects a replaced file
-  without waiting for a scraper;
+* the file is checked every :data:`WATCH_INTERVAL_SECONDS`, the interval of the
+  connect-token set, off the serving loop: it is read in a worker thread and a
+  change is put in force on the loop in one assignment, so an idle hub applies
+  or rejects a replaced file without waiting for a scraper, and no request
+  waits for the file;
 * each entry that passes its ``not_after`` is recorded once, by whichever comes
   first, the periodic check or a request (``metrics_token_expired``);
 * a request admitted by a *retiring* entry is recorded once per entry and hour
@@ -34,9 +36,13 @@ validity clock that steps back into a recorded hour writes no second row; an
 admission in an hour further back than that writes none, because its use is
 already shown by the later rows.
 
-Without a journal the file is still checked periodically; nothing is recorded.
-An entry is marked as recorded only after its row is written, so a failed write
-is tried again at the next check or admission.
+Every row is queued where it arises, also inside a request, and the next check
+writes the set's queue in a worker thread
+(:meth:`~synapse_channel.core.token_set.TokenSetAuthenticator.flush`), so no
+request waits for the journal. A row that cannot be written stays first in the
+queue for the next check, and the hub writes the queue once more when it stops
+serving. Without a journal the file is still checked periodically; nothing is
+recorded.
 """
 
 from __future__ import annotations
@@ -44,6 +50,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
+from functools import partial
 
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hourly_once import HOUR_SECONDS, HourlyOnce, hour_of
@@ -137,12 +144,23 @@ class MetricsTokenWatch:
         token_set.observe_outcomes(self._observed)
 
     def check(self) -> None:
-        """Re-read the file if it changed, then record entries that expired."""
+        """Check the file, note expiries and write the queue, all on the calling thread.
+
+        This is the synchronous form of :meth:`tick`, for callers that may block.
+        """
         self._token_set.refresh()
         self._record_expired("watcher")
+        self.flush()
+
+    async def tick(self) -> None:
+        """Check the file and write the queue in worker threads; put changes in force here."""
+        prepared = await asyncio.to_thread(self._token_set.prepare)
+        self._token_set.apply(prepared)
+        self._record_expired("watcher")
+        await asyncio.to_thread(self.flush)
 
     async def run(self, interval: float = WATCH_INTERVAL_SECONDS) -> None:
-        """Call :meth:`check` every ``interval`` seconds while the hub serves.
+        """Run :meth:`tick` every ``interval`` seconds while the hub serves.
 
         A failed check is logged and the next one runs; the loop never ends on
         its own, so it cannot stop the hub.
@@ -150,12 +168,13 @@ class MetricsTokenWatch:
         while True:
             await asyncio.sleep(interval)
             try:
-                self.check()
+                await self.tick()
             except Exception:
                 _LOG.exception("cannot check the metrics token-set file")
 
     def flush(self) -> None:
-        """Write nothing: this watch holds no row, it writes each one as it arises."""
+        """Write the set's queued rows in order; the hub calls this once more when it stops."""
+        self._token_set.flush()
 
     def _observed(self, outcome: TokenOutcome) -> None:
         """Record expiries seen at a request and an admission by a retiring entry."""
@@ -164,20 +183,22 @@ class MetricsTokenWatch:
             self._record_retiring(outcome.entry)
 
     def _record_expired(self, observed: str) -> None:
-        """Write one row for each entry in force that passed its end of validity."""
-        if self._audit is None:
+        """Queue one row for each entry in force that passed its end of validity."""
+        audit = self._audit
+        if audit is None:
             return
         now = self._token_set.now()
         for entry in self._token_set.entries:
             not_after = entry.not_after
             if not_after is None or now < not_after or entry.token_id in self._expired:
                 continue
-            self._audit.expired(entry.token_id, not_after, observed)
             self._expired.add(entry.token_id)
+            self._token_set.defer(partial(audit.expired, entry.token_id, not_after, observed))
 
     def _record_retiring(self, entry: TokenEntry) -> None:
-        """Write the first admission per hour by ``entry`` when a newer entry is valid."""
-        if self._audit is None:
+        """Queue the first admission per hour by ``entry`` when a newer entry is valid."""
+        audit = self._audit
+        if audit is None:
             return
         now = self._token_set.now()
         newest = newest_valid(self._token_set.entries, now, self._token_set.policy_refusal)
@@ -186,8 +207,10 @@ class MetricsTokenWatch:
         hour = hour_of(now)
         if not self._retiring.is_new(entry.token_id, hour):
             return
-        self._audit.retiring_admission(entry.token_id, newest.token_id, hour * HOUR_SECONDS)
         self._retiring.mark(entry.token_id, hour)
+        self._token_set.defer(
+            partial(audit.retiring_admission, entry.token_id, newest.token_id, hour * HOUR_SECONDS)
+        )
 
 
 def metrics_token_watch_for(

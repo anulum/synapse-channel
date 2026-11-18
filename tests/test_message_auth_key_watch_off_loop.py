@@ -19,8 +19,8 @@ from unittest import mock
 
 import pytest
 
+import synapse_channel.core.deferred_writes as deferred_writes_module
 import synapse_channel.core.message_auth_key_set as key_set_module
-import synapse_channel.core.message_auth_key_watch as watch_module
 from key_set_helpers import instant, key_entry, replace_owner_only, write_key_set, write_secret
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_ingress import HubIngress
@@ -236,7 +236,7 @@ def test_a_full_queue_counts_what_it_cannot_keep_and_journals_the_count(
     keys = _set(tmp_path, *ended, clock=_Clock(_BASE))
     watch = message_auth_key_watch_for(keys, store)
     assert watch is not None
-    monkeypatch.setattr(watch_module, "AUDIT_QUEUE_LIMIT", 2)
+    monkeypatch.setattr(deferred_writes_module, "AUDIT_QUEUE_LIMIT", 2)
     real_append = store.append
     journal_down = [True]
 

@@ -151,6 +151,23 @@ execution evidence when carrying a release claim forward.
   takes rows again. `benchmarks/frame_signature_benchmark.py --workload
   key-set` measures the serving loop's lateness while a key set rotates; on
   healthy storage the two designs do not differ measurably (`docs/benchmarks.md`).
+- **Hub stability.** The connect token set (`--token-set`) and the metrics
+  token set (`--metrics-token-set`) are no longer read on the hub's serving
+  loop either. A connection's authentication, and a metrics or health request,
+  are judged against the set in force and read no file; the hub's
+  once-a-second check reads the file in a worker thread and replaces the set in
+  one step, so a new, retired or replaced token is in force from the next
+  check, within about one second, instead of at the next authentication. The
+  rows of a change (`connect_token_set_applied`, `_rejected`,
+  `metrics_token_set_applied`, `_rejected`), the hub's state file for
+  `synapse token-set status`, and the metrics expiry and retiring rows are
+  queued where they arise and written by that check in a worker thread, with
+  the key set's rules: a refused write stays first for the next check, the hub
+  writes the queue once more when it stops serving, and rows past 4096 are
+  counted in the new `connect_token_audit_overflow` and
+  `metrics_token_audit_overflow` rows. The queue is now one shared type for the
+  three rotating secret files. A session's own admission and refusal rows are
+  unchanged.
 
 ### Fixed
 

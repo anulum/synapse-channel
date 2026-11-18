@@ -101,10 +101,10 @@ class MessageAuthKeyEntry:
 class MessageAuthKeySetObserver(Protocol):
     """Receives each change in which key set is in force."""
 
-    def set_applied(self, path: Path, key_ids: tuple[str, ...]) -> None:
+    def set_applied(self, path: Path, key_ids: tuple[str, ...], /) -> None:
         """Report that the set at ``path`` is now in force."""
 
-    def set_rejected(self, path: Path, reason: str) -> None:
+    def set_rejected(self, path: Path, reason: str, /) -> None:
         """Report that the set at ``path`` was not applied and why."""
 
 

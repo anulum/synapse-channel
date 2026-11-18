@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 from websockets.asyncio.client import connect
 
-from hub_e2e_helpers import read_until_type, running_hub, send_json
+from hub_e2e_helpers import read_until_type, running_hub, send_json, until_token_set_checked
 from synapse_channel import cli
 from synapse_channel.cli_hub_transport import _connect_authenticator
 from synapse_channel.core.auth import TokenAuthenticator
@@ -96,9 +96,11 @@ async def test_by_default_a_session_outlives_its_token_and_is_recorded(tmp_path:
     path = _open_set(tmp_path)
     journal = EventStore(tmp_path / "hub.db")
     try:
-        hub = SynapseHub(journal=journal, authenticator=TokenSetAuthenticator(path))
+        authenticator = TokenSetAuthenticator(path)
+        hub = SynapseHub(journal=journal, authenticator=authenticator)
         async with running_hub(hub) as (_, uri):
             _, (end,) = _write(path, ("short", "s-short", SHORT_SECONDS))
+            await until_token_set_checked(authenticator)
             async with connect(uri) as websocket:
                 await send_json(websocket, sender="A", type="heartbeat", token="s-short")
                 await read_until_type(websocket, "welcome")
@@ -123,6 +125,7 @@ async def test_the_hub_can_close_a_session_when_its_token_expires(tmp_path: Path
         hub = SynapseHub(journal=journal, authenticator=authenticator)
         async with running_hub(hub) as (_, uri):
             _, (end,) = _write(path, ("short", "s-short", SHORT_SECONDS))
+            await until_token_set_checked(authenticator)
             async with connect(uri) as websocket:
                 await send_json(websocket, sender="A", type="heartbeat", token="s-short")
                 await read_until_type(websocket, "welcome")
@@ -181,6 +184,7 @@ async def test_a_session_that_ends_first_leaves_no_timer_and_no_row(
         assert sessions is not None
         async with running_hub(hub) as (_, uri):
             _, (end,) = _write(path, ("short", "s-short", SHORT_SECONDS), ("open", "s-open", None))
+            await until_token_set_checked(authenticator)
             async with connect(uri) as websocket:
                 await send_json(websocket, sender="A", type="heartbeat", token="s-short")
                 await read_until_type(websocket, "welcome")
@@ -204,6 +208,7 @@ async def test_closing_without_a_journal_still_closes(tmp_path: Path) -> None:
     authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True)
     async with running_hub(SynapseHub(authenticator=authenticator)) as (_, uri):
         _write(path, ("short", "s-short", SHORT_SECONDS))
+        await until_token_set_checked(authenticator)
         async with connect(uri) as websocket:
             await send_json(websocket, sender="A", type="heartbeat", token="s-short")
             await read_until_type(websocket, "welcome")
@@ -308,6 +313,7 @@ async def test_a_later_end_and_a_rejected_file_keep_the_session(tmp_path: Path) 
     authenticator = TokenSetAuthenticator(path, expiry_closes_sessions=True)
     async with running_hub(SynapseHub(authenticator=authenticator)) as (_, uri):
         _, (first_end,) = _write(path, ("tok", "s-tok", SHORT_SECONDS))
+        await until_token_set_checked(authenticator)
         websocket = await _session(uri, "A", "s-tok")
         try:
             _, (end,) = _write(path, ("tok", "s-tok", 600))
@@ -326,11 +332,13 @@ async def test_by_default_a_retired_token_keeps_its_session_and_is_recorded(
     path, _ = _write(tmp_path / "tokens.json", ("old", "s-old", None), ("new", "s-new", None))
     journal = EventStore(tmp_path / "hub.db")
     try:
-        hub = SynapseHub(journal=journal, authenticator=TokenSetAuthenticator(path))
+        authenticator = TokenSetAuthenticator(path)
+        hub = SynapseHub(journal=journal, authenticator=authenticator)
         async with running_hub(hub) as (_, uri):
             websocket = await _session(uri, "A", "s-old")
             try:
                 _write(path, ("new", "s-new", None))
+                await until_token_set_checked(authenticator)
                 kept = await _session(uri, "B", "s-new")
                 await kept.close()
                 await asyncio.wait_for(await websocket.ping(), timeout=5)
@@ -390,7 +398,7 @@ async def test_the_check_loop_survives_a_failing_check(
     class BrokenCheck(TokenSetAuthenticator):
         calls = 0
 
-        def refresh(self) -> None:
+        def prepare(self) -> None:
             self.calls += 1
             raise RuntimeError("check failed")
 

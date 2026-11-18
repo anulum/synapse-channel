@@ -336,11 +336,13 @@ def test_a_policy_hub_never_blocks_a_retire_and_the_cli_follows_its_policy(
         captured = capsys.readouterr()
         assert f"warning: hub {writer.path.name} will refuse token long" in captured.err
         assert "at most 30 days" in captured.err
+        authenticator.refresh()
         assert authenticator.authenticate(fits, "A") == (True, "Authenticated.")
         assert authenticator.authenticate_outcome(captured.out.strip(), "A").code == "policy"
         assert authenticator.stale_reason is None
         assert main(["token-set", "retire", str(path), "--id", "leak"]) == 0
         capsys.readouterr()
+        authenticator.refresh()
         assert authenticator.authenticate(leak, "A")[0] is False
         (state,) = read_hub_states(path)
         assert (state.state, state.max_token_days, state.policy_refused) == ("applied", 30, 1)

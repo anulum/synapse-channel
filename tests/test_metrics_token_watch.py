@@ -185,6 +185,8 @@ def test_an_older_valid_entry_is_retiring_and_rows_once_per_hour(
     clock.now = _BASE + HOUR_SECONDS + 10
     assert _admits(token_set, "older-secret")
     assert _admits(token_set, "older-secret")
+    assert _rows(store, METRICS_RETIRING_ADMISSION_KIND) == []  # queued for the next check
+    token_set.flush()
     assert _rows(store, METRICS_RETIRING_ADMISSION_KIND) == [
         (
             METRICS_RETIRING_ADMISSION_KIND,
@@ -247,6 +249,7 @@ def test_the_equal_start_earlier_in_the_file_is_the_retiring_one(
     assert metrics_token_watch_for(token_set, store) is not None
     assert _admits(token_set, "second-secret")
     assert _admits(token_set, "first-secret")
+    token_set.flush()
     rows = _rows(store, METRICS_RETIRING_ADMISSION_KIND)
     assert [payload["token_id"] for _, payload in rows] == ["first"]
 
@@ -297,7 +300,9 @@ def test_a_newer_entry_the_policy_refuses_is_no_replacement(
             not_after=_instant(_BASE + 7200),
         ),
     )
+    token_set.refresh()
     assert _admits(token_set, "older-secret")
+    token_set.flush()
     assert _retiring(store) == [("older", "bounded", _BASE)]
 
 
@@ -365,6 +370,7 @@ def test_a_clock_that_steps_back_writes_no_second_row_for_an_hour(
     for offset in steps:
         clock.now = _BASE + offset
         assert _admits(token_set, "older-secret")
+    token_set.flush()
     assert _retiring(store) == [
         ("older", "newer", _BASE),
         ("older", "newer", _BASE + hour),
@@ -390,7 +396,7 @@ class _FailureCounter(logging.Handler):
 async def test_a_failed_check_is_logged_and_the_loop_goes_on(tmp_path: Path) -> None:
     """A journal that cannot be written fails each check; the loop logs it and keeps checking.
 
-    The entry is marked recorded only after its row is written, so every check retries it.
+    The row that cannot be written stays first in the queue, so every check retries it.
     """
     path = tmp_path / "metrics-tokens.json"
     _write(path, _entry("old", "old-secret", not_after=_instant(_BASE - 60)))

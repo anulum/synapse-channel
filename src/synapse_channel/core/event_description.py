@@ -320,6 +320,12 @@ EVENT_WORDS: Mapping[str, Describer] = {
     EventKind.MESSAGE_AUTH_KEY_AUDIT_OVERFLOW: _fixed(
         lambda p: f"message key audit queue overflowed{_count(p, 'dropped', 'rows not kept')}"
     ),
+    EventKind.CONNECT_TOKEN_AUDIT_OVERFLOW: _fixed(
+        lambda p: f"connect token audit queue overflowed{_count(p, 'dropped', 'rows not kept')}"
+    ),
+    EventKind.METRICS_TOKEN_AUDIT_OVERFLOW: _fixed(
+        lambda p: f"metrics token audit queue overflowed{_count(p, 'dropped', 'rows not kept')}"
+    ),
     **{
         kind: _receipt(kind)
         for kind in (

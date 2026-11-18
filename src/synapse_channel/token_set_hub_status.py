@@ -344,12 +344,14 @@ def publish_hub_state(authenticator: TokenSetAuthenticator) -> HubStateWriter | 
     -------
     HubStateWriter or None
         The writer, already observing the set, or ``None`` when publishing
-        is not possible.
+        is not possible. It observes the set deferred: a later state file is
+        written by the set's check in a worker thread, never on the serving
+        loop, and describes the set as that check left it.
     """
     try:
         writer = HubStateWriter(authenticator)
     except (OSError, RuntimeError, PrivateDirError) as exc:
         _LOG.warning("token-set hub state not published: %s", exc)
         return None
-    authenticator.observe(writer)
+    authenticator.observe(writer, deferred=True)
     return writer

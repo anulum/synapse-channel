@@ -452,8 +452,11 @@ When that boundary is crossed, the proportionate controls are:
   is applied that no longer admits it, because the token was removed, its
   secret changed, its agent list no longer names the session or its
   `not_before` moved into the future (reason "connect token retired"). Every
-  token-set hub checks the file every second as well as at each connection,
-  so a change takes effect without waiting for a new connection. `synapse
+  token-set hub checks the file every second, off its serving loop: the file
+  is read and the audit rows and state file are written in worker threads,
+  and a connection is judged against the set in force without reading the
+  file. A change therefore takes effect within about one second, without
+  waiting for a new connection, and no connection waits for the check. `synapse
   token-set status PATH` shows, for each running hub that follows the set,
   whether the file on disk is in force, whether the hub kept its last
   accepted set (with a reason code: `missing`, `unsafe` or `invalid`), or
@@ -542,9 +545,10 @@ When that boundary is crossed, the proportionate controls are:
   `--metrics-token-set PATH` guards the endpoint with a token set in the
   `--token-set` format instead of one fixed token, so the metrics bearer
   rotates without a restart: add the new entry, move the scraper to it, then
-  remove the old one. The hub checks the file every second, as it does a
-  connect-token set, and again at each metrics request, so an idle hub also
-  picks up a change; a file that fails validation is not applied and the last
+  remove the old one. The hub checks the file every second, off its serving
+  loop as it does a connect-token set, and judges each metrics request against
+  the set in force, so an idle hub also picks up a change within about one
+  second; a file that fails validation is not applied and the last
   accepted set keeps working. Entries honour their `not_before`/`not_after`
   window, and an entry that names `agents` admits no metrics request. It
   cannot be combined with `--metrics-token` or `--metrics-token-file`, and
@@ -561,7 +565,10 @@ When that boundary is crossed, the proportionate controls are:
   old entry is removed. A newer entry that the hub's token policy refuses does
   not count as a replacement. Both rows are remembered by the running hub
   process only: after a restart, an entry that is still expired, or an hour
-  already recorded for an entry, is recorded again.
+  already recorded for an entry, is recorded again. The rows of both token sets
+  are queued where they arise and written by the next check, as the key set's
+  are: a refused write stays queued, and rows past 4096 are counted in
+  `connect_token_audit_overflow` or `metrics_token_audit_overflow`.
 - **A2A HTTP bridge.** `synapse a2a-serve` is a separate stdlib HTTP edge that
   defaults to `127.0.0.1`. Its public Agent Card is intentionally readable; the
   task, RPC, extended-card, and push-configuration routes can require HTTP

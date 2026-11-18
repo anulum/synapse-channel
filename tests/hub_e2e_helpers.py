@@ -38,6 +38,7 @@ from synapse_channel.core.tls import (
     MTLSTrustedPeer,
     certificate_sha256_pin_from_der,
 )
+from synapse_channel.core.token_set import TokenSetAuthenticator, status_digest
 
 _MULTIHUB_DOMAIN = "test-follower-domain"
 _MULTIHUB_NAMESPACE = "SYNAPSE-CHANNEL"
@@ -389,3 +390,21 @@ async def collect_available(websocket: Connection, duration: float = 0.15) -> li
             messages.append(await read_json(websocket, timeout=remaining))
         except TimeoutError:
             return messages
+
+
+async def until_token_set_checked(
+    token_set: TokenSetAuthenticator, *, timeout: float = 10.0
+) -> None:
+    """Wait until a serving hub's check has seen the token-set file as it is on disk now.
+
+    A hub applies a changed token set at its next check of the file, about one
+    second later, not at the next connection; a test that changed the file waits
+    here before it connects. The check has seen the file when the status it
+    last recorded equals the file's status now.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while token_set.signature_digest != status_digest(token_set.path):
+        if loop.time() >= deadline:
+            raise TimeoutError(f"the hub did not check {token_set.path} in time")
+        await asyncio.sleep(0.02)

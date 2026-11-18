@@ -7,8 +7,11 @@
 # SYNAPSE_CHANNEL — journal rows for connect-token admissions and token-set changes
 """Record which connect token admitted a session and when the token set changed.
 
-A hub that follows a token set and has a journal writes five audit-only kinds.
-Coordination replay skips them; they hold no secret and no digest.
+A hub that follows a token set and has a journal writes six audit-only kinds.
+Coordination replay skips them; they hold no secret and no digest. The rows of a
+change in the set in force are queued where the change is put in force and
+written by the set's check in a worker thread
+(:class:`~synapse_channel.core.deferred_writes.DeferredWrites`).
 
 ``connect_token_set_applied``
     The file now in force, with its token identifiers.
@@ -25,13 +28,16 @@ Coordination replay skips them; they hold no secret and no digest.
     of a window is written at once; the others in the next
     :data:`REFUSAL_WINDOW_SECONDS` are counted and written as one row when the
     window closes, so a flood of bad tokens cannot flood the journal.
+``connect_token_audit_overflow``
+    How many queued rows were not kept because the queue was full while the
+    journal could not take them; written when the journal takes rows again.
 
 Agent names come from the connecting client and are cut to
 :data:`AGENT_FIELD_LIMIT` characters.
 
-A hub whose metrics bearer follows a token set (``--metrics-token-set``) writes four
-more audit-only kinds for that set. The first two have the same fields as their
-connect-token counterparts:
+A hub whose metrics bearer follows a token set (``--metrics-token-set``) writes five
+more audit-only kinds for that set. The first two and the last have the same
+fields as their connect-token counterparts:
 
 ``metrics_token_set_applied``
     The metrics token-set file now in force, with its token identifiers.
@@ -49,6 +55,8 @@ connect-token counterparts:
     identifier and the start of the hour (``hour_start``). One row per
     identifier and hour while one hub process runs, so an overlap still in use
     shows without flooding the journal.
+``metrics_token_audit_overflow``
+    How many queued rows of the metrics token set were not kept.
 """
 
 from __future__ import annotations
@@ -68,10 +76,12 @@ REFUSED_KIND = "connect_token_refused"
 SET_APPLIED_KIND = "connect_token_set_applied"
 SET_REJECTED_KIND = "connect_token_set_rejected"
 SESSION_ENDED_KIND = "connect_token_session_ended"
+AUDIT_OVERFLOW_KIND = "connect_token_audit_overflow"
 METRICS_SET_APPLIED_KIND = "metrics_token_set_applied"
 METRICS_SET_REJECTED_KIND = "metrics_token_set_rejected"
 METRICS_EXPIRED_KIND = "metrics_token_expired"
 METRICS_RETIRING_ADMISSION_KIND = "metrics_token_retiring_admission"
+METRICS_AUDIT_OVERFLOW_KIND = "metrics_token_audit_overflow"
 
 REFUSAL_WINDOW_SECONDS = 60.0
 """Length of one refusal aggregation window."""
@@ -121,6 +131,10 @@ class TokenAudit:
     def set_rejected(self, path: Path, reason: str) -> None:
         """Record that the set at ``path`` was not applied."""
         self._journal.append(SET_REJECTED_KIND, {"path": str(path), "reason": reason}, durable=True)
+
+    def overflow(self, dropped: int) -> None:
+        """Record that ``dropped`` queued rows were not kept because the queue was full."""
+        self._journal.append(AUDIT_OVERFLOW_KIND, {"dropped": dropped}, durable=True)
 
     def admitted(self, token_id: str | None, agent: str) -> None:
         """Record the token that admitted one session."""
@@ -214,12 +228,14 @@ def token_audit_for(
     -------
     TokenAudit or None
         The attached audit, already holding the set in force; ``None`` for a
-        hub without a token set or without a journal.
+        hub without a token set or without a journal. It observes the set
+        deferred: the rows of a later change are written by the set's check.
     """
     if journal is None or not isinstance(authenticator, TokenSetAuthenticator):
         return None
     audit = TokenAudit(journal)
-    authenticator.observe(audit)
+    authenticator.observe(audit, deferred=True)
+    authenticator.count_overflow_with(audit.overflow)
     return audit
 
 
@@ -285,6 +301,10 @@ class MetricsTokenAudit:
             durable=True,
         )
 
+    def overflow(self, dropped: int) -> None:
+        """Record that ``dropped`` queued rows were not kept because the queue was full."""
+        self._journal.append(METRICS_AUDIT_OVERFLOW_KIND, {"dropped": dropped}, durable=True)
+
 
 def metrics_token_audit_for(
     token_set: TokenAuthenticator | None, journal: EventStore | None
@@ -304,10 +324,12 @@ def metrics_token_audit_for(
     -------
     MetricsTokenAudit or None
         The attached audit, already holding the set in force; ``None`` for a hub
-        without a metrics token set or without a journal.
+        without a metrics token set or without a journal. It observes the set
+        deferred, as the connect-token audit does.
     """
     if journal is None or not isinstance(token_set, TokenSetAuthenticator):
         return None
     audit = MetricsTokenAudit(journal)
-    token_set.observe(audit)
+    token_set.observe(audit, deferred=True)
+    token_set.count_overflow_with(audit.overflow)
     return audit

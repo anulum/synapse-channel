@@ -14,9 +14,11 @@ are read in a worker thread and a change is put in force on the loop in one
 assignment, so a verification never waits for a read. With a journal it writes
 five audit-only kinds. A row is queued in memory where it arises, also inside a
 verification, and the next check writes the queue in a worker thread, so no
-verification waits for the journal either. A row that cannot be written stays
-queued for the next check, the queue holds at most :data:`AUDIT_QUEUE_LIMIT`
-rows, and the hub writes it once more when it stops serving. The rows hold key
+verification waits for the journal either. The queue is a
+:class:`~synapse_channel.core.deferred_writes.DeferredWrites`: a row that cannot
+be written stays first for the next check, the queue holds at most
+:data:`~synapse_channel.core.deferred_writes.AUDIT_QUEUE_LIMIT` rows, and the
+hub writes it once more when it stops serving. The rows hold key
 ids and names, never a secret, a digest or a signature:
 
 ``message_auth_key_set_applied``
@@ -48,12 +50,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
-from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
 
+from synapse_channel.core.deferred_writes import DeferredSetObserver, DeferredWrites
 from synapse_channel.core.hourly_once import HOUR_SECONDS, HourlyOnce, hour_of
 from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.message_auth_key_set import MessageAuthKeyEntry, MessageAuthKeySet
@@ -69,9 +70,6 @@ MESSAGE_KEY_AUDIT_OVERFLOW_KIND = "message_auth_key_audit_overflow"
 
 RETIRING_MEMORY_HOURS = 24
 """How many hours behind its latest recorded hour a key and sender's hours are kept."""
-
-AUDIT_QUEUE_LIMIT = 4096
-"""Most rows a watch holds while its journal cannot take them; further rows are counted."""
 
 _LOG = logging.getLogger(__name__)
 
@@ -189,10 +187,6 @@ def newest_for_sender(
     return newest
 
 
-_Row = Callable[[MessageAuthKeyAudit], None]
-"""One queued audit row: the write it stands for, given the audit."""
-
-
 class MessageAuthKeyWatch:
     """Check one key set periodically and record its life, off the serving loop.
 
@@ -215,22 +209,12 @@ class MessageAuthKeyWatch:
         self._audit = audit
         self._expired: set[str] = set()
         self._retiring = HourlyOnce(RETIRING_MEMORY_HOURS)
-        self._queue: deque[_Row] = deque()
-        self._dropped = 0
-        self._counting = threading.Lock()
-        self._writing = threading.Lock()
+        self._writes = DeferredWrites("message-auth key-set audit", _LOG)
         keys.observe_lookups(lambda: self._note_expired("verification"))
         keys.observe_admissions(self._note_retiring)
         if audit is not None:
-            keys.observe(self)
-
-    def set_applied(self, path: Path, key_ids: tuple[str, ...]) -> None:
-        """Queue the row of the key set now in force."""
-        self._enqueue(partial(MessageAuthKeyAudit.set_applied, path=path, key_ids=key_ids))
-
-    def set_rejected(self, path: Path, reason: str) -> None:
-        """Queue the row of a key set that was not applied."""
-        self._enqueue(partial(MessageAuthKeyAudit.set_rejected, path=path, reason=reason))
+            self._writes.count_overflow_with(audit.overflow)
+            keys.observe(DeferredSetObserver(audit, self._writes))
 
     def check(self) -> None:
         """Check the files, note expiries and write the queue, all on the calling thread.
@@ -275,42 +259,12 @@ class MessageAuthKeyWatch:
         the rows queued after it. The hub calls this once more when it stops
         serving.
         """
-        audit = self._audit
-        if audit is None:
-            return
-        with self._writing:
-            while self._queue:
-                self._queue[0](audit)
-                self._queue.popleft()
-            with self._counting:
-                dropped = self._dropped
-            if dropped:
-                audit.overflow(dropped)
-                with self._counting:
-                    self._dropped -= dropped
-
-    def _enqueue(self, row: _Row) -> None:
-        """Queue ``row``, or count it when the queue is full; never block.
-
-        Only a watch with an audit queues: the set is observed only then, and
-        the notes return first without one.
-        """
-        with self._counting:
-            if len(self._queue) < AUDIT_QUEUE_LIMIT:
-                self._queue.append(row)
-                return
-            self._dropped += 1
-            first = self._dropped == 1
-        if first:
-            _LOG.error(
-                "the message-auth key-set audit queue is full (%d rows); "
-                "further rows are counted and the count is journalled later",
-                AUDIT_QUEUE_LIMIT,
-            )
+        self._writes.flush()
 
     def _note_expired(self, observed: str) -> None:
         """Queue one row for each key in force that passed its end of validity."""
-        if self._audit is None:
+        audit = self._audit
+        if audit is None:
             return
         now = self._keys.now()
         for entry in self._keys.entries:
@@ -318,18 +272,14 @@ class MessageAuthKeyWatch:
             if not_after is None or now < not_after or entry.key_id in self._expired:
                 continue
             self._expired.add(entry.key_id)
-            self._enqueue(
-                partial(
-                    MessageAuthKeyAudit.expired,
-                    key_id=entry.key_id,
-                    not_after=not_after,
-                    observed=observed,
-                )
+            self._writes.put(
+                partial(audit.expired, key_id=entry.key_id, not_after=not_after, observed=observed)
             )
 
     def _note_retiring(self, entry: MessageAuthKeyEntry, sender: str) -> None:
         """Queue the first verification per hour by a retiring key for ``sender``."""
-        if self._audit is None:
+        audit = self._audit
+        if audit is None:
             return
         now = self._keys.now()
         newest = newest_for_sender(self._keys.entries, sender, now)
@@ -339,9 +289,9 @@ class MessageAuthKeyWatch:
         if not self._retiring.is_new((entry.key_id, sender), hour):
             return
         self._retiring.mark((entry.key_id, sender), hour)
-        self._enqueue(
+        self._writes.put(
             partial(
-                MessageAuthKeyAudit.retiring_admission,
+                audit.retiring_admission,
                 key_id=entry.key_id,
                 sender=sender,
                 newest_key_id=newest.key_id,

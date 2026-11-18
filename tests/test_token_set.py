@@ -20,7 +20,13 @@ import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
-from hub_e2e_helpers import read_json, read_until_type, running_hub, send_json
+from hub_e2e_helpers import (
+    read_json,
+    read_until_type,
+    running_hub,
+    send_json,
+    until_token_set_checked,
+)
 from synapse_channel import cli
 from synapse_channel.cli_hub_startup import HubStartupRefused
 from synapse_channel.cli_hub_transport import _connect_authenticator
@@ -75,6 +81,8 @@ def test_two_tokens_rotate_without_a_restart(tmp_path: Path) -> None:
     assert auth.authenticate("s-old", "A") == (True, "Authenticated.")
     assert auth.authenticate("s-new", "A") == (True, "Authenticated.")
     _write(path, _entry("new", "s-new"))
+    assert auth.authenticate("s-old", "A") == (True, "Authenticated.")  # in force until a check
+    auth.refresh()
     assert auth.authenticate("s-old", "A") == (False, "Invalid authentication token.")
     assert auth.authenticate("s-new", "A") == (True, "Authenticated.")
     assert [entry.token_id for entry in auth.entries] == ["new"]
@@ -112,13 +120,16 @@ def test_a_bad_replacement_keeps_the_last_good_set_and_reports_stale(
     auth = TokenSetAuthenticator(path)
     _write(path, raw="{not json")
     with caplog.at_level("WARNING", logger="synapse_channel.core.token_set"):
+        auth.refresh()
         assert auth.authenticate("s", "A")[0] is True
     assert auth.stale_reason is not None and "not valid JSON" in auth.stale_reason
     assert "token set not applied" in caplog.text and "last accepted set stays" in caplog.text
     path.unlink()
+    auth.refresh()
     assert auth.authenticate("s", "A")[0] is True
     assert auth.stale_reason == f"{path} is missing"
     _write(path, _entry("fresh", "t"))
+    auth.refresh()
     assert auth.authenticate("t", "A")[0] is True
     assert auth.authenticate("s", "A")[0] is False
     assert auth.stale_reason is None
@@ -131,11 +142,13 @@ def test_a_symlinked_or_shared_replacement_is_refused(tmp_path: Path) -> None:
     other = _write(tmp_path / "other.json", _entry("swapped", "x"))
     path.unlink()
     path.symlink_to(other)
+    auth.refresh()
     assert auth.authenticate("x", "A")[0] is False
     assert auth.stale_reason is not None
     path.unlink()
     _write(path, _entry("shared", "y"))
     os.chmod(path, 0o644)
+    auth.refresh()
     assert auth.authenticate("y", "A")[0] is False
     assert auth.stale_reason is not None
     assert auth.authenticate("s", "A")[0] is True
@@ -148,16 +161,20 @@ def test_a_mode_change_alone_is_noticed_both_ways(tmp_path: Path) -> None:
     auth = TokenSetAuthenticator(path)
     _write(path, _entry("b", "s-b"))
     os.chmod(path, 0o644)
+    auth.refresh()
     assert auth.authenticate("s-a", "A")[0] is True
     assert auth.stale_reason is not None
     os.chmod(path, 0o600)
+    auth.refresh()
     assert auth.authenticate("s-a", "A")[0] is False
     assert auth.authenticate("s-b", "A")[0] is True
     assert auth.stale_reason is None
     os.chmod(path, 0o644)
+    auth.refresh()
     assert auth.authenticate("s-b", "A")[0] is True
     assert auth.stale_reason is not None
     os.chmod(path, 0o600)
+    auth.refresh()
     assert auth.authenticate("s-b", "A")[0] is True
     assert auth.stale_reason is None
 
@@ -238,14 +255,16 @@ def test_an_empty_set_admits_nobody(tmp_path: Path) -> None:
 
 
 async def test_a_real_hub_follows_the_file_without_a_restart(tmp_path: Path) -> None:
-    """A retired token is refused on the next connection; the new one is admitted."""
+    """A retired token is refused once the hub has checked the file; the new one is admitted."""
     path = _write(tmp_path / "tokens.json", _entry("old", "s-old"))
-    hub = SynapseHub(hub_id="syn-token-set", authenticator=TokenSetAuthenticator(path))
+    authenticator = TokenSetAuthenticator(path)
+    hub = SynapseHub(hub_id="syn-token-set", authenticator=authenticator)
     async with running_hub(hub) as (_, uri):
         async with connect(uri) as websocket:
             await send_json(websocket, sender="A", type="heartbeat", token="s-old")
             assert (await read_until_type(websocket, "welcome"))["hub_id"] == "syn-token-set"
         _write(path, _entry("new", "s-new"))
+        await until_token_set_checked(authenticator)
         async with connect(uri) as websocket:
             await send_json(websocket, sender="B", type="heartbeat", token="s-old")
             denied = await read_until_type(websocket, "auth_denied")
@@ -310,6 +329,7 @@ def test_a_set_that_cannot_be_inspected_goes_stale_instead_of_raising(tmp_path: 
     auth = TokenSetAuthenticator(path)
     folder.chmod(0o600)
     try:
+        auth.refresh()
         assert auth.authenticate("s", "A") == (True, "Authenticated.")
         assert auth.stale_reason is not None
     finally:
@@ -336,6 +356,7 @@ def test_require_expiry_refuses_unending_tokens_but_applies_the_set(
     assert isinstance(_connect_authenticator(namespace), TokenSetAuthenticator)
     assert "refuses these tokens, which admit nothing: forever" in capsys.readouterr().err
     _write(path, ending)
+    auth.refresh()
     assert auth.authenticate("s-ends", "A") == (True, "Authenticated.")
     assert auth.stale_reason is None and auth.policy_refused() == ()
     assert TokenSetAuthenticator(path).policy == {"require_expiry": False, "max_token_days": None}

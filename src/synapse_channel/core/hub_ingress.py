@@ -231,15 +231,21 @@ class HubIngress:
     def flush_audit(self) -> None:
         """Write what the audits still hold; called when serving stops.
 
-        That is the counts of refusal windows still open, and the rows each
-        secret watch has queued but not yet written. A failure is logged and
-        the others are still written.
+        That is the counts of refusal windows still open, the rows and state
+        files the connect token set has queued, and the rows each secret watch
+        has queued but not yet written. A failure is logged and the others are
+        still written.
         """
         if self._token_audit is not None:
             try:
                 self._token_audit.flush()
             except Exception:
                 logger.exception("cannot record the last connect-token refusal counts")
+        if isinstance(self._authenticator, TokenSetAuthenticator):
+            try:
+                self._authenticator.flush()
+            except Exception:
+                logger.exception("cannot record the last rows of the connect token set")
         for watch in self._secret_watches:
             try:
                 watch.flush()

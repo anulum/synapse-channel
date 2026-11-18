@@ -132,8 +132,10 @@ def test_the_authenticator_reports_each_set_change(tmp_path: Path, store: EventS
     authenticator = TokenSetAuthenticator(path)
     authenticator.observe(TokenAudit(store))
     _write(path, raw="{broken")
+    authenticator.refresh()
     assert authenticator.authenticate("s-a", "A") == (True, "Authenticated.")
     _write(path, ("a", "s-a", {}), ("b", "s-b", {}))
+    authenticator.refresh()
     assert authenticator.authenticate("s-b", "A") == (True, "Authenticated.")
     events = _audit_rows(store)
     assert [event.kind for event in events] == [

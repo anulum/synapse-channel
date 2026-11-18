@@ -126,10 +126,12 @@ def test_rotation_through_the_cli_reaches_a_running_authenticator(
     authenticator = TokenSetAuthenticator(path, clock=lambda: NOW)
     assert _new(path, "--id", "new", "--agents", "A/one, A/two") == 0
     new = capsys.readouterr().out.strip()
+    authenticator.refresh()
     assert authenticator.authenticate_with_principal(new, "A/two")[0] is True
     assert authenticator.authenticate_with_principal(old, "A/x")[0] is True
     assert main(["token-set", "retire", str(path), "--id", "old"]) == 0
     assert "1 token(s) remain" in capsys.readouterr().out
+    authenticator.refresh()
     assert authenticator.authenticate_with_principal(old, "A/x") == (
         False,
         "Invalid authentication token.",

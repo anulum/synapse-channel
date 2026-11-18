@@ -15,6 +15,18 @@ file when it changes, so a rotation needs no restart. A file that fails
 validation is not applied: the hub keeps the last set it accepted and reports
 itself stale until a valid file appears.
 
+An authentication reads the set in force and nothing else: no file status, no
+file and no write. Checking the file is a separate step.
+:meth:`TokenSetAuthenticator.prepare` reads it and returns what it found
+without changing the set in force, so the hub runs it in a worker thread;
+:meth:`TokenSetAuthenticator.apply` then puts the result in force in one
+assignment and tells the observers. An observer that writes (a journal row, a
+state file) is attached ``deferred``: its write is queued
+(:class:`~synapse_channel.core.deferred_writes.DeferredWrites`) and the hub
+writes the queue in a worker thread (:meth:`TokenSetAuthenticator.flush`). A
+change therefore takes effect at the next check, about one second, and no
+connection waits for a file or the journal.
+
 The digest of a low-entropy secret can be guessed offline from a leaked file.
 Secrets for a token set should be generated, not chosen.
 """
@@ -34,6 +46,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from synapse_channel.core.auth import _QUOTA_PRINCIPAL_DOMAIN, TokenAuthenticator
+from synapse_channel.core.deferred_writes import DeferredSetObserver, DeferredWrites
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.core.utc_instants import parse_utc_instant
@@ -116,11 +129,32 @@ class TokenOutcome:
 class TokenSetObserver(Protocol):
     """Receives each change in which token set is in force."""
 
-    def set_applied(self, path: Path, token_ids: tuple[str, ...]) -> None:
+    def set_applied(self, path: Path, token_ids: tuple[str, ...], /) -> None:
         """Report that the file at ``path`` is now in force."""
 
-    def set_rejected(self, path: Path, reason: str) -> None:
+    def set_rejected(self, path: Path, reason: str, /) -> None:
         """Report that the file at ``path`` was not applied and why."""
+
+
+@dataclass(frozen=True)
+class PreparedTokenSet:
+    """What one check of a token-set file found, before it is put in force.
+
+    Parameters
+    ----------
+    signature : tuple of int or None
+        The file status the next check compares against.
+    entries : tuple of TokenEntry or None
+        The new set, or ``None`` when the file on disk cannot be put in force.
+    reason, code : str or None
+        Why the file cannot be put in force, and the matching code (``missing``,
+        ``unsafe`` or ``invalid``), when ``entries`` is ``None``.
+    """
+
+    signature: tuple[int, ...] | None
+    entries: tuple[TokenEntry, ...] | None
+    reason: str | None
+    code: str | None
 
 
 def connect_token_digest(secret: str) -> str:
@@ -329,12 +363,13 @@ class TokenSetAuthenticator(TokenAuthenticator):
 
     Notes
     -----
-    Before each authentication the file's device, inode, size, modification
-    time, mode, owner, link count and change time are compared with the last
-    read. A difference triggers a reload. A reload that fails keeps the
-    previous set and records why in :attr:`stale_reason`. The check, the read
-    and the swap run without an ``await``, so no other coroutine can
-    authenticate against a half-loaded set.
+    Each check (:meth:`prepare`, :meth:`refresh`) compares the file's device,
+    inode, size, modification time, mode, owner, link count and change time
+    with the last read. A difference triggers a reload. A reload that fails
+    keeps the previous set and records why in :attr:`stale_reason`. An
+    authentication judges against the set in force and never checks the file;
+    :meth:`apply` replaces the set in one assignment, so no authentication sees
+    a half-loaded set.
 
     The token policy (``require_expiry``, ``max_token_days``) acts on single
     tokens when they are presented, not on the file. A set that holds a token
@@ -364,6 +399,7 @@ class TokenSetAuthenticator(TokenAuthenticator):
         self._stale_code: str | None = None
         self._observers: list[TokenSetObserver] = []
         self._outcome_observers: list[Callable[[TokenOutcome], None]] = []
+        self._writes = DeferredWrites(f"token-set audit of {self._path.name}", _LOG)
 
     @property
     def policy(self) -> dict[str, object]:
@@ -391,17 +427,41 @@ class TokenSetAuthenticator(TokenAuthenticator):
             entry.token_id for entry in self._entries if self.policy_refusal(entry, now) is not None
         )
 
-    def observe(self, observer: TokenSetObserver) -> None:
+    def observe(self, observer: TokenSetObserver, *, deferred: bool = False) -> None:
         """Send every later change to ``observer``, starting with the set in force now.
 
         A set that is stale at this point is reported as applied and then as
         rejected, so the observer starts from the same state as the hub.
         Observers are called in the order they were added.
+
+        Parameters
+        ----------
+        observer : TokenSetObserver
+            Receives each change.
+        deferred : bool, optional
+            Queue each later call instead of making it where the change is put
+            in force; :meth:`flush` makes the queued calls. An observer that
+            writes a file or a journal row is attached this way, so the serving
+            loop never waits for its write. The calls for the set in force now
+            are made at once: observers are attached before the hub serves.
         """
-        self._observers.append(observer)
+        attached = DeferredSetObserver(observer, self._writes) if deferred else observer
+        self._observers.append(attached)
         observer.set_applied(self._path, self._token_ids())
         if self._stale_reason is not None:
             observer.set_rejected(self._path, self._stale_reason)
+
+    def count_overflow_with(self, overflow: Callable[[int], None]) -> None:
+        """Hand the number of deferred writes that were not kept to ``overflow``."""
+        self._writes.count_overflow_with(overflow)
+
+    def defer(self, write: Callable[[], None]) -> None:
+        """Queue one write to be made at the next :meth:`flush`; never block."""
+        self._writes.put(write)
+
+    def flush(self) -> None:
+        """Make every queued write in order; a failed write stays first and is raised."""
+        self._writes.flush()
 
     def observe_outcomes(self, observer: Callable[[TokenOutcome], None]) -> None:
         """Send the outcome of every later authentication to ``observer``.
@@ -455,27 +515,63 @@ class TokenSetAuthenticator(TokenAuthenticator):
         """Return the current time on the clock that judges validity windows."""
         return self._clock()
 
-    def refresh(self) -> None:
-        """Reload the file if it changed; keep the current set if it fails.
+    def prepare(self) -> PreparedTokenSet | None:
+        """Check the file and read it if it changed, without changing the set in force.
 
-        A failing observer is logged and the others are still told; the
-        change has already happened, so it is not undone.
+        It reads only the file and the status last seen, and mutates nothing,
+        so the hub runs it in a worker thread while authentications go on. One
+        check runs at a time: the caller passes its result to :meth:`apply`
+        before the next one.
+
+        Returns
+        -------
+        PreparedTokenSet or None
+            ``None`` when the file did not change; otherwise the new set, or why
+            the file on disk cannot be put in force.
         """
         current = _signature(self._path)
         if current == self._signature:
-            return
-        self._signature = current
+            return None
         if current is None:
-            self._mark_stale(f"{self._path} is missing", "missing")
-            return
+            return PreparedTokenSet(None, None, f"{self._path} is missing", "missing")
         try:
-            self._entries = load_token_set(self._path)
+            entries = load_token_set(self._path)
         except SecretFileError as exc:
-            self._mark_stale(str(exc), "unsafe")
-            return
+            return PreparedTokenSet(current, None, str(exc), "unsafe")
         except TokenSetError as exc:
-            self._mark_stale(str(exc), "invalid")
+            return PreparedTokenSet(current, None, str(exc), "invalid")
+        return PreparedTokenSet(current, entries, None, None)
+
+    def refresh(self) -> None:
+        """Check the file, put any change in force and make the queued writes, all now.
+
+        This is :meth:`prepare`, :meth:`apply` and :meth:`flush` on the calling
+        thread, for callers that may block; the hub's watcher runs them apart so
+        the read and the writes stay off its serving loop. A write that fails
+        is logged and stays queued for the next flush.
+        """
+        self.apply(self.prepare())
+        try:
+            self.flush()
+        except Exception:
+            _LOG.exception("cannot record a token-set change; it stays queued")
+
+    def apply(self, prepared: PreparedTokenSet | None) -> None:
+        """Put what :meth:`prepare` found in force; call it where authentications run.
+
+        A new set replaces the one in force in one assignment and is announced
+        to the observers. A file that cannot be put in force keeps the last set
+        and is announced with its reason. A failing observer is logged and the
+        others are still told; the change has already happened, so it is not
+        undone.
+        """
+        if prepared is None:
             return
+        self._signature = prepared.signature
+        if prepared.entries is None:
+            self._mark_stale(str(prepared.reason), str(prepared.code))
+            return
+        self._entries = prepared.entries
         self._stale_reason = None
         self._stale_code = None
         for observer in self._observers:
@@ -496,7 +592,7 @@ class TokenSetAuthenticator(TokenAuthenticator):
                 _LOG.exception("a token-set observer failed on a rejected set")
 
     def authenticate_with_principal(self, token: str, agent: str) -> tuple[bool, str, str | None]:
-        """Authenticate against the set in force after picking up any change.
+        """Authenticate against the set in force; no file is read.
 
         Returns
         -------
@@ -534,8 +630,7 @@ class TokenSetAuthenticator(TokenAuthenticator):
         return outcome
 
     def _judge(self, token: str, agent: str) -> TokenOutcome:
-        """Reach the verdict on ``token`` for ``agent`` against the set in force."""
-        self.refresh()
+        """Reach the verdict on ``token`` for ``agent`` against the set in force alone."""
         candidate = str(token)
         if not candidate:
             return TokenOutcome(False, "Authentication token required.", None, None, "missing")

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import time
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ import pytest
 from cli_e2e_helpers import CliResult, free_port, http_get, isolated_hub, run_cli
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.token_audit import METRICS_SET_APPLIED_KIND, METRICS_SET_REJECTED_KIND
+from synapse_channel.core.token_sessions import WATCH_INTERVAL_SECONDS
 from synapse_channel.core.token_set import connect_token_digest
 
 
@@ -37,6 +39,14 @@ def _write(path: Path, *secrets: tuple[str, str], raw: str | None = None) -> Non
 def _bearer(secret: str) -> dict[str, str]:
     """Return the Authorization header for ``secret``."""
     return {"Authorization": f"Bearer {secret}"}
+
+
+def _until_admitted(url: str, secret: str) -> None:
+    """Wait until the hub's check of the file, about one second away, admits ``secret``."""
+    deadline = time.monotonic() + 2 * WATCH_INTERVAL_SECONDS + 5
+    while http_get(url, headers=_bearer(secret))[0] != 200:
+        assert time.monotonic() < deadline, "the hub never put the replaced file in force"
+        time.sleep(0.05)
 
 
 def _audit_rows(db_path: Path) -> list[tuple[str, dict[str, Any]]]:
@@ -62,10 +72,11 @@ def test_a_hub_process_rotates_its_metrics_bearer_and_journals_each_set(tmp_path
         assert status == 200 and "synapse_up" in body
 
         _write(tokens, ("scraper-2", "second-secret-longer"))
+        _until_admitted(url, "second-secret-longer")
         assert http_get(url, headers=_bearer("first-secret"))[0] == 401
-        assert http_get(url, headers=_bearer("second-secret-longer"))[0] == 200
 
         _write(tokens, raw="{not json")
+        time.sleep(2 * WATCH_INTERVAL_SECONDS + 0.5)  # the next check rejects it
         assert http_get(url, headers=_bearer("second-secret-longer"))[0] == 200
         db_path = hub.db_path
     rows = _audit_rows(db_path)

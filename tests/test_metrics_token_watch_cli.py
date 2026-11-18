@@ -97,7 +97,7 @@ def test_an_entry_that_expires_while_the_hub_serves_is_one_row(tmp_path: Path) -
     """``not_after`` a few seconds ahead: valid first, then 401, and one expiry row.
 
     The short entry is written only once the hub listens, so a slow start cannot use up
-    its window; the request that follows also applies it.
+    its window; the hub's next check applies it, and the test waits for that.
     """
     tokens = tmp_path / "metrics-tokens.json"
     _write(tokens, _entry("starter", "starter-secret"))
@@ -107,7 +107,9 @@ def test_an_entry_that_expires_while_the_hub_serves_is_one_row(tmp_path: Path) -
         url = f"http://127.0.0.1:{hub.port}/metrics"
         end = float(int(time.time()) + 4)
         _write(tokens, _entry("short", "short-secret", not_after=_instant(end)))
-        assert _status(url, "short-secret") == 200
+        while _status(url, "short-secret") != 200:
+            assert time.time() < end - 0.5, "the hub never put the short entry in force"
+            time.sleep(0.05)
         time.sleep(max(0.0, end + _TWO_INTERVALS + 0.5 - time.time()))
         assert _status(url, "short-secret") == 401
         assert _status(url, "short-secret") == 401

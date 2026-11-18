@@ -23,10 +23,14 @@ digest, when that entry no longer names the session's agent, when its
 ``not_before`` has moved into the future, or when the hub's token policy
 refuses the changed entry. A changed
 ``not_after`` moves the session's end to the new value, earlier or later.
-Every token-set hub checks the file every :data:`WATCH_INTERVAL_SECONDS` as
-well as at each authentication (:func:`watch_token_set`), so a retire takes
-effect without waiting for a new connection. Every admitted session is followed while it is open,
-so memory grows with open sessions only.
+Every token-set hub checks the file every :data:`WATCH_INTERVAL_SECONDS`
+(:func:`watch_token_set`), off its serving loop: the file is read in a worker
+thread, a change is put in force on the loop, and the rows and state files it
+causes are written in a worker thread again (:func:`check_token_set`). A retire
+therefore takes effect within about one second, without waiting for a new
+connection, and no connection waits for the file or the journal. Every
+admitted session is followed while it is open, so memory grows with open
+sessions only.
 """
 
 from __future__ import annotations
@@ -53,7 +57,7 @@ RETIRED_CLOSE_REASON = "connect token retired"
 """Close reason for a session whose token left the set or no longer names its agent."""
 
 WATCH_INTERVAL_SECONDS = 1.0
-"""How often a closing hub checks the token-set file between authentications."""
+"""How often a hub checks each rotating secret file: a token set, a key set."""
 
 _LOG = logging.getLogger(__name__)
 
@@ -204,6 +208,18 @@ class TokenSessions:
             )
 
 
+async def check_token_set(authenticator: TokenSetAuthenticator) -> None:
+    """Check the token-set file once, keeping the read and the writes off the caller's loop.
+
+    The file is read in a worker thread; what it found is put in force here,
+    on the thread that authenticates, in one assignment; the rows and state
+    files the change causes are then written in a worker thread.
+    """
+    prepared = await asyncio.to_thread(authenticator.prepare)
+    authenticator.apply(prepared)
+    await asyncio.to_thread(authenticator.flush)
+
+
 async def watch_token_set(
     authenticator: TokenSetAuthenticator, interval: float = WATCH_INTERVAL_SECONDS
 ) -> None:
@@ -211,13 +227,13 @@ async def watch_token_set(
 
     Every token-set hub runs this, so a changed file is applied, or reported
     stale, without waiting for a new connection. A failed check is logged and
-    the next one runs; the loop never ends on its own, so it cannot stop the
-    hub.
+    the next one runs; a write that failed stays queued for it. The loop never
+    ends on its own, so it cannot stop the hub.
     """
     while True:
         await asyncio.sleep(interval)
         try:
-            authenticator.refresh()
+            await check_token_set(authenticator)
         except Exception:
             _LOG.exception("cannot check the token-set file")
 

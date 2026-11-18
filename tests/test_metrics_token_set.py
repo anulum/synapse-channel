@@ -19,7 +19,7 @@ import pytest
 from websockets.datastructures import Headers
 from websockets.http11 import Request
 
-from hub_e2e_helpers import http_get, running_hub
+from hub_e2e_helpers import http_get, running_hub, until_token_set_checked
 from synapse_channel.core import hub_http
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
@@ -86,10 +86,13 @@ def test_the_set_admits_its_entries_and_rotates_without_a_restart(tmp_path: Path
     assert not _admits(token_set, None)
 
     _write(path, _entry("scraper-2", "second-secret-longer"))
+    assert _admits(token_set, "first-secret")  # in force until a check
+    token_set.refresh()
     assert _admits(token_set, "second-secret-longer")
     assert not _admits(token_set, "first-secret")
 
     _write(path, raw="{not json")
+    token_set.refresh()
     assert _admits(token_set, "second-secret-longer")  # the last accepted set stays
     assert token_set.stale_code == "invalid"
 
@@ -189,10 +192,11 @@ async def test_a_live_hub_rotates_its_metrics_bearer_and_journals_it(tmp_path: P
     path = tmp_path / "metrics-tokens.json"
     _write(path, _entry("scraper-1", "first-secret"))
     store = EventStore(tmp_path / "hub.db")
+    token_set = TokenSetAuthenticator(path)
     hub = SynapseHub(
         hub_id="syn-metrics-set",
         enable_metrics=True,
-        metrics_token_set=TokenSetAuthenticator(path),
+        metrics_token_set=token_set,
         journal=store,
     )
     try:
@@ -200,6 +204,7 @@ async def test_a_live_hub_rotates_its_metrics_bearer_and_journals_it(tmp_path: P
             status, _, body = await http_get(uri, "/metrics", authorization="Bearer first-secret")
             assert status == 200 and "synapse_up" in body
             _write(path, _entry("scraper-2", "second-secret-longer"))
+            await until_token_set_checked(token_set)
             status, _, _ = await http_get(uri, "/metrics", authorization="Bearer first-secret")
             assert status == 401
             status, _, _ = await http_get(

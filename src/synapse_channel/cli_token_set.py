@@ -8,7 +8,8 @@
 """Manage a hub's connect-token set: ``synapse token-set new/retire/list``.
 
 These are local file operations; they do not connect to the hub. A hub started
-with ``--token-set PATH`` picks up each change on its next authentication.
+with ``--token-set PATH`` picks up each change at its next check of the file,
+within about one second.
 
 ``new`` generates a 256-bit secret, stores only its digest, and writes the
 secret to a new owner-only ``--secret-out`` file. It prints the secret on
@@ -181,7 +182,7 @@ def _cmd_new(args: argparse.Namespace, *, clock: Callable[[], float] = time.time
 
 
 def _cmd_retire(args: argparse.Namespace) -> int:
-    """Remove a token; the hub refuses it from its next authentication."""
+    """Remove a token; the hub refuses it from its next check of the file."""
     path = Path(args.path).expanduser()
     try:
         remaining = retire_token(path, args.id)
