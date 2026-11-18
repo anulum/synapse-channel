@@ -25,8 +25,21 @@ This module answers where the server lives and offers two remedies:
 * :func:`move_to_own_scope` asks the user service manager to put a server that
   already runs into a new transient scope, without restarting it.
 
-Both need a systemd user manager. Without one the functions say so and change
-nothing; tmux then behaves as it always did.
+Both need a systemd user manager. Without one :func:`move_to_own_scope` says so
+and changes nothing.
+
+**What a server started here keeps in its environment.** Every session copies
+the server's global environment, so whatever the server holds reaches every
+seat on the host. A service started by the user manager carries the manager's
+environment (which may hold variables a login shell imported, such as a
+terminal's seat identity) and systemd's per-service keys (``INVOCATION_ID``,
+``JOURNAL_STREAM`` and others). A server started without a user manager carries
+the whole environment of the command that started it, for example another
+seat's ``TMPDIR`` and ``XDG_*_HOME`` directories. So right after
+:func:`start_own_server` starts a server, before any session exists, every
+global variable is unset except :data:`SERVER_ENVIRONMENT`, the ``LC_*``
+locale variables and the names listed in :data:`KEEP_ENVIRONMENT_SETTING`.
+A server that already runs is never changed.
 
 Only the server process is placed. A tmux built with systemd support, 3.4 and
 later, already runs every pane in a scope of its own. With an older tmux the
@@ -35,6 +48,7 @@ panes stay children of the server in the original control group.
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import time
@@ -61,6 +75,45 @@ NEW_SERVER_UNIT_PREFIX = "synapse-tmux-server-"
 
 INHERITED_ENVIRONMENT = ("PATH", "LANG", "LC_ALL", "TMUX_TMPDIR")
 """Caller variables the new server keeps, when set: where commands and the socket are found."""
+
+SERVER_ENVIRONMENT = (
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "PATH",
+    "LANG",
+    "LANGUAGE",
+    "TZ",
+    "TMUX_TMPDIR",
+    "XDG_RUNTIME_DIR",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "SSH_AUTH_SOCK",
+)
+"""Global variables a server started here keeps: the user, the locale and the desktop session.
+
+It is fixed in code and cannot be narrowed. Every other global variable is
+unset, apart from the ``LC_*`` locale variables and the names a user lists in
+:data:`KEEP_ENVIRONMENT_SETTING`.
+"""
+
+SERVER_ENVIRONMENT_PREFIXES = ("LC_",)
+"""Name prefixes of further variables a server started here keeps."""
+
+KEEP_ENVIRONMENT_SETTING = "SYNAPSE_TMUX_SERVER_KEEP_ENV"
+"""Caller variable naming, comma-separated, further variables the server keeps.
+
+A user who sets ``XDG_DATA_HOME``, ``XDG_CONFIG_HOME`` or ``XDG_STATE_HOME`` on
+purpose lists them here. Otherwise a seat would look for its Synapse machine key
+under ``~/.local/share`` instead, prove a different key, and the hub would refuse
+the identity it pinned. A listed variable is also copied from the caller into a
+server the user manager starts.
+"""
+
+_LOGGER = logging.getLogger(__name__)
 
 MOVED_SCOPE_PREFIX = "tmux-server-"
 """Name prefix of the scope a running server is moved into; the process id follows."""
@@ -168,6 +221,89 @@ def user_manager_available(*, runner: CommandRunner) -> bool:
     return completed is not None and completed.returncode == 0 and bool(completed.stdout.strip())
 
 
+def kept_variables(environ: Mapping[str, str]) -> frozenset[str]:
+    """Return the variable names a user listed in :data:`KEEP_ENVIRONMENT_SETTING`.
+
+    Parameters
+    ----------
+    environ : Mapping[str, str]
+        The caller's environment.
+
+    Returns
+    -------
+    frozenset of str
+        The comma-separated names, stripped; blank entries are ignored.
+    """
+    listed = environ.get(KEEP_ENVIRONMENT_SETTING, "")
+    return frozenset(name.strip() for name in listed.split(",") if name.strip())
+
+
+def is_server_variable(name: str, kept: frozenset[str] = frozenset()) -> bool:
+    """Return whether a server started here keeps the global variable ``name``.
+
+    Parameters
+    ----------
+    name : str
+        A variable name from the server's global environment.
+    kept : frozenset of str
+        Further names the user listed in :data:`KEEP_ENVIRONMENT_SETTING`.
+
+    Returns
+    -------
+    bool
+        True for :data:`SERVER_ENVIRONMENT`, an ``LC_*`` name or a listed name.
+    """
+    return (
+        name in SERVER_ENVIRONMENT or name.startswith(SERVER_ENVIRONMENT_PREFIXES) or name in kept
+    )
+
+
+def scrub_server_environment(
+    tmux_bin: str, *, runner: CommandRunner, kept: frozenset[str] = frozenset()
+) -> tuple[str, ...] | None:
+    """Unset every global variable of the server that it is not to keep.
+
+    Every session copies the server's global environment, so this runs before
+    the first session exists. All names are unset in one tmux call. The names
+    dropped, never their values, are logged at debug level, so an operator can
+    see why a seat lacks a variable.
+
+    Parameters
+    ----------
+    tmux_bin : str
+        The tmux executable that reaches the server.
+    runner : CommandRunner
+        Command boundary for the tmux calls.
+    kept : frozenset of str
+        Further names to keep, from :data:`KEEP_ENVIRONMENT_SETTING`.
+
+    Returns
+    -------
+    tuple of str or None
+        The names dropped, in the server's order; ``None`` when the
+        environment could not be read or changed.
+    """
+    shown = _run([tmux_bin, "show-environment", "-g"], runner=runner)
+    if shown is None or shown.returncode != 0:
+        return None
+    # A line "-NAME" marks a variable that is already unset; skip it.
+    names = [
+        line.split("=", 1)[0]
+        for line in shown.stdout.splitlines()
+        if line and not line.startswith("-") and "=" in line
+    ]
+    dropped = tuple(name for name in names if not is_server_variable(name, kept))
+    if dropped:
+        command: list[str] = [tmux_bin]
+        for index, name in enumerate(dropped):
+            command.extend([*([";"] if index else []), "set-environment", "-g", "-u", name])
+        unset = _run(command, runner=runner)
+        if unset is None or unset.returncode != 0:
+            return None
+    _LOGGER.debug("tmux server environment reduced; dropped: %s", ", ".join(dropped) or "nothing")
+    return dropped
+
+
 @dataclass(frozen=True, slots=True)
 class ServerStart:
     """Outcome of starting a tmux server in a service of its own."""
@@ -185,9 +321,10 @@ def own_server_command(
     The service is ``forking``: the user manager runs the tmux client in a clean
     execution context, the client forks the server and exits, and the server
     stays as the service's main process. ``exit-empty off`` keeps the server
-    while it has no session yet. :data:`INHERITED_ENVIRONMENT` names the caller
-    variables passed on; ``--setenv=NAME`` copies the value, so it is not
-    written into the command line.
+    while it has no session yet. :data:`INHERITED_ENVIRONMENT` and the names
+    listed in :data:`KEEP_ENVIRONMENT_SETTING` are the caller variables passed
+    on; ``--setenv=NAME`` copies the value, so it is not written into the
+    command line.
 
     Parameters
     ----------
@@ -204,6 +341,7 @@ def own_server_command(
         The ``systemd-run --user …`` command.
     """
     env = os.environ if environ is None else environ
+    listed = sorted(kept_variables(env) - set(INHERITED_ENVIRONMENT))
     return [
         "systemd-run",
         "--user",
@@ -213,6 +351,7 @@ def own_server_command(
         f"--unit={unit}",
         f"--description={SERVER_DESCRIPTION}",
         *(f"--setenv={key}" for key in INHERITED_ENVIRONMENT if key in env),
+        *(f"--setenv={key}" for key in listed if key in env),
         "--",
         tmux_bin,
         "start-server",
@@ -253,25 +392,56 @@ def start_own_server(
     Returns
     -------
     ServerStart
-        ``started`` only when the service was started. Nothing is started
-        when a server already answers or no user manager does; a refused
-        start is reported, and the caller's own command then starts the
-        server as tmux always did.
+        ``started`` when a server was started: in its own service (``unit``
+        names it) or, without a user manager or when the service start is
+        refused, in place as the caller's own child (``unit`` is ``None``).
+        Either way its environment is reduced before any session exists (see
+        the module text). Nothing is started when a server already answers; a
+        server that cannot be started at all is left to the caller's command,
+        as tmux always did.
     """
+    kept = kept_variables(os.environ if environ is None else environ)
     if server_pid(tmux_bin, runner=runner) is not None:
         return ServerStart(False, None, "a tmux server already answers")
     if not user_manager_available(runner=runner):
-        return ServerStart(False, None, "no systemd user manager answers")
+        return _start_in_place(
+            tmux_bin, runner=runner, kept=kept, reason="no systemd user manager answers"
+        )
     unit = f"{NEW_SERVER_UNIT_PREFIX}{token or uuid.uuid4().hex[:12]}.service"
     completed = _run(own_server_command(tmux_bin, unit=unit, environ=environ), runner=runner)
     if completed is None or completed.returncode != 0:
         detail = "" if completed is None else (completed.stderr or completed.stdout).strip()
-        return ServerStart(
-            False,
-            None,
-            f"could not start {unit}" + (f" — {terminal_text(detail)}" if detail else ""),
-        )
-    return ServerStart(True, unit, f"tmux server started in {unit}")
+        reason = f"could not start {unit}" + (f" — {terminal_text(detail)}" if detail else "")
+        return _start_in_place(tmux_bin, runner=runner, kept=kept, reason=reason)
+    note = _reduction_note(tmux_bin, runner=runner, kept=kept)
+    return ServerStart(True, unit, f"tmux server started in {unit}; {note}")
+
+
+def _reduction_note(tmux_bin: str, *, runner: CommandRunner, kept: frozenset[str]) -> str:
+    """Reduce a new server's environment and describe the outcome in a few words."""
+    dropped = scrub_server_environment(tmux_bin, runner=runner, kept=kept)
+    if dropped is None:
+        return "its environment could not be reduced"
+    return f"{len(dropped)} variable(s) dropped from its environment"
+
+
+def _start_in_place(
+    tmux_bin: str, *, runner: CommandRunner, kept: frozenset[str], reason: str
+) -> ServerStart:
+    """Start the server as the caller's own child, then reduce its environment.
+
+    The server stays in the caller's control group, where the caller's own
+    command would have started it. It is started here only so that the
+    variables of whoever first ran tmux are dropped before a session copies
+    them. When even this start fails, ``reason`` is reported unchanged.
+    """
+    started = _run(
+        [tmux_bin, "start-server", ";", "set-option", "-g", "exit-empty", "off"], runner=runner
+    )
+    if started is None or started.returncode != 0:
+        return ServerStart(False, None, reason)
+    note = _reduction_note(tmux_bin, runner=runner, kept=kept)
+    return ServerStart(True, None, f"{reason}; tmux server started in place; {note}")
 
 
 def move_to_own_scope(

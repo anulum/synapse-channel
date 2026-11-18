@@ -15,6 +15,7 @@ service unit the test owns.
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
@@ -29,13 +30,17 @@ import pytest
 
 from synapse_channel.cli import main as cli_main
 from synapse_channel.tmux_server import (
+    KEEP_ENVIRONMENT_SETTING,
     MOVED_SCOPE_PREFIX,
     NEW_SERVER_UNIT_PREFIX,
     SERVER_DESCRIPTION,
     TmuxServerPlacement,
+    is_server_variable,
+    kept_variables,
     move_to_own_scope,
     own_server_command,
     placement,
+    scrub_server_environment,
     server_pid,
     start_own_server,
     unit_of_pid,
@@ -575,3 +580,214 @@ def test_a_refused_server_start_is_reported_and_not_claimed(
     )
     started = start_own_server("tmux", runner=runner, token="t")
     assert (started.started, started.unit, started.detail) == (False, None, detail)
+
+
+# --- the environment a server started here keeps --------------------------------
+
+_POLLUTED = {
+    "TMPDIR": "/elsewhere/tmp",
+    "XDG_CACHE_HOME": "/elsewhere/cache",
+    "XDG_STATE_HOME": "/elsewhere/state",
+    "XDG_DATA_HOME": "/kept/data",
+    "SYN_IDENTITY": "OTHER/seat",
+    "SYN_HOME": "/elsewhere/synapse",
+    "INVOCATION_ID": "0123abcd",
+    "JOURNAL_STREAM": "8:1234",
+    "OPENCODE_CONFIG": "/elsewhere/opencode.json",
+}
+"""What a launcher service leaves behind when it starts the first server."""
+
+
+class Script:
+    """Answer each command in turn, keyed by its first two words; record every command."""
+
+    def __init__(self, answers: dict[tuple[str, ...], subprocess.CompletedProcess[str]]):
+        self.answers = answers
+        self.commands: list[list[str]] = []
+
+    def __call__(
+        self,
+        args: Sequence[str],
+        *,
+        capture_output: bool = False,
+        text: bool = False,
+        check: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        command = list(args)
+        self.commands.append(command)
+        key = (Path(command[0]).name, *command[1:2])
+        return self.answers.get(key, _done(0))
+
+
+def test_the_listed_names_are_read_from_the_keep_setting() -> None:
+    assert kept_variables({KEEP_ENVIRONMENT_SETTING: " XDG_DATA_HOME, ,MY_HOME ,"}) == {
+        "XDG_DATA_HOME",
+        "MY_HOME",
+    }
+    assert kept_variables({}) == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("name", "kept", "keeps"),
+    [
+        ("HOME", frozenset(), True),
+        ("XDG_RUNTIME_DIR", frozenset(), True),
+        ("LC_CTYPE", frozenset(), True),
+        ("TMPDIR", frozenset(), False),
+        ("SYN_IDENTITY", frozenset(), False),
+        ("INVOCATION_ID", frozenset(), False),
+        ("XDG_DATA_HOME", frozenset(), False),
+        ("XDG_DATA_HOME", frozenset({"XDG_DATA_HOME"}), True),
+    ],
+)
+def test_the_server_keeps_only_its_own_variables_and_the_listed_ones(
+    name: str, kept: frozenset[str], keeps: bool
+) -> None:
+    assert is_server_variable(name, kept) is keeps
+
+
+def test_the_scrub_drops_the_rest_in_one_call_and_logs_only_names(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    shown = (
+        "HOME=/h\nTMPDIR=/secret/tmp\n-GONE\nSYN_IDENTITY=OTHER/seat\nLC_ALL=C\nXDG_DATA_HOME=/d\n"
+    )
+    runner = Script({("tmux", "show-environment"): _done(0, stdout=shown)})
+
+    with caplog.at_level(logging.DEBUG, logger="synapse_channel.tmux_server"):
+        dropped = scrub_server_environment("tmux", runner=runner, kept=frozenset({"XDG_DATA_HOME"}))
+
+    assert dropped == ("TMPDIR", "SYN_IDENTITY")
+    assert runner.commands[1] == [
+        "tmux",
+        "set-environment",
+        "-g",
+        "-u",
+        "TMPDIR",
+        ";",
+        "set-environment",
+        "-g",
+        "-u",
+        "SYN_IDENTITY",
+    ]
+    assert "TMPDIR, SYN_IDENTITY" in caplog.text
+    assert "/secret/tmp" not in caplog.text and "OTHER/seat" not in caplog.text
+
+
+def test_a_clean_server_needs_no_unset_call() -> None:
+    runner = Script({("tmux", "show-environment"): _done(0, stdout="HOME=/h\nPATH=/bin\n")})
+    assert scrub_server_environment("tmux", runner=runner) == ()
+    assert len(runner.commands) == 1
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        {("tmux", "show-environment"): _done(1)},
+        {
+            ("tmux", "show-environment"): _done(0, stdout="TMPDIR=/t\n"),
+            ("tmux", "set-environment"): _done(1),
+        },
+    ],
+)
+def test_a_scrub_that_cannot_read_or_change_the_server_says_so(
+    answers: dict[tuple[str, ...], subprocess.CompletedProcess[str]],
+) -> None:
+    assert scrub_server_environment("tmux", runner=Script(answers)) is None
+
+
+def test_the_listed_names_are_copied_into_a_service_started_server() -> None:
+    caller = {
+        "PATH": "/bin",
+        "XDG_DATA_HOME": "/kept/data",
+        KEEP_ENVIRONMENT_SETTING: "XDG_DATA_HOME,ABSENT_NAME,PATH",
+    }
+    command = own_server_command("tmux", unit="u.service", environ=caller)
+    assert [part for part in command if part.startswith("--setenv=")] == [
+        "--setenv=PATH",
+        "--setenv=XDG_DATA_HOME",
+    ]
+
+
+def test_a_service_started_server_is_reduced_before_any_session() -> None:
+    runner = Script(
+        {
+            ("tmux", "display-message"): _done(1, stderr="no server running\n"),
+            ("systemctl", "--user"): _done(0, stdout="255\n"),
+            ("tmux", "show-environment"): _done(
+                0, stdout="HOME=/h\nINVOCATION_ID=abc\nSYN_IDENTITY=user/terminal-7081\n"
+            ),
+        }
+    )
+
+    started = start_own_server("tmux", runner=runner, token="t", environ={"PATH": "/bin"})
+
+    assert (started.started, started.unit) == (True, "synapse-tmux-server-t.service")
+    assert started.detail.endswith("2 variable(s) dropped from its environment")
+    assert runner.commands[-1][-1] == "SYN_IDENTITY" and "INVOCATION_ID" in runner.commands[-1]
+
+
+def test_a_refused_service_start_still_starts_a_reduced_server_in_place() -> None:
+    runner = Script(
+        {
+            ("tmux", "display-message"): _done(1, stderr="no server running\n"),
+            ("systemctl", "--user"): _done(0, stdout="255\n"),
+            ("systemd-run", "--user"): _done(1, stderr="Job failed\n"),
+            ("tmux", "show-environment"): _done(1),
+        }
+    )
+
+    started = start_own_server("tmux", runner=runner, token="t", environ={})
+
+    assert (started.started, started.unit) == (True, None)
+    assert started.detail == (
+        "could not start synapse-tmux-server-t.service — Job failed; "
+        "tmux server started in place; its environment could not be reduced"
+    )
+
+
+@pytest.fixture
+def private_tmux(tmp_path: Path) -> Iterator[str]:
+    """A tmux wrapper on a private socket with no user configuration."""
+    if shutil.which("tmux") is None:
+        pytest.skip("tmux is missing")
+    socket = f"synapse-test-{uuid.uuid4().hex[:10]}"
+    wrapper = tmp_path / "tmux-private"
+    wrapper.write_text(f'#!/bin/sh\nexec tmux -L {socket} -f /dev/null "$@"\n', encoding="utf-8")
+    wrapper.chmod(0o755)
+    try:
+        yield str(wrapper)
+    finally:
+        subprocess.run(["tmux", "-L", socket, "kill-server"], capture_output=True, check=False)
+        socket_dir = Path(os.environ.get("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}"
+        (socket_dir / socket).unlink(missing_ok=True)
+
+
+def test_a_session_on_a_server_started_from_a_polluted_parent_inherits_none_of_it(
+    private_tmux: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reported fleet defect: one seat's directories and identity reached every seat."""
+    for name, value in _POLLUTED.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv(KEEP_ENVIRONMENT_SETTING, "XDG_DATA_HOME")
+    # No user manager: the caller's own environment is what a plain start would pass on.
+    runner = Replay({"systemctl": _done(1, stderr="Failed to connect to bus\n")})
+
+    started = start_own_server(private_tmux, runner=runner)
+
+    assert started.started and started.unit is None
+    out = tmp_path / "pane-env.txt"
+    subprocess.run(
+        [private_tmux, "new-session", "-d", "-s", "probe", "/bin/sh", "-c", f"env > {out}"],
+        check=True,
+    )
+    deadline = time.monotonic() + 10.0
+    while not (out.exists() and out.stat().st_size) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    seen = dict(
+        line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines() if "=" in line
+    )
+    leaked = sorted(name for name in _POLLUTED if name in seen and name != "XDG_DATA_HOME")
+    assert leaked == []
+    assert seen.get("XDG_DATA_HOME") == "/kept/data"
+    assert seen.get("HOME") == os.environ["HOME"]

@@ -922,8 +922,28 @@ Synapse keeps the server out of every other unit in two ways:
   other variables come from the user manager. The session itself is then
   created by the caller's own `tmux new-session`, so its exit code, output and
   environment are unchanged. When a server already runs, nothing is started.
-  Without a systemd user manager, or when the start is refused, tmux starts as
-  it always did.
+  Without a systemd user manager, or when the service start is refused, the
+  server is started in place, as the caller's own child, where tmux would
+  have started it anyway.
+- **A new server keeps only a small, fixed environment.** Every session copies
+  the server's global environment, so whatever the server holds reaches every
+  seat. Right after Synapse starts a server, before any session exists, it
+  unsets every global variable except the user, locale and desktop-session
+  ones (`HOME`, `USER`, `LOGNAME`, `SHELL`, `PATH`, `LANG`, `LANGUAGE`,
+  `LC_*`, `TZ`, `TMUX_TMPDIR`, `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`,
+  `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, `SSH_AUTH_SOCK`). That removes
+  what a launcher service would otherwise hand to every seat: its `TMPDIR`
+  and `XDG_*_HOME` directories, its `SYN_*` identity, and systemd's
+  per-service keys such as `INVOCATION_ID` and `JOURNAL_STREAM`. The names
+  dropped, never their values, are logged at debug level. A server that
+  already runs is never changed.
+
+  If you set `XDG_DATA_HOME`, `XDG_CONFIG_HOME` or `XDG_STATE_HOME` on purpose,
+  list them in `SYNAPSE_TMUX_SERVER_KEEP_ENV`, comma-separated, in the
+  environment that starts the first seat. Otherwise every seat looks for its
+  Synapse machine key under `~/.local/share` instead of your data directory,
+  proves a different key, and the hub refuses the identity it pinned. A listed
+  variable is kept and also copied into a server the user manager starts.
 - **A running server can be moved.** `synapse service tmux-server` prints
   where the server lives:
 

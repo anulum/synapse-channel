@@ -18,6 +18,19 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+- **A new tmux server no longer hands one seat's environment to every seat.**
+  Every session copies the server's global environment, and the first server
+  took whatever its starter had: a launcher service's `TMPDIR` and
+  `XDG_*_HOME` directories, its seat identity, and systemd's per-service keys.
+  Right after Synapse starts a server, before any session exists, it now
+  unsets every global variable except a fixed set for the user, the locale and
+  the desktop session. Without a user manager, or when the service start is
+  refused, the server is started in place and reduced the same way. Names
+  listed in `SYNAPSE_TMUX_SERVER_KEEP_ENV` are kept, so a deliberate
+  `XDG_DATA_HOME` keeps the machine key where the hub expects it. Dropped names
+  are logged at debug level, never their values. A running server is not
+  changed.
+
 ### Added
 
 - `synapse setup apply` names a directory it refuses. The application receipt gains `refusal`: the absolute
