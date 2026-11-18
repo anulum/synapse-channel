@@ -1903,6 +1903,8 @@ an installed protected runtime or revocation fencing.
 | `dashboard_hub_snapshot` | The hub snapshot a dashboard reads through public requests, with observed peers, re-exported as `dashboard.fetch_dashboard_snapshot`. |
 | `dashboard_start` | One dashboard server's start: the bind, the access policy, the owner-only files, the host monitor and the serving thread, re-exported as `dashboard.start_dashboard_server`. |
 | `dashboard_approval_decide` | `POST /approval/decide`: an approval decision from the cockpit, checked against the event store (digests, declarer, project) and the hub's roster before the operator relay records it. |
+| `dashboard_setup_writes`, `dashboard_setup_write_http` | The setup writes behind one entry, and what they share: the bounded request, the caller admitted before anything is recorded, and the receipt. |
+| `dashboard_setup_apply_http` | `POST /setup/apply`: one issued plan applied once through the command line's executor, its plan rebuilt and checked first, with an `authorised` receipt before any effect and the outcome's after a fresh inspection. |
 | `dashboard_setup_plan_http` | `POST /setup/plan`: one setup plan bound to the command line's plan by its digest, a one-use nonce, and a receipt for every answer to a known caller. |
 | `dashboard_setup_http` | Whether one dashboard start serves setup (`--setup-apply`, `--setup-receipts`), and its read-only `/setup/preflight.json`: the command line's inspection, projected without anything it measured. |
 | `pane_wake` | Staged wake preparation and submission through `agent_tmux.inject_wake`, with verified pane binding and retry state. |
@@ -1943,11 +1945,11 @@ an installed protected runtime or revocation fencing.
 |---|---:|
 | Package version | 0.99.55 |
 | Public API exports | 70 |
-| Package modules | 1051 |
-| Classes | 1500 |
+| Package modules | 1054 |
+| Classes | 1504 |
 | Wire message types | 131 |
 | CLI subcommands | 314 |
-| Test functions | 14793 |
+| Test functions | 14820 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 99 |
 | GitHub Actions workflows | 29 |

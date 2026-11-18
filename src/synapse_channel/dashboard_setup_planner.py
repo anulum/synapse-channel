@@ -302,6 +302,16 @@ class SetupPlanStore:
             self._records[request.plan_id] = replace(record, consumed=True)
             return AuthorisedSetupPlan(request.plan_id, record.plan)
 
+    def generation_of(self, plan_id: str) -> str | None:
+        """Return the configuration generation an issued plan was bound to, without consuming it.
+
+        An apply reads it to tell a changed host (``plan_drift``) from any other
+        mismatch before it asks for the one use.
+        """
+        with self._lock:
+            record = self._records.get(plan_id)
+        return None if record is None else record.plan.configuration_generation
+
     def discard(self, plan_id: str) -> bool:
         """Drop one issued plan so it can never be authorised, and return whether it was held.
 

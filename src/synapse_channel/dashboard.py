@@ -170,11 +170,10 @@ from synapse_channel.dashboard_setup_http import (
     SetupServing,
     setup_preflight_response,
 )
-from synapse_channel.dashboard_setup_plan_http import (
-    SETUP_PLAN_PATH,
-    SetupPlanBindings,
-    read_setup_plan_request,
-    setup_plan_response,
+from synapse_channel.dashboard_setup_writes import (
+    SETUP_WRITE_PATHS,
+    SetupWriteContext,
+    setup_write_response,
 )
 from synapse_channel.dashboard_start import DashboardServer as DashboardServer
 from synapse_channel.dashboard_start import start_dashboard_server as start_dashboard_server
@@ -474,8 +473,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if self._reject_foreign_host():
             return
         route = urlsplit(self.path).path
-        if route == SETUP_PLAN_PATH:
-            self._write_access_decision(self._setup_plan_decision())
+        if route in SETUP_WRITE_PATHS:
+            self._write_access_decision(self._setup_write_decision(route))
             return
         access = write_decision(
             self.access_policy,
@@ -531,15 +530,16 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         self._write_response(self._relay(plan, relay_identity))
 
-    def _setup_plan_decision(self) -> AccessHttpDecision:
-        """Answer ``POST /setup/plan`` from this start's setup decision and the route's checks."""
-        bindings = SetupPlanBindings(
+    def _setup_write_decision(self, route: str) -> AccessHttpDecision:
+        """Answer a setup write from this start's setup decision and the route's checks."""
+        context = SetupWriteContext(
             self.access_policy,
             self.setup_serving,
             type(self).setup_inspection,
             self.operator_rate_limiter,
+            self.token,
         )
-        return setup_plan_response(read_setup_plan_request(self.headers, self.rfile), bindings)
+        return setup_write_response(route, self.headers, self.rfile, context)
 
     def _relay(self, plan: RelayPlan, relay_identity: str) -> FeedResponse:
         """Run one relay plan under ``relay_identity`` against this start's hub."""

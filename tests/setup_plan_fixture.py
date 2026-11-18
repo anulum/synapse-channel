@@ -20,6 +20,9 @@ from synapse_channel.setup_profiles import SetupProfile, get_setup_profile
 TARGET = {"uri": "ws://127.0.0.1:8876", "project": "DEMO", "identity": "DEMO/claude-one"}
 """The inspected target: the default loopback hub, as ``local-single-user`` requires."""
 
+PYTHON = "/home/someone/.venv/bin/python"
+"""The inspected interpreter, part of the plan's generation."""
+
 
 def profile() -> SetupProfile:
     """Return the command line's ``local-single-user`` profile."""
@@ -33,6 +36,8 @@ def inspection(
     *,
     hub_pid: int | None = None,
     target: dict[str, str] | None = None,
+    systemctl: str = "/usr/bin/systemctl",
+    python: str = PYTHON,
 ) -> dict[str, object]:
     """Return one complete inspection; ``statuses`` replaces checks' statuses (all pass)."""
     served = profile()
@@ -40,12 +45,12 @@ def inspection(
     status.update(statuses or {})
     values: dict[str, object] = {
         "package": {"name": "synapse-channel", "version": "0.99.52"},
-        "python": {"executable": "/home/someone/.venv/bin/python", "version": "3.12.0"},
+        "python": {"executable": python, "version": "3.12.0"},
         "platform": {"system": "Linux", "release": "test", "machine": "x86_64"},
         "executable": "/home/someone/.venv/bin/synapse",
         "service_manager": {
             "kind": "systemd-user",
-            "executable": "/usr/bin/systemctl",
+            "executable": systemctl,
             "hub_pid": hub_pid or 0,
         },
     }
@@ -87,3 +92,8 @@ def cli_plan(
 
 HUB_AND_WAITER_DOWN = {"hub": "fail", "waiter": "fail"}
 """A host whose hub and waiter are not running: two planned service effects."""
+
+
+def inspection_of_profile(_profile: SetupProfile) -> dict[str, object]:
+    """Inspect the served profile as the dashboard's inspection does: all well."""
+    return inspection()

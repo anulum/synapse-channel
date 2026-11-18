@@ -81,6 +81,11 @@ SetupReceiptReason = Literal[
     "plan_store_full",
     "plan_request_reused",
     "plan_issue_failed",
+    "plan_blocked",
+    "plan_not_found",
+    "plan_mismatch",
+    "plan_replayed",
+    "apply_unavailable",
 ]
 
 _GENESIS_DIGEST = "0" * 64
@@ -128,6 +133,11 @@ _REASONS = frozenset(
         "plan_store_full",
         "plan_request_reused",
         "plan_issue_failed",
+        "plan_blocked",
+        "plan_not_found",
+        "plan_mismatch",
+        "plan_replayed",
+        "apply_unavailable",
     }
 )
 # Derived from their sources, so a profile or an effect the command line adds
@@ -135,6 +145,9 @@ _REASONS = frozenset(
 _PROFILE_IDS = frozenset(available_setup_profiles())
 _EFFECT_KINDS = frozenset(setup_effect_ids())
 _BEFORE_PLAN_OUTCOMES = frozenset({"refused", "denied", "rate_limited"})
+# An apply refused before its plan was authorised names the plan the request named, but no
+# generation: the generation is the authorised plan's.
+_REFUSAL_OUTCOMES = frozenset({"refused", "denied", "rate_limited", "expired", "drifted"})
 
 
 class SetupReceiptStoreError(SynapseError, ValueError):
@@ -207,9 +220,10 @@ class SetupArtifactDigest:
 class SetupReceiptDraft:
     """Server-owned evidence awaiting an assigned sequence and chain digest.
 
-    ``plan_id``, ``plan_digest`` and ``configuration_generation`` are ``None``
-    only in a receipt of a plan request refused before any plan existed; every
-    receipt that names a plan names all three of its values.
+    ``plan_id`` and ``plan_digest`` are ``None`` together, and only in a receipt
+    of a plan request refused before any plan existed. ``configuration_generation``
+    is ``None`` only in a refusal: one before any plan existed, or an apply refused
+    before its plan was authorised, which names the plan the request named.
     """
 
     request_id: str
@@ -442,7 +456,7 @@ class SetupReceiptStore:
 
 
 def _validate_plan_reference(draft: SetupReceiptDraft) -> None:
-    """Require the plan's id, digest and generation, except before any plan existed."""
+    """Require a plan's id and digest except before any plan; a generation except in refusals."""
     if draft.plan_id is None or draft.plan_digest is None:
         if draft.plan_id is not None or draft.plan_digest is not None:
             raise ValueError("setup receipt plan id and plan digest go together")
@@ -452,10 +466,10 @@ def _validate_plan_reference(draft: SetupReceiptDraft) -> None:
         if _OPAQUE_ID.fullmatch(draft.plan_id) is None:
             raise ValueError("setup receipt plan id is invalid")
         _validate_digest(draft.plan_digest, name="plan digest")
-        if draft.configuration_generation is None:
-            raise ValueError("setup receipt with a plan names its configuration generation")
     if draft.configuration_generation is not None:
         _validate_digest(draft.configuration_generation, name="configuration generation")
+    elif draft.outcome not in _REFUSAL_OUTCOMES:
+        raise ValueError("setup receipt names its configuration generation unless it is a refusal")
 
 
 def _build_receipt(

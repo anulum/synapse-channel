@@ -576,3 +576,49 @@ def test_an_underscore_in_a_principal_id_is_kept_as_the_access_file_allows(tmp_p
     with SetupReceiptStore(tmp_path / "receipts") as store:
         receipt = store.append(replace(_draft(), principal_id="ops_admin"))
     assert receipt.draft.principal_id == "ops_admin"
+
+
+@pytest.mark.parametrize(
+    ("outcome", "reason"),
+    [
+        ("refused", "plan_not_found"),
+        ("refused", "plan_mismatch"),
+        ("refused", "plan_replayed"),
+        ("refused", "plan_blocked"),
+        ("refused", "apply_unavailable"),
+        ("expired", "plan_expired"),
+        ("drifted", "plan_drift"),
+        ("denied", "capability_denied"),
+        ("rate_limited", "rate_limit"),
+    ],
+)
+def test_an_apply_refused_before_authorisation_names_the_plan_but_no_generation(
+    tmp_path: Path, outcome: SetupReceiptOutcome, reason: SetupReceiptReason
+) -> None:
+    draft = replace(
+        _draft(),
+        capability="setup_apply",
+        outcome=outcome,
+        reason=reason,
+        configuration_generation=None,
+    )
+    with SetupReceiptStore(tmp_path / "receipts") as store:
+        stored = store.append(draft)
+
+    assert stored.draft.plan_id == _PLAN_ID
+    assert stored.browser_projection()["configuration_generation"] is None
+
+
+@pytest.mark.parametrize("outcome", ["authorised", "applied", "partial", "already_satisfied"])
+def test_an_apply_that_ran_or_was_authorised_names_its_generation(
+    outcome: SetupReceiptOutcome,
+) -> None:
+    reason: SetupReceiptReason = "partial_effects" if outcome == "partial" else "none"
+    with pytest.raises(ValueError, match="names its configuration generation"):
+        replace(
+            _draft(),
+            capability="setup_apply",
+            outcome=outcome,
+            reason=reason,
+            configuration_generation=None,
+        )

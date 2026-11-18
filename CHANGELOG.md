@@ -18,6 +18,31 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- With setup served, `POST /setup/apply` applies an issued plan once, through the command line's executor.
+  The dashboard re-inspects the host and rebuilds the command line's plan, and takes the plan's one use only
+  when that plan is still the one it was bound to. It then builds the command line's authorisation on the
+  server:
+  - its nonce is derived from the confirmation nonce;
+  - its life is the plan's remaining time;
+  - its restart authority is the plan's hub process id.
+  Its own process is protected. The browser sends no authorisation, process id or path.
+  - **Receipts:** `authorised` is recorded before any effect, and an unwritable chain refuses before one.
+    The outcome is `applied`, `partial` or `refused`, with each effect's `after` read by a fresh inspection
+    after the apply.
+  - **Refusals:** a changed host is `drifted`; a used, unknown, mismatched or expired plan, a blocked effect
+    and the executor's own refusals are each a receipt naming why.
+  - **No effect:** a plan with no effect is `already_satisfied`, and nothing is run.
+
+### Changed
+
+- The setup receipt chain gains the apply's reasons: `plan_blocked` (the command line's own code),
+  `plan_not_found`, `plan_mismatch`, `plan_replayed` and `apply_unavailable`. `apply_unavailable` is the
+  executor's lock, ledger or platform refusing before any effect, never `effect_failed`. A receipt's
+  configuration generation may be absent only in a refusal. An apply refused before the plan's one use
+  names the plan the request named, and no generation.
+
 ## [0.99.55] - 2026-11-18
 
 Core 0.99.55 lets an operator stop governed operations and seal what a stop

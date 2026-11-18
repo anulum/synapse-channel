@@ -762,6 +762,44 @@ order:
   unavailable`. A plan issued meanwhile is discarded, so it can never be applied.
 - **The bodies:** a refusal's body names its reason and nothing else.
 
+`POST /setup/apply` takes exactly `{"version": 1, "request_id": "<the plan's
+request id>", "plan_id": "…", "plan_digest": "…", "confirmation_nonce": "…",
+"confirm": true}` and needs `setup_apply`. It applies the plan once, through the
+same executor as `synapse setup apply`:
+
+- **The plan applied is the plan confirmed.** The dashboard re-inspects the host
+  and rebuilds the command line's plan. It takes the plan's one use only when the
+  rebuilt plan is still the one the dashboard plan was bound to.
+- **The authorisation is built on the server.** It is the command line's
+  authorisation for that plan. Its one-use nonce is derived from the
+  confirmation nonce, its life is the plan's remaining time (30 to 900 seconds),
+  and its restart authority is the plan's hub process id.
+- **The browser never sends** an authorisation, a process id or a path.
+- **The dashboard protects itself.** Its own process is protected, so a plan
+  whose restart would be the dashboard refuses before any effect.
+
+The route admits the caller as `POST /setup/plan` does, and nothing before the
+caller is known is recorded. It then answers:
+
+| Answer | When | Receipt |
+| --- | --- | --- |
+| `400` | the body is not exactly the request (its refusal code is named) | none |
+| `429`, `403` | the rate limit is spent; the bearer lacks `setup_apply` | `rate_limited`; `denied`, `capability_denied` |
+| `503` | the host cannot be inspected | `refused`, `apply_unavailable` |
+| `409` | the host's executables changed since the plan (the plan stays unused) | `drifted`, `plan_drift` |
+| `409` | no such plan; the plan expired; it was used; the nonce or request does not match | `refused` `plan_not_found`; `expired` `plan_expired`; `refused` `plan_replayed`; `refused` `plan_mismatch` |
+| `409` | the rebuilt plan is not the bound one; the plan has a blocked effect | `drifted`, `plan_drift`; `refused`, `plan_blocked` |
+| `200` | the plan has no effect; nothing is run | `already_satisfied` |
+| `503` | the receipt chain cannot be written, before any effect | none written |
+| `409`, `503` | the executor refused before any effect: the host changed, the authorisation expired, a protected process, or its lock, ledger or platform | `drifted` `plan_drift`; `expired` `plan_expired`; `refused` `unsafe_posture`; `refused` `apply_unavailable` |
+| `200` | the executor ran | `applied`, `partial` (`postcondition_unverified` or `partial_effects`) or `refused` (`effect_failed`, recovered) |
+
+An apply that reaches the executor records `authorised` first, then its outcome.
+Each effect's `after` comes from a fresh inspection after the apply, never from
+the executor's own account. The `200` answers carry the outcome's receipt.
+A refusal before the plan's one use names the plan the request named and no
+generation.
+
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
 name) the dashboard serves thirteen feeds off the **durable event store** —
 available when the hub is down, real sequences and timestamps, behind the

@@ -36,12 +36,11 @@ from synapse_channel.dashboard_setup_http import SetupServing
 from synapse_channel.dashboard_setup_plan_http import (
     SETUP_PLAN_PATH,
     SetupPlanBindings,
-    SetupPlanHttpRequest,
-    read_setup_plan_request,
     setup_plan_response,
 )
 from synapse_channel.dashboard_setup_planner import SetupPlanStore
 from synapse_channel.dashboard_setup_receipts import SetupReceipt, SetupReceiptStore
+from synapse_channel.dashboard_setup_write_http import SetupWriteRequest, read_setup_write_request
 from synapse_channel.setup_profiles import SetupProfile
 from test_dashboard_setup_http import TOKENS, _access_file, _fake_inspect, _receipts, _start
 
@@ -91,8 +90,8 @@ def _request(
     origins: tuple[str, ...] = (ORIGIN,),
     content_type: str = "application/json",
     body: bytes | None = None,
-) -> SetupPlanHttpRequest:
-    return SetupPlanHttpRequest(
+) -> SetupWriteRequest:
+    return SetupWriteRequest(
         authorization=None if token is None else f"Bearer {token}",
         host=HOST,
         origins=origins,
@@ -187,7 +186,7 @@ def test_the_origin_is_compared_without_case(tmp_path: Path) -> None:
     ],
 )
 def test_an_unknown_caller_or_a_malformed_request_is_refused_unrecorded(
-    tmp_path: Path, plan_request: SetupPlanHttpRequest, status: int, text: str
+    tmp_path: Path, plan_request: SetupWriteRequest, status: int, text: str
 ) -> None:
     receipts = _receipts(tmp_path)
 
@@ -392,7 +391,7 @@ def test_the_request_is_read_with_every_origin_and_a_bounded_body() -> None:
     headers["Origin"] = ORIGIN
     headers["Origin"] = "http://evil.example"
 
-    read = read_setup_plan_request(headers, io.BytesIO(b"12345678"))
+    read = read_setup_write_request(headers, io.BytesIO(b"12345678"))
 
     assert read.origins == (ORIGIN, "http://evil.example")
     assert read.body == b"12345"
@@ -404,7 +403,7 @@ def test_the_request_is_read_with_every_origin_and_a_bounded_body() -> None:
 def test_a_body_that_is_absent_or_over_the_bound_is_never_read(length: str) -> None:
     stream = io.BytesIO(b"x" * (MAX_SETUP_REQUEST_BYTES + 10))
 
-    read = read_setup_plan_request(_headers(Content_Length=length), stream)
+    read = read_setup_write_request(_headers(Content_Length=length), stream)
 
     assert read.body == b""
     assert stream.tell() == 0
