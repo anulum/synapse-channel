@@ -42,8 +42,11 @@ from synapse_channel.operations.row import NEVER_ADMITTED, OperationRow
 from synapse_channel.operations.spec import OperationSpec, OperationSpecError
 from synapse_channel.operations.vocabulary import Vocabulary, packaged
 
-SCHEMA = "operation-catalogue-v2"
-"""Schema name of a catalogue as plain data."""
+SCHEMA = "operation-catalogue-v3"
+"""Schema name of a catalogue whose rows may name their observing read row (``observed_by``)."""
+
+PREVIOUS_SCHEMA = "operation-catalogue-v2"
+"""Schema name of a catalogue without observers; still read, and written when no row has one."""
 
 LEGACY_SCHEMA = "operation-catalogue-v1"
 """Schema name of the earlier form, read as an inventory that admits nothing."""
@@ -160,6 +163,38 @@ class Catalogue:
             raise OperationRefusedError(f"{operation} {reason}")
         return row
 
+    def observer(self, row: OperationRow, fingerprint: str) -> OperationRow:
+        """Return the admitted read row that observes ``row``'s change, or refuse it.
+
+        The observing row is the one ``row.observed_by`` names, for the same
+        host, vendor, component, version, operating system and transport. It
+        must exist, read and nothing else, print projected JSON, disclose no
+        session content and be admitted for ``fingerprint`` as any row is, so a
+        projection never observed (``unverified``) cannot verify a change.
+
+        Raises
+        ------
+        OperationRefusedError
+            The row names no observer, or the first check above that fails.
+        """
+        if not row.observed_by:
+            raise OperationRefusedError(f"{row.operation} names no observing read row")
+        found = self.find(
+            row.observed_by,
+            host=row.host,
+            vendor=row.vendor,
+            component=row.component,
+            component_version=row.component_version,
+            os=row.os,
+            transport=row.transport,
+        )
+        reason = observer_refusal(found, fingerprint)
+        if reason or found is None:
+            raise OperationRefusedError(
+                f"{row.operation} is observed by {row.observed_by}, which {reason}"
+            )
+        return found
+
     def candidates(
         self, *, host: str, vendor: str, component: str, os: str, component_version: str
     ) -> tuple[OperationRow, ...]:
@@ -194,8 +229,9 @@ class Catalogue:
 
     def to_json(self) -> dict[str, object]:
         """Return the catalogue as plain data."""
+        observed = any(row.observed_by for row in self.rows())
         return {
-            "schema": SCHEMA,
+            "schema": SCHEMA if observed else PREVIOUS_SCHEMA,
             "vocabulary_revision": self.vocabulary.revision,
             "operations": [row.to_json() for row in self.rows()],
         }
@@ -212,7 +248,7 @@ class Catalogue:
             holds an unregistered word, or is listed twice.
         """
         words = packaged() if vocabulary is None else vocabulary
-        if not isinstance(data, dict) or data.get("schema") != SCHEMA:
+        if not isinstance(data, dict) or data.get("schema") not in (SCHEMA, PREVIOUS_SCHEMA):
             raise OperationSpecError("not an operation catalogue of this schema")
         revision = data.get("vocabulary_revision")
         if type(revision) is not int or not 1 <= revision <= words.revision:
@@ -220,7 +256,10 @@ class Catalogue:
         rows = data.get("operations")
         if not isinstance(rows, list):
             raise OperationSpecError("an operation catalogue lists its operations")
-        return cls((OperationRow.from_json(row) for row in rows), vocabulary=words)
+        catalogue = cls((OperationRow.from_json(row) for row in rows), vocabulary=words)
+        if data["schema"] == PREVIOUS_SCHEMA and any(row.observed_by for row in catalogue.rows()):
+            raise OperationSpecError(f"observed_by needs a catalogue of schema {SCHEMA}")
+        return catalogue
 
 
 class LegacyInventory:
@@ -275,7 +314,7 @@ def read_catalogue(data: object) -> Catalogue | LegacyInventory:
         The data is of neither schema, or is refused by its reader.
     """
     schema = data.get("schema") if isinstance(data, dict) else None
-    if schema == SCHEMA:
+    if schema in (SCHEMA, PREVIOUS_SCHEMA):
         return Catalogue.from_json(data)
     if schema == LEGACY_SCHEMA:
         return LegacyInventory.from_json(data)
@@ -312,6 +351,19 @@ def admission_refusal(row: OperationRow, fingerprint: str) -> str:
     if "credential_bearing" in row.disclosures and not row.output_projection:
         return "can print credentials and names no projection that removes them"
     return ""
+
+
+def observer_refusal(found: OperationRow | None, fingerprint: str) -> str:
+    """Return why ``found`` cannot observe a change, or an empty text when it can."""
+    if found is None:
+        return "is not listed for the same component, version and transport"
+    if found.effects != ("read",):
+        return "does more than read"
+    if found.output_mode != "json" or not found.output_projection:
+        return "prints no projected JSON"
+    if "session_content" in found.disclosures:
+        return "discloses session content"
+    return admission_refusal(found, fingerprint)
 
 
 def _version_order(version: str) -> tuple[tuple[int, int | str], ...]:

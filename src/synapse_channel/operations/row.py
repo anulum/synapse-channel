@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — one row of the operations catalogue, with its native binding
 """Describe one operation of one answering component, and how it is invoked.
 
-A row of the catalogue (schema ``operation-catalogue-v2``) is not a command of
+A row of the catalogue (schema ``operation-catalogue-v3``) is not a command of
 a client. It is **one invocation with fixed parts and a closed set of
 arguments**: the executable and the words that never change, or the exact
 request method, and for every argument where its value goes. The same command
@@ -280,6 +280,8 @@ class OperationRow:
     qualification: str = "unverified"
     evidence: str = ""
     qualified_binding: str = ""
+    observed_by: str = ""
+    """The read operation of the same component that observes this row's change; empty for none."""
 
     def __post_init__(self) -> None:
         """Refuse a row outside the vocabularies or with an unusable binding."""
@@ -288,6 +290,7 @@ class OperationRow:
         self._check_binding()
         self._check_arguments()
         self._check_qualification()
+        self._check_observer()
 
     def _check_texts(self) -> None:
         for field in _TOKENS:
@@ -371,6 +374,18 @@ class OperationRow:
                 "a qualified row names its evidence, the component's fingerprint and its binding"
             )
 
+    def _check_observer(self) -> None:
+        if not isinstance(self.observed_by, str):
+            raise _refuse("row observed_by is a text")
+        if not self.observed_by:
+            return
+        if _OPERATION.fullmatch(self.observed_by) is None:
+            raise _refuse("row observed_by names an operation of two or three dotted parts")
+        if self.observed_by == self.operation:
+            raise _refuse("a row is not observed by itself")
+        if not {"change", "destroy"}.intersection(self.effects):
+            raise _refuse("observed_by belongs to a row that changes or destroys state")
+
     @property
     def key(self) -> tuple[str, ...]:
         """Return what makes this row unique, transport and variant included."""
@@ -380,6 +395,7 @@ class OperationRow:
     def binding_digest(self) -> str:
         """Return the digest of everything a qualification vouches for."""
         bound = {name: value for name, value in self.to_json().items() if name not in _UNBOUND}
+        # to_json leaves out an empty observed_by, so a row without one keeps its earlier digest.
         canonical = json.dumps(bound, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         return "sha256:" + hashlib.sha256(canonical.encode("ascii")).hexdigest()
 
@@ -484,6 +500,8 @@ class OperationRow:
             {**asdict(argument), "choices": list(argument.choices)} for argument in self.arguments
         ]
         data["obligations"] = [asdict(obligation) for obligation in self.obligations]
+        if not self.observed_by:
+            del data["observed_by"]
         return data
 
     @classmethod

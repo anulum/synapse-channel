@@ -17,6 +17,7 @@ import pytest
 
 from synapse_channel.operations.catalogue import (
     LEGACY_SCHEMA,
+    PREVIOUS_SCHEMA,
     SCHEMA,
     Catalogue,
     LegacyInventory,
@@ -206,7 +207,7 @@ def test_a_catalogue_survives_the_trip_through_plain_data() -> None:
 
     data = json.loads(json.dumps(catalogue.to_json()))
 
-    assert data["schema"] == SCHEMA == "operation-catalogue-v2"
+    assert data["schema"] == PREVIOUS_SCHEMA == "operation-catalogue-v2"
     assert data["vocabulary_revision"] == packaged().revision
     assert Catalogue.from_json(data).rows() == catalogue.rows()
     assert isinstance(read_catalogue(data), Catalogue)
@@ -215,6 +216,7 @@ def test_a_catalogue_survives_the_trip_through_plain_data() -> None:
         [],
         {**data, "schema": "other"},
         {"schema": SCHEMA, "vocabulary_revision": 1},
+        {**data, "operations": [{**row, "observed_by": "setting.read", "effects": ["change"]}]},
         {**data, "operations": {}},
         {**data, "operations": [row, row]},
         {**data, "operations": [{**row, "transport": "shell"}]},
@@ -264,7 +266,7 @@ def test_a_file_of_the_earlier_schema_is_an_inventory_that_admits_nothing() -> N
     unknown_forms: tuple[Any, ...] = (
         [],
         {"operations": []},
-        {"schema": "operation-catalogue-v3", "operations": []},
+        {"schema": "operation-catalogue-v4", "operations": []},
     )
     for unknown in unknown_forms:
         with pytest.raises(
@@ -274,3 +276,102 @@ def test_a_file_of_the_earlier_schema_is_an_inventory_that_admits_nothing() -> N
     # A current row in a file that calls itself the earlier schema is refused too.
     with pytest.raises(OperationSpecError):
         read_catalogue({"schema": LEGACY_SCHEMA, "operations": [list_sessions().to_json()]})
+
+
+def _observed() -> Catalogue:
+    """Return a change row observed by a read row of the same component, and decoys."""
+    read = list_sessions(
+        operation="setting.read", output_projection="setting-values-v1", idempotent="yes"
+    )
+    return Catalogue(
+        [
+            qualified(
+                list_sessions(
+                    operation="setting.write", effects=("change",), observed_by="setting.read"
+                )
+            ),
+            qualified(read),
+            qualified(
+                list_sessions(
+                    operation="plugin.write", effects=("change",), observed_by="plugin.read"
+                )
+            ),
+            qualified(
+                list_sessions(
+                    operation="policy.write", effects=("change",), observed_by="policy.check"
+                )
+            ),
+            qualified(
+                list_sessions(
+                    operation="policy.check", effects=("read", "change"), output_projection="p"
+                )
+            ),
+            qualified(
+                list_sessions(
+                    operation="feature.write", effects=("change",), observed_by="feature.read"
+                )
+            ),
+            qualified(list_sessions(operation="feature.read")),
+            qualified(
+                list_sessions(
+                    operation="session.write", effects=("destroy",), observed_by="session.search"
+                )
+            ),
+            qualified(
+                list_sessions(
+                    operation="session.search",
+                    output_projection="s",
+                    disclosures=("session_content",),
+                )
+            ),
+            qualified(
+                list_sessions(
+                    operation="model.write", effects=("change",), observed_by="model.read"
+                )
+            ),
+            list_sessions(operation="model.read", output_projection="models-v1"),
+            qualified(list_sessions(operation="client.write", effects=("change",))),
+        ]
+    )
+
+
+def test_a_change_is_observed_only_by_an_admitted_projected_read_of_its_component() -> None:
+    catalogue = _observed()
+    find = {key: CLIENT[key] for key in ("host", "vendor", "component", "component_version", "os")}
+
+    def row(operation: str) -> OperationRow:
+        found = catalogue.find(operation, **find, transport="cli")
+        assert found is not None
+        return found
+
+    assert catalogue.observer(row("setting.write"), FINGERPRINT).operation == "setting.read"
+    refusals = {
+        "client.write": "client.write names no observing read row",
+        "plugin.write": "which is not listed for the same component, version and transport",
+        "policy.write": "which does more than read",
+        "feature.write": "which prints no projected JSON",
+        "session.write": "which discloses session content",
+        "model.write": "which is unverified: listed, and not run",
+    }
+    for operation, reason in refusals.items():
+        with pytest.raises(OperationRefusedError) as refused:
+            catalogue.observer(row(operation), FINGERPRINT)
+        assert str(refused.value).endswith(reason), (operation, str(refused.value))
+    with pytest.raises(OperationRefusedError, match="qualified for another executable"):
+        catalogue.observer(row("setting.write"), "sha256:" + "cd" * 32)
+
+
+def test_a_catalogue_with_an_observer_is_written_and_read_as_the_new_schema() -> None:
+    catalogue = _observed()
+    data = json.loads(json.dumps(catalogue.to_json()))
+
+    assert data["schema"] == SCHEMA == "operation-catalogue-v3"
+    assert Catalogue.from_json(data).rows() == catalogue.rows()
+    assert isinstance(read_catalogue(data), Catalogue)
+    write = next(item for item in data["operations"] if item["operation"] == "setting.write")
+    plain = next(item for item in data["operations"] if item["operation"] == "setting.read")
+    assert write["observed_by"] == "setting.read" and "observed_by" not in plain
+    with pytest.raises(OperationSpecError, match="observed_by needs a catalogue of schema"):
+        Catalogue.from_json({**data, "schema": PREVIOUS_SCHEMA})
+    previous = Catalogue.from_json({**data, "schema": PREVIOUS_SCHEMA, "operations": [plain]})
+    assert previous.to_json()["schema"] == PREVIOUS_SCHEMA

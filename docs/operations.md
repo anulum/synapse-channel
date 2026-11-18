@@ -71,6 +71,14 @@ never adds words, and an invocation is built from the row alone.
 | `output_mode`, `output_schema`, `output_projection`, `disclosures` | What comes back and what it can reveal |
 | `side_effects`, `needs_restart`, `interactive`, `idempotent` | As words, and from fixed vocabularies |
 | `qualification`, `evidence`, `qualified_binding` | How well the row is known, where that is shown, and the digest of the binding that was qualified |
+| `observed_by` | Optional, on a row that changes or destroys state: the `read` operation of the same component that observes the changed object. It is part of the qualified binding when set |
+
+**The observing row.** A row that names `observed_by` is observed only by a row of that name for the same host,
+vendor, component, version, operating system and transport that reads and nothing else, prints JSON with an
+`output_projection`, discloses no `session_content` and is admitted for the executable found, as any row is. A
+projection that was never run (`unverified`) cannot observe a change. Otherwise the observer is refused with the
+first reason that fails. The hub path's `component_state` effect names this observer and the digest of its projected
+output.
 
 A row outside these vocabularies is refused when it is built, and so is plain
 data that does not describe a row, including any field the schema does not
@@ -410,7 +418,9 @@ not a catalogue exits `2` with the reason; that includes any value of the
 wrong kind inside a row and any name with an unregistered word.
 
 The catalogue file is plain data in the form
-`{"schema": "operation-catalogue-v2", "vocabulary_revision": 2, "operations": [...]}`.
+`{"schema": "operation-catalogue-v3", "vocabulary_revision": 2, "operations": [...]}`. A catalogue in which no
+row names `observed_by` is written as `operation-catalogue-v2`, which earlier readers know; both are read, and a
+`v2` file whose row names an observer is refused.
 A file made with a newer vocabulary than the reader has is refused.
 
 ## Files of the earlier schema

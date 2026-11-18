@@ -564,3 +564,32 @@ def test_a_row_survives_the_trip_through_plain_data() -> None:
 def test_plain_data_that_is_not_a_row_is_refused(damage: Any) -> None:
     with pytest.raises(OperationSpecError):
         OperationRow.from_json(damage(list_sessions().to_json()))
+
+
+def test_a_change_row_may_name_its_observer_and_keeps_its_digest_without_one() -> None:
+    plain = list_sessions(operation="setting.write", effects=("change",))
+    observed = replace(plain, observed_by="setting.read")
+    assert "observed_by" not in plain.to_json()
+    assert observed.to_json()["observed_by"] == "setting.read"
+    assert OperationRow.from_json(observed.to_json()) == observed
+    assert observed.binding_digest != plain.binding_digest
+    assert (
+        qualified(plain).runnable
+        and not replace(qualified(plain), observed_by="setting.read").runnable
+    )
+    refused: list[tuple[dict[str, Any], str]] = [
+        (
+            {"observed_by": "Setting.Read"},
+            "row observed_by names an operation of two or three dotted parts",
+        ),
+        (
+            {"observed_by": "read"},
+            "row observed_by names an operation of two or three dotted parts",
+        ),
+        ({"observed_by": "setting.write"}, "a row is not observed by itself"),
+        ({"observed_by": "setting.read", "effects": ("read",)}, "observed_by belongs to a row"),
+        ({"observed_by": 7}, "row observed_by is a text"),
+    ]
+    for changes, message in refused:
+        with pytest.raises(OperationSpecError, match=message):
+            replace(plain, **changes)

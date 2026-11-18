@@ -20,6 +20,16 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- A catalogue row that changes or destroys state may name `observed_by`, the
+  `read` operation of the same component that observes the changed object.
+  `Catalogue.observer` returns that row only when it is listed for the same
+  host, vendor, component, version, operating system and transport, reads and
+  nothing else, prints projected JSON, discloses no session content and is
+  admitted for the executable found; otherwise it names the first reason. The
+  field is part of the qualified binding when set, and a row without it keeps
+  its digest. A catalogue that uses the field is `operation-catalogue-v3`; one
+  that does not is still written as `operation-catalogue-v2`, and both are
+  read.
 - A component's own state is a declared effect kind: `operation_record`
   accepts `effect: component_state`, whose target names the component's
   identity (`host`, `vendor`, `component`, `component_version`, `os`,
