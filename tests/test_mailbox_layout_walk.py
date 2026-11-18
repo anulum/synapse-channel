@@ -150,3 +150,28 @@ def test_the_walk_reads_only_chats_and_watermarks(
         assert tracker.pending_count("P/b") == 3
     finally:
         store.close()
+
+
+def test_an_event_of_another_kind_is_not_projected_even_when_the_window_returns_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The walk counts chats only, whatever the store's window hands it."""
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        for target in ("P/a", "P/b", "P/a"):
+            _chat(store, target)
+        store.append("claim", {"sender": "PEER", "target": "P/a", "type": "chat", "payload": "x"})
+        read_window = store.read_window
+
+        def every_kind(**kwargs: Any) -> Any:
+            kwargs.pop("kinds", None)
+            return read_window(**kwargs)
+
+        monkeypatch.setattr(store, "read_window", every_kind)
+        tracker = MailboxPendingTracker(store)
+        assert tracker.pending_count("P/a") == 2
+        assert tracker.pending_count("P/b") == 1
+        assert _rows(store, "mailbox_address_hits") == 3
+        assert _rows(store, "mailbox_name_mentions") == 3
+    finally:
+        store.close()
