@@ -14,12 +14,15 @@ import os
 import time
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from _platform_caps import requires_proc
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, free_port, running_hub
-from synapse_channel import cli_messaging
+from synapse_channel import cli_messaging, cli_messaging_wait
+from synapse_channel.cli_messaging_types import AgentFactory
+from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
@@ -1099,3 +1102,156 @@ async def test_wait_zero_config_machine_identity_pins_and_protects_the_waiter(
             assert await second == 0
         finally:
             await close_agents(observer)
+
+
+class _ClosedAgentProbe:
+    """Probe double for a connection that the hub closed with a given code.
+
+    It records the keyword arguments it was built with, so a test can check
+    whether the wait asked for a takeover.
+    """
+
+    built: list[dict[str, object]] = []
+
+    def __init__(self, *_args: object, code: int, reason: str, ready: bool, **kwargs: object):
+        self.running = True
+        self.last_close_code: int | None = code
+        self.last_close_reason = reason
+        self._ready = ready
+        _ClosedAgentProbe.built.append(kwargs)
+
+    async def connect(self) -> None:
+        return None
+
+    async def wait_until_ready(self, timeout: float) -> bool:
+        del timeout
+        return self._ready
+
+
+def _closed_factory(code: int, reason: str, *, ready: bool) -> AgentFactory:
+    """Return an agent factory whose connections close with ``code`` and ``reason``."""
+
+    def build(*args: object, **kwargs: object) -> _ClosedAgentProbe:
+        return _ClosedAgentProbe(*args, code=code, reason=reason, ready=ready, **kwargs)
+
+    return cast(AgentFactory, build)
+
+
+async def test_wait_without_takeover_never_displaces_a_live_holder(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A wait without takeover meets a live holder: it exits 6 and the holder stays armed.
+
+    This is the restore fence's primitive. With the default takeover the second
+    wait would evict the first, which would then yield with 4.
+    """
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        holder = asyncio.create_task(
+            cli_messaging._wait(uri=uri, name="X-rx", for_name="X", timeout=0.0, poll_interval=0.01)
+        )
+        try:
+            await _wait_for_presence(observer, "X-rx")
+            code = await asyncio.wait_for(
+                cli_messaging._wait(
+                    uri=uri,
+                    name="X-rx",
+                    for_name="X",
+                    timeout=5.0,
+                    poll_interval=0.01,
+                    takeover=False,
+                ),
+                timeout=10.0,
+            )
+            assert code == cli_messaging_wait.WAIT_NAME_LIVE_EXIT_CODE == 6
+            assert not holder.done()
+            await _send_chat(uri, "A", "X", "wake")
+            assert await asyncio.wait_for(holder, timeout=5.0) == 0
+        finally:
+            if not holder.done():
+                holder.cancel()
+            await asyncio.gather(holder, return_exceptions=True)
+            await close_agents(observer)
+
+
+async def test_wait_without_takeover_reports_a_conflict_before_readiness_as_live() -> None:
+    """A conflict refused at the handshake is "live" (6) without takeover, "unreachable" with it."""
+    _ClosedAgentProbe.built.clear()
+    without = await cli_messaging._wait(
+        uri="ws://unused",
+        name="X-rx",
+        for_name="X",
+        timeout=0.0,
+        takeover=False,
+        agent_factory=_closed_factory(4009, "name conflict", ready=False),
+    )
+    with_takeover = await cli_messaging._wait(
+        uri="ws://unused",
+        name="X-rx",
+        for_name="X",
+        timeout=0.0,
+        agent_factory=_closed_factory(4009, "name conflict", ready=False),
+    )
+    assert without == 6
+    assert with_takeover == 1
+    assert [built["takeover"] for built in _ClosedAgentProbe.built] == [False, True]
+
+
+async def test_wait_without_takeover_never_reads_a_reserved_name_as_live() -> None:
+    """A reserved name can never register, so it is not a live holder."""
+    code = await cli_messaging._wait(
+        uri="ws://unused",
+        name="X-rx",
+        for_name="X",
+        timeout=0.0,
+        takeover=False,
+        agent_factory=_closed_factory(4009, "reserved identity", ready=False),
+    )
+    assert code == 1
+
+
+def test_a_conflict_after_the_welcome_is_live_only_without_takeover(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The hub judges a sender after its welcome; that conflict is "live" only without takeover."""
+    agent = cast(SynapseAgent, _ClosedAgentProbe(code=4009, reason="name conflict", ready=True))
+    assert (
+        cli_messaging_wait._closed_connection_code(agent, name="X-rx", uri="ws://h", takeover=False)
+        == cli_messaging_wait.WAIT_NAME_LIVE_EXIT_CODE
+    )
+    assert cli_messaging_wait._closed_connection_code(agent, name="X-rx", uri="ws://h") == 3
+    assert "X-rx" in capsys.readouterr().out
+
+
+def test_cmd_wait_passes_no_takeover_only_when_asked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``--no-takeover`` reaches the runner; without it the runner sees no ``takeover`` key."""
+    monkeypatch.delenv("SYN_TMUX_PROVIDER", raising=False)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    seen: list[dict[str, object]] = []
+
+    async def wait_once(**kwargs: object) -> int:
+        seen.append(kwargs)
+        return 0
+
+    for no_takeover in (True, False):
+        ns = argparse.Namespace(
+            uri="ws://h",
+            name="X",
+            for_name=None,
+            timeout=0.0,
+            directed_only=False,
+            wake_jitter=0.0,
+            token=None,
+            ready_timeout=0.1,
+            no_takeover=no_takeover,
+        )
+        assert (
+            cli_messaging._cmd_wait(
+                ns, wait_runner=wait_once, async_runner=lambda coro: asyncio.run(coro)
+            )
+            == 0
+        )
+    assert seen[0]["takeover"] is False
+    assert "takeover" not in seen[1]

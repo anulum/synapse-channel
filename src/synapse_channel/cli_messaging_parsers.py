@@ -164,7 +164,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Random seconds (0..N) to delay exiting on a broadcast wake, so many "
         "terminals do not re-invoke at once and trip the provider rate limit; 0 disables.",
     )
-    wait.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    _add_wait_registration_arguments(wait)
     _add_bridge_wait_arguments(wait)
     wait.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
@@ -223,6 +223,23 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "instead of showing them marked as not replay-protected.",
     )
     listen.set_defaults(func=_cmd_listen)
+
+
+def _add_wait_registration_arguments(wait: argparse.ArgumentParser) -> None:
+    """Add the ``wait`` options that shape how its connection registers.
+
+    Parameters
+    ----------
+    wait : argparse.ArgumentParser
+        The ``wait`` subcommand parser.
+    """
+    wait.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    wait.add_argument(
+        "--no-takeover",
+        action="store_true",
+        help="Register only a free name: never evict a live holder. When a live "
+        "connection holds the name, exit 6 and hold nothing.",
+    )
 
 
 def _add_bridge_wait_arguments(wait: argparse.ArgumentParser) -> None:

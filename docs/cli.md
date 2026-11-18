@@ -1397,6 +1397,7 @@ provider turn; transport and supervision still use host resources.
 ```bash
 synapse wait --name api-dev-rx --for api-dev   # blocks; prints + exits on a message for api-dev
 synapse wait --for api-dev --timeout 60        # give up after 60s (exit 2) instead of waiting forever
+synapse wait --name api-dev-rx --for api-dev --no-takeover  # never evict a live holder: exit 6 if the name is live
 synapse wait --for api-dev --capability-card card.json   # re-register a dispatch card on every (re)connect
 ```
 

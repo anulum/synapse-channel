@@ -51,6 +51,12 @@ execution evidence when carrying a release claim forward.
   - **Refusals:** a changed host is `drifted`; a used, unknown, mismatched or expired plan, a blocked effect
     and the executor's own refusals are each a receipt naming why.
   - **No effect:** a plan with no effect is `already_satisfied`, and nothing is run.
+- **A wait that never displaces a live holder.** `synapse wait --no-takeover`
+  registers only a free name. When a live connection holds the name, the wait
+  exits `6` and holds nothing, whether the hub refuses the name at the handshake
+  or just after the welcome. A reserved name still reads as a refusal (`1`),
+  and a wait without the flag keeps taking its own name over as before. A
+  restore can build on this so that it never evicts a running seat.
 
 ### Changed
 

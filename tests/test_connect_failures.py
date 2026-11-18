@@ -397,3 +397,12 @@ def test_takeover_refused_close_is_recognised_and_unauth_cap_excluded() -> None:
     )
     assert not connect_failures.is_takeover_refused_close(4010, "takeover cooldown")
     assert not connect_failures.is_takeover_refused_close(None, "takeover cooldown")
+
+
+def test_name_conflict_close_is_recognised_and_reserved_identity_excluded() -> None:
+    assert connect_failures.is_name_conflict_close(4009, "name conflict")
+    assert connect_failures.is_name_conflict_close(4009, "")
+    assert not connect_failures.is_name_conflict_close(4009, "reserved identity")
+    assert not connect_failures.is_name_conflict_close(4009, "Reserved identity")
+    assert not connect_failures.is_name_conflict_close(4010, "name conflict")
+    assert not connect_failures.is_name_conflict_close(None, "name conflict")

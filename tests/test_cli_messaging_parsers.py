@@ -194,6 +194,10 @@ class TestWaitParser:
         with pytest.raises(SystemExit):
             _parser().parse_args(["wait", "--wake-capability", "telepathy"])
 
+    def test_no_takeover_is_off_by_default_and_set_by_its_flag(self) -> None:
+        assert _parser().parse_args(["wait"]).no_takeover is False
+        assert _parser().parse_args(["wait", "--no-takeover"]).no_takeover is True
+
 
 class TestListenParser:
     """Cover the ``listen`` argument surface."""

@@ -226,6 +226,18 @@ def is_takeover_refused_close(code: int | None, reason: str) -> bool:
     return code == TAKEOVER_COOLDOWN_CLOSE_CODE and "takeover" in reason.lower()
 
 
+def is_name_conflict_close(code: int | None, reason: str) -> bool:
+    """Return whether a close means a live connection already holds the name.
+
+    ``4009`` is overloaded with the reserved-identity refusal, so the reason
+    text decides: a reserved global name can never register, while an ordinary
+    conflict means another connection holds the name right now. A registration
+    that asked for no takeover reads this as "the name is live" and must not
+    retry it with a takeover.
+    """
+    return code == NAME_CONFLICT_CLOSE_CODE and "reserved" not in reason.lower()
+
+
 def _guidance_for(code: int, reason: str) -> str | None:
     """Return actionable guidance for a hub close, disambiguating reused codes.
 

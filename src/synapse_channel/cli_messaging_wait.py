@@ -22,6 +22,7 @@ from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import (
     describe_connect_failure,
     is_identity_refused_close,
+    is_name_conflict_close,
     is_name_owned_close,
     is_superseded_close,
     is_takeover_refused_close,
@@ -48,6 +49,14 @@ AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
 
 WAIT_RECONNECT_DELAY_SECONDS = 1.0
 """Delay between re-arm attempts after an established unbounded wait drops."""
+
+WAIT_NAME_LIVE_EXIT_CODE = 6
+"""Exit code of a wait without takeover whose name a live connection holds.
+
+Without takeover the hub refuses an online name (``4009``) instead of evicting
+its holder. The wait reports that verdict and holds nothing, so a fence that
+must never displace a live seat can tell "live" apart from "unreachable".
+"""
 
 
 def _load_dispatch_card(path: Path) -> dict[str, Any] | None:
@@ -200,7 +209,50 @@ async def _settle_burst(
     return list(received)
 
 
-def _closed_connection_code(agent: SynapseAgent, *, name: str, uri: str) -> int:
+def _handshake_refusal_code(agent: SynapseAgent, *, takeover: bool) -> int:
+    """Return the wait exit code for a connection the hub refused before readiness.
+
+    Parameters
+    ----------
+    agent : SynapseAgent
+        The waiter's agent, whose last close code and reason name the refusal.
+    takeover : bool
+        Whether the connection asked to take its name over.
+
+    Returns
+    -------
+    int
+        ``4`` when the hub refused a takeover or an ownership lease refused the
+        name (yield), ``5`` when the identity pin or binding refused the key
+        (stop), ``6`` when a wait without takeover met a live holder of its
+        name, and ``1`` for an unreachable hub.
+    """
+    code, reason = agent.last_close_code, agent.last_close_reason
+    if is_takeover_refused_close(code, reason):
+        # Another live connection holds this name and the hub is protecting
+        # it; retrying the takeover would only feed the oscillation
+        # quarantine. Yield the identity.
+        return 4
+    if is_name_owned_close(code, reason):
+        # An ownership lease held by another identity refused this claim.
+        # Without the lease token a retry can never succeed; yield instead of
+        # hammering the refusal.
+        return 4
+    if is_identity_refused_close(code, reason):
+        # The name is pinned to (or requires) another identity key.
+        # Distinguish this from an ordinary ownership yield so a service
+        # manager stops instead of crash-looping the refusal.
+        return 5
+    if not takeover and is_name_conflict_close(code, reason):
+        # Asked for no takeover and a live connection holds the name: report
+        # it as live, never as an unreachable hub.
+        return WAIT_NAME_LIVE_EXIT_CODE
+    return 1
+
+
+def _closed_connection_code(
+    agent: SynapseAgent, *, name: str, uri: str, takeover: bool = True
+) -> int:
     """Return the wait exit code for a connection that closed without a message.
 
     Parameters
@@ -211,13 +263,18 @@ def _closed_connection_code(agent: SynapseAgent, *, name: str, uri: str) -> int:
         Connection name, used in the printed explanation.
     uri : str
         Hub address, used in the printed explanation.
+    takeover : bool, optional
+        Whether this connection asked to take its name over. A connection
+        that did not ask reads a name conflict that lands after the welcome
+        as the name being live.
 
     Returns
     -------
     int
         ``4`` when a newer waiter superseded this one or an ownership lease
         refused the name (yield), ``5`` when the identity pin or binding refused
-        the key (stop), and ``3`` for any other dropped connection (re-arm).
+        the key (stop), ``6`` when a wait without takeover met a live holder of
+        its name, and ``3`` for any other dropped connection (re-arm).
     """
     if is_superseded_close(agent.last_close_code, agent.last_close_reason):
         # A newer waiter took this name over. The newcomer is the
@@ -238,6 +295,11 @@ def _closed_connection_code(agent: SynapseAgent, *, name: str, uri: str) -> int:
         # without the lease token would only hammer the same refusal.
         print(refusal)
         return 4
+    if not takeover and is_name_conflict_close(agent.last_close_code, agent.last_close_reason):
+        # The hub judges a sender after its welcome, so a conflict on a
+        # registration without takeover can land here. The name is live.
+        print(refusal)
+        return WAIT_NAME_LIVE_EXIT_CODE
     # The connection dropped without a message. Exit so the caller re-arms,
     # rather than looping forever on a dead socket — a timeout=0 waiter that
     # silently stayed up after a hub restart is exactly how an agent goes dark.
@@ -268,6 +330,7 @@ async def _wait(
     capability_card_path: Path | None = None,
     capability_refresh_seconds: float = 21_600.0,
     parent_pid: int | None = None,
+    takeover: bool = True,
 ) -> int:
     """Block until one message addressed to ``for_name`` arrives, print it, and exit.
 
@@ -352,6 +415,11 @@ async def _wait(
         on Linux the kernel sends ``SIGTERM`` when that process exits, and on
         every platform the wait ends with ``2`` within one poll interval once its
         parent changes. ``None`` (the default) binds to nothing.
+    takeover : bool, optional
+        Whether the connection may take its name over from an earlier holder
+        (the default, so a re-arm evicts its own ghost). ``False`` registers
+        only a free name: a live holder is never displaced, and the wait ends
+        with ``6`` instead.
 
     Returns
     -------
@@ -361,8 +429,9 @@ async def _wait(
         waiting (so the caller knows to re-arm rather than treat it as a timeout),
         ``4`` when a newer connection took the name over or an ownership lease
         held by another identity refused the claim (the caller must *yield*),
-        and ``5`` when the identity pin or binding refused this key (the caller
-        must stop and surface the governed recovery path, never re-arm).
+        ``5`` when the identity pin or binding refused this key (the caller
+        must stop and surface the governed recovery path, never re-arm), and
+        ``6`` when a wait without takeover met a live holder of its name.
     """
     received: list[dict[str, Any]] = []
     seen: set[tuple[str, int]] = set()
@@ -392,7 +461,8 @@ async def _wait(
     if not bind_to_parent(parent_pid):
         return 2  # the bridge exited before this wait started; never register for it
     # A re-arming waiter takes over its own name, evicting a ghost holder of
-    # ``<name>-rx`` instead of failing with a name conflict. In mailbox mode it
+    # ``<name>-rx`` instead of failing with a name conflict, unless the caller
+    # asked for no takeover: then a live holder is never displaced. In mailbox mode it
     # resumes from the persisted cursor and declares ``for_name`` as the identity to
     # replay for, since it connects under an ``-rx`` name but waits on the bare one.
     since_seq = (
@@ -408,7 +478,7 @@ async def _wait(
         uri=uri,
         verbose=False,
         token=token,
-        takeover=True,
+        takeover=takeover,
         roles=roles,
         mailbox=mailbox,
         mailbox_since_seq=since_seq,
@@ -430,22 +500,7 @@ async def _wait(
                     close_reason=agent.last_close_reason,
                 )
             )
-            if is_takeover_refused_close(agent.last_close_code, agent.last_close_reason):
-                # Another live connection holds this name and the hub is
-                # protecting it; retrying the takeover would only feed the
-                # oscillation quarantine. Yield the identity.
-                return 4
-            if is_name_owned_close(agent.last_close_code, agent.last_close_reason):
-                # An ownership lease held by another identity refused this
-                # claim. Without the lease token a retry can never succeed;
-                # yield instead of hammering the refusal.
-                return 4
-            if is_identity_refused_close(agent.last_close_code, agent.last_close_reason):
-                # The name is pinned to (or requires) another identity key.
-                # Distinguish this from an ordinary ownership yield so a
-                # service manager stops instead of crash-looping the refusal.
-                return 5
-            return 1
+            return _handshake_refusal_code(agent, takeover=takeover)
         card_kwargs = (
             _load_dispatch_card(capability_card_path) if capability_card_path is not None else None
         )
@@ -507,7 +562,7 @@ async def _wait(
             )
             return 0
         if conn_task.done():
-            return _closed_connection_code(agent, name=name, uri=uri)
+            return _closed_connection_code(agent, name=name, uri=uri, takeover=takeover)
         return 2
     finally:
         agent.running = False
@@ -565,7 +620,8 @@ def _wait_arguments(
     -------
     dict[str, Any]
         Arguments for the wait runner. ``parent_pid`` is present only when
-        ``--exit-with-parent`` was given, so runners that predate it keep working.
+        ``--exit-with-parent`` was given, and ``takeover`` only when
+        ``--no-takeover`` was given, so runners that predate them keep working.
     """
     machine = machine_identity_agent_kwargs()
     card = getattr(args, "capability_card", None)
@@ -589,6 +645,8 @@ def _wait_arguments(
     parent_pid = getattr(args, "exit_with_parent", None)
     if parent_pid is not None:
         arguments["parent_pid"] = parent_pid
+    if getattr(args, "no_takeover", False):
+        arguments["takeover"] = False
     return arguments
 
 
