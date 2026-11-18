@@ -372,6 +372,7 @@ class MessageType:
     OPERATION_LEVEL_CRITERIA = "operation_level_criteria"
     OPERATION_LEVEL_JUDGEMENT = "operation_level_judgement"
     OPERATION_LEVEL_RAISE = "operation_level_raise"
+    OPERATION_LEVEL_LOWER = "operation_level_lower"
     IDENTITY_ENROLL = "identity_enroll"
     IDENTITY_REVOKE = "identity_revoke"
     ENTITLEMENT_ADVERT = "entitlement_advert"

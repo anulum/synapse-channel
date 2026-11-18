@@ -283,6 +283,18 @@ class EventStore:
         """Append several events in one SQLite transaction."""
         return self._families.events.append_batch(events, ts=ts, durable=durable)
 
+    @inherit_documentation(EventWriter.append_linked)
+    def append_linked(
+        self,
+        head: tuple[str, Mapping[str, Any]],
+        follow: Callable[[int], Iterable[tuple[str, Mapping[str, Any]]]],
+        *,
+        ts: float | None = None,
+        durable: bool = False,
+    ) -> tuple[int, ...]:
+        """Append a head row and the rows built from its sequence in one transaction."""
+        return self._families.events.append_linked(head, follow, ts=ts, durable=durable)
+
     _stored_operation = staticmethod(decode_operation)
 
     @inherit_documentation(OperationTable.get_operation)

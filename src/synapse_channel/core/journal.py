@@ -160,6 +160,7 @@ class EventKind:
     APPROVAL_KIND = "approval_kind"
     LEVEL_CRITERIA = "level_criteria"
     LEVEL_JUDGEMENT = "level_judgement"
+    OPERATION_TRIGGER = "operation_trigger"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
     IDENTITY_ENROLLMENT = "identity_enrollment"
     ENTITLEMENT_ADVERT = "entitlement_advert"

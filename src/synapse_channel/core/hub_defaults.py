@@ -73,3 +73,5 @@ below a sequence the read-side has already consumed, which the hub cannot know. 
 instead of silently growing or unsafely trimming, a hub started on a log larger than
 this emits a single startup hint to run :class:`compact` manually.
 """
+DEFAULT_STOP_BOUND_SECONDS = 900.0
+"""Seconds a stop may stay ``stop requested`` before the hub records a trigger."""

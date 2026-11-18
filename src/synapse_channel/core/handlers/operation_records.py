@@ -65,10 +65,12 @@ from synapse_channel.core.authorisation_intent import (
     intent_time_refusal,
 )
 from synapse_channel.core.handlers.operation_attempts import VERB_SPECS as ATTEMPT_VERB_SPECS
+from synapse_channel.core.handlers.operation_level_lower import VERB_SPECS as LOWER_VERB_SPECS
 from synapse_channel.core.handlers.operation_level_raise import VERB_SPECS as RAISE_VERB_SPECS
 from synapse_channel.core.handlers.operation_levels import VERB_SPECS as LEVEL_VERB_SPECS
 from synapse_channel.core.handlers.operation_state import VERB_SPECS as STATE_VERB_SPECS
 from synapse_channel.core.handlers.operation_stops import VERB_SPECS as STOP_VERB_SPECS
+from synapse_channel.core.handlers.operation_triggers import record_trigger
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import OperationFact
 from synapse_channel.core.operation_records import (
@@ -92,6 +94,7 @@ from synapse_channel.core.operation_records import (
     seal_refusal,
     stop_readback_refusal,
 )
+from synapse_channel.core.operation_triggers import CAUSE_INCORRECT_ACCEPTANCE
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.verb_registry import VerbSpec
 
@@ -132,6 +135,11 @@ if TYPE_CHECKING:
         @property
         def state_mutations(self) -> SerializedStateMutationActor:
             """Return the hub's single mutation actor."""
+            ...
+
+        @property
+        def ladder_enabled(self) -> bool:
+            """Return whether ``--ladder`` is on, which lets an incorrect acceptance trigger."""
             ...
 
         async def send_json(self, websocket: Any, frame: dict[str, Any]) -> None:
@@ -270,6 +278,11 @@ def _evidence(
             result=verification.result,
             seq=seq,
         )
+        if hub.ladder_enabled and ledger.attempts.contradicted_at(request.operation_id) == seq:
+            trigger = ledger.attempts.operation_trigger(
+                request.operation_id, CAUSE_INCORRECT_ACCEPTANCE, shown_by=seq
+            )
+            record_trigger(store, ledger.attempts, trigger, time.time())
     return _Verdict(STATUS_ACCEPTED, f"{request.record} recorded", seq=seq)
 
 
@@ -403,6 +416,8 @@ VERB_SPECS = (
             EventKind.OPERATION_VERIFIED,
             EventKind.OPERATION_SEALED,
             EventKind.OPERATION_STOP_READBACK,
+            EventKind.OPERATION_TRIGGER,
+            EventKind.OPERATION_LEVEL,
         ),
         minimum_wire_version=7,
         commands=("operation",),
@@ -412,5 +427,6 @@ VERB_SPECS = (
     *STOP_VERB_SPECS,
     *LEVEL_VERB_SPECS,
     *RAISE_VERB_SPECS,
+    *LOWER_VERB_SPECS,
 )
 """The operation family: records, attempts, reads, and the stops and levels of its scopes."""

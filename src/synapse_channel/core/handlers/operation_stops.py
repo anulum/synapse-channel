@@ -188,6 +188,15 @@ def _decide_resume(
     )
 
 
+def _note_committed(candidate: AttemptLedger, scope: str, outcome: _Outcome, seq: int) -> None:
+    """Note a recorded stop, with what it listed and when, or a resume, on the candidate."""
+    if outcome.answer == STOP_RECORDED:
+        pairs = tuple((item.operation_id, item.attempt_id) for item in outcome.listed)
+        candidate.note_stop(scope, seq, epoch=outcome.epoch, listed=pairs, recorded_at=outcome.now)
+    elif outcome.answer == RESUMED:
+        candidate.note_resume(scope, seq)
+
+
 def _rows(
     kind: str, request: StopRequest | ResumeRequest, sender: str, outcome: _Outcome
 ) -> tuple[tuple[str, dict[str, Any]], ...]:
@@ -310,11 +319,7 @@ async def _serve(
         """Note the committed record on the candidate, then install it."""
         outcome, seq = committed.outcome, committed.seq
         assert outcome is not None and seq is not None
-        if outcome.answer == STOP_RECORDED:
-            pairs = tuple((item.operation_id, item.attempt_id) for item in outcome.listed)
-            candidate.note_stop(request.scope, seq, epoch=outcome.epoch, listed=pairs)
-        elif outcome.answer == RESUMED:
-            candidate.note_resume(request.scope, seq)
+        _note_committed(candidate, request.scope, outcome, seq)
         ledger.publish_from(candidate)
 
     execution = await hub.run_atomic_operation(

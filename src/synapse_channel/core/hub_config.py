@@ -65,6 +65,7 @@ from synapse_channel.core.hub_defaults import (
     DEFAULT_MAX_MSG_BYTES,
     DEFAULT_RELAY_MAX_LINES,
     DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
+    DEFAULT_STOP_BOUND_SECONDS,
     DEFAULT_TAKEOVER_COOLDOWN,
     DEFAULT_TAKEOVER_OSCILLATION_THRESHOLD,
     DEFAULT_TAKEOVER_OSCILLATION_WINDOW,
@@ -217,6 +218,8 @@ class HubAuthConfig:
     verdict_authority: Mapping[str, frozenset[str]] = field(default_factory=dict)
     verdict_gate_enabled: bool = True
     allow_unrecorded_verdict_inputs: bool = False
+    ladder_enabled: bool = False
+    stop_bound_seconds: float = DEFAULT_STOP_BOUND_SECONDS
 
 
 @dataclass(frozen=True, kw_only=True)

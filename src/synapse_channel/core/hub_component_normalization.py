@@ -26,6 +26,7 @@ from synapse_channel.core.hub_defaults import (
     DEFAULT_MAX_MSG_BYTES,
     DEFAULT_RELAY_MAX_LINES,
     DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
+    DEFAULT_STOP_BOUND_SECONDS,
 )
 from synapse_channel.core.hub_handshake import normalise_allow_origins
 from synapse_channel.core.message_forward_origin import DEFAULT_FORWARD_TTL_SECONDS
@@ -51,6 +52,10 @@ def normalize_transport(config: HubConfig) -> HubConfig:
             require_identity_proof=bool(auth.require_identity_proof),
             require_identity_binding=bool(auth.require_identity_binding),
             private_directed_messages=bool(auth.private_directed_messages),
+            ladder_enabled=bool(auth.ladder_enabled),
+            stop_bound_seconds=max(
+                safe_float(auth.stop_bound_seconds, default=DEFAULT_STOP_BOUND_SECONDS), 1.0
+            ),
         ),
         metrics=replace(
             metrics,

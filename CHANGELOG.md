@@ -20,6 +20,22 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Triggers lower a scope's level in the same transaction that records them.
+  With `synapse hub --ladder on` (off by default; without it the hub records
+  no trigger of its own and refuses no approval for its level): an incorrect
+  acceptance (an independent `not_verified` after an independent
+  `verified`), an operation past its intent's deadline with an ended attempt
+  and no independent verification, and a stop still `stop requested` past
+  `--stop-bound` (900 s by default) are journalled as `operation_trigger` with
+  the step down to A1 as `operation_level` rows of cause `trigger:<seq>`, in
+  one SQLite transaction under the lock that admits approvals and opens
+  attempts. A watcher checks deadlines and stop bounds every 15 seconds, off
+  the serving loop; each trigger is written once, also across a restart, and
+  only for a deadline or bound that passed after the watcher started, so a
+  restored hub writes no burst of old ones. An automated approval of an
+  operation at A1 is refused at admission and again when the note is
+  journalled, so no automated approval follows a trigger. An actor of a scope
+  may always ask for its own step down with `operation_level_lower`.
 - A scope's level can be raised by a judged count: an identity holding
   `operation-level` declares the criteria of a raise to the next level
   (`operation_level_criteria`, journalled as `level_criteria`), as countable

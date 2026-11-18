@@ -101,6 +101,13 @@ A rejection is still admitted. An approval of a digest no operation declares
 yet is admitted; a request to open an attempt with it after the resume is
 answered `approval_stale`, because the approval is older than the resume.
 
+With `synapse hub --ladder on`, an `approved` decision of an automated approver
+on the intent of an operation at autonomy level `A1` is refused as "approval
+gate: an automated approval needs level A2 or above (scope S is at A1)" and
+journalled as `verdict_record_refused`; it is checked again when the note is
+journalled. A person's approval (the role grant `<project>/person`) is not
+refused for its level. The option is off by default.
+
 ## Status
 
 ```bash

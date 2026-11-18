@@ -33,7 +33,7 @@ def _kinds() -> set[str]:
 
 def test_every_journal_kind_has_words_and_nothing_else_does() -> None:
     assert set(EVENT_WORDS) == _kinds()
-    assert len(EVENT_WORDS) == 71
+    assert len(EVENT_WORDS) == 72
 
 
 def _written(tmp_path: Path) -> list[tuple[str, EventWords | None]]:

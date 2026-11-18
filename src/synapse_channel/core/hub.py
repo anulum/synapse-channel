@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import ssl
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Coroutine, Iterable, Mapping
 from typing import Any, Unpack
 
 from websockets.asyncio.server import Server, serve
@@ -94,6 +94,7 @@ from synapse_channel.core.hub_ledger_guard import FindingQuota, HubLedgerGuard
 from synapse_channel.core.hub_service_lifetime import (
     HubServiceHooks,
     HubServiceLifetime,
+    trigger_watcher_for,
 )
 from synapse_channel.core.idempotency import IdempotencyCache
 from synapse_channel.core.identity_enrollments import (
@@ -1740,6 +1741,10 @@ class SynapseHub(HubConfigView):
             self._bind_port,
         )
 
+    def _trigger_watcher(self) -> Coroutine[Any, Any, None] | None:
+        """Return the operations' trigger watcher of a hub with a journal and ``--ladder on``."""
+        return trigger_watcher_for(self)
+
     def _service_lifetime(self) -> HubServiceLifetime:
         """Bind listener-independent services to this exact composed hub."""
         return HubServiceLifetime(
@@ -1747,6 +1752,7 @@ class SynapseHub(HubConfigView):
             HubServiceHooks(
                 monitoring=self._dark_seats.running,
                 token_watcher=self._ingress.token_set_watcher,
+                trigger_watcher=self._trigger_watcher,
                 key_rechecker=self._frame_gate.recheck_loop,
                 current_checkpoint=lambda: self._live_checkpoint,
                 anchor_checkpoint=self._checkpoint_anchor_loop,

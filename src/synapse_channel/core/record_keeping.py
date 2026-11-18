@@ -93,6 +93,7 @@ _OPERATION_KINDS = frozenset(
         "operation_level_answered",
         "level_criteria",
         "level_judgement",
+        "operation_trigger",
         "dead_letter_forwarding",
         "delivery_receipt_requested",
         "delivery_receipt_immediate",

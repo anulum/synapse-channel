@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.persistence_connection import StoreConnection
@@ -22,6 +22,10 @@ if TYPE_CHECKING:
         StoredEvent,
     )
 logger = logging.getLogger("synapse_channel.core.persistence")
+
+
+def _encode(stamp: float, kind: str, payload: Mapping[str, Any]) -> tuple[float, str, str]:
+    return (stamp, str(kind), json.dumps(dict(payload), ensure_ascii=True, separators=(",", ":")))
 
 
 class EventWriter:
@@ -60,25 +64,71 @@ class EventWriter:
             an empty tuple without opening a transaction.
         """
         stamp = time.time() if ts is None else float(ts)
-        rows = [
-            (stamp, str(kind), json.dumps(dict(payload), ensure_ascii=True, separators=(",", ":")))
-            for kind, payload in events
-        ]
+        rows = [_encode(stamp, kind, payload) for kind, payload in events]
         if not rows:
             return ()
+        return self._in_transaction(durable, lambda: [self._insert(row) for row in rows])
+
+    def append_linked(
+        self,
+        head: tuple[str, Mapping[str, Any]],
+        follow: Callable[[int], Iterable[tuple[str, Mapping[str, Any]]]],
+        *,
+        ts: float | None = None,
+        durable: bool = False,
+    ) -> tuple[int, ...]:
+        """Append ``head`` and the rows ``follow`` builds from its sequence, in one transaction.
+
+        A row that names the sequence of another row of the same commit, such as
+        a level change naming the trigger it carries out, cannot be built before
+        the insert. ``follow`` receives the head's sequence inside the
+        transaction; the whole batch commits or rolls back as one unit, with one
+        timestamp, as :meth:`append_batch` does.
+
+        Parameters
+        ----------
+        head : tuple[str, Mapping[str, Any]]
+            The first ``(kind, payload)`` pair.
+        follow : Callable[[int], Iterable[tuple[str, Mapping[str, Any]]]]
+            Builds the further pairs from the head's sequence. It runs under the
+            store's lock and must not touch the store.
+        ts : float or None, optional
+            Shared timestamp; the system clock is used when omitted.
+        durable : bool, optional
+            Use ``synchronous=FULL`` for the batch commit.
+
+        Returns
+        -------
+        tuple[int, ...]
+            The head's sequence, then the others' in the order ``follow`` gave.
+        """
+        stamp = time.time() if ts is None else float(ts)
+        first = _encode(stamp, *head)
+
+        def body() -> list[int]:
+            sequences = [self._insert(first)]
+            for kind, payload in follow(sequences[0]):
+                sequences.append(self._insert(_encode(stamp, kind, payload)))
+            return sequences
+
+        return self._in_transaction(durable, body)
+
+    def _insert(self, row: tuple[float, str, str]) -> int:
+        sequence = self.storage.insert_event(*row)
+        if row[1] in self.storage.aef_kinds:
+            self.storage.connection.execute(
+                "INSERT INTO aef_outbox (legacy_seq, receipt_id) VALUES (?, NULL)",
+                (sequence,),
+            )
+        return sequence
+
+    def _in_transaction(self, durable: bool, body: Callable[[], list[int]]) -> tuple[int, ...]:
+        """Run ``body`` under the store's lock as one transaction; roll back on any failure."""
         with self.storage.lock:
             if durable:
                 self.storage.connection.execute("PRAGMA synchronous=FULL")
             try:
-                sequences = []
-                for row in rows:
-                    sequence = self.storage.insert_event(*row)
-                    sequences.append(sequence)
-                    if row[1] in self.storage.aef_kinds:
-                        self.storage.connection.execute(
-                            "INSERT INTO aef_outbox (legacy_seq, receipt_id) VALUES (?, NULL)",
-                            (sequence,),
-                        )
+                sequences = body()
                 self.storage.connection.commit()
             except BaseException:
                 self.storage.connection.rollback()

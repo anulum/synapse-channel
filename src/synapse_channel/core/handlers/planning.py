@@ -27,6 +27,7 @@ from synapse_channel.core.atomic_operations import AtomicExecution, OperationDra
 from synapse_channel.core.handlers.planning_events import TaskEventRecorder
 from synapse_channel.core.handlers.verdict_admission import (
     announce_stale_verdicts,
+    ladder_recheck,
     progress_refusal,
 )
 from synapse_channel.core.journal import EventKind, record_ledger_progress
@@ -74,6 +75,11 @@ if TYPE_CHECKING:
         @property
         def blackboard(self) -> Blackboard:
             """Return the blackboard used by this handler family."""
+            ...
+
+        @property
+        def ladder_enabled(self) -> bool:
+            """Return whether ``--ladder`` refuses an automated approval at A1."""
             ...
 
 
@@ -343,7 +349,7 @@ async def handle_ledger_progress(
         return
 
     def mutate(board: Blackboard) -> tuple[bool, ProgressNote | str]:
-        return board.post_progress(task_id=task_id, author=sender, text=text, kind=kind)
+        return _post_or_refuse(hub, board, sender=sender, task_id=task_id, kind=kind, text=text)
 
     def persist(result: tuple[bool, ProgressNote | str]) -> None:
         if result[0] and isinstance(result[1], ProgressNote) and hub.journal is not None:
@@ -385,6 +391,16 @@ async def handle_ledger_progress(
     await _publish_progress(hub, data, execution, execution.response or draft.response)
     # Only an appended note reaches this point (replays and conflicts returned above).
     await announce_stale_verdicts(hub, recorded, sender=sender, kind=kind, text=text)
+
+
+def _post_or_refuse(
+    hub: PlanningContext, board: Blackboard, *, sender: str, task_id: str, kind: str, text: str
+) -> tuple[bool, ProgressNote | str]:
+    """Post a note under the state actor's lock, unless ``--ladder`` refuses it now."""
+    late = ladder_recheck(hub, sender=sender, kind=kind, text=text)
+    if late is not None:
+        return False, late
+    return board.post_progress(task_id=task_id, author=sender, text=text, kind=kind)
 
 
 async def _publish_progress(

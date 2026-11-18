@@ -147,6 +147,54 @@ def test_append_batch_rolls_back_every_row_when_a_later_insert_fails(tmp_path: P
     store.close()
 
 
+def test_append_linked_builds_the_following_rows_from_the_head_s_sequence(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    store.append("chat", {"id": 0})
+    seen: list[int] = []
+
+    def follow(seq: int) -> list[tuple[str, dict[str, Any]]]:
+        seen.append(seq)
+        return [("release", {"of": seq}), ("finding", {"of": seq})]
+
+    sequences = store.append_linked(("claim", {"task_id": "T"}), follow, ts=4.0, durable=True)
+    events = store.read_all()
+    assert (sequences, seen) == ((2, 3, 4), [2])
+    assert [(event.kind, dict(event.payload), event.ts) for event in events[1:]] == [
+        ("claim", {"task_id": "T"}, 4.0),
+        ("release", {"of": 2}, 4.0),
+        ("finding", {"of": 2}, 4.0),
+    ]
+    assert store.append_linked(("claim", {"task_id": "U"}), lambda _seq: ()) == (5,)
+    assert _synchronous_mode(store) == 1
+    store.close()
+
+
+def test_append_linked_rolls_back_the_head_when_a_following_row_fails(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    store._conn.execute(
+        "CREATE TRIGGER reject_relay BEFORE INSERT ON events "
+        "WHEN NEW.kind = 'operator_relay' "
+        "BEGIN SELECT RAISE(FAIL, 'forced follower failure'); END"
+    )
+    store._conn.commit()
+
+    def unbuildable(_seq: int) -> list[tuple[str, dict[str, Any]]]:
+        raise ValueError("cannot build")
+
+    with pytest.raises(ValueError, match="cannot build"):
+        store.append_linked(("release", {"task_id": "T1"}), unbuildable)
+    with pytest.raises(sqlite3.IntegrityError, match="forced follower failure"):
+        store.append_linked(
+            ("release", {"task_id": "T1"}),
+            lambda _seq: [("operator_relay", {"task_id": "T1"})],
+            durable=True,
+        )
+    assert store.count() == 0
+    assert not store._conn.in_transaction
+    assert _synchronous_mode(store) == 1
+    store.close()
+
+
 def test_durable_append_never_reports_post_commit_cleanup_as_write_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

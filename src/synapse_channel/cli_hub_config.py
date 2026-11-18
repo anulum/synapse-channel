@@ -97,6 +97,8 @@ def _authentication(args: argparse.Namespace, base: HubAuthConfig) -> HubAuthCon
         verdict_authority=verdict.verdict_authority,
         verdict_gate_enabled=verdict.gate_enabled,
         allow_unrecorded_verdict_inputs=verdict.allow_unrecorded_inputs,
+        ladder_enabled=getattr(args, "ladder", "on" if base.ladder_enabled else "off") == "on",
+        stop_bound_seconds=getattr(args, "stop_bound", base.stop_bound_seconds),
     )
 
 

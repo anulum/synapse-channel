@@ -57,4 +57,6 @@ class HubAuthOptions(TypedDict, total=False):
     private_directed_messages: bool
     verdict_authority: Mapping[str, frozenset[str]]
     verdict_gate_enabled: bool
+    ladder_enabled: bool
+    stop_bound_seconds: float
     allow_unrecorded_verdict_inputs: bool

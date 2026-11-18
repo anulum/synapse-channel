@@ -1751,6 +1751,48 @@ count.
 
 **Pinned by.** `tests/test_hub_operation_level_raise.py`.
 
+### INV-LD-7 — a trigger and its step down are one transaction
+
+**Normative.** The hub MUST journal an `operation_trigger` row and every
+`operation_level` row of its step down in one transaction, under the lock that
+admits approvals and opens attempts; a failure of any row MUST leave none. With
+`--ladder on`, an incorrect acceptance, an operation past its deadline with an
+ended attempt and no independent verification, and a stop still `stop
+requested` past the stop bound MUST each write their trigger, once, from the
+hub's own records; an executor's report MUST NOT prevent one, and a deadline or
+bound that passed before the watcher started MUST NOT. Without the option the
+hub MUST write none of these. A step down MUST restart the count of a raise.
+
+**Implementation.** `core/handlers/operation_triggers.py:record_trigger`,
+`core/persistence_events.py:EventWriter.append_linked`,
+`core/operation_attempt_ledger.py:AttemptLedger.due_triggers`.
+
+**Pinned by.** `tests/test_operation_triggers.py`, `tests/test_hub_operation_triggers.py`.
+
+### INV-LD-8 — under the ladder option no automated approval follows a trigger
+
+**Normative.** With `--ladder on`, an `approved` note of an automated approver
+on an intent whose operation is at `A1` MUST be refused, at admission and again
+when the note is journalled, so that every automated approval admitted for an
+operation lies below the level line of any trigger that lowered it. A person's
+approval MUST NOT be refused for its level. Without the option the rule is not
+claimed.
+
+**Implementation.** `core/handlers/verdict_admission.py:progress_refusal`,
+`core/handlers/verdict_admission.py:ladder_recheck`.
+
+**Pinned by.** `tests/test_hub_operation_triggers.py`.
+
+### INV-LD-9 — an actor may always ask for its own step down
+
+**Normative.** An actor of a scope MUST be able to lower it, recorded as an
+`actor_request` trigger with its step down; any other identity MUST be refused
+`not_an_actor`, and a level that is not lower `not_lower`.
+
+**Implementation.** `core/handlers/operation_level_lower.py`.
+
+**Pinned by.** `tests/test_hub_operation_triggers.py`.
+
 ## Normative constants
 
 These values are part of the contract. The drift guard

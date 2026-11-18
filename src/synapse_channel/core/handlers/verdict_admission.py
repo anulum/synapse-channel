@@ -44,7 +44,8 @@ from synapse_channel.core.journal import (
     record_verdict_record_refused,
     record_verdict_stale,
 )
-from synapse_channel.core.operation_levels import approver_kind
+from synapse_channel.core.operation_levels import KIND_AUTOMATED, approver_kind
+from synapse_channel.core.operation_triggers import ladder_refusal
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.verdict_hub import (
     admission_refusal,
@@ -82,6 +83,11 @@ if TYPE_CHECKING:
             """Return the hub's role grants, which tell a person from an automated role."""
             ...
 
+        @property
+        def ladder_enabled(self) -> bool:
+            """Return whether ``--ladder`` refuses an automated approval at A1."""
+            ...
+
 
 NO_JOURNAL_REFUSAL = "evidence, verdict and correction records need a durable journal"
 """Private reply when a hub without a journal receives a verdict-family note."""
@@ -106,8 +112,10 @@ def progress_refusal(
         if fields is None or fields["state"] != STATE_APPROVED:
             return None, []
         notes = recorded_notes(journal)
-        reason = _stopped_refusal(hub, fields["subject"]) or _approval_gate(
-            hub, journal, notes, sender=sender, subject=fields["subject"]
+        reason = (
+            _stopped_refusal(hub, fields["subject"])
+            or _ladder_refusal(hub, sender, fields["subject"])
+            or _approval_gate(hub, journal, notes, sender=sender, subject=fields["subject"])
         )
         if reason is None and subject_digest(fields["subject"]) is not None:
             kind = approver_kind(hub.role_grants, sender)
@@ -121,6 +129,35 @@ def progress_refusal(
             {"author": sender, "kind": kind, "task_id": task_id, "reason": reason},
         )
     return reason, notes
+
+
+def _ladder_refusal(hub: VerdictAdmissionContext, sender: str, subject: str) -> str | None:
+    """Under ``--ladder``, refuse an automated approval of an intent whose operation is at A1."""
+    digest = subject_digest(subject)
+    if not hub.ladder_enabled or digest is None:
+        return None
+    if approver_kind(hub.role_grants, sender) != KIND_AUTOMATED:
+        return None
+    scope = hub.operation_records.attempts.automated_floor(digest)
+    return None if scope is None else ladder_refusal(scope)
+
+
+def ladder_recheck(
+    hub: VerdictAdmissionContext, *, sender: str, kind: str, text: str
+) -> str | None:
+    """Repeat the ``--ladder`` refusal of an approval note when it is about to be journalled.
+
+    The admission runs before the note's own write, which waits for the state
+    actor's lock; a trigger committed in between would leave an automated
+    approval journalled after the step down, above its level line. Called under
+    that lock, this answers the note the way the admission would now.
+    """
+    if kind != APPROVAL_NOTE_KIND or not hub.ladder_enabled:
+        return None
+    fields = parse_approval_note(text)
+    if fields is None or fields["state"] != STATE_APPROVED:
+        return None
+    return _ladder_refusal(hub, sender, fields["subject"])
 
 
 def _stopped_refusal(hub: VerdictAdmissionContext, subject: str) -> str | None:

@@ -71,6 +71,14 @@ class HubAuthConfigView(HubConfigOwner):
             config, auth=replace(config.auth, private_directed_messages=value)
         ),
     )
+    ladder_enabled: ConfigAttribute[bool] = ConfigAttribute(
+        lambda config: config.auth.ladder_enabled,
+        lambda config, value: replace(config, auth=replace(config.auth, ladder_enabled=value)),
+    )
+    stop_bound_seconds: ConfigAttribute[float] = ConfigAttribute(
+        lambda config: config.auth.stop_bound_seconds,
+        lambda config, value: replace(config, auth=replace(config.auth, stop_bound_seconds=value)),
+    )
     require_acl: ConfigAttribute[bool] = ConfigAttribute(
         lambda config: config.auth.require_acl,
         lambda config, value: replace(config, auth=replace(config.auth, require_acl=value)),

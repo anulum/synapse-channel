@@ -42,12 +42,14 @@ The ledger also keeps each scope's stops (:mod:`~synapse_channel.core.operation_
   journal sequence of a scope's latest level row is its level line;
 * a ``level_criteria`` row states what a raise of a scope must show, and a
   ``level_judgement`` row whether a judge found it met. The counts they rely on
-  are computed from the facts above each time they are asked for.
+  are computed from the facts above each time they are asked for;
+* an ``operation_trigger`` row marks its operation or its stop, so that the hub
+  writes no trigger twice, even after a restart.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -64,12 +66,21 @@ from synapse_channel.core.operation_levels import DEFAULT_LEVEL, LEVELS, lowest
 from synapse_channel.core.operation_stop_readbacks import CLOSING_RESULTS
 from synapse_channel.core.operation_stop_states import (
     STATE_AT_REST,
+    STATE_STOP_REQUESTED,
     ListedAttempt,
     StopState,
     compute_stop_state,
     profile_for,
 )
 from synapse_channel.core.operation_stops import scopes_of
+from synapse_channel.core.operation_triggers import (
+    CAUSE_ACTOR_REQUEST,
+    CAUSE_DEADLINE_UNVERIFIED,
+    CAUSE_STOP_UNSETTLED,
+    TRIGGER_TARGET,
+    Trigger,
+    above,
+)
 
 if TYPE_CHECKING:
     from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -99,6 +110,7 @@ _RESTORED_KINDS = (
     EventKind.OPERATION_LEVEL,
     EventKind.LEVEL_CRITERIA,
     EventKind.LEVEL_JUDGEMENT,
+    EventKind.OPERATION_TRIGGER,
 )
 
 
@@ -109,11 +121,17 @@ _STOP_KINDS = (
     EventKind.OPERATION_LEVEL,
     EventKind.LEVEL_CRITERIA,
     EventKind.LEVEL_JUDGEMENT,
+    EventKind.OPERATION_TRIGGER,
 )
 """The rows of a scope: stops, resumes, read-backs and levels, restored by ``_restore_stop``."""
 
-_LEVEL_KINDS = (EventKind.OPERATION_LEVEL, EventKind.LEVEL_CRITERIA, EventKind.LEVEL_JUDGEMENT)
-"""The rows of a scope's level: its records, criteria and judgements."""
+_LEVEL_KINDS = (
+    EventKind.OPERATION_LEVEL,
+    EventKind.LEVEL_CRITERIA,
+    EventKind.LEVEL_JUDGEMENT,
+    EventKind.OPERATION_TRIGGER,
+)
+"""The rows of a scope's level: its records, criteria, judgements and triggers."""
 
 
 @dataclass(frozen=True)
@@ -167,6 +185,10 @@ class _StopRow:
     readbacks: dict[str, str]
     resumed: StopState | None = None
     """The state computed when a resume lifted this stop; it stands from then on."""
+    recorded_at: float = 0.0
+    """The hub's wall-clock time of the stop; 0 when its row did not state one."""
+    bound_triggered: bool = False
+    """Whether the hub recorded the stop's ``stop_unsettled`` trigger."""
 
 
 @dataclass(frozen=True)
@@ -200,6 +222,8 @@ class _Operation:
     """The sequence of the first independent ``not_verified`` after it closed; 0 when none."""
     unknown_seqs: list[int] = field(default_factory=list)
     """The sequences of its executors' reports of an ``unknown`` outcome."""
+    triggered: set[str] = field(default_factory=set)
+    """The causes of the triggers the hub recorded for it, so none is written twice."""
 
 
 @dataclass(frozen=True)
@@ -238,6 +262,24 @@ def _deadline_of(intent: object) -> int | None:
         return None
     deadline = intent.get("deadline")
     return deadline if isinstance(deadline, int) and not isinstance(deadline, bool) else None
+
+
+def _time_of(payload: Mapping[str, Any]) -> float:
+    """Return a row's ``hub_time``, or 0 when it states none."""
+    value = payload.get("hub_time")
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
+
+
+def _past_deadline_unverified(entry: _Operation, now: float, since: float) -> bool:
+    """Return whether a deadline passed in (since, now], ended, unverified and not yet triggered."""
+    deadline = entry.fact.deadline
+    return (
+        deadline is not None
+        and since < deadline <= now
+        and not entry.closed
+        and any(attempt.ended for attempt in entry.attempts)
+        and CAUSE_DEADLINE_UNVERIFIED not in entry.triggered
+    )
 
 
 def _bound(entry: Mapping[str, Any]) -> int:
@@ -389,16 +431,23 @@ class AttemptLedger:
             if isinstance(listed, list)
             else ()
         )
-        self.note_stop(scope, seq, epoch=epoch if type(epoch) is int else 0, listed=pairs)
+        epoch = epoch if type(epoch) is int else 0
+        self.note_stop(scope, seq, epoch=epoch, listed=pairs, recorded_at=_time_of(payload))
 
     def note_stop(
-        self, scope: str, seq: int, *, epoch: int, listed: tuple[tuple[str, str], ...]
+        self,
+        scope: str,
+        seq: int,
+        *,
+        epoch: int,
+        listed: tuple[tuple[str, str], ...],
+        recorded_at: float = 0.0,
     ) -> None:
         """Record that ``scope`` is stopped by the row at ``seq``, listing (operation, attempt)."""
         stops = self._stops.setdefault(scope, _ScopeStops())
         names = tuple(dict.fromkeys(operation_id for operation_id, _attempt in listed))
         stops.standing, stops.epoch, stops.listed, stops.line = seq, epoch, names, seq
-        self._stop_rows[seq] = _StopRow(scope, epoch, listed, {})
+        self._stop_rows[seq] = _StopRow(scope, epoch, listed, {}, recorded_at=recorded_at)
 
     def stop_lists(self, stop_seq: int, operation_id: str, attempt_id: str) -> bool:
         """Return whether the stop recorded at ``stop_seq`` listed this attempt."""
@@ -464,11 +513,16 @@ class AttemptLedger:
         return None
 
     def _restore_level(self, kind: str, seq: int, payload: Mapping[str, Any]) -> None:
-        if kind == EventKind.OPERATION_LEVEL:
+        if kind == EventKind.OPERATION_TRIGGER:
+            self.note_trigger(str(payload.get("cause") or ""), payload)
+        elif kind == EventKind.OPERATION_LEVEL:
             scope, level, epoch = payload.get("scope"), payload.get("level"), payload.get("epoch")
             if isinstance(scope, str) and level in LEVELS and type(epoch) is int:
                 self.note_level(scope, seq, level=str(level), epoch=epoch)
-            return
+        else:
+            self._restore_ladder(kind, seq, payload)
+
+    def _restore_ladder(self, kind: str, seq: int, payload: Mapping[str, Any]) -> None:
         digest = payload.get("digest")
         if not isinstance(digest, str):
             return
@@ -552,6 +606,93 @@ class AttemptLedger:
                 actors.add(entry.fact.declarer)
                 actors.update(attempt.executor for attempt in entry.attempts)
         return frozenset(actors)
+
+    def note_trigger(self, cause: str, subject: Mapping[str, Any]) -> None:
+        """Record that the hub wrote the trigger ``cause`` for an operation or a stop."""
+        operation_id, stop_seq = subject.get("operation_id"), subject.get("stop_seq")
+        entry = self._operations.get(operation_id) if isinstance(operation_id, str) else None
+        if entry is not None:
+            entry.triggered.add(cause)
+        row = self._stop_rows.get(stop_seq) if type(stop_seq) is int else None
+        if row is not None:
+            row.bound_triggered = True
+
+    def contradicted_at(self, operation_id: str) -> int:
+        """Return the sequence of the operation's first independent contradiction, or 0."""
+        entry = self._operations.get(operation_id)
+        return 0 if entry is None else entry.contradicted_seq
+
+    def _levels_of(self, scopes: Iterable[str]) -> tuple[tuple[str, str, int], ...]:
+        return tuple((scope, *self.level_of(scope)) for scope in scopes)
+
+    def operation_trigger(self, operation_id: str, cause: str, *, shown_by: int = 0) -> Trigger:
+        """Return the trigger ``cause`` of an operation: every containing scope above A1 falls."""
+        lowers = above(self._levels_of(self._scopes_of(operation_id)), TRIGGER_TARGET)
+        subject = {"operation_id": operation_id}
+        scope = f"operation:{operation_id}"
+        return Trigger(cause, scope, TRIGGER_TARGET, lowers, shown_by, "", subject)
+
+    def due_triggers(self, now: float, stop_bound: float, since: float = 0.0) -> list[Trigger]:
+        """Return the triggers the watcher records at ``now``, once each.
+
+        An operation past its intent's deadline with an ended attempt and no
+        independent verification is ``deadline_unverified``; a stop still
+        ``stop requested`` ``stop_bound`` seconds after it was recorded, and not
+        lifted, is ``stop_unsettled``. Only a deadline or a bound that passed
+        after ``since`` counts, so a watcher started on a long journal writes no
+        burst of old triggers.
+        """
+        found = [
+            self.operation_trigger(operation_id, CAUSE_DEADLINE_UNVERIFIED)
+            for operation_id, entry in sorted(self._operations.items())
+            if _past_deadline_unverified(entry, now, since)
+        ]
+        for seq, row in sorted(self._stop_rows.items()):
+            if self._unsettled(seq, row, now, stop_bound, since):
+                lowers = above(self._levels_of((row.scope,)), TRIGGER_TARGET)
+                subject = {"stop_seq": seq}
+                found.append(
+                    Trigger(
+                        CAUSE_STOP_UNSETTLED, row.scope, TRIGGER_TARGET, lowers, seq, "", subject
+                    )
+                )
+        return found
+
+    def _unsettled(self, seq: int, row: _StopRow, now: float, bound: float, since: float) -> bool:
+        passed = row.recorded_at + bound
+        if row.bound_triggered or row.resumed is not None or not row.recorded_at > 0:
+            return False
+        if not since < passed <= now:
+            return False
+        state = self.stop_state(seq)
+        return state is not None and state.state == STATE_STOP_REQUESTED
+
+    def actor_trigger(self, scope: str, target: str, actor: str) -> Trigger:
+        """Return an actor's own step down of ``scope`` to ``target``."""
+        lowers = above(self._levels_of((scope,)), target)
+        return Trigger(CAUSE_ACTOR_REQUEST, scope, target, lowers, 0, actor, {})
+
+    def scope_actors(self, scope: str) -> frozenset[str]:
+        """Return the declarers and executors of every operation ``scope`` contains."""
+        found: set[str] = set()
+        for entry in self._in_scope(scope):
+            found.add(entry.fact.declarer)
+            found.update(attempt.executor for attempt in entry.attempts)
+        return frozenset(found)
+
+    def automated_floor(self, digest: str) -> str | None:
+        """Return the narrowest A1 scope of an operation declared with intent ``digest``.
+
+        Operations are read in id order; ``None`` when none that declares the
+        digest is at A1, or none declares it.
+        """
+        for operation_id in sorted(self._operations):
+            if self._operations[operation_id].fact.intent_sha256 != digest:
+                continue
+            for scope in self._scopes_of(operation_id):
+                if self.level_of(scope)[0] == DEFAULT_LEVEL:
+                    return scope
+        return None
 
     def stop_identity(self, stop_seq: int) -> tuple[str, int] | None:
         """Return the scope and epoch of the stop recorded at ``stop_seq``, or ``None``."""

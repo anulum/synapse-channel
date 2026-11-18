@@ -22,6 +22,7 @@ from synapse_channel.core.capability_card_trust import (
     DEFAULT_CAPABILITY_CARD_HISTORY_RETENTION_SECONDS,
 )
 from synapse_channel.core.hub import DEFAULT_AUTH_TIMEOUT
+from synapse_channel.core.hub_defaults import DEFAULT_STOP_BOUND_SECONDS
 from synapse_channel.core.identity_enrollments import (
     DEFAULT_ENROLLMENT_RATE,
     DEFAULT_ENROLLMENT_WINDOW_SECONDS,
@@ -39,6 +40,40 @@ def add_hub_admission_arguments(hub: argparse.ArgumentParser) -> None:
     add_hub_message_auth_key_set_argument(hub)
     add_hub_frame_signature_argument(hub)
     add_policy_arguments(hub)
+    add_hub_ladder_arguments(hub)
+
+
+def _positive_seconds(value: str) -> float:
+    """Parse a whole or fractional number of seconds above zero for ``--stop-bound``."""
+    try:
+        seconds = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a number of seconds") from None
+    if not 0 < seconds < float("inf"):
+        raise argparse.ArgumentTypeError("the stop bound must be above zero and finite")
+    return seconds
+
+
+def add_hub_ladder_arguments(hub: argparse.ArgumentParser) -> None:
+    """Add ``--ladder`` and ``--stop-bound``, the autonomy ladder's hub options."""
+    hub.add_argument(
+        "--ladder",
+        choices=("on", "off"),
+        default="off",
+        help="Turn on the autonomy ladder's enforcement: refuse an automated approval of an "
+        "operation at level A1 (checked again when the note is journalled), and record the hub's "
+        "triggers with their step down to A1: an incorrect acceptance, an operation past its "
+        "deadline unverified, a stop unsettled past --stop-bound. Off by default; without it the "
+        "hub refuses no approval for its level and records no trigger of its own.",
+    )
+    hub.add_argument(
+        "--stop-bound",
+        type=_positive_seconds,
+        default=DEFAULT_STOP_BOUND_SECONDS,
+        metavar="SECONDS",
+        help="Seconds a stop may stay at stop requested before the hub records a trigger and "
+        "lowers the stopped scope to A1 (default 900).",
+    )
 
 
 def add_hub_frame_signature_argument(hub: argparse.ArgumentParser) -> None:

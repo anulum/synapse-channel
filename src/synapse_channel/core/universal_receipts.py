@@ -92,6 +92,7 @@ NON_RECEIPT_EVENT_KINDS = frozenset(
         EventKind.APPROVAL_KIND,
         EventKind.LEVEL_CRITERIA,
         EventKind.LEVEL_JUDGEMENT,
+        EventKind.OPERATION_TRIGGER,
         EventKind.DELIVERY_INTENT_ACCEPTED,
         EventKind.DELIVERY_INTENT_QUEUED,
         EventKind.DELIVERY_INTENT_TRANSITION,

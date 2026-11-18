@@ -22,11 +22,20 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.handlers.delivery_modes import delivery_expiry_loop
+from synapse_channel.core.handlers.operation_triggers import watch_operation_triggers
 from synapse_channel.core.merkle_checkpoint import LiveCheckpoint
 from synapse_channel.core.message_forward_origin import message_forward_retry_loop
 
 if TYPE_CHECKING:
     from synapse_channel.core.handlers.delivery_modes import DeliveryModesContext
+    from synapse_channel.core.handlers.operation_triggers import TriggerWatchContext
+
+
+def trigger_watcher_for(hub: TriggerWatchContext) -> Coroutine[Any, Any, None] | None:
+    """Return the operations' trigger watcher, only for a hub with a journal and ``--ladder on``."""
+    if hub.journal is None or not hub.ladder_enabled:
+        return None
+    return watch_operation_triggers(hub)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -39,6 +48,8 @@ class HubServiceHooks:
         The existing dark-seat monitor's context, entered before listening.
     token_watcher:
         Return a token-set watcher only when the current ingress owns one.
+    trigger_watcher:
+        Return the operations' trigger watcher only when the hub keeps a journal.
     key_rechecker:
         Construct the existing periodic identity-key recheck coroutine.
     current_checkpoint:
@@ -51,6 +62,7 @@ class HubServiceHooks:
 
     monitoring: Callable[[], AbstractAsyncContextManager[None]]
     token_watcher: Callable[[], Coroutine[Any, Any, None] | None]
+    trigger_watcher: Callable[[], Coroutine[Any, Any, None] | None]
     key_rechecker: Callable[[], Coroutine[Any, Any, None]]
     current_checkpoint: Callable[[], LiveCheckpoint | None]
     anchor_checkpoint: Callable[[LiveCheckpoint], Coroutine[Any, Any, None]]
@@ -109,6 +121,11 @@ class HubServiceLifetime:
             watcher = asyncio.create_task(token_set_watcher)
             self._backgrounds.append(watcher)
             watcher.add_done_callback(lambda _task: stop.set())
+        trigger_watcher = self._hooks.trigger_watcher()
+        if trigger_watcher is not None:
+            triggers = asyncio.create_task(trigger_watcher)
+            self._backgrounds.append(triggers)
+            triggers.add_done_callback(lambda _task: stop.set())
         key_rechecker = asyncio.create_task(self._hooks.key_rechecker())
         self._backgrounds.append(key_rechecker)
         key_rechecker.add_done_callback(lambda _task: stop.set())

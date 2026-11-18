@@ -343,6 +343,45 @@ does not add agent grades to protocol envelopes.
   verification, executors' `unknown` outcome reports and attempts past their
   intent's deadline while unverified, and stops of a containing scope at rest.
   A declarer's own verification and any outcome report never count as verified.
+- **Triggers and their step down:** with `synapse hub --ladder on`, the hub records a trigger as an
+  `operation_trigger` row (`scope`, `cause`, `target`, `shown_by`: the journal
+  sequence of the record that shows it or 0, `by`, `lowered`, and
+  `operation_id` or `stop_seq`) and each step down it causes as an
+  `operation_level` row with cause `trigger:<seq>`, all in one SQLite
+  transaction under the state actor's lock, so no approval is admitted and no
+  attempt opened between them. The causes are `incorrect_acceptance` (an
+  independent verification reads `not_verified` an operation an earlier one
+  read `verified`; it lowers to `A1` every scope that contains the operation),
+  `deadline_unverified` (the hub's watcher, at its tick every 15 seconds, finds
+  an operation past its intent's deadline with an ended attempt and no
+  independent verification; an executor's report of `confirmed_done` does not
+  prevent it), `stop_unsettled` (a stop still `stop requested` when
+  `--stop-bound` seconds, 900 by default, have passed; it lowers the stopped
+  scope) and `actor_request`. A scope already at the target gets the trigger
+  row only. Each trigger is written once per operation or stop, also across a
+  restart, and the watcher counts only deadlines and bounds that pass after it
+  started, so a hub restored from a long journal writes no burst of old
+  triggers. The watcher writes in a worker thread, off the serving loop, while
+  it holds the state actor's lock. Without `--ladder` the hub records none of
+  these. A step down restarts the count of a raise (it starts after the
+  scope's latest step down).
+- **An actor's own step down:** `operation_level_lower` names a `scope`, a
+  `level` below the scope's current one, a `reason` and `idem_key`. An actor
+  of the scope (the declarer or an executor of an operation it contains) may
+  always ask; the hub records an `actor_request` trigger with its step down
+  and answers `lowered`. Any other sender is `not_an_actor`, a level that is
+  not lower `not_lower`; both are journalled as `operation_level_answered`.
+  `invalid_request` and `no_journal` are not journalled. Under `--require-acl`
+  the gate asks for `operation-stop` on the scope.
+- **The ladder option:** with `synapse hub --ladder on` an automated approval
+  of an intent whose operation is at `A1` is refused at admission as "approval
+  gate: an automated approval needs level A2 or above (scope S is at A1)",
+  naming the narrowest scope at `A1`, and the refusal is checked again under the
+  state actor's lock when the note is journalled, so a trigger committed in
+  between refuses it too. A person's approval is not affected. Without the
+  option (the default) no approval is refused for its level, the hub records
+  no trigger of its own, and the rule that no automated approval follows a
+  trigger is not enforced; an actor's own step down is available either way.
 - **Operation state:** `operation_state` names `task_id` and `operation_id` and
   reads that operation's attempts. It is answered only to an identity holding
   `operation-evidence` or `operation-seal` on the task, which the handler

@@ -124,6 +124,8 @@ LEGACY_DEFAULTS: dict[str, object] = {
     "verdict_authority": {},
     "verdict_gate_enabled": True,
     "allow_unrecorded_verdict_inputs": False,
+    "ladder_enabled": False,
+    "stop_bound_seconds": 900.0,
     "warn_stale_recipients": DEFAULT_WARN_STALE_RECIPIENTS,
     "recipient_liveness_window": DEFAULT_RECIPIENT_LIVENESS_WINDOW,
     "waiter_liveness_window": DEFAULT_WAITER_LIVENESS_WINDOW,
