@@ -41,6 +41,7 @@ from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType
 from synapse_channel.core.ratelimit import RateLimiter
@@ -310,8 +311,10 @@ _BACKLOG = 100
 SHARED_PORT_ATTEMPTS = 8
 
 
-class SharedPortError(OSError):
+class SharedPortError(SynapseError, OSError):
     """The name could not be bound to one port within ``SHARED_PORT_ATTEMPTS``."""
+
+    code = "shared_port"
 
 
 def shared_port_sockets(host: str, port: int) -> list[socket.socket] | None:

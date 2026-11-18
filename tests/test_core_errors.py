@@ -702,6 +702,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "setup_receipt_store",
         ValueError,
     ),
+    "SharedPortError": (
+        "synapse_channel.core.hub_connection",
+        "shared_port",
+        OSError,
+    ),
     "ShellClaimGuardError": (
         "synapse_channel.shell_claim_guard",
         "shell_claim_guard",

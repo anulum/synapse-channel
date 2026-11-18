@@ -197,10 +197,10 @@ def test_websocket_and_hub_http_rows_bind_to_the_immutable_hub_config() -> None:
     assert hub.max_clients == DEFAULT_MAX_CLIENTS == 256
     assert hub.max_connections_per_host == DEFAULT_MAX_CONNECTIONS_PER_HOST == 32
     assert hub.auth_timeout == DEFAULT_AUTH_TIMEOUT == 10.0
-    source = inspect.getsource(SynapseHub.serve)
-    assert "max_size=self.max_msg_bytes" in source
-    assert "process_request=self._process_request" in source
-    assert "ssl=ssl_context" in source
+    source = inspect.getsource(SynapseHub._open_server)
+    assert source.count("max_size=self.max_msg_bytes") == 2
+    assert source.count("process_request=self._process_request") == 2
+    assert source.count("ssl=ssl_context") == 2
     assert "no second wire cap" in str(policies["websocket"].response_size)
     assert "GET-only" in str(policies["hub-http"].request_size)
 

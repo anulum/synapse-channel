@@ -114,6 +114,8 @@ execution evidence when carrying a release claim forward.
   expired under load before the welcome arrived, and the read failed with
   no close code. A welcome
   that never arrives still fails on that one attempt.
+- A shared-port bind that cannot place every address on one port is a
+  classified error. It remains an `OSError`, and its code is `shared_port`.
 - `synapse hub --port 0` listens on one port for every address its host name
   resolves to. A name such as `localhost` could bind each address on its own
   ephemeral port and publish only the first, so a client that dialled the
