@@ -285,7 +285,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_wake_adapter_pane_bridge.py": (1, "platform-guard"),
     # Pane sessions are read from Linux procfs and need tmux.
     "tests/test_tmux_reap.py": (1, "platform-guard"),
-    "tests/test_tmux_server.py": (2, "platform-guard"),
+    # A real tmux server, alone or under a systemd user manager, exists only where installed.
+    "tests/test_tmux_server.py": (3, "platform-guard"),
     "tests/test_worker_session.py": (2, "platform-guard"),
     # Only POSIX keeps the replaced inode open for the interrupt watch.
     "tests/test_worker_outcome_interrupt.py": (1, "platform-guard"),
