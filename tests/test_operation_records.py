@@ -48,6 +48,16 @@ from synapse_channel.core.result_verification_record import ResultVerification
 from synapse_channel.core.state_models import TaskClaim
 
 SHA = "a" * 64
+COMPONENT = {
+    "host": "ws",
+    "vendor": "acme",
+    "component": "editor",
+    "component_version": "1.2.3",
+    "os": "linux",
+    "transport": "cli",
+    "observed_by": "setting.read",
+    "expected_sha256": SHA,
+}
 REV = "b" * 40
 
 
@@ -114,6 +124,7 @@ def _claim(**changes: Any) -> TaskClaim:
         ),
         ("deployment", {"report": "/srv/app/health.json", "revision": "v1.2.3"}),
         ("migration", {"database": "/srv/app.db", "migration": "0042", "schema_sha256": SHA}),
+        ("component_state", COMPONENT),
     ],
 )
 def test_each_effect_decodes_its_exact_target(effect: str, target: dict[str, str]) -> None:
@@ -197,6 +208,26 @@ def test_each_effect_decodes_its_exact_target(effect: str, target: dict[str, str
                 "effect_target": {"repository": "repo", "branch": "main", "revision": "abc"},
             },
             "revision has the wrong form",
+        ),
+        (
+            {"effect": "component_state", "effect_target": {**COMPONENT, "path": "x"}},
+            "a component_state effect_target names exactly",
+        ),
+        (
+            {"effect": "component_state", "effect_target": {**COMPONENT, "observed_by": "read"}},
+            "observed_by has the wrong form",
+        ),
+        (
+            {"effect": "component_state", "effect_target": {**COMPONENT, "observed_by": "A.b"}},
+            "observed_by has the wrong form",
+        ),
+        (
+            {"effect": "component_state", "effect_target": {**COMPONENT, "expected_sha256": "x"}},
+            "expected_sha256 has the wrong form",
+        ),
+        (
+            {"effect": "component_state", "effect_target": {**COMPONENT, "vendor": ""}},
+            "vendor must be",
         ),
     ],
 )
@@ -353,6 +384,21 @@ def test_rows_carry_only_checked_fields_and_the_ledger_restores(tmp_path: Path) 
         )
     finally:
         reopened.close()
+
+
+def test_a_restored_component_state_declaration_keeps_its_whole_target(tmp_path: Path) -> None:
+    """After a restart the ledger names the component, its observing read and the digest."""
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        row = {"task_id": "T", "operation_id": "op-c", "sender": "P/worker"}
+        store.append(
+            EventKind.OPERATION_DECLARED, {**row, "effect": "component_state", **COMPONENT}
+        )
+        restored = OperationLedger(store)
+        assert restored.effect_of("op-c") == "component_state"
+        assert restored.target_of("op-c") == COMPONENT
+    finally:
+        store.close()
 
 
 def test_the_ledger_skips_malformed_rows_and_starts_empty_without_a_journal(tmp_path: Path) -> None:

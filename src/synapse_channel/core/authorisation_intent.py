@@ -175,6 +175,11 @@ def _pre_state(effect: str, value: object) -> str:
         return _text(value, "a deployment pre_state (the running revision)")
     if effect == "migration":
         return _match(value, "a migration pre_state (the schema SHA-256 before)", _HEX64)
+    if effect == "component_state":
+        if value == "absent":
+            return "absent"
+        label = "a component_state pre_state ('absent' or the observed projection's SHA-256)"
+        return _match(value, label, _HEX64)
     raise _refuse("the declared effect is unknown")
 
 

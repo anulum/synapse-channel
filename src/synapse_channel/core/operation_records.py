@@ -101,11 +101,14 @@ EFFECT_FILE = "file"
 EFFECT_GIT = "git_publication"
 EFFECT_DEPLOYMENT = "deployment"
 EFFECT_MIGRATION = "migration"
+EFFECT_COMPONENT_STATE = "component_state"
+"""A component's own state, changed by a catalogue row and observed by a read row of it."""
 VERIFIER_FOR_EFFECT: Mapping[str, str] = {
     EFFECT_FILE: "file_change",
     EFFECT_GIT: "git_publication",
     EFFECT_DEPLOYMENT: "deployment",
     EFFECT_MIGRATION: "database_migration",
+    EFFECT_COMPONENT_STATE: "component_read",
 }
 """The verifier whose records may speak for each declared effect."""
 
@@ -134,6 +137,9 @@ _BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
 _MAX_TASK = 256
 _MAX_PATH = 512
 _MAX_NAME = 128
+_DOTTED = re.compile(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+")
+COMPONENT_IDENTITY = ("host", "vendor", "component", "component_version", "os", "transport")
+"""The fields of a component's identity, as a catalogue row names them."""
 _MAX_BUDGET = 2**53
 
 
@@ -246,6 +252,8 @@ def _target(effect: str, value: object) -> dict[str, str]:
             "report": _bounded_text(value.get("report"), "report", _MAX_PATH),
             "revision": _bounded_text(value.get("revision"), "revision", _MAX_NAME),
         }
+    elif effect == EFFECT_COMPONENT_STATE:
+        fields = _component_target(value)
     else:
         fields = {
             "database": _bounded_text(value.get("database"), "database", _MAX_PATH),
@@ -254,6 +262,15 @@ def _target(effect: str, value: object) -> dict[str, str]:
         }
     if set(value) != set(fields):
         raise OperationRecordError(f"a {effect} effect_target names exactly {sorted(fields)}")
+    return fields
+
+
+def _component_target(value: Mapping[str, Any]) -> dict[str, str]:
+    """Validate a component's identity, its observing read row and the expected digest."""
+    fields = {name: _bounded_text(value.get(name), name, _MAX_NAME) for name in COMPONENT_IDENTITY}
+    observed_by = _bounded_text(value.get("observed_by"), "observed_by", _MAX_NAME)
+    fields["observed_by"] = _pattern(observed_by, "observed_by", _DOTTED)
+    fields["expected_sha256"] = _pattern(value.get("expected_sha256"), "expected_sha256", _HEX64)
     return fields
 
 
@@ -349,6 +366,7 @@ _TARGET_KEYS = {
     EFFECT_GIT: ("repository", "branch", "revision", "object_format"),
     EFFECT_DEPLOYMENT: ("report", "revision"),
     EFFECT_MIGRATION: ("database", "migration", "schema_sha256"),
+    EFFECT_COMPONENT_STATE: (*COMPONENT_IDENTITY, "observed_by", "expected_sha256"),
 }
 """The declaration row's fields that name each effect's target."""
 

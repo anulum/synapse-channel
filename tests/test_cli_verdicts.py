@@ -195,6 +195,20 @@ async def test_cli_refusals_before_any_hub_contact(
     assert "no answer from the hub" in capsys.readouterr().err
 
 
+def test_hub_options_set_the_ladder_and_its_stop_bound() -> None:
+    """``--ladder`` and ``--stop-bound`` reach the hub; the bound is positive seconds."""
+    default = build_cli_hub_config(build_parser().parse_args(["hub"]), HubConfig()).auth
+    assert (default.ladder_enabled, default.stop_bound_seconds) == (False, 900.0)
+    args = build_parser().parse_args(["hub", "--ladder", "on", "--stop-bound", "60.5"])
+    auth = build_cli_hub_config(args, HubConfig()).auth
+    assert (auth.ladder_enabled, auth.stop_bound_seconds) == (True, 60.5)
+    hub = SynapseHub(ladder_enabled=True, stop_bound_seconds=60.5)
+    assert (hub.ladder_enabled, hub.stop_bound_seconds) == (True, 60.5)
+    for bound in ("0", "-5", "inf", "nan", "soon"):
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["hub", "--stop-bound", bound])
+
+
 def test_hub_options_build_the_verdict_policy() -> None:
     """Hub flags reach the hub's verdict policy; a hub without them keeps the default."""
     args = build_parser().parse_args(

@@ -167,6 +167,8 @@ def test_a_git_intent_names_its_base_and_its_changed_files() -> None:
         ("file", HEX64),
         ("deployment", "build-2026.11.12"),
         ("migration", HEX64),
+        ("component_state", "absent"),
+        ("component_state", HEX64),
     ],
 )
 def test_each_effect_accepts_its_own_pre_state(effect: str, pre_state: str) -> None:
@@ -188,6 +190,9 @@ def test_each_effect_accepts_its_own_pre_state(effect: str, pre_state: str) -> N
         ("deployment", "line\nbreak"),
         ("migration", "absent"),
         ("file", 7),
+        ("component_state", HEX40),
+        ("component_state", "ABSENT"),
+        ("component_state", None),
     ],
 )
 def test_a_pre_state_of_the_wrong_form_is_refused(effect: str, pre_state: object) -> None:

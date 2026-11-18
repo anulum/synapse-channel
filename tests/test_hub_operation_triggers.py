@@ -163,6 +163,16 @@ async def test_an_incorrect_acceptance_steps_every_scope_down_and_a1_needs_a_per
                 rows = _rows(store, before)
                 late = await _approve(seats[scene.APPROVER], waiting, "after the trigger")
                 person = await _approve(seats[LEAD], waiting, "a person")
+                text = format_approval_note(subject=f"sha256:{waiting}", state="rejected")
+                rejection = await scene.answer(
+                    seats[scene.APPROVER],
+                    lambda: seats[scene.APPROVER].agent.post_progress(
+                        scene.TASK, text, kind=APPROVAL_NOTE_KIND
+                    ),
+                    lambda frame: (
+                        frame.get("type") in ("ledger_progress_posted", MessageType.ERROR)
+                    ),
+                )
     finally:
         store.close()
     refusal = "approval gate: an automated approval needs level A2 or above (scope {} is at A1)"
@@ -189,6 +199,7 @@ async def test_an_incorrect_acceptance_steps_every_scope_down_and_a1_needs_a_per
     assert [row.seq for row in rows] == list(range(trigger.seq, trigger.seq + 5))
     assert (late["type"], late["payload"]) == (MessageType.ERROR, refusal.format("effect:file"))
     assert person["type"] == "ledger_progress_posted"
+    assert rejection["type"] == "ledger_progress_posted"
 
 
 async def test_without_the_ladder_a_default_hub_changes_nothing(tmp_path: Path) -> None:

@@ -157,15 +157,22 @@ does not add agent grades to protocol envelopes.
   `task_id` and `operation_id` (1–128 of `A-Z a-z 0-9 . _ : -`) are required.
   A `declare` comes from the owner of the live claim and names the claim's
   `epoch` or `ownership_epoch`, an `effect` (`file`, `git_publication`,
-  `deployment` or `migration`), its identifiers in `effect_target` (exactly
-  `path`+`sha256`; `repository`+`branch`+`revision`; `report`+`revision`; or
-  `database`+`migration`+`schema_sha256`) and optionally `budget_remaining`. A
+  `deployment`, `migration` or `component_state`), its identifiers in
+  `effect_target` (exactly `path`+`sha256`; `repository`+`branch`+`revision`;
+  `report`+`revision`; `database`+`migration`+`schema_sha256`; or, for a
+  component's own state, the component's identity `host`+`vendor`+`component`+
+  `component_version`+`os`+`transport`, `observed_by`, the dotted name of the
+  catalogue `read` operation that observes the changed object, and
+  `expected_sha256`, the SHA-256 of that read's projected output after the
+  change) and optionally `budget_remaining`. A
   repository URL that carries a credential, a query or a fragment is refused.
   A `declare` may also carry `intent`, an authorisation intent statement of
   schema `synapse.authorisation-intent.v0`: `pre_state` (for a file `absent` or
   its SHA-256; for a Git publication the base commit, 40 or 64 lower-case hex
   of the same object format as `revision`; for a deployment the
-  running revision; for a migration the schema SHA-256 before), `changed_files`
+  running revision; for a migration the schema SHA-256 before; for a
+  component's state `absent` or the SHA-256 of the observing read's projected
+  output before the change), `changed_files`
   for a Git publication only (sorted relative paths, each with its Git mode or
   `absent`), `recovery_class` (`reversible`, `restorable`, `one_way`),
   `deadline` (UNIX seconds), `budget` (`not_applicable` or
@@ -183,7 +190,8 @@ does not add agent grades to protocol envelopes.
   An id is declared once per hub; the journal keeps the claim's current epoch as
   `snapshot_epoch`. An `outcome` carries one `synapse.execution-outcome.v1`
   `report`; a `verification` carries one `synapse.result-verification.v1`
-  `verification` whose verifier matches the declared effect. Both need the
+  `verification` whose verifier matches the declared effect (`file_change`,
+  `git_publication`, `deployment`, `database_migration` or `component_read`). Both need the
   `operation-evidence` grant, a declared operation on the same task and fewer
   than 32 earlier rows for it. The hub journals `operation_declared`,
   `operation_outcome` or `operation_verified`; verification evidence keeps only

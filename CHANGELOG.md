@@ -20,6 +20,17 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- A component's own state is a declared effect kind: `operation_record`
+  accepts `effect: component_state`, whose target names the component's
+  identity (`host`, `vendor`, `component`, `component_version`, `os`,
+  `transport`), `observed_by`, the catalogue `read` operation that observes the
+  changed object, and `expected_sha256`, the digest of that read's projected
+  output after the change. Its intent's `pre_state` is `absent` or the digest
+  of the projected read before the change, and its verifier is
+  `component_read`: a verification by any other verifier is refused, and the
+  executor's own does not close the operation. `operation_state` and the
+  effect scope `effect:component_state` follow. The runner and the verifier
+  that use it come in later units.
 - Triggers lower a scope's level in the same transaction that records them.
   With `synapse hub --ladder on` (off by default; without it the hub records
   no trigger of its own and refuses no approval for its level): an incorrect
