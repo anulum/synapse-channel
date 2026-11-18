@@ -295,6 +295,7 @@ def test_start_session_puts_a_new_tmux_server_in_a_service_of_its_own(tmp_path: 
             _result(["tmux", "display-message"], 1, stderr="no server running\n"),
             _result(["systemctl", "--user", "show"], 0, stdout="255\n"),
             _result(["systemd-run"], 0),
+            _result(["tmux", "set-environment"], 0),
             _result(["tmux", "new-session"], 0),
         ]
     )
@@ -323,8 +324,14 @@ def test_start_session_puts_a_new_tmux_server_in_a_service_of_its_own(tmp_path: 
         "exit-empty",
         "off",
     ]
+    # Before any session exists, the new server's global environment is reduced.
+    assert runner.calls[4:6] == [
+        ["tmux", "show-environment", "-g"],
+        ["tmux", "set-environment", "-g", "-u", "SYN_PROJECT", ";"]
+        + ["set-environment", "-g", "-u", "SYN_IDENTITY"],
+    ]
     # The session itself is the caller's own command: its code and output are kept.
-    session = runner.calls[4]
+    session = runner.calls[6]
     assert session[:5] == ["tmux", "new-session", "-d", "-s", config.session]
     assert session[-1].endswith(" kimi")
 
@@ -336,6 +343,8 @@ def test_start_session_starts_tmux_plainly_without_a_user_manager(tmp_path: Path
             _result(["tmux", "has-session"], 1),
             _result(["tmux", "display-message"], 1, stderr="no server running\n"),
             _result(["systemctl", "--user", "show"], 1, stderr="Failed to connect to bus\n"),
+            _result(["tmux", "start-server"], 0),
+            _result(["tmux", "set-environment"], 0),
             _result(["tmux", "new-session"], 0),
         ]
     )
@@ -343,7 +352,11 @@ def test_start_session_starts_tmux_plainly_without_a_user_manager(tmp_path: Path
     result = start_session(config, runner=runner)
 
     assert result.started is True
-    assert runner.calls[3][:3] == ["tmux", "new-session", "-d"]
+    # Without a user manager the server starts in place, and is reduced before any session.
+    assert runner.calls[3] == ["tmux", "start-server", ";", "set-option", "-g", "exit-empty", "off"]
+    assert runner.calls[4] == ["tmux", "show-environment", "-g"]
+    assert runner.calls[5][:5] == ["tmux", "set-environment", "-g", "-u", "SYN_PROJECT"]
+    assert runner.calls[6][:3] == ["tmux", "new-session", "-d"]
 
 
 def test_start_session_does_not_duplicate_existing_session(tmp_path: Path) -> None:

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -123,6 +124,20 @@ async def _attempt(
     return str(opened["attempt_id"])
 
 
+def _left(name: str) -> Callable[[dict[str, Any]], bool]:
+    """Return a predicate for the hub's notice that ``name`` has left."""
+
+    def left(frame: dict[str, Any]) -> bool:
+        """Match the presence update that reports ``name`` gone."""
+        return (
+            frame.get("type") == MessageType.PRESENCE_UPDATE
+            and frame.get("event") == "left"
+            and frame.get("agent") == name
+        )
+
+    return left
+
+
 async def _opened(
     uri: str,
     b: str,
@@ -133,6 +148,7 @@ async def _opened(
 ) -> list[tuple[str, str, str, str]]:
     """Open one attempt per (task, operation, git) in ``plan``; return each with its ids."""
     names = (scene.WORKER, scene.REVIEWER, scene.APPROVER)
+    observer = await connect_agent("X/opened-observer", uri)
     worker, reviewer, approver = [await connect_agent(name, uri) for name in names]
     opened = []
     try:
@@ -147,6 +163,13 @@ async def _opened(
             opened.append((task, operation_id, digest, attempt))
     finally:
         await close_agents(worker, reviewer, approver)
+        # A caller may connect one of these names at once; it is free only once the hub
+        # has seen this connection leave, or that connect is refused as a live holder.
+        try:
+            for name in names:
+                await observer.recorder.wait_for(_left(name), timeout=scene.WAIT)
+        finally:
+            await close_agents(observer)
     return opened
 
 

@@ -18,6 +18,9 @@ from synapse_channel.mcp.resource_views import (
 )
 from synapse_channel.mcp.server import SynapseHubBridge, build_mcp_server
 
+BRIDGE_REQUEST_TIMEOUT = 5.0
+"""Long enough for a loaded macOS runner; the helper's 0.5 s timed out there."""
+
 
 async def test_mcp_server_registers_resource_templates() -> None:
     server = build_mcp_server(SynapseHubBridge(request_timeout=0.05))
@@ -34,7 +37,7 @@ async def test_mcp_server_registers_resource_templates() -> None:
 async def test_task_resource_template_returns_one_board_task() -> None:
     async with running_hub() as (_, uri):
         await seed_task(uri, "T1", "Build task resource")
-        handle = await start_bridge(uri)
+        handle = await start_bridge(uri, request_timeout=BRIDGE_REQUEST_TIMEOUT)
         try:
             out = await handle.bridge.task_resource("T1")
         finally:
@@ -54,7 +57,7 @@ async def test_agent_resource_template_returns_manifest_and_resource_offers() ->
                 message.get("type") == "resource_offered" and message.get("agent") == "FAST"
             )
         )
-        handle = await start_bridge(uri)
+        handle = await start_bridge(uri, request_timeout=BRIDGE_REQUEST_TIMEOUT)
         try:
             out = await handle.bridge.agent_resource("FAST")
         finally:
@@ -77,7 +80,7 @@ async def test_resource_kind_template_filters_resource_offers() -> None:
                 message.get("type") == "resource_offered" and message.get("kind") == "fs"
             )
         )
-        handle = await start_bridge(uri)
+        handle = await start_bridge(uri, request_timeout=BRIDGE_REQUEST_TIMEOUT)
         try:
             out = await handle.bridge.resource_kind_resource("llm")
         finally:
