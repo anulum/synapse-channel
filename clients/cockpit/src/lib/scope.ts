@@ -13,23 +13,28 @@
  * applies it to the snapshot, the live stream and the event-backed feeds.
  *
  * A peer scope is of another kind: it shows an observed peer hub's folded
- * state alone, advisory and read-only, and no feed of this hub.
+ * state alone, advisory and read-only, and no feed of this hub. The Fleet
+ * mirror's scope is the same kind of view of Fleet's advisory export.
  */
 export type CockpitScope =
   | { readonly kind: "all" }
   | { readonly kind: "none" }
   | { readonly kind: "project"; readonly namespace: string }
   | { readonly kind: "group"; readonly name: string }
-  | { readonly kind: "peer"; readonly hub: string };
+  | { readonly kind: "peer"; readonly hub: string }
+  | { readonly kind: "fleet" };
 
 /** A scope of this hub's own records. */
-export type LocalScope = Exclude<CockpitScope, { readonly kind: "peer" }>;
+export type LocalScope = Exclude<CockpitScope, { readonly kind: "peer" } | { readonly kind: "fleet" }>;
 
 /** A scope that shows an observed peer hub. */
 export type PeerScope = Extract<CockpitScope, { readonly kind: "peer" }>;
 
 /** The default scope: every record the hub sends. */
 export const WHOLE_HUB: LocalScope = { kind: "all" };
+
+/** The Fleet mirror's scope: Fleet's advisory export, one per dashboard. */
+export const FLEET_MIRROR: CockpitScope = { kind: "fleet" };
 
 /** The URL key that carries the scope. */
 export const SCOPE_PARAM = "scope";
@@ -53,6 +58,7 @@ function validName(name: string): boolean {
  */
 export function parseScope(value: string | null): CockpitScope {
   if (value === "none") return { kind: "none" };
+  if (value === "fleet") return FLEET_MIRROR;
   const separator = value?.indexOf(":") ?? -1;
   if (value === null || separator < 0) return WHOLE_HUB;
   const kind = value.slice(0, separator);
@@ -147,7 +153,12 @@ export function scopeOptions(counts: ScopeCounts | null, current: CockpitScope):
       agents: row.agents,
     });
   }
-  if (current.kind !== "peer" && current.kind !== "group" && !options.some((option) => sameScope(option.scope, current))) {
+  if (
+    current.kind !== "peer" &&
+    current.kind !== "group" &&
+    current.kind !== "fleet" &&
+    !options.some((option) => sameScope(option.scope, current))
+  ) {
     options.push({ scope: current, tasks: 0, agents: 0 });
   }
   return options;

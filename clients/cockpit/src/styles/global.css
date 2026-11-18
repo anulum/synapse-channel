@@ -5272,6 +5272,81 @@ body {
   font-style: italic;
 }
 
+/* ---------- the Fleet mirror's scope ---------- */
+.fleet-health {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.fleet-health__scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.fleet-health__table {
+  border-collapse: collapse;
+  font-size: var(--fs-micro);
+}
+
+.fleet-health__table th,
+.fleet-health__table td {
+  padding: 0 var(--sp-2);
+  text-align: left;
+  color: var(--ink);
+}
+
+.fleet-notice {
+  margin: 0;
+  padding: var(--sp-1) var(--sp-4);
+  border-bottom: 1px solid var(--warn);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+
+.fleet-board,
+.fleet-claims {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  list-style: none;
+}
+
+.fleet-board__task {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.fleet-board__id {
+  font-family: var(--font-mono);
+}
+
+.fleet-board__title {
+  flex: 1 1 12rem;
+}
+
+.fleet-board__badge {
+  color: var(--sev-crit-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fleet-board__origin,
+.fleet-board__hub,
+.fleet-board__claim,
+.fleet-board__status {
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.fleet-claims__hub {
+  margin: var(--sp-2) var(--sp-3) 0;
+  font-size: var(--fs-small);
+}
+
 /* ---------- compact density ---------- */
 :root[data-density="compact"] {
   --fs-micro: 9px;

@@ -541,7 +541,43 @@ view, and the view grants nothing:
 
 A hub this dashboard does not observe, and one whose last pull failed, show no
 row and say why. Choosing any other scope restores this hub's view and its
-feeds. The Fleet mirror (`/fleet-observed.json`) is not offered as a scope.
+feeds.
+
+### Look at the Fleet mirror
+
+A dashboard started with `--fleet-observed-file EXPORT` and
+`--fleet-observed-access-file GRANTS` serves Fleet's version-1 export to the
+principals on the observer list. The cockpit reads
+`/fleet-observed-access.json` on login and on each access revision; on a `200`
+that says `observe`, the selector offers **Fleet mirror (advisory)** under
+**Fleet**. Any other answer offers nothing and says nothing, because a dashboard
+without the mirror is the usual case. No second credential is asked: the
+cockpit reads the mirror with the login's own bearer.
+
+Choosing it, `scope=fleet`, shows Fleet's export alone, read every 10 seconds;
+the cockpit reads no other feed of this hub and no live stream:
+
+- a band under the HUD says `advisory · Fleet mirror <source> · exported <age>
+  ago · not this hub's state · writes off`, marks an export older than 5 minutes
+  `stale`, says how many rows did not read and were left out, and opens the
+  health of each hub Fleet drains: cursor, events, failures, last success,
+  caught up, and the drain limit it hit;
+- the board lists Fleet's tasks with their status, who claims each and the hub
+  that holds the claim (`claim hub`), a `conflict` badge with its evidence, and
+  the row's origin; the claims group the claimed tasks by that hub; both say
+  `advisory · Fleet mirror <source>`;
+- every other panel (roster, host sessions, reliability, signal log, findings,
+  attention, fleet views, topology, metrics, audit, operations, incident,
+  causality, risk) says `not observed` and why: the export carries no agents,
+  events or messages;
+- every write control is absent, time travel and the federation row are hidden,
+  and the HUD shows no key figures of this hub.
+
+An answer of `409` says the export's version is not supported; `503` says the
+mirror is unavailable and keeps the last good read, marked stale. A `403` (the
+grant was removed, or it changed between the read and the answer) withdraws the
+scope: the cockpit returns to the whole hub and says the grant ended. A `404`
+returns to the whole hub too.
 
 ## Inspect fleet communication
 

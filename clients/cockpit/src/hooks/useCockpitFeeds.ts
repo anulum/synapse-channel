@@ -151,8 +151,10 @@ export function useCockpitFeeds(
   scope: CockpitScope = WHOLE_HUB,
 ): CockpitFeeds {
   const scopeKey = scopeText(scope);
-  // A peer scope shows the observed hub's snapshot alone; this hub's feeds stay closed.
-  const auxiliary = useCockpitAuxiliaryFeeds(blocked || scope.kind === "peer", credentialRevision, scope);
+  // A peer scope shows the observed hub's snapshot alone, and the Fleet scope Fleet's export
+  // alone (read in the App); this hub's feeds stay closed in both.
+  const observed = scope.kind === "peer" || scope.kind === "fleet";
+  const auxiliary = useCockpitAuxiliaryFeeds(blocked || observed, credentialRevision, scope);
   const [snap, setSnap] = useState<SnapshotState>(INITIAL_SNAPSHOT);
   const [kpis, setKpis] = useState<readonly Kpi[]>([]);
   const [log, setLog] = useState<readonly CockpitEvent[]>([]);
@@ -172,7 +174,8 @@ export function useCockpitFeeds(
 
   useEffect(() => {
     setAttention(INITIAL_ATTENTION);
-    if (blocked || parseScope(scopeKey).kind === "peer") return;
+    const kind = parseScope(scopeKey).kind;
+    if (blocked || kind === "peer" || kind === "fleet") return;
     const store = createAttentionStore({ url: withScope("/attention.json", parseScope(scopeKey)) });
     const unsubscribe = store.subscribe(setAttention);
     return () => {
@@ -194,6 +197,7 @@ export function useCockpitFeeds(
     previous.current = ZERO_HEADLINE_METRICS;
     if (blocked) return;
     if (requestScope.kind === "peer") return pollPeerSnapshot(requestScope, setSnap, setTransportState);
+    if (requestScope.kind === "fleet") return;
 
     const routed = new Set<(event: CockpitEvent) => void>();
     setSpineSource({

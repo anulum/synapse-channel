@@ -226,6 +226,72 @@ def _scope_groups(scratch: Path) -> Path | None:
     return path
 
 
+def _owner_only(path: Path, document: object) -> Path:
+    path.write_text(json.dumps(document), encoding="utf-8")
+    path.chmod(0o600)
+    return path
+
+
+def _fleet_mirror(scratch: Path) -> tuple[Path, Path] | None:
+    """Write Fleet's export and the observer list the mirror journey reads, when it asks for them.
+
+    The operator principal is the one observer; the viewer is not on the list.
+    One task carries a conflict with its evidence, and two claims are held on two
+    hubs, so the board and the claims show ``claim_hub``.
+    """
+    if os.environ.get("SYNAPSE_COCKPIT_E2E_FLEET_MIRROR") != "1":
+        return None
+    now = time.time()
+
+    def peer(name: str, cursor: int, failures: int) -> dict[str, object]:
+        return {
+            "peer_id": name,
+            "cursor": cursor,
+            "events": cursor + 1,
+            "last_success_at": now - 30,
+            "consecutive_failures": failures,
+            "status_written_at": now - 20,
+            "caught_up": failures == 0,
+            "budget_exhausted_reason": None if failures == 0 else "pages",
+        }
+
+    def task(task_id: str, title: str, holder: str | None, hub: str | None) -> dict[str, object]:
+        return {
+            "task_id": task_id,
+            "status": "in_progress" if holder else "open",
+            "title": title,
+            "claimed_by": holder,
+            "claim_hub": hub,
+            "board_provenance": {"hub": hub or "harbour-hub", "seq": 12},
+            "board_conflict": None,
+        }
+
+    conflicted = task("MIRROR-1", "Rebuild the pier", "harbour/worker", "harbour-hub")
+    conflicted["board_conflict"] = {"hubs": ["harbour-hub", "lighthouse-hub"], "field": "status"}
+    export = {
+        "version": 1,
+        "source_id": "fleet-e2e",
+        "exported_at": now,
+        "advisory": True,
+        "snapshot": {
+            "advisory": "Advisory: Fleet's view of the hubs it drains, not a hub's state.",
+            "generated_at": now,
+            "peers": [peer("harbour-hub", 40, 0), peer("lighthouse-hub", 12, 2)],
+            "tasks": [
+                conflicted,
+                task("MIRROR-2", "Light the lamp", "lighthouse/keeper", "lighthouse-hub"),
+                task("MIRROR-3", "Paint the hull", None, None),
+            ],
+            "progress_notes": 4,
+        },
+    }
+    grants = {"version": 1, "observers": ["operator"]}
+    return (
+        _owner_only(scratch / "fleet-observed.json", export),
+        _owner_only(scratch / "fleet-observers.json", grants),
+    )
+
+
 def _dashboard(
     hub_uri: str,
     port: int,
@@ -233,6 +299,7 @@ def _dashboard(
     dist: Path,
     observed: tuple[ObservedPeerSpec, ...],
     access_file: Path,
+    mirror: tuple[Path, Path] | None,
 ) -> DashboardServer:
     """Start the read-gated operator dashboard on the hub, observing ``observed``."""
     return start_dashboard_server(
@@ -253,6 +320,8 @@ def _dashboard(
         operator=True,
         observed_peers=observed,
         observed_timeout=2.0,
+        fleet_observed_file=None if mirror is None else mirror[0],
+        fleet_observed_access_file=None if mirror is None else mirror[1],
     )
 
 
@@ -289,13 +358,17 @@ async def _serve() -> None:
         await _await_hub(hub_uri)
         observer = f"{DASHBOARD_NAME}-observed"
         observed = await peers.enter_async_context(observed_peer_hub(scratch_path, HOST, observer))
-        dashboard = _dashboard(hub_uri, dashboard_port, scratch_path, dist, observed, access_file)
+        mirror = _fleet_mirror(scratch_path)
+        dashboard = _dashboard(
+            hub_uri, dashboard_port, scratch_path, dist, observed, access_file, mirror
+        )
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
         for signum in (signal.SIGINT, signal.SIGTERM):
             with contextlib.suppress(NotImplementedError):
                 loop.add_signal_handler(signum, stop.set)
-        print(f"cockpit e2e ready at {dashboard.url('/cockpit/')}", flush=True)
+        grants = "" if mirror is None else f" fleet-grants={mirror[1]}"
+        print(f"cockpit e2e ready at {dashboard.url('/cockpit/')}{grants}", flush=True)
         await stop.wait()
     finally:
         if dashboard is not None:

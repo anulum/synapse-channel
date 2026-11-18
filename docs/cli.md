@@ -474,6 +474,12 @@ an Authorization header; the built React cockpit shell and assets provide the
 separate public bootstrap route before authenticated live reads. Add
 `--observed-peer HUB=URI` to include peer-hub rows in the browser and
 `/snapshot.json`; those rows stay advisory and are labelled `observed@HUB`.
+`--fleet-observed-file EXPORT` with `--fleet-observed-access-file GRANTS`
+serves Fleet's export at `/fleet-observed.json` to the principals on the
+owner-only observer list, read with the login's own bearer; the same list
+decides who is offered the cockpit's Fleet mirror scope, and removing a
+principal from it withdraws that scope at its next read
+([cockpit](cockpit.md#look-at-the-fleet-mirror)).
 The snapshot's risk section also enriches at most 20 ready tasks with at most
 three explainable `route-task` candidates and three `resource-bids` candidates
 per task. These are the same deterministic local scorers as the CLI, remain

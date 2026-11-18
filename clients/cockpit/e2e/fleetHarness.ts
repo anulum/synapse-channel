@@ -95,15 +95,18 @@ export async function stop(started: Started | undefined): Promise<void> {
  * (`e2e/peer_hub.py`), which a peer scope shows. With `scopeGroups`, it declares
  * the group `ships` of the demonstration fleet's two projects. With `operations`,
  * a real hub first journals one governed operation in every state the
- * operation report gives.
+ * operation report gives. With `fleetMirror`, the dashboard serves a Fleet
+ * export and an observer list naming the operator principal alone; the list's
+ * path is returned as `fleetGrants`, so a journey can change the grant.
  */
 export async function startHarness(
   options: {
     readonly observedPeer?: boolean;
     readonly scopeGroups?: boolean;
     readonly operations?: boolean;
+    readonly fleetMirror?: boolean;
   } = {},
-): Promise<{ readonly harness: Started; readonly url: string }> {
+): Promise<{ readonly harness: Started; readonly url: string; readonly fleetGrants: string | null }> {
   const harness = await start("e2e/dashboard_harness.py", [], {
     ...process.env,
     PYTHONUNBUFFERED: "1",
@@ -114,13 +117,15 @@ export async function startHarness(
     SYNAPSE_COCKPIT_E2E_OBSERVED_PEER: options.observedPeer === true ? "1" : "0",
     SYNAPSE_COCKPIT_E2E_SCOPE_GROUPS: options.scopeGroups === true ? "1" : "0",
     SYNAPSE_COCKPIT_E2E_OPERATIONS: options.operations === true ? "1" : "0",
+    SYNAPSE_COCKPIT_E2E_FLEET_MIRROR: options.fleetMirror === true ? "1" : "0",
   });
   const url = /ready at (\S+)/u.exec(harness.line)?.[1];
   if (!url) {
     await stop(harness);
     throw new Error(`unexpected harness readiness: ${harness.line}`);
   }
-  return { harness, url };
+  const fleetGrants = /fleet-grants=(\S+)/u.exec(harness.line)?.[1] ?? null;
+  return { harness, url, fleetGrants };
 }
 
 export interface Seeded {

@@ -62,6 +62,13 @@ export function ScopeTag({
   const travelling = useContext(ReplayContext);
   const { t } = useCockpitI18n();
   if (scope.kind === "all") return null;
+  if (scope.kind === "fleet") {
+    return (
+      <span className="panel__sub panel__scope panel__scope--whole" title={t("scope.fleetFeedTitle")}>
+        {t("scope.fleetFeedTag")}
+      </span>
+    );
+  }
   if (scope.kind === "peer") {
     return snapshot ? (
       <span className="panel__sub panel__scope panel__scope--peer" title={t("scope.peerTitle")}>

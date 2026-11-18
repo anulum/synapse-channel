@@ -35,6 +35,7 @@ import type { CockpitEvent } from "../types";
 import { AttentionQueue } from "./AttentionQueue";
 import type { CausalityPrefill } from "./CausalityView";
 import { DataCoverage } from "./DataCoverage";
+import { FleetInspectorBody, useFleetScope } from "./FleetMirrorScope";
 import { PeerInspectorBody, usePeerHub } from "./PeerScope";
 import { SignalLog } from "./SignalLog";
 
@@ -102,6 +103,8 @@ export interface InspectorPanelProps {
 export function InspectorPanel(props: InspectorPanelProps): JSX.Element {
   const { t } = useCockpitI18n();
   const peerHub = usePeerHub();
+  const fleet = useFleetScope();
+  if (fleet) return <FleetInspectorBody tab={props.tab} />;
   if (peerHub !== null && props.tab !== "topology") return <PeerInspectorBody tab={props.tab} hub={peerHub} />;
   const {
     tab, events, provenance = "derived", coverage, attention = [], attentionFeed, connected = false,

@@ -10,6 +10,7 @@ import type { JSX } from "react";
 
 import { useCockpitI18n } from "../context/CockpitI18n";
 import {
+  FLEET_MIRROR,
   groupOptions,
   parseScope,
   peerScopes,
@@ -25,6 +26,8 @@ interface ScopePickerProps {
   /** The snapshot's scope block; null before the first snapshot or from a dashboard without one. */
   readonly counts: ScopeCounts | null;
   readonly onChange: (scope: CockpitScope) => void;
+  /** Whether the dashboard offers this principal the Fleet mirror's scope. */
+  readonly fleetOffered?: boolean;
 }
 
 /**
@@ -34,7 +37,7 @@ interface ScopePickerProps {
  * the dashboard declares follow under their own heading, then the observed
  * peer hubs: each of those shows that hub's folded state, advisory and read-only.
  */
-export function ScopePicker({ scope, counts, onChange }: ScopePickerProps): JSX.Element {
+export function ScopePicker({ scope, counts, onChange, fleetOffered = false }: ScopePickerProps): JSX.Element {
   const { t } = useCockpitI18n();
   const label = (option: ScopeOption): string => {
     const values = { tasks: option.tasks, agents: option.agents };
@@ -45,7 +48,8 @@ export function ScopePicker({ scope, counts, onChange }: ScopePickerProps): JSX.
   };
   const groups = groupOptions(counts, scope);
   const peers = peerScopes(counts, scope);
-  const marked = scope.kind === "all" ? "" : scope.kind === "peer" ? " hud__scope--on hud__scope--peer" : " hud__scope--on";
+  const observed = scope.kind === "peer" || scope.kind === "fleet";
+  const marked = scope.kind === "all" ? "" : observed ? " hud__scope--on hud__scope--peer" : " hud__scope--on";
   return (
     <span className={`hud__scope${marked}`} title={t("hud.scopeTitle")}>
       <select
@@ -75,6 +79,11 @@ export function ScopePicker({ scope, counts, onChange }: ScopePickerProps): JSX.
                 {t("hud.scopePeer", { hub: peer.hub })}
               </option>
             ))}
+          </optgroup>
+        )}
+        {(fleetOffered || scope.kind === "fleet") && (
+          <optgroup label={t("hud.scopeMirrorGroup")}>
+            <option value={scopeText(FLEET_MIRROR)}>{t("hud.scopeFleet")}</option>
           </optgroup>
         )}
       </select>

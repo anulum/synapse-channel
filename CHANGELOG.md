@@ -20,6 +20,17 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- The cockpit offers the Fleet mirror as a scope, `scope=fleet`, to a
+  principal on the dashboard's Fleet observer list: it reads
+  `/fleet-observed-access.json` on each access revision and, on `observe`,
+  lists **Fleet mirror (advisory)**. In that scope it reads
+  `/fleet-observed.json` alone, every 10 seconds, with the login's own bearer.
+  A band says the export is advisory, how old it is (stale after 5 minutes),
+  that writes are off, and opens each drained hub's health; the board shows
+  each task's claim hub, a conflict badge with its evidence and the row's
+  origin, and the claims are grouped by claim hub. Every other panel says it
+  is not observed. A `403` withdraws the scope with a notice; `409` and `503`
+  are stated. The server's routes and grants are unchanged.
 - A catalogue row that changes or destroys state may name `observed_by`, the
   `read` operation of the same component that observes the changed object.
   `Catalogue.observer` returns that row only when it is listed for the same

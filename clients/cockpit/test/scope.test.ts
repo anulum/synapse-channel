@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  FLEET_MIRROR,
   WHOLE_HUB,
   appendQuery,
   groupOptions,
@@ -133,6 +134,22 @@ describe("scopeOptions", () => {
     expect(peerScopes(withPeers, EAST)).toEqual([EAST, { kind: "peer", hub: "west" }]);
     expect(peerScopes(counts, { kind: "peer", hub: "gone" })).toEqual([{ kind: "peer", hub: "gone" }]);
     expect(peerScopes(null, ALPHA)).toEqual([]);
+  });
+
+  it("reads the Fleet mirror's scope, writes it to the URL and keeps it out of the local choices", () => {
+    expect(parseScope("fleet")).toEqual(FLEET_MIRROR);
+    expect(scopeText(FLEET_MIRROR)).toBe("fleet");
+    expect(scopeToSearch(FLEET_MIRROR, "?theme=dark")).toBe("?theme=dark&scope=fleet");
+    expect(scopeFromSearch("?scope=fleet")).toEqual(FLEET_MIRROR);
+    expect(sameScope(FLEET_MIRROR, { kind: "fleet" })).toBe(true);
+    expect(scopeOptions(counts, FLEET_MIRROR).map((option) => scopeText(option.scope))).toEqual([
+      "all",
+      "none",
+      "project:ALPHA",
+      "project:BETA",
+    ]);
+    expect(peerScopes(counts, FLEET_MIRROR)).toEqual([]);
+    expect(groupOptions(counts, FLEET_MIRROR)).toEqual(groupOptions(counts, WHOLE_HUB));
   });
 
   it("lists the declared groups on their own and keeps the current one", () => {

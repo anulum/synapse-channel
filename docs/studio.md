@@ -150,6 +150,8 @@ multi-principal access file, list its explicit principal IDs instead.
 A dashboard read capability alone does not grant mirror disclosure. Revocation
 is checked before reading and again before returning data. Existing
 dashboard-access version-one capability keys are unchanged.
+The same list governs the cockpit's Fleet mirror scope: only an observer on it
+is offered `scope=fleet` (see [the cockpit](cockpit.md#look-at-the-fleet-mirror)).
 
 Authenticated `/fleet-observed-access.json` reports the separate grant;
 `/fleet-observed.json` returns the complete export. Responses are no-store:
