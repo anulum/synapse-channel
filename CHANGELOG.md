@@ -118,7 +118,11 @@ execution evidence when carrying a release claim forward.
   resolves to. A name such as `localhost` could bind each address on its own
   ephemeral port and publish only the first, so a client that dialled the
   other address found nothing. The first address still receives the kernel
-  port; the rest bind that same port. A fixed port is unchanged.
+  port; the rest bind that same port. If that port is taken for a later
+  address, every socket is closed and the bind starts again from port zero,
+  eight times, and then the start fails naming the addresses and the last
+  port. A later address is never given a different port. A fixed port is
+  unchanged.
 
 ## [0.99.55] - 2026-11-18
 

@@ -1663,9 +1663,10 @@ class SynapseHub(HubConfigView):
         stop = self._prepare_serving(host, port, ssl_context)
         started = False
         services = self._service_lifetime()
-        listener = shared_port_sockets(host, int(port))
+        listener: list[socket.socket] | None = None
         adopted = 0
         try:
+            listener = shared_port_sockets(host, int(port))
             async with AsyncExitStack() as stack:
                 await stack.enter_async_context(services.monitoring())
                 if listener is None:

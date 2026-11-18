@@ -304,6 +304,14 @@ class HubConnection:
 
 
 _BACKLOG = 100
+# A bound, not a measurement. A port taken for a later address closes every
+# socket and starts again from port zero. A later address is never given a
+# different port.
+SHARED_PORT_ATTEMPTS = 8
+
+
+class SharedPortError(OSError):
+    """The name could not be bound to one port within ``SHARED_PORT_ATTEMPTS``."""
 
 
 def shared_port_sockets(host: str, port: int) -> list[socket.socket] | None:
@@ -312,7 +320,9 @@ def shared_port_sockets(host: str, port: int) -> list[socket.socket] | None:
     A fixed port is already shared by the server. Port zero is not: each
     resolved address would otherwise receive its own ephemeral port, and a
     client that dials another address of the same name would find nothing at
-    the port the hub records.
+    the port the hub records. When the received port is taken for a later
+    address, every socket opened for that attempt is closed and the bind
+    starts again from port zero.
 
     Parameters
     ----------
@@ -330,27 +340,34 @@ def shared_port_sockets(host: str, port: int) -> list[socket.socket] | None:
 
     Raises
     ------
+    SharedPortError
+        A later address could not take the received port within
+        ``SHARED_PORT_ATTEMPTS`` attempts. The message names the addresses
+        and the last port. No socket is left open.
     OSError
-        A later address could not take the port the first address received.
-        Sockets opened before that failure are closed.
+        The first address could not be bound. That failure is not retried.
     """
     if int(port) != 0:
         return None
     addresses = _unique_addresses(host, 0)
     if len(addresses) < 2:
         return None
-    opened: list[socket.socket] = []
-    try:
+    last_port = 0
+    for _attempt in range(SHARED_PORT_ATTEMPTS):
         first = _listen(addresses[0], 0)
-        opened.append(first)
+        opened = [first]
         assigned = int(first.getsockname()[1])
-        for address in addresses[1:]:
-            opened.append(_listen(address, assigned))
-    except OSError:
-        for listening in opened:
-            listening.close()
-        raise
-    return opened
+        try:
+            for address in addresses[1:]:
+                opened.append(_listen(address, assigned))
+        except OSError:
+            last_port = assigned
+            for listening in opened:
+                listening.close()
+            continue
+        return opened
+    names = " and ".join(str(sockaddr[0]) for _family, sockaddr in addresses)
+    raise SharedPortError(f"could not bind {names} on one port; last port was {last_port}")
 
 
 def _unique_addresses(host: str, port: int) -> list[tuple[int, tuple[object, ...]]]:
