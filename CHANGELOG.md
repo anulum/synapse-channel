@@ -18,6 +18,32 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.55] - 2026-11-18
+
+Core 0.99.55 lets an operator stop governed operations and seal what a stop
+listed, keeps an autonomy level per scope that a judged count raises and a
+trigger lowers, lets a component's own state change through the hub and be
+verified by its read, offers the Fleet mirror as a cockpit scope, and checks
+the token sets off the hub's serving loop.
+
+- **Stops.** `synapse operation stop` and `resume` act on a scope; `--seal`
+  seals each attempt a stop listed and records what it read back; every stop
+  reports its state and the profile it claims.
+- **Autonomy levels.** A level per scope, set by hand, raised one step on a
+  judged and recounted record, and with `--ladder` lowered in the same
+  transaction as a missed deadline, an overlong stop or an incorrect
+  acceptance.
+- **Component state.** Core applies a read row's projection; `synapse ops run
+  --hub` changes a component's own state after a second read, and
+  `synapse verify-result component` verifies it.
+- **Cockpit.** The Fleet mirror is an advisory, read-only scope for its
+  observers.
+- **Hub stability.** The per-message key set and the connect and metrics token
+  sets are checked off the serving loop.
+- **Fixes.** `synapse worker-session` raises an interrupt while the provider is
+  still running, and `synapse label`'s refresh no longer covers the agent's
+  pane.
+
 ### Added
 
 - The cockpit offers the Fleet mirror as a scope, `scope=fleet`, to a

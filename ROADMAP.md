@@ -256,6 +256,17 @@ interfaces, maturity, and release commitments.
 - Capability cards, signed advisory cards, directories, manifests, and
   evidence-preserving local routing. Cards and routing recommendations do not
   grant authority.
+- Stopping governed operations: `synapse operation stop` stops a scope and,
+  with `--seal`, seals each attempt it listed and records what it read back;
+  every stop reports its state and the profile it claims, and a resume needs
+  `operation-resume`. Autonomy levels per scope: `synapse operation level`
+  sets a scope's level, a judged and recounted record raises it one step, and
+  with `--ladder` a missed deadline, an overlong stop or an incorrect
+  acceptance lowers it in the same transaction. A component's own state is a
+  governed effect: Core applies a read row's projection, `synapse ops run
+  --hub` changes the state after a second read, and `synapse verify-result
+  component` verifies it. The cockpit offers the Fleet mirror as an advisory,
+  read-only scope to its observers. See [operations](docs/operations.md).
 
 ### Security and multi-host primitives
 
@@ -318,7 +329,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.54 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.55 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities

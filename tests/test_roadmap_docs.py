@@ -164,7 +164,15 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
         assert released_in_0_99_54 in shipped, released_in_0_99_54
         assert released_in_0_99_54 not in unreleased, released_in_0_99_54
     assert "in no release yet" in unreleased
-    assert "At 0.99.54 nothing on `main` is outside a release." in unreleased
+    for released_in_0_99_55 in (
+        "`synapse operation stop`",
+        "`synapse operation level`",
+        "`synapse verify-result component`",
+        "Fleet mirror as an advisory",
+    ):
+        assert released_in_0_99_55 in shipped, released_in_0_99_55
+        assert released_in_0_99_55 not in unreleased, released_in_0_99_55
+    assert "At 0.99.55 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:
