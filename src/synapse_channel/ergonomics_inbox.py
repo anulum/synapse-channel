@@ -45,6 +45,7 @@ class InboxOptions:
     uri: str | None = None
     token_file: str | None = None
     limit: int = 50
+    since: int | None = None
 
 
 def inbox_argv(
@@ -156,10 +157,11 @@ def _finish_inbox_options(
         raise ValueError("--limit must be an integer from 1 to 100") from None
     if not 1 <= limit <= 100:
         raise ValueError("--limit must be an integer from 1 to 100")
+    since = _since_option(source_options.get("--since"))
     if source == "hub" and project_wide:
         raise ValueError("hub inbox requires an exact identity; --project-wide is not supported")
     if source == "feed" and any(flag != "--source" for flag in source_options):
-        raise ValueError("--uri, --token-file and --limit require --source hub")
+        raise ValueError("--uri, --token-file, --limit and --since require --source hub")
     return InboxOptions(
         exact_name=exact_name,
         project_wide=project_wide,
@@ -168,7 +170,21 @@ def _finish_inbox_options(
         uri=source_options.get("--uri"),
         token_file=source_options.get("--token-file"),
         limit=limit,
+        since=since,
     )
+
+
+def _since_option(raw: str | None) -> int | None:
+    """Return an explicit hub sequence, or ``None`` when the flag is absent."""
+    if raw is None:
+        return None
+    try:
+        since = int(raw)
+    except ValueError:
+        raise ValueError("--since must be a nonnegative integer") from None
+    if since < 0 or since > 9223372036854775807:
+        raise ValueError("--since must be a nonnegative integer")
+    return since
 
 
 def parse_inbox_options(rest: Sequence[str], env: Mapping[str, str]) -> InboxOptions:
@@ -182,7 +198,7 @@ def parse_inbox_options(rest: Sequence[str], env: Mapping[str, str]) -> InboxOpt
     while index < len(tokens):
         token = tokens[index]
         flag, _, _inline = token.partition("=")
-        if flag in {"--source", "--uri", "--token-file", "--limit"}:
+        if flag in {"--source", "--uri", "--token-file", "--limit", "--since"}:
             index = _store_source_option(tokens, index, source_options)
             continue
         if token in {"--as", "--name"}:
@@ -278,6 +294,7 @@ def run_inbox(
                         token=token,
                         limit=options.limit,
                         timeout=INBOX_READY_HANG_GUARD_SECONDS,
+                        since=options.since,
                     )
                 ),
             )

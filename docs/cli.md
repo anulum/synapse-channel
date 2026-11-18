@@ -4236,11 +4236,21 @@ syn inbox
 ```
 
 Each call returns JSON with `available`, `identity`, `hub_id`, `cursor`,
-`messages`, `has_more` and `source`. Repeat while `has_more` is true, including
-pages without matching messages. A request scans at most 1,000 chat rows,
-returns 1–100 matching messages, and has a 7 MiB encoded-message budget.
-Ascending reads retain old unread messages through long gaps. A single
-message exceeding that budget refuses the read.
+`messages`, `has_more` and `source`. A first read, when no cursor is stored,
+shows the newest page and records the journal tail. `has_more` is false on
+that page. Older mail is an explicit start, which names the connected hub
+and pages forward from that sequence:
+
+```bash
+syn inbox --source hub --since 0
+```
+
+`--since` is a nonnegative journal sequence. Sequence 0 with that known hub
+is the oldest page, not the newest page. Repeat while `has_more` is true,
+including pages without matching messages. A request scans at most 1,000
+chat rows, returns 1–100 matching messages, and has a 7 MiB encoded-message
+budget. Ascending reads retain old unread messages through long gaps. A
+single message exceeding that budget refuses the read.
 
 The endpoint and exact identity select an owner-only cursor under
 `$SYN_HOME/hub-inbox-cursor/`, bound to the actual hub identity. Feed offsets

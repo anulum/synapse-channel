@@ -138,6 +138,63 @@ def test_the_hub_source_waits_for_the_named_guard(
     assert seen["timeout"] == INBOX_READY_HANG_GUARD_SECONDS
 
 
+async def test_an_explicit_start_is_not_the_absent_cursor(tmp_path: Path) -> None:
+    """Sequence 0 with a hub id pages forward. The absent cursor does not.
+
+    The newest page is only the empty hub binding. Naming the hub keeps the
+    oldest message on the first page.
+    """
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (_, uri):
+            publisher = await connect_agent("P/publisher", uri)
+            reader = await connect_agent("P/reader", uri)
+            try:
+                await publisher.agent.chat("oldest", target="P/reader")
+                await publisher.agent.chat("newest", target="P/reader")
+                await fence(publisher)
+                absent = await query(reader, limit=1)
+                assert [item["payload"] for item in absent["messages"]] == ["newest"]
+                assert absent["has_more"] is False
+                assert absent["cursor"] == journal.max_seq()
+                explicit = await query(reader, since=0, hub_id=reader.agent.hub_id, limit=1)
+                assert [item["payload"] for item in explicit["messages"]] == ["oldest"]
+                assert explicit["has_more"] is True
+            finally:
+                await close_agents(publisher, reader)
+    finally:
+        journal.close()
+
+
+async def test_since_zero_reads_forward_from_the_known_hub(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``since=0`` names the welcomed hub and returns the oldest message."""
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (_, uri):
+            publisher = await connect_agent("P/publisher", uri)
+            try:
+                await publisher.agent.chat("oldest", target="P/reader")
+                await publisher.agent.chat("newest", target="P/reader")
+                await fence(publisher)
+                code = await read_hub_inbox(
+                    uri=uri,
+                    identity="P/reader",
+                    home=tmp_path / "reader",
+                    limit=1,
+                    since=0,
+                )
+                assert code == 0
+                page = json.loads(capsys.readouterr().out)
+                assert [item["payload"] for item in page["messages"]] == ["oldest"]
+                assert page["hub_id"]
+            finally:
+                await close_agents(publisher)
+    finally:
+        journal.close()
+
+
 async def test_an_absent_cursor_reads_the_newest_page(tmp_path: Path) -> None:
     """Sequence 0 with an empty hub id returns the newest message, then the tail.
 

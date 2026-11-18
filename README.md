@@ -931,8 +931,11 @@ project-wide alias form; `$SYN_ALIASES` supplies the same standing alias list.
 For a remote hub, select `syn inbox --source hub --uri ENDPOINT` or set
 `SYN_INBOX_SOURCE=hub` for the CLI or MCP adapter. This reads authenticated
 journal pages with independent endpoint and identity cursors instead of a
-stale local feed. Repeat while `has_more` is true; an unavailable result
-is not an empty inbox. Hub mode treats aliases as exact identities and
+stale local feed. A first read with no stored cursor shows the newest page
+and records the journal tail. Older mail is an explicit start:
+`syn inbox --source hub --since 0` names the connected hub and pages
+forward from that sequence. Repeat while `has_more` is true; an unavailable
+result is not an empty inbox. Hub mode treats aliases as exact identities and
 excludes channel-tagged chat. See [remote inbox](docs/cli.md#reading-an-inbox-on-another-machine).
 On the hub side the waiter identity is protected by a **name-ownership lease**:
 the first `synapse wait`/`arm` for a name is granted an opaque token (persisted
@@ -1949,7 +1952,7 @@ an installed protected runtime or revocation fencing.
 | Classes | 1504 |
 | Wire message types | 131 |
 | CLI subcommands | 314 |
-| Test functions | 14873 |
+| Test functions | 14876 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 99 |
 | GitHub Actions workflows | 29 |

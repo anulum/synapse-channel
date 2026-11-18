@@ -100,9 +100,12 @@ execution evidence when carrying a release claim forward.
 - `syn-inbox --source hub` for an identity with no cursor reads the newest
   page and records the journal tail. It used to start at sequence 0 with at
   most 100 messages, so the first page was the oldest window of the log.
-  A stored cursor still pages forward. The connection waits 30 seconds for
-  the hub's welcome, on one attempt. Five seconds expired under load before
-  the welcome arrived, and the read failed with no close code. A welcome
+  A stored cursor still pages forward. An explicit `--since`, including
+  `--since 0`, names the known hub and pages forward from that sequence.
+  Sequence 0 with an empty hub id remains the newest page. The connection
+  waits 30 seconds for the hub's welcome, on one attempt. Five seconds
+  expired under load before the welcome arrived, and the read failed with
+  no close code. A welcome
   that never arrives still fails on that one attempt.
 
 ## [0.99.55] - 2026-11-18

@@ -474,6 +474,8 @@ and MCP reads use a local file, so a working remote hub or SSH forward does
 not prove that file is current. Use `syn inbox --source hub` with `--uri`,
 or start the MCP adapter with `SYN_INBOX_SOURCE=hub`. Both hub and reader
 must support the [durable inbox query](protocol.md#durable-inbox-query).
+A first hub read with no stored cursor shows the newest page. Older mail
+is `syn inbox --source hub --since 0`, which pages forward on the known hub.
 
 Unavailable means the connection, protocol, journal or cursor storage needs
 repair; it is not an empty inbox. If the exact identity is already connected,

@@ -1433,10 +1433,14 @@ the wire version remain unchanged:
                 "since_seq":0,"limit":50}}
 ```
 
-An initial cursor is zero with an empty hub binding. Subsequent requests
-bind the returned `hub_id` and use `cursor` as `since_seq`. Integers exclude
-booleans; `since_seq` is within SQLite's nonnegative signed 64-bit range and
-`limit` is 1–100. The requester must be the exact identity or one of its
+An initial cursor is zero with an empty hub binding. That shape is the
+newest page: at most `limit` matches from one backward window of 1,000 chat
+rows, ascending, with the cursor set to the journal tail and `has_more`
+false. Sequence 0 with a non-empty hub id is an explicit forward start and
+keeps the ascending read. The CLI sends that shape as `--since`. Subsequent
+requests bind the returned `hub_id` and use `cursor` as `since_seq`.
+Integers exclude booleans; `since_seq` is within SQLite's nonnegative signed
+64-bit range and `limit` is 1–100. The requester must be the exact identity or one of its
 recognized receive-only waiter sidecars. Identity admission applies. ACL
 enforcement requires `mailbox` on `agent:<identity>`; this does not grant
 `recall` on global history.

@@ -198,10 +198,12 @@ contract](attachments.md#recipient-granted-cross-hub-reads-wire-version-6).
 
 `hub_inbox` provides `inbox_query(identity, cursor, limit)`,
 `validate_inbox_page(response, identity, cursor, *, roles=())`, and async
-`read_hub_inbox(*, uri, identity, home, token=None, limit=50, timeout=5.0)`.
+`read_hub_inbox(*, uri, identity, home, token=None, limit=50, timeout=30.0, since=None)`.
 The reader prints one page and persists its cursor; it returns zero on
-success or one on an unavailable result. Validation raises `ValueError`
-before consuming unsupported or malformed pages.
+success or one on an unavailable result. `since=None` uses the stored
+cursor, and an absent cursor reads the newest page. An explicit `since`,
+including 0, names the known hub and pages forward. Validation raises
+`ValueError` before consuming unsupported or malformed pages.
 
 `hub_inbox_cursor` provides frozen `HubInboxCursor(hub_id="", seq=0)`,
 `hub_inbox_cursor_path(home, uri, identity)`, `load_hub_inbox_cursor(path)`

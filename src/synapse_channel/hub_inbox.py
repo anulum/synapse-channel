@@ -131,6 +131,36 @@ def validate_inbox_page(
 INBOX_READY_HANG_GUARD_SECONDS = 30.0
 
 
+def _require_read_bounds(limit: int, timeout: float, since: int | None) -> None:
+    """Refuse a page size, deadline or explicit sequence outside the contract."""
+    if (
+        type(limit) is not int
+        or not 1 <= limit <= 100
+        or not math.isfinite(timeout)
+        or timeout <= 0
+        or (
+            since is not None
+            and (type(since) is not int or since < 0 or since > 9223372036854775807)
+        )
+    ):
+        raise ValueError("invalid inbox read bounds")
+
+
+def _query_cursor(stored: HubInboxCursor, since: int | None, connected_hub: str) -> HubInboxCursor:
+    """Return the cursor to send.
+
+    An omitted sequence keeps the stored cursor, including the absent cursor
+    that asks for the newest page. An explicit sequence names the stored hub
+    when one is recorded, otherwise the hub that just welcomed this connection.
+    """
+    if since is None:
+        return stored
+    known = stored.hub_id or connected_hub
+    if not known or known == "unknown":
+        raise ValueError("explicit inbox start has no hub")
+    return HubInboxCursor(known, since)
+
+
 def _unavailable(agent: SynapseAgent) -> str:
     """Name why the inbox connection did not become ready, with the hub's close."""
     return (
@@ -166,6 +196,7 @@ async def read_hub_inbox(
     token: str | None = None,
     limit: int = 50,
     timeout: float = INBOX_READY_HANG_GUARD_SECONDS,
+    since: int | None = None,
 ) -> int:
     """Print one authenticated page and then persist its isolated local cursor.
 
@@ -185,6 +216,10 @@ async def read_hub_inbox(
         Positive welcome and response deadline in seconds. The default is
         :data:`INBOX_READY_HANG_GUARD_SECONDS`. One attempt; a missed welcome
         is a failure, not a second connection.
+    since : int or None, optional
+        Explicit journal sequence on the known hub. ``None`` uses the stored
+        cursor. Sequence 0 with that hub pages forward; it is not the absent
+        cursor.
 
     Returns
     -------
@@ -195,13 +230,7 @@ async def read_hub_inbox(
     agent: SynapseAgent | None = None
     task: asyncio.Task[None] | None = None
     try:
-        if (
-            type(limit) is not int
-            or not 1 <= limit <= 100
-            or not math.isfinite(timeout)
-            or timeout <= 0
-        ):
-            raise ValueError("invalid inbox read bounds")
+        _require_read_bounds(limit, timeout, since)
         path = hub_inbox_cursor_path(home, uri, identity)
         cursor = load_hub_inbox_cursor(path)
         request_id = uuid.uuid4().hex
@@ -223,15 +252,16 @@ async def read_hub_inbox(
         task = await register_owner(agent, timeout)
         if task is None:
             raise ValueError(_unavailable(agent))
+        query_cursor = _query_cursor(cursor, since, str(agent.hub_id or ""))
         await agent.send_message(
             MessageType.HISTORY_REQUEST,
             target="System",
             payload="durable inbox",
             request_id=request_id,
-            inbox_query=inbox_query(identity, cursor, limit),
+            inbox_query=inbox_query(identity, query_cursor, limit),
         )
         response = await asyncio.wait_for(reply, timeout=timeout)
-        page = validate_inbox_page(response, identity, cursor, roles=agent.roles)
+        page = validate_inbox_page(response, identity, query_cursor, roles=agent.roles)
         if page["hub_id"] != agent.hub_id:
             raise ValueError("inbox page does not belong to the connected hub")
         print(

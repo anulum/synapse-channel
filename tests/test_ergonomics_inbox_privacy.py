@@ -132,6 +132,12 @@ def test_inbox_name_override_is_exact_and_unknown_options_fail(
     assert len(calls) == 1
 
 
+def test_since_zero_is_an_explicit_hub_start() -> None:
+    options = ergonomics_inbox.parse_inbox_options(["--source", "hub", "--since", "0"], {})
+    assert options.since == 0
+    assert options.source == "hub"
+
+
 def test_inbox_option_parser_supports_equals_forms_and_deduplicates_aliases() -> None:
     options = ergonomics_inbox.parse_inbox_options(
         ["--name=user/terminal-23696", "--as=user/coordinator", "--as=user/coordinator"],
@@ -227,6 +233,9 @@ def test_inbox_helpers_have_a_focused_owner_and_compatibility_reexports() -> Non
         ["--uri", "ws://localhost:8876"],
         ["--token-file", "missing"],
         ["--limit", "1"],
+        ["--since", "0"],
+        ["--source", "hub", "--since", "-1"],
+        ["--source", "hub", "--since", "no"],
     ],
 )
 def test_invalid_source_options_refuse_before_reading(
