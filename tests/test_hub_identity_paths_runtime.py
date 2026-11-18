@@ -9,24 +9,80 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
-import socket
 import stat
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from websockets.asyncio.server import ServerConnection, serve
+from websockets.exceptions import ConnectionClosed
+
 from cli_e2e_helpers import free_port, run_cli
 from home_redirect import redirect_home
 
-# A cold CLI start on a loaded Windows runner once took longer than 10 s.
-# The loop still fails at once when the hub process exits, so a longer
-# wait only covers a slow start; it cannot hide a hub that crashed.
-HUB_START_SECONDS = 30.0
+# A hang guard, not a measurement. A cold CLI start on a loaded runner
+# has stayed silent past ninety seconds while the interpreter was still
+# importing. The loop still fails at once when the hub process exits, so
+# a longer wait only covers a slow start; it cannot hide a hub that
+# crashed. Readiness is the serving line from this process. A TCP accept
+# is not enough: under load another listener can own a port that was free
+# a moment earlier, and the roster query then spends its budget there.
+HUB_START_SECONDS = 180.0
+# A hang guard, not a measurement. ``who`` waits five seconds for the welcome
+# by default. Under load the hub has already accepted TCP and the welcome
+# arrives later. A hub that refuses or never welcomes still fails; this wait
+# is not a retry.
+WHO_READY_HANG_GUARD_SECONDS = 30.0
+# The process must outlast a slow interpreter start plus the welcome wait.
+# A shorter kill hides the reach failure behind a subprocess timeout.
+WHO_PROCESS_HANG_GUARD_SECONDS = 120.0
+# Past the five-second default, inside the hang guard. A revert to that
+# default makes the late-welcome registration fail.
+_LATE_WELCOME_SECONDS = 6.0
+
+
+_SERVING_MARKER = "Synapse Hub running on "
+
+
+def _uri_published_by(log_path: Path) -> str | None:
+    """Read the port this process logged after it bound, as a loopback URI."""
+    if not log_path.exists():
+        return None
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        if _SERVING_MARKER not in line:
+            continue
+        published = line.split(_SERVING_MARKER, 1)[1].strip().split()[0]
+        port = int(published.rsplit(":", 1)[1])
+        return f"ws://127.0.0.1:{port}"
+    return None
+
+
+def _served_uri(log_path: Path, process: subprocess.Popen[bytes]) -> str:
+    """Return this process's serving URI once it publishes that line.
+
+    The wait is a hang guard. A process that exits first fails at once, with
+    its log. A process that stays up and never publishes the line fails when
+    the guard ends.
+    """
+    deadline = time.monotonic() + HUB_START_SECONDS
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise AssertionError(log_path.read_text(encoding="utf-8"))
+        uri = _uri_published_by(log_path)
+        if uri is not None:
+            return uri
+        time.sleep(0.05)
+    log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    raise AssertionError(
+        f"owned CLI hub did not publish its serving line in {HUB_START_SECONDS:g} s:\n{log}"
+    )
 
 
 def hub_environment(home: Path) -> dict[str, str]:
@@ -59,11 +115,10 @@ def owned_cli_hub(
         capture_output=True,
         text=True,
         check=True,
-        timeout=10,
+        timeout=HUB_START_SECONDS,
     )
     assert Path(actual_home.stdout.strip()).resolve() == home.resolve()
-    port = free_port()
-    command = [sys.executable, "-u", "-m", "synapse_channel.cli", "hub", "--port", str(port)]
+    command = [sys.executable, "-u", "-m", "synapse_channel.cli", "hub", "--port", "0"]
     if database is not None:
         command.extend(("--db", str(database)))
     if pin_file is not None:
@@ -78,21 +133,7 @@ def owned_cli_hub(
             stderr=subprocess.STDOUT,
         )
         try:
-            deadline = time.monotonic() + HUB_START_SECONDS
-            while time.monotonic() < deadline:
-                if process.poll() is not None:
-                    raise AssertionError((home / f"{label}.log").read_text())
-                try:
-                    with socket.create_connection(("127.0.0.1", port), timeout=0.2):
-                        break
-                except OSError:
-                    time.sleep(0.05)
-            else:
-                log = (home / f"{label}.log").read_text(encoding="utf-8")
-                raise AssertionError(
-                    f"owned CLI hub did not become reachable in {HUB_START_SECONDS:g} s:\n{log}"
-                )
-            yield f"ws://127.0.0.1:{port}"
+            yield _served_uri(home / f"{label}.log", process)
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -105,8 +146,78 @@ def owned_cli_hub(
 
 def registered_pin(uri: str, home: Path, name: str) -> None:
     """Register a real signed CLI client and await its actual roster reply."""
-    reply = run_cli("who", "--name", name, uri=uri, env=hub_environment(home), cwd=home)
+    reply = run_cli(
+        "who",
+        "--name",
+        name,
+        "--ready-timeout",
+        f"{WHO_READY_HANG_GUARD_SECONDS:g}",
+        uri=uri,
+        env=hub_environment(home),
+        cwd=home,
+        timeout=WHO_PROCESS_HANG_GUARD_SECONDS,
+    )
     assert reply.ok(), reply.output
+
+
+@contextmanager
+def _roster_after_welcome(delay: float) -> Iterator[str]:
+    """Accept at once and send one roster only after the welcome delay.
+
+    The delay is how long the peer withholds the welcome. The TCP listener is
+    up before the caller connects, which is the shape a loaded hub already
+    has when the roster query starts.
+    """
+    port = free_port()
+    started = threading.Event()
+    stop = threading.Event()
+    errors: list[BaseException] = []
+
+    async def handler(websocket: ServerConnection) -> None:
+        try:
+            await asyncio.sleep(delay)
+            await websocket.send(json.dumps({"type": "welcome", "hub_id": "late-welcome"}))
+            async for raw in websocket:
+                message = json.loads(raw)
+                if isinstance(message, dict) and message.get("type") == "who_request":
+                    await websocket.send(
+                        json.dumps(
+                            {
+                                "type": "who_snapshot",
+                                "online_agents": ["P/late-welcome"],
+                                "sender": "System",
+                            }
+                        )
+                    )
+                    return
+        except ConnectionClosed:
+            return
+
+    def serve_until_stopped() -> None:
+        async def run() -> None:
+            try:
+                async with serve(handler, "127.0.0.1", port):
+                    started.set()
+                    while not stop.is_set():
+                        await asyncio.sleep(0.05)
+            except BaseException as exc:
+                errors.append(exc)
+                started.set()
+
+        asyncio.run(run())
+
+    thread = threading.Thread(target=serve_until_stopped, name="late-welcome", daemon=True)
+    thread.start()
+    if not started.wait(timeout=5):
+        stop.set()
+        raise AssertionError("the late welcome peer did not start")
+    if errors:
+        raise AssertionError(str(errors[0]))
+    try:
+        yield f"ws://127.0.0.1:{port}"
+    finally:
+        stop.set()
+        thread.join(timeout=5)
 
 
 def pin_names(path: Path) -> set[str]:
@@ -389,3 +500,42 @@ def test_later_auth_refusal_keeps_the_companion_for_a_subsequent_start(tmp_path:
     with owned_cli_hub(home, database, "after-auth-refusal") as uri:
         registered_pin(uri, home, "P/after-auth-refusal")
         assert pin_names(companion) == {"P/after-auth-refusal"}
+
+
+def test_roster_query_waits_out_a_welcome_that_misses_five_seconds(tmp_path: Path) -> None:
+    """The registration call accepts a welcome that arrives after five seconds.
+
+    Five seconds is the roster query's own default. This peer accepts at once
+    and welcomes only after six seconds, so dropping the named hang guard, or
+    putting that default back, fails the registration. The wait is one budget.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    with _roster_after_welcome(_LATE_WELCOME_SECONDS) as uri:
+        registered_pin(uri, home, "P/late-welcome")
+
+
+def test_a_peer_that_never_welcomes_fails_the_roster_query_once(tmp_path: Path) -> None:
+    """A hub that accepts and never welcomes within the budget fails once.
+
+    The short budget is explicit so the missing welcome is not waited out.
+    A second attempt would print the reach failure again. The process budget
+    only covers a slow interpreter start.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    with _roster_after_welcome(WHO_READY_HANG_GUARD_SECONDS) as uri:
+        reply = run_cli(
+            "who",
+            "--name",
+            "P/silent",
+            "--ready-timeout",
+            "0.4",
+            uri=uri,
+            env=hub_environment(home),
+            cwd=home,
+            timeout=WHO_PROCESS_HANG_GUARD_SECONDS,
+        )
+    assert not reply.ok(), reply.output
+    assert reply.output.count("Could not reach hub") == 1
+    assert "Traceback" not in reply.output
