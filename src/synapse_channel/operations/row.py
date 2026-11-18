@@ -30,6 +30,13 @@ may run also names the fingerprint of the answering executable and the digest
 of its own binding at the time it was qualified. A row whose binding changed
 since is stale and may not run.
 
+**Observation.** A row that changes or destroys state may name
+``observed_by``, the read row of the same component that observes the change.
+A row with JSON output may name ``projection_paths``, the paths Core selects
+from its output to project and digest it
+(:mod:`~synapse_channel.operations.projection`). Both are part of the
+qualified binding when set.
+
 A row is data. It is produced on the host where the component runs, and it
 grants nothing.
 """
@@ -43,6 +50,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any, Final
 
+from synapse_channel.operations.projection import MAX_PATH_LENGTH, PROJECTION_PATH
 from synapse_channel.operations.spec import (
     IDEMPOTENT,
     INTERACTIVE,
@@ -282,6 +290,8 @@ class OperationRow:
     qualified_binding: str = ""
     observed_by: str = ""
     """The read operation of the same component that observes this row's change; empty for none."""
+    projection_paths: tuple[str, ...] = ()
+    """The JSON paths Core selects from this row's output to project and digest; empty for none."""
 
     def __post_init__(self) -> None:
         """Refuse a row outside the vocabularies or with an unusable binding."""
@@ -291,6 +301,7 @@ class OperationRow:
         self._check_arguments()
         self._check_qualification()
         self._check_observer()
+        self._check_projection()
 
     def _check_texts(self) -> None:
         for field in _TOKENS:
@@ -386,6 +397,17 @@ class OperationRow:
         if not {"change", "destroy"}.intersection(self.effects):
             raise _refuse("observed_by belongs to a row that changes or destroys state")
 
+    def _check_projection(self) -> None:
+        paths = _texts(self.projection_paths, "row projection_paths", PROJECTION_PATH)
+        if not paths:
+            return
+        if self.output_mode != "json":
+            raise _refuse("projection_paths belong to json output")
+        if any(len(path) > MAX_PATH_LENGTH for path in paths) or len(set(paths)) != len(paths):
+            raise _refuse(
+                f"each projection path is at most {MAX_PATH_LENGTH} characters, named once"
+            )
+
     @property
     def key(self) -> tuple[str, ...]:
         """Return what makes this row unique, transport and variant included."""
@@ -395,7 +417,8 @@ class OperationRow:
     def binding_digest(self) -> str:
         """Return the digest of everything a qualification vouches for."""
         bound = {name: value for name, value in self.to_json().items() if name not in _UNBOUND}
-        # to_json leaves out an empty observed_by, so a row without one keeps its earlier digest.
+        # to_json leaves out an empty observed_by and empty projection_paths, so a row
+        # without them keeps its earlier digest.
         canonical = json.dumps(bound, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         return "sha256:" + hashlib.sha256(canonical.encode("ascii")).hexdigest()
 
@@ -500,8 +523,10 @@ class OperationRow:
             {**asdict(argument), "choices": list(argument.choices)} for argument in self.arguments
         ]
         data["obligations"] = [asdict(obligation) for obligation in self.obligations]
-        if not self.observed_by:
-            del data["observed_by"]
+        data["projection_paths"] = list(self.projection_paths)
+        for field in ("observed_by", "projection_paths"):
+            if not data[field]:
+                del data[field]
         return data
 
     @classmethod
@@ -524,7 +549,13 @@ class OperationRow:
                 ("obligations", CallerObligation, ()),
             ):
                 fields[name] = tuple(_built(kind, item, lists) for item in _list(fields, name))
-            for name in ("effects", "reserved_natives", "disclosures", "side_effects"):
+            for name in (
+                "effects",
+                "reserved_natives",
+                "disclosures",
+                "side_effects",
+                "projection_paths",
+            ):
                 fields[name] = tuple(_list(fields, name))
             return cls(**fields)
         except TypeError as exc:

@@ -43,7 +43,7 @@ from synapse_channel.operations.spec import OperationSpec, OperationSpecError
 from synapse_channel.operations.vocabulary import Vocabulary, packaged
 
 SCHEMA = "operation-catalogue-v3"
-"""Schema name of a catalogue whose rows may name their observing read row (``observed_by``)."""
+"""Schema name of a catalogue whose rows may name ``observed_by`` and ``projection_paths``."""
 
 PREVIOUS_SCHEMA = "operation-catalogue-v2"
 """Schema name of a catalogue without observers; still read, and written when no row has one."""
@@ -168,9 +168,10 @@ class Catalogue:
 
         The observing row is the one ``row.observed_by`` names, for the same
         host, vendor, component, version, operating system and transport. It
-        must exist, read and nothing else, print projected JSON, disclose no
-        session content and be admitted for ``fingerprint`` as any row is, so a
-        projection never observed (``unverified``) cannot verify a change.
+        must exist, read and nothing else, print projected JSON, name the
+        ``projection_paths`` Core selects, disclose no session content and be
+        admitted for ``fingerprint`` as any row is, so a projection never
+        observed (``unverified``) cannot verify a change.
 
         Raises
         ------
@@ -229,7 +230,7 @@ class Catalogue:
 
     def to_json(self) -> dict[str, object]:
         """Return the catalogue as plain data."""
-        observed = any(row.observed_by for row in self.rows())
+        observed = any(row.observed_by or row.projection_paths for row in self.rows())
         return {
             "schema": SCHEMA if observed else PREVIOUS_SCHEMA,
             "vocabulary_revision": self.vocabulary.revision,
@@ -257,8 +258,11 @@ class Catalogue:
         if not isinstance(rows, list):
             raise OperationSpecError("an operation catalogue lists its operations")
         catalogue = cls((OperationRow.from_json(row) for row in rows), vocabulary=words)
-        if data["schema"] == PREVIOUS_SCHEMA and any(row.observed_by for row in catalogue.rows()):
-            raise OperationSpecError(f"observed_by needs a catalogue of schema {SCHEMA}")
+        new_fields = any(row.observed_by or row.projection_paths for row in catalogue.rows())
+        if data["schema"] == PREVIOUS_SCHEMA and new_fields:
+            raise OperationSpecError(
+                f"observed_by and projection_paths need a catalogue of schema {SCHEMA}"
+            )
         return catalogue
 
 
@@ -361,6 +365,8 @@ def observer_refusal(found: OperationRow | None, fingerprint: str) -> str:
         return "does more than read"
     if found.output_mode != "json" or not found.output_projection:
         return "prints no projected JSON"
+    if not found.projection_paths:
+        return "names no projection paths Core can apply"
     if "session_content" in found.disclosures:
         return "discloses session content"
     return admission_refusal(found, fingerprint)

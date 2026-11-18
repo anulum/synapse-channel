@@ -213,6 +213,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "terminal_label_profile",
         ValueError,
     ),
+    "ProjectionError": (
+        "synapse_channel.operations.projection",
+        "projection_failed",
+        ValueError,
+    ),
     "SeatRegisterError": (
         "synapse_channel.native_seat_register",
         "native_seat_register",

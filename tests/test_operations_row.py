@@ -593,3 +593,32 @@ def test_a_change_row_may_name_its_observer_and_keeps_its_digest_without_one() -
     for changes, message in refused:
         with pytest.raises(OperationSpecError, match=message):
             replace(plain, **changes)
+
+
+def test_a_json_row_may_name_projection_paths_and_they_enter_its_binding() -> None:
+    plain = list_sessions()
+    projected = replace(plain, projection_paths=("sessions[].id", "sessions[].title"))
+    assert "projection_paths" not in plain.to_json()
+    assert projected.to_json()["projection_paths"] == ["sessions[].id", "sessions[].title"]
+    assert OperationRow.from_json(projected.to_json()) == projected
+    assert OperationRow.from_json(plain.to_json()).projection_paths == ()
+    assert projected.binding_digest != plain.binding_digest
+    assert (
+        qualified(plain).runnable
+        and not replace(qualified(plain), projection_paths=("sessions[].id",)).runnable
+    )
+    long_path = ".".join(["k" * 16] * 16)  # 16 keys of 16 characters: 271 characters
+    refused: list[tuple[dict[str, Any], str]] = [
+        ({"projection_paths": ("sessions..id",)}, "is not in the form it must have"),
+        ({"projection_paths": ("sessions[0]",)}, "is not in the form it must have"),
+        ({"projection_paths": ("a", "a")}, "named once"),
+        ({"projection_paths": (long_path,)}, "at most 256 characters"),
+        ({"projection_paths": ["a"]}, "is a list of at most 64 texts"),
+        ({"projection_paths": tuple(f"k{n}" for n in range(65))}, "is a list of at most 64 texts"),
+        ({"projection_paths": ("a",), "output_mode": "text", "output_schema": ""}, "json output"),
+    ]
+    for changes, message in refused:
+        with pytest.raises(OperationSpecError, match=message):
+            replace(plain, **changes)
+    with pytest.raises(OperationSpecError, match="row projection_paths is a list"):
+        OperationRow.from_json({**plain.to_json(), "projection_paths": "a"})

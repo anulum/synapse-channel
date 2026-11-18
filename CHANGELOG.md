@@ -41,6 +41,16 @@ execution evidence when carrying a release claim forward.
   its digest. A catalogue that uses the field is `operation-catalogue-v3`; one
   that does not is still written as `operation-catalogue-v2`, and both are
   read.
+- A catalogue row with JSON output may name `projection_paths`, the JSON paths
+  Core itself selects from that output (`settings.theme`, `plugins[].name`:
+  keys and `[]` only, at most 64 paths), so two identities that run the same
+  read on the same state compute the same digest:
+  `synapse_channel.operations.projection` parses the output (refusing duplicate
+  keys, `NaN`, `Infinity` and output the runner cut), selects each path in
+  array order, refuses a path the output lacks, and digests the projection as
+  Core's canonical JSON. An observing row must now name `projection_paths`.
+  The field is part of the qualified binding when set, and it also makes a
+  catalogue `operation-catalogue-v3`.
 - A component's own state is a declared effect kind: `operation_record`
   accepts `effect: component_state`, whose target names the component's
   identity (`host`, `vendor`, `component`, `component_version`, `os`,

@@ -281,7 +281,10 @@ def test_a_file_of_the_earlier_schema_is_an_inventory_that_admits_nothing() -> N
 def _observed() -> Catalogue:
     """Return a change row observed by a read row of the same component, and decoys."""
     read = list_sessions(
-        operation="setting.read", output_projection="setting-values-v1", idempotent="yes"
+        operation="setting.read",
+        output_projection="setting-values-v1",
+        projection_paths=("settings.theme",),
+        idempotent="yes",
     )
     return Catalogue(
         [
@@ -321,6 +324,7 @@ def _observed() -> Catalogue:
                 list_sessions(
                     operation="session.search",
                     output_projection="s",
+                    projection_paths=("sessions[].id",),
                     disclosures=("session_content",),
                 )
             ),
@@ -329,7 +333,17 @@ def _observed() -> Catalogue:
                     operation="model.write", effects=("change",), observed_by="model.read"
                 )
             ),
-            list_sessions(operation="model.read", output_projection="models-v1"),
+            list_sessions(
+                operation="model.read",
+                output_projection="models-v1",
+                projection_paths=("models[].name",),
+            ),
+            qualified(
+                list_sessions(
+                    operation="skill.write", effects=("change",), observed_by="skill.read"
+                )
+            ),
+            qualified(list_sessions(operation="skill.read", output_projection="t")),
             qualified(list_sessions(operation="client.write", effects=("change",))),
         ]
     )
@@ -352,6 +366,7 @@ def test_a_change_is_observed_only_by_an_admitted_projected_read_of_its_componen
         "feature.write": "which prints no projected JSON",
         "session.write": "which discloses session content",
         "model.write": "which is unverified: listed, and not run",
+        "skill.write": "which names no projection paths Core can apply",
     }
     for operation, reason in refusals.items():
         with pytest.raises(OperationRefusedError) as refused:
@@ -371,7 +386,18 @@ def test_a_catalogue_with_an_observer_is_written_and_read_as_the_new_schema() ->
     write = next(item for item in data["operations"] if item["operation"] == "setting.write")
     plain = next(item for item in data["operations"] if item["operation"] == "setting.read")
     assert write["observed_by"] == "setting.read" and "observed_by" not in plain
-    with pytest.raises(OperationSpecError, match="observed_by needs a catalogue of schema"):
+    with pytest.raises(OperationSpecError, match="projection_paths need a catalogue of schema"):
         Catalogue.from_json({**data, "schema": PREVIOUS_SCHEMA})
-    previous = Catalogue.from_json({**data, "schema": PREVIOUS_SCHEMA, "operations": [plain]})
+    bare = next(item for item in data["operations"] if item["operation"] == "feature.read")
+    assert "observed_by" not in bare and "projection_paths" not in bare
+    previous = Catalogue.from_json({**data, "schema": PREVIOUS_SCHEMA, "operations": [bare]})
     assert previous.to_json()["schema"] == PREVIOUS_SCHEMA
+
+
+def test_projection_paths_alone_make_a_catalogue_of_the_new_schema() -> None:
+    read = qualified(list_sessions(output_projection="ids", projection_paths=("sessions[].id",)))
+    data = json.loads(json.dumps(Catalogue([read]).to_json()))
+    assert data["schema"] == SCHEMA
+    assert Catalogue.from_json(data).rows() == (read,)
+    with pytest.raises(OperationSpecError, match="projection_paths need a catalogue of schema"):
+        Catalogue.from_json({**data, "schema": PREVIOUS_SCHEMA})

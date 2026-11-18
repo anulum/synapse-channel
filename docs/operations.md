@@ -72,10 +72,12 @@ never adds words, and an invocation is built from the row alone.
 | `side_effects`, `needs_restart`, `interactive`, `idempotent` | As words, and from fixed vocabularies |
 | `qualification`, `evidence`, `qualified_binding` | How well the row is known, where that is shown, and the digest of the binding that was qualified |
 | `observed_by` | Optional, on a row that changes or destroys state: the `read` operation of the same component that observes the changed object. It is part of the qualified binding when set |
+| `projection_paths` | Optional, on a row with `json` output: the paths Core selects from that output to project and digest it (below). Part of the qualified binding when set |
 
 **The observing row.** A row that names `observed_by` is observed only by a row of that name for the same host,
 vendor, component, version, operating system and transport that reads and nothing else, prints JSON with an
-`output_projection`, discloses no `session_content` and is admitted for the executable found, as any row is. A
+`output_projection`, names the `projection_paths` Core applies, discloses no `session_content` and is admitted for
+the executable found, as any row is. A
 projection that was never run (`unverified`) cannot observe a change. Otherwise the observer is refused with the
 first reason that fails. The hub path's `component_state` effect names this observer and the digest of its projected
 output.
@@ -145,6 +147,27 @@ the output can reveal whatever the effect: `session_content`, which needs its
 own scoped consent, and `credential_bearing`. Raw output that can hold
 credentials stays on the execution host: such a row is admitted only when it
 names an `output_projection`, a host-side step that removes them.
+
+**The projection Core applies.** `output_projection` names a projection for a
+person. A row with `json` output may also name `projection_paths`, which Core
+applies itself, so two identities running the same read on the same state
+compute the same digest:
+
+- a path is keys joined by `.`, each key 1 to 64 characters of
+  `[A-Za-z0-9_-]`, and a key followed by `[]` steps into every element of that
+  array, in its order (`settings.theme`, `plugins[].name`); at most 16 keys and
+  256 characters a path, and 64 paths a row, each named once. There are no
+  filters, wildcards or indexes;
+- the output is parsed as one JSON value; a duplicate key, `NaN` and
+  `Infinity` are refused, and output the runner cut at its limit gives no
+  projection;
+- the projection is an object of each path and the value it selects. A path
+  the output does not have is refused, never left empty, and so is a step into
+  something that is not an object or not an array;
+- its digest is the SHA-256 of Core's canonical JSON of that object, in 64
+  hex digits. A selected value that canonical JSON does not accept, such as a
+  number with a fraction, is refused; numbers elsewhere in the output do not
+  matter.
 
 ### What the component asks back
 
@@ -419,8 +442,8 @@ wrong kind inside a row and any name with an unregistered word.
 
 The catalogue file is plain data in the form
 `{"schema": "operation-catalogue-v3", "vocabulary_revision": 2, "operations": [...]}`. A catalogue in which no
-row names `observed_by` is written as `operation-catalogue-v2`, which earlier readers know; both are read, and a
-`v2` file whose row names an observer is refused.
+row names `observed_by` or `projection_paths` is written as `operation-catalogue-v2`, which earlier readers know;
+both are read, and a `v2` file whose row names either is refused.
 A file made with a newer vocabulary than the reader has is refused.
 
 ## Files of the earlier schema
