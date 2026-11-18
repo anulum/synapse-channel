@@ -104,6 +104,26 @@ def _validate_private_dir(target: Path, *, purpose: str) -> Path:
     return target
 
 
+def _create_missing_ancestors(directory: Path) -> None:
+    """Create ``directory`` and each missing ancestor ``0700``, the farthest first.
+
+    ``os.makedirs`` applies its ``mode`` to the last directory only; the ones it
+    creates above it take the umask's default, which under a umask of ``0002``
+    lets the group write them. Each missing directory is therefore created on
+    its own. A directory that already exists is never changed.
+    """
+    missing: list[Path] = []
+    cursor = directory
+    while not os.path.lexists(cursor):
+        missing.append(cursor)
+        cursor = cursor.parent
+    for ancestor in reversed(missing):
+        try:
+            os.mkdir(ancestor, 0o700)
+        except FileExistsError:
+            continue  # created by another process meanwhile; it is not changed
+
+
 def ensure_private_dir(
     path: str | Path,
     *,
@@ -122,9 +142,10 @@ def ensure_private_dir(
     path : str or pathlib.Path
         The private directory to materialise.
     parents : bool, optional
-        Create missing ancestors owner-only first. The strict floor still
-        applies only to the leaf — the predictable clobber target — with
-        ancestors trusted under the caller's root, as :mod:`secret_files`
+        Create missing ancestors owner-only first, each one ``0700`` whatever
+        the umask; an ancestor that already exists is not changed. The strict
+        floor still applies only to the leaf — the predictable clobber target —
+        with ancestors trusted under the caller's root, as :mod:`secret_files`
         trusts parent traversal.
     purpose : str, optional
         Human name for the directory, placed in every error (e.g. ``"machine
@@ -155,7 +176,7 @@ def ensure_private_dir(
         )
     if parents and target.parent not in (target, Path(target.anchor)):
         try:
-            os.makedirs(target.parent, mode=0o700, exist_ok=True)
+            _create_missing_ancestors(target.parent)
         except OSError as exc:
             raise PrivateDirError(
                 f"{purpose}: cannot create parents of {target}: {exc.strerror or exc}"

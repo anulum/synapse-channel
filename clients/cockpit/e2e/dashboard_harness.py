@@ -241,10 +241,10 @@ def _arm_setup(scratch: Path, stack: contextlib.AsyncExitStack) -> dict[str, Any
     (``tests/setup_host_fixture.py``), so the machine's service manager is never
     reached. ``HOME`` is the temporary home while the harness runs and the
     ``XDG_*`` directories are unset, so the executor writes its units and its
-    ledger there. The umask is CI's (0022), as the apply tests pin it: under 0002
-    the executor refuses the ``~/.local`` its own ledger creates. ``stack`` undoes
-    the patches and the umask, then stops the unit processes and the hub, when it
-    closes.
+    ledger there. The umask is pinned to CI's (0022), so the host's umask does
+    not decide the journey; the apply tests run under 0022 and 0002. ``stack``
+    undoes the patches and the umask, then stops the unit processes and the hub,
+    when it closes.
     """
     if os.environ.get("SYNAPSE_COCKPIT_E2E_SETUP") != "1":
         return {}

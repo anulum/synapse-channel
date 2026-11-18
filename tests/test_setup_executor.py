@@ -1073,6 +1073,38 @@ def test_apply_recovers_without_effect_when_a_required_directory_is_group_writab
     assert unsafe.exists()
 
 
+def test_apply_under_a_group_umask_creates_the_ledgers_parents_owner_only(
+    tmp_path: Path,
+) -> None:
+    """Under Ubuntu's umask (0002) the ledger's new ``~/.local`` does not block the effects.
+
+    The ledger sits where the command line keeps it, under ``~/.local/state``, and
+    ``~/.local`` does not exist yet. The ledger creates it, and the executor then
+    requires it private before it writes below ``~/.local/share``.
+    """
+    systemctl = _manager(tmp_path)
+    inspection = _inspection(systemctl, {"waiter": "fail"})
+    plan = build_setup_plan(_profile(), inspection)
+    authorization = _authorization(plan, nonce=f"{NONCE}_group_umask")
+    home = tmp_path / "home"
+    home.mkdir()
+    previous = os.umask(0o002)
+    try:
+        receipt = _run_apply(
+            plan,
+            authorization,
+            inspection=inspection,
+            home=home,
+            ledger=home / ".local" / "state" / "synapse-channel",
+        )
+    finally:
+        os.umask(previous)
+        _stop_manager_processes(systemctl)
+    assert receipt["outcome"] == "applied"
+    local = home / ".local"
+    assert [stat.S_IMODE(path.stat().st_mode) for path in (local, local / "state")] == [0o700] * 2
+
+
 def test_apply_recovers_without_effect_when_home_directory_is_missing(tmp_path: Path) -> None:
     systemctl = _manager(tmp_path)
     inspection = _inspection(systemctl, {"waiter": "fail"})

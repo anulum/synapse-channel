@@ -21,7 +21,7 @@ from collections.abc import Callable, Iterator
 from email.message import Message
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -68,15 +68,15 @@ def _stop_unit_processes() -> Iterator[None]:
     stop_every_host()
 
 
-@pytest.fixture(autouse=True)
-def _ci_umask() -> Iterator[None]:
-    """Run the executor under the umask CI runs it under (0022), whatever the host's.
+@pytest.fixture(autouse=True, params=[0o022, 0o002], ids=["umask0022", "umask0002"])
+def _pinned_umask(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Run each test under CI's umask (0022) and under Ubuntu's (0002), whatever the host's.
 
-    Under a umask of 0002 the executor's ledger creates ``~/.local`` writable by the group,
-    and the executor then refuses that directory before any effect. That is the command
-    line's own behaviour, reported to its owner; these tests are about the route.
+    Under 0002 the ledger's missing ``~/.local`` was once created writable by the group,
+    and the executor then refused it before any effect; the host's umask decided these
+    tests. Both are pinned so neither can hide that again.
     """
-    previous = os.umask(0o022)
+    previous = os.umask(cast(int, request.param))
     yield
     os.umask(previous)
 

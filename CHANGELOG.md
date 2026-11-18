@@ -53,6 +53,16 @@ execution evidence when carrying a release claim forward.
   configuration generation may be absent only in a refusal. An apply refused before the plan's one use
   names the plan the request named, and no generation.
 
+### Fixed
+
+- `synapse setup apply`, and the dashboard's apply, refused every change on a
+  host whose umask lets the group write (Ubuntu's default, 0002) when `~/.local`
+  did not exist yet. The setup ledger created it with the umask's mode, and the
+  executor then refused it as not private. Every private directory that
+  creates its missing parents now creates each one `0700`, whatever the umask;
+  a directory that already exists is not changed, so a group-writable
+  `~/.local` the person already has is still refused.
+
 ## [0.99.55] - 2026-11-18
 
 Core 0.99.55 lets an operator stop governed operations and seal what a stop

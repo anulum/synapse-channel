@@ -97,6 +97,50 @@ def test_creates_missing_ancestors_when_parents_requested(tmp_path: Path) -> Non
 
 
 @_POSIX_ONLY
+def test_creates_each_missing_ancestor_owner_only_under_a_group_umask(tmp_path: Path) -> None:
+    """Under Ubuntu's umask, every directory the call creates is 0700, not only the last one."""
+    target = tmp_path / "a" / "b" / "leaf"
+    previous = os.umask(0o002)
+    try:
+        ensure_private_dir(target, parents=True, purpose="nested under 0002")
+    finally:
+        os.umask(previous)
+    assert [_mode(path) for path in (tmp_path / "a", tmp_path / "a" / "b", target)] == [0o700] * 3
+
+
+@_POSIX_ONLY
+def test_an_existing_ancestor_is_not_changed(tmp_path: Path) -> None:
+    """A directory the person already has keeps its mode, even when the group may write it."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o775)
+    target = shared / "b" / "leaf"
+    ensure_private_dir(target, parents=True, purpose="under an existing directory")
+    assert [_mode(shared), _mode(shared / "b"), _mode(target)] == [0o775, 0o700, 0o700]
+
+
+@_POSIX_ONLY
+def test_an_ancestor_created_meanwhile_by_another_process_is_not_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When another process creates an ancestor first, its directory is kept as it made it."""
+    raced = tmp_path / "raced"
+    real_mkdir = os.mkdir
+
+    def create_first(path: str | os.PathLike[str], mode: int = 0o777) -> None:
+        if Path(path) == raced:
+            real_mkdir(path)
+            os.chmod(path, 0o755)  # the other process's mode, whatever this host's umask
+            raise FileExistsError(17, "File exists", os.fspath(path))
+        real_mkdir(path, mode)
+
+    monkeypatch.setattr(os, "mkdir", create_first)
+    target = raced / "b" / "leaf"
+    ensure_private_dir(target, parents=True, purpose="raced ancestor")
+    assert [_mode(raced), _mode(raced / "b"), _mode(target)] == [0o755, 0o700, 0o700]
+
+
+@_POSIX_ONLY
 def test_rejects_a_symlink_at_the_leaf(tmp_path: Path) -> None:
     real = tmp_path / "real"
     real.mkdir(mode=0o700)
@@ -190,10 +234,10 @@ def test_reports_when_the_leaf_cannot_be_created(tmp_path: Path) -> None:
 def test_reports_when_ancestors_cannot_be_created(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def refuse(path: str, mode: int = 0o777, exist_ok: bool = False) -> None:
+    def refuse(path: str | os.PathLike[str], mode: int = 0o777) -> None:
         raise OSError(13, "Permission denied")
 
-    monkeypatch.setattr(os, "makedirs", refuse)
+    monkeypatch.setattr(os, "mkdir", refuse)
     with pytest.raises(PrivateDirError, match="cannot create parents"):
         ensure_private_dir(tmp_path / "x" / "y" / "z", parents=True, purpose="blocked parents")
 
