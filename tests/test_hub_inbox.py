@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
 from pathlib import Path
 from typing import Any
@@ -18,7 +20,10 @@ import pytest
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel.core.acl import MAILBOX, MESSAGE, AclPolicy, AclRule
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.hub_connection import HubConnection
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.ergonomics_inbox import run_inbox
+from synapse_channel.hub_inbox import INBOX_READY_HANG_GUARD_SECONDS, read_hub_inbox
 from test_cli_lock_legacy_runtime import legacy_release_profile as legacy_release_profile
 
 
@@ -110,6 +115,98 @@ async def test_exact_recipients_private_channels_and_own_messages(tmp_path: Path
         journal.close()
 
 
+class _InboxName:
+    """Exact identity for one hub-source read."""
+
+    project = "P"
+    identity = "P/reader"
+
+
+def test_the_hub_source_waits_for_the_named_guard(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The hub source passes the named welcome allowance into the read."""
+    seen: dict[str, object] = {}
+
+    async def fake(**kwargs: object) -> int:
+        seen.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("synapse_channel.hub_inbox.read_hub_inbox", fake)
+    code = run_inbox(_InboxName(), ["--source", "hub"], {}, lambda _argv: 0, home=tmp_path)
+    assert code == 0
+    assert seen["timeout"] == INBOX_READY_HANG_GUARD_SECONDS
+
+
+async def test_an_absent_cursor_reads_the_newest_page(tmp_path: Path) -> None:
+    """Sequence 0 with an empty hub id returns the newest message, then the tail.
+
+    A forward scan from that same shape would return the oldest message and
+    leave the newer one on a later page.
+    """
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (_, uri):
+            publisher = await connect_agent("P/publisher", uri)
+            reader = await connect_agent("P/reader", uri)
+            try:
+                await publisher.agent.chat("oldest", target="P/reader")
+                await publisher.agent.chat("newest", target="P/reader")
+                await fence(publisher)
+                page = await query(reader, limit=1)
+                assert [item["payload"] for item in page["messages"]] == ["newest"]
+                assert page["has_more"] is False
+                assert page["cursor"] == journal.max_seq()
+                following = await query(reader, since=page["cursor"], hub_id=page["hub_id"])
+                assert following["messages"] == []
+            finally:
+                await close_agents(publisher, reader)
+    finally:
+        journal.close()
+
+
+async def test_a_welcome_past_five_seconds_still_reads_the_newest_page(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Six seconds is inside the welcome guard and still one connection.
+
+    The previous five-second allowance fails this read before the welcome.
+    """
+    original = HubConnection.send_welcome
+    armed = False
+
+    async def late(self: HubConnection, websocket: Any) -> None:
+        if armed:
+            await asyncio.sleep(6)
+        await original(self, websocket)
+
+    monkeypatch.setattr(HubConnection, "send_welcome", late)
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (_, uri):
+            publisher = await connect_agent("P/publisher", uri)
+            try:
+                await publisher.agent.chat("oldest", target="P/reader")
+                await publisher.agent.chat("newest", target="P/reader")
+                await fence(publisher)
+                armed = True
+                code = await read_hub_inbox(
+                    uri=uri,
+                    identity="P/reader",
+                    home=tmp_path / "reader",
+                    limit=1,
+                )
+                assert code == 0
+                page = json.loads(capsys.readouterr().out)
+                assert [item["payload"] for item in page["messages"]] == ["newest"]
+            finally:
+                await close_agents(publisher)
+    finally:
+        journal.close()
+
+
 async def test_page_limit_keeps_the_later_message(tmp_path: Path) -> None:
     """A full page stops and the following query returns the next message."""
     journal = EventStore(tmp_path / "hub.db")
@@ -121,7 +218,7 @@ async def test_page_limit_keeps_the_later_message(tmp_path: Path) -> None:
                 await publisher.agent.chat("first", target="P/reader")
                 await publisher.agent.chat("second", target="P/reader")
                 await fence(publisher)
-                first = await query(reader, limit=1)
+                first = await query(reader, limit=1, hub_id=reader.agent.hub_id)
                 assert first["available"] is True
                 assert [item["payload"] for item in first["messages"]] == ["first"]
                 assert first["has_more"] is True
@@ -148,12 +245,12 @@ async def test_long_gap_scans_foreign_rows_and_retains_old_unread(tmp_path: Path
                 reader = await connect_agent("P/reader", uri)
                 try:
                     first = await query(reader)
-                    assert [m["payload"] for m in first["messages"]] == ["old unread"]
-                    assert first["has_more"] is True
-                    second = await query(reader, since=first["cursor"], hub_id=first["hub_id"])
-                    assert [m["payload"] for m in second["messages"]] == ["new unread"]
-                    assert second["cursor"] > first["cursor"]
-                    assert second["has_more"] is False
+                    assert [m["payload"] for m in first["messages"]] == ["new unread"]
+                    assert first["has_more"] is False
+                    assert first["cursor"] == journal.max_seq()
+                    forward = await query(reader, since=0, hub_id=first["hub_id"])
+                    assert [m["payload"] for m in forward["messages"]] == ["old unread"]
+                    assert forward["has_more"] is True
                 finally:
                     await close_agents(reader)
             finally:
@@ -290,7 +387,7 @@ async def test_encoded_page_budget_preserves_next_row_and_refuses_oversized_mess
                 reader = await connect_agent("P/reader", uri)
                 oversized = await connect_agent("P/oversized", uri)
                 try:
-                    first = await query(reader)
+                    first = await query(reader, hub_id=reader.agent.hub_id)
                     assert len(first["messages"]) == 1
                     assert first["messages"][0]["payload"].startswith("first")
                     assert first["has_more"] is True

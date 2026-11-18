@@ -97,6 +97,13 @@ execution evidence when carrying a release claim forward.
   or in-flight push from landing after `at rest`), held at `stop requested` as
   `unsealable` for unmarked effects until another identity observes it, and
   counted towards `actor_of_scope` on `operation_resume`.
+- `syn-inbox --source hub` for an identity with no cursor reads the newest
+  page and records the journal tail. It used to start at sequence 0 with at
+  most 100 messages, so the first page was the oldest window of the log.
+  A stored cursor still pages forward. The connection waits 30 seconds for
+  the hub's welcome, on one attempt. Five seconds expired under load before
+  the welcome arrived, and the read failed with no close code. A welcome
+  that never arrives still fails on that one attempt.
 
 ## [0.99.55] - 2026-11-18
 

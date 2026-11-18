@@ -254,7 +254,10 @@ def run_inbox(
 
     if options.source == "hub":
         from synapse_channel.core.secret_files import SecretFileError, read_secret_file
-        from synapse_channel.hub_inbox import read_hub_inbox
+        from synapse_channel.hub_inbox import (
+            INBOX_READY_HANG_GUARD_SECONDS,
+            read_hub_inbox,
+        )
 
         uri = options.uri or env.get("SYNAPSE_URI", "").strip() or "ws://127.0.0.1:8876"
         token_file = options.token_file or env.get("SYNAPSE_TOKEN_FILE", "").strip()
@@ -274,6 +277,7 @@ def run_inbox(
                         home=home,
                         token=token,
                         limit=options.limit,
+                        timeout=INBOX_READY_HANG_GUARD_SECONDS,
                     )
                 ),
             )

@@ -859,6 +859,15 @@ def test_read_since_honours_limit_for_batched_walking(tmp_path: Path) -> None:
     assert [e.seq for e in nxt] == [batch[-1].seq + 1, batch[-1].seq + 2]
 
 
+def test_read_latest_returns_the_newest_rows_in_order(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    whole = store.read_all()
+    latest = store.read_latest(limit=2)
+    assert [event.seq for event in latest] == [event.seq for event in whole[-2:]]
+    assert store.read_latest(kinds=(), limit=2) == []
+    store.close()
+
+
 def test_read_since_at_the_tail_returns_empty(tmp_path: Path) -> None:
     store = _seeded(tmp_path)
     tail = store.read_all()[-1].seq

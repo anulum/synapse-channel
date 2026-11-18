@@ -36,6 +36,84 @@ INBOX_PAGE_BYTES = 7 * 1024 * 1024
 """Maximum encoded message bytes, below the client frame ceiling."""
 
 
+def _accepts(frame: dict[str, Any], identity: str, roles: tuple[str, ...]) -> bool:
+    """Return whether one chat frame belongs on this identity's inbox page."""
+    return (
+        not frame.get("channel")
+        and frame.get("sender") != identity
+        and is_recipient(str(frame.get("target") or "all"), identity, roles)
+    )
+
+
+def _keep(
+    messages: list[dict[str, Any]], message: dict[str, Any], used: int
+) -> tuple[bool, int, str]:
+    """Append ``message`` unless the page byte budget is spent."""
+    encoded = len(json.dumps(message).encode("utf-8"))
+    if used + encoded > INBOX_PAGE_BYTES:
+        error = "" if messages else "inbox message exceeds the response size limit"
+        return False, used, error
+    messages.append(message)
+    return True, used + encoded, ""
+
+
+def _forward_messages(
+    events: list[Any],
+    identity: str,
+    roles: tuple[str, ...],
+    limit: int,
+    since: int,
+) -> tuple[list[dict[str, Any]], int, str, bool]:
+    """Page forward from ``since`` and report whether later rows remain."""
+    messages: list[dict[str, Any]] = []
+    scanned = 0
+    message_bytes = 0
+    cursor = since
+    error = ""
+    for event in events[:INBOX_SCAN_LIMIT]:
+        frame = event.payload
+        if _accepts(frame, identity, roles):
+            message = {**frame, "seq": event.seq}
+            encoded_bytes = len(json.dumps(message).encode("utf-8"))
+            if message_bytes + encoded_bytes > INBOX_PAGE_BYTES:
+                if not messages:
+                    error = "inbox message exceeds the response size limit"
+                break
+            messages.append(message)
+            message_bytes += encoded_bytes
+            cursor = event.seq
+            scanned += 1
+            if len(messages) == limit:
+                break
+        else:
+            cursor = event.seq
+            scanned += 1
+    return messages, cursor, error, scanned < len(events)
+
+
+def _newest_messages(
+    events: list[Any],
+    identity: str,
+    roles: tuple[str, ...],
+    limit: int,
+    tail: int,
+) -> tuple[list[dict[str, Any]], int, str]:
+    """Keep at most ``limit`` newest matches and anchor the cursor at ``tail``."""
+    chosen: list[dict[str, Any]] = []
+    used = 0
+    error = ""
+    for event in reversed(events):
+        frame = event.payload
+        if not isinstance(frame, dict) or not _accepts(frame, identity, roles):
+            continue
+        message = {**frame, "seq": event.seq}
+        kept, used, error = _keep(chosen, message, used)
+        if not kept or len(chosen) == limit:
+            break
+    chosen.reverse()
+    return chosen, tail, error
+
+
 async def handle_inbox_query(
     hub: InboxContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
@@ -57,6 +135,8 @@ async def handle_inbox_query(
     Only self or a recognised receive-only sidecar can read this surface.
     Channel-tagged chat is excluded: private membership uses channel history.
     Cursor advancement records scanned journal rows, not model processing.
+    An absent cursor, sequence 0 and an empty hub id, returns the newest
+    matches in one backward window and anchors at the journal tail.
     """
     query = data.get("inbox_query")
     page: dict[str, Any] = {
@@ -98,40 +178,27 @@ async def handle_inbox_query(
                 error = "inbox cursor exceeds the retained journal"
             else:
                 error = ""
-                events = hub.journal.read_since(
-                    since, kinds=(EventKind.CHAT,), limit=INBOX_SCAN_LIMIT + 1
-                )
-                messages: list[dict[str, Any]] = []
-                scanned = 0
-                message_bytes = 0
-                for event in events[:INBOX_SCAN_LIMIT]:
-                    frame = event.payload
-                    if (
-                        not frame.get("channel")
-                        and frame.get("sender") != identity
-                        and is_recipient(
-                            str(frame.get("target") or "all"), identity, hub.roles_of(sender)
-                        )
-                    ):
-                        message = {**frame, "seq": event.seq}
-                        encoded_bytes = len(json.dumps(message).encode("utf-8"))
-                        if message_bytes + encoded_bytes > INBOX_PAGE_BYTES:
-                            if not messages:
-                                error = "inbox message exceeds the response size limit"
-                            break
-                        messages.append(message)
-                        message_bytes += encoded_bytes
-                        page["cursor"] = event.seq
-                        scanned += 1
-                        if len(messages) == limit:
-                            break
-                    else:
-                        page["cursor"] = event.seq
-                        scanned += 1
+                roles = hub.roles_of(sender)
+                if since == 0 and not bound_hub:
+                    tail = hub.journal.max_seq()
+                    newest = hub.journal.read_latest(
+                        kinds=(EventKind.CHAT,), limit=INBOX_SCAN_LIMIT
+                    )
+                    messages, page["cursor"], error = _newest_messages(
+                        newest, identity, roles, limit, tail
+                    )
+                    has_more = False
+                else:
+                    events = hub.journal.read_since(
+                        since, kinds=(EventKind.CHAT,), limit=INBOX_SCAN_LIMIT + 1
+                    )
+                    messages, page["cursor"], error, has_more = _forward_messages(
+                        events, identity, roles, limit, since
+                    )
                 page.update(
                     available=not bool(error),
                     messages=messages,
-                    has_more=scanned < len(events),
+                    has_more=has_more,
                 )
     if error:
         page["error"] = error

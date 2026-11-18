@@ -534,6 +534,13 @@ class EventStore:
         """Return events whose sequence is greater than a cursor, in order."""
         return self._families.reads.read_since(after_seq, kinds=kinds, limit=limit)
 
+    @inherit_documentation(EventReader.read_latest)
+    def read_latest(
+        self, *, kinds: Iterable[str] | None = None, limit: int | None = None
+    ) -> list[StoredEvent]:
+        """Return the newest matching events in ascending sequence order."""
+        return self._families.reads.read_latest(kinds=kinds, limit=limit)
+
     @inherit_documentation(EventReader.read_window)
     def read_window(
         self,

@@ -125,6 +125,12 @@ def validate_inbox_page(
     return page
 
 
+# A hang guard, not a measurement. Registration waits for the welcome.
+# Five seconds expires while a loaded hub is still welcoming, and the
+# socket then has no close frame. The read fails once; it is not retried.
+INBOX_READY_HANG_GUARD_SECONDS = 30.0
+
+
 def _unavailable(agent: SynapseAgent) -> str:
     """Name why the inbox connection did not become ready, with the hub's close."""
     return (
@@ -159,7 +165,7 @@ async def read_hub_inbox(
     home: Path,
     token: str | None = None,
     limit: int = 50,
-    timeout: float = 5.0,
+    timeout: float = INBOX_READY_HANG_GUARD_SECONDS,
 ) -> int:
     """Print one authenticated page and then persist its isolated local cursor.
 
@@ -176,7 +182,9 @@ async def read_hub_inbox(
     limit : int, optional
         Returned messages per page, from 1 to 100.
     timeout : float, optional
-        Positive connection and response deadline in seconds.
+        Positive welcome and response deadline in seconds. The default is
+        :data:`INBOX_READY_HANG_GUARD_SECONDS`. One attempt; a missed welcome
+        is a failure, not a second connection.
 
     Returns
     -------

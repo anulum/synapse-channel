@@ -142,6 +142,44 @@ class EventReader:
             rows = self.storage.connection.execute(sql, params).fetchall()
         return [self.storage.decode_event(row, True) for row in rows]
 
+    def read_latest(
+        self, *, kinds: Iterable[str] | None = None, limit: int | None = None
+    ) -> list[StoredEvent]:
+        """Return the newest matching events in ascending sequence order.
+
+        Parameters
+        ----------
+        kinds : Iterable[str] or None, optional
+            When given, restrict the result to these event kinds. An empty
+            iterable returns nothing. ``None`` includes every kind.
+        limit : int or None, optional
+            How many of the newest rows to read, floored at zero. ``None``
+            reads the whole log.
+
+        Returns
+        -------
+        list of StoredEvent
+            Matching events ordered by ascending sequence, so the last item
+            is the newest.
+        """
+        sql = "SELECT seq, ts, kind, payload FROM events"
+        params: list[Any] = []
+        if kinds is not None:
+            kind_list = [str(kind) for kind in kinds]
+            if not kind_list:
+                return []
+            sql += f" WHERE kind IN ({','.join('?' for _ in kind_list)})"
+            params.extend(kind_list)
+        sql += " ORDER BY seq DESC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(max(0, int(limit)))
+        with self.storage.lock:
+            rows = self.storage.connection.execute(sql, params).fetchall()
+        newest_first = [self.storage.decode_event(row, True) for row in rows]
+        newest_first.reverse()
+        return newest_first
+
     def read_window(
         self,
         *,
