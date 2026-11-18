@@ -800,6 +800,22 @@ the executor's own account. The `200` answers carry the outcome's receipt.
 A refusal before the plan's one use names the plan the request named and no
 generation.
 
+`GET /setup/receipts.json` reads the setup receipt chain back. Like the
+preflight, it needs `setup_plan`, so an admin's bearer:
+
+- **The list:** `{"receipts": [...], "count": n}`, the newest 100 receipts,
+  newest first; `count` is how many the chain holds.
+- **One receipt:** `?sequence=N` answers `{"receipt": {...}}`, or `404 no setup
+  receipt N`. A sequence that is not one positive integer is `400`.
+- **An unreadable chain:** `503 setup receipt chain unavailable`.
+- **Each receipt** is the chain's own document: its sequence, request, plan,
+  principal, capability, profile, generation, time, outcome and reason, each
+  effect's unit with its verdict before and after, the package and template
+  versions, and the chain's digests. It holds no bearer, nonce, path or command
+  output.
+
+The cockpit reads an apply back here before it says the change was applied.
+
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
 name) the dashboard serves thirteen feeds off the **durable event store** —
 available when the hub is down, real sequences and timestamps, behind the

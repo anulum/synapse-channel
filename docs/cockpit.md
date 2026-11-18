@@ -404,10 +404,11 @@ hub.
 
 ## Prepare a local setup without browser-side mutation
 
-Choose **setup** in the HUD, or open it from the in-product guide. The current
-assistant is deliberately read-only. It does not execute a shell, start or
-change a service, create a token, inspect the host filesystem, or enable a
-network bind.
+Choose **setup** in the HUD, or open it from the in-product guide. The
+assistant is read-only unless the dashboard serves setup to your login (see
+[Apply a setup plan from the cockpit](#apply-a-setup-plan-from-the-cockpit)).
+It does not execute a shell, start or change a service, create a token, inspect
+the host filesystem, or enable a network bind.
 
 The assistant has four steps:
 
@@ -434,9 +435,36 @@ storage, or session-storage preferences.
 !!! note
 
     A copied preview is still only a plan. Review each placeholder and file
-    permission in the terminal before running it. Capability-bound apply
-    actions require a separate backend contract and are not part of this
-    assistant.
+    permission in the terminal before running it.
+
+## Apply a setup plan from the cockpit
+
+When the dashboard serves setup (`synapse dashboard --operator --setup-apply
+--setup-receipts DIR`, see [the command line](cli.md)) and your login holds
+`setup_plan` and `setup_apply` (only an access file's admins do), the assistant
+adds an **Apply** step before **Verify**. Its header then says it applies only what you
+confirm. A peer scope never offers the step.
+
+1. **Preview the plan.** The dashboard plans the profile its preflight names
+   with the command line's own planner. The step lists each planned change,
+   its disruption and whether it can be undone, and says "the hub (process N)
+   is restarted" for a restart. A plan with a change the dashboard cannot make
+   here offers no confirmation.
+2. **Confirm and apply.** Nothing is sent until you tick the confirmation. The
+   dashboard then applies the plan once, through the command line's executor,
+   and answers with its receipt.
+3. **Read the receipt back.** The step reads the apply's receipt from the
+   dashboard's receipt chain (`/setup/receipts.json`) before it says anything:
+   - **applied** only when the chain holds an `applied` receipt whose every
+     change is `satisfied` afterwards;
+   - **nothing changed** when the host already held the profile;
+   - **refused** for a refusal, with the chain's own receipt and reason;
+   - **unknown** otherwise, including when the apply got no answer and the
+     chain shows nothing.
+
+A plan applies once. Confirming the same plan again is refused by the
+dashboard (`plan_replayed`) and shown as refused; preview a new plan instead.
+Leaving the step forgets the plan, and the dashboard lets it expire.
 
 ## Use the activity spine
 

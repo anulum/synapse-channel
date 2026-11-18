@@ -30,7 +30,22 @@ describe("parseServedSurfaces", () => {
       surfaces: [WAITS, ATTENTION],
       configured: 1,
       total: 2,
+      setup: null,
     });
+  });
+
+  it("reads whether setup is served and why not", () => {
+    const served = parseServedSurfaces({ surfaces: [], setup: { advertised: true, reason: "ready" } });
+    const unarmed = parseServedSurfaces({ surfaces: [], setup: { advertised: false, reason: "unarmed" } });
+
+    expect(served?.setup).toEqual({ advertised: true, reason: "ready" });
+    expect(unarmed?.setup).toEqual({ advertised: false, reason: "unarmed" });
+  });
+
+  it("reads a setup block that is not well formed as no block", () => {
+    for (const setup of [null, [], "ready", { advertised: "yes", reason: "ready" }, { advertised: true }]) {
+      expect(parseServedSurfaces({ surfaces: [WAITS], setup })?.setup).toBeNull();
+    }
   });
 
   it("drops each malformed row on its own", () => {
@@ -46,7 +61,7 @@ describe("parseServedSurfaces", () => {
         { ...ATTENTION, configured: "no" },
       ],
     });
-    expect(parsed).toEqual({ surfaces: [WAITS], configured: 1, total: 1 });
+    expect(parsed).toEqual({ surfaces: [WAITS], configured: 1, total: 1, setup: null });
   });
 
   it("refuses anything that is not a summary", () => {
@@ -69,7 +84,7 @@ describe("createServedSurfacesStore", () => {
 
     expect(String(fetcher.mock.calls[0]?.[0])).toBe(SERVED_SURFACES_PATH);
     expect(states.at(-1)).toEqual({
-      data: { surfaces: [ATTENTION], configured: 0, total: 1 },
+      data: { surfaces: [ATTENTION], configured: 0, total: 1, setup: null },
       status: "live",
       fetchedAt: 42,
       error: null,

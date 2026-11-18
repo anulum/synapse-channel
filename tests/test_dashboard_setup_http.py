@@ -27,6 +27,7 @@ from synapse_channel.dashboard_access import compatibility_access_policy
 from synapse_channel.dashboard_setup_contract import SetupPostureDecision, SetupPostureReason
 from synapse_channel.dashboard_setup_http import (
     SETUP_PREFLIGHT_PATH,
+    SETUP_RECEIPTS_PATH,
     SetupServing,
     hub_inspection,
     open_setup_receipts,
@@ -329,7 +330,9 @@ def test_the_command_line_arms_setup_and_names_the_preflight_and_where_its_answe
     printed = capsys.readouterr().out
     assert f"setup preflight (admin): {armed.url(SETUP_PREFLIGHT_PATH)}" in printed
     assert "whether setup is served: /capabilities.json" in printed
+    assert f"setup receipts (admin): {armed.url(SETUP_RECEIPTS_PATH)}" in printed
+    assert f"setup plan and apply (admin): POST {armed.url('/setup/plan')}, /setup/apply" in printed
     plain = cli.build_parser().parse_args(["dashboard"])
     assert (plain.setup_apply, plain.setup_receipts) == (False, None)
     assert cli_dashboard._announce(plain, armed, None) is True
-    assert "setup preflight" not in capsys.readouterr().out
+    assert "setup " not in capsys.readouterr().out

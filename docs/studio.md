@@ -298,6 +298,8 @@ separate layer.
 
 Full hub/Fleet configuration, on-demand remote compute, vendor-client control
 sequences and process lifecycle management require further qualified interfaces.
-The current local setup assistant previews commands without applying them.
+The cockpit's local setup assistant previews commands without running them. It
+applies a setup plan only where the dashboard serves setup to an admin, once per
+confirmed plan, through the command line's executor.
 The separately granted host-session view observes Linux process metadata;
 it does not control processes or qualify Windows/Linux fleet resource management.

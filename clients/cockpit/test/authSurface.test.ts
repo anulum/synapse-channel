@@ -22,7 +22,9 @@ const REQUEST_MODULES = [
   "history.ts",
   "liveTransport.ts",
   "merkleVerify.ts",
+  "operationsFeed.ts",
   "operatorActionTransport.ts",
+  "setupApply.ts",
   "snapshotStore.ts",
   "stateAt.ts",
 ] as const;

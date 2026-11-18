@@ -96,6 +96,11 @@
   border-bottom: 1px solid var(--line);
 }
 
+/* The apply step makes five; the narrow layout below keeps two columns for both. */
+.setup-steps--apply {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .setup-step {
   display: flex;
   align-items: center;
@@ -459,4 +464,101 @@
   color: var(--ink);
   font: var(--fs-small) var(--font-mono);
   overflow-wrap: anywhere;
+}
+
+/* The apply step: preview, confirm, apply once, read the receipt back. */
+.setup-apply-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.setup-apply-actions button {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink);
+  padding: 0 var(--sp-3);
+  font: 600 var(--fs-small) var(--font-display);
+  cursor: pointer;
+}
+
+.setup-apply-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.setup-apply-actions .setup-apply-go {
+  border-color: var(--now);
+  background: var(--now);
+  color: var(--panel);
+}
+
+.setup-apply-confirm {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.setup-apply-plan,
+.setup-apply-answer {
+  margin-top: var(--sp-4);
+}
+
+.setup-apply-plan h4,
+.setup-apply-answer h4 {
+  margin: 0 0 var(--sp-2);
+  font-family: var(--font-display);
+}
+
+.setup-apply-list {
+  display: grid;
+  gap: var(--sp-1);
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup-apply-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--abyss);
+}
+
+.setup-apply-row span {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.setup-apply-row code,
+.setup-apply-receipt code {
+  color: var(--ink);
+  font: var(--fs-small) var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.setup-apply-answer .setup-status {
+  display: inline-block;
+  margin: var(--sp-2) 0;
+  border-radius: var(--radius);
+  white-space: normal;
+}
+
+.setup-status--applied,
+.setup-status--unchanged {
+  color: var(--sev-ok-text);
+}
+
+.setup-status--refused {
+  color: var(--sev-crit-text);
+}
+
+.setup-status--unknown {
+  color: var(--warn);
 }

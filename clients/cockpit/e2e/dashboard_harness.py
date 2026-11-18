@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import importlib
 import json
 import os
@@ -19,10 +20,14 @@ import sys
 import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import ModuleType
+from typing import Any
 
 from peer_hub import observed_peer_hub
 from websockets.asyncio.client import connect
 
+import synapse_channel.dashboard_setup_http as setup_http
+import synapse_channel.dashboard_setup_writes as setup_writes
 from synapse_channel.core.approvals import format_approval_note
 from synapse_channel.core.attention import project_hub_attention
 from synapse_channel.core.attention_store import sync_evidence
@@ -31,7 +36,11 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind, record_finding, record_operator_relay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import DashboardServer, start_dashboard_server
+from synapse_channel.dashboard_setup_apply_http import SetupApplyBindings
 from synapse_channel.observed_peers import ObservedPeerSpec
+
+TESTS = Path(__file__).resolve().parents[3] / "tests"
+"""The repository's ``tests`` folder; its fixtures are imported only when a journey asks."""
 
 HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 18765
@@ -212,8 +221,58 @@ async def _journal_operations(path: Path) -> None:
     path : pathlib.Path
         The event store the harness's hub then journals to; it must not exist yet.
     """
-    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tests"))
-    await importlib.import_module("operation_report_store").journal_every_state_async(path)
+    await _tests_module("operation_report_store").journal_every_state_async(path)
+
+
+def _tests_module(name: str) -> ModuleType:
+    """Import one module of the repository's ``tests`` folder, put on the path once."""
+    if str(TESTS) not in sys.path:
+        sys.path.insert(0, str(TESTS))
+    return importlib.import_module(name)
+
+
+def _arm_setup(scratch: Path, stack: contextlib.AsyncExitStack) -> dict[str, Any]:
+    """Arm setup on a temporary host when the setup journey asks, and return the start's options.
+
+    The dashboard then plans and applies setup on ``scratch/setup``: a temporary
+    home and unit directory and the fake ``systemctl`` of the executor's own
+    tests, holding a sleeping process as the running hub the plan restarts. The
+    dashboard's inspection and the executor's own read that host
+    (``tests/setup_host_fixture.py``), so the machine's service manager is never
+    reached. ``HOME`` is the temporary home while the harness runs and the
+    ``XDG_*`` directories are unset, so the executor writes its units and its
+    ledger there. The umask is CI's (0022), as the apply tests pin it: under 0002
+    the executor refuses the ``~/.local`` its own ledger creates. ``stack`` undoes
+    the patches and the umask, then stops the unit processes and the hub, when it
+    closes.
+    """
+    if os.environ.get("SYNAPSE_COCKPIT_E2E_SETUP") != "1":
+        return {}
+    import pytest  # the setup journey's patches; no other journey needs pytest
+
+    stack.callback(os.umask, os.umask(0o022))  # before the host's first directory
+    hosts = _tests_module("setup_host_fixture")
+    hub = stack.enter_context(_tests_module("test_setup_executor")._process())
+    root = scratch / "setup"
+    root.mkdir()
+    host = hosts.Host(root, {"hub": "fail"}, hub_pid=hub.pid)
+    host.run_hub(hub.pid)
+    stack.callback(host.stop_units)
+
+    async def inspect(profile: Any, **_options: Any) -> dict[str, object]:
+        """Read the temporary host, as the command line's inspection would read a real one."""
+        inspection: dict[str, object] = host.inspect(profile)
+        return inspection
+
+    patches = pytest.MonkeyPatch()
+    stack.callback(patches.undo)
+    patches.setenv("HOME", str(host.home))
+    for name in ("XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"):
+        patches.delenv(name, raising=False)
+    patches.setattr(setup_http, "inspect_setup", inspect)
+    bindings = functools.partial(SetupApplyBindings, inspection_runner=host.executor_inspect)
+    patches.setattr(setup_writes, "SetupApplyBindings", bindings)
+    return {"setup_apply": True, "setup_receipts": host.receipts}
 
 
 def _scope_groups(scratch: Path) -> Path | None:
@@ -300,6 +359,7 @@ def _dashboard(
     observed: tuple[ObservedPeerSpec, ...],
     access_file: Path,
     mirror: tuple[Path, Path] | None,
+    setup: dict[str, Any],
 ) -> DashboardServer:
     """Start the read-gated operator dashboard on the hub, observing ``observed``."""
     return start_dashboard_server(
@@ -322,6 +382,7 @@ def _dashboard(
         observed_timeout=2.0,
         fleet_observed_file=None if mirror is None else mirror[0],
         fleet_observed_access_file=None if mirror is None else mirror[1],
+        **setup,
     )
 
 
@@ -359,8 +420,9 @@ async def _serve() -> None:
         observer = f"{DASHBOARD_NAME}-observed"
         observed = await peers.enter_async_context(observed_peer_hub(scratch_path, HOST, observer))
         mirror = _fleet_mirror(scratch_path)
+        setup = _arm_setup(scratch_path, peers)
         dashboard = _dashboard(
-            hub_uri, dashboard_port, scratch_path, dist, observed, access_file, mirror
+            hub_uri, dashboard_port, scratch_path, dist, observed, access_file, mirror, setup
         )
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()

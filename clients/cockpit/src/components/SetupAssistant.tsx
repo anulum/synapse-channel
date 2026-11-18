@@ -4,13 +4,14 @@
 // © Code 2020–2026 Miroslav Šotek. All rights reserved.
 // ORCID: 0009-0009-3560-0851
 // Contact: www.anulum.li | protoscience@anulum.li
-// SYNAPSE_CHANNEL — read-only local setup assistant
+// SYNAPSE_CHANNEL — local setup assistant: read-only, with an apply step where the dashboard serves setup
 
 import type { JSX, MouseEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useCockpitI18n } from "../context/CockpitI18n";
 import type { ServedSurfaces } from "../lib/servedSurfaces";
+import type { SetupApplySource } from "../lib/setupApply";
 import {
   buildSetupCommandPlan,
   deriveSetupPreflight,
@@ -20,14 +21,20 @@ import {
   type SetupEvidence,
   type SetupProfileInput,
 } from "../lib/setupAssistant";
+import { SetupApplyStep } from "./SetupApplyStep";
 
-const STEPS = ["preflight", "profile", "commands", "verify"] as const;
-type SetupStep = (typeof STEPS)[number];
+const READ_ONLY_STEPS = ["preflight", "profile", "commands", "verify"] as const;
+const APPLY_STEPS = ["preflight", "profile", "commands", "apply", "verify"] as const;
+type SetupStep = (typeof APPLY_STEPS)[number];
 
 interface SetupAssistantProps {
   readonly open: boolean;
   readonly evidence: SetupEvidence;
   readonly onClose: () => void;
+  /** Whether the login may plan and apply setup here: it holds both capabilities, outside a peer scope. */
+  readonly canApplySetup?: boolean;
+  /** The apply step's reads and writes; the cockpit's own by default. */
+  readonly applySource?: SetupApplySource;
 }
 
 const DEFAULT_PROFILE: SetupProfileInput = Object.freeze({
@@ -64,9 +71,15 @@ function ServedSurfacesPanel({ served }: { readonly served: ServedSurfaces | nul
   );
 }
 
-export function SetupAssistant({ open, evidence, onClose }: SetupAssistantProps): JSX.Element | null {
+export function SetupAssistant({
+  open,
+  evidence,
+  onClose,
+  canApplySetup = false,
+  applySource,
+}: SetupAssistantProps): JSX.Element | null {
   const { t } = useCockpitI18n();
-  const [step, setStep] = useState<SetupStep>("preflight");
+  const [chosen, setStep] = useState<SetupStep>("preflight");
   const [profile, setProfile] = useState<SetupProfileInput>(DEFAULT_PROFILE);
   const [copyState, setCopyState] = useState<{ readonly id: SetupCommand["id"]; readonly ok: boolean } | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -74,7 +87,11 @@ export function SetupAssistant({ open, evidence, onClose }: SetupAssistantProps)
   const preflight = useMemo(() => deriveSetupPreflight(evidence), [evidence]);
   const proof = useMemo(() => deriveSetupProof(evidence), [evidence]);
   const plan = useMemo(() => buildSetupCommandPlan(profile), [profile]);
-  const stepIndex = STEPS.indexOf(step);
+  // The apply step is offered only where the dashboard says it serves setup and the login may use it.
+  const offersApply = canApplySetup && evidence.served?.setup?.advertised === true;
+  const steps: readonly SetupStep[] = offersApply ? APPLY_STEPS : READ_ONLY_STEPS;
+  const step = steps.includes(chosen) ? chosen : "preflight";
+  const stepIndex = steps.indexOf(step);
 
   useEffect(() => {
     if (!open) return;
@@ -137,11 +154,11 @@ export function SetupAssistant({ open, evidence, onClose }: SetupAssistantProps)
   };
 
   const advance = (): void => {
-    const next = STEPS[stepIndex + 1];
+    const next = steps[stepIndex + 1];
     if (next !== undefined) setStep(next);
   };
   const retreat = (): void => {
-    const previous = STEPS[stepIndex - 1];
+    const previous = steps[stepIndex - 1];
     if (previous !== undefined) setStep(previous);
   };
 
@@ -157,7 +174,7 @@ export function SetupAssistant({ open, evidence, onClose }: SetupAssistantProps)
       >
         <div className="setup-assistant__head">
           <div>
-            <span className="setup-assistant__eyebrow">{t("setup.eyebrow")}</span>
+            <span className="setup-assistant__eyebrow">{t(offersApply ? "setup.eyebrowApply" : "setup.eyebrow")}</span>
             <h2 id="setup-title">{t("setup.title")}</h2>
           </div>
           <button
@@ -171,13 +188,15 @@ export function SetupAssistant({ open, evidence, onClose }: SetupAssistantProps)
           </button>
         </div>
 
-        <p id="setup-privacy" className="setup-assistant__privacy">{t("setup.localOnly")}</p>
+        <p id="setup-privacy" className="setup-assistant__privacy">
+          {t(offersApply ? "setup.localOnlyApply" : "setup.localOnly")}
+        </p>
         <p className="visually-hidden" aria-live="polite">
-          {t("setup.progress", { current: stepIndex + 1, total: STEPS.length })}
+          {t("setup.progress", { current: stepIndex + 1, total: steps.length })}
         </p>
 
-        <nav className="setup-steps" aria-label={t("setup.progress", { current: stepIndex + 1, total: STEPS.length })}>
-          {STEPS.map((candidate, index) => (
+        <nav className={offersApply ? "setup-steps setup-steps--apply" : "setup-steps"} aria-label={t("setup.progress", { current: stepIndex + 1, total: steps.length })}>
+          {steps.map((candidate, index) => (
             <button
               key={candidate}
               type="button"
@@ -299,6 +318,8 @@ export function SetupAssistant({ open, evidence, onClose }: SetupAssistantProps)
             </section>
           )}
 
+          {step === "apply" && <SetupApplyStep {...(applySource === undefined ? {} : { source: applySource })} />}
+
           {step === "verify" && (
             <section aria-labelledby="setup-verify-title">
               <h3 id="setup-verify-title">{t("setup.verify.title")}</h3>
@@ -323,7 +344,7 @@ export function SetupAssistant({ open, evidence, onClose }: SetupAssistantProps)
 
         <footer className="setup-assistant__foot">
           <button type="button" onClick={retreat} disabled={stepIndex === 0}>{t("setup.back")}</button>
-          {stepIndex < STEPS.length - 1 ? (
+          {stepIndex < steps.length - 1 ? (
             <button type="button" className="setup-assistant__next" onClick={advance} disabled={!plan.ok && stepIndex >= 1}>
               {t("setup.next")}
             </button>

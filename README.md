@@ -1906,7 +1906,7 @@ an installed protected runtime or revocation fencing.
 | `dashboard_setup_writes`, `dashboard_setup_write_http` | The setup writes behind one entry, and what they share: the bounded request, the caller admitted before anything is recorded, and the receipt. |
 | `dashboard_setup_apply_http` | `POST /setup/apply`: one issued plan applied once through the command line's executor, its plan rebuilt and checked first, with an `authorised` receipt before any effect and the outcome's after a fresh inspection. |
 | `dashboard_setup_plan_http` | `POST /setup/plan`: one setup plan bound to the command line's plan by its digest, a one-use nonce, and a receipt for every answer to a known caller. |
-| `dashboard_setup_http` | Whether one dashboard start serves setup (`--setup-apply`, `--setup-receipts`), and its read-only `/setup/preflight.json`: the command line's inspection, projected without anything it measured. |
+| `dashboard_setup_http` | Whether one dashboard start serves setup (`--setup-apply`, `--setup-receipts`), and its two reads: `/setup/preflight.json`, the command line's inspection projected without anything it measured, and `/setup/receipts.json`, the setup receipt chain, newest first or one by sequence. |
 | `pane_wake` | Staged wake preparation and submission through `agent_tmux.inject_wake`, with verified pane binding and retry state. |
 | `agent_pane_state` | Provider marker precedence, submit readiness, staged-hint observations and opt-in native input readiness, used by the `agent_tmux` facade. |
 | `opencode_composer`, `opencode_composer_files`, `opencode_composer_probe`, `opencode_composer_startup`, `opencode_composer_state` | Opt-in [OpenCode mini input verification](docs/opencode.md#wake-a-managed-mini-terminal): private callback files, exact draft comparisons, qualified new-client startup, process-bound readback and launch-bound wake state. |
@@ -1949,7 +1949,7 @@ an installed protected runtime or revocation fencing.
 | Classes | 1504 |
 | Wire message types | 131 |
 | CLI subcommands | 314 |
-| Test functions | 14821 |
+| Test functions | 14830 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 99 |
 | GitHub Actions workflows | 29 |

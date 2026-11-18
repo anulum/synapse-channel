@@ -168,7 +168,7 @@ from synapse_channel.dashboard_setup_http import (
     UNARMED,
     Inspection,
     SetupServing,
-    setup_preflight_response,
+    setup_read_response,
 )
 from synapse_channel.dashboard_setup_writes import (
     SETUP_WRITE_PATHS,
@@ -412,8 +412,13 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if path == DASHBOARD_ACCESS_PATH:
             return access_descriptor_decision(self.access_policy, authorization)
         if path in SETUP_PATHS:
-            return setup_preflight_response(
-                authorization, self.access_policy, self.setup_serving, type(self).setup_inspection
+            return setup_read_response(
+                path,
+                urlsplit(self.path).query,
+                authorization,
+                self.access_policy,
+                self.setup_serving,
+                type(self).setup_inspection,
             )
         return None
 

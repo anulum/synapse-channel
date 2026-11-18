@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SetupAssistant } from "../../src/components/SetupAssistant";
 import { CockpitI18nProvider } from "../../src/context/CockpitI18n";
+import type { SetupApplySource } from "../../src/lib/setupApply";
 import type { SetupEvidence } from "../../src/lib/setupAssistant";
 
 const EVIDENCE: SetupEvidence = {
@@ -89,6 +90,7 @@ describe("SetupAssistant", () => {
         ],
         configured: 1,
         total: 2,
+        setup: null,
       },
     });
 
@@ -172,5 +174,81 @@ describe("SetupAssistant", () => {
     const veil = document.querySelector(".setup-veil");
     fireEvent.mouseDown(veil as Element);
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});
+
+const SERVED = { surfaces: [], configured: 0, total: 0, setup: { advertised: true, reason: "ready" } };
+const SERVES_SETUP: SetupEvidence = { ...EVIDENCE, served: SERVED };
+
+function stepNames(): string[] {
+  const nav = screen.getByRole("navigation");
+  return Array.from(nav.querySelectorAll("button"), (button) => button.textContent ?? "");
+}
+
+function renderOffering(evidence: SetupEvidence, canApplySetup: boolean, applySource?: SetupApplySource) {
+  // One close handler for every render, as the app's stable `closeSetup`: a new one would reset the step.
+  const onClose = vi.fn();
+  const tree = (given: SetupEvidence) => (
+    <CockpitI18nProvider>
+      <SetupAssistant
+        open
+        evidence={given}
+        onClose={onClose}
+        canApplySetup={canApplySetup}
+        {...(applySource === undefined ? {} : { applySource })}
+      />
+    </CockpitI18nProvider>
+  );
+  const view = render(tree(evidence));
+  return { rerender: (given: SetupEvidence) => view.rerender(tree(given)) };
+}
+
+describe("SetupAssistant apply step", () => {
+  it("is offered only where the dashboard serves setup and the login may plan and apply", () => {
+    const refused = { ...SERVES_SETUP, served: { ...SERVED, setup: { advertised: false, reason: "unarmed" } } };
+    for (const [evidence, allowed] of [
+      [SERVES_SETUP, false],
+      [refused, true],
+      [EVIDENCE, true],
+    ] as const) {
+      renderOffering(evidence, allowed);
+      expect(stepNames()).toEqual(["1Preflight", "2Profile", "3Commands", "4Verify"]);
+      expect(screen.getByText("Local setup · read only")).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it("says the assistant can change the host, and only after a confirmation, when it offers the step", () => {
+    renderOffering(SERVES_SETUP, true);
+
+    expect(stepNames()).toEqual(["1Preflight", "2Profile", "3Commands", "4Apply", "5Verify"]);
+    expect(screen.getByText("Local setup · applies only what you confirm")).toBeTruthy();
+    expect(screen.getByRole("dialog").getAttribute("aria-describedby")).toBe("setup-privacy");
+    expect(document.getElementById("setup-privacy")?.textContent).toContain(
+      "The apply step changes this host only after you confirm one plan",
+    );
+    expect(document.querySelector(".setup-steps--apply")).not.toBeNull();
+  });
+
+  it("opens the apply step with the source it is given", async () => {
+    const plan = vi.fn(async () => ({ kind: "refused", status: 404, detail: "setup not served: unarmed" }) as const);
+    renderOffering(SERVES_SETUP, true, { plan, apply: vi.fn(), readBack: vi.fn() });
+
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await userEvent.click(screen.getByRole("button", { name: "Preview the plan" }));
+
+    expect(plan).toHaveBeenCalledOnce();
+    expect((await screen.findByRole("alert")).textContent).toBe("The dashboard refused: setup not served: unarmed");
+  });
+
+  it("returns to the preflight when the step it showed is no longer offered", async () => {
+    const view = renderOffering(SERVES_SETUP, true);
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(screen.getByRole("heading", { name: "Apply on this host" })).toBeTruthy();
+
+    view.rerender(EVIDENCE);
+
+    expect(stepNames()).toHaveLength(4);
+    expect(screen.getByRole("heading", { name: "Current browser evidence" })).toBeTruthy();
   });
 });

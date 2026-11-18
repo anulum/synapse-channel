@@ -27,11 +27,26 @@ export interface ServedSurface {
   readonly configured: boolean;
 }
 
+/** Whether this start serves setup, and the first reason when it does not. */
+export interface ServedSetup {
+  readonly advertised: boolean;
+  readonly reason: string;
+}
+
 /** The whole capability summary, with counts taken from the rows themselves. */
 export interface ServedSurfaces {
   readonly surfaces: readonly ServedSurface[];
   readonly configured: number;
   readonly total: number;
+  /** The summary's `setup` block; null when it has none or it is not well formed. */
+  readonly setup: ServedSetup | null;
+}
+
+function servedSetupOf(block: unknown): ServedSetup | null {
+  if (typeof block !== "object" || block === null || Array.isArray(block)) return null;
+  const { advertised, reason } = block as Record<string, unknown>;
+  if (typeof advertised !== "boolean" || typeof reason !== "string") return null;
+  return { advertised, reason };
 }
 
 function servedSurfaceOf(entry: unknown): ServedSurface | null {
@@ -46,7 +61,8 @@ function servedSurfaceOf(entry: unknown): ServedSurface | null {
 /** Shape the summary payload; null = not a summary at all. Malformed rows are dropped. */
 export function parseServedSurfaces(raw: unknown): ServedSurfaces | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
-  const rows = (raw as Record<string, unknown>)["surfaces"];
+  const summary = raw as Record<string, unknown>;
+  const rows = summary["surfaces"];
   if (!Array.isArray(rows)) return null;
   const surfaces = rows
     .map(servedSurfaceOf)
@@ -55,6 +71,7 @@ export function parseServedSurfaces(raw: unknown): ServedSurfaces | null {
     surfaces,
     configured: surfaces.filter((surface) => surface.configured).length,
     total: surfaces.length,
+    setup: servedSetupOf(summary["setup"]),
   };
 }
 

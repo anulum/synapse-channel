@@ -97,7 +97,10 @@ export async function stop(started: Started | undefined): Promise<void> {
  * a real hub first journals one governed operation in every state the
  * operation report gives. With `fleetMirror`, the dashboard serves a Fleet
  * export and an observer list naming the operator principal alone; the list's
- * path is returned as `fleetGrants`, so a journey can change the grant.
+ * path is returned as `fleetGrants`, so a journey can change the grant. With
+ * `setup`, the dashboard serves setup to its admin on a temporary host: a
+ * temporary home and the executor tests' fake service manager, never the
+ * machine's own.
  */
 export async function startHarness(
   options: {
@@ -105,6 +108,7 @@ export async function startHarness(
     readonly scopeGroups?: boolean;
     readonly operations?: boolean;
     readonly fleetMirror?: boolean;
+    readonly setup?: boolean;
   } = {},
 ): Promise<{ readonly harness: Started; readonly url: string; readonly fleetGrants: string | null }> {
   const harness = await start("e2e/dashboard_harness.py", [], {
@@ -118,6 +122,7 @@ export async function startHarness(
     SYNAPSE_COCKPIT_E2E_SCOPE_GROUPS: options.scopeGroups === true ? "1" : "0",
     SYNAPSE_COCKPIT_E2E_OPERATIONS: options.operations === true ? "1" : "0",
     SYNAPSE_COCKPIT_E2E_FLEET_MIRROR: options.fleetMirror === true ? "1" : "0",
+    SYNAPSE_COCKPIT_E2E_SETUP: options.setup === true ? "1" : "0",
   });
   const url = /ready at (\S+)/u.exec(harness.line)?.[1];
   if (!url) {

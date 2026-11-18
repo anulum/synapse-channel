@@ -467,6 +467,7 @@ export function App(): JSX.Element {
         <SetupAssistant
           open={overlays.setupOpen}
           onClose={overlays.closeSetup}
+          canApplySetup={capabilities.setup_plan && capabilities.setup_apply && peerHub === null}
           evidence={{
             access: access.phase,
             snapshot: feeds.snap.status,

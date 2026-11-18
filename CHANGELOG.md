@@ -20,6 +20,16 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- With setup served, the cockpit's setup assistant offers an **Apply** step to a login holding
+  `setup_plan` and `setup_apply`, outside a peer scope. It previews the plan the dashboard issues (each
+  change, its disruption and reversibility, and "the hub (process N) is restarted" for a restart), applies
+  it once only after an explicit confirmation, and reads the apply's receipt back from the chain before
+  saying anything: **applied** only for an `applied` receipt whose every change is `satisfied` afterwards,
+  **refused** for a refusal, **unknown** otherwise. A replay of the same plan is refused and shown as
+  refused. The assistant's header says it applies only what is confirmed while the step is offered.
+- With setup served, `GET /setup/receipts.json` gives an admin the setup receipt chain: the newest 100
+  receipts, newest first, with the chain's `count`, or one by `?sequence=N` (404 for an unknown one, 400
+  for a malformed one, 503 for an unreadable chain).
 - With setup served, `POST /setup/apply` applies an issued plan once, through the command line's executor.
   The dashboard re-inspects the host and rebuilds the command line's plan, and takes the plan's one use only
   when that plan is still the one it was bound to. It then builds the command line's authorisation on the

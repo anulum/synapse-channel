@@ -84,8 +84,8 @@ describe("setup assistant model", () => {
 
   it("lets the dashboard's own summary decide the optional feeds over the feeds that answered", () => {
     const surface = { name: "waits", path: "/waits.json", flag: "--feeds-db" };
-    const none = { surfaces: [{ ...surface, configured: false }], configured: 0, total: 1 };
-    const one = { surfaces: [{ ...surface, configured: true }], configured: 1, total: 1 };
+    const none = { surfaces: [{ ...surface, configured: false }], configured: 0, total: 1, setup: null };
+    const one = { surfaces: [{ ...surface, configured: true }], configured: 1, total: 1, setup: null };
 
     expect(deriveSetupPreflight({ ...LIVE, served: none })[4]).toEqual({ id: "feeds", truth: "absent" });
     expect(deriveSetupProof({ ...LIVE, served: none })[4]).toEqual({ id: "feeds", verdict: "absent" });

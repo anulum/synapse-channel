@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import time
 from collections.abc import Callable, Iterator
 from email.message import Message
 from http import HTTPStatus
@@ -29,6 +30,8 @@ import setup_plan_fixture as fixture
 import synapse_channel.dashboard_setup_apply_http as apply_module
 import synapse_channel.dashboard_setup_http as setup_http
 import synapse_channel.dashboard_setup_writes as writes_module
+from setup_host_fixture import Host, stop_every_host
+from synapse_channel.cli_arm import pid_alive
 from synapse_channel.dashboard import DashboardServer
 from synapse_channel.dashboard_access_http import AccessHttpDecision
 from synapse_channel.dashboard_operator import WriteRateLimiter
@@ -40,8 +43,7 @@ from synapse_channel.dashboard_setup_apply_http import (
 from synapse_channel.dashboard_setup_contract import SetupPlan, SetupPostureDecision
 from synapse_channel.dashboard_setup_http import SetupServing
 from synapse_channel.dashboard_setup_plan_http import SetupPlanBindings, setup_plan_response
-from synapse_channel.dashboard_setup_planner import SetupPlanStore
-from synapse_channel.dashboard_setup_receipts import SetupReceipt, SetupReceiptStore
+from synapse_channel.dashboard_setup_receipts import SetupReceiptStore
 from synapse_channel.dashboard_setup_write_http import STATUS_VERDICTS, SetupWriteRequest
 from synapse_channel.dashboard_setup_writes import SetupWriteContext, setup_write_response
 from synapse_channel.setup_authorization import SetupAuthorizationError
@@ -50,78 +52,33 @@ from synapse_channel.setup_ledger import (
     SetupAuthorizationLedger,
     default_setup_ledger_dir,
 )
-from synapse_channel.setup_profiles import SetupProfile
 from test_dashboard_setup_http import TOKENS, _access_file, _fake_inspect, _receipts, _start
 from test_dashboard_setup_plan_http import ADMIN, OPERATOR, _policy
-from test_setup_executor import (
-    _manager,
-    _manager_commands,
-    _manager_state,
-    _process,
-    _stop_manager_processes,
-)
+from test_setup_executor import _manager_commands, _manager_state, _process
 
 HOST = "127.0.0.1:8765"
 ORIGIN = "http://127.0.0.1:8765"
 NOW = 1_800_000_000.0
-
-_HOSTS: list[Host] = []
-"""Every host the running test made, so its unit processes are stopped after it."""
 
 
 @pytest.fixture(autouse=True)
 def _stop_unit_processes() -> Iterator[None]:
     """Stop the processes the fake service manager started for a unit, as its own tests do."""
     yield
-    while _HOSTS:
-        _stop_manager_processes(_HOSTS.pop().systemctl)
+    stop_every_host()
 
 
-class Host:
-    """A temporary home, its fake service manager, and what the inspections see of it."""
+@pytest.fixture(autouse=True)
+def _ci_umask() -> Iterator[None]:
+    """Run the executor under the umask CI runs it under (0022), whatever the host's.
 
-    def __init__(self, tmp_path: Path, statuses: dict[str, str], *, hub_pid: int | None = None):
-        self.home = tmp_path / "home"
-        self.home.mkdir()
-        self.systemctl = _manager(tmp_path)
-        _HOSTS.append(self)
-        self.statuses = dict(statuses)
-        self.hub_pid = hub_pid
-        self.executor_statuses: dict[str, str] | None = None
-        self.executor_hub_pid: int | None = None
-        self.applied = False
-        self.after_statuses: dict[str, str] = {}
-        self.unreadable_after = False
-        self.python = fixture.PYTHON
-        self.receipts = _receipts(tmp_path)
-        self.plans = SetupPlanStore()
-        self.serving = SetupServing(
-            SetupPostureDecision(True, "ready"), self.receipts, fixture.profile(), self.plans
-        )
-
-    def inspection(self, statuses: dict[str, str], hub_pid: int | None) -> dict[str, object]:
-        return fixture.inspection(
-            statuses, hub_pid=hub_pid, systemctl=str(self.systemctl), python=self.python
-        )
-
-    def inspect(self, _profile: SetupProfile) -> dict[str, object]:
-        """The dashboard's inspection: the host as planned, and all well once the executor ran."""
-        if self.applied and self.unreadable_after:
-            raise RuntimeError("the host could not be read after the apply")
-        if self.applied:
-            return self.inspection(self.after_statuses, None)
-        return self.inspection(self.statuses, self.hub_pid)
-
-    async def executor_inspect(self, *_args: object, **_kwargs: object) -> dict[str, object]:
-        """The executor's own fresh inspection, just before its first effect."""
-        self.applied = True
-        statuses = self.statuses if self.executor_statuses is None else self.executor_statuses
-        hub_pid = self.hub_pid if self.executor_hub_pid is None else self.executor_hub_pid
-        return self.inspection(statuses, hub_pid)
-
-    def chain(self) -> tuple[SetupReceipt, ...]:
-        with SetupReceiptStore(self.receipts) as chain:
-            return chain.read_all()
+    Under a umask of 0002 the executor's ledger creates ``~/.local`` writable by the group,
+    and the executor then refuses that directory before any effect. That is the command
+    line's own behaviour, reported to its owner; these tests are about the route.
+    """
+    previous = os.umask(0o022)
+    yield
+    os.umask(previous)
 
 
 def _request(body: dict[str, object], *, token: str = ADMIN) -> SetupWriteRequest:
@@ -468,10 +425,7 @@ def test_a_hub_whose_process_changed_after_the_plan_is_drift(tmp_path: Path) -> 
 def test_a_running_hub_is_restarted_and_its_after_read_afterwards(tmp_path: Path) -> None:
     with _process() as hub:
         host = Host(tmp_path, {"hub": "fail"}, hub_pid=hub.pid)
-        state = {
-            "units": {"synapse-hub.service": {"active": True, "enabled": True, "pid": hub.pid}}
-        }
-        (host.systemctl.parent / "manager-state.json").write_text(json.dumps(state), "utf-8")
+        host.run_hub(hub.pid)
         plan = _plan(host)
 
         status, body = _apply(host, _confirm(plan))
@@ -484,6 +438,22 @@ def test_a_running_hub_is_restarted_and_its_after_read_afterwards(tmp_path: Path
     restarted = _manager_state(host.systemctl)["units"]
     assert isinstance(restarted, dict)
     assert restarted["synapse-hub.service"]["pid"] != hub.pid
+
+
+def test_the_unit_processes_an_apply_starts_are_stopped_with_its_host(tmp_path: Path) -> None:
+    host = Host(tmp_path, fixture.HUB_AND_WAITER_DOWN)
+    assert _apply(host, _confirm(_plan(host)))[0] == 200
+    units = _manager_state(host.systemctl)["units"]
+    assert isinstance(units, dict)
+    started = [int(record["pid"]) for record in units.values() if record["pid"]]
+    assert len(started) == 2 and all(pid_alive(pid) for pid in started)
+
+    stop_every_host()
+
+    deadline = time.monotonic() + 5.0
+    while any(pid_alive(pid) for pid in started) and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert not any(pid_alive(pid) for pid in started)
 
 
 def test_a_ledger_that_cannot_be_opened_is_unavailable(tmp_path: Path) -> None:

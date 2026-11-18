@@ -27,6 +27,7 @@ from synapse_channel.dashboard_setup_http import (
     SETUP_APPLY_FLAG,
     SETUP_PREFLIGHT_PATH,
     SETUP_RECEIPTS_FLAG,
+    SETUP_RECEIPTS_PATH,
 )
 from synapse_channel.observed_peers import (
     parse_observed_peer,
@@ -170,6 +171,8 @@ def _announce(args: argparse.Namespace, server: DashboardServer, cockpit_dist: P
             f"setup preflight (admin): {server.url(SETUP_PREFLIGHT_PATH)}; "
             "whether setup is served: /capabilities.json"
         )
+        print("setup receipts (admin): " + server.url(SETUP_RECEIPTS_PATH))
+        print("setup plan and apply (admin): POST " + server.url("/setup/plan") + ", /setup/apply")
     if args.reliability_db is not None:
         for label, path in _STORE_FEED_LINES:
             print(f"{label}: {server.url(path)}")
@@ -339,9 +342,11 @@ def _add_setup_arguments(dashboard: argparse.ArgumentParser) -> None:
         dest="setup_apply",
         action="store_true",
         help=(
-            "Serve setup from the dashboard: the read-only preflight of the local-single-user "
-            "profile. Needs --operator, a --dashboard-access-file whose admins then hold "
-            "setup_plan and setup_apply, a loopback bind, and --setup-receipts."
+            "Serve setup of the local-single-user profile from the dashboard to its admins: "
+            "the read-only preflight and receipt chain, and a plan applied once after a "
+            "confirmation, through the command line's executor. Needs --operator, a "
+            "--dashboard-access-file whose admins then hold setup_plan and setup_apply, a "
+            "loopback bind, and --setup-receipts."
         ),
     )
     dashboard.add_argument(

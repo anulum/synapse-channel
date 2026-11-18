@@ -19,9 +19,10 @@ them. ``/capabilities.json`` states the same decision.
 ``local-single-user`` profile with the command line's own inspection and returns
 the projection of
 :func:`~synapse_channel.dashboard_setup_planner.build_setup_preflight`, to a
-principal holding ``setup_plan`` only. ``POST /setup/plan``
-(:mod:`synapse_channel.dashboard_setup_plan_http`) issues plans into the start's
-one-use plan store.
+principal holding ``setup_plan`` only. ``GET /setup/receipts.json`` reads the
+setup receipt chain to the same principal: the newest receipts, or one by
+``?sequence=N``, each as its ``browser_projection()``. The setup writes
+(:mod:`synapse_channel.dashboard_setup_writes`) issue and apply plans.
 """
 
 from __future__ import annotations
@@ -33,11 +34,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
+from urllib.parse import parse_qs
 
 from synapse_channel.core.hub_exposure import is_loopback_host
 from synapse_channel.core.secure_path import assert_owner_only_dir_path
-from synapse_channel.dashboard_access import DashboardAccessPolicy
+from synapse_channel.dashboard_access import DashboardAccessPolicy, DashboardPrincipal
 from synapse_channel.dashboard_access_http import AccessHttpDecision
 from synapse_channel.dashboard_setup_contract import (
     SetupPosture,
@@ -52,8 +54,14 @@ from synapse_channel.setup_profiles import SetupProfile, get_setup_profile
 SETUP_PREFLIGHT_PATH: Final = "/setup/preflight.json"
 """Read-only setup preflight: the profile's requirements and their observed status."""
 
-SETUP_PATHS: Final = frozenset({SETUP_PREFLIGHT_PATH})
-"""Every setup route this dashboard can serve."""
+SETUP_RECEIPTS_PATH: Final = "/setup/receipts.json"
+"""Read-only setup receipts: the newest, or one by ``?sequence=N``."""
+
+SETUP_PATHS: Final = frozenset({SETUP_PREFLIGHT_PATH, SETUP_RECEIPTS_PATH})
+"""Every setup read this dashboard can serve."""
+
+MAX_SETUP_RECEIPTS_LISTED: Final = 100
+"""The newest receipts one list answer holds; ``count`` says how many the chain holds."""
 
 SETUP_APPLY_FLAG: Final = "--setup-apply"
 """The start flag that arms setup, beside ``--operator``."""
@@ -171,6 +179,42 @@ def setup_serving(
     return SetupServing(decision, receipts, profile, plans)
 
 
+def setup_read_response(
+    path: str,
+    query: str,
+    authorization: str | None,
+    policy: DashboardAccessPolicy,
+    serving: SetupServing,
+    inspect: Inspection,
+) -> AccessHttpDecision:
+    """Answer one setup read on ``path``, one of :data:`SETUP_PATHS`."""
+    if path == SETUP_RECEIPTS_PATH:
+        return setup_receipts_response(authorization, query, policy, serving)
+    return setup_preflight_response(authorization, policy, serving, inspect)
+
+
+_HEADERS: Final = (("Vary", "Authorization"),)
+
+
+def _reader(
+    authorization: str | None, policy: DashboardAccessPolicy, serving: SetupServing
+) -> DashboardPrincipal | AccessHttpDecision:
+    """Return the principal allowed to read setup, or the answer that refuses the read."""
+    if not serving.decision.advertised:
+        body = f"setup not served: {serving.decision.reason}".encode()
+        return AccessHttpDecision(HTTPStatus.NOT_FOUND, body, headers=_HEADERS)
+    principal = policy.resolve_credential(authorization)
+    if principal is None:
+        return AccessHttpDecision(
+            HTTPStatus.UNAUTHORIZED, b"bearer required", authenticate=True, headers=_HEADERS
+        )
+    if not principal.capabilities.setup_plan:
+        return AccessHttpDecision(
+            HTTPStatus.FORBIDDEN, b"setup_plan capability required", headers=_HEADERS
+        )
+    return principal
+
+
 def setup_preflight_response(
     authorization: str | None,
     policy: DashboardAccessPolicy,
@@ -187,25 +231,80 @@ def setup_preflight_response(
         fails; otherwise 200 with the preflight projection, which holds no path,
         no hub address and no identity.
     """
-    headers = (("Vary", "Authorization"),)
+    principal = _reader(authorization, policy, serving)
+    if isinstance(principal, AccessHttpDecision):
+        return principal
     profile = serving.profile
-    if profile is None:
-        body = f"setup not served: {serving.decision.reason}".encode()
-        return AccessHttpDecision(HTTPStatus.NOT_FOUND, body, headers=headers)
-    principal = policy.resolve_credential(authorization)
-    if principal is None:
-        return AccessHttpDecision(
-            HTTPStatus.UNAUTHORIZED, b"bearer required", authenticate=True, headers=headers
-        )
-    if not principal.capabilities.setup_plan:
-        return AccessHttpDecision(
-            HTTPStatus.FORBIDDEN, b"setup_plan capability required", headers=headers
-        )
     try:
-        inspection = inspect(profile)
+        inspection = inspect(cast(SetupProfile, profile))
     except Exception:  # any probe failure is one bounded answer, never a trace
         return AccessHttpDecision(
-            HTTPStatus.SERVICE_UNAVAILABLE, b"setup inspection unavailable", headers=headers
+            HTTPStatus.SERVICE_UNAVAILABLE, b"setup inspection unavailable", headers=_HEADERS
         )
-    body = json.dumps(build_setup_preflight(profile, inspection), sort_keys=True).encode()
-    return AccessHttpDecision(HTTPStatus.OK, body, principal, headers=headers)
+    preflight = build_setup_preflight(cast(SetupProfile, profile), inspection)
+    body = json.dumps(preflight, sort_keys=True).encode()
+    return AccessHttpDecision(HTTPStatus.OK, body, principal, headers=_HEADERS)
+
+
+def _sequence(query: str) -> int | None:
+    """Return ``?sequence=N`` as a positive integer, or ``None`` when the query names none.
+
+    Raises
+    ------
+    ValueError
+        When ``sequence`` is repeated, empty, not a decimal, or out of range.
+    """
+    values = parse_qs(query, keep_blank_values=True).get("sequence")
+    if values is None:
+        return None
+    if len(values) != 1 or not values[0].isascii() or not values[0].isdigit():
+        raise ValueError("sequence must be one positive integer")
+    number = int(values[0])
+    if not 1 <= number <= 2**53:
+        raise ValueError("sequence must be one positive integer")
+    return number
+
+
+def setup_receipts_response(
+    authorization: str | None,
+    query: str,
+    policy: DashboardAccessPolicy,
+    serving: SetupServing,
+) -> AccessHttpDecision:
+    """Answer ``GET /setup/receipts.json``, the newest receipts, or one by ``?sequence=N``.
+
+    Returns
+    -------
+    AccessHttpDecision
+        404, 401 or 403 as the preflight; 400 for a malformed ``sequence``; 503
+        when the chain cannot be read; 404 for a sequence the chain does not
+        hold; otherwise 200 with ``{"receipts": [...], "count": N}``, newest
+        first and at most :data:`MAX_SETUP_RECEIPTS_LISTED`, or
+        ``{"receipt": {...}}``.
+    """
+    principal = _reader(authorization, policy, serving)
+    if isinstance(principal, AccessHttpDecision):
+        return principal
+    try:
+        sequence = _sequence(query)
+    except ValueError as refusal:
+        return AccessHttpDecision(HTTPStatus.BAD_REQUEST, str(refusal).encode(), headers=_HEADERS)
+    try:
+        with SetupReceiptStore(cast(Path, serving.receipts)) as chain:
+            receipts = chain.read_all()
+    except (OSError, ValueError):  # the chain's errors are ValueErrors
+        body = b"setup receipt chain unavailable"
+        return AccessHttpDecision(HTTPStatus.SERVICE_UNAVAILABLE, body, headers=_HEADERS)
+    if sequence is None:
+        newest = receipts[-MAX_SETUP_RECEIPTS_LISTED:][::-1]
+        document: dict[str, object] = {
+            "receipts": [receipt.browser_projection() for receipt in newest],
+            "count": len(receipts),
+        }
+    elif sequence <= len(receipts):
+        document = {"receipt": receipts[sequence - 1].browser_projection()}
+    else:
+        body = f"no setup receipt {sequence}".encode()
+        return AccessHttpDecision(HTTPStatus.NOT_FOUND, body, headers=_HEADERS)
+    body = json.dumps(document, sort_keys=True).encode()
+    return AccessHttpDecision(HTTPStatus.OK, body, principal, headers=_HEADERS)
