@@ -172,7 +172,15 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     ):
         assert released_in_0_99_55 in shipped, released_in_0_99_55
         assert released_in_0_99_55 not in unreleased, released_in_0_99_55
-    assert "At 0.99.55 nothing on `main` is outside a release." in unreleased
+    for released_in_0_99_56 in (
+        "`POST /setup/apply`",
+        "`GET /setup/receipts.json`",
+        "`synapse wait --no-takeover`",
+        "a new tmux server keeps only a fixed set",
+    ):
+        assert released_in_0_99_56 in shipped, released_in_0_99_56
+        assert released_in_0_99_56 not in unreleased, released_in_0_99_56
+    assert "At 0.99.56 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:

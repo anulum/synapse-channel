@@ -18,18 +18,26 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
-- **A new tmux server no longer hands one seat's environment to every seat.**
-  Every session copies the server's global environment, and the first server
-  took whatever its starter had: a launcher service's `TMPDIR` and
-  `XDG_*_HOME` directories, its seat identity, and systemd's per-service keys.
-  Right after Synapse starts a server, before any session exists, it now
-  unsets every global variable except a fixed set for the user, the locale and
-  the desktop session. Without a user manager, or when the service start is
-  refused, the server is started in place and reduced the same way. Names
-  listed in `SYNAPSE_TMUX_SERVER_KEEP_ENV` are kept, so a deliberate
-  `XDG_DATA_HOME` keeps the machine key where the hub expects it. Dropped names
-  are logged at debug level, never their values. A running server is not
-  changed.
+## [0.99.56] - 2026-11-18
+
+Core 0.99.56 applies a setup plan from the dashboard, once and only after an
+explicit confirmation, with a receipt for every outcome; adds a wait that never
+displaces a live holder; keeps one seat's environment out of a new tmux server;
+reads a hub inbox from its newest page; and listens on one port for every
+address of a host name.
+
+- **Setup from the dashboard.** `POST /setup/apply` applies an issued plan once
+  through the command line's executor, after the host is inspected again;
+  `GET /setup/receipts.json` reads the receipt chain; the cockpit's setup
+  assistant offers an **Apply** step. `synapse setup apply` names a directory
+  it refuses, with its mode and one safe fix.
+- **Seats.** `synapse wait --no-takeover` registers only a free name and exits
+  `6` while a live connection holds it. A new tmux server keeps only a fixed
+  set of global variables.
+- **Fixes.** The inbox reads the newest page when no cursor is stored; a stop
+  lists every attempt that is neither sealed nor reconciled; private setup
+  directories are created `0700` whatever the umask; `synapse hub --port 0`
+  binds every address of its name to one port.
 
 ### Added
 
@@ -86,6 +94,18 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A new tmux server no longer hands one seat's environment to every seat.**
+  Every session copies the server's global environment, and the first server
+  took whatever its starter had: a launcher service's `TMPDIR` and
+  `XDG_*_HOME` directories, its seat identity, and systemd's per-service keys.
+  Right after Synapse starts a server, before any session exists, it now
+  unsets every global variable except a fixed set for the user, the locale and
+  the desktop session. Without a user manager, or when the service start is
+  refused, the server is started in place and reduced the same way. Names
+  listed in `SYNAPSE_TMUX_SERVER_KEEP_ENV` are kept, so a deliberate
+  `XDG_DATA_HOME` keeps the machine key where the hub expects it. Dropped names
+  are logged at debug level, never their values. A running server is not
+  changed.
 - `synapse setup apply`, and the dashboard's apply, refused every change on a
   host whose umask lets the group write (Ubuntu's default, 0002) when `~/.local`
   did not exist yet. The setup ledger created it with the umask's mode, and the
@@ -109,11 +129,10 @@ execution evidence when carrying a release claim forward.
   `--since 0`, names the known hub and pages forward from that sequence.
   Sequence 0 with an empty hub id remains the newest page. A caller that
   means the beginning, including an MCP inbox page with no hub id, names the
-  known hub and pages forward. The connection
-  waits 30 seconds for the hub's welcome, on one attempt. Five seconds
-  expired under load before the welcome arrived, and the read failed with
-  no close code. A welcome
-  that never arrives still fails on that one attempt.
+  known hub and pages forward. The connection waits 30 seconds for the hub's
+  welcome, on one attempt. Five seconds expired under load before the welcome
+  arrived, and the read failed with no close code. A welcome that never
+  arrives still fails on that one attempt.
 - A shared-port bind that cannot place every address on one port is a
   classified error. It remains an `OSError`, and its code is `shared_port`.
 - `synapse hub --port 0` listens on one port for every address its host name

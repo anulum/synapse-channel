@@ -114,6 +114,9 @@ interfaces, maturity, and release commitments.
   reads the chat history to answer. Antigravity CLI (`agy`) is a provider
   command like the others: the shell hook wraps it, its tmux pane takes
   directed wakes, and `synapse participant ask agy` drives it headlessly.
+  `synapse wait --no-takeover` registers only a free name and never displaces
+  a live holder, and a new tmux server keeps only a fixed set of global
+  variables, so one seat's environment does not reach the others.
 - Mail that no session will collect can be found, handed to a successor or
   closed (`synapse mailbox orphans`, `handover`, `close` and `drain`, and
   `synapse doctor --mailbox-orphans`), and mail addressed to a role waits in
@@ -239,7 +242,12 @@ interfaces, maturity, and release commitments.
   loopback, for an access file's admins): `GET /setup/preflight.json` gives
   each requirement of the command line's `local-single-user` profile, and
   `POST /setup/plan` issues a plan bound to the command line's own plan, with
-  a receipt for every answer. See the [CLI reference](docs/cli.md).
+  a receipt for every answer. `POST /setup/apply` applies an issued plan once
+  through the command line's executor after the host is inspected again,
+  `GET /setup/receipts.json` reads the receipt chain, and the cockpit's setup
+  assistant offers an Apply step only after an explicit confirmation.
+  `synapse setup apply` names a directory it refuses, with its mode and one
+  safe fix. See the [CLI reference](docs/cli.md).
 - Every dashboard write needs exactly one `Origin`, the dashboard's own
   (`http://<Host>`); a missing, repeated or foreign `Origin` is answered 403
   and relays nothing. See [cockpit](docs/cockpit.md).
@@ -329,7 +337,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.55 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.56 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities
