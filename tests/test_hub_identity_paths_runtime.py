@@ -118,7 +118,19 @@ def owned_cli_hub(
         timeout=HUB_START_SECONDS,
     )
     assert Path(actual_home.stdout.strip()).resolve() == home.resolve()
-    command = [sys.executable, "-u", "-m", "synapse_channel.cli", "hub", "--port", "0"]
+    # One loopback address: with port 0, a name such as "localhost" can resolve to
+    # both ::1 and 127.0.0.1, each bound on its own port, and the hub logs one of them.
+    command = [
+        sys.executable,
+        "-u",
+        "-m",
+        "synapse_channel.cli",
+        "hub",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "0",
+    ]
     if database is not None:
         command.extend(("--db", str(database)))
     if pin_file is not None:
