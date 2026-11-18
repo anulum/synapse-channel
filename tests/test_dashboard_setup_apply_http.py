@@ -16,7 +16,7 @@ from __future__ import annotations
 import io
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from email.message import Message
 from http import HTTPStatus
 from pathlib import Path
@@ -53,11 +53,28 @@ from synapse_channel.setup_ledger import (
 from synapse_channel.setup_profiles import SetupProfile
 from test_dashboard_setup_http import TOKENS, _access_file, _fake_inspect, _receipts, _start
 from test_dashboard_setup_plan_http import ADMIN, OPERATOR, _policy
-from test_setup_executor import _manager, _manager_commands, _manager_state, _process
+from test_setup_executor import (
+    _manager,
+    _manager_commands,
+    _manager_state,
+    _process,
+    _stop_manager_processes,
+)
 
 HOST = "127.0.0.1:8765"
 ORIGIN = "http://127.0.0.1:8765"
 NOW = 1_800_000_000.0
+
+_HOSTS: list[Host] = []
+"""Every host the running test made, so its unit processes are stopped after it."""
+
+
+@pytest.fixture(autouse=True)
+def _stop_unit_processes() -> Iterator[None]:
+    """Stop the processes the fake service manager started for a unit, as its own tests do."""
+    yield
+    while _HOSTS:
+        _stop_manager_processes(_HOSTS.pop().systemctl)
 
 
 class Host:
@@ -67,6 +84,7 @@ class Host:
         self.home = tmp_path / "home"
         self.home.mkdir()
         self.systemctl = _manager(tmp_path)
+        _HOSTS.append(self)
         self.statuses = dict(statuses)
         self.hub_pid = hub_pid
         self.executor_statuses: dict[str, str] | None = None
