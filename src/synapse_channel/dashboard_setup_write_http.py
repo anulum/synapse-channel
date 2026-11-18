@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from email.message import Message
 from http import HTTPStatus
 from pathlib import Path
-from typing import Final, cast
+from typing import Final, cast, get_args
 
 from synapse_channel import __version__
 from synapse_channel.dashboard_access import DashboardAccessPolicy, DashboardPrincipal
@@ -46,7 +46,7 @@ from synapse_channel.dashboard_setup_receipts import (
     SetupReceiptReason,
     SetupReceiptStore,
 )
-from synapse_channel.setup_contract import SETUP_SCHEMA_VERSION
+from synapse_channel.setup_contract import SETUP_SCHEMA_VERSION, SetupCheckStatus
 from synapse_channel.setup_profiles import SetupProfile
 
 SETUP_WRITE_HEADERS: Final = (("Vary", "Authorization"),)
@@ -61,13 +61,22 @@ _EFFECT_TARGETS: Final = {
 }
 """The unit each supported effect installs, as the executor names it; others name themselves."""
 
-STATUS_VERDICTS: Final[Mapping[str, SetupInspectionVerdict]] = {
-    "pass": "satisfied",
-    "warn": "unsatisfied",
-    "fail": "unsatisfied",
-    "unavailable": "unverifiable",
-}
-"""An inspection status of an effect's check, as a receipt's verdict."""
+_VERDICTS_BY_STATUS: Final[tuple[SetupInspectionVerdict, ...]] = (
+    "satisfied",
+    "unsatisfied",
+    "unsatisfied",
+    "unverifiable",
+)
+"""The verdict of each check status, in the order the command line's contract declares them."""
+
+STATUS_VERDICTS: Final[Mapping[str, SetupInspectionVerdict]] = dict(
+    zip(get_args(SetupCheckStatus), _VERDICTS_BY_STATUS, strict=True)
+)
+"""An inspection status of an effect's check, as a receipt's verdict.
+
+Built from the contract's own status list, so a status added there fails here
+at import rather than reading as an unknown verdict.
+"""
 
 
 @dataclass(frozen=True)

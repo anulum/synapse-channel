@@ -42,7 +42,7 @@ from synapse_channel.dashboard_setup_http import SetupServing
 from synapse_channel.dashboard_setup_plan_http import SetupPlanBindings, setup_plan_response
 from synapse_channel.dashboard_setup_planner import SetupPlanStore
 from synapse_channel.dashboard_setup_receipts import SetupReceipt, SetupReceiptStore
-from synapse_channel.dashboard_setup_write_http import SetupWriteRequest
+from synapse_channel.dashboard_setup_write_http import STATUS_VERDICTS, SetupWriteRequest
 from synapse_channel.dashboard_setup_writes import SetupWriteContext, setup_write_response
 from synapse_channel.setup_authorization import SetupAuthorizationError
 from synapse_channel.setup_ledger import (
@@ -602,3 +602,12 @@ def test_an_apply_without_this_dashboards_origin_is_refused_unrecorded(tmp_path:
     assert decision.status == 403
     assert decision.body == b"setup writes require this dashboard's own Origin"
     assert _outcomes(host) == [("planned", "none")]
+
+
+def test_each_check_status_reads_as_its_verdict() -> None:
+    assert dict(STATUS_VERDICTS) == {
+        "pass": "satisfied",
+        "warn": "unsatisfied",
+        "fail": "unsatisfied",
+        "unavailable": "unverifiable",
+    }
