@@ -366,3 +366,49 @@ def test_cmd_without_a_subcommand_exits_two(capsys: Any, tmp_path: Path) -> None
     )
     assert cli_agent_tmux._cmd_agent_tmux(ns) == 2
     assert "requires a subcommand" in capsys.readouterr().out
+
+
+def test_a_guarded_wait_joins_an_existing_session_and_never_starts_one(tmp_path: Path) -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "agent-tmux",
+            "wait",
+            "--identity",
+            "user/terminal-1135378",
+            "--session",
+            "synapse-user_terminal-1135378",
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            "kimi",
+            "--first-no-takeover",
+        ]
+    )
+    calls: list[str] = []
+    captured: dict[str, AgentTmuxConfig] = {}
+
+    def starter(config: AgentTmuxConfig) -> AgentTmuxWakeResult:
+        raise AssertionError("a guarded waiter never starts a session")
+
+    def status_runner(config: AgentTmuxConfig) -> AgentTmuxStatus:
+        calls.append("status")
+        return AgentTmuxStatus(
+            identity=config.identity,
+            session=config.session,
+            session_exists=False,
+            pane_command=None,
+            pane_start_command=None,
+            agent_active=False,
+            binding_valid=False,
+            binding_detail="no session",
+        )
+
+    def waiter(config: AgentTmuxConfig, **_options: Any) -> int:
+        captured["config"] = config
+        return 0
+
+    code = cli_agent_tmux._cmd_agent_tmux(
+        args, starter=starter, status_runner=status_runner, waiter=waiter
+    )
+    assert code == 1 and calls == ["status"] and not captured
+    assert cli_agent_tmux._config_from_args(args).first_no_takeover is True

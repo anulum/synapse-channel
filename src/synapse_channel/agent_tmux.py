@@ -37,7 +37,7 @@ import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
 from typing import Protocol
@@ -170,6 +170,11 @@ class AgentTmuxConfig:
     opencode_editor_readback : bool, optional
         Opt a new pinned OpenCode mini client into exact native input readback.
         Existing owner clients are never reconfigured or restarted.
+    first_no_takeover : bool, optional
+        Register the pane waiter's name without a takeover until one wait has
+        held it, so a live waiter is never displaced (see
+        :func:`_first_registration`). Such a waiter joins an existing session
+        only; it never starts one.
     """
 
     identity: str
@@ -186,6 +191,7 @@ class AgentTmuxConfig:
     pane_probe_interval: float = DEFAULT_PANE_PROBE_INTERVAL
     token_file: Path | None = None
     opencode_editor_readback: bool = False
+    first_no_takeover: bool = False
 
 
 @dataclass(frozen=True)
@@ -996,7 +1002,66 @@ def _wait_command(
         command.extend(["--token-file", str(config.token_file)])
     elif config.token:
         command.extend(["--token", config.token])
+    if config.first_no_takeover:
+        command.append("--no-takeover")
     return command
+
+
+_REGISTERED_WAIT_CODES = frozenset({0, 2, 3})
+"""``synapse wait`` codes that come only after its name was held: a message, a
+timeout, or a drop after the welcome. ``1`` (an unreachable hub) holds nothing."""
+
+NO_TAKEOVER_UNSUPPORTED_EXIT_CODE = 2
+"""Exit of a waiter whose ``synapse`` cannot wait without a takeover."""
+
+
+def _first_registration(
+    config: AgentTmuxConfig, wait_proc: subprocess.CompletedProcess[str], refusal: int
+) -> tuple[AgentTmuxConfig, subprocess.CompletedProcess[str], int]:
+    """Settle a waiter's first registration when it must not take its name over.
+
+    With ``first_no_takeover`` each wait carries ``--no-takeover`` until one of
+    them has held the name. A live connection on the name ends the waiter with
+    ``synapse wait``'s name-live code, so it displaces nothing and wakes
+    nothing. A ``synapse`` too old for the flag ends it as well, rather than
+    wait with a takeover. Once a wait has held the name, later waits re-arm with
+    a takeover as before: they meet only this waiter's own stale socket.
+
+    Returns
+    -------
+    tuple[AgentTmuxConfig, subprocess.CompletedProcess[str], int]
+        The configuration for the next wait, the wait itself, and the refusal
+        (``0`` to go on).
+    """
+    from synapse_channel.cli_messaging_wait import WAIT_NAME_LIVE_EXIT_CODE
+
+    if not config.first_no_takeover or refusal:
+        return config, wait_proc, refusal
+    who = f"agent-tmux {terminal_text(config.identity)}"
+    if wait_proc.returncode == WAIT_NAME_LIVE_EXIT_CODE:
+        print(
+            f"{who}: {pane_waiter_name(config.identity)} is held by a live connection; "
+            "nothing is taken over or woken",
+            file=sys.stderr,
+            flush=True,
+        )
+        return config, wait_proc, WAIT_NAME_LIVE_EXIT_CODE
+    stderr = wait_proc.stderr or ""
+    if (
+        wait_proc.returncode == 2
+        and "unrecognized arguments" in stderr
+        and "--no-takeover" in stderr
+    ):
+        print(
+            f"{who}: {terminal_text(config.synapse_bin)} cannot wait without a takeover; "
+            "this waiter stops rather than take the name over",
+            file=sys.stderr,
+            flush=True,
+        )
+        return config, wait_proc, NO_TAKEOVER_UNSUPPORTED_EXIT_CODE
+    if wait_proc.returncode in _REGISTERED_WAIT_CODES:
+        return replace(config, first_no_takeover=False), wait_proc, 0
+    return config, wait_proc, 0
 
 
 def _backoff_delay(
@@ -1292,8 +1357,8 @@ def wait_and_wake(
         if heartbeat is not None:
             heartbeat()
         if pending:
-            wait_proc, refusal = _pending_step(
-                config, runner=runner, sleeper=sleeper, heartbeat=heartbeat
+            config, wait_proc, refusal = _first_registration(
+                config, *_pending_step(config, runner=runner, sleeper=sleeper, heartbeat=heartbeat)
             )
             if refusal == _DELIVERED:
                 pending = False
@@ -1312,6 +1377,7 @@ def wait_and_wake(
             sleeper(backoff(consecutive_failures))
             continue
         wait_proc, refusal = _bridge_wait(config, runner=runner, heartbeat=heartbeat)
+        config, wait_proc, refusal = _first_registration(config, wait_proc, refusal)
         if refusal:
             return refusal
         # A provider-yield exit is rc=0 with the plain-passive message. Treating

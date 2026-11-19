@@ -70,6 +70,7 @@ def _config_from_args(args: argparse.Namespace) -> AgentTmuxConfig:
         submit_delay=args.submit_delay,
         pane_probe_interval=getattr(args, "pane_probe_interval", DEFAULT_PANE_PROBE_INTERVAL),
         opencode_editor_readback=getattr(args, "opencode_editor_readback", False),
+        first_no_takeover=getattr(args, "first_no_takeover", False),
     )
 
 
@@ -121,8 +122,9 @@ def _cmd_agent_tmux(
             0 if snapshot.session_exists and snapshot.binding_valid and snapshot.agent_active else 1
         )
     if args.agent_tmux_command == "wait":
-        start_result = starter(config)
-        if start_result.returncode != 0:
+        # A waiter that must not take its name over joins an existing session only.
+        start_result = None if config.first_no_takeover else starter(config)
+        if start_result is not None and start_result.returncode != 0:
             _print_wake_result(start_result)
             return start_result.returncode
         snapshot = status_runner(config)
@@ -250,6 +252,14 @@ def register_parsers(
         help=(
             "Give up after N consecutive failed waits; omit to retry the hub "
             "indefinitely with backoff (the counter resets on every wake)."
+        ),
+    )
+    wait.add_argument(
+        "--first-no-takeover",
+        action="store_true",
+        help=(
+            "Join an existing session only, and register the pane waiter's name without a "
+            "takeover until one wait has held it: exit 6 when a live waiter holds it."
         ),
     )
     wait.set_defaults(func=_cmd_agent_tmux)

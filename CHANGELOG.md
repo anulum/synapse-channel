@@ -51,6 +51,15 @@ execution evidence when carrying a release claim forward.
   command after `--`, never from the seat's name, which can name another
   provider.
 
+- **A pane waiter that never displaces a live one.** `synapse agent-tmux wait
+  --first-no-takeover` joins an existing session only, and registers the pane
+  waiter's name without a takeover until one wait has held it. A live
+  connection on the name ends it with exit 6, and it wakes nothing; a
+  `synapse` too old to wait without a takeover ends it with exit 2, rather
+  than wait with one. An unreachable hub keeps the guard; once a wait has held
+  the name, later waits re-arm with a takeover as before. A restored seat's
+  waiter starts this way.
+
 ## [0.99.58] - 2026-11-19
 
 Core 0.99.58 adds a hard-linked generation chain for conditional deployments and

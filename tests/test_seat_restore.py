@@ -310,6 +310,8 @@ def test_worker_session_restore_arms_the_waiter_with_the_holders_command(
     assert calls["restore"]["session"] == "synapse-T_seat"
     assert calls["restore"]["env"]["SYN_TMUX_PROVIDER"] == "1"
     assert calls["waiter"]["command"] == ["synapse", "seat-hold", "--", "codex"]
+    # The restored seat's waiter never displaces a live waiter of the same seat.
+    assert calls["waiter"]["first_no_takeover"] is True
     assert calls["pane"]["command"] == ["synapse", "seat-hold", "--", "codex"]
     assert calls["attach"]["session"] == "synapse-T_seat"
 
@@ -428,3 +430,23 @@ async def test_a_live_seat_is_left_alone_and_nothing_runs(
     assert not _has_session(private_tmux, "synapse-T_seat")
     markers = list(tmp_path.glob("synapse-seat-hold/T_seat.*"))
     assert [m.read_text(encoding="utf-8").split()[0] for m in markers] == ["refused"]
+
+
+def _waiter(tmp_path: Path, **guard: bool) -> list[str]:
+    return worker_session._waiter_command(
+        identity="T/seat",
+        session="synapse-T_seat",
+        cwd=tmp_path,
+        command=["synapse", "seat-hold", "--", "codex"],
+        synapse_bin="synapse",
+        tmux_bin="tmux",
+        uri="ws://127.0.0.1:8876",
+        token=None,
+        token_file=None,
+        **guard,
+    )
+
+
+def test_the_restore_waiter_command_asks_for_no_first_takeover(tmp_path: Path) -> None:
+    assert _waiter(tmp_path, first_no_takeover=True)[-1] == "--first-no-takeover"
+    assert "--first-no-takeover" not in _waiter(tmp_path)

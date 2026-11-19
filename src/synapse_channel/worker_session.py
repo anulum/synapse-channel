@@ -160,6 +160,7 @@ def _waiter_command(
     uri: str,
     token: str | None,
     token_file: str | None,
+    first_no_takeover: bool = False,
 ) -> list[str]:
     """Build the fixed waiter argument vector, preferring a token file."""
     wait_command = [
@@ -187,6 +188,8 @@ def _waiter_command(
         wait_command.extend(["--token", token])
     if uri != DEFAULT_HUB_URI:
         wait_command.extend(["--uri", uri])
+    if first_no_takeover:
+        wait_command.append("--first-no-takeover")
     return wait_command
 
 
@@ -212,8 +215,13 @@ def _start_tmux_waiter(
     token: str | None,
     token_file: str | None = None,
     env: Mapping[str, str],
+    first_no_takeover: bool = False,
 ) -> None:
-    """Start the persistent directed waiter for a provider tmux session."""
+    """Start the persistent directed waiter for a provider tmux session.
+
+    ``first_no_takeover`` makes the waiter join the session only and never
+    displace a live waiter of the same seat.
+    """
     pidfile, logfile = _waiter_paths(identity, env)
     if _pid_is_alive(pidfile):
         return
@@ -230,6 +238,7 @@ def _start_tmux_waiter(
                 uri=uri,
                 token=token,
                 token_file=token_file,
+                first_no_takeover=first_no_takeover,
             ),
             env=dict(env),
             stdin=subprocess.DEVNULL,
@@ -490,6 +499,7 @@ def _launch_restored_worker(
             token=token,
             token_file=token_file,
             env=env,
+            first_no_takeover=True,
         )
         return _attach_tmux_session(session=resolved, tmux_bin=tmux_bin, env=env)
 

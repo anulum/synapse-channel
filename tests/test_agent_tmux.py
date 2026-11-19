@@ -21,11 +21,13 @@ from fixtures.agent_tmux_provider_screens import PROVIDER_SCREENS
 from synapse_channel.agent_tmux import (
     BINDING_REFUSAL_EXIT_CODE,
     DEFAULT_AGENT_PANE_COMMANDS,
+    NO_TAKEOVER_UNSUPPORTED_EXIT_CODE,
     AgentTmuxConfig,
     _backoff_delay,
     _bounded_native_command,
     _pane_is_safe_for_submit,
     _provider_family,
+    _wait_command,
     agent_binary,
     build_wake_prompt,
     inject_wake,
@@ -1403,3 +1405,109 @@ def test_native_startup_commands_never_take_a_replacement_environment(tmp_path: 
     assert not marker.exists()
     completed = _bounded_native_command(["touch", str(marker)], capture_output=True, text=True)
     assert completed.returncode == 0 and marker.exists()
+
+
+# --- a waiter that must not take its name over -------------------------------------
+
+
+def _guarded(tmp_path: Path) -> AgentTmuxConfig:
+    return replace(_config(tmp_path), first_no_takeover=True)
+
+
+def _waits(runner: RecordingRunner) -> list[list[str]]:
+    return [call for call in runner.calls if call[:2] == ["synapse", "wait"]]
+
+
+def test_a_guarded_waiter_meeting_a_live_name_takes_nothing_over_and_wakes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runner = RecordingRunner([_result(["synapse", "wait"], 6)])
+
+    assert wait_and_wake(_guarded(tmp_path), runner=runner, sleeper=RecordingSleeper()) == 6
+
+    assert [call[-1] for call in _waits(runner)] == ["--no-takeover"]
+    assert runner.calls == _waits(runner)  # no probe, no injection
+    assert "is held by a live connection; nothing is taken over or woken" in (
+        capsys.readouterr().err
+    )
+
+
+def test_a_guarded_waiter_takes_over_again_once_a_wait_has_held_its_name(
+    tmp_path: Path,
+) -> None:
+    runner = RecordingRunner(
+        [
+            _result(["synapse", "wait"], 1),  # an unreachable hub holds nothing
+            _result(["synapse", "wait"], 3),  # dropped after the welcome: the name was held
+            _result(["synapse", "wait"], 0, "sender: wake\n"),
+            _result(["tmux", "send-keys"], 0),
+        ]
+    )
+
+    result = wait_and_wake(
+        _guarded(tmp_path), runner=runner, max_wakes=1, sleeper=RecordingSleeper()
+    )
+
+    assert result == 0
+    assert ["--no-takeover" in call for call in _waits(runner)] == [True, True, False]
+
+
+def test_a_guarded_waiter_stops_when_its_synapse_cannot_wait_without_takeover(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    refusal = "synapse: error: unrecognized arguments: --no-takeover\n"
+    runner = RecordingRunner([_result(["synapse", "wait"], 2, "", refusal)])
+
+    result = wait_and_wake(_guarded(tmp_path), runner=runner, sleeper=RecordingSleeper())
+
+    assert result == NO_TAKEOVER_UNSUPPORTED_EXIT_CODE == 2
+    assert len(_waits(runner)) == 1 and runner.calls == _waits(runner)
+    assert "cannot wait without a takeover; this waiter stops" in capsys.readouterr().err
+
+
+def test_a_guarded_pending_wake_is_not_delivered_past_a_live_name(tmp_path: Path) -> None:
+    config = _guarded(tmp_path)
+    registry_path(config).write_text(
+        json.dumps(
+            {
+                "identity": config.identity,
+                "session": config.session,
+                "cwd": str(config.cwd),
+                "pending_wake": True,
+                "pending_since": 100.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "has-session"], 0),
+            _result(["tmux", "display-message"], 0, "codex\tcodex\n"),
+            _result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["update"]),
+            _result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["update"]),
+            _result(["synapse", "wait"], 6),
+        ]
+    )
+
+    assert wait_and_wake(config, runner=runner, sleeper=RecordingSleeper()) == 6
+    assert [call[-1] for call in _waits(runner)] == ["--no-takeover"]
+    assert not [call for call in runner.calls if call[1] == "send-keys"]
+
+
+def test_an_unguarded_waiter_never_asks_for_no_takeover(tmp_path: Path) -> None:
+    runner = RecordingRunner([_result(["synapse", "wait"], 6)])
+    # Without the guard a 6 is an ordinary failed wait: retried, never a stop.
+    result = wait_and_wake(
+        _config(tmp_path), runner=runner, sleeper=RecordingSleeper(), max_wait_failures=1
+    )
+    assert result == 6
+    assert not any("--no-takeover" in call for call in _waits(runner))
+
+
+def test_the_guarded_wait_command_is_one_synapse_accepts(tmp_path: Path) -> None:
+    from synapse_channel.cli import build_parser
+
+    command = _wait_command(_guarded(tmp_path))
+    args = build_parser().parse_args(command[1:])
+    assert args.no_takeover is True
+    assert args.name == "SYNAPSE-CHANNEL/codex-main-pane-rx"
