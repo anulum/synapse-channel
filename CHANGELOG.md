@@ -18,6 +18,19 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+- **One live holder per seat.** `synapse seat-hold --identity ID --nonce N --
+  <agent>` holds the seat's dedicated name, `<identity>-seat`, for the agent's
+  whole lifetime, and starts the agent only once the hub has accepted it. The
+  name is registered without a takeover and without an ownership-lease token,
+  so a live seat is never displaced and a second copy is refused (exit 75). On
+  Linux the agent is the holder's child with a parent-death signal, so it never
+  outlives its holder; it runs in its own process group, which the holder
+  signals when it ends. A dropped connection is registered again without a
+  takeover, and a refusal that outlasts the hub's keepalive window ends the
+  seat. A private marker named by the nonce reports `ready`, `refused`,
+  `unavailable`, `unsupported` or `failed`; an agent that cannot be started with
+  its fence is never run (exit 70). Other platforms are refused by name.
+
 ## [0.99.58] - 2026-11-19
 
 Core 0.99.58 adds a hard-linked generation chain for conditional deployments and
