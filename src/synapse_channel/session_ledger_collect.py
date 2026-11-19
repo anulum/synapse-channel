@@ -37,7 +37,7 @@ import re
 import sqlite3
 import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import time
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -312,13 +312,20 @@ def _session_facts(tmux_bin: str, runner: Runner, session: str) -> dict[str, Any
     return {**env, "label": {"focus": focus, "now": None, "state": None}}
 
 
-def _started_at(proc: Proc, proc_root: Path, now: Callable[[], float] = time.time) -> str | None:
-    """Return when a process started, from its start ticks and the time since boot."""
+def _started_at(proc: Proc, proc_root: Path) -> str | None:
+    """Return when a process started, from the boot time and its start ticks.
+
+    The boot time is the kernel's ``btime`` in ``/proc/stat``, fixed for a
+    boot, so the same process always gets the same start time. The clock and
+    the time since boot, read a moment apart, would not: their sum can cross a
+    second between two snapshots.
+    """
     try:
-        since_boot = float((proc_root / "uptime").read_text(encoding="ascii").split()[0])
-    except (OSError, ValueError, IndexError):
+        lines = (proc_root / "stat").read_text(encoding="ascii").splitlines()
+        btime = next(int(line.split()[1]) for line in lines if line.startswith("btime "))
+    except (OSError, ValueError, IndexError, StopIteration):
         return None
-    started = now() - since_boot + proc.start_ticks / os.sysconf("SC_CLK_TCK")
+    started = btime + proc.start_ticks / os.sysconf("SC_CLK_TCK")
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started))
 
 

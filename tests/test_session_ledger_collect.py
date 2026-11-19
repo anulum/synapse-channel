@@ -95,7 +95,7 @@ def _proc_root(tmp_path: Path) -> Path:
     root = tmp_path / "proc"
     (root / "500").mkdir(parents=True, exist_ok=True)
     (root / "500" / "environ").write_bytes(b"SYN_IDENTITY=P/c\0SYN_PROJECT=P\0SECRET_TOKEN=no\0")
-    (root / "uptime").write_text("1000.0 0\n", encoding="ascii")
+    (root / "stat").write_text("cpu  1 2 3\nbtime 1700000000\nprocesses 9\n", encoding="ascii")
     return root
 
 
@@ -367,12 +367,15 @@ def test_a_label_that_is_not_json_has_no_focus(tmp_path: Path) -> None:
     assert {row["label"]["focus"] for row in rows.values()} == {None}
 
 
-def test_a_start_time_without_uptime_is_unknown(tmp_path: Path) -> None:
-    proc = Proc(1, 0, ("x",), 1)
-    assert session_ledger_collect._started_at(proc, tmp_path) is None
-    (tmp_path / "uptime").write_text("100.0 1\n", encoding="ascii")
-    when = session_ledger_collect._started_at(proc, tmp_path, now=lambda: 1_000_000.0)
-    assert when is not None and when.startswith("1970-01-12T")
+def test_a_start_time_comes_from_the_boot_time_and_is_the_same_every_time(tmp_path: Path) -> None:
+    proc = Proc(1, 0, ("x",), 3 * os.sysconf("SC_CLK_TCK"))
+    assert session_ledger_collect._started_at(proc, tmp_path) is None  # no /proc/stat
+    (tmp_path / "stat").write_text("cpu  1 2 3\nprocesses 9\n", encoding="ascii")
+    assert session_ledger_collect._started_at(proc, tmp_path) is None  # no btime line
+    (tmp_path / "stat").write_text("cpu  1 2 3\nbtime 1000000\n", encoding="ascii")
+    # Three seconds after a boot at 1970-01-12T13:46:40Z, whenever it is read.
+    assert session_ledger_collect._started_at(proc, tmp_path) == "1970-01-12T13:46:43Z"
+    assert session_ledger_collect._started_at(proc, tmp_path) == "1970-01-12T13:46:43Z"
 
 
 # --- what is recorded --------------------------------------------------------------------------
