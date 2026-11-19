@@ -56,9 +56,13 @@ execution evidence when carrying a release claim forward.
   waiter's name without a takeover until one wait has held it. A live
   connection on the name ends it with exit 6, and it wakes nothing; a
   `synapse` too old to wait without a takeover ends it with exit 2, rather
-  than wait with one. An unreachable hub keeps the guard; once a wait has held
-  the name, later waits re-arm with a takeover as before. A restored seat's
-  waiter starts this way.
+
+  than wait with one. The guard drops only when a wait writes
+  `synapse-wait: registered <name>` on standard error, which `synapse wait
+  --no-takeover` now does once the hub has accepted the name; an exit code
+  alone never drops it, since a timeout's 2 is also a usage error. Once a wait
+  has held the name, later waits re-arm with a takeover as before. A restored
+  seat's waiter starts this way.
 
 ## [0.99.58] - 2026-11-19
 

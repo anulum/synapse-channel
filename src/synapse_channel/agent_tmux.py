@@ -1007,10 +1007,6 @@ def _wait_command(
     return command
 
 
-_REGISTERED_WAIT_CODES = frozenset({0, 2, 3})
-"""``synapse wait`` codes that come only after its name was held: a message, a
-timeout, or a drop after the welcome. ``1`` (an unreachable hub) holds nothing."""
-
 NO_TAKEOVER_UNSUPPORTED_EXIT_CODE = 2
 """Exit of a waiter whose ``synapse`` cannot wait without a takeover."""
 
@@ -1021,8 +1017,11 @@ def _first_registration(
     """Settle a waiter's first registration when it must not take its name over.
 
     With ``first_no_takeover`` each wait carries ``--no-takeover`` until one of
-    them has held the name. A live connection on the name ends the waiter with
-    ``synapse wait``'s name-live code, so it displaces nothing and wakes
+    them has held the name, which that wait says on standard error with the
+    exact line :func:`~synapse_channel.cli_messaging_wait.registered_line` for
+    this waiter's name. An exit code never counts as that proof: ``2``, for
+    one, is also a usage error. A live connection on the name ends the waiter
+    with ``synapse wait``'s name-live code, so it displaces nothing and wakes
     nothing. A ``synapse`` too old for the flag ends it as well, rather than
     wait with a takeover. Once a wait has held the name, later waits re-arm with
     a takeover as before: they meet only this waiter's own stale socket.
@@ -1033,7 +1032,7 @@ def _first_registration(
         The configuration for the next wait, the wait itself, and the refusal
         (``0`` to go on).
     """
-    from synapse_channel.cli_messaging_wait import WAIT_NAME_LIVE_EXIT_CODE
+    from synapse_channel.cli_messaging_wait import WAIT_NAME_LIVE_EXIT_CODE, registered_line
 
     if not config.first_no_takeover or refusal:
         return config, wait_proc, refusal
@@ -1059,7 +1058,7 @@ def _first_registration(
             flush=True,
         )
         return config, wait_proc, NO_TAKEOVER_UNSUPPORTED_EXIT_CODE
-    if wait_proc.returncode in _REGISTERED_WAIT_CODES:
+    if registered_line(pane_waiter_name(config.identity)) in stderr.splitlines():
         return replace(config, first_no_takeover=False), wait_proc, 0
     return config, wait_proc, 0
 

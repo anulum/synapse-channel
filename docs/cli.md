@@ -47,7 +47,7 @@ everything, since they need the whole command table.
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
 | `synapse token-set` | Manage a hub's connect-token set for `synapse hub --token-set` (the same file format serves `synapse hub --metrics-token-set`, in a separate file): `new` generates a 256-bit secret, stores only its digest and writes the secret to a new owner-only `--secret-out` file, or prints it once with `--print-secret`; `retire` removes a token; `list` shows identifiers, agents and validity, never a secret or a digest; `status` shows whether each running hub has the set on disk in force, and `status --prune` first removes the leftover files of hubs that are gone. A change whose result would not validate writes nothing. See *Rotating connect tokens* in `SECURITY.md`. |
 | `synapse sqlcipher` | SQLCipher page-encryption ops for the hub event store: `rekey` via PRAGMA rekey, `migrate` plaintext → encrypted. |
-| `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. `agent-tmux wait --first-no-takeover` joins an existing session only and never starts one; it registers the pane waiter's name without a takeover until one wait has held it, so a live waiter of the same seat is never displaced: it exits 6 when a live connection holds the name, and 2 when its `synapse` cannot wait without a takeover. Once a wait has held the name, later waits re-arm with a takeover as before. `worker-session --restore` starts its waiter this way. |
+| `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. `agent-tmux wait --first-no-takeover` joins an existing session only and never starts one; it registers the pane waiter's name without a takeover until one wait has held it, so a live waiter of the same seat is never displaced: it exits 6 when a live connection holds the name, and 2 when its `synapse` cannot wait without a takeover. A wait counts as having held the name only when it wrote the exact line `synapse-wait: registered <name>` on standard error; an exit code alone never does, since a timeout's 2 is also a usage error. Once a wait has held the name, later waits re-arm with a takeover as before. `worker-session --restore` starts its waiter this way. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
 | `synapse waker` | Install, inspect, persistently inhibit, or explicitly resume a systemd-supervised exact-seat `agent-tmux` bridge. The service restarts the bridge, never the provider terminal. |
 | `synapse service hub-restart` | Print which user units depend on the hub and what a restart would do to them. With `--authorized-hub-pid <pid>` naming the running hub, restart it as one service-manager job, wait until it answers, and report each dependent as unchanged, restarted, stopped, started or changed. Refuses when systemd would restart other units with the hub, unless `--allow-dependent-restart` is given. See [Restarting the hub safely](deployment.md#restarting-the-hub-safely). |
@@ -1403,6 +1403,12 @@ synapse wait --for api-dev --timeout 60        # give up after 60s (exit 2) inst
 synapse wait --name api-dev-rx --for api-dev --no-takeover  # never evict a live holder: exit 6 if the name is live
 synapse wait --for api-dev --capability-card card.json   # re-register a dispatch card on every (re)connect
 ```
+
+With `--no-takeover`, once the hub has accepted the name, the wait writes one
+line to standard error, `synapse-wait: registered <name>`, and flushes it. A
+refused wait (exit 6), or one that never got that far, does not write it, so a
+caller can tell "the name was held" apart from an exit code that several paths
+share.
 
 With `--capability-card FILE` the waiter re-registers a persistent dispatch
 card for its `--for` identity on every connect — so automated dispatch can

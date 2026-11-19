@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import json
 import random
+import sys
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from typing import Any
 from synapse_channel.cli_messaging_types import AgentFactory, JitterFunction
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import (
+    closed_after_ready,
     describe_connect_failure,
     is_identity_refused_close,
     is_name_conflict_close,
@@ -207,6 +209,40 @@ async def _settle_burst(
             break
         collected = len(received)
     return list(received)
+
+
+REGISTERED_PREFIX = "synapse-wait: registered "
+"""Start of the line a wait without takeover writes to standard error once its name is held."""
+
+
+def registered_line(name: str) -> str:
+    """Return the whole line that says ``name`` is held by a wait without takeover.
+
+    A bridge that must not take its name over drops that guard only on this
+    exact line for the name it expects: a refusal, a usage error or a message
+    never prints it.
+    """
+    return f"{REGISTERED_PREFIX}{name}"
+
+
+async def _ready_and_held(
+    agent: SynapseAgent, *, name: str, takeover: bool, timeout: float
+) -> bool:
+    """Return whether the connection is ready and, without takeover, its name is held.
+
+    Without a takeover the hub can refuse the name after its welcome, so the
+    name counts as held only once the hub has answered a roster request
+    (:func:`~synapse_channel.connect_failures.closed_after_ready`). Then the
+    wait writes :func:`registered_line` to standard error, flushed, once.
+    """
+    if not await agent.wait_until_ready(timeout=timeout):
+        return False
+    if takeover:
+        return True
+    if await closed_after_ready(agent, timeout=timeout):
+        return False
+    print(registered_line(name), file=sys.stderr, flush=True)
+    return True
 
 
 def _handshake_refusal_code(agent: SynapseAgent, *, takeover: bool) -> int:
@@ -491,7 +527,7 @@ async def _wait(
     )
     conn_task = asyncio.create_task(agent.connect())
     try:
-        if not await agent.wait_until_ready(timeout=ready_timeout):
+        if not await _ready_and_held(agent, name=name, takeover=takeover, timeout=ready_timeout):
             print(
                 describe_connect_failure(
                     name,

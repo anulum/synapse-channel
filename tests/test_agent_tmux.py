@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from fixtures.agent_tmux_provider_screens import PROVIDER_SCREENS
+from synapse_channel import agent_tmux
 from synapse_channel.agent_tmux import (
     BINDING_REFUSAL_EXIT_CODE,
     DEFAULT_AGENT_PANE_COMMANDS,
@@ -1444,7 +1445,8 @@ def test_a_guarded_waiter_takes_over_again_once_a_wait_has_held_its_name(
     runner = RecordingRunner(
         [
             _result(["synapse", "wait"], 1),  # an unreachable hub holds nothing
-            _result(["synapse", "wait"], 3),  # dropped after the welcome: the name was held
+            # Dropped after the welcome, and the wait said the name was held.
+            _result(["synapse", "wait"], 3, "", f"{REGISTERED}\n"),
             _result(["synapse", "wait"], 0, "sender: wake\n"),
             _result(["tmux", "send-keys"], 0),
         ]
@@ -1525,3 +1527,32 @@ def test_the_guarded_wait_command_is_one_synapse_accepts(tmp_path: Path) -> None
     args = build_parser().parse_args(command[1:])
     assert args.no_takeover is True
     assert args.name == "SYNAPSE-CHANNEL/codex-main-pane-rx"
+
+
+REGISTERED = "synapse-wait: registered SYNAPSE-CHANNEL/codex-main-pane-rx"
+
+
+@pytest.mark.parametrize(
+    ("code", "stdout", "stderr", "held"),
+    [
+        (2, "", f"{REGISTERED}\n", True),  # it held the name, then timed out
+        (0, "sender: wake\n", f"{REGISTERED}\n", True),
+        (3, "", f"a note\n{REGISTERED}\n", True),
+        (2, "", "", False),  # the bridge was gone before the wait started
+        (2, "", "usage: synapse wait\nsynapse wait: error: argument --timeout: invalid\n", False),
+        (0, "sender: wake\n", "", False),
+        (3, "", "", False),
+        (0, f"sender: {REGISTERED}\n", "", False),  # a message that quotes the line
+        (2, "", f"note: {REGISTERED}\n", False),  # not a whole line
+        (2, "", "synapse-wait: registered SYNAPSE-CHANNEL/other-pane-rx\n", False),  # another name
+    ],
+)
+def test_only_the_exact_registered_line_drops_the_guard(
+    code: int, stdout: str, stderr: str, held: bool, tmp_path: Path
+) -> None:
+    """An exit code is never proof that the name was held: ``2`` is also a usage error."""
+    config, proc, refusal = agent_tmux._first_registration(
+        _guarded(tmp_path), _result(["synapse", "wait"], code, stdout, stderr), 0
+    )
+    assert refusal == 0 and proc.returncode == code
+    assert config.first_no_takeover is (not held)

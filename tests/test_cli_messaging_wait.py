@@ -1255,3 +1255,60 @@ def test_cmd_wait_passes_no_takeover_only_when_asked(
         )
     assert seen[0]["takeover"] is False
     assert "takeover" not in seen[1]
+
+
+async def test_a_wait_without_takeover_says_once_that_its_name_is_held(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The hub has accepted the name: one exact line on standard error, flushed."""
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        code = await cli_messaging._wait(
+            uri=uri, name="X-rx", for_name="X", timeout=0.3, poll_interval=0.01, takeover=False
+        )
+    captured = capsys.readouterr()
+    assert code == 2  # it held the name, then timed out
+    assert captured.err.splitlines().count(cli_messaging_wait.registered_line("X-rx")) == 1
+    assert "registered" not in captured.out
+    assert cli_messaging_wait.registered_line("X-rx") == "synapse-wait: registered X-rx"
+
+
+async def test_a_wait_with_takeover_or_a_refused_name_writes_no_registered_line(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        assert (
+            await cli_messaging._wait(
+                uri=uri, name="Y-rx", for_name="Y", timeout=0.3, poll_interval=0.01
+            )
+            == 2
+        )
+        holder = await connect_agent("Z-rx", uri)
+        try:
+            code = await cli_messaging._wait(
+                uri=uri, name="Z-rx", for_name="Z", timeout=2.0, poll_interval=0.01, takeover=False
+            )
+        finally:
+            await close_agents(holder)
+    assert code == cli_messaging_wait.WAIT_NAME_LIVE_EXIT_CODE
+    assert cli_messaging_wait.REGISTERED_PREFIX not in capsys.readouterr().err
+
+
+async def test_a_name_refused_after_the_welcome_is_never_reported_held(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The welcome alone is not the hub's verdict: the line waits for the roster answer."""
+
+    async def refused(agent: object, *, timeout: float) -> bool:
+        return True
+
+    monkeypatch.setattr(cli_messaging_wait, "closed_after_ready", refused)
+    code = await cli_messaging._wait(
+        uri="ws://unused",
+        name="X-rx",
+        for_name="X",
+        timeout=0.0,
+        takeover=False,
+        agent_factory=_closed_factory(4009, "name conflict", ready=True),
+    )
+    assert code == cli_messaging_wait.WAIT_NAME_LIVE_EXIT_CODE
+    assert cli_messaging_wait.REGISTERED_PREFIX not in capsys.readouterr().err
