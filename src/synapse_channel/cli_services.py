@@ -99,6 +99,8 @@ def _cmd_worker_session(
     outcome_options = {}
     if getattr(args, "outcome_file", None) is not None:
         outcome_options["outcome_file"] = args.outcome_file
+    if getattr(args, "restore", False):
+        outcome_options["restore"] = True
     try:
         return session_runner(
             identity=args.identity,
@@ -181,6 +183,12 @@ def _add_worker_parser(
         "--syn-bin", default="syn", help="Syn ergonomic command used for the sidecar."
     )
     worker.add_argument("--no-arm", action="store_true", help="Do not start the wake sidecar.")
+    worker.add_argument(
+        "--restore",
+        action="store_true",
+        help="Start a seat that a crash or reboot cut, only behind its seat holder: exit 75 when "
+        "the seat is live, 69, 70 or 78 when the restore must stop.",
+    )
     worker.add_argument(
         "--terminal-tmux",
         choices=("auto", "on", "off"),

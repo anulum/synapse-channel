@@ -36,6 +36,15 @@ execution evidence when carrying a release claim forward.
   child loads nothing. Other platforms are refused by name, and an unreadable
   token file is refused with exit 2.
 
+- **Restore a cut seat without evicting a live one.** `synapse worker-session
+  --restore --identity ID -- <agent>` starts the agent in tmux behind
+  `synapse seat-hold`, and goes on only when the holder's final marker says
+  `ready`. A seat whose tmux session exists, or whose name a live connection
+  holds, is left alone (exit 75); a hub that cannot be reached, an agent that
+  cannot start, or no final answer stops the restore (69, 70 or 78) and ends
+  the session it created. The waiter and the session record get the holder's
+  command, so a later restart of the pane goes through the holder too.
+
 ## [0.99.58] - 2026-11-19
 
 Core 0.99.58 adds a hard-linked generation chain for conditional deployments and

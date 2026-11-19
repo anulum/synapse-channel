@@ -28,6 +28,7 @@ from synapse_channel.launch_record import (
     record_dir_for,
     write_record,
 )
+from synapse_channel.seat_restore import start_restored_seat
 from synapse_channel.worker_outcome import OPERATION_ID_ENV, WorkerExit, WorkerObservation
 
 SIDECAR_SHUTDOWN_TIMEOUT_SECONDS = 5.0
@@ -449,6 +450,66 @@ def _launch_terminal_worker(
     )
 
 
+def _launch_restored_worker(
+    *,
+    outcome: WorkerObservation,
+    env: dict[str, str],
+    command: Sequence[str],
+    uri: str,
+    token: str | None,
+    token_file: str | None,
+    tmux_bin: str,
+    synapse_bin: str,
+    session: str | None,
+    cwd: Path,
+) -> WorkerExit:
+    """Start a cut seat again behind its seat holder, and report that outcome.
+
+    The pane runs ``synapse seat-hold``; only once it holds the seat's name are
+    the pane recorded, the waiter started and the terminal attached. The waiter
+    gets the holder's command, so a restart of the pane goes through it too.
+    """
+    env["SYN_TMUX_PROVIDER"] = "1"
+    env["SYNAPSE_AUTO_CONNECT"] = "0"
+    identity = env["SYN_IDENTITY"]
+    resolved = session or _default_tmux_session(identity)
+
+    def after_ready(pane: Sequence[str]) -> int:
+        """Record the held pane, arm its waiter and attach the terminal."""
+        _record_started_pane(
+            identity=identity, command=pane, env=env, tmux_bin=tmux_bin, session=resolved, cwd=cwd
+        )
+        _start_tmux_waiter(
+            identity=identity,
+            session=resolved,
+            cwd=cwd,
+            command=pane,
+            synapse_bin=synapse_bin,
+            tmux_bin=tmux_bin,
+            uri=uri,
+            token=token,
+            token_file=token_file,
+            env=env,
+        )
+        return _attach_tmux_session(session=resolved, tmux_bin=tmux_bin, env=env)
+
+    return outcome.tmux_result(
+        lambda: start_restored_seat(
+            identity=identity,
+            command=command,
+            session=resolved,
+            cwd=cwd,
+            uri=uri,
+            token=token,
+            token_file=token_file,
+            tmux_bin=tmux_bin,
+            synapse_bin=synapse_bin,
+            env=env,
+            after_ready=after_ready,
+        )
+    )
+
+
 def _open_arm_sidecar(
     env: dict[str, str],
     *,
@@ -507,6 +568,7 @@ def run_worker_session(
     environ: Mapping[str, str] | None = None,
     sidecar_shutdown_timeout_seconds: float = SIDECAR_SHUTDOWN_TIMEOUT_SECONDS,
     outcome_file: Path | None = None,
+    restore: bool = False,
 ) -> WorkerExit:
     """Run ``command`` with ``SYN_PROJECT``/``SYN_IDENTITY`` and an optional waker.
 
@@ -519,6 +581,9 @@ def run_worker_session(
     tokens while waiting. ``cwd`` sets the provider working directory in both
     direct and tmux modes; it defaults to the directory at the time of this call.
     That same directory resolves POSIX executable paths in the launch record.
+
+    ``restore`` starts a seat that a crash or reboot cut: always through tmux,
+    and only behind its seat holder (:mod:`synapse_channel.seat_restore`).
     """
     if not command:
         raise ValueError("worker-session requires a provider command")
@@ -529,8 +594,9 @@ def run_worker_session(
         environ=environ,
         outcome_file=outcome_file,
     )
-    if _terminal_tmux_enabled(command=command, mode=terminal_tmux, env=env):
-        return _launch_terminal_worker(
+    if restore or _terminal_tmux_enabled(command=command, mode=terminal_tmux, env=env):
+        launch = _launch_restored_worker if restore else _launch_terminal_worker
+        return launch(
             outcome=outcome,
             env=env,
             command=command,
