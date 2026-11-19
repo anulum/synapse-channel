@@ -24,6 +24,7 @@ from synapse_channel.restore_grace import HubGraceError
 from synapse_channel.restore_pacing import GIB, Limits, Reading
 from synapse_channel.restore_plan import START, Entry
 from synapse_channel.restore_run import (
+    CHILD_NOT_STARTED_EXIT_CODE,
     CHILD_TIMEOUT_SECONDS,
     ENV_PASSED,
     HOST_UNREADABLE_EXIT_CODE,
@@ -125,16 +126,11 @@ def test_the_child_restores_the_seat_without_attaching_and_never_widens_permissi
     assert argv == [
         "/bin/synapse",
         "worker-session",
-        "--identity",
-        "P/a",
-        "--uri",
-        "ws://h:1",
-        "--tmux-bin",
-        "tmux",
-        "--synapse-bin",
-        "/bin/synapse",
-        "--tmux-session",
-        "synapse-P_a",
+        "--identity=P/a",
+        "--uri=ws://h:1",
+        "--tmux-bin=tmux",
+        "--synapse-bin=/bin/synapse",
+        "--tmux-session=synapse-P_a",
         "--restore",
         "--no-attach",
         "--",
@@ -144,8 +140,34 @@ def test_the_child_restores_the_seat_without_attaching_and_never_widens_permissi
     ]
 
 
+def test_a_value_from_the_ledger_is_never_read_as_an_option() -> None:
+    import argparse
+
+    from synapse_channel import cli_services
+
+    odd = _entry("--uri=ws://elsewhere:1", session="-x")
+    argv = child_argv(odd, synapse_bin="synapse", uri="ws://h:1", tmux_bin="tmux")
+    parser = argparse.ArgumentParser()
+    cli_services.add_parsers(parser.add_subparsers())
+    args = parser.parse_args(argv[1:])
+    assert (args.identity, args.uri, args.tmux_session) == (
+        "--uri=ws://elsewhere:1",
+        "ws://h:1",
+        "-x",
+    )
+    assert args.restore and args.no_attach
+
+
 def test_the_child_timeout_outlasts_the_holders_final_word() -> None:
     assert CHILD_TIMEOUT_SECONDS == MARKER_WAIT_SECONDS + 25.0
+
+
+async def test_a_child_that_cannot_be_started_is_a_named_code(tmp_path: Path) -> None:
+    code, detail = await run_child(
+        [sys.executable, "-c", "pass"], env={}, cwd=str(tmp_path / "gone"), timeout=30.0
+    )
+    assert code == CHILD_NOT_STARTED_EXIT_CODE == 127
+    assert detail.startswith("the child could not be started: ")
 
 
 async def test_the_exit_code_and_output_of_a_child_are_returned(tmp_path: Path) -> None:
@@ -272,8 +294,23 @@ def test_a_fresh_snapshot_before_each_start_can_hold_it_back(
     rows: list[tuple[str, str]], live: set[str], taken: set[str], why: str | None
 ) -> None:
     entry = _entry(row_id="r1")
-    assert (
-        recheck(entry, snapshot=lambda: (_rows(*rows), live), tmux_taken=taken.__contains__) == why
+    found = recheck(
+        entry,
+        snapshot=lambda: (_rows(*rows), live),
+        tmux_taken=taken.__contains__,
+        cwd_exists=lambda _cwd: True,
+    )
+    assert found == why
+
+
+def test_a_working_directory_gone_since_the_plan_holds_the_start_back(tmp_path: Path) -> None:
+    def never(*_args: object) -> Any:
+        raise AssertionError("nothing more is read for a seat that cannot start")
+
+    gone = _entry(cwd=str(tmp_path / "gone"))
+    assert recheck(gone, snapshot=never, tmux_taken=never) == "its working directory is gone"
+    assert recheck(_entry(cwd=None), snapshot=never, tmux_taken=never) == (
+        "its working directory is gone"
     )
 
 
@@ -423,7 +460,15 @@ async def test_the_hub_grace_can_stop_the_run_between_starts(tmp_path: Path) -> 
     assert grace.closed == 1
 
 
-@pytest.mark.parametrize("failure", [CollectError("tmux list-panes failed"), LedgerError("locked")])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        CollectError("tmux list-panes failed"),
+        LedgerError("locked"),
+        OSError("ledger unreadable"),
+        ValueError("/proc/meminfo names no MemTotal or MemAvailable"),
+    ],
+)
 async def test_a_snapshot_that_fails_before_a_start_stops_the_run(
     tmp_path: Path, failure: Exception
 ) -> None:
@@ -436,6 +481,16 @@ async def test_a_snapshot_that_fails_before_a_start_stops_the_run(
     code, _outcomes = await execute([_entry("P/a")], run)
     assert code == HOST_UNREADABLE_EXIT_CODE and spawn.calls == []
     assert lines == [f"the host could not be read or recorded ({failure}); the run stops"]
+
+
+async def test_a_host_whose_headroom_cannot_be_read_stops_the_run(tmp_path: Path) -> None:
+    def unreadable() -> Reading:
+        raise ValueError("/proc/meminfo names no MemTotal or MemAvailable")
+
+    run, lines, spawn, _clock, grace = _run(tmp_path, {"P/a": 0}, read=unreadable)
+    code, _outcomes = await execute([_entry("P/a")], run)
+    assert (code, spawn.calls, grace.calls, grace.closed) == (HOST_UNREADABLE_EXIT_CODE, [], 0, 1)
+    assert "names no MemTotal or MemAvailable" in lines[0]
 
 
 async def test_nothing_to_start_runs_nothing_and_closes_the_connection(tmp_path: Path) -> None:

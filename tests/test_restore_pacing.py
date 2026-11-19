@@ -161,6 +161,13 @@ def test_the_host_is_read_from_proc(tmp_path: Path) -> None:
     assert read_host(root, cpus=4) == Reading(8_192_000_000, 16_384_000_000, 2.5, 4, 3.25)
 
 
+def test_a_meminfo_without_the_two_figures_cannot_be_read(tmp_path: Path) -> None:
+    root = _proc(tmp_path, pressure=None)
+    (root / "meminfo").write_text("MemTotal: 100 kB\n", encoding="ascii")
+    with pytest.raises(ValueError, match="names no MemTotal or MemAvailable"):
+        read_host(root, cpus=1)
+
+
 @pytest.mark.parametrize("pressure", [None, "", "some nothing here\n"])
 def test_a_kernel_without_memory_pressure_reads_as_none(
     tmp_path: Path, pressure: str | None

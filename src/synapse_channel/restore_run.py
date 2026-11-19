@@ -78,6 +78,9 @@ NO_HEADROOM_EXIT_CODE = 75
 TIMEOUT_EXIT_CODE = 1
 """A child gave no answer in time; its seat's state is unknown, so the run stops."""
 
+CHILD_NOT_STARTED_EXIT_CODE = 127
+"""A child that could not be started at all; the run stops."""
+
 HOST_UNREADABLE_EXIT_CODE = 3
 """A snapshot before a start could not read the host or record it; the run stops."""
 
@@ -167,20 +170,19 @@ def child_environ(
 
 
 def child_argv(entry: Entry, *, synapse_bin: str, uri: str, tmux_bin: str) -> list[str]:
-    """Return the child command that restores one seat without attaching to it."""
+    """Return the child command that restores one seat without attaching to it.
+
+    Every value is joined to its option with ``=``, so a value read from the
+    ledger can never be taken for an option of its own.
+    """
     return [
         synapse_bin,
         "worker-session",
-        "--identity",
-        entry.identity,
-        "--uri",
-        uri,
-        "--tmux-bin",
-        tmux_bin,
-        "--synapse-bin",
-        synapse_bin,
-        "--tmux-session",
-        entry.session,
+        f"--identity={entry.identity}",
+        f"--uri={uri}",
+        f"--tmux-bin={tmux_bin}",
+        f"--synapse-bin={synapse_bin}",
+        f"--tmux-session={entry.session}",
         "--restore",
         "--no-attach",
         "--",
@@ -194,17 +196,21 @@ async def run_child(
     """Run one child in its own process group; return its exit code and its output.
 
     The code is ``None`` when the child gave no answer within ``timeout``; its
-    process group is then ended, ``SIGTERM`` first.
+    process group is then ended, ``SIGTERM`` first. A child that cannot be
+    started at all gives :data:`CHILD_NOT_STARTED_EXIT_CODE`.
     """
-    process = await asyncio.create_subprocess_exec(
-        *argv,
-        env=dict(env),
-        cwd=cwd,
-        stdin=asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        start_new_session=True,
-    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            env=dict(env),
+            cwd=cwd,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        return CHILD_NOT_STARTED_EXIT_CODE, f"the child could not be started: {exc.strerror or exc}"
     try:
         output, _ = await asyncio.wait_for(process.communicate(), timeout)
     except TimeoutError:
@@ -305,8 +311,11 @@ def recheck(
     *,
     snapshot: Callable[[], tuple[Mapping[str, Row], Collection[str]]],
     tmux_taken: Callable[[str], bool],
+    cwd_exists: Callable[[str], bool] = os.path.isdir,
 ) -> str | None:
     """Return why a planned seat must not start now, from a fresh snapshot, or ``None``."""
+    if entry.cwd is None or not cwd_exists(entry.cwd):
+        return "its working directory is gone"
     rows, live = snapshot()
     if entry.identity in live:
         return "the seat runs now"
@@ -400,7 +409,7 @@ async def execute(entries: Sequence[Entry], run: Run) -> tuple[int, list[Outcome
     except HubGraceError as stop:
         run.report(f"{stop}; the run stops")
         return stop.exit_code, outcomes
-    except (CollectError, LedgerError) as exc:
+    except (CollectError, LedgerError, OSError, ValueError) as exc:
         run.report(f"the host could not be read or recorded ({exc}); the run stops")
         return HOST_UNREADABLE_EXIT_CODE, outcomes
     finally:

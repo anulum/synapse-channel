@@ -205,13 +205,19 @@ class HubGrace:
             await self.close()
             raise HubGraceError(HUB_UNAVAILABLE_EXIT_CODE, f"the hub changed ({agent.hub_id})")
         self.hub_id, self._up_since = agent.hub_id, self._clock()
-        if first and self._shortcut(agent.hub_id):
+        if first and await self._shortcut(agent.hub_id):
             self._up_since -= self._grace
         return held
 
-    def _shortcut(self, welcome: str) -> bool:
-        """Return whether ``/health`` proves the first wait unneeded for this same hub."""
-        reading = self._health(self._uri) if self._health is not None else None
+    async def _shortcut(self, welcome: str) -> bool:
+        """Return whether ``/health`` proves the first wait unneeded for this same hub.
+
+        The read is a blocking HTTP request, so it runs off the event loop that
+        serves the held connection.
+        """
+        if self._health is None:
+            return False
+        reading = await asyncio.to_thread(self._health, self._uri)
         return reading is not None and reading[0] == welcome and reading[1] >= self._grace
 
     async def close(self) -> None:

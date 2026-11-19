@@ -139,7 +139,7 @@ def read_host(proc_root: Path = Path("/proc"), cpus: int | None = None) -> Readi
     OSError
         When ``/proc/meminfo`` or ``/proc/loadavg`` cannot be read.
     ValueError
-        When either cannot be parsed.
+        When either cannot be parsed, or names no ``MemTotal`` or ``MemAvailable``.
     """
     memory: dict[str, int] = {}
     for line in (proc_root / "meminfo").read_text(encoding="ascii").splitlines():
@@ -151,6 +151,8 @@ def read_host(proc_root: Path = Path("/proc"), cpus: int | None = None) -> Readi
         pressure: float | None = float(some.split("avg10=")[1].split()[0])
     except (OSError, IndexError, ValueError):
         pressure = None
+    if "MemAvailable" not in memory or "MemTotal" not in memory:
+        raise ValueError("/proc/meminfo names no MemTotal or MemAvailable")
     return Reading(
         memory["MemAvailable"], memory["MemTotal"], load1, cpus or os.cpu_count() or 1, pressure
     )
