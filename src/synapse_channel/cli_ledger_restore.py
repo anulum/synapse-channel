@@ -30,7 +30,7 @@ import shutil
 import socket
 import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from itertools import chain
 from pathlib import Path
@@ -42,6 +42,7 @@ from synapse_channel.restore_grace import HubGrace
 from synapse_channel.restore_pacing import Limits, config_path, describe, load_limits, read_host
 from synapse_channel.restore_plan import START, Entry, Scope, plan, previous_boot
 from synapse_channel.restore_run import (
+    Outcome,
     RestoreBusyError,
     Run,
     child_environ,
@@ -266,6 +267,16 @@ def _dry_run(
     return 0
 
 
+async def _with_signals(entries: Sequence[Entry], run: Run) -> tuple[int, list[Outcome]]:
+    """Run :func:`execute` with ``SIGINT`` and ``SIGTERM`` noted by the run's interrupt.
+
+    The first signal starts no further seat and lets the one in flight finish;
+    a second ends that seat's process group. The run then exits 130.
+    """
+    with run.interrupt.installed(asyncio.get_running_loop()):
+        return await execute(entries, run)
+
+
 def _execute(
     args: argparse.Namespace,
     directory: Path,
@@ -310,7 +321,9 @@ def _execute(
         report=report,
     )
     code, outcomes = (
-        asyncio.run(execute(entries, run)) if any(e.state == START for e in entries) else (0, [])
+        asyncio.run(_with_signals(entries, run))
+        if any(e.state == START for e in entries)
+        else (0, [])
     )
     if args.json:
         document = _document(args, scope, entries, head)

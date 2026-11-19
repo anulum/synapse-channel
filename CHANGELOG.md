@@ -113,6 +113,16 @@ execution evidence when carrying a release claim forward.
   in a private `0600` file beside its marker, which is removed when the seat is
   not held; it is never in the environment or on a command line.
 
+- **An interrupted restore tells the truth.** The first `SIGINT` or `SIGTERM`
+  to `synapse ledger restore --execute` starts no further seat: the seat being
+  started finishes within its usual bound, its real outcome is recorded on its
+  row, and the run exits `130`. A second signal, or that bound, ends the
+  child's whole process group and records `interrupted`, so no process is left
+  behind and no start goes unrecorded. Before each start the planner now waits
+  for the hub's grace first, then for headroom, then asks the hub once more,
+  so a start never goes on a headroom reading taken before a long wait for the
+  hub.
+
 ## [0.99.58] - 2026-11-19
 
 Core 0.99.58 adds a hard-linked generation chain for conditional deployments and

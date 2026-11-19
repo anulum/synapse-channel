@@ -24,6 +24,16 @@ The child's exit code decides the run:
 * ``70``: the agent could not start; recorded, and the run goes on;
 * anything else, or no answer: the run stops.
 
+Before each start the run waits for the hub's grace, then for headroom, then
+asks the hub once more, so the start goes on a fresh reading of both.
+
+**An interrupted run tells the truth.** The first ``SIGINT`` or ``SIGTERM``
+starts no further seat: a seat being started is finished within its usual
+bound, its real outcome is recorded, and the run exits
+:data:`INTERRUPTED_EXIT_CODE`. A second signal, or that bound, ends the child's
+process group and records ``interrupted``. Neither leaves a process behind or
+a start unrecorded.
+
 Only one run holds ``restore.lock`` in the ledger directory at a time.
 """
 
@@ -36,9 +46,9 @@ import os
 import signal
 import time
 from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.restore_grace import HubGraceError
@@ -85,6 +95,19 @@ CHILD_NOT_STARTED_EXIT_CODE = 127
 
 HOST_UNREADABLE_EXIT_CODE = 3
 """A snapshot before a start could not read the host or record it; the run stops."""
+
+INTERRUPTED_EXIT_CODE = 130
+"""The run was interrupted by a signal (``128 + SIGINT``); no further seat was started."""
+
+FRESH_ANSWER_SECONDS = 10.0
+"""The hub's last answer before a start is fresh when it took no longer than this.
+
+A longer one means the connection dropped and the grace started again, so the
+headroom reading is taken again before the start.
+"""
+
+CLEARANCE_ROUNDS = 3
+"""How often headroom is read again because the hub's connection dropped, before the run stops."""
 
 LOCK_NAME = "restore.lock"
 
@@ -169,8 +192,9 @@ async def run_child(
     """Run one child in its own process group; return its exit code and its output.
 
     The code is ``None`` when the child gave no answer within ``timeout``; its
-    process group is then ended, ``SIGTERM`` first. A child that cannot be
-    started at all gives :data:`CHILD_NOT_STARTED_EXIT_CODE`.
+    process group is then ended, ``SIGTERM`` first. The group is ended the same
+    way when the wait is cancelled. A child that cannot be started at all gives
+    :data:`CHILD_NOT_STARTED_EXIT_CODE`.
     """
     try:
         process = await asyncio.create_subprocess_exec(
@@ -189,6 +213,9 @@ async def run_child(
     except TimeoutError:
         await _end_group(process)
         return None, f"no answer within {timeout:g} s; its process group was ended"
+    except asyncio.CancelledError:
+        await _end_group(process)  # a cancelled start never leaves its child behind
+        raise
     return process.returncode, output.decode("utf-8", errors="replace").strip()
 
 
@@ -316,6 +343,59 @@ class Grace(Protocol):
 Spawn = Callable[..., Awaitable[tuple[int | None, str]]]
 """Runs one child; :func:`run_child` in production."""
 
+_T = TypeVar("_T")
+
+
+class Interrupt:
+    """The signals a run notes: the first stops new starts, the second ends the one in flight."""
+
+    def __init__(self) -> None:
+        self.requested = asyncio.Event()
+        self.forced = asyncio.Event()
+
+    def note(self) -> None:
+        """Note one ``SIGINT`` or ``SIGTERM``."""
+        if self.requested.is_set():
+            self.forced.set()
+        self.requested.set()
+
+    @contextlib.contextmanager
+    def installed(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        signals: Sequence[signal.Signals] = (signal.SIGINT, signal.SIGTERM),
+    ) -> Iterator[Interrupt]:
+        """Route ``signals`` on ``loop`` to :meth:`note` until the block ends."""
+        for number in signals:
+            loop.add_signal_handler(number, self.note)
+        try:
+            yield self
+        finally:
+            for number in signals:
+                loop.remove_signal_handler(number)
+
+
+async def _unless(event: asyncio.Event, awaitable: Awaitable[_T]) -> tuple[bool, _T | None]:
+    """Await ``awaitable`` unless ``event`` is set first; then cancel it.
+
+    Return ``(False, result)`` when it finished, ``(True, None)`` when the event
+    came first. Its own exception is raised as it is.
+    """
+    task = asyncio.ensure_future(awaitable)
+    if event.is_set():
+        task.cancel()
+    stop = asyncio.ensure_future(event.wait())
+    try:
+        await asyncio.wait({task, stop}, return_when=asyncio.FIRST_COMPLETED)
+        if task.done() and not task.cancelled():
+            return False, task.result()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return True, None
+    finally:
+        stop.cancel()
+        await asyncio.gather(stop, return_exceptions=True)
+
 
 @dataclass
 class Run:
@@ -336,15 +416,29 @@ class Run:
     clock: Callable[[], float] = time.monotonic
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
     child_timeout: float = CHILD_TIMEOUT_SECONDS
+    interrupt: Interrupt = field(default_factory=Interrupt)
 
 
 async def start_seat(entry: Entry, run: Run) -> Outcome:
-    """Start one seat through its child, and return what came of it."""
+    """Start one seat through its child, and return what came of it.
+
+    A second signal while the child runs ends its process group, and so does
+    the child's bound once a first signal came: the outcome is ``interrupted``.
+    """
     env, _dropped = child_environ(run.environ, entry, run.token)
     argv = child_argv(entry, synapse_bin=run.synapse_bin, uri=run.uri, tmux_bin=run.tmux_bin)
     before = frozenset(fold(read_events(run.directory)))
-    code, output = await run.spawn(argv, env=env, cwd=entry.cwd, timeout=run.child_timeout)
+    forced, answer = await _unless(
+        run.interrupt.forced,
+        run.spawn(argv, env=env, cwd=entry.cwd, timeout=run.child_timeout),
+    )
+    if forced or answer is None:
+        detail = "a second signal ended its process group"
+        return Outcome(entry.identity, entry.row_id, "interrupted", detail=detail)
+    code, output = answer
     state = outcome_state(code)
+    if state == "timeout" and run.interrupt.requested.is_set():
+        state = "interrupted"
     new_row = (
         await find_new_row(run.directory, entry.identity, before, clock=run.clock, sleep=run.sleep)
         if code == 0
@@ -354,19 +448,40 @@ async def start_seat(entry: Entry, run: Run) -> Outcome:
     return Outcome(entry.identity, entry.row_id, state, code, detail, new_row)
 
 
+async def clearance(run: Run, last_start: float | None) -> str | None:
+    """Wait for the hub's grace, then headroom, then the hub's answer; return a shortfall.
+
+    The hub is asked last, so a start goes on a fresh answer. When that answer
+    took long, the connection dropped and its grace started again, so headroom
+    is read again: at most :data:`CLEARANCE_ROUNDS` times.
+    """
+    await run.grace.ready()
+    for _round in range(CLEARANCE_ROUNDS):
+        short = await wait_for_headroom(
+            run.limits, read=run.read, clock=run.clock, sleep=run.sleep, last_start=last_start
+        )
+        if short is not None:
+            return short
+        asked = run.clock()
+        await run.grace.ready()
+        if run.clock() - asked <= FRESH_ANSWER_SECONDS:
+            return None
+    return "the hub's connection kept dropping while the host was read"
+
+
 async def execute(entries: Sequence[Entry], run: Run) -> tuple[int, list[Outcome]]:
     """Start every entry that starts, one at a time; return the run's exit code and outcomes."""
     outcomes: list[Outcome] = []
     last_start: float | None = None
+    stopping = run.interrupt.requested
     try:
         for entry in (item for item in entries if item.state == START):
-            short = await wait_for_headroom(
-                run.limits, read=run.read, clock=run.clock, sleep=run.sleep, last_start=last_start
-            )
+            interrupted, short = await _unless(stopping, clearance(run, last_start))
+            if interrupted:
+                break
             if short is not None:
                 run.report(f"no headroom on this host in time ({short}); the run stops")
                 return NO_HEADROOM_EXIT_CODE, outcomes
-            await run.grace.ready()
             changed = run.recheck(entry)
             last_start = run.clock()
             outcome = (
@@ -377,6 +492,8 @@ async def execute(entries: Sequence[Entry], run: Run) -> tuple[int, list[Outcome
             outcomes.append(outcome)
             problem = record_outcome(run.directory, entry, outcome)
             run.report(_line(outcome) + (f" (not recorded: {problem})" if problem else ""))
+            if stopping.is_set():
+                break
             if outcome.state not in GOES_ON:
                 return outcome.code or TIMEOUT_EXIT_CODE, outcomes
     except HubGraceError as stop:
@@ -387,6 +504,9 @@ async def execute(entries: Sequence[Entry], run: Run) -> tuple[int, list[Outcome
         return HOST_UNREADABLE_EXIT_CODE, outcomes
     finally:
         await run.grace.close()
+    if stopping.is_set():
+        run.report("interrupted: no further seat is started; the run stops")
+        return INTERRUPTED_EXIT_CODE, outcomes
     return 0, outcomes
 
 

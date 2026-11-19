@@ -29,10 +29,13 @@ from synapse_channel.restore_plan import START, Entry
 from synapse_channel.restore_run import (
     CHILD_NOT_STARTED_EXIT_CODE,
     CHILD_TIMEOUT_SECONDS,
+    CLEARANCE_ROUNDS,
     ENV_PASSED,
     HOST_UNREADABLE_EXIT_CODE,
+    INTERRUPTED_EXIT_CODE,
     NO_HEADROOM_EXIT_CODE,
     TIMEOUT_EXIT_CODE,
+    Interrupt,
     Outcome,
     RestoreBusyError,
     Run,
@@ -432,7 +435,8 @@ async def test_seats_start_one_at_a_time_and_the_run_goes_on_past_live_and_faile
     assert outcomes[0].detail == "last line for P/a"
     assert [call[2] for call in spawn.calls] == ["/work"] * 3
     assert clock.slept == [30.0, 30.0]  # the spacing between starts
-    assert grace.calls == 3 and grace.closed == 1
+    # The hub is asked before the headroom wait and again just before each start.
+    assert grace.calls == 6 and grace.closed == 1
     assert lines[0] == "P/a  started (0) new row new-P/a: last line for P/a"
     recorded = [event["restore"]["state"] for event in read_events(tmp_path) if "restore" in event]
     assert recorded == ["started", "live", "failed"]
@@ -471,11 +475,12 @@ async def test_no_headroom_in_time_stops_the_run_before_any_start(tmp_path: Path
         "no headroom on this host in time (memory available 1.0 GiB is below 9.6 GiB); "
         "the run stops"
     ]
-    assert grace.calls == 0 and grace.closed == 1
+    assert grace.calls == 1 and grace.closed == 1
 
 
 async def test_the_hub_grace_can_stop_the_run_between_starts(tmp_path: Path) -> None:
-    run, lines, spawn, _clock, grace = _run(tmp_path, {"P/a": 0, "P/b": 0}, grace=_Grace(stop_at=2))
+    # Each start asks the hub twice, so the third answer is the second seat's first.
+    run, lines, spawn, _clock, grace = _run(tmp_path, {"P/a": 0, "P/b": 0}, grace=_Grace(stop_at=3))
     code, outcomes = await execute([_entry("P/a"), _entry("P/b")], run)
     assert code == 69 and [o.identity for o in outcomes] == ["P/a"] and len(spawn.calls) == 1
     assert lines[-1] == "the hub changed (hub-b); the run stops"
@@ -511,7 +516,7 @@ async def test_a_host_whose_headroom_cannot_be_read_stops_the_run(tmp_path: Path
 
     run, lines, spawn, _clock, grace = _run(tmp_path, {"P/a": 0}, read=unreadable)
     code, _outcomes = await execute([_entry("P/a")], run)
-    assert (code, spawn.calls, grace.calls, grace.closed) == (HOST_UNREADABLE_EXIT_CODE, [], 0, 1)
+    assert (code, spawn.calls, grace.calls, grace.closed) == (HOST_UNREADABLE_EXIT_CODE, [], 1, 1)
     assert "names no MemTotal or MemAvailable" in lines[0]
 
 
@@ -528,3 +533,196 @@ async def test_an_outcome_line_says_when_it_could_not_be_recorded(tmp_path: Path
     run.directory = blocked
     code, _outcomes = await execute([_entry("P/a")], run)
     assert code == 0 and lines[0].startswith("P/a  live (75): last line for P/a (not recorded: ")
+
+
+# --- a fresh reading of the hub and the host before each start --------------------------
+
+
+class _OrderedGrace(_Grace):
+    """Records each answer in ``order``; answers after the first may take ``slow`` seconds."""
+
+    def __init__(self, order: list[str], clock: _Clock, slow: Sequence[float] = ()) -> None:
+        super().__init__()
+        self.order, self.clock, self.slow = order, clock, list(slow)
+
+    async def ready(self) -> None:
+        await super().ready()
+        self.order.append("hub")
+        if self.calls > 1 and self.slow:
+            self.clock.now += self.slow.pop(0)  # a drop: the grace started again
+
+
+async def test_the_host_is_read_after_the_hubs_grace_and_the_hub_is_asked_last(
+    tmp_path: Path,
+) -> None:
+    order: list[str] = []
+
+    def read() -> Reading:
+        order.append("host")
+        return ROOMY
+
+    run, _lines, spawn, clock, _grace = _run(tmp_path, {"P/a": 0}, read=read)
+    run.grace = _OrderedGrace(order, clock)
+    assert (await execute([_entry("P/a")], run))[0] == 0
+    assert order == ["hub", "host", "hub"] and len(spawn.calls) == 1
+
+
+async def test_a_drop_while_the_host_is_read_reads_the_host_again(tmp_path: Path) -> None:
+    order: list[str] = []
+
+    def read() -> Reading:
+        order.append("host")
+        return ROOMY
+
+    run, _lines, spawn, clock, _grace = _run(tmp_path, {"P/a": 0}, read=read)
+    run.grace = _OrderedGrace(order, clock, slow=[45.0])
+    assert (await execute([_entry("P/a")], run))[0] == 0
+    assert order == ["hub", "host", "hub", "host", "hub"] and len(spawn.calls) == 1
+
+
+async def test_a_hub_that_keeps_dropping_stops_the_run_before_any_start(tmp_path: Path) -> None:
+    order: list[str] = []
+    run, lines, spawn, clock, _grace = _run(tmp_path, {"P/a": 0})
+    run.grace = _OrderedGrace(order, clock, slow=[45.0] * CLEARANCE_ROUNDS)
+    assert await execute([_entry("P/a")], run) == (NO_HEADROOM_EXIT_CODE, [])
+    assert spawn.calls == [] and order.count("hub") == CLEARANCE_ROUNDS + 1
+    assert lines == [
+        "no headroom on this host in time (the hub's connection kept dropping while the host "
+        "was read); the run stops"
+    ]
+
+
+# --- an interrupted run ------------------------------------------------------------------
+
+
+def test_a_first_signal_asks_to_stop_and_a_second_forces() -> None:
+    interrupt = Interrupt()
+    interrupt.note()
+    assert interrupt.requested.is_set() and not interrupt.forced.is_set()
+    interrupt.note()
+    assert interrupt.forced.is_set()
+
+
+async def test_real_signals_reach_the_interrupt_only_while_it_is_installed() -> None:
+    interrupt = Interrupt()
+    with interrupt.installed(asyncio.get_running_loop(), signals=(signal.SIGUSR1,)):
+        os.kill(os.getpid(), signal.SIGUSR1)
+        await asyncio.wait_for(interrupt.requested.wait(), 5.0)
+        os.kill(os.getpid(), signal.SIGUSR1)
+        await asyncio.wait_for(interrupt.forced.wait(), 5.0)
+    assert signal.getsignal(signal.SIGUSR1) == signal.SIG_DFL
+
+
+async def test_a_first_signal_during_a_start_finishes_that_seat_and_starts_no_other(
+    tmp_path: Path,
+) -> None:
+    run, lines, spawn, _clock, grace = _run(tmp_path, {"P/a": 0, "P/b": 0})
+    real = run.spawn
+
+    async def interrupted_meanwhile(*args: Any, **kwargs: Any) -> tuple[int | None, str]:
+        run.interrupt.note()  # arrives while the child runs
+        return await real(*args, **kwargs)
+
+    run.spawn = interrupted_meanwhile
+    code, outcomes = await execute([_entry("P/a"), _entry("P/b")], run)
+    assert code == INTERRUPTED_EXIT_CODE
+    assert [(o.identity, o.state, o.new_row_id) for o in outcomes] == [
+        ("P/a", "started", "new-P/a")
+    ]
+    assert len(spawn.calls) == 1 and grace.closed == 1
+    recorded = [event["restore"]["state"] for event in read_events(tmp_path) if "restore" in event]
+    assert recorded == ["started"]
+    assert lines[-1] == "interrupted: no further seat is started; the run stops"
+
+
+class _WaitingGrace(_Grace):
+    """A grace that never ends, as a hub that keeps dropping would make it."""
+
+    async def ready(self) -> None:
+        self.calls += 1
+        await asyncio.Event().wait()
+
+
+async def test_a_first_signal_while_waiting_for_the_hub_starts_nothing(tmp_path: Path) -> None:
+    grace = _WaitingGrace()
+    run, lines, spawn, _clock, _grace = _run(tmp_path, {"P/a": 0}, grace=grace)
+    asyncio.get_running_loop().call_later(0.05, run.interrupt.note)
+    assert await asyncio.wait_for(execute([_entry("P/a")], run), 10.0) == (
+        INTERRUPTED_EXIT_CODE,
+        [],
+    )
+    assert spawn.calls == [] and grace.closed == 1 and list(read_events(tmp_path)) == []
+    assert lines == ["interrupted: no further seat is started; the run stops"]
+
+
+async def test_the_bound_of_the_child_after_a_first_signal_is_recorded_as_interrupted(
+    tmp_path: Path,
+) -> None:
+    run, _lines, _spawn, _clock, _grace = _run(tmp_path, {"P/a": 0})
+
+    async def no_answer(*_args: Any, **_kwargs: Any) -> tuple[int | None, str]:
+        run.interrupt.note()
+        return None, "no answer within 60 s; its process group was ended"
+
+    run.spawn = no_answer
+    code, outcomes = await execute([_entry("P/a")], run)
+    assert code == INTERRUPTED_EXIT_CODE
+    assert [(o.state, o.code) for o in outcomes] == [("interrupted", None)]
+    recorded = [event["restore"] for event in read_events(tmp_path) if "restore" in event]
+    assert [(item["state"], item["code"]) for item in recorded] == [("interrupted", None)]
+
+
+async def test_a_second_signal_ends_the_seats_whole_group_and_records_interrupted(
+    tmp_path: Path,
+) -> None:
+    pids = tmp_path / "pids"
+    marker = f"restore-run-test-{uuid.uuid4().hex}"  # names this test's processes, and no other
+    script = (
+        "import os, subprocess, sys, time\n"
+        "grand = subprocess.Popen([sys.executable, '-c', "
+        "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(120)', "
+        f"{marker!r}])\n"
+        f"open({str(pids)!r}, 'w').write(f'{{os.getpid()}} {{grand.pid}}')\n"
+        "time.sleep(120)\n"
+    )
+    run, _lines, _spawn, _clock, _grace = _run(tmp_path / "ledger", {"P/a": 0})
+    run.directory.mkdir()
+
+    async def hanging_child(*_args: Any, **_kwargs: Any) -> tuple[int | None, str]:
+        argv = [sys.executable, "-c", script, marker]
+        return await run_child(argv, env=dict(os.environ), cwd=str(tmp_path), timeout=60.0)
+
+    async def two_signals() -> None:
+        while not pids.exists() or not pids.read_text(encoding="utf-8").strip():
+            await asyncio.sleep(0.05)
+        run.interrupt.note()
+        run.interrupt.note()
+
+    def alive(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+
+    run.spawn = hanging_child
+    signals = asyncio.ensure_future(two_signals())
+    try:
+        code, outcomes = await asyncio.wait_for(execute([_entry("P/a")], run), 45.0)
+        assert code == INTERRUPTED_EXIT_CODE
+        assert [(o.state, o.detail) for o in outcomes] == [
+            ("interrupted", "a second signal ended its process group")
+        ]
+        recorded = [e["restore"]["state"] for e in read_events(run.directory) if "restore" in e]
+        assert recorded == ["interrupted"]
+        group = [int(part) for part in pids.read_text(encoding="utf-8").split()]
+        deadline = time.monotonic() + 10.0
+        while any(alive(pid) for pid in group):
+            assert time.monotonic() < deadline, "the group was not ended"
+            await asyncio.sleep(0.05)
+    finally:
+        signals.cancel()
+        if pids.exists():  # whatever the verdict, the child's own group never outlives the test
+            leader = int(pids.read_text(encoding="utf-8").split()[0])
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(leader, signal.SIGKILL)
