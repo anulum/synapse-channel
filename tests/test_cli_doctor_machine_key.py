@@ -16,8 +16,8 @@ import pytest
 from synapse_channel import cli
 from synapse_channel.machine_identity import ensure_machine_identity
 
-_DISK_FREE = re.compile(r"has \d+(?:\.\d+)? MiB free")
-"""Live free-space figure. It is not part of the machine-key check."""
+_DISK_FREE = re.compile(r"has \d+(?:\.\d+)? MiB free \(\d+(?:\.\d+)?% used\)")
+"""Live free-space and usage figures. They are not part of the machine-key check."""
 
 
 def _run_doctor(capsys: pytest.CaptureFixture[str]) -> tuple[int, str]:
@@ -51,8 +51,8 @@ def _machine_key_lines(report: str) -> list[str]:
 
 
 def _without_live_disk_free(report: str) -> str:
-    """Hide the live free-space tenth so two runs can be compared."""
-    return _DISK_FREE.sub("has DISK MiB free", report)
+    """Hide the live free space and usage so two runs can be compared."""
+    return _DISK_FREE.sub("has DISK MiB free (USED% used)", report)
 
 
 def test_doctor_names_xdg_data_home_on_two_runs(
