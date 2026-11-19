@@ -1423,7 +1423,11 @@ def test_a_guarded_waiter_meeting_a_live_name_takes_nothing_over_and_wakes_nothi
 ) -> None:
     runner = RecordingRunner([_result(["synapse", "wait"], 6)])
 
-    assert wait_and_wake(_guarded(tmp_path), runner=runner, sleeper=RecordingSleeper()) == 6
+    result = wait_and_wake(
+        _guarded(tmp_path), runner=runner, sleeper=RecordingSleeper(), max_wait_failures=1
+    )
+
+    assert result == 6
 
     assert [call[-1] for call in _waits(runner)] == ["--no-takeover"]
     assert runner.calls == _waits(runner)  # no probe, no injection
@@ -1458,14 +1462,18 @@ def test_a_guarded_waiter_stops_when_its_synapse_cannot_wait_without_takeover(
     refusal = "synapse: error: unrecognized arguments: --no-takeover\n"
     runner = RecordingRunner([_result(["synapse", "wait"], 2, "", refusal)])
 
-    result = wait_and_wake(_guarded(tmp_path), runner=runner, sleeper=RecordingSleeper())
+    result = wait_and_wake(
+        _guarded(tmp_path), runner=runner, sleeper=RecordingSleeper(), max_wait_failures=1
+    )
 
     assert result == NO_TAKEOVER_UNSUPPORTED_EXIT_CODE == 2
     assert len(_waits(runner)) == 1 and runner.calls == _waits(runner)
     assert "cannot wait without a takeover; this waiter stops" in capsys.readouterr().err
 
 
-def test_a_guarded_pending_wake_is_not_delivered_past_a_live_name(tmp_path: Path) -> None:
+def test_a_guarded_pending_wake_is_not_delivered_past_a_live_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     config = _guarded(tmp_path)
     registry_path(config).write_text(
         json.dumps(
@@ -1489,9 +1497,13 @@ def test_a_guarded_pending_wake_is_not_delivered_past_a_live_name(tmp_path: Path
         ]
     )
 
-    assert wait_and_wake(config, runner=runner, sleeper=RecordingSleeper()) == 6
+    result = wait_and_wake(config, runner=runner, sleeper=RecordingSleeper(), max_wait_failures=1)
+
+    assert result == 6
     assert [call[-1] for call in _waits(runner)] == ["--no-takeover"]
     assert not [call for call in runner.calls if call[1] == "send-keys"]
+    # The guard stopped it, not an ordinary failed wait.
+    assert "is held by a live connection" in capsys.readouterr().err
 
 
 def test_an_unguarded_waiter_never_asks_for_no_takeover(tmp_path: Path) -> None:
