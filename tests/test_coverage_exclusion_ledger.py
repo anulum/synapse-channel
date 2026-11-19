@@ -51,6 +51,10 @@ Justification classes
 ``optional-dep-guard``
     Tests that run only where their optional dependency is installed; CI
     installs every one of these, so they run and count toward coverage there.
+``installed-cli-guard``
+    Tests that read an installed provider CLI's own ``--help`` (no session, no
+    provider capacity) to prove a fixed command form exists; skipped on a host
+    without that CLI, and the skip is listed in the run's evidence.
 ``operator-smoke``
     Real provider-CLI smokes (claude, codex, kimi, grok, ollama) enabled
     explicitly with ``SYNAPSE_PARTICIPANT_REAL_SMOKE=1``; they spend live
@@ -139,6 +143,13 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_session_ledger.py": (2, "platform-guard"),
     # The collector reads the real process table only on Linux.
     "tests/test_session_ledger_collect.py": (2, "platform-guard"),
+    # The restore's pieces read /proc and send POSIX signals; the journey needs tmux.
+    "tests/test_restore_pacing.py": (1, "platform-guard"),
+    "tests/test_restore_grace.py": (1, "platform-guard"),
+    "tests/test_restore_run.py": (1, "platform-guard"),
+    "tests/test_restore_journeys.py": (1, "platform-guard"),
+    # Each resume form is checked against the vendor's installed CLI, where there is one.
+    "tests/test_restore_plan.py": (1, "installed-cli-guard"),
     "tests/test_path_identity_inode_reuse.py": (3, "platform-guard"),
     "tests/test_token_set.py": (1, "platform-guard"),
     "tests/test_cli_token_set.py": (1, "platform-guard"),
@@ -420,6 +431,7 @@ def test_the_ledgers_carry_no_unconditional_skips() -> None:
     """
     allowed = {
         "filesystem-capability",
+        "installed-cli-guard",
         "operator-smoke",
         "optional-dep-guard",
         "platform-guard",

@@ -323,7 +323,9 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     "AntiRollbackError": ("synapse_channel.core.merkle_checkpoint", "anti_rollback", Exception),
     "ChildSetupError": ("synapse_channel.seat_hold", "seat_child_setup", RuntimeError),
     "CollectError": ("synapse_channel.session_ledger_collect", "ledger_collect", Exception),
+    "HubGraceError": ("synapse_channel.restore_grace", "restore_hub_grace", Exception),
     "LedgerError": ("synapse_channel.session_ledger", "session_ledger", Exception),
+    "RestoreBusyError": ("synapse_channel.restore_run", "restore_busy", Exception),
     "ApplyPatchPathError": ("synapse_channel.apply_patch_paths", "apply_patch_path", ValueError),
     "AtRestBindError": ("synapse_channel.core.at_rest_guard", "at_rest_bind", RuntimeError),
     "AutoActionStoreError": (

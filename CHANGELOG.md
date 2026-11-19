@@ -93,6 +93,22 @@ execution evidence when carrying a release claim forward.
   terminal is not attached to it, for a caller that has no terminal to give
   the seat; `--no-attach` without `--restore` is refused (exit 2).
 
+- **Restore the seats a crash or reboot cut.** `synapse ledger restore` plans
+  from the ledger which seats start again: each identity's last row on this
+  host that a reboot cut or whose launcher vanished, from the previous boot by
+  default, never one that really ended. A row the collector alone saw end, or
+  whose last two restores could not start the agent, needs `--only`. A row
+  without a resume handle, with a permission profile, a lost working
+  directory or a tmux name in use is held back. Without `--execute` it is a
+  dry run that writes nothing. With `--execute` one run at a time holds
+  `restore.lock`, holds its own hub connection as `<host>-restore-planner`
+  (45 s up before the first start, an answer within 5 s before every start, a
+  drop starts the wait again, another hub stops the run), waits for headroom
+  (memory, load, memory pressure, 30 s spacing; a host may only tighten
+  these), and starts each seat with `worker-session --restore --no-attach` in
+  its own directory and a listed environment. Each outcome is recorded on the
+  old row, with the new row once it is seen.
+
 ## [0.99.58] - 2026-11-19
 
 Core 0.99.58 adds a hard-linked generation chain for conditional deployments and

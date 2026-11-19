@@ -4,8 +4,8 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — `synapse ledger`: show the session ledger, read the interim v0 files
-"""``synapse ledger``: show this host's session ledger, and read the interim tool's v0 files."""
+# SYNAPSE_CHANNEL — `synapse ledger`: show the session ledger, snapshot the host, restore seats
+"""``synapse ledger``: show, snapshot and restore this host's sessions; read the v0 files."""
 
 from __future__ import annotations
 
@@ -31,7 +31,9 @@ HOST_UNREADABLE_EXIT_CODE = 3
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register ``ledger`` with ``show``, ``snapshot`` and ``read-v0``."""
+    """Register ``ledger`` with ``show``, ``snapshot``, ``restore`` and ``read-v0``."""
+    from synapse_channel.cli_ledger_restore import add_restore_parser
+
     parser = subparsers.add_parser("ledger", help="Show this host's session ledger.")
     nested = parser.add_subparsers(dest="ledger_command", required=True)
     show = nested.add_parser("show", help="One line per row: open rows, or every row with --all.")
@@ -44,6 +46,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     snapshot.add_argument("--tmux-bin", default="tmux", help="The tmux executable to read.")
     snapshot.set_defaults(func=_cmd_snapshot)
+    add_restore_parser(nested)
     v0 = nested.add_parser(
         "read-v0", help="Read an interim v0 event file as v1 events; writes nothing."
     )
