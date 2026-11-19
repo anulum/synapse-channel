@@ -251,7 +251,7 @@ def provider_command(command: Sequence[str]) -> tuple[str, ...]:
     A seat restored behind its holder runs ``synapse seat-hold <options> --
     <agent>``. Its agent is what follows ``--``; the holder's option values
     come first and must never decide the provider (an identity such as
-    ``CEO/claude-…`` can run any agent). Every other command is its own.
+    ``ops/claude-…`` can run any agent). Every other command is its own.
 
     Parameters
     ----------

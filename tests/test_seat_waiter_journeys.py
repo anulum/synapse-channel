@@ -96,10 +96,14 @@ def _agent(tmp_path: Path) -> Path:
     return path
 
 
+PANE = f"={SESSION}:"
+"""The session's pane: an exact session name needs the trailing ``:`` in a pane target."""
+
+
 def _capture(tmux: str) -> str:
-    return subprocess.run(
-        [tmux, "capture-pane", "-p", "-t", f"={SESSION}"], capture_output=True, text=True
-    ).stdout
+    shown = subprocess.run([tmux, "capture-pane", "-p", "-t", PANE], capture_output=True, text=True)
+    assert shown.returncode == 0, shown.stderr
+    return shown.stdout
 
 
 def _seat_processes() -> list[str]:
@@ -176,9 +180,7 @@ async def test_a_held_seat_wakes_its_own_pane_in_one_process_and_keeps_it_quiet(
             screen = _capture(private_tmux)
             assert "AGENT-OUTPUT" in screen  # the agent's own output still reaches the pane
             assert "synapse" not in screen.lower() and "waiter" not in screen.lower(), screen
-            subprocess.run(
-                [private_tmux, "send-keys", "-t", f"={SESSION}", "quit", "Enter"], check=True
-            )
+            subprocess.run([private_tmux, "send-keys", "-t", PANE, "quit", "Enter"], check=True)
             await _until(
                 lambda: (
                     subprocess.run(

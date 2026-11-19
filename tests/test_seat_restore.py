@@ -182,7 +182,7 @@ def _restored(identity: str, command: Sequence[str], tmp_path: Path) -> AgentTmu
 
 def test_the_provider_is_the_agent_after_the_holders_separator(tmp_path: Path) -> None:
     """A seat's name never decides its provider: only the agent after ``--`` does."""
-    codex_under_claude = _restored("CEO/claude-0001", ["codex", "resume", "x"], tmp_path)
+    codex_under_claude = _restored("ops/claude-0001", ["codex", "resume", "x"], tmp_path)
     assert provider_command(codex_under_claude.agent_command) == ("codex", "resume", "x")
     assert _provider_family(codex_under_claude) == "codex"
     assert agent_binary(codex_under_claude) == "codex"
@@ -191,13 +191,13 @@ def test_the_provider_is_the_agent_after_the_holders_separator(tmp_path: Path) -
     assert agent_binary(claude_under_codex) == "claude"
     # An agent run by its interpreter: options are skipped, and the script names it.
     script = ["node", "--max-old-space-size=4096", "/usr/lib/codex/bin/codex.js"]
-    assert _provider_family(_restored("CEO/claude-0001", script, tmp_path)) == "codex"
+    assert _provider_family(_restored("ops/claude-0001", script, tmp_path)) == "codex"
 
 
 def test_a_command_not_behind_a_holder_is_its_own_agent() -> None:
     mentions = ("codex", "exec", "seat-hold", "--", "x")  # an argument, not the holder's shape
     assert provider_command(mentions) == mentions
-    unfinished = ("synapse", "seat-hold", "--identity", "CEO/claude-1")
+    unfinished = ("synapse", "seat-hold", "--identity", "ops/claude-1")
     assert provider_command(unfinished) == unfinished
     assert provider_command([]) == ()
 
@@ -205,7 +205,7 @@ def test_a_command_not_behind_a_holder_is_its_own_agent() -> None:
 def test_a_restored_codex_seat_gets_the_update_override_as_the_agents_argument(
     tmp_path: Path,
 ) -> None:
-    config = _restored("CEO/claude-0001", ["codex", "resume", "x"], tmp_path)
+    config = _restored("ops/claude-0001", ["codex", "resume", "x"], tmp_path)
     managed = _managed_agent_command(config)
     assert managed[: len(config.agent_command)] == config.agent_command
     assert provider_command(managed) == (
@@ -219,7 +219,7 @@ def test_a_restored_codex_seat_gets_the_update_override_as_the_agents_argument(
 
 def test_an_owner_override_and_a_non_codex_agent_are_left_as_they_are(tmp_path: Path) -> None:
     owned = _restored(
-        "CEO/claude-0001", ["codex", "-c", "check_for_update_on_startup=true"], tmp_path
+        "ops/claude-0001", ["codex", "-c", "check_for_update_on_startup=true"], tmp_path
     )
     assert _managed_agent_command(owned) == owned.agent_command
     claude = _restored("SYNAPSE-CHANNEL/codex-2970473", ["claude"], tmp_path)
