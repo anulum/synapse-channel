@@ -103,13 +103,28 @@ def ledger_dir(environ: Mapping[str, str] | None = None) -> Path:
     else:
         raise NoLedger("the environment names no state or home directory")
     directory = (base / "synapse" / "ledger").resolve()
-    for parent in (directory, *directory.parents):
-        if parent.name == COORDINATION_MARKER or (parent / ".git").exists():
-            raise LedgerError(
-                f"the session ledger would lie in a shared or versioned tree ({parent}); "
-                "unset XDG_STATE_HOME or point it at ~/.local/state"
-            )
+    tree = shared_tree(directory)
+    if tree is not None:
+        raise LedgerError(
+            f"the session ledger would lie in a shared or versioned tree ({tree}); "
+            "unset XDG_STATE_HOME or point it at ~/.local/state"
+        )
     return directory
+
+
+def shared_tree(path: Path) -> Path | None:
+    """Return the git work tree or coordination tree that ``path`` lies in, if any.
+
+    A git work tree is marked by a ``.git`` file (a linked work tree or a
+    submodule) or by a ``.git`` directory that holds a ``HEAD``. A stray
+    ``.git`` directory without one, which git itself does not read as a
+    repository, does not make a home directory a work tree.
+    """
+    for parent in (path, *path.parents):
+        marker = parent / ".git"
+        if parent.name == COORDINATION_MARKER or marker.is_file() or (marker / "HEAD").is_file():
+            return parent
+    return None
 
 
 def boot_id() -> str:

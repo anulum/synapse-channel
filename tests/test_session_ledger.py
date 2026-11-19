@@ -34,6 +34,7 @@ from synapse_channel.session_ledger import (
     pid_starttime,
     read_events,
     row_id,
+    shared_tree,
 )
 
 BOOT = "boot-a"
@@ -65,10 +66,23 @@ def test_a_shared_or_versioned_location_is_refused(marker: str, tmp_path: Path) 
     tree.mkdir(parents=True)
     if marker == "git-dir":
         (tmp_path / "repo" / ".git").mkdir()
+        (tmp_path / "repo" / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
     elif marker == "git-file":
         (tmp_path / "repo" / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
     with pytest.raises(LedgerError, match="unset XDG_STATE_HOME or point it at ~/.local/state"):
         ledger_dir({"XDG_STATE_HOME": str(tree)})
+    assert shared_tree(tree / "synapse") == tree.parent
+
+
+def test_a_stray_git_directory_without_a_head_is_not_a_work_tree(tmp_path: Path) -> None:
+    # Whatever surrounds the test's own directory stays what it is.
+    outer = shared_tree(tmp_path.parent)
+    state = tmp_path / ".local" / "state"
+    # A home directory with a leftover ``.git/info`` is not a repository; git says so too.
+    (tmp_path / ".git" / "info").mkdir(parents=True)
+    assert shared_tree(state) == outer
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    assert shared_tree(state) == tmp_path
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc is Linux-only")
