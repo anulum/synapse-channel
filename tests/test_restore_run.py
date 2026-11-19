@@ -635,6 +635,15 @@ async def test_a_first_signal_during_a_start_finishes_that_seat_and_starts_no_ot
     assert lines[-1] == "interrupted: no further seat is started; the run stops"
 
 
+async def test_a_signal_before_the_run_starts_nothing_not_even_the_wait(tmp_path: Path) -> None:
+    run, lines, spawn, _clock, grace = _run(tmp_path, {"P/a": 0})
+    run.interrupt.note()  # noted while the command was still taking its snapshot
+    assert await execute([_entry("P/a")], run) == (INTERRUPTED_EXIT_CODE, [])
+    # The wait for the hub is never begun, so not even a fast answer can start a seat.
+    assert (spawn.calls, grace.calls, grace.closed) == ([], 0, 1)
+    assert lines == ["interrupted: no further seat is started; the run stops"]
+
+
 class _WaitingGrace(_Grace):
     """A grace that never ends, as a hub that keeps dropping would make it."""
 
