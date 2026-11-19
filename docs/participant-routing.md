@@ -34,6 +34,22 @@ selected. Invalid numbers, timestamps, or contradictory free/price declarations 
 rejected. Candidate `tags` and `data_classes` must satisfy the task even for a local
 model; the default data class is only `public`.
 
+## Declare locality and metered use
+
+`locality="local"` declares that a candidate runs on the operator's own machine, for
+example an Ollama model on a listed local endpoint. Every local candidate ranks before
+every hosted one; inside each tier the ranking below is unchanged, and
+`RoutingChoice.reason` names the tier. The default is `locality="hosted"`, so a
+candidate whose author declares nothing is never preferred as local. The router has no
+endpoint to check this against: declare `local` only for an endpoint that is on the
+[worker's local endpoint list](cli.md#worker-options).
+
+A hosted candidate with a priced quote is metered use. It is excluded with
+`metered_without_reference` unless the task names that choice in
+`TaskProfile(metered_ref=...)`, for example the run id the caller records. Metered use
+is therefore never an automatic fallback when no local candidate is eligible. A local
+candidate, a free candidate and a candidate with an unknown price need no reference.
+
 ## Choose uncertainty policy
 
 ```python
@@ -71,7 +87,7 @@ neither a billing limit nor a reservation. Later entitlement and spend enforceme
 must use a separate authoritative ledger.
 
 `RouteRejection.code` reports a stable machine-readable reason such as
-`unknown_price`, `stale_quota`, `cost_unverified`, `currency_mismatch`,
+`unknown_price`, `stale_quota`, `cost_unverified`, `metered_without_reference`, `currency_mismatch`,
 `account_suspended`, `data_policy`, or `missing_capability`. Inspect `decision.rejected`
 before retrying or changing policy. No eligible provider yields `choice=None`; it
 does not fall through to an unpriced remote provider.

@@ -7,9 +7,12 @@
 # SYNAPSE_CHANNEL — choose which provider and model should answer a task
 """Route a task from explicit capability, price, quota, and data-policy evidence.
 
-Current observations win over unknown or stale observations. Within an evidence
-class, known utilisation, comparable estimated cost, and channel robustness
-rank candidates. Unpriced use never appears as a zero-cost estimate. Advisory
+A candidate the roster declares local ranks before every hosted one. Within each
+of those two tiers, current observations win over unknown or stale observations,
+and known utilisation, comparable estimated cost, and channel robustness rank
+candidates. A hosted priced candidate is used only when the task names the
+explicit choice of metered use (``TaskProfile.metered_ref``); it is never an
+automatic fallback. Unpriced use never appears as a zero-cost estimate. Advisory
 routing can admit unknown observations under an explicit operator policy; a
 bounded-cost task requires a current comparable quote independently of policy.
 """
@@ -43,6 +46,11 @@ _CHANNEL_RANK = {channel: rank for rank, channel in enumerate(ParticipantChannel
 AccountStatus = Literal["active", "suspended", "expired"]
 """Account states that can affect dispatch eligibility."""
 
+Locality = Literal["local", "hosted"]
+"""Where a candidate runs, as the roster's author declares it."""
+
+_LOCALITIES: frozenset[str] = frozenset({"local", "hosted"})
+
 
 @dataclass(frozen=True)
 class ModelCandidate:
@@ -72,6 +80,10 @@ class ModelCandidate:
         Provenance and time limits of the quota observation.
     account_status : {"active", "suspended", "expired"}
         Account eligibility. A suspended or expired account cannot be routed.
+    locality : {"local", "hosted"}
+        Where the model runs, as the roster's author declares it. A ``local``
+        candidate ranks before every ``hosted`` one. The default is ``hosted``,
+        so an undeclared candidate is never preferred as local.
     """
 
     name: str
@@ -91,6 +103,12 @@ class ModelCandidate:
     quota_observed_at: float | None = None
     quota_valid_until: float | None = None
     account_status: AccountStatus = "active"
+    locality: Locality = "hosted"
+
+    def __post_init__(self) -> None:
+        """Reject a locality other than ``local`` or ``hosted``."""
+        if self.locality not in _LOCALITIES:
+            raise ValueError("locality must be 'local' or 'hosted'")
 
     @property
     def effective_price_kind(self) -> PriceKind:
@@ -119,6 +137,10 @@ class TaskProfile:
         Currency of ``max_estimated_cost`` and comparable quotes.
     policy : RoutingPolicy
         Operator rules for unknown/stale observations in unbounded advisory use.
+    metered_ref : str
+        The explicit choice of metered use for this task, for example the run
+        id the caller records. Empty, the default, excludes every hosted priced
+        candidate with ``metered_without_reference``.
     """
 
     required_tags: frozenset[str] = field(default_factory=frozenset)
@@ -128,6 +150,7 @@ class TaskProfile:
     max_estimated_cost: float | None = None
     currency: str = "USD"
     policy: RoutingPolicy = field(default_factory=RoutingPolicy)
+    metered_ref: str = ""
 
     def __post_init__(self) -> None:
         """Reject invalid task estimates before evaluating candidates."""
@@ -139,6 +162,8 @@ class TaskProfile:
             raise ValueError("max_estimated_cost must be finite and nonnegative")
         if not self.currency or not self.data_classification:
             raise ValueError("currency and data_classification must be nonempty")
+        if self.metered_ref != self.metered_ref.strip():
+            raise ValueError("metered_ref must be empty or a reference without surrounding spaces")
 
 
 @dataclass(frozen=True)
@@ -173,6 +198,10 @@ class RoutingDecision:
     rejected: tuple[RouteRejection, ...]
 
 
+_Eligible = tuple[ModelCandidate, ParticipantChannel, float | None, EvidenceStatus, EvidenceStatus]
+"""An eligible candidate with its channel, estimated cost, and price and quota status."""
+
+
 def route_candidates(
     task: TaskProfile,
     candidates: list[ModelCandidate],
@@ -201,9 +230,7 @@ def route_candidates(
     observed_now = time.time() if now is None else now
     if not math.isfinite(observed_now) or observed_now < 0:
         raise ValueError("now must be finite and nonnegative")
-    eligible: list[
-        tuple[ModelCandidate, ParticipantChannel, float | None, EvidenceStatus, EvidenceStatus]
-    ] = []
+    eligible: list[_Eligible] = []
     rejected: list[RouteRejection] = []
     for candidate in candidates:
         channel = select_channel(candidate.capabilities, which=which)
@@ -232,28 +259,11 @@ def route_candidates(
     if not eligible:
         return RoutingDecision(choice=None, rejected=tuple(rejected))
 
-    def rank(
-        entry: tuple[
-            ModelCandidate, ParticipantChannel, float | None, EvidenceStatus, EvidenceStatus
-        ],
-    ) -> tuple[int, float, int, float, int]:
-        candidate, channel, cost, price_state, quota_state = entry
-        quota_penalty = 0 if quota_state is EvidenceStatus.CURRENT else 1
-        utilisation = candidate.rate_limit_utilisation or 0.0
-        price_penalty = 0 if price_state is EvidenceStatus.CURRENT else 1
-        return (
-            quota_penalty,
-            utilisation,
-            price_penalty,
-            cost if cost is not None else math.inf,
-            _CHANNEL_RANK[channel],
-        )
-
-    candidate, channel, cost, price_state, quota_state = min(eligible, key=rank)
+    candidate, channel, cost, price_state, quota_state = min(eligible, key=_rank_key)
     cost_text = "unknown" if cost is None else f"{cost:.4f} {task.currency}"
     reason = (
         f"selected {candidate.name!r} (model {candidate.model!r}) via {channel.value} "
-        f"from {len(eligible)} eligible: est_cost={cost_text}, "
+        f"from {len(eligible)} eligible in the {candidate.locality} tier: est_cost={cost_text}, "
         f"price={price_state.value}, quota={quota_state.value}, "
         f"utilisation={candidate.rate_limit_utilisation}"
     )
@@ -271,6 +281,19 @@ def select_provider(
 ) -> RoutingChoice | None:
     """Return the chosen route, or None; use :func:`route_candidates` for exclusions."""
     return route_candidates(task, candidates, which=which).choice
+
+
+def _rank_key(entry: _Eligible) -> tuple[int, int, float, int, float, int]:
+    """Rank local before hosted, then by today's evidence, utilisation, cost and channel."""
+    candidate, channel, cost, price_state, quota_state = entry
+    return (
+        0 if candidate.locality == "local" else 1,
+        0 if quota_state is EvidenceStatus.CURRENT else 1,
+        candidate.rate_limit_utilisation or 0.0,
+        0 if price_state is EvidenceStatus.CURRENT else 1,
+        cost if cost is not None else math.inf,
+        _CHANNEL_RANK[channel],
+    )
 
 
 def _estimated_cost(candidate: ModelCandidate, task: TaskProfile) -> float | None:
@@ -309,6 +332,12 @@ def _rejection_code(
         return "quota_exhausted"
     if (
         candidate.effective_price_kind is PriceKind.PRICED
+        and candidate.locality == "hosted"
+        and not task.metered_ref
+    ):
+        return "metered_without_reference"
+    if (
+        candidate.effective_price_kind is PriceKind.PRICED
         and candidate.price_currency != task.currency
     ):
         return "currency_mismatch"
@@ -319,6 +348,13 @@ def _rejection_code(
             return "cost_unverified"
         if estimated > task.max_estimated_cost:
             return "cost_ceiling"
+    return _policy_code(task, price_state, quota_state)
+
+
+def _policy_code(
+    task: TaskProfile, price_state: EvidenceStatus, quota_state: EvidenceStatus
+) -> str | None:
+    """Return the exclusion the operator's policy makes of unknown or stale evidence."""
     if price_state is EvidenceStatus.UNKNOWN and task.policy.unknown_price == "refuse":
         return "unknown_price"
     if price_state is EvidenceStatus.STALE and task.policy.stale_price == "refuse":

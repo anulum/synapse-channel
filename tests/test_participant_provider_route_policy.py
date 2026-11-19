@@ -45,7 +45,9 @@ def _route(task: TaskProfile, *candidates: ModelCandidate) -> RoutingDecision:
 
 
 def test_bounded_routing_admits_explicit_free_local_and_current_priced_remote() -> None:
-    local = _candidate("local", price_kind=PriceKind.FREE, rate_limit_utilisation=0.0)
+    local = _candidate(
+        "local", price_kind=PriceKind.FREE, rate_limit_utilisation=0.0, locality="local"
+    )
     remote = _candidate(
         "remote",
         price=ModelPrice(input_per_1k=1.0, output_per_1k=2.0),
@@ -59,8 +61,12 @@ def test_bounded_routing_admits_explicit_free_local_and_current_priced_remote() 
         quota_observed_at=90.0,
         quota_valid_until=110.0,
     )
+    # The remote candidate is hosted and priced, so the task names its metered use.
     task = TaskProfile(
-        estimated_input_tokens=1000, estimated_output_tokens=1000, max_estimated_cost=3.0
+        estimated_input_tokens=1000,
+        estimated_output_tokens=1000,
+        max_estimated_cost=3.0,
+        metered_ref="run-1",
     )
     decision = _route(task, remote, local)
     assert decision.choice is not None
@@ -89,7 +95,7 @@ def test_bounded_dispatch_rejects_unverifiable_or_ineligible_routes(
     changes: dict[str, object], code: str
 ) -> None:
     decision = _route(
-        TaskProfile(estimated_input_tokens=1000, max_estimated_cost=1.0),
+        TaskProfile(estimated_input_tokens=1000, max_estimated_cost=1.0, metered_ref="run-1"),
         _candidate("remote", **changes),
     )
     assert decision.choice is None

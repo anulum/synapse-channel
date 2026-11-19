@@ -93,7 +93,10 @@ def test_cheaper_wins_when_headroom_is_equal() -> None:
         capabilities=_headless(),
         price=ModelPrice(input_per_1k=1.0, output_per_1k=1.0),
     )
-    task = TaskProfile(estimated_input_tokens=1000, estimated_output_tokens=1000)
+    # Both are hosted and priced, so the task names its metered use explicitly.
+    task = TaskProfile(
+        estimated_input_tokens=1000, estimated_output_tokens=1000, metered_ref="run-1"
+    )
     choice = select_provider(task, [pricey, cheap], which=_present)
     assert choice is not None
     assert choice.candidate.name == "cheap"

@@ -20,6 +20,14 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **Provider routing ranks declared local candidates first and never falls back to
+  metered use on its own.** `ModelCandidate` gains `locality` (`"local"` or
+  `"hosted"`, default `"hosted"`), and every local candidate ranks before every hosted
+  one; inside each tier the order is unchanged and the choice's reason names the tier.
+  A hosted candidate with a priced quote is now excluded with
+  `metered_without_reference` unless `TaskProfile.metered_ref` names the explicit
+  choice of metered use. Callers that route among priced hosted candidates must set
+  `metered_ref`.
 - **`ollama` and `tiered` workers now refuse non-local endpoints.** Every HTTP tier's
   base URL (the `ollama` model, and `tiered`'s SLM and HEAVY tiers) must be on the
   operator's local endpoint list, checked when the worker is built; an undeclared
