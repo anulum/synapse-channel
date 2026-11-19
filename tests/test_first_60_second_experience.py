@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,20 @@ from synapse_channel.demo import run_coordination_demo
 from synapse_channel.demo_scenario import DEMO_AGENT_LABELS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _closed_loopback_port() -> int:
+    """Bind an ephemeral loopback port, close it, and return that port.
+
+    Port 0 is not a closed port. The WebSocket client maps it to 80, so a
+    listener there can answer a probe that was meant to time out.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as holder:
+        holder.bind(("127.0.0.1", 0))
+        port = int(holder.getsockname()[1])
+    if port == 0:
+        raise RuntimeError("the kernel did not assign a probe port")
+    return port
 
 
 def _read_repo_text(relative_path: str) -> str:
@@ -163,9 +178,11 @@ async def test_demo_probe_leaves_logger_levels_untouched_on_both_exits() -> None
     ws_logger = logging.getLogger("synapse.hub.ws")
     previous_level = ws_logger.level
     ws_logger.setLevel(logging.WARNING)
+    port = _closed_loopback_port()
+    assert port != 0
     try:
         with pytest.raises(TimeoutError, match="did not start listening"):
-            await demo_module._await_listening(0, timeout=0.05)
+            await demo_module._await_listening(port, timeout=0.05)
         assert ws_logger.level == logging.WARNING
     finally:
         ws_logger.setLevel(previous_level)
@@ -180,5 +197,7 @@ async def test_demo_helpers_time_out_honestly(tmp_path: object) -> None:
     inbox = demo_module.DemoInbox()
     with pytest.raises(TimeoutError, match="expected message did not arrive"):
         await inbox.wait_for(lambda _m: False, timeout=0.05)
+    port = _closed_loopback_port()
+    assert port != 0
     with pytest.raises(TimeoutError, match="did not start listening"):
-        await demo_module._await_listening(0, timeout=0.05)
+        await demo_module._await_listening(port, timeout=0.05)
