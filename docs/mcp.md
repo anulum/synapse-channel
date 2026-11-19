@@ -213,6 +213,10 @@ This release tests the option against the environment-variable contract with
 real processes and a real hub. A run with the client itself is not part of
 this release's evidence.
 
+A Grok client on another computer does not use this stdio command. Point it at
+the loopback HTTPS listener through a private tunnel, as described in the
+[remote Grok connector](grok-remote.md).
+
 ### Cursor
 
 Cursor reads project servers from `.cursor/mcp.json` and global servers from

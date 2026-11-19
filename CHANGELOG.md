@@ -23,6 +23,13 @@ execution evidence when carrying a release claim forward.
 - `synapse_channel.core.generation_chain` and `synapse generation head|read|publish|seal` implement the `synapse-generation.v1` hard-linked 20-digit generation chain (`gen-<20 digits>.json`) in owner-only local directories (refusing symlinks, loose permissions, and NFS/CIFS/SMB/FUSE filesystems via `statfs`), syncing `.partial` files and the chain directory on publication, carrying the base generation's artefact forward (or 64 zeros at generation 0) when sealing, and refusing gaps below the head or non-canonical slot bytes.
 - `synapse_channel.result_verification_effects.verify_deployment` (`ServiceStartRecord`, `synapse-service-start.v1`) and `synapse verify-result deployment` gain generation-chain verification (`--chain`, `--start-record`, `--base-generation`, `--base-artefact-sha256`, `--artefact-sha256`, `--attempt-id`, `--revision`) alongside legacy `--report` mode, verifying pre-state digests (including 64 zeros at generation 0), slot ownership/kind/artefact at `base + 1`, and strict canonical start-record convergence while suspending non-converged or unrecognised start records as `observed`/`not_checked`.
 
+- **Remote Grok connector.** A Grok client on another computer uses the loopback
+  HTTPS MCP listener, one issuer subject pinned to one seat, and an owner-only
+  stable bearer that a private process exchanges for the current hub token.
+  Directed mail for a local pane is woken by `synapse waker`; a seat without a
+  pane keeps a directed mailbox waiter. `synapse_status` includes the project's
+  online peer names. See [remote Grok connector](docs/grok-remote.md).
+
 ### Changed
 
 - **`synapse mcp-gate` seats list their tools.** Each `seats[]` entry of the gate

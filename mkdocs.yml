@@ -120,6 +120,7 @@ nav:
   - MCP server: mcp.md
   - HTTP MCP: mcp-http.md
   - MCP bearer gate: mcp-gate.md
+  - Remote Grok connector: grok-remote.md
   - Git-native claims: git-claims.md
   - Policy engine: policy-engine.md
   - Agent trust graph: agent-trust-graph.md
