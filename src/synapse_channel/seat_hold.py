@@ -18,8 +18,10 @@ long as its agent runs:
   :data:`SEAT_LIVE_EXIT_CODE`. No ownership-lease token is used, because a token
   file on the same host would let a second copy present it and be admitted.
 * **The agent starts after the name is held.** The holder writes a private
-  marker naming the fresh nonce it was given, then starts the agent as its own
-  child. A caller that waits for the marker learns the outcome without guessing.
+  marker naming the fresh nonce it was given (``held``), then starts the agent
+  as its own child, and writes the final ``ready`` once the agent has started
+  (or ``failed`` when it could not). A caller that waits for a final word learns
+  the outcome without guessing.
 * **The holder's death ends the agent.** On Linux the agent is started with a
   parent-death signal, and checks right after setting it that the holder is
   still its parent. A holder killed outright therefore never leaves an agent
@@ -299,9 +301,13 @@ class SeatHolder:
             wake_capability=WAKE_PASSIVE,
         )
         task = asyncio.create_task(agent.connect())
-        refused = not await agent.wait_until_ready(timeout=timeout)
-        if not refused:
-            refused = await closed_after_ready(agent, timeout=timeout)
+        try:
+            refused = not await agent.wait_until_ready(timeout=timeout)
+            if not refused:
+                refused = await closed_after_ready(agent, timeout=timeout)
+        except asyncio.CancelledError:
+            await _close(agent, task)
+            raise
         if refused:
             await _close(agent, task)
             live = is_name_conflict_close(agent.last_close_code, agent.last_close_reason)
@@ -439,7 +445,14 @@ async def supervise(
                 continue
             if lost_since is None:
                 lost_since = clock()
-            verdict = await holder.acquire(timeout=timing.ready_timeout)
+            # A stop or the agent's exit must not wait for a registration in flight.
+            acquiring = asyncio.ensure_future(holder.acquire(timeout=timing.ready_timeout))
+            await _first_of(acquiring, agent_done, stop.wait())
+            if not acquiring.done():
+                acquiring.cancel()
+                await asyncio.gather(acquiring, return_exceptions=True)
+                continue
+            verdict = acquiring.result()
             if verdict == "held":
                 lost_since, delay = None, timing.reconnect_base
                 continue
@@ -511,7 +524,8 @@ async def hold_seat(
         live elsewhere; :data:`HUB_UNAVAILABLE_EXIT_CODE` when the hub could not
         be reached; :data:`UNSUPPORTED_PLATFORM_EXIT_CODE` off Linux;
         :data:`AGENT_START_FAILED_EXIT_CODE` when the agent could not be started
-        with its fence. The marker says ``ready``, ``refused``, ``unavailable``,
+        with its fence. The marker says ``held`` while the agent is being
+        started, then one final word: ``ready``, ``refused``, ``unavailable``,
         ``unsupported`` or ``failed``.
     """
     if not NONCE_PATTERN.match(nonce):
@@ -536,7 +550,7 @@ async def hold_seat(
         )
         write_marker(marker, f"{'refused' if live else 'unavailable'} {holder.name} {nonce}")
         return SEAT_LIVE_EXIT_CODE if live else HUB_UNAVAILABLE_EXIT_CODE
-    write_marker(marker, f"ready {holder.name} {nonce}")
+    write_marker(marker, f"held {holder.name} {nonce}")
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     handled = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
@@ -549,6 +563,7 @@ async def hold_seat(
             print(f"synapse seat-hold: the agent could not be started with its fence: {exc}")
             write_marker(marker, f"failed {holder.name} {nonce}")
             return AGENT_START_FAILED_EXIT_CODE
+        write_marker(marker, f"ready {holder.name} {nonce}")
         return await supervise(holder, child, stop=stop, timing=timing)
     finally:
         for signum in handled:

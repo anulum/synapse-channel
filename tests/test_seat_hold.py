@@ -33,6 +33,7 @@ import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
 from synapse_channel import cli_seat_hold, seat_hold
+from synapse_channel.client.agent_dispatch import MessageCallback
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.seat_hold import (
     AGENT_START_FAILED_EXIT_CODE,
@@ -228,6 +229,12 @@ async def test_an_agent_that_cannot_start_ends_the_seat_with_a_failed_marker(
 
 
 async def test_the_agent_starts_only_after_the_seat_is_held(tmp_path: Path) -> None:
+    at_spawn: list[str] = []
+
+    async def spawn_after_reading(argv: Sequence[str], holder_pid: int) -> Any:
+        at_spawn.append(_marker(tmp_path))
+        return await spawn_agent(argv, holder_pid)
+
     async with running_hub() as (_hub, uri):
         marker = marker_path(tmp_path, "T/seat", NONCE)
         seen = tmp_path / "seen.txt"
@@ -240,10 +247,16 @@ async def test_the_agent_starts_only_after_the_seat_is_held(tmp_path: Path) -> N
             ),
             uri=uri,
             marker_dir=tmp_path,
+            spawner=spawn_after_reading,
             timing=FAST,
         )
     assert code == 3
-    assert seen.read_text(encoding="utf-8").strip() == f"ready T/seat-seat {NONCE}"
+    # The hold is on record before the agent is started ...
+    assert at_spawn == [f"held T/seat-seat {NONCE}"]
+    # ... the agent finds a marker for this start (``ready`` may already be written) ...
+    assert seen.read_text(encoding="utf-8").split()[1:] == ["T/seat-seat", NONCE]
+    # ... and the final word says it started.
+    assert _marker(tmp_path) == f"ready T/seat-seat {NONCE}"
 
 
 async def test_a_live_holder_is_never_displaced_and_nothing_starts(tmp_path: Path) -> None:
@@ -584,3 +597,60 @@ def test_an_unreadable_token_file_is_a_named_refusal(
     assert (
         out == f"synapse seat-hold: cannot read the token file {missing}: No such file or directory"
     )
+
+
+async def test_a_failed_start_replaces_held_with_failed(tmp_path: Path) -> None:
+    """``held`` is not final: a spawn that fails turns it into ``failed``."""
+    seen: list[str] = []
+
+    async def failing(argv: Sequence[str], _pid: int) -> Any:
+        seen.append(_marker(tmp_path))
+        raise OSError("exec format error")
+
+    async with running_hub() as (_hub, uri):
+        code = await hold_seat(
+            "T/seat", NONCE, ["agent"], uri=uri, marker_dir=tmp_path, spawner=failing, timing=FAST
+        )
+    assert seen == [f"held T/seat-seat {NONCE}"]
+    assert code == AGENT_START_FAILED_EXIT_CODE
+    assert _marker(tmp_path) == f"failed T/seat-seat {NONCE}"
+
+
+class _HangingAgent:
+    """A client whose hub never answers; it records whether its attempt was closed."""
+
+    closed: list[str] = []
+
+    def __init__(self, name: str, *_args: object, **_kwargs: object) -> None:
+        self.name = name
+        self.running = True
+        self.last_close_code: int | None = None
+        self.last_close_reason = ""
+        self.callback: MessageCallback | None = None
+
+    async def connect(self) -> None:
+        try:
+            await asyncio.sleep(3600)
+        finally:
+            _HangingAgent.closed.append(self.name)
+
+    async def wait_until_ready(self, timeout: float = 5.0) -> bool:
+        await asyncio.sleep(timeout)
+        return False
+
+    async def request_who(self, hub: str | None = None) -> None:
+        return None
+
+
+async def test_a_stop_during_a_reconnect_does_not_wait_for_the_registration() -> None:
+    _HangingAgent.closed.clear()
+    holder = SeatHolder("T/seat", uri="ws://unused", token=None, factory=_HangingAgent)
+    child = await spawn_agent(["sleep", "30"], os.getpid())
+    stop = asyncio.Event()
+    slow = dataclasses.replace(FAST, ready_timeout=60.0)
+    asyncio.get_running_loop().call_later(0.3, stop.set)
+    started = time.monotonic()
+    status = await asyncio.wait_for(supervise(holder, child, stop=stop, timing=slow), timeout=20.0)
+    assert time.monotonic() - started < 10.0
+    assert status == 128 + signal.SIGTERM
+    assert _HangingAgent.closed == ["T/seat-seat"]

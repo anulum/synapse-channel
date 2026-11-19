@@ -27,9 +27,14 @@ execution evidence when carrying a release claim forward.
   outlives its holder; it runs in its own process group, which the holder
   signals when it ends. A dropped connection is registered again without a
   takeover, and a refusal that outlasts the hub's keepalive window ends the
-  seat. A private marker named by the nonce reports `ready`, `refused`,
-  `unavailable`, `unsupported` or `failed`; an agent that cannot be started with
-  its fence is never run (exit 70). Other platforms are refused by name.
+
+  seat, and a stop does not wait for a registration in flight. A private
+  marker named by the nonce says `held` while the agent is being started, then
+  one final word: `ready` once it has started, or `refused`, `unavailable`,
+  `unsupported` or `failed`. An agent that cannot be started with its fence is
+  never run (exit 70). The fence's library is resolved before the fork, so the
+  child loads nothing. Other platforms are refused by name, and an unreadable
+  token file is refused with exit 2.
 
 ## [0.99.58] - 2026-11-19
 
