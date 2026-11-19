@@ -304,6 +304,14 @@ def test_health_is_never_read_from_anything_but_a_hub_uri(uri: str) -> None:
     assert health_reading(uri) is None
 
 
+@pytest.mark.parametrize("scheme", ["http", "https", "ftp"])
+def test_a_server_that_serves_health_is_still_not_read_for_another_scheme(scheme: str) -> None:
+    body = json.dumps({"hub_id": "hub-a", "uptime_seconds": 61}).encode()
+    with _http(200, body) as port:
+        assert health_reading(f"ws://127.0.0.1:{port}") == ("hub-a", 61.0)  # it is served
+        assert health_reading(f"{scheme}://127.0.0.1:{port}") is None
+
+
 def test_health_from_no_listener_is_none() -> None:
     assert health_reading(f"wss://127.0.0.1:{free_port()}", timeout=1.0) is None
 
