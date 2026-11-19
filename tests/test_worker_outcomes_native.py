@@ -489,32 +489,34 @@ def test_actual_launch_refusal_remains_not_started_after_launcher_exits(tmp_path
 def test_real_publication_failure_recovery_is_unknown_without_relaunch(tmp_path: Path) -> None:
     """A provider replaces the report directory; its joined launcher cannot publish exit.
 
-    The child replaces the directory once the launcher's started record is in
-    it. Without that wait, the rename races the launcher's own publish: on
-    Windows a directory with an open file cannot be renamed, the child fails,
-    and the launcher reports the child's exit instead of the failed publish.
-    The wait is a hang guard on setup, not part of the claim.
+    The launch record is written only after the started publication has
+    returned, so the launcher is waiting and will not touch the directory
+    again until the child exits. The child writes and flushes its effect, then
+    renames the directory. The effect is therefore durable before the exit
+    publication sees the replacement. Renaming any earlier races that
+    publication: on Windows a directory with an open file cannot be renamed,
+    and on every host the failed publication stops the child between its
+    writes. The wait is a hang guard on the launch record, not part of the claim.
     """
     env = private_environment(tmp_path)
     original, moved = tmp_path / "private", tmp_path / "moved"
     report, effect = original / "outcome.json", tmp_path / "effect"
     program = "\n".join(
         [
-            "import json, pathlib, sys, time",
+            "import os, pathlib, sys, time",
             "src = pathlib.Path(sys.argv[1])",
+            "records = pathlib.Path(os.environ['XDG_STATE_HOME']) / 'synapse' / 'launch-records'",
             f"deadline = time.monotonic() + {_SETUP_GUARD_SECONDS}",
-            "while True:",
-            "    try:",
-            "        if json.loads((src / 'outcome.json').read_text())['state'] == 'started':",
-            "            src.rename(pathlib.Path(sys.argv[2]))",
-            "            break",
-            "    except (OSError, ValueError, KeyError):",
-            "        pass",
+            "while not any(records.glob('*.json')):",
             "    if time.monotonic() >= deadline:",
-            "        raise SystemExit('the started record was never replaceable')",
+            "        raise SystemExit('the launch record was never published')",
             "    time.sleep(0.01)",
+            "effect = pathlib.Path(sys.argv[3])",
+            "effect.write_text('effect completed')",
+            "with effect.open('rb+') as handle:",
+            "    os.fsync(handle.fileno())",
+            "src.rename(pathlib.Path(sys.argv[2]))",
             "src.write_text('controlled replacement')",
-            "pathlib.Path(sys.argv[3]).write_text('effect completed')",
         ]
     )
     run = subprocess.run(
