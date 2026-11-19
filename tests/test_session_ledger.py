@@ -117,7 +117,7 @@ def test_a_new_boot_starts_its_seq_again(tmp_path: Path) -> None:
 def test_a_crash_between_seq_and_line_leaves_a_gap_never_a_repeat(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TL-1: the number is stored before the line, so a crash between them costs a number."""
+    """The number is stored before the line, so a crash between them costs a number."""
     append_event({"event": "start", "row_id": "r"}, directory=tmp_path, boot=BOOT)
     real = session_ledger._append_line
 
@@ -135,7 +135,7 @@ def test_a_crash_between_seq_and_line_leaves_a_gap_never_a_repeat(
 def test_a_failed_write_leaves_no_partial_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TL-2: a disk-full or short write is cut back to the previous size."""
+    """A disk-full or short write is cut back to the previous size."""
     append_event({"event": "start", "row_id": "r"}, directory=tmp_path, boot=BOOT)
     events = next(tmp_path.glob("events-*.jsonl"))
     size = events.stat().st_size
@@ -171,6 +171,17 @@ def test_an_unterminated_last_line_is_skipped_then_cut(tmp_path: Path) -> None:
     assert [line["event"] for line in _lines(tmp_path)] == ["start", "end"]
 
 
+def test_a_whole_but_unterminated_last_line_is_not_read(tmp_path: Path) -> None:
+    """A writer that died before its newline left a complete object: it is still not a line."""
+    append_event({"event": "start", "row_id": "r"}, directory=tmp_path, boot=BOOT)
+    events = next(tmp_path.glob("events-*.jsonl"))
+    with events.open("ab") as stream:
+        stream.write(
+            json.dumps({"schema": SCHEMA, "event": "end", "row_id": "r", "seq": 9}).encode()
+        )
+    assert [line["event"] for line in _lines(tmp_path)] == ["start"]
+
+
 def test_other_lines_are_not_read_as_v1(tmp_path: Path) -> None:
     (tmp_path / "events-2026-11.jsonl").write_text(
         'not json\n{"schema": "ws-session-ledger.v0", "event": "observed"}\n["a list"]\n',
@@ -180,7 +191,7 @@ def test_other_lines_are_not_read_as_v1(tmp_path: Path) -> None:
 
 
 def test_a_held_lock_costs_a_launcher_its_line_not_its_time(tmp_path: Path) -> None:
-    """TL-3: the wait is bounded; the line is given up and reported."""
+    """The wait is bounded; the line is given up and reported."""
     append_event({"event": "start", "row_id": "r"}, directory=tmp_path, boot=BOOT)
     fd = os.open(tmp_path / "ledger.lock", os.O_RDWR)
     fcntl.flock(fd, fcntl.LOCK_EX)
@@ -275,7 +286,7 @@ def test_the_first_end_is_final() -> None:
 def test_a_late_real_end_supersedes_once_and_only_from_its_launcher(
     late: dict[str, Any], taken: bool
 ) -> None:
-    """TL-4: only the row's launcher, from the same boot, naming the end it corrects."""
+    """Only the row's launcher, from the same boot, naming the end it corrects."""
     events = [
         _event("start", 1, launcher="seat-hold"),
         _event("ended_unobserved", 2, end_kind="observed_gone"),
@@ -285,6 +296,19 @@ def test_a_late_real_end_supersedes_once_and_only_from_its_launcher(
     row = fold(events)["r"]
     # A refused late end is ignored, and the valid correction after it is still taken.
     assert row.end is not None and row.end["seq"] == (3 if taken else 4)
+
+
+def test_a_real_end_is_never_superseded() -> None:
+    row = fold(
+        [
+            _event("start", 1, launcher="seat-hold"),
+            _event("end", 2, launcher="seat-hold", end_kind="exit", exit_status=0),
+            _event(
+                "end", 3, launcher="seat-hold", end_kind="exit", exit_status=9, supersedes_seq=2
+            ),
+        ]
+    )["r"]
+    assert row.end is not None and row.end["seq"] == 2 and not row.corrected
 
 
 def test_a_boot_cut_and_an_observed_rows_end_are_final() -> None:

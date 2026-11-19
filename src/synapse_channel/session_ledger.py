@@ -282,9 +282,10 @@ def fold(events: Iterable[Mapping[str, Any]]) -> dict[str, Row]:
     """Fold events into rows, applying the one-end rule.
 
     The first end of a row is final, with one exception: a real ``end`` may
-    supersede an ``ended_unobserved`` once, when it comes from the launcher
-    named in the row's ``start`` and from the same boot. Every other late end
-    is ignored.
+    supersede an ``ended_unobserved`` when it comes from the launcher named in
+    the row's ``start``, from the same boot, and names that line in
+    ``supersedes_seq``. The corrected end is itself a real end, so it is
+    final: there is at most one correction. Every other late end is ignored.
     """
     rows: dict[str, Row] = {}
     for event in events:
@@ -314,7 +315,6 @@ def _take_end(row: Row, event: Mapping[str, Any]) -> None:
     launcher = row.start.get("launcher")
     if (
         row.end.get("event") == "ended_unobserved"
-        and not row.corrected
         and launcher not in (None, "observed")
         and event.get("launcher") == launcher
         and event.get("boot_id") == row.end.get("boot_id")
