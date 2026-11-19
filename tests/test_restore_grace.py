@@ -209,6 +209,33 @@ async def test_health_is_only_a_shortcut_for_the_first_wait_of_the_same_hub(
         await grace.close()
 
 
+async def test_health_is_read_off_the_loop_that_serves_the_connection() -> None:
+    ticks: list[float] = []
+    seen: list[int] = []
+
+    def slow(_uri: str) -> tuple[str, float] | None:
+        start = len(ticks)
+        time.sleep(0.3)  # a slow /health, as on a loaded host
+        seen.append(len(ticks) - start)
+        return None
+
+    async def tick() -> None:
+        while True:
+            ticks.append(time.monotonic())
+            await asyncio.sleep(0.01)
+
+    ticker = asyncio.create_task(tick())
+    grace = _grace(FakeHub(), health=slow)
+    try:
+        await grace.ready()
+    finally:
+        ticker.cancel()
+        await asyncio.gather(ticker, return_exceptions=True)
+        await grace.close()
+    # The loop went on while the read waited: the connection's own frames are not held up.
+    assert seen and seen[0] >= 5
+
+
 async def test_health_is_not_read_again_after_a_drop() -> None:
     hub = FakeHub()
     reads: list[str] = []
