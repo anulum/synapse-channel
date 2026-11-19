@@ -31,6 +31,7 @@ from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.agent_tmux import AgentTmuxConfig, start_session
 from synapse_channel.seat_hold import marker_path
 from synapse_channel.seat_restore import wait_for_marker
+from synapse_channel.session_ledger_collect import children, descendants, read_procs
 from synapse_channel.waiter_identity import pane_waiter_name
 
 IDENTITY = "T/hold"
@@ -106,10 +107,24 @@ def _capture(tmux: str) -> str:
     return shown.stdout
 
 
-def _seat_processes() -> list[str]:
-    # -ww: never cut a command line to the 80 columns ps assumes for a pipe
-    listing = subprocess.run(["ps", "-ww", "-eo", "args"], capture_output=True, text=True).stdout
-    return [line for line in listing.splitlines() if IDENTITY in line and "ps -eo" not in line]
+def _seat_processes(tmux: str) -> list[tuple[str, ...]]:
+    """The argument vectors of every process under the private tmux server, and no other.
+
+    Other tests on the host may run seat holders of their own; only this
+    server's tree is this seat's.
+    """
+    server = int(
+        subprocess.run(
+            [tmux, "display", "-p", "#{pid}"], capture_output=True, text=True, check=True
+        ).stdout
+    )
+    procs = read_procs()
+    return [procs[pid].argv for pid in descendants(server, children(procs))]
+
+
+WAITER_WORDS = ("synapse-wait", "seat-hold", "registered", "waiter", "connected", "traceback")
+"""What the holder or its waiter would print. The wake prompt itself is typed into the
+pane by design, so the word "Synapse" alone proves nothing."""
 
 
 async def _until(check: Callable[[], bool], within: float = 20.0) -> None:
@@ -166,9 +181,11 @@ async def test_a_held_seat_wakes_its_own_pane_in_one_process_and_keeps_it_quiet(
             await _until(lambda: pane_waiter_name(IDENTITY) in hub.online_agents())
             assert f"{IDENTITY}-seat" in hub.online_agents()
             # One Synapse process for the seat: no `agent-tmux wait`, no `synapse wait` child.
-            processes = _seat_processes()
-            assert len([line for line in processes if "seat-hold" in line]) == 1, processes
-            assert not [line for line in processes if " wait " in f" {line} "], processes
+            # A shell tmux keeps between itself and the holder (fish does) names the holder
+            # inside one word; the holder has "seat-hold" as an argument of its own.
+            processes = _seat_processes(private_tmux)
+            assert len([argv for argv in processes if "seat-hold" in argv]) == 1, processes
+            assert not [argv for argv in processes if "wait" in argv], processes
             sender = await connect_agent("SENDER", uri)
             try:
                 await sender.agent.chat("please wake", target=IDENTITY)
@@ -179,7 +196,7 @@ async def test_a_held_seat_wakes_its_own_pane_in_one_process_and_keeps_it_quiet(
                 await close_agents(sender)
             screen = _capture(private_tmux)
             assert "AGENT-OUTPUT" in screen  # the agent's own output still reaches the pane
-            assert "synapse" not in screen.lower() and "waiter" not in screen.lower(), screen
+            assert not [word for word in WAITER_WORDS if word in screen.lower()], screen
             subprocess.run([private_tmux, "send-keys", "-t", PANE, "quit", "Enter"], check=True)
             await _until(
                 lambda: (
