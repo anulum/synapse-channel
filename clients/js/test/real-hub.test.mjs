@@ -336,24 +336,33 @@ async function startFixtureHub(t, env) {
     child.once("error", (error) => resolve({ error }));
     child.once("exit", (code, signal) => resolve({ code, signal }));
   });
-  const watchdog = setTimeout(() => child.kill("SIGKILL"), 20000);
   const lines = createInterface({ input: child.stdout });
+  // The ready line is the proof the fixture is listening. The test's own
+  // signal is the only bound (25 s on the signed-frame test). A five-second
+  // abort fired while the interpreter was still starting.
+  const onAbort = () => child.kill("SIGKILL");
+  t.signal.addEventListener("abort", onAbort, { once: true });
   t.after(async () => {
+    t.signal.removeEventListener("abort", onAbort);
     lines.close();
     child.stdin.end();
-    const killTimer = setTimeout(() => child.kill("SIGKILL"), 3000);
     const result = await exited;
-    clearTimeout(killTimer);
-    clearTimeout(watchdog);
     assert.deepEqual(result, { code: 0, signal: null }, diagnostics);
   });
-  const ready = once(lines, "line", { signal: AbortSignal.timeout(5000) });
-  return Promise.race([
-    ready.then(([line]) => JSON.parse(line)),
-    exited.then((status) => {
-      throw new Error(`Hub exited before readiness: ${JSON.stringify(status)} ${diagnostics}`);
-    }),
-  ]);
+  try {
+    const [line] = await Promise.race([
+      once(lines, "line", { signal: t.signal }),
+      exited.then((status) => {
+        throw new Error(`Hub exited before readiness: ${JSON.stringify(status)} ${diagnostics}`);
+      }),
+    ]);
+    return JSON.parse(line);
+  } catch (error) {
+    if (t.signal.aborted) {
+      throw new Error(`fixture hub did not print its ready line: ${diagnostics}`, { cause: error });
+    }
+    throw error;
+  }
 }
 
 test("SDK signs every frame for a Python hub that requires it", { timeout: 25000 }, async (t) => {
