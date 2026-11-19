@@ -636,6 +636,8 @@ def test_a_token_without_a_file_reaches_the_holder_in_a_private_file(tmp_path: P
     assert path == tmp_path / "synapse-seat-hold" / f"T_seat.{NONCE}.token"
     assert path.stat().st_mode & 0o777 == 0o600
     assert read_secret_file(path, flag="--token-file") == "secret-token"
+    # The tmux configuration holds the file, never the value a waiter could put on its command line.
+    assert held.configs[0].token is None and held.configs[0].token_file == path
     # A seat that is not held leaves no token behind; a held one keeps it for its pane.
     for word in ("refused", None):
         nonce = f"nonce-{word or 'none'}-1"

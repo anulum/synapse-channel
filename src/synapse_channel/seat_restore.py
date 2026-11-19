@@ -55,6 +55,7 @@ from synapse_channel.agent_tmux import (
     AgentTmuxWakeResult,
     start_session,
 )
+from synapse_channel.core.private_dir import ensure_private_dir
 from synapse_channel.reap import safe_key
 from synapse_channel.seat_hold import (
     AGENT_START_FAILED_EXIT_CODE,
@@ -248,7 +249,7 @@ def seat_token_file(directory: Path, identity: str, nonce: str, token: str) -> P
     directory, and named by this start's nonce. It stays while the seat is held,
     so a later restart of the pane through its recorded command still finds it.
     """
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    ensure_private_dir(directory, parents=True, purpose="seat holder marker directory")
     path = directory / f"{safe_key(identity)}.{nonce}.token"
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
@@ -311,20 +312,21 @@ def start_restored_seat(
         session that already exists, or :data:`HUB_UNAVAILABLE_EXIT_CODE` when
         the pane could not be started or gave no answer.
     """
-    token_value = nonce or secrets.token_hex(8)
+    start_nonce = nonce or secrets.token_hex(8)
     directory = default_marker_dir(env)
     written = (
-        seat_token_file(directory, identity, token_value, token)
+        seat_token_file(directory, identity, start_nonce, token)
         if token and not token_file
         else None
     )
+    holder_token_file = str(written) if written is not None else token_file
     pane = holder_command(
         synapse_bin=synapse_bin,
         identity=identity,
-        nonce=token_value,
+        nonce=start_nonce,
         marker_dir=directory,
         uri=uri,
-        token_file=str(written) if written is not None else token_file,
+        token_file=holder_token_file,
         command=command,
         wake_session=session,
         tmux_bin=tmux_bin,
@@ -340,13 +342,15 @@ def start_restored_seat(
                 tmux_bin=tmux_bin,
                 synapse_bin=synapse_bin,
                 uri=uri,
-                token=token,
+                # Only the file: a config holding the value could put it on a waiter's command line.
+                token=None,
+                token_file=Path(holder_token_file) if holder_token_file else None,
             )
         ),
         session=session,
         tmux_bin=tmux_bin,
         kill=kill,
-        word=lambda: wait(marker_path(directory, identity, token_value)),
+        word=lambda: wait(marker_path(directory, identity, start_nonce)),
     )
     if code is not None:
         if written is not None:
