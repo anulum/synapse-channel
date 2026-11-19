@@ -87,6 +87,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "integrations": ADAPTER,
     "mcp": ADAPTER,
     "mcp-call": ADAPTER,
+    "mcp-gate": ADAPTER,
     "mcp-tools": ADAPTER,
     "ingest": ADAPTER,
     "codex-tmux": ADAPTER,

@@ -192,6 +192,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_shell:add_parsers", ("shell-hook", "install-shell-hook")),
     ("synapse_channel.cli_mcp:add_parsers", ("mcp",)),
     ("synapse_channel.cli_mcp_call:add_parsers", ("mcp-tools", "mcp-call")),
+    ("synapse_channel.cli_mcp_gate:add_parsers", ("mcp-gate",)),
     (
         "synapse_channel.cli_a2a:add_parsers",
         ("a2a-card", "a2a-serve", "a2a-interop-trace", "a2a-client"),

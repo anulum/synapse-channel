@@ -502,6 +502,12 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "local_endpoint",
         ValueError,
     ),
+    "GateConfigError": ("synapse_channel.mcp.gate_config", "mcp_gate_config", ValueError),
+    "SeatTokenUnavailable": (
+        "synapse_channel.mcp.gate_config",
+        "mcp_gate_seat_token",
+        RuntimeError,
+    ),
     "EffectSuiteKeyError": (
         "synapse_channel.effect_suite.record",
         "effect_suite_key",

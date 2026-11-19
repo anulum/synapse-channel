@@ -61,6 +61,15 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **`synapse mcp-gate`: a stable-bearer gate in front of the authenticated HTTP MCP
+  listener,** for a remote client that can keep only one static secret. The gate
+  checks a 256-bit bearer on every request, stored as a digest that expires after
+  90 days. It replaces the bearer with the seat's current issuer token and forwards
+  one request per connection, with allow-listed headers, to the listener, whose
+  certificate it pins. Its framing is strict, its deadlines are total and its
+  connections, sessions and responses are bounded. It refuses to start for a seat
+  holding a work-changing grant. See [MCP bearer gate](docs/mcp-gate.md).
+
 - Operation declarations (`operation_record` `declare` and `synapse operation declare`) accept a generation-chain deployment target (`chain`, `start_record`, `base_generation`, `base_artefact_sha256`, `artefact_sha256`, `revision`, requiring 64 zeros when `base_generation` is `0`) alongside the existing `report`+`revision` target, and an optional starting schema digest (`base_schema_sha256`) on migration targets, refusing mixed target shapes and preserving all declared fields across journal replay.
 
 ## [0.99.56] - 2026-11-18
