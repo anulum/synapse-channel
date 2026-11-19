@@ -37,6 +37,10 @@ execution evidence when carrying a release claim forward.
   key. Redirecting that variable creates a second machine key, and a hub that
   already pinned the seat refuses the new key with close code 4013.
 
+- The pane-bridge tests unlink the private tmux socket `kill-server` leaves
+  behind. A `synapse-test-*` socket is removed only when no server answers
+  on it.
+
 ### Changed
 
 - **Provider routing ranks declared local candidates first and never falls back to

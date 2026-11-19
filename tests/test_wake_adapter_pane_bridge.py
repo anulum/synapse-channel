@@ -16,7 +16,9 @@ file; "one wake" is one line in that file.
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import socket as netsock
 import subprocess
 import sys
 import time
@@ -64,6 +66,7 @@ class Pane:
 
     def __init__(self, tmp_path: Path, program: str) -> None:
         socket = f"synapse-test-{uuid.uuid4().hex[:10]}"
+        self.socket_name = socket
         self.tmux = tmp_path / "tmux-private"
         self.tmux.write_text(
             f'#!/bin/sh\nexec {shutil.which("tmux")} -L {socket} -f /dev/null "$@"\n',
@@ -106,6 +109,80 @@ class Pane:
         path = registry_path(self.config)
         return path.exists() and json.loads(path.read_text(encoding="utf-8"))["pending_wake"]
 
+    def socket_file(self) -> Path:
+        """Return the socket this server reports, or the path ``-L`` would use.
+
+        ``kill-server`` leaves the socket behind. When the server is already
+        gone, the path is the tmux default for this socket name.
+        """
+        shown = subprocess.run(
+            [str(self.tmux), "display-message", "-p", "#{socket_path}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        reported = shown.stdout.strip()
+        if shown.returncode == 0 and reported:
+            return Path(reported)
+        root = Path(os.environ.get("TMUX_TMPDIR", "/tmp"))
+        return root / f"tmux-{os.getuid()}" / self.socket_name
+
+    def stop(self) -> Path:
+        """Stop this private server and unlink the socket ``kill-server`` leaves.
+
+        Returns
+        -------
+        pathlib.Path
+            The socket path that was removed, whether or not the server still answered.
+        """
+        socket = self.socket_file()
+        subprocess.run(
+            [str(self.tmux), "kill-server"],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        socket.unlink(missing_ok=True)
+        return socket
+
+
+def server_answers(socket: Path) -> bool:
+    """Return whether a tmux server answers on ``socket``.
+
+    ``list-sessions`` does not start a server. A socket left after
+    ``kill-server`` does not answer.
+    """
+    done = subprocess.run(
+        ["tmux", "-S", str(socket), "list-sessions"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    return done.returncode == 0
+
+
+def remove_unanswered_test_sockets(directory: Path) -> list[Path]:
+    """Unlink ``synapse-test-*`` sockets in ``directory`` when nothing answers.
+
+    A socket whose server still answers is left in place.
+
+    Returns
+    -------
+    list[pathlib.Path]
+        The sockets that were removed, in name order.
+    """
+    removed: list[Path] = []
+    if not directory.is_dir():
+        return removed
+    for socket in sorted(directory.glob("synapse-test-*")):
+        if socket.is_dir() or server_answers(socket):
+            continue
+        socket.unlink(missing_ok=True)
+        removed.append(socket)
+    return removed
+
 
 @pytest.fixture
 def composer(tmp_path: Path) -> Iterator[Pane]:
@@ -113,7 +190,7 @@ def composer(tmp_path: Path) -> Iterator[Pane]:
     assert start_session(pane.config).returncode == 0
     pane.wait_for("›")
     yield pane
-    pane.run("kill-server")
+    pane.stop()
 
 
 @pytest.fixture
@@ -122,7 +199,7 @@ def dialog(tmp_path: Path) -> Iterator[Pane]:
     assert start_session(pane.config).returncode == 0
     pane.wait_for("2. No")
     yield pane
-    pane.run("kill-server")
+    pane.stop()
 
 
 def _normal(text: str) -> str:
@@ -204,3 +281,65 @@ def test_a_missing_session_another_seat_and_a_foreign_prompt(
     composer.run("kill-server")
     gone = adapter.available(TARGET)
     assert (gone.available, gone.detail) == (False, "the tmux session is missing")
+
+
+def test_the_pane_fixture_unlinks_the_socket_it_created(tmp_path: Path) -> None:
+    """The fixture stop removes the real socket ``kill-server`` leaves behind."""
+    pane = Pane(tmp_path, "#!/bin/sh\nsleep 60\n")
+    started = subprocess.run(
+        [str(pane.tmux), "new-session", "-d", "-s", pane.config.session, "sleep", "60"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert started.returncode == 0, started.stderr
+    socket = Path(pane.run("display-message", "-p", "#{socket_path}").strip())
+    assert socket.name.startswith("synapse-test-")
+    assert socket.exists()
+    try:
+        assert pane.stop() == socket
+        assert not socket.exists()
+    finally:
+        subprocess.run(
+            [str(pane.tmux), "kill-server"],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        socket.unlink(missing_ok=True)
+
+
+def test_only_an_unanswered_test_socket_is_removed() -> None:
+    """A live synapse-test server stays; a socket nothing answers on is removed."""
+    directory = Path("/tmp") / f"c117-{uuid.uuid4().hex[:8]}"
+    directory.mkdir()
+    dead = directory / "synapse-test-dead"
+    live = directory / "synapse-test-live"
+    try:
+        with netsock.socket(netsock.AF_UNIX) as held:
+            held.bind(str(dead))
+        started = subprocess.run(
+            ["tmux", "-S", str(live), "new-session", "-d", "-s", "keep", "sleep", "60"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        assert started.returncode == 0, started.stderr
+        assert server_answers(live)
+        assert not server_answers(dead)
+        assert remove_unanswered_test_sockets(directory) == [dead]
+        assert not dead.exists()
+        assert live.exists()
+        assert server_answers(live)
+    finally:
+        subprocess.run(
+            ["tmux", "-S", str(live), "kill-server"],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        live.unlink(missing_ok=True)
+        dead.unlink(missing_ok=True)
+        directory.rmdir()
