@@ -40,10 +40,13 @@ from synapse_channel.session_ledger_collect import (
     observe_host,
     open_files,
     read_procs,
+    running_identities,
+    survey,
     topmost_agent,
 )
 
 BOOT = "boot-a"
+COMMON = frozenset({"schema", "host", "boot_id", "seq", "ts"})
 SID = "11111111-2222-3333-4444-555555555555"
 PARENT = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
@@ -400,8 +403,33 @@ def test_an_unchanged_host_records_nothing_new(tmp_path: Path) -> None:
     ledger = tmp_path / "ledger"
     collect(ledger, _host(tmp_path))
     before = len(_events(ledger))
-    assert collect(ledger, _host(tmp_path)) == session_ledger_collect.Collected(2, 0, 0, 0)
+    assert collect(ledger, _host(tmp_path)) == session_ledger_collect.Collected(
+        2, 0, 0, 0, frozenset({"P/a", "P/c"})
+    )
     assert len(_events(ledger)) == before
+
+
+def test_a_survey_is_the_snapshot_held_in_memory(tmp_path: Path) -> None:
+    ledger = tmp_path / "ledger"
+    events, view = survey(ledger, _host(tmp_path))
+    assert not ledger.exists()  # a survey creates nothing
+    assert [event["event"] for event in events] == ["start", "observe", "start", "observe"]
+    assert set(view["rows"]) == {f"{BOOT}:300:30", f"{BOOT}:500:50"}
+    assert running_identities(view) == frozenset({"P/a", "P/c"})
+    # A real snapshot afterwards writes exactly what the survey held.
+    collect(ledger, _host(tmp_path))
+    written = [{k: v for k, v in event.items() if k not in COMMON} for event in _events(ledger)]
+    assert written == events
+    # And a survey of an unchanged host after it holds nothing, still writing nothing.
+    before = sorted((path.name, path.stat().st_mtime_ns) for path in ledger.rglob("*"))
+    assert survey(ledger, _host(tmp_path))[0] == []
+    assert sorted((path.name, path.stat().st_mtime_ns) for path in ledger.rglob("*")) == before
+
+
+def test_the_running_identities_are_the_views_named_rows() -> None:
+    view = {"rows": {"a": {"identity": "P/a"}, "b": {"identity": None}, "c": "junk", "d": {}}}
+    assert running_identities(view) == frozenset({"P/a"})
+    assert running_identities({}) == frozenset()
 
 
 def test_a_gone_row_ends_unless_its_launcher_ended_it(tmp_path: Path) -> None:

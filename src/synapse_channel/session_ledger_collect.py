@@ -418,12 +418,23 @@ START_FIELDS = (
 
 @dataclass
 class Collected:
-    """What one snapshot found and wrote."""
+    """What one snapshot found and wrote, and the identities it saw running."""
 
     rows: int = 0
     started: int = 0
     observed: int = 0
     ended: int = 0
+    identities: frozenset[str] = frozenset()
+
+
+def running_identities(view: Mapping[str, Any]) -> frozenset[str]:
+    """Return the identities a snapshot's view sees running."""
+    rows = view.get("rows", {})
+    return frozenset(
+        str(row["identity"])
+        for row in rows.values()
+        if isinstance(row, dict) and row.get("identity")
+    )
 
 
 def _now() -> str:
@@ -504,6 +515,29 @@ def _news(
     return events
 
 
+def survey(directory: Path, host: Host) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Return the events a snapshot would write and the view it would keep; write nothing.
+
+    A restore's dry run reads the host this way: no line, no ``seq``, no
+    ``current.json`` and no ``boots/`` file, and no directory is created.
+
+    Raises
+    ------
+    CollectError
+        When the host cannot be read.
+    """
+    observed = observe_host(host)
+    previous = _load(directory / "current.json")
+    rows = fold(read_events(directory)) if directory.is_dir() else {}
+    open_rows = {key for key, row in rows.items() if row.open}
+    started = {key for key, row in rows.items() if row.start}
+    at = _now()
+    events = _ends(previous, observed, open_rows, host.boot, at) + _news(
+        previous, observed, started, host.boot
+    )
+    return events, {"schema": SCHEMA, "boot_id": host.boot, "recorded_at": at, "rows": observed}
+
+
 def collect(directory: Path, host: Host) -> Collected:
     """Record what runs on the host now, and keep the view for the next snapshot.
 
@@ -514,23 +548,18 @@ def collect(directory: Path, host: Host) -> Collected:
     LedgerError
         When a line cannot be written.
     """
-    observed = observe_host(host)
+    events, snapshot = survey(directory, host)
     ensure_private_dir(directory, parents=True, purpose="session ledger")
     ensure_private_dir(directory / "boots", purpose="session ledger boots")
-    previous = _load(directory / "current.json")
-    rows = fold(read_events(directory))
-    open_rows = {key for key, row in rows.items() if row.open}
-    started = {key for key, row in rows.items() if row.start}
-    at = _now()
-    events = _ends(previous, observed, open_rows, host.boot, at) + _news(
-        previous, observed, started, host.boot
-    )
     for event in events:
         append_event(event, directory=directory, wait=COLLECTOR_LOCK_WAIT_SECONDS, boot=host.boot)
-    snapshot = {"schema": SCHEMA, "boot_id": host.boot, "recorded_at": at, "rows": observed}
     _write_json(directory / "current.json", snapshot)
     _write_json(directory / "boots" / f"{host.boot or 'unknown'}.json", snapshot)
     kinds = [event["event"] for event in events]
     return Collected(
-        len(observed), kinds.count("start"), kinds.count("observe"), kinds.count("ended_unobserved")
+        len(snapshot["rows"]),
+        kinds.count("start"),
+        kinds.count("observe"),
+        kinds.count("ended_unobserved"),
+        running_identities(snapshot),
     )
