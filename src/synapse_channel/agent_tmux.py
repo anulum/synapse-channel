@@ -233,6 +233,34 @@ class RegistryRecord:
     wake_launch_nonce: str | None = None
 
 
+SEAT_HOLD_SUBCOMMAND = "seat-hold"
+"""The ``synapse`` subcommand that runs an agent behind its seat holder."""
+
+
+def provider_command(command: Sequence[str]) -> tuple[str, ...]:
+    """Return the agent's own command inside a pane command.
+
+    A seat restored behind its holder runs ``synapse seat-hold <options> --
+    <agent>``. Its agent is what follows ``--``; the holder's option values
+    come first and must never decide the provider (an identity such as
+    ``CEO/claude-…`` can run any agent). Every other command is its own.
+
+    Parameters
+    ----------
+    command : Sequence[str]
+        The pane's command, as ``AgentTmuxConfig.agent_command`` holds it.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The agent's argument vector.
+    """
+    parts = tuple(command)
+    if parts[1:2] == (SEAT_HOLD_SUBCOMMAND,) and "--" in parts[2:]:
+        return parts[parts.index("--", 2) + 1 :]
+    return parts
+
+
 def agent_binary(config: AgentTmuxConfig) -> str:
     """Return the agent binary name probed for in the pane's start command.
 
@@ -247,9 +275,10 @@ def agent_binary(config: AgentTmuxConfig) -> str:
         The basename of the first launch token (e.g. ``codex`` or ``kimi``), or
         an empty string when ``agent_command`` is empty.
     """
-    if not config.agent_command:
+    command = provider_command(config.agent_command)
+    if not command:
         return ""
-    return Path(config.agent_command[0]).name
+    return Path(command[0]).name
 
 
 def _safe_key(identity: str) -> str:
@@ -451,8 +480,8 @@ def build_wake_prompt(identity: str) -> str:
 
 
 def _provider_family(config: AgentTmuxConfig) -> str | None:
-    """Return the supported terminal provider named by the launch command."""
-    for token in config.agent_command:
+    """Return the supported terminal provider named by the agent's own command."""
+    for token in provider_command(config.agent_command):
         if token.startswith("-"):
             continue
         binary = Path(token).name.lower()
@@ -475,10 +504,13 @@ def _managed_agent_command(config: AgentTmuxConfig) -> tuple[str, ...]:
 
     Existing sessions are never rewritten or restarted. The override applies
     only when Synapse creates a new Codex tmux session, and an explicit owner
-    override in ``agent_command`` always wins.
+    override in ``agent_command`` always wins. Behind a seat holder the agent's
+    own command is the tail after ``--``, so the override lands there, as the
+    agent's argument.
     """
     command = config.agent_command
-    if _provider_family(config) != "codex" or _has_codex_update_override(command):
+    agent = provider_command(command)
+    if _provider_family(config) != "codex" or _has_codex_update_override(agent):
         return command
     return (*command, "--config", CODEX_MANAGED_UPDATE_CONFIG)
 

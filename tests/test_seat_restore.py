@@ -30,16 +30,27 @@ import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import cli_services, worker_session
-from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxWakeResult
+from synapse_channel.agent_tmux import (
+    CODEX_MANAGED_UPDATE_CONFIG,
+    AgentTmuxConfig,
+    AgentTmuxWakeResult,
+    _managed_agent_command,
+    _provider_family,
+    agent_binary,
+    provider_command,
+)
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.seat_hold import (
     HUB_UNAVAILABLE_EXIT_CODE,
+    READY_TIMEOUT_SECONDS,
     SEAT_LIVE_EXIT_CODE,
     SeatHolder,
     write_marker,
 )
 from synapse_channel.seat_restore import (
+    HOLDER_START_ALLOWANCE_SECONDS,
     MARKER_EXIT_CODES,
+    MARKER_WAIT_SECONDS,
     holder_command,
     start_restored_seat,
     wait_for_marker,
@@ -134,6 +145,72 @@ def test_the_pane_runs_the_agent_behind_the_holder(tmp_path: Path) -> None:
         command=["a"],
     )
     assert with_token[with_token.index("--token-file") + 1] == "/k"
+
+
+def _restored(identity: str, command: Sequence[str], tmp_path: Path) -> AgentTmuxConfig:
+    """The tmux configuration a restore makes: the agent behind its holder."""
+    pane = holder_command(
+        synapse_bin="/opt/bin/synapse",
+        identity=identity,
+        nonce=NONCE,
+        marker_dir=tmp_path,
+        uri="ws://h",
+        token_file=None,
+        command=command,
+    )
+    return AgentTmuxConfig(identity=identity, session="s", cwd=tmp_path, agent_command=tuple(pane))
+
+
+def test_the_provider_is_the_agent_after_the_holders_separator(tmp_path: Path) -> None:
+    """A seat's name never decides its provider: only the agent after ``--`` does."""
+    codex_under_claude = _restored("CEO/claude-0001", ["codex", "resume", "x"], tmp_path)
+    assert provider_command(codex_under_claude.agent_command) == ("codex", "resume", "x")
+    assert _provider_family(codex_under_claude) == "codex"
+    assert agent_binary(codex_under_claude) == "codex"
+    claude_under_codex = _restored("SYNAPSE-CHANNEL/codex-2970473", ["claude", "-r"], tmp_path)
+    assert _provider_family(claude_under_codex) == "claude"
+    assert agent_binary(claude_under_codex) == "claude"
+    # An agent run by its interpreter: options are skipped, and the script names it.
+    script = ["node", "--max-old-space-size=4096", "/usr/lib/codex/bin/codex.js"]
+    assert _provider_family(_restored("CEO/claude-0001", script, tmp_path)) == "codex"
+
+
+def test_a_command_not_behind_a_holder_is_its_own_agent() -> None:
+    mentions = ("codex", "exec", "seat-hold", "--", "x")  # an argument, not the holder's shape
+    assert provider_command(mentions) == mentions
+    unfinished = ("synapse", "seat-hold", "--identity", "CEO/claude-1")
+    assert provider_command(unfinished) == unfinished
+    assert provider_command([]) == ()
+
+
+def test_a_restored_codex_seat_gets_the_update_override_as_the_agents_argument(
+    tmp_path: Path,
+) -> None:
+    config = _restored("CEO/claude-0001", ["codex", "resume", "x"], tmp_path)
+    managed = _managed_agent_command(config)
+    assert managed[: len(config.agent_command)] == config.agent_command
+    assert provider_command(managed) == (
+        "codex",
+        "resume",
+        "x",
+        "--config",
+        CODEX_MANAGED_UPDATE_CONFIG,
+    )
+
+
+def test_an_owner_override_and_a_non_codex_agent_are_left_as_they_are(tmp_path: Path) -> None:
+    owned = _restored(
+        "CEO/claude-0001", ["codex", "-c", "check_for_update_on_startup=true"], tmp_path
+    )
+    assert _managed_agent_command(owned) == owned.agent_command
+    claude = _restored("SYNAPSE-CHANNEL/codex-2970473", ["claude"], tmp_path)
+    assert _managed_agent_command(claude) == claude.agent_command
+
+
+def test_the_marker_wait_covers_the_holders_worst_case() -> None:
+    """Start, welcome and the hub keeping the name: twice the registration timeout and more."""
+    assert HOLDER_START_ALLOWANCE_SECONDS == 15.0
+    assert MARKER_WAIT_SECONDS == 2 * READY_TIMEOUT_SECONDS + HOLDER_START_ALLOWANCE_SECONDS == 35.0
 
 
 def test_the_wait_gives_up_on_no_marker_and_on_held_alone(tmp_path: Path) -> None:

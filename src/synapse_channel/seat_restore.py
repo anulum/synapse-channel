@@ -38,7 +38,12 @@ import time
 from collections.abc import Callable, Container, Mapping, Sequence
 from pathlib import Path
 
-from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxWakeResult, start_session
+from synapse_channel.agent_tmux import (
+    SEAT_HOLD_SUBCOMMAND,
+    AgentTmuxConfig,
+    AgentTmuxWakeResult,
+    start_session,
+)
 from synapse_channel.seat_hold import (
     AGENT_START_FAILED_EXIT_CODE,
     HUB_UNAVAILABLE_EXIT_CODE,
@@ -49,8 +54,16 @@ from synapse_channel.seat_hold import (
     marker_path,
 )
 
-MARKER_WAIT_SECONDS = READY_TIMEOUT_SECONDS + 10.0
-"""How long the restore waits for the holder's marker: its registration plus process start."""
+HOLDER_START_ALLOWANCE_SECONDS = 15.0
+"""Time allowed for the holder's own process to start, on a host that may be loaded."""
+
+MARKER_WAIT_SECONDS = 2 * READY_TIMEOUT_SECONDS + HOLDER_START_ALLOWANCE_SECONDS
+"""How long the restore waits for the holder's final word.
+
+The holder's worst case is its start, then up to :data:`READY_TIMEOUT_SECONDS`
+for the hub's welcome and up to as long again for the hub to keep the name
+(``closed_after_ready``), then the agent's spawn.
+"""
 
 MARKER_EXIT_CODES: Mapping[str, int] = {
     "ready": 0,
@@ -76,7 +89,7 @@ def holder_command(
     token = ["--token-file", token_file] if token_file else []
     return [
         synapse_bin,
-        "seat-hold",
+        SEAT_HOLD_SUBCOMMAND,
         "--identity",
         identity,
         "--nonce",

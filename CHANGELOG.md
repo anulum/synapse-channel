@@ -42,8 +42,14 @@ execution evidence when carrying a release claim forward.
   `ready`. A seat whose tmux session exists, or whose name a live connection
   holds, is left alone (exit 75); a hub that cannot be reached, an agent that
   cannot start, or no final answer stops the restore (69, 70 or 78) and ends
-  the session it created. The waiter and the session record get the holder's
-  command, so a later restart of the pane goes through the holder too.
+
+  the session it created. The holder's final word is awaited for 35 s: twice
+  its registration timeout and an allowance for its start on a loaded host.
+  The waiter and the session record get the holder's command, so a later
+  restart of the pane goes through the holder too. The provider, its wake
+  patterns and the managed Codex update setting come from the agent's own
+  command after `--`, never from the seat's name, which can name another
+  provider.
 
 ## [0.99.58] - 2026-11-19
 
