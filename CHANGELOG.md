@@ -27,7 +27,6 @@ execution evidence when carrying a release claim forward.
   outlives its holder; it runs in its own process group, which the holder
   signals when it ends. A dropped connection is registered again without a
   takeover, and a refusal that outlasts the hub's keepalive window ends the
-
   seat, and a stop does not wait for a registration in flight. A private
   marker named by the nonce says `held` while the agent is being started, then
   one final word: `ready` once it has started, or `refused`, `unavailable`,
@@ -42,36 +41,15 @@ execution evidence when carrying a release claim forward.
   `ready`. A seat whose tmux session exists, or whose name a live connection
   holds, is left alone (exit 75); a hub that cannot be reached, an agent that
   cannot start, or no final answer stops the restore (69, 70 or 78) and ends
-
   the session it created. The holder's final word is awaited for 35 s: twice
   its registration timeout and an allowance for its start on a loaded host.
   The waiter and the session record get the holder's command, so a later
   restart of the pane goes through the holder too. The provider, its wake
   patterns and the managed Codex update setting come from the agent's own
   command after `--`, never from the seat's name, which can name another
-
-- **A pane waiter that never displaces a live one.** `synapse agent-tmux wait
-  --first-no-takeover` joins an existing session only, and registers the pane
-  waiter's name without a takeover until one wait has held it. A live
-  connection on the name ends it with exit 6, and it wakes nothing; a
-  `synapse` too old to wait without a takeover ends it with exit 2, rather
-
-  than wait with one. The guard drops only when a wait writes
-  `synapse-wait: registered <name>` on standard error, which `synapse wait
-  --no-takeover` now does once the hub has accepted the name; an exit code
-  alone never drops it, since a timeout's 2 is also a usage error. Once a wait
-  has held the name, later waits re-arm with a takeover as before. A restored
-  seat's waiter starts this way.
-
-- **One Synapse process per held seat.** `synapse seat-hold --wake-session S`
-  also runs the pane's waiter, in its own process: the wait loop in one
-  thread, and each wait on that thread's own event loop, so a slow wait never
-  delays the holder's registration. While the agent runs, the holder's own
-  output goes to a private log beside its marker (0600, rotated once at 4 MiB),
-  never to the agent's terminal. A waiter that stops leaves the seat running and
-  records why. `worker-session --restore` uses it, so a restored seat needs no
-  separate `agent-tmux wait` and its `synapse wait` child. `--nonce` is now
-  optional: without it a fresh one is made.
+  provider. With `--no-attach`, the restored pane is recorded and this
+  terminal is not attached to it, for a caller that has no terminal to give
+  the seat; `--no-attach` without `--restore` is refused (exit 2).
 
 - **A session ledger on every host.** `synapse ledger show` lists this host's
   agent sessions from `$XDG_STATE_HOME/synapse/ledger/`, schema
@@ -82,16 +60,11 @@ execution evidence when carrying a release claim forward.
   launcher waits for the lock about a second at most, so the ledger never
   delays a seat. The ledger refuses to live inside a git or coordination tree,
   and never stores an argument vector, other environment variables, screen
-
   text or a token. `ledger snapshot` records the sessions nobody launched, the
   vendors' native session ids, and the ends of sessions that are gone or were
   cut by a reboot; a failed tmux query writes nothing. `ledger read-v0` reads
   the interim tool's v0 files. There is no retention yet: every monthly file
   is kept.
-
-  provider. With `--no-attach`, the restored pane is recorded and this
-  terminal is not attached to it, for a caller that has no terminal to give
-  the seat; `--no-attach` without `--restore` is refused (exit 2).
 
 - **Restore the seats a crash or reboot cut.** `synapse ledger restore` plans
   from the ledger which seats start again: each identity's last row on this
@@ -108,6 +81,28 @@ execution evidence when carrying a release claim forward.
   these), and starts each seat with `worker-session --restore --no-attach` in
   its own directory and a listed environment. Each outcome is recorded on the
   old row, with the new row once it is seen.
+
+- **One Synapse process per held seat.** `synapse seat-hold --wake-session S`
+  also runs the pane's waiter, in its own process: the wait loop in one
+  thread, and each wait on that thread's own event loop, so a slow wait never
+  delays the holder's registration. While the agent runs, the holder's own
+  output goes to a private log beside its marker (0600, rotated once at 4 MiB),
+  never to the agent's terminal. A waiter that stops leaves the seat running and
+  records why. `worker-session --restore` uses it, so a restored seat needs no
+  separate `agent-tmux wait` and its `synapse wait` child. `--nonce` is now
+  optional: without it a fresh one is made.
+
+- **A pane waiter that never displaces a live one.** `synapse agent-tmux wait
+  --first-no-takeover` joins an existing session only, and registers the pane
+  waiter's name without a takeover until one wait has held it. A live
+  connection on the name ends it with exit 6, and it wakes nothing; a
+  `synapse` too old to wait without a takeover ends it with exit 2, rather
+  than wait with one. The guard drops only when a wait writes
+  `synapse-wait: registered <name>` on standard error, which `synapse wait
+  --no-takeover` now does once the hub has accepted the name; an exit code
+  alone never drops it, since a timeout's 2 is also a usage error. Once a wait
+  has held the name, later waits re-arm with a takeover as before. A restored
+  seat's waiter starts this way.
 
 ## [0.99.58] - 2026-11-19
 
