@@ -61,7 +61,7 @@ def test_serve_refuses_a_seat_with_work_changing_grants_or_no_bearer(
 ) -> None:
     config = _provision(tmp_path, [*MESSAGING_TOOLS, "synapse_task_update"])
     assert cli_mcp_gate._cmd_serve(_args("serve", "--config", str(config))) == 2
-    assert "may not hold: synapse_task_update" in capsys.readouterr().err
+    assert "does not list: synapse_task_update" in capsys.readouterr().err
     grant_file(tmp_path / "grants.json", {"PROJ/bot": MESSAGING_TOOLS})
     assert cli_mcp_gate._cmd_serve(_args("serve", "--config", str(config))) == 2
     assert "bearer record of PROJ/bot is unusable" in capsys.readouterr().err

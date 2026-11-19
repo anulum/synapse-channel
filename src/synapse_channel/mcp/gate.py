@@ -74,6 +74,7 @@ FORWARDED_HEADERS = frozenset(
 """The only client headers the gate forwards; it sets Host, Authorization and Content-Length."""
 
 _LOG = logging.getLogger("synapse.mcp.gate")
+_MAX_BODY_DIGITS = len(str(MAX_BODY))
 _TOKEN_CHARS = frozenset(
     b"!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 )
@@ -138,7 +139,7 @@ def _body_length(headers: list[tuple[bytes, bytes]]) -> int | None:
         return None
     if not lengths:
         return 0
-    if len(lengths) != 1 or not lengths[0].isdigit():
+    if len(lengths) != 1 or not lengths[0].isdigit() or len(lengths[0]) > _MAX_BODY_DIGITS:
         raise Refusal(400, "content-length invalid")
     if int(lengths[0]) > MAX_BODY:
         raise Refusal(413, "body too large")

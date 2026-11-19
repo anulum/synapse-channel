@@ -131,7 +131,9 @@ async def rig(
     seats, bearers, tokens = [], {}, {}
     for name in ("PROJ/a", "PROJ/b"):
         tag = name.split("/")[1]
-        seat = GateSeat(name, tmp_path / f"{tag}.bearer", tmp_path / f"{tag}.token")
+        seat = GateSeat(
+            name, tmp_path / f"{tag}.bearer", tmp_path / f"{tag}.token", frozenset({"synapse_send"})
+        )
         bearers[name] = new_bearer(seat.bearer_file)
         tokens[name] = seat_token(FUTURE)
         owner_file(seat.token_file, tokens[name])
@@ -253,6 +255,10 @@ async def test_smuggling_shapes_are_refused_before_the_listener(tmp_path: Path) 
             f"POST http://evil/mcp HTTP/1.1\r\n{bearer}\r\n\r\n",
             f"POST /mcp HTTP/1.1\r\n{bearer}\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n",
             f"POST /mcp HTTP/1.1\r\n{bearer}\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nabXY",
+            f"POST /mcp HTTP/1.1\r\n{bearer}\r\nTransfer-Encoding: chunked\r\n\r\n0x2\r\nab\r\n",
+            f"POST /mcp HTTP/1.1\r\n{bearer}\r\nTransfer-Encoding: chunked\r\n\r\n1_0\r\n",
+            f"POST /mcp HTTP/1.1\r\n{bearer}\r\nTransfer-Encoding: chunked\r\n\r\n 2\r\nab\r\n",
+            f"POST /mcp HTTP/1.1\r\n{bearer}\r\nTransfer-Encoding: chunked\r\n\r\n123456789\r\n",
         ):
             assert status(await gate.call(raw.encode())) == 400
         assert gate.listener.received == []

@@ -48,26 +48,15 @@ BEARER_WARNING = timedelta(days=14)
 MAX_GATE_SEATS = 32
 """The most seats one gate serves."""
 
-GATE_DENIED_TOOLS = frozenset(
-    {
-        "synapse_claim",
-        "synapse_release",
-        "synapse_handoff",
-        "synapse_task_declare",
-        "synapse_task_update",
-    }
-)
-"""Grants a seat behind the gate may not hold.
-
-The stable bearer sits with a third party, so a seat behind the gate keeps
-messaging and read grants only; work-changing grants stay with local seats.
-"""
+MAX_SEAT_TOOLS = 32
+"""The most tools one seat may list."""
 
 _MAX_CONFIG_BYTES = 65536
 _MAX_SECRET_BYTES = 8192
 _SEAT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._@-]*")
 _PUBLIC_HOST = re.compile(r"[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?")
 _DIGEST = re.compile(r"[0-9a-f]{64}")
+_TOOL = re.compile(r"synapse_[a-z_]{1,48}")
 _TOKEN = re.compile(rb"[A-Za-z0-9_-]+\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]+")
 _CONFIG_FIELDS = frozenset(
     {
@@ -82,7 +71,7 @@ _CONFIG_FIELDS = frozenset(
         "seats",
     }
 )
-_SEAT_FIELDS = frozenset({"seat", "bearer_file", "token_file"})
+_SEAT_FIELDS = frozenset({"seat", "bearer_file", "token_file", "tools"})
 _BEARER_FIELDS = frozenset({"schema", "sha256", "issued_at", "expires_at"})
 
 
@@ -100,11 +89,17 @@ class SeatTokenError(SynapseError, RuntimeError):
 
 @dataclass(frozen=True)
 class GateSeat:
-    """One seat behind the gate, with its bearer record and its token file."""
+    """One seat behind the gate, with its bearer record, its token file and its tools.
+
+    ``tools`` is the operator's explicit list of the tools this seat may hold.
+    The gate refuses to start when the listener grants the seat any other tool,
+    so a tool that changes work is present only when the operator lists it.
+    """
 
     seat: str
     bearer_file: Path
     token_file: Path
+    tools: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -204,13 +199,28 @@ def _upstream(value: object) -> tuple[str, int]:
     return _loopback(parts.hostname, "upstream host"), _port(port, "upstream port")
 
 
+def _tools(value: object, field: str) -> frozenset[str]:
+    if (
+        not isinstance(value, list)
+        or not 1 <= len(value) <= MAX_SEAT_TOOLS
+        or not all(isinstance(tool, str) and _TOOL.fullmatch(tool) for tool in value)
+        or len(set(value)) != len(value)
+    ):
+        raise GateConfigError(
+            f"{field} must list 1 to {MAX_SEAT_TOOLS} distinct synapse_ tool names"
+        )
+    return frozenset(value)
+
+
 def _seats(value: object) -> tuple[GateSeat, ...]:
     if not isinstance(value, list) or not 1 <= len(value) <= MAX_GATE_SEATS:
         raise GateConfigError(f"seats must list 1 to {MAX_GATE_SEATS} seats")
     seats: list[GateSeat] = []
     for index, item in enumerate(value):
         if not isinstance(item, dict) or set(item) != _SEAT_FIELDS:
-            raise GateConfigError(f"seats[{index}] must be {{seat, bearer_file, token_file}}")
+            raise GateConfigError(
+                f"seats[{index}] must be {{seat, bearer_file, token_file, tools}}"
+            )
         seat = item["seat"]
         if not isinstance(seat, str) or not _SEAT.fullmatch(seat):
             raise GateConfigError(f"seats[{index}].seat must be a PROJECT/seat identity")
@@ -219,6 +229,7 @@ def _seats(value: object) -> tuple[GateSeat, ...]:
                 seat,
                 _absolute(item["bearer_file"], f"seats[{index}].bearer_file"),
                 _absolute(item["token_file"], f"seats[{index}].token_file"),
+                _tools(item["tools"], f"seats[{index}].tools"),
             )
         )
     files = [path for seat in seats for path in (seat.bearer_file, seat.token_file)]
@@ -266,13 +277,13 @@ def load_gate_config(path: Path) -> GateConfig:
 
 
 def check_seat_grants(config: GateConfig) -> None:
-    """Refuse a gate whose seat is not granted, or is granted a denied tool.
+    """Refuse a gate whose seat is not granted, or is granted a tool it does not list.
 
     Raises
     ------
     GateConfigError
         When the listener's grant file cannot be read, does not grant a gate
-        seat, or grants one of :data:`GATE_DENIED_TOOLS` to it.
+        seat, or grants a seat a tool outside that seat's ``tools`` list.
     """
     # The listener's grant model needs the MCP extra; import it only when a gate starts.
     from synapse_channel.mcp.http_config import HttpConfigError, load_http_auth_config
@@ -289,10 +300,11 @@ def check_seat_grants(config: GateConfig) -> None:
     for seat in config.seats:
         if seat.seat not in tools:
             raise GateConfigError(f"the grant file grants no subject the seat {seat.seat}")
-        denied = sorted(tools[seat.seat] & GATE_DENIED_TOOLS)
-        if denied:
+        unlisted = sorted(tools[seat.seat] - seat.tools)
+        if unlisted:
             raise GateConfigError(
-                f"the seat {seat.seat} holds grants a gated seat may not hold: {', '.join(denied)}"
+                f"the seat {seat.seat} holds grants its gate entry does not list: "
+                f"{', '.join(unlisted)}"
             )
 
 

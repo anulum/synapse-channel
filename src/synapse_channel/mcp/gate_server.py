@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import ssl
 from collections.abc import Awaitable, Callable
 
@@ -41,6 +42,8 @@ from synapse_channel.mcp.gate import (
 from synapse_channel.mcp.gate_config import SeatTokenError, read_seat_token
 
 LOG = logging.getLogger("synapse.mcp.gate")
+_CHUNK_SIZE = re.compile(rb"[0-9A-Fa-f]{1,8}")
+"""HTTP allows only hex digits in a chunk size; eight cover far more than any bound here."""
 _STREAM_CHUNK = 65536
 
 
@@ -63,12 +66,12 @@ async def read_chunked(reader: asyncio.StreamReader, limit: int) -> bytes:
     total = 0
     while True:
         line = await reader.readuntil(b"\r\n")
-        try:
-            size = int(line[:-2].split(b";", 1)[0], 16)
-        except ValueError:
-            raise Refusal(400, "chunk size invalid") from None
+        size_field = line[:-2].split(b";", 1)[0]
+        if not _CHUNK_SIZE.fullmatch(size_field):
+            raise Refusal(400, "chunk size invalid")
+        size = int(size_field, 16)
         total += size
-        if size < 0 or total > limit:
+        if total > limit:
             raise Refusal(413, "body too large")
         if size == 0:
             while await reader.readuntil(b"\r\n") != b"\r\n":

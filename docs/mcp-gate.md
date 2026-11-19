@@ -49,7 +49,8 @@ The configuration is an owner-only JSON file, `synapse-mcp-gate.v1`:
     {
       "seat": "PROJECT/bot",
       "bearer_file": "/private/mcp/bot.bearer",
-      "token_file": "/private/mcp/bot.token"
+      "token_file": "/private/mcp/bot.token",
+      "tools": ["synapse_status", "synapse_inbox_page", "synapse_send"]
     }
   ]
 }
@@ -59,10 +60,11 @@ The configuration is an owner-only JSON file, `synapse-mcp-gate.v1`:
 - **The upstream pin:** `upstream_cert_sha256` is required. A listener that presents another certificate gets no byte
   of the request, so a process that takes the port while the listener is down collects no token.
 - **`public_host`** is the `Host` the listener's resource URL expects.
-- **`grant_file`** is the listener's `--http-auth-file`. The gate refuses to start when a configured seat is not
-  granted there, or holds a grant that changes work: `synapse_claim`, `synapse_release`, `synapse_handoff`,
-  `synapse_task_declare`, `synapse_task_update`. The bearer sits with a third party, so a gated seat keeps messaging
-  and read grants only.
+- **`grant_file`** is the listener's `--http-auth-file`, and **`tools`** is the operator's explicit list of the tools
+  each seat may hold. The gate refuses to start when a configured seat is not granted there, or when the listener
+  grants it a tool its entry does not list. A tool that changes work (`synapse_claim`, `synapse_release`,
+  `synapse_handoff`, `synapse_task_declare`, `synapse_task_update`) is therefore held through the gate only when the
+  operator writes it into that seat's list, and a tool added to the profile later is refused until it is listed.
 - **`token_file`** is read at every request. The operator's renewal job rewrites it with a temporary file and a
   rename. A missing, malformed or expired token gives `503`, as does a token the listener refuses. That keeps an
   operator's renewal failure apart from a wrong bearer (`401`).
@@ -74,7 +76,7 @@ The configuration is an owner-only JSON file, `synapse-mcp-gate.v1`:
 | The bearer | Required on every request, as exactly one `Authorization: Bearer` header. Its digest is compared with every seat's digest. A missing or broken bearer record revokes that seat. |
 | Sessions | An MCP session id is never a credential. A session the gate saw with another seat is refused. An unknown session is forwarded with the requesting seat's token, and the listener decides. |
 | Headers | Only `Content-Type`, `Accept`, `Mcp-Session-Id`, `MCP-Protocol-Version`, `Last-Event-ID` and `User-Agent` are forwarded. The gate sets `Host`, `Authorization`, `Content-Length` and `Connection: close`. |
-| Framing | Origin-form targets only; no `CONNECT` or `TRACE`. Exactly one `Content-Length` or `Transfer-Encoding: chunked` alone, at most 1 MiB, forwarded with an exact `Content-Length`. Folded lines, NUL, bare CR, duplicate `Host` and every other framing give `400`. |
+| Framing | Origin-form targets only; no `CONNECT` or `TRACE`. Exactly one `Content-Length` of at most seven digits, or `Transfer-Encoding: chunked` alone with hex chunk sizes of at most eight digits; at most 1 MiB, forwarded with an exact `Content-Length`. Folded lines, NUL, bare CR, duplicate `Host` and every other framing give `400`. |
 | Deadlines | 10 s for the TLS handshake and the whole head, 30 s for the whole body. Event streams close after 120 s of silence. |
 | Bounds | 64 KiB heads (`431` above), 16 MiB buffered responses (`502` above), 32 connections, 1,024 remembered sessions. After 20 failed authentications in 10 s, each refusal waits a second. |
 | Logs | Method, path without its query, seat and status. Never a bearer, a token, a body or a header value. |
@@ -83,5 +85,6 @@ The configuration is an owner-only JSON file, `synapse-mcp-gate.v1`:
 
 A tunnel that reaches the gate from the public internet makes the stable bearer
 the client's only authentication. Whoever holds the bearer holds the gated
-seat's grants until the bearer is rotated or its record is removed. Give a gated
-seat only the grants the client needs.
+seat's listed grants until the bearer is rotated (`new-bearer --replace`) or its
+record is removed. List only the tools the client needs. The HTTP profile itself
+has no spend, operator or approval tool.

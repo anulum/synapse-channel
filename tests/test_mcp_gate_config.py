@@ -24,7 +24,6 @@ from synapse_channel.mcp.gate_config import (
     BEARER_LIFETIME,
     BEARER_SCHEMA,
     GATE_CONFIG_SCHEMA,
-    GATE_DENIED_TOOLS,
     GateConfigError,
     SeatTokenError,
     bearer_digest,
@@ -38,6 +37,13 @@ from synapse_channel.mcp.gate_config import (
 
 PIN = "a" * 64
 NOW = datetime(2026, 11, 19, 3, 0, tzinfo=UTC)
+WORK_CHANGING_TOOLS = [
+    "synapse_claim",
+    "synapse_release",
+    "synapse_handoff",
+    "synapse_task_declare",
+    "synapse_task_update",
+]
 MESSAGING_TOOLS = [
     "synapse_board",
     "synapse_state",
@@ -93,6 +99,7 @@ def config_document(tmp_path: Path, **changes: Any) -> dict[str, Any]:
                 "seat": "PROJ/bot",
                 "bearer_file": str(tmp_path / "bot.bearer"),
                 "token_file": str(tmp_path / "bot.token"),
+                "tools": MESSAGING_TOOLS,
             }
         ],
     }
@@ -119,11 +126,12 @@ def test_a_valid_configuration_loads(tmp_path: Path) -> None:
     assert ipv6.upstream_host == "::1"
 
 
-def _seat(tmp_path: Path, name: str = "PROJ/bot", tag: str = "bot") -> dict[str, str]:
+def _seat(tmp_path: Path, name: str = "PROJ/bot", tag: str = "bot") -> dict[str, Any]:
     return {
         "seat": name,
         "bearer_file": str(tmp_path / f"{tag}.bearer"),
         "token_file": str(tmp_path / f"{tag}.token"),
+        "tools": MESSAGING_TOOLS,
     }
 
 
@@ -156,11 +164,44 @@ def _seat(tmp_path: Path, name: str = "PROJ/bot", tag: str = "bot") -> dict[str,
         ({"grant_file": ""}, "grant_file must be an absolute path"),
         ({"seats": []}, "seats must list"),
         ({"seats": "PROJ/bot"}, "seats must list"),
-        ({"seats": [{"seat": "PROJ/bot"}]}, "must be {seat, bearer_file, token_file}"),
-        ({"seats": ["PROJ/bot"]}, "must be {seat, bearer_file, token_file}"),
+        ({"seats": [{"seat": "PROJ/bot"}]}, "must be {seat, bearer_file, token_file, tools}"),
+        ({"seats": ["PROJ/bot"]}, "must be {seat, bearer_file, token_file, tools}"),
         (
-            {"seats": [{"seat": "bot", "bearer_file": "/b", "token_file": "/t"}]},
+            {"seats": [{"seat": "bot", "bearer_file": "/b", "token_file": "/t", "tools": ["x"]}]},
             "PROJECT/seat identity",
+        ),
+        (
+            {"seats": [{"seat": "P/b", "bearer_file": "/b", "token_file": "/t", "tools": []}]},
+            "must list 1 to 32 distinct synapse_ tool names",
+        ),
+        (
+            {"seats": [{"seat": "P/b", "bearer_file": "/b", "token_file": "/t", "tools": "x"}]},
+            "distinct synapse_ tool names",
+        ),
+        (
+            {"seats": [{"seat": "P/b", "bearer_file": "/b", "token_file": "/t", "tools": [1]}]},
+            "distinct synapse_ tool names",
+        ),
+        (
+            {
+                "seats": [
+                    {"seat": "P/b", "bearer_file": "/b", "token_file": "/t", "tools": ["send"]}
+                ]
+            },
+            "distinct synapse_ tool names",
+        ),
+        (
+            {
+                "seats": [
+                    {
+                        "seat": "P/b",
+                        "bearer_file": "/b",
+                        "token_file": "/t",
+                        "tools": ["synapse_send", "synapse_send"],
+                    }
+                ]
+            },
+            "distinct synapse_ tool names",
         ),
     ],
 )
@@ -204,16 +245,28 @@ def test_a_missing_configuration_is_refused(tmp_path: Path) -> None:
 # --- the seats' grants -------------------------------------------------------------------
 
 
-def test_a_messaging_seat_passes_the_grant_check(tmp_path: Path) -> None:
-    grant_file(tmp_path / "grants.json", {"PROJ/bot": MESSAGING_TOOLS})
-    check_seat_grants(load_gate_config(write_config(tmp_path)))
+def test_a_seat_whose_grants_are_all_listed_passes_the_grant_check(tmp_path: Path) -> None:
+    grant_file(tmp_path / "grants.json", {"PROJ/bot": MESSAGING_TOOLS[:3]})
+    config = load_gate_config(write_config(tmp_path))
+    assert config.seats[0].tools == frozenset(MESSAGING_TOOLS)
+    check_seat_grants(config)  # a seat may list more than the listener grants
 
 
-def test_a_seat_with_a_work_changing_grant_is_refused(tmp_path: Path) -> None:
+def test_a_granted_tool_the_seat_does_not_list_refuses_the_start(tmp_path: Path) -> None:
     grant_file(tmp_path / "grants.json", {"PROJ/bot": [*MESSAGING_TOOLS, "synapse_claim"]})
-    with pytest.raises(GateConfigError, match="may not hold: synapse_claim"):
+    with pytest.raises(GateConfigError, match="does not list: synapse_claim"):
         check_seat_grants(load_gate_config(write_config(tmp_path)))
-    assert "synapse_send" not in GATE_DENIED_TOOLS
+
+
+@pytest.mark.parametrize("tool", WORK_CHANGING_TOOLS)
+def test_a_work_changing_tool_is_held_only_when_the_operator_lists_it(
+    tmp_path: Path, tool: str
+) -> None:
+    grant_file(tmp_path / "grants.json", {"PROJ/bot": [*MESSAGING_TOOLS, tool]})
+    with pytest.raises(GateConfigError, match=f"does not list: {tool}"):
+        check_seat_grants(load_gate_config(write_config(tmp_path)))
+    listed = [_seat(tmp_path) | {"tools": [*MESSAGING_TOOLS, tool]}]
+    check_seat_grants(load_gate_config(write_config(tmp_path, seats=listed)))
 
 
 def test_a_seat_the_grant_file_does_not_grant_is_refused(tmp_path: Path) -> None:

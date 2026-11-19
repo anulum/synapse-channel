@@ -88,6 +88,8 @@ def test_a_plain_request_is_parsed() -> None:
         (head("Content-Length: 1", "Content-Length: 1"), (400, "content-length invalid")),
         (head("Content-Length: -1"), (400, "content-length invalid")),
         (head(f"Content-Length: {MAX_BODY + 1}"), (413, "body too large")),
+        (head("Content-Length: 00000001"), (400, "content-length invalid")),
+        (head("Content-Length: " + "9" * 5000), (400, "content-length invalid")),
     ],
 )
 def test_every_unaccepted_framing_is_refused(raw: bytes, expected: tuple[int, str]) -> None:
@@ -235,7 +237,12 @@ def gate_config(tmp_path: Path, seats: int = 2) -> GateConfig:
         tls_key_file=tmp_path / "gate.key",
         grant_file=tmp_path / "grants.json",
         seats=tuple(
-            GateSeat(f"PROJ/s{index}", tmp_path / f"s{index}.bearer", tmp_path / f"s{index}.token")
+            GateSeat(
+                f"PROJ/s{index}",
+                tmp_path / f"s{index}.bearer",
+                tmp_path / f"s{index}.token",
+                frozenset({"synapse_send"}),
+            )
             for index in range(seats)
         ),
     )
