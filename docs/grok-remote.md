@@ -47,7 +47,10 @@ client reads its inbox with the MCP inbox tool. A third-party webhook is not
 required and is not a supported wake path.
 
 `synapse_status` includes `peers`, the project's online agent names from one
-state snapshot, together with the counts.
+state snapshot, together with the counts. The remote HTTP status uses that
+same project boundary for claims, resources and agents. Its mailbox count
+comes from one bounded who snapshot; a missing snapshot leaves
+`mailbox_pending_available` false and still returns the other fields.
 
 ## Journey
 

@@ -32,6 +32,12 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **Remote status counts stay inside the granted project.** `ProjectMcpViews.status`
+  counts only that project's claims, resources and agents, and `waiter_online`
+  is this identity's own waiter. The mailbox count comes from one bounded who
+  snapshot. When that snapshot does not arrive, the other fields still return
+  and `mailbox_pending_available` is false.
+
 - **`synapse mcp-gate` seats list their tools.** Each `seats[]` entry of the gate
   configuration names the tools that seat may hold, and the gate refuses to start
   when the listener grants a seat a tool its entry does not list. A tool that

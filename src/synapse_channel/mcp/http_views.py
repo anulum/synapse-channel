@@ -15,6 +15,7 @@ from typing import TypeVar
 from pydantic import TypeAdapter
 
 from synapse_channel.core.capability_directory import build_capability_directory, directory_to_json
+from synapse_channel.core.mailbox_pending import parse_pending_counts
 from synapse_channel.mcp.bridge import SynapseHubBridge
 from synapse_channel.mcp.resource_views import (
     agent_resource_to_json,
@@ -155,8 +156,11 @@ class ProjectMcpViews:
     async def status(self) -> str:
         """Return this project's online peers and this identity's mailbox status.
 
-        One who/state round trip. The board is not loaded, so the reply stays
-        inside the time a remote client will wait for.
+        One state snapshot, plus one bounded who snapshot. Claims and resources
+        come from the state snapshot. The live roster and the mailbox count
+        come from the who snapshot. Names outside this project are not counted.
+        When the who snapshot does not arrive, the roster falls back to the
+        state snapshot and the mailbox count is unavailable.
         """
         source = _validate(await self.bridge.state(), OBJECT_SNAPSHOT, json_input=True)
         claims = [
@@ -169,11 +173,22 @@ class ProjectMcpViews:
             for row in _validate(source.get("resources"), ROW_SNAPSHOT)
             if self._agent(row.get("agent"))
         ]
-        names = [
+        state_names = [
             str(row["agent"])
             for row in _validate(source.get("agents"), ROW_SNAPSHOT)
             if self._agent(row.get("agent"))
         ]
+        try:
+            who = _validate(await self.bridge.who(), OBJECT_SNAPSHOT, json_input=True)
+        except RuntimeError:
+            who = None
+        raw_online = who.get("online_agents") if who is not None else None
+        if isinstance(raw_online, list):
+            names = [str(item) for item in raw_online if self._agent(item)]
+        else:
+            names = state_names
+        counts = parse_pending_counts(None if who is None else who.get("mailbox_pending"))
+        pending = None if counts is None else counts.get(self.bridge.name, 0)
         peers, waiters = split_roster(names)
         return _json(
             {
@@ -191,8 +206,8 @@ class ProjectMcpViews:
                         pane_waiter_name(self.bridge.name),
                     )
                 ),
-                "mailbox_pending": None,
-                "mailbox_pending_available": False,
+                "mailbox_pending": pending,
+                "mailbox_pending_available": counts is not None,
             }
         )
 

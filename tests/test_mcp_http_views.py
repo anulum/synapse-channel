@@ -117,10 +117,17 @@ async def test_project_views_hide_foreign_and_unscoped_hub_data() -> None:
             assert [claim["task_id"] for claim in state["active_claims"]] == ["VISIBLE"]
             assert {row["agent"] for row in state["agents"]} == {"ALPHA/worker", "ALPHA/remote"}
             assert "dead_letters" not in state and "pending_relay_approvals" not in state
-            status = json.loads(await views.status())
+            raw_status = await views.status()
+            status = json.loads(raw_status)
             assert status["online_agents"] == 2
             assert status["peers"] == ["ALPHA/remote", "ALPHA/worker"]
+            assert "BETA/worker" not in status["peers"]
             assert status["active_claims"] == 1 and status["resources"] == 1
+            assert status["waiter_online"] is False
+            assert status["active_claims"] == 1
+            assert status["resources"] == 1
+            if status["mailbox_pending_available"]:
+                assert isinstance(status["mailbox_pending"], int)
             assert status["identity"] == "ALPHA/remote"
             manifest = await views.manifest()
             assert [row["agent"] for row in json.loads(manifest)] == ["ALPHA/worker"]
@@ -160,6 +167,63 @@ async def test_project_views_require_a_bound_project_identity() -> None:
                     ProjectMcpViews(bridge.bridge, project)
         finally:
             await bridge.close()
+
+
+async def test_status_waiter_online_ignores_another_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Another project's waiter is not this identity's waiter, and a missing who still reports."""
+    async with running_hub() as (_, uri):
+        foreign_waiter = await connect_agent("BETA/remote-rx", uri)
+        foreign_worker = await connect_agent("BETA/worker", uri)
+        bridge = await start_bridge(uri, name="ALPHA/remote", request_timeout=_REPLY_BUDGET_SECONDS)
+        views = ProjectMcpViews(bridge.bridge, "ALPHA")
+        own: AgentHandle | None = None
+        try:
+            absent = json.loads(await views.status())
+            assert absent["waiter_online"] is False
+            assert "BETA/remote-rx" not in absent["peers"]
+            assert "BETA/worker" not in absent["peers"]
+            own = await connect_agent("ALPHA/remote-rx", uri)
+            present = json.loads(await views.status())
+            assert present["waiter_online"] is True
+            assert "BETA/worker-rx" not in present["peers"]
+
+            async def _counted_who() -> str:
+                return json.dumps(
+                    {
+                        "online_agents": [
+                            "ALPHA/remote",
+                            "ALPHA/remote-rx",
+                            "BETA/worker",
+                            "BETA/worker-rx",
+                        ],
+                        "mailbox_pending": {"ALPHA/remote": 2, "BETA/worker": 9},
+                    }
+                )
+
+            monkeypatch.setattr(views.bridge, "who", _counted_who)
+            counted = json.loads(await views.status())
+            assert counted["mailbox_pending"] == 2
+            assert counted["mailbox_pending_available"] is True
+            assert counted["active_claims"] == 0
+            assert counted["waiter_online"] is True
+            assert "BETA/worker" not in counted["peers"]
+
+            async def _no_who() -> str:
+                return "the hub did not return its roster"
+
+            monkeypatch.setattr(views.bridge, "who", _no_who)
+            degraded = json.loads(await views.status())
+            assert degraded["mailbox_pending"] is None
+            assert degraded["mailbox_pending_available"] is False
+            assert degraded["identity"] == "ALPHA/remote"
+        finally:
+            await bridge.close()
+            opened = [foreign_waiter, foreign_worker]
+            if own is not None:
+                opened.append(own)
+            await close_agents(*opened)
 
 
 async def test_project_views_refuse_queries_before_connection_ready() -> None:

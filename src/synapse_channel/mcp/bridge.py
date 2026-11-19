@@ -9,12 +9,14 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.client.claim_confirmation import DEFAULT_CLAIM_REPLY_TIMEOUT
+from synapse_channel.core.protocol import MessageType
 from synapse_channel.execution_outcome import OutcomeState
 from synapse_channel.mcp import app_task_actions
 from synapse_channel.mcp.advisory_actions import McpAdvisoryActions
@@ -240,6 +242,19 @@ class SynapseHubBridge(_McpInboxQueries):
     async def board(self) -> str:
         """Return the shared task/progress blackboard through the query facade."""
         return await self.snapshot_queries.board()
+
+    async def who(self) -> str:
+        """Return one bounded who snapshot, including mailbox counts.
+
+        The request uses the bridge reply budget. It does not read the inbox.
+        """
+        reply = await self._await_reply(
+            lambda data: data.get("type") == MessageType.WHO_SNAPSHOT,
+            self.agent.request_who,
+        )
+        if reply is None:
+            return "the hub did not return its roster"
+        return json.dumps(reply, indent=2, sort_keys=True)
 
     async def status(self) -> str:
         """Return live roster, waiter, claim, resource, and mailbox counts."""
