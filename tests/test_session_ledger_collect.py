@@ -155,6 +155,13 @@ def test_the_topmost_agent_is_found_under_a_pane() -> None:
         (("less", "/home/u/claude-notes.md"), None),
         (("node",), None),
         ((), None),
+        # A package launcher is not the agent: the agent it starts is its own process.
+        (("npx", "@openai/codex"), None),
+        (("node", "/usr/lib/node_modules/npm/bin/npx-cli.js", "@openai/codex"), None),
+        (("npm", "exec", "claude"), None),
+        (("uvx", "grok"), None),
+        (("pipx", "run", "grok"), None),
+        (("/usr/bin/python3", "/home/u/.local/bin/pipx", "run", "grok"), None),
     ],
 )
 def test_an_agent_is_known_by_its_executable_only(

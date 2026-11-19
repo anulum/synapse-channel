@@ -85,6 +85,19 @@ def test_a_stray_git_directory_without_a_head_is_not_a_work_tree(tmp_path: Path)
     assert shared_tree(state) == tmp_path
 
 
+def test_a_stray_git_directory_inside_a_real_repository_finds_the_repository(
+    tmp_path: Path,
+) -> None:
+    # The stray marker is passed over, and the real work tree above it still counts.
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    home = tmp_path / "home"
+    (home / ".git" / "info").mkdir(parents=True)
+    assert shared_tree(home / ".local" / "state") == tmp_path
+    with pytest.raises(LedgerError, match=f"shared or versioned tree \\({tmp_path}\\)"):
+        ledger_dir({"XDG_STATE_HOME": str(home / ".local" / "state")})
+
+
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc is Linux-only")
 def test_a_rows_key_is_the_boot_the_pid_and_its_start_ticks() -> None:
     assert boot_id()
