@@ -202,7 +202,17 @@ def _next_seq(directory: Path, boot: str) -> int:
     finally:
         os.close(fd)
     os.replace(temp, path)
+    sync_directory(directory)  # the new number survives a power cut before the line is written
     return following
+
+
+def sync_directory(directory: Path) -> None:
+    """Flush ``directory`` itself, so a file just renamed into it stays renamed after a crash."""
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def _append_line(path: Path, line: bytes) -> None:
@@ -306,6 +316,10 @@ def fold(events: Iterable[Mapping[str, Any]]) -> dict[str, Row]:
     the row's ``start``, from the same boot, and names that line in
     ``supersedes_seq``. The corrected end is itself a real end, so it is
     final: there is at most one correction. Every other late end is ignored.
+
+    A row's start is its first, except that a launcher's start replaces one
+    the collector wrote for the same process: the collector can see a process
+    a moment before its launcher records it, and the launcher knows more.
     """
     rows: dict[str, Row] = {}
     for event in events:
@@ -314,7 +328,7 @@ def fold(events: Iterable[Mapping[str, Any]]) -> dict[str, Row]:
             continue
         row = rows.setdefault(key, Row(key))
         kind = event.get("event")
-        if kind == "start" and not row.start:
+        if kind == "start" and _takes_start(row.start, event):
             row.start = dict(event)
         elif kind == "observe":
             row.observed.update({k: v for k, v in event.items() if k not in _COMMON})
@@ -326,6 +340,13 @@ def fold(events: Iterable[Mapping[str, Any]]) -> dict[str, Row]:
 
 
 _COMMON = frozenset({"schema", "host", "boot_id", "seq", "ts", "event", "row_id"})
+
+
+def _takes_start(current: Mapping[str, Any], event: Mapping[str, Any]) -> bool:
+    """Return whether ``event`` becomes the row's start."""
+    if not current:
+        return True
+    return current.get("launcher") == "observed" and event.get("launcher") not in (None, "observed")
 
 
 def _take_end(row: Row, event: Mapping[str, Any]) -> None:

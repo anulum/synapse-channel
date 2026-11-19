@@ -289,6 +289,37 @@ def test_a_row_takes_its_first_start_and_merges_observations() -> None:
     }
 
 
+def test_a_launchers_start_replaces_the_collectors_for_the_same_process() -> None:
+    # The collector saw the process a moment before its launcher recorded it.
+    seen_first = fold(
+        [
+            _event("start", 1, launcher="observed", identity="T/x"),
+            _event("start", 2, launcher="seat-hold", identity="T/x"),
+            _event("start", 3, launcher="observed"),
+        ]
+    )
+    assert seen_first["r"].start["launcher"] == "seat-hold"
+    # A launcher's start is never replaced, and neither is a first collector's by another.
+    collectors = fold([_event("start", 1, launcher="observed"), _event("start", 2)])
+    assert collectors["r"].start["seq"] == 1
+
+
+def test_a_new_number_is_flushed_with_its_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flushed: list[bool] = []
+    real = os.fsync
+
+    def recording(fd: int) -> None:
+        flushed.append(stat.S_ISDIR(os.fstat(fd).st_mode))
+        real(fd)
+
+    monkeypatch.setattr(os, "fsync", recording)
+    append_event({"event": "start", "row_id": "r"}, directory=tmp_path, boot=BOOT)
+    # The number's file first, then the directory that holds its new name.
+    assert flushed == [False, True]
+
+
 def test_the_first_end_is_final() -> None:
     row = fold(
         [

@@ -53,6 +53,7 @@ from synapse_channel.session_ledger import (
     fold,
     read_events,
     row_id,
+    sync_directory,
 )
 
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -459,6 +460,7 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     finally:
         os.close(fd)
     os.replace(temp, path)
+    sync_directory(path.parent)
 
 
 def _ends(
