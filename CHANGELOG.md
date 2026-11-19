@@ -18,6 +18,10 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- `synapse_channel.core.generation_chain` and `synapse generation head|read|publish|seal` implement the `synapse-generation.v1` hard-linked 20-digit generation chain (`gen-<20 digits>.json`) in owner-only local directories (refusing symlinks, loose permissions, and NFS/CIFS/SMB/FUSE filesystems via `statfs`), syncing `.partial` files and the chain directory on publication, carrying the base generation's artefact forward (or 64 zeros at generation 0) when sealing, and refusing gaps below the head or non-canonical slot bytes.
+
 ## [0.99.57] - 2026-11-19
 
 Core 0.99.57 adds `synapse mcp-gate`, a stable-bearer gate that lets a remote MCP

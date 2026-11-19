@@ -523,6 +523,16 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "operation_record",
         ValueError,
     ),
+    "GenerationChainError": (
+        "synapse_channel.core.generation_chain",
+        "generation_chain",
+        ValueError,
+    ),
+    "GenerationChainCorruptionError": (
+        "synapse_channel.core.generation_chain",
+        "generation_chain_corrupt",
+        ValueError,
+    ),
     "McpConfigError": ("synapse_channel.core.mcp_outbound", "mcp_config", ValueError),
     "McpDependencyError": (
         "synapse_channel.core.mcp_outbound",

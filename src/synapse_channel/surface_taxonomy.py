@@ -174,6 +174,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "contracts": EXPERIMENTAL,
     "verify-result": EXPERIMENTAL,
     "operation": EXPERIMENTAL,
+    "generation": EXPERIMENTAL,
     "effect-suite": EXPERIMENTAL,
     "work-state": EXPERIMENTAL,
 }

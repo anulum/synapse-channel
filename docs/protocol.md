@@ -163,7 +163,14 @@ does not add agent grades to protocol envelopes.
   `chain`+`start_record`+`base_generation`+`base_artefact_sha256`+`artefact_sha256`+`revision`,
   where `start_record` names the file the deployed service writes after loading and
   checking the artefact, `base_generation` is `0` or `[1-9][0-9]{0,17}` and
-  `base_artefact_sha256` is 64 zeros when `base_generation` is `0`; for a migration either
+  `base_artefact_sha256` is 64 zeros when `base_generation` is `0` (each slot in
+  `chain` is `gen-<20 digits>.json` holding canonical sorted-key compact ASCII JSON
+  of `{"artefact","attempt","generation","kind","operation","schema"}` with
+  `schema="synapse-generation.v1"` and `kind` in `{"applied","sealed"}`, published
+  into an owner-only `0700` non-network/non-FUSE directory by syncing a private
+  `.partial` file, hard-linking the final slot name, and syncing the directory,
+  with `sealed` carrying the base generation's artefact forward or 64 zeros at
+  generation 0, and gaps or non-canonical slot bytes refused as corruption); for a migration either
   `database`+`migration`+`schema_sha256` or
   `database`+`migration`+`base_schema_sha256`+`schema_sha256`, never a mixture
   of shapes; or, for a
