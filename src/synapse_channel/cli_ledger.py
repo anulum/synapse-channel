@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from synapse_channel.session_ledger import (
@@ -25,9 +26,12 @@ from synapse_channel.session_ledger import (
 USAGE_EXIT_CODE = 2
 """Exit code for a ledger that cannot be read here."""
 
+HOST_UNREADABLE_EXIT_CODE = 3
+"""Exit code for a snapshot that could not read the host; nothing was written."""
+
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register ``ledger`` with ``show`` and ``read-v0``."""
+    """Register ``ledger`` with ``show``, ``snapshot`` and ``read-v0``."""
     parser = subparsers.add_parser("ledger", help="Show this host's session ledger.")
     nested = parser.add_subparsers(dest="ledger_command", required=True)
     show = nested.add_parser("show", help="One line per row: open rows, or every row with --all.")
@@ -35,6 +39,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     show.add_argument("--boot", default=None, help="Only rows of this boot id.")
     show.add_argument("--json", action="store_true", help="Print the rows as JSON.")
     show.set_defaults(func=_cmd_show)
+    snapshot = nested.add_parser(
+        "snapshot", help="Record the agent sessions that run on this host now (one pass)."
+    )
+    snapshot.add_argument("--tmux-bin", default="tmux", help="The tmux executable to read.")
+    snapshot.set_defaults(func=_cmd_snapshot)
     v0 = nested.add_parser(
         "read-v0", help="Read an interim v0 event file as v1 events; writes nothing."
     )
@@ -77,6 +86,30 @@ def _cmd_show(args: argparse.Namespace) -> int:
     else:
         for row in rows:
             print(_line(row))
+    return 0
+
+
+def _cmd_snapshot(args: argparse.Namespace) -> int:
+    """Record what runs on this host now; on a failed read, write nothing."""
+    from synapse_channel.session_ledger_collect import CollectError, Host, collect, read_procs
+
+    try:
+        directory = ledger_dir()
+        home = os.environ.get("HOME")
+        found = collect(
+            directory,
+            Host(read_procs(), tmux_bin=args.tmux_bin, home=Path(home) if home else None),
+        )
+    except CollectError as exc:
+        print(f"synapse ledger: the host could not be read, nothing was written: {exc}")
+        return HOST_UNREADABLE_EXIT_CODE
+    except LedgerError as exc:
+        print(f"synapse ledger: {exc}")
+        return USAGE_EXIT_CODE
+    print(
+        f"synapse ledger: {found.rows} session(s); {found.started} started, "
+        f"{found.observed} observed, {found.ended} ended"
+    )
     return 0
 
 

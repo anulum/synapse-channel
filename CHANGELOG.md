@@ -83,8 +83,12 @@ execution evidence when carrying a release claim forward.
   launcher waits for the lock about a second at most, so the ledger never
   delays a seat. The ledger refuses to live inside a git or coordination tree,
   and never stores an argument vector, other environment variables, screen
-  text or a token. `ledger read-v0` reads the interim tool's v0 files. There is
-  no retention yet: every monthly file is kept.
+
+  text or a token. `ledger snapshot` records the sessions nobody launched, the
+  vendors' native session ids, and the ends of sessions that are gone or were
+  cut by a reboot; a failed tmux query writes nothing. `ledger read-v0` reads
+  the interim tool's v0 files. There is no retention yet: every monthly file
+  is kept.
 
 ## [0.99.58] - 2026-11-19
 
