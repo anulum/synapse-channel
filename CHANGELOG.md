@@ -20,10 +20,10 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
-- The first-minute demo probe no longer waits on port 0. That value is mapped
-  to port 80 by the WebSocket client, so a listener there can satisfy a test
-  that must time out. The probe now uses a loopback port that was bound and
-  then closed, and it still raises `TimeoutError`.
+- The first-minute demo timeout tests no longer probe port 0. That value is
+  mapped to port 80 by the WebSocket client, so a listener there can satisfy a
+  test that must time out. The tests now wait on a loopback port that was bound
+  and then closed, and they still raise `TimeoutError`.
 
 ### Changed
 
