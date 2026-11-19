@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from collections.abc import Coroutine, Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -25,6 +24,7 @@ from typing import Any
 import pytest
 
 from synapse_channel import cli, cli_processes
+from synapse_channel.client import local_endpoints
 from synapse_channel.client.chat_backends import OpenAIChatClient
 from synapse_channel.client.llm_worker import (
     DEFAULT_OLLAMA_BASE_URL,
@@ -41,6 +41,7 @@ from synapse_channel.client.local_endpoints import (
     normalise_endpoint,
 )
 from synapse_channel.client.routing import TieredChatClient
+from synapse_channel.core.secure_path import SecurePathError
 
 HOSTED = "https://api.deepseek.com/v1"
 
@@ -246,17 +247,28 @@ def test_an_empty_list_declares_nothing_local(tmp_path: Path) -> None:
         _worker(local_endpoints=load_local_endpoints(empty))
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits and symlinks")
-def test_a_symlinked_or_shared_or_missing_list_is_refused(tmp_path: Path) -> None:
-    real = _list_file(
-        tmp_path / "real.json", {"schema": LOCAL_ENDPOINTS_SCHEMA, "endpoints": [HOSTED]}
+def test_a_list_the_owner_only_reader_refuses_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    listed = _list_file(
+        tmp_path / "endpoints.json", {"schema": LOCAL_ENDPOINTS_SCHEMA, "endpoints": [HOSTED]}
     )
-    link = tmp_path / "link.json"
-    link.symlink_to(real)
-    with pytest.raises(LocalEndpointError, match="cannot read the local endpoint list"):
-        load_local_endpoints(link)
-    real.chmod(0o644)
-    with pytest.raises(LocalEndpointError, match="cannot read the local endpoint list"):
-        load_local_endpoints(real)
+    calls: list[tuple[Path, str, int]] = []
+
+    def refuse(path: Path, *, purpose: str, max_bytes: int) -> bytes:
+        calls.append((path, purpose, max_bytes))
+        raise SecurePathError(f"{purpose} must not be a symlink")
+
+    monkeypatch.setattr(local_endpoints, "read_owner_only_file_bytes", refuse)
+    with pytest.raises(
+        LocalEndpointError,
+        match="cannot read the local endpoint list: local endpoint list must not be a symlink",
+    ):
+        load_local_endpoints(listed)
+    # The list goes through the platform's owner-only reader with the size bound.
+    assert calls == [(listed, "local endpoint list", local_endpoints.MAX_LOCAL_ENDPOINTS_BYTES)]
+
+
+def test_a_missing_explicit_list_is_refused(tmp_path: Path) -> None:
     with pytest.raises(LocalEndpointError, match="cannot read the local endpoint list"):
         load_local_endpoints(tmp_path / "absent.json")
