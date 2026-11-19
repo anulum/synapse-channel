@@ -139,7 +139,9 @@ interfaces, maturity, and release commitments.
   [MCP guide](docs/mcp.md). A remote client that keeps only one static secret
   reaches the HTTPS listener through `synapse mcp-gate`, which checks a
   stable bearer on every request and forwards it with the seat's current
-  issuer token to the pinned listener. See [MCP bearer gate](docs/mcp-gate.md).
+  issuer token to the pinned listener; each gated seat lists the tools it may
+  hold. See [MCP bearer gate](docs/mcp-gate.md) and the
+  [remote Grok connector](docs/grok-remote.md).
 - History read queries answered only to the identity they name, an inbox page
   and an owned-work listing on the MCP stdio bridge, and remote MCP mutations
   that carry their operation identifier as a tool argument, with lease fences
@@ -181,7 +183,9 @@ interfaces, maturity, and release commitments.
   (`synapse operation declare`, `outcome` and `verification`).
   `synapse verify-result` checks the requested result
   itself: a file's exact SHA-256 and the change's tests, a commit on a remote
-  branch, a deployment's health report, or a migration. See
+  branch, a deployment's health report or its generation chain and service
+  start record, or a migration. `synapse generation` keeps a hard-linked
+  generation chain for conditional deployments. See
   [execution outcomes](docs/execution-outcomes.md).
 - Catalogue operations run end to end with `synapse ops run`, along one
   checked path: the exact target and executable fingerprint, the qualification
@@ -344,7 +348,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.57 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.58 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities

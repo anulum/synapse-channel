@@ -188,7 +188,15 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     ):
         assert released_in_0_99_57 in shipped, released_in_0_99_57
         assert released_in_0_99_57 not in unreleased, released_in_0_99_57
-    assert "At 0.99.57 nothing on `main` is outside a release." in unreleased
+    for released_in_0_99_58 in (
+        "each gated seat lists the tools it may",
+        "[remote Grok connector](docs/grok-remote.md)",
+        "its generation chain and service",
+        "`synapse generation` keeps a hard-linked",
+    ):
+        assert released_in_0_99_58 in shipped, released_in_0_99_58
+        assert released_in_0_99_58 not in unreleased, released_in_0_99_58
+    assert "At 0.99.58 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:
