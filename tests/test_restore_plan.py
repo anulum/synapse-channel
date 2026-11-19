@@ -317,19 +317,29 @@ def test_no_resume_form_carries_a_permission_flag() -> None:
         assert not [word for word in PERMISSION_WORDS for part in form if word in part.lower()]
 
 
+def _cli_knows(binary: str, word: str) -> bool:
+    """Return whether the installed CLI lists ``word``: a flag in its help, or a subcommand."""
+    probe = ["--help"] if word.startswith("-") else [word, "--help"]
+    shown = subprocess.run([binary, *probe], capture_output=True, text=True, timeout=60)
+    text = shown.stdout + shown.stderr
+    # A flag must be listed; a subcommand must answer and take the session id as its argument.
+    return shown.returncode == 0 and (
+        word in text if word.startswith("-") else "SESSION_ID" in text
+    )
+
+
 @pytest.mark.parametrize("vendor", sorted(RESUME_FORMS))
 def test_each_resume_form_exists_in_the_installed_cli(vendor: str) -> None:
     """The table's flag is in the CLI's help; its subcommand answers its own help.
 
-    A form the CLI does not know would start a fresh, unresumed session.
+    A form the CLI does not know would start a fresh, unresumed session. A
+    made-up form of the same kind must fail the same check, or the check
+    proves nothing.
     """
     binary, word = RESUME_FORMS[vendor]
     found = shutil.which(binary)
     if found is None:
         pytest.skip(f"{vendor} is not installed on this host")
-    probe = ["--help"] if word.startswith("-") else [word, "--help"]
-    shown = subprocess.run([found, *probe], capture_output=True, text=True, timeout=60)
-    text = shown.stdout + shown.stderr
-    assert shown.returncode == 0, text[-500:]
-    # A flag must be listed; a subcommand must take the session id as its argument.
-    assert word in text if word.startswith("-") else "SESSION_ID" in text, text[-500:]
+    assert _cli_knows(found, word)
+    made_up = "--no-such-resume-form" if word.startswith("-") else "no-such-resume-command"
+    assert not _cli_knows(found, made_up)
