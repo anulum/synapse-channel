@@ -406,6 +406,26 @@ def test_a_first_snapshot_starts_every_unlaunched_row_and_records_what_it_found(
     assert stat.S_IMODE((ledger / "boots").stat().st_mode) == 0o700
 
 
+def test_a_snapshots_views_are_flushed_with_their_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger = tmp_path / "ledger"
+    flushed: list[int] = []
+    real = os.fsync
+
+    def recording(fd: int) -> None:
+        status = os.fstat(fd)
+        if stat.S_ISDIR(status.st_mode):
+            flushed.append(status.st_ino)
+        real(fd)
+
+    monkeypatch.setattr(os, "fsync", recording)
+    collect(ledger, _host(tmp_path))
+    # Each view is renamed into place, then its directory is flushed.
+    assert (ledger / "boots").stat().st_ino in flushed
+    assert ledger.stat().st_ino in flushed
+
+
 def test_an_unchanged_host_records_nothing_new(tmp_path: Path) -> None:
     ledger = tmp_path / "ledger"
     collect(ledger, _host(tmp_path))

@@ -9,8 +9,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import signal
 import socket
 import sys
 from collections.abc import Sequence
@@ -285,6 +287,21 @@ def test_execute_snapshots_holds_the_lock_and_starts_the_plan(
     assert json.loads((ledger / "current.json").read_text(encoding="utf-8"))["boot_id"] == boot_id()
     with restore_lock(ledger):  # and the lock is free again
         pass
+
+
+def test_execute_notes_a_real_signal_and_exits_130(
+    tmp_path: Path, ledger: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_execute(entries: Sequence[Entry], run: Run) -> tuple[int, list[Outcome]]:
+        # The run's interrupt holds SIGTERM while it runs; only then is one sent.
+        assert signal.getsignal(signal.SIGTERM) not in (signal.SIG_DFL, signal.SIG_IGN, None)
+        os.kill(os.getpid(), signal.SIGTERM)
+        await asyncio.wait_for(run.interrupt.requested.wait(), 5.0)
+        return 130, []
+
+    monkeypatch.setattr(cli_ledger_restore, "execute", fake_execute)
+    assert _restore(tmp_path, "--execute", "--uri", "ws://127.0.0.1:9") == 130
+    assert signal.getsignal(signal.SIGTERM) == signal.SIG_DFL  # given back afterwards
 
 
 def test_execute_reports_progress_on_standard_output_without_json(
