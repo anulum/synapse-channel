@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import dataclasses
 import os
 import signal
 import stat
@@ -459,7 +460,7 @@ async def _until(predicate: Any, timeout: float = 10.0) -> None:
 
 
 def test_the_real_child_operations_work_in_this_process() -> None:
-    assert seat_hold._set_death_signal(0) == 0  # 0 clears the parent-death signal
+    assert seat_hold.child_ops().set_death_signal(0) == 0  # 0 clears the parent-death signal
     previous = seat_hold._set_sigttou(signal.SIG_DFL)
     seat_hold._set_sigttou(previous)
 
@@ -514,3 +515,72 @@ def test_the_parser_takes_the_agent_command_after_the_options() -> None:
         command=["true"],
     )
     assert cli_seat_hold._cmd_seat_hold(bare, runner=runner) == 0 and len(captured) == 1
+
+
+class _Libc:
+    """A loaded C library double: records each ``prctl`` call."""
+
+    def __init__(self, calls: list[tuple[int, ...]]) -> None:
+        self.calls = calls
+
+    def prctl(self, *args: int) -> int:
+        self.calls.append(args)
+        return 0
+
+
+def test_the_library_is_loaded_in_the_parent_and_never_in_the_child_setup() -> None:
+    """Loading a library between fork and exec could deadlock; the child only calls."""
+    loads: list[object] = []
+    calls: list[tuple[int, ...]] = []
+
+    def loader(name: object, use_errno: bool = False) -> _Libc:
+        loads.append(name)
+        return _Libc(calls)
+
+    recorder = _Ops(tty=False)
+    ops = dataclasses.replace(
+        recorder.ops, set_death_signal=seat_hold.child_ops(loader).set_death_signal
+    )
+    assert loads == [None]
+    setup = child_setup(41, ops)
+    setup()
+    assert loads == [None]
+    assert calls == [(seat_hold.PR_SET_PDEATHSIG, int(signal.SIGTERM), 0, 0, 0)]
+
+
+def test_a_set_up_made_without_operations_resolves_them_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loads: list[object] = []
+
+    def loader(name: object, use_errno: bool = False) -> _Libc:
+        loads.append(name)
+        return _Libc([])
+
+    monkeypatch.setattr("ctypes.CDLL", loader)
+    child_setup(41)  # made in the parent, as spawn_agent makes it; never run here
+    assert loads == [None]
+
+
+def test_an_unreadable_token_file_is_a_named_refusal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing = tmp_path / "absent-token"
+    args = argparse.Namespace(
+        identity="T/seat",
+        nonce=NONCE,
+        marker_dir=None,
+        uri="ws://h",
+        token_file=str(missing),
+        command=["--", "true"],
+    )
+
+    def never(coroutine: Coroutine[Any, Any, int]) -> int:
+        coroutine.close()
+        raise AssertionError("nothing may run")
+
+    assert cli_seat_hold._cmd_seat_hold(args, runner=never) == cli_seat_hold.USAGE_EXIT_CODE == 2
+    out = capsys.readouterr().out.strip()
+    assert (
+        out == f"synapse seat-hold: cannot read the token file {missing}: No such file or directory"
+    )

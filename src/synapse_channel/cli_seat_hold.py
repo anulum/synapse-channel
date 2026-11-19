@@ -26,7 +26,7 @@ AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
 """Runs the holder's coroutine to completion; injectable for tests."""
 
 USAGE_EXIT_CODE = 2
-"""Exit code for a command line without an agent command."""
+"""Exit code for a command line without an agent command, or with an unreadable token file."""
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -70,7 +70,14 @@ def _cmd_seat_hold(args: argparse.Namespace, *, runner: AsyncRunner = asyncio.ru
     if not command:
         print("synapse seat-hold: give the agent command after '--'")
         return USAGE_EXIT_CODE
-    token = Path(args.token_file).read_text(encoding="utf-8").strip() if args.token_file else None
+    try:
+        token = (
+            Path(args.token_file).read_text(encoding="utf-8").strip() if args.token_file else None
+        )
+    except OSError as exc:
+        reason = exc.strerror or type(exc).__name__
+        print(f"synapse seat-hold: cannot read the token file {args.token_file}: {reason}")
+        return USAGE_EXIT_CODE
     return runner(
         hold_seat(
             args.identity,

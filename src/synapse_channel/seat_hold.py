@@ -54,7 +54,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
-from typing import Protocol
+from typing import Any, Protocol
 
 from synapse_channel.client.agent_dispatch import MessageCallback
 from synapse_channel.connect_failures import closed_after_ready, is_name_conflict_close
@@ -170,7 +170,7 @@ class ChildOps:
     """The process operations the agent's child runs before it executes the agent.
 
     They are a parameter so the child's set-up can be checked in-process; the
-    real ones are :data:`REAL_CHILD_OPS`.
+    real ones come from :func:`child_ops`.
     """
 
     setpgid: Callable[[int, int], None]
@@ -182,10 +182,21 @@ class ChildOps:
     getppid: Callable[[], int]
 
 
-def _set_death_signal(signum: int) -> int:
-    """Ask the kernel to send ``signum`` to this process when its parent dies."""
-    libc = ctypes.CDLL(None, use_errno=True)
-    return int(libc.prctl(PR_SET_PDEATHSIG, signum, 0, 0, 0))
+def resolve_death_signal(loader: Callable[..., Any] | None = None) -> Callable[[int], int]:
+    """Resolve ``prctl`` now, in the calling process, and return a setter that only calls it.
+
+    The agent's child runs between fork and exec, where loading a library could
+    deadlock on a lock that another thread of the holder held at the fork (an
+    executor thread resolving the hub's host name, for one). So the library is
+    loaded here, in the parent, and the child only calls the resolved function.
+    """
+    prctl = (loader or ctypes.CDLL)(None, use_errno=True).prctl
+
+    def set_death_signal(signum: int) -> int:
+        """Ask the kernel to send ``signum`` to this process when its parent dies."""
+        return int(prctl(PR_SET_PDEATHSIG, signum, 0, 0, 0))
+
+    return set_death_signal
 
 
 def _set_sigttou(handler: SignalHandler) -> SignalHandler:
@@ -193,19 +204,20 @@ def _set_sigttou(handler: SignalHandler) -> SignalHandler:
     return signal.signal(signal.SIGTTOU, handler)
 
 
-REAL_CHILD_OPS = ChildOps(
-    setpgid=os.setpgid,
-    isatty=os.isatty,
-    getpgrp=os.getpgrp,
-    tcsetpgrp=os.tcsetpgrp,
-    set_sigttou=_set_sigttou,
-    set_death_signal=_set_death_signal,
-    getppid=os.getppid,
-)
-"""The real operations, used in the forked child before it executes the agent."""
+def child_ops(loader: Callable[..., Any] | None = None) -> ChildOps:
+    """Return the real child operations, with ``prctl`` resolved in this (parent) process."""
+    return ChildOps(
+        setpgid=os.setpgid,
+        isatty=os.isatty,
+        getpgrp=os.getpgrp,
+        tcsetpgrp=os.tcsetpgrp,
+        set_sigttou=_set_sigttou,
+        set_death_signal=resolve_death_signal(loader),
+        getppid=os.getppid,
+    )
 
 
-def child_setup(holder_pid: int, ops: ChildOps = REAL_CHILD_OPS) -> Callable[[], None]:
+def child_setup(holder_pid: int, ops: ChildOps | None = None) -> Callable[[], None]:
     """Return the set-up the agent's child runs between fork and exec.
 
     The child enters a process group of its own and, on a terminal, takes the
@@ -214,20 +226,22 @@ def child_setup(holder_pid: int, ops: ChildOps = REAL_CHILD_OPS) -> Callable[[],
     holder: a holder that died between the fork and that request would
     otherwise leave the agent running without a fence. Either failure raises
     :class:`ChildSetupError`, so the agent is never executed; the holder learns
-    it as a failed start.
+    it as a failed start. The operations are made here, in the parent, so the
+    child loads nothing.
     """
+    real = ops or child_ops()
 
     def setup() -> None:
         """Run in the child before it executes the agent."""
-        ops.setpgid(0, 0)
-        if ops.isatty(0):
-            previous = ops.set_sigttou(signal.SIG_IGN)
+        real.setpgid(0, 0)
+        if real.isatty(0):
+            previous = real.set_sigttou(signal.SIG_IGN)
             with contextlib.suppress(OSError):
-                ops.tcsetpgrp(0, ops.getpgrp())
-            ops.set_sigttou(previous)
-        if ops.set_death_signal(signal.SIGTERM) != 0:
+                real.tcsetpgrp(0, real.getpgrp())
+            real.set_sigttou(previous)
+        if real.set_death_signal(signal.SIGTERM) != 0:
             raise ChildSetupError("the kernel refused the parent-death signal")
-        if ops.getppid() != holder_pid:
+        if real.getppid() != holder_pid:
             raise ChildSetupError("the holder ended before the agent could be fenced")
 
     return setup
@@ -443,8 +457,9 @@ async def supervise(
         await asyncio.gather(agent_done, return_exceptions=True)
 
 
-def reclaim_terminal(ops: ChildOps = REAL_CHILD_OPS) -> None:
+def reclaim_terminal(ops: ChildOps | None = None) -> None:
     """Give the terminal's foreground back to the holder after the agent ended."""
+    ops = ops or child_ops()
     if not ops.isatty(0):
         return
     previous = ops.set_sigttou(signal.SIG_IGN)
