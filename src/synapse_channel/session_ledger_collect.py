@@ -37,7 +37,7 @@ import re
 import sqlite3
 import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -55,6 +55,8 @@ from synapse_channel.session_ledger import (
 )
 
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+INTERPRETER = re.compile(r"python[0-9.]*|node|nodejs|bun|deno")
+"""Executables that run an agent's script; the script then names the agent."""
 RESUME_FLAGS = frozenset({"--resume", "-r", "--conversation", "resume"})
 NO_SERVER_MARKERS = ("no server running", "error connecting to")
 """tmux's words for "there is no server", which is not an error for a collector."""
@@ -65,6 +67,21 @@ OBSERVED_FIELDS = ("native_session_id", "native_session_id_source", "label", "tm
 
 class CollectError(Exception):
     """A query failed; nothing is written, so a failure never reads as a gone seat."""
+
+
+def agent_vendor(argv: Sequence[str]) -> str | None:
+    """Return the vendor whose agent a process runs, judged by its executable only.
+
+    The executable is the first word, or the script an interpreter
+    (``node``, ``python``, ``bun``, ``deno``) runs. An argument never makes a
+    process an agent: a tmux server's arguments name its first command, a shell
+    names the agent it starts, a seat holder names the agent after ``--``, and
+    a terminal's title or an open file can carry a vendor's name.
+    """
+    words = list(argv[:1])
+    if words and INTERPRETER.fullmatch(Path(words[0]).name):
+        words = [word for word in argv[1:] if not word.startswith("-")][:1]
+    return provider_family_of(words)
 
 
 class Runner(Protocol):
@@ -130,9 +147,9 @@ def topmost_agent(
     """
     # A pane tmux lists may have ended before the process table was read.
     for pid in [root, *descendants(root, kids)] if root in procs else descendants(root, kids):
-        vendor = provider_family_of(procs[pid].argv)
+        vendor = agent_vendor(procs[pid].argv)
         parent = procs.get(procs[pid].ppid)
-        if vendor and (parent is None or provider_family_of(parent.argv) != vendor):
+        if vendor and (parent is None or agent_vendor(parent.argv) != vendor):
             return pid
     return None
 
@@ -250,9 +267,7 @@ def native_session(
     The sources, in order: Claude's per-process sessions file, a resume flag in
     an argument vector, and an open Codex rollout file or agy conversation.
     """
-    tree = [pid] + [
-        d for d in descendants(pid, kids) if provider_family_of(procs[d].argv) == vendor
-    ]
+    tree = [pid] + [d for d in descendants(pid, kids) if agent_vendor(procs[d].argv) == vendor]
     claude = _claude_session(tree, home) if vendor == "claude" else None
     if claude:
         return claude, "claude_sessions_file"
@@ -319,7 +334,7 @@ def _observation(
     host: Host, pid: int, kids: Mapping[int, list[int]], facts: Mapping[str, Any]
 ) -> dict[str, Any]:
     proc = host.procs[pid]
-    vendor = provider_family_of(proc.argv)
+    vendor = agent_vendor(proc.argv)
     native, source = native_session(
         vendor, pid, host.procs, kids, home=host.home, proc_root=host.proc_root
     )
@@ -377,9 +392,9 @@ def observe_host(host: Host) -> dict[str, dict[str, Any]]:
         found = _observation(host, agent, kids, facts)
         rows[found["row_id"]] = found
     for pid, proc in host.procs.items():
-        vendor = provider_family_of(proc.argv)
+        vendor = agent_vendor(proc.argv)
         parent = host.procs.get(proc.ppid)
-        if not vendor or pid in covered or (parent and provider_family_of(parent.argv) == vendor):
+        if not vendor or pid in covered or (parent and agent_vendor(parent.argv) == vendor):
             continue
         found = _observation(host, pid, kids, named_environ(pid, host.proc_root))
         rows[found["row_id"]] = found

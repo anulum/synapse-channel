@@ -31,6 +31,7 @@ from synapse_channel.session_ledger_collect import (
     CollectError,
     Host,
     Proc,
+    agent_vendor,
     agy_root,
     collect,
     descendants,
@@ -135,6 +136,48 @@ def test_the_topmost_agent_is_found_under_a_pane() -> None:
     assert topmost_agent(400, PROCS, kids) is None
     assert topmost_agent(300, PROCS, kids) == 300  # the pane's own process is the agent
     assert topmost_agent(310, PROCS, kids) is None  # the same agent's child is not a seat
+
+
+@pytest.mark.parametrize(
+    ("argv", "vendor"),
+    [
+        (("claude", "--resume", SID), "claude"),
+        (("/home/u/.local/bin/claude",), "claude"),
+        (("node", "--no-warnings", "/usr/lib/codex/bin/codex.js", "resume", SID), "codex"),
+        (("/opt/codex/vendor/codex-linux-x64/codex", "--helper"), "codex"),
+        (("/usr/bin/python3", "-u", "/opt/grok/grok.py"), "grok"),
+        (("agy", "--conversation", SID), "agy"),
+        # An argument never makes a process an agent:
+        (("tmux", "-L", "s", "new-session", "-d", "-s", "x", "/tmp/bin/claude"), None),
+        (("fish", "-c", "env SYN_IDENTITY=P/a claude"), None),
+        (("/usr/bin/kitty", "--title", "Claude-TL", "--class", "Claude-TL"), None),
+        (("/venv/bin/python", "/venv/bin/synapse", "seat-hold", "--", "codex"), None),
+        (("less", "/home/u/claude-notes.md"), None),
+        (("node",), None),
+        ((), None),
+    ],
+)
+def test_an_agent_is_known_by_its_executable_only(
+    argv: tuple[str, ...], vendor: str | None
+) -> None:
+    assert agent_vendor(argv) == vendor
+
+
+def test_the_agent_behind_a_seat_holder_is_the_seat_and_the_holder_is_not(
+    tmp_path: Path,
+) -> None:
+    procs = {
+        100: Proc(100, 1, ("tmux", "new-session", "--", "/venv/bin/synapse"), 10),
+        200: Proc(
+            200, 100, ("/venv/bin/python", "/venv/bin/synapse", "seat-hold", "--", "codex"), 20
+        ),
+        300: Proc(300, 200, ("node", "/usr/lib/codex/bin/codex.js"), 30),
+        900: Proc(900, 1, ("/usr/bin/kitty", "--title", "Claude-TL"), 90),
+    }
+    runner = _tmux(**{"list-panes": (0, "synapse-P_a\t0.0\t200\n", "")})
+    rows = observe_host(_host(tmp_path, runner, procs))
+    # The row's PID is the agent's, the one its launcher records; no terminal is a seat.
+    assert [row["pid"] for row in rows.values()] == [300]
 
 
 def test_only_the_two_named_keys_are_read_from_an_environment(tmp_path: Path) -> None:
