@@ -36,6 +36,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secure_path import SecurePathError, read_owner_only_file_bytes
 
 LOCAL_ENDPOINTS_SCHEMA = "synapse-local-endpoints.v1"
@@ -56,8 +57,10 @@ MAX_LOCAL_ENDPOINTS_BYTES = 65536
 _DEFAULT_PORTS: Mapping[str, int] = {"http": 80, "https": 443}
 
 
-class LocalEndpointError(ValueError):
+class LocalEndpointError(SynapseError, ValueError):
     """An endpoint list or a model endpoint that a local worker must refuse."""
+
+    code = "local_endpoint"
 
 
 def default_local_endpoints_path(environ: Mapping[str, str] | None = None) -> Path:

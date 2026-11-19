@@ -497,6 +497,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "level_criteria",
         ValueError,
     ),
+    "LocalEndpointError": (
+        "synapse_channel.client.local_endpoints",
+        "local_endpoint",
+        ValueError,
+    ),
     "EffectSuiteKeyError": (
         "synapse_channel.effect_suite.record",
         "effect_suite_key",
