@@ -10,10 +10,11 @@
 The report reads the rows the hub journals for an operation: its declaration
 with the authorisation intent, the approval notes on the intent's digest, the
 hub's answers to each request for an attempt, the executor's outcome reports,
-the independent verifications and the seals. It folds them with the hub's own
-readers, :class:`~synapse_channel.core.operation_attempt_ledger.AttemptLedger`
-and :func:`~synapse_channel.core.approvals.build_approval_report`, so it never
-gives a state the hub would not.
+the independent verifications, the seals and the stop read-backs. It folds them
+with the hub's own readers,
+:class:`~synapse_channel.core.operation_attempt_ledger.AttemptLedger` and
+:func:`~synapse_channel.core.approvals.build_approval_report`, so it never gives
+a state the hub would not.
 
 Every link keeps its journal sequence and time. A missing row is "not
 recorded", never "did not happen": an executor's report is never a success
@@ -97,7 +98,8 @@ class ChainLink:
     seq, at : int, float
         The row's journal sequence and the hub's time.
     kind : str
-        ``declared``, ``approval``, ``answer``, ``outcome``, ``verification`` or ``seal``.
+        ``declared``, ``approval``, ``answer``, ``outcome``, ``verification``,
+        ``seal`` or ``stop_readback``.
     actor : str
         The row's sender, or the approval note's author.
     detail : Mapping[str, object]
@@ -218,18 +220,23 @@ def run_operation_reports(
 def build_operation_report(operation_id: str, events: Sequence[StoredEvent]) -> OperationReport:
     """Fold ``operation_id``'s rows in ``events`` into its report."""
     rows = [event for event in events if _is_of(event, operation_id)]
+    stops = [event for event in events if event.kind == EventKind.OPERATION_STOPPED]
     approvals = build_approval_report(events).by_subject
-    return _report(operation_id, rows, approvals, _as_of(events))
+    return _report(operation_id, rows, approvals, _as_of(events), stops)
 
 
 def list_operation_reports(events: Sequence[StoredEvent]) -> tuple[OperationReport, ...]:
     """Return the report of every declared operation in ``events``, in declaration order.
 
-    The approval notes are read once for all operations, so a store of many
-    operations is read in one pass.
+    The approval notes and recorded stops are read once for all operations, so a
+    store of many operations is read in one pass.
     """
     rows_by_operation: dict[str, list[StoredEvent]] = {}
+    stops: list[StoredEvent] = []
     for event in events:
+        if event.kind == EventKind.OPERATION_STOPPED:
+            stops.append(event)
+            continue
         operation_id = event.payload.get("operation_id") if event.kind in _KINDS else None
         if isinstance(operation_id, str):
             rows_by_operation.setdefault(operation_id, []).append(event)
@@ -242,7 +249,9 @@ def list_operation_reports(events: Sequence[StoredEvent]) -> tuple[OperationRepo
     )
     approvals = build_approval_report(events).by_subject
     as_of = _as_of(events)
-    return tuple(_report(key, rows_by_operation[key], approvals, as_of) for _seq, key in declared)
+    return tuple(
+        _report(key, rows_by_operation[key], approvals, as_of, stops) for _seq, key in declared
+    )
 
 
 def _as_of(events: Sequence[StoredEvent]) -> tuple[int, float]:
@@ -258,6 +267,7 @@ def _report(
     rows: Sequence[StoredEvent],
     approvals: Mapping[str, ApprovalStatus],
     as_of: tuple[int, float],
+    stops: Sequence[StoredEvent] = (),
 ) -> OperationReport:
     """Fold one operation's rows into its report, given the store's approvals and last row."""
     as_of_seq, as_of_time = as_of
@@ -267,7 +277,7 @@ def _report(
             operation_id, "", NOT_RECORDED, "", "no intent", (), (), as_of_seq, as_of_time
         )
     ledger = AttemptLedger(None)
-    for row in rows:
+    for row in sorted((*rows, *stops), key=lambda item: item.seq):
         ledger.apply_event(row)
     digest = str(declaration.payload.get("intent_sha256") or "")
     approval = approvals.get(f"sha256:{digest}") if digest else None

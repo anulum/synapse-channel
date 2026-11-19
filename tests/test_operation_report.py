@@ -29,6 +29,7 @@ from synapse_channel.core.operation_report import (
     operation_report_to_json,
     render_lines,
     run_operation_report,
+    run_operation_reports,
 )
 from synapse_channel.core.persistence import EventStore
 
@@ -276,7 +277,31 @@ def test_an_outcome_ended_attempt_sealed_by_stop_read_back_reports_sealed(tmp_pa
             {
                 "operation_id": op,
                 "sender": "R/recovery",
-                "stop_seq": 9,
+                "stop_seq": 99,
+                "attempt_id": attempt,
+                "result": "sealed",
+                "marker_ref": marker.ref,
+                "object_format": "sha1",
+                "marker_object": marker.objects("sha1").sealed,
+            },
+        )
+        assert run_operation_report(path, op).state == "ended, unreconciled"
+        assert [item.state for item in run_operation_reports(path)] == ["ended, unreconciled"]
+
+        stop_seq = store.append(
+            EventKind.OPERATION_STOPPED,
+            {
+                "scope": "project:P",
+                "epoch": 1,
+                "listed": [{"operation_id": op, "attempt_id": attempt}],
+            },
+        )
+        store.append(
+            EventKind.OPERATION_STOP_READBACK,
+            {
+                "operation_id": op,
+                "sender": "R/recovery",
+                "stop_seq": stop_seq,
                 "attempt_id": attempt,
                 "result": "sealed",
                 "marker_ref": marker.ref,
@@ -290,4 +315,9 @@ def test_an_outcome_ended_attempt_sealed_by_stop_read_back_reports_sealed(tmp_pa
     assert report.state == "sealed"
     assert [item.state for item in report.attempts] == ["sealed"]
     assert report.chain[-1].kind == "stop_readback"
-    assert report.chain[-1].detail == {"stop_seq": 9, "attempt_id": attempt, "result": "sealed"}
+    assert report.chain[-1].detail == {
+        "stop_seq": stop_seq,
+        "attempt_id": attempt,
+        "result": "sealed",
+    }
+    assert [item.state for item in run_operation_reports(path)] == ["sealed"]
