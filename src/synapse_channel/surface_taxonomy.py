@@ -96,6 +96,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "worker": ADAPTER,
     "worker-session": ADAPTER,
     "seat-hold": ADAPTER,
+    "ledger": ADAPTER,
     "git-claim": ADAPTER,
     "git-claim-check": ADAPTER,
     "git-hook": ADAPTER,

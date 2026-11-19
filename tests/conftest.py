@@ -115,6 +115,26 @@ def _isolated_machine_identity(tmp_path_factory: pytest.TempPathFactory) -> Iter
             os.environ["XDG_DATA_HOME"] = previous
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _isolated_state_home(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    """Point ``XDG_STATE_HOME`` at a session-scoped temporary directory.
+
+    Launchers write the session ledger and launch records under it. Left unset,
+    a test that starts an agent would write into the developer's real
+    ``~/.local/state/synapse``. Subprocesses inherit it, as with the data home.
+    """
+    state_home = tmp_path_factory.mktemp("state-home")
+    previous = os.environ.get("XDG_STATE_HOME")
+    os.environ["XDG_STATE_HOME"] = str(state_home)
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = previous
+
+
 @pytest.fixture(autouse=True)
 def _restore_synapse_logger() -> Iterator[None]:
     """Snapshot and restore the ``synapse`` logger around every test.

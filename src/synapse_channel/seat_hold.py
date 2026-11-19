@@ -63,6 +63,7 @@ from synapse_channel.client.agent_dispatch import MessageCallback
 from synapse_channel.connect_failures import closed_after_ready, is_name_conflict_close
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.reap import private_runtime_parent, safe_key
+from synapse_channel.session_ledger import LauncherRecord
 
 if TYPE_CHECKING:
     from synapse_channel.seat_waiter import OutputRouter, SeatWaiter, WakeTarget
@@ -500,6 +501,7 @@ def _open_waiter(
     uri: str,
     token: str | None,
     directory: Path,
+    record: LauncherRecord,
 ) -> SeatWaiter:
     """Silence the holder's output and start the pane waiter, once the agent runs."""
     from synapse_channel.seat_waiter import open_seat_waiter
@@ -513,6 +515,7 @@ def _open_waiter(
         log_path=directory / f"{safe_key(identity)}-holder.log",
         router=router[0],
         errors=router[1],
+        ledger=record,
     )
 
 
@@ -530,11 +533,25 @@ class _WaiterSlot:
         return cls(wake, _install_router() if wake is not None else None)
 
     def open(
-        self, identity: str, argv: Sequence[str], uri: str, token: str | None, directory: Path
+        self,
+        identity: str,
+        argv: Sequence[str],
+        uri: str,
+        token: str | None,
+        directory: Path,
+        record: LauncherRecord,
     ) -> None:
         """Silence the holder and start the waiter; call it once the agent runs."""
         if self.wake is not None and self.router is not None:
-            self.seat = _open_waiter(self.wake, self.router, identity, argv, uri, token, directory)
+            self.seat = _open_waiter(
+                self.wake, self.router, identity, argv, uri, token, directory, record
+            )
+
+    def tmux(self) -> dict[str, str] | None:
+        """Return the tmux place the ledger records for a seat that wakes its pane."""
+        if self.wake is None:
+            return None
+        return {"session": self.wake.session, "pane": os.environ.get("TMUX_PANE", "")}
 
     async def close(self) -> None:
         """Stop the waiter and give the terminal back, before the seat is released."""
@@ -636,11 +653,21 @@ async def hold_seat(
             write_marker(marker, f"failed {holder.name} {nonce}")
             return AGENT_START_FAILED_EXIT_CODE
         write_marker(marker, f"ready {holder.name} {nonce}")
-        slot.open(identity, argv, uri, token, directory)
+        record = LauncherRecord("seat-hold")
+        slot.open(identity, argv, uri, token, directory, record)
+        record.started(
+            child.pid,
+            identity=identity,
+            argv=argv,
+            cwd=Path.cwd(),
+            holder=holder.name,
+            tmux=slot.tmux(),
+        )
         try:
             return await supervise(holder, child, stop=stop, timing=timing)
         finally:
             await slot.close()
+            record.ended(child.returncode)
     finally:
         for signum in handled:
             loop.remove_signal_handler(signum)

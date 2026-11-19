@@ -511,7 +511,12 @@ def build_wake_prompt(identity: str) -> str:
 
 def _provider_family(config: AgentTmuxConfig) -> str | None:
     """Return the supported terminal provider named by the agent's own command."""
-    for token in provider_command(config.agent_command):
+    return provider_family_of(config.agent_command)
+
+
+def provider_family_of(command: Sequence[str]) -> str | None:
+    """Return the supported provider named by the agent's own command in ``command``."""
+    for token in provider_command(command):
         if token.startswith("-"):
             continue
         binary = Path(token).name.lower()

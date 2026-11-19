@@ -666,3 +666,44 @@ def test_a_crashed_waits_trace_goes_to_the_log_not_to_its_stderr(
     result, refusal = run(command, env={}, interval=1, probe=lambda: 0)
     assert (result.returncode, result.stderr, refusal) == (1, "", 0)
     assert "RuntimeError: wait crashed" in log.getvalue()
+
+
+def test_a_stopped_waiter_is_also_recorded_in_the_session_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from synapse_channel.session_ledger import LauncherRecord, read_events
+
+    ledger = LauncherRecord("seat-hold", directory=tmp_path / "ledger")
+    ledger.row = "b:1:2"
+    monkeypatch.setattr(QuietTerminal, "redirect", lambda self: None)
+    monkeypatch.setattr(PaneWaiter, "start", lambda self: None)
+    monkeypatch.chdir(tmp_path)
+    seat = open_seat_waiter(
+        WakeTarget("synapse-T_waiter"),
+        identity=IDENTITY,
+        agent_argv=["claude"],
+        uri="ws://h",
+        token=None,
+        log_path=tmp_path / "T_waiter.log",
+        router=OutputRouter(io.StringIO()),
+        ledger=ledger,
+    )
+    config = replace(seat.waiter.config, registry_dir=tmp_path / "registry")
+    seat.waiter._record(config, "binding refused")
+    (line,) = list(read_events(tmp_path / "ledger"))
+    assert (line["event"], line["row_id"]) == ("observe", "b:1:2")
+    assert line["waiter"] == {"state": "stopped", "reason": "binding refused"}
+    entry = json.loads(agent_tmux.registry_path(config).read_text(encoding="utf-8"))
+    assert entry["waiter_stopped"]["reason"] == "binding refused"
+    without = open_seat_waiter(
+        WakeTarget("synapse-T_waiter"),
+        identity=IDENTITY,
+        agent_argv=["claude"],
+        uri="ws://h",
+        token=None,
+        log_path=tmp_path / "T_waiter.log",
+        router=OutputRouter(io.StringIO()),
+    )
+    without.waiter._record(config, "no ledger here")  # the registry only
+    # Without a ledger only the registry hears of it; the ledger keeps its one line.
+    assert len(list(read_events(tmp_path / "ledger"))) == 1

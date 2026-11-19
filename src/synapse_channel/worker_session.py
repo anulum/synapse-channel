@@ -29,6 +29,7 @@ from synapse_channel.launch_record import (
     write_record,
 )
 from synapse_channel.seat_restore import start_restored_seat
+from synapse_channel.session_ledger import LauncherRecord
 from synapse_channel.worker_outcome import OPERATION_ID_ENV, WorkerExit, WorkerObservation
 
 SIDECAR_SHUTDOWN_TIMEOUT_SECONDS = 5.0
@@ -316,15 +317,19 @@ def _run_provider(
     except OSError:
         outcome.observe(OutcomeState.NOT_STARTED, "provider_launch_refused")
         raise
+    ledger = LauncherRecord("worker-session", environ=env)
     with provider:
         try:
             outcome.observe(OutcomeState.STARTED, "provider_started")
             _record_launch(env["SYN_IDENTITY"], command, provider.pid, env, cwd=cwd)
+            ledger.started(provider.pid, identity=env["SYN_IDENTITY"], argv=command, cwd=cwd)
             returncode = _wait_for_provider(provider)
+            ledger.ended(returncode)
         except BaseException:
             # An interrupted wait must not leave the provider behind, running or unreaped.
             provider.kill()
             provider.wait()
+            ledger.ended(provider.returncode)
             outcome.observe(
                 OutcomeState.UNKNOWN,
                 "provider_wait_interrupted",

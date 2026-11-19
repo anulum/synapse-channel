@@ -760,3 +760,34 @@ def test_the_command_line_passes_the_wake_target_and_an_optional_nonce(
     assert seen[0]["nonce"] is None
     assert seen[0]["wake"] == WakeTarget("synapse-T_seat", "/x/tmux", 2.5)
     assert seen[1]["wake"] is None
+
+
+async def test_a_held_seat_writes_its_ledger_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from synapse_channel import session_ledger
+
+    ledger = tmp_path / "ledger"
+
+    def record(launcher: str) -> session_ledger.LauncherRecord:
+        return session_ledger.LauncherRecord(launcher, directory=ledger)
+
+    monkeypatch.setattr(seat_hold, "LauncherRecord", record)
+    async with running_hub() as (_hub, uri):
+        code = await hold_seat(
+            "T/seat",
+            NONCE,
+            _python("raise SystemExit(4)"),
+            uri=uri,
+            marker_dir=tmp_path,
+            timing=FAST,
+        )
+    assert code == 4
+    start, end = list(session_ledger.read_events(ledger))
+    assert (start["event"], start["launcher"], start["holder"]) == (
+        "start",
+        "seat-hold",
+        "T/seat-seat",
+    )
+    assert start["tmux"] is None and start["identity"] == "T/seat"
+    assert (end["event"], end["row_id"], end["exit_status"]) == ("end", start["row_id"], 4)

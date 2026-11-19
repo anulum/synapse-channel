@@ -74,6 +74,18 @@ execution evidence when carrying a release claim forward.
   separate `agent-tmux wait` and its `synapse wait` child. `--nonce` is now
   optional: without it a fresh one is made.
 
+- **A session ledger on every host.** `synapse ledger show` lists this host's
+  agent sessions from `$XDG_STATE_HOME/synapse/ledger/`, schema
+  `synapse.session-ledger.v1`. Each row is keyed by boot, PID and start ticks.
+  `seat-hold` and `worker-session` write each agent's start and its real end
+  (exit status or signal), and a seat's stopped waiter is recorded too. A line
+  is numbered and appended under one lock, never partly written, and a
+  launcher waits for the lock about a second at most, so the ledger never
+  delays a seat. The ledger refuses to live inside a git or coordination tree,
+  and never stores an argument vector, other environment variables, screen
+  text or a token. `ledger read-v0` reads the interim tool's v0 files. There is
+  no retention yet: every monthly file is kept.
+
 ## [0.99.58] - 2026-11-19
 
 Core 0.99.58 adds a hard-linked generation chain for conditional deployments and

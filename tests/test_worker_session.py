@@ -1068,3 +1068,33 @@ def test_worker_session_interrupted_while_waiting_does_not_leave_the_provider(
         interrupt.cancel()
 
     assert not _process_exists(int(seen.read_text(encoding="utf-8")))
+
+
+def test_a_direct_worker_writes_its_ledger_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from synapse_channel import session_ledger, worker_session
+
+    ledger = tmp_path / "ledger"
+
+    def record(launcher: str, *, environ: object = None) -> session_ledger.LauncherRecord:
+        return session_ledger.LauncherRecord(launcher, directory=ledger)
+
+    monkeypatch.setattr(worker_session, "LauncherRecord", record)
+    code = run_worker_session(
+        identity="repo/codex-main",
+        command=[sys.executable, "-c", "raise SystemExit(3)"],
+        terminal_tmux="off",
+        arm=False,
+        cwd=tmp_path,
+        environ={"HOME": str(tmp_path)},
+    )
+    assert code == 3
+    start, end = list(session_ledger.read_events(ledger))
+    assert (start["event"], start["launcher"], start["identity"]) == (
+        "start",
+        "worker-session",
+        "repo/codex-main",
+    )
+    assert start["holder"] is None and start["cwd"] == str(tmp_path)
+    assert (end["row_id"], end["end_kind"], end["exit_status"]) == (start["row_id"], "exit", 3)

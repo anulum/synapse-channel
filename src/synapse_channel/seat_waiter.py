@@ -52,6 +52,7 @@ from synapse_channel.agent_tmux import (
     wait_and_wake,
     wait_executor,
 )
+from synapse_channel.session_ledger import LauncherRecord
 
 SEAT_LOG_LIMIT_BYTES = 4 * 1024 * 1024
 """Size above which the holder's log is rotated once (one older file is kept)."""
@@ -405,13 +406,15 @@ def open_seat_waiter(
     log_path: Path,
     router: OutputRouter,
     errors: OutputRouter | None = None,
+    ledger: LauncherRecord | None = None,
 ) -> SeatWaiter:
     """Silence the holder's output and start the pane waiter for a running agent.
 
     Call it once the agent has started: the agent already holds its own copies
     of the terminal, so only the holder's descriptors 1 and 2 move to the log.
     The waiter never displaces a live waiter of the same seat
-    (``first_no_takeover``).
+    (``first_no_takeover``). A waiter that stops is recorded in the seat's
+    registry entry and, through ``ledger``, in the session ledger.
     """
     config = AgentTmuxConfig(
         identity=identity,
@@ -426,6 +429,12 @@ def open_seat_waiter(
     )
     quiet = QuietTerminal(log_path)
     quiet.redirect()
-    waiter = PaneWaiter(config, router=router, quiet=quiet, errors=errors)
+
+    def record(stopped: AgentTmuxConfig, reason: str) -> None:
+        record_waiter_stop(stopped, reason)
+        if ledger is not None:
+            ledger.observed(waiter={"state": "stopped", "reason": reason})
+
+    waiter = PaneWaiter(config, router=router, quiet=quiet, record=record, errors=errors)
     waiter.start()
     return SeatWaiter(waiter, quiet)
