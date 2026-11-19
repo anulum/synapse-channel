@@ -222,14 +222,35 @@ def _read_intent(path: Path) -> dict[str, Any]:
     return document
 
 
-def _effect_target(args: argparse.Namespace) -> dict[str, str]:
-    """Return the declared effect's identifiers from the parsed arguments."""
-    names = {
+_CHAINED_DEPLOYMENT_FIELDS = (
+    "chain",
+    "start_record",
+    "base_generation",
+    "base_artefact_sha256",
+    "artefact_sha256",
+    "revision",
+)
+
+
+def _target_field_names(args: argparse.Namespace) -> tuple[str, ...]:
+    """Return the exact target option names required by ``args``."""
+    if args.effect == "deployment":
+        chained = any(getattr(args, name) is not None for name in _CHAINED_DEPLOYMENT_FIELDS[:-1])
+        if chained and args.report is not None:
+            raise ValueError("a deployment declaration names either --report or --chain, not both")
+        return _CHAINED_DEPLOYMENT_FIELDS if chained else ("report", "revision")
+    if args.effect == "migration" and args.base_schema_sha256 is not None:
+        return ("database", "migration", "base_schema_sha256", "schema_sha256")
+    return {
         "file": ("path", "sha256"),
         "git_publication": ("repository", "branch", "revision"),
-        "deployment": ("report", "revision"),
         "migration": ("database", "migration", "schema_sha256"),
     }[args.effect]
+
+
+def _effect_target(args: argparse.Namespace) -> dict[str, str]:
+    """Return the declared effect's identifiers from the parsed arguments."""
+    names = _target_field_names(args)
     missing = [name for name in names if getattr(args, name) is None]
     if missing:
         flags = ", ".join("--" + name.replace("_", "-") for name in missing)
@@ -390,8 +411,20 @@ def _add_declare_parser(actions: argparse._SubParsersAction[argparse.ArgumentPar
         ("--branch", "git_publication: the branch on the remote"),
         ("--revision", "git_publication: full commit; deployment: the deployed revision"),
         ("--report", "deployment: the health report the service writes"),
+        ("--chain", "deployment: the generation-chain directory"),
+        (
+            "--start-record",
+            "deployment: the start record the service writes after loading the artefact",
+        ),
+        ("--base-generation", "deployment: the head generation before the change"),
+        (
+            "--base-artefact-sha256",
+            "deployment: SHA-256 of the base generation's artefact (64 zeros at generation 0)",
+        ),
+        ("--artefact-sha256", "deployment: SHA-256 of the deployed artefact"),
         ("--database", "migration: the database"),
         ("--migration", "migration: the migration identity"),
+        ("--base-schema-sha256", "migration: SHA-256 of the starting schema text"),
         ("--schema-sha256", "migration: SHA-256 of the requested schema text"),
     ):
         declare.add_argument(flag, default=None, help=help_text)

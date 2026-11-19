@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -516,3 +517,185 @@ def test_an_intent_is_checked_on_a_declaration_and_belongs_to_no_other_record(
         assert not store.read_since(0)
     finally:
         store.close()
+
+
+def test_chained_deployment_and_prestate_migration_targets_round_trip_and_legacy_rows_replay(
+    tmp_path: Path,
+) -> None:
+    """Both new shapes journal and replay every field, while legacy rows replay unchanged."""
+    zeros = "0" * 64
+    other_sha = "c" * 64
+    chained_zero = {
+        "chain": "/srv/app/generations",
+        "start_record": "/srv/app/started.json",
+        "base_generation": "0",
+        "base_artefact_sha256": zeros,
+        "artefact_sha256": SHA,
+        "revision": "v2.0.0",
+    }
+    chained_next = {
+        "chain": "/srv/app/generations",
+        "start_record": "/srv/app/started.json",
+        "base_generation": "9" * 18,
+        "base_artefact_sha256": SHA,
+        "artefact_sha256": other_sha,
+        "revision": "v2.0.1",
+    }
+    migration_pre = {
+        "database": "/srv/app.db",
+        "migration": "0043",
+        "base_schema_sha256": SHA,
+        "schema_sha256": other_sha,
+    }
+    legacy_deploy = {"report": "/srv/app/health.json", "revision": "v1.0.0"}
+    legacy_migration = {"database": "/srv/app.db", "migration": "0042", "schema_sha256": SHA}
+
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        store.append(
+            EventKind.OPERATION_DECLARED,
+            {
+                "task_id": "T",
+                "operation_id": "op-leg-dep",
+                "sender": "P/worker",
+                "recorded_at": 1.0,
+                "effect": "deployment",
+                "snapshot_epoch": 1,
+                **legacy_deploy,
+            },
+        )
+        store.append(
+            EventKind.OPERATION_DECLARED,
+            {
+                "task_id": "T",
+                "operation_id": "op-leg-mig",
+                "sender": "P/worker",
+                "recorded_at": 2.0,
+                "effect": "migration",
+                "snapshot_epoch": 1,
+                **legacy_migration,
+            },
+        )
+        for op_id, effect, target in (
+            ("op-ch-0", "deployment", chained_zero),
+            ("op-ch-1", "deployment", chained_next),
+            ("op-mig-pre", "migration", migration_pre),
+        ):
+            req = decode_operation_record(
+                _declare(operation_id=op_id, effect=effect, effect_target=target)
+            )
+            assert dict(req.target) == target
+            record_operation(store, req, sender="P/worker", snapshot_epoch=3, now=10.0)
+        restored = OperationLedger(store)
+    finally:
+        store.close()
+
+    assert restored.target_of("op-leg-dep") == legacy_deploy
+    assert restored.target_of("op-leg-mig") == legacy_migration
+    assert restored.target_of("op-ch-0") == chained_zero
+    assert restored.target_of("op-ch-1") == chained_next
+    assert restored.target_of("op-mig-pre") == migration_pre
+
+
+_BOTH_DEPLOYMENT_SHAPES = (
+    "['report', 'revision'] or "
+    "['artefact_sha256', 'base_artefact_sha256', 'base_generation', "
+    "'chain', 'revision', 'start_record']"
+)
+_BOTH_MIGRATION_SHAPES = (
+    "['database', 'migration', 'schema_sha256'] or "
+    "['base_schema_sha256', 'database', 'migration', 'schema_sha256']"
+)
+
+
+@pytest.mark.parametrize(
+    ("effect", "target", "expected"),
+    [
+        (
+            "deployment",
+            {
+                "report": "/srv/app/health.json",
+                "chain": "/srv/app/generations",
+                "start_record": "/srv/app/started.json",
+                "base_generation": "0",
+                "base_artefact_sha256": "0" * 64,
+                "artefact_sha256": SHA,
+                "revision": "v1",
+            },
+            _BOTH_DEPLOYMENT_SHAPES,
+        ),
+        (
+            "deployment",
+            {
+                "chain": "/srv/app/generations",
+                "base_generation": "0",
+                "base_artefact_sha256": "0" * 64,
+                "artefact_sha256": SHA,
+                "revision": "v1",
+            },
+            _BOTH_DEPLOYMENT_SHAPES,
+        ),
+        (
+            "deployment",
+            {"report": "/srv/app/health.json", "chain": "/srv/app/generations", "revision": "v1"},
+            _BOTH_DEPLOYMENT_SHAPES,
+        ),
+        (
+            "deployment",
+            {"chain": "/srv/app/generations", "revision": "v1"},
+            _BOTH_DEPLOYMENT_SHAPES,
+        ),
+        (
+            "migration",
+            {"database": "/srv/app.db", "migration": "0042", "base_schema_sha256": SHA},
+            _BOTH_MIGRATION_SHAPES,
+        ),
+        (
+            "migration",
+            {
+                "database": "/srv/app.db",
+                "migration": "0042",
+                "base_schema_sha256": SHA,
+                "schema_sha256": SHA,
+                "extra": "x",
+            },
+            _BOTH_MIGRATION_SHAPES,
+        ),
+        (
+            "deployment",
+            {
+                "chain": "/srv/app/generations",
+                "start_record": "/srv/app/started.json",
+                "base_generation": "0",
+                "base_artefact_sha256": SHA,
+                "artefact_sha256": SHA,
+                "revision": "v1",
+            },
+            "64 zeros",
+        ),
+    ],
+)
+def test_mixed_target_shapes_and_non_zero_empty_chain_digest_are_refused(
+    effect: str, target: dict[str, Any], expected: str
+) -> None:
+    """Mixed key sets name both valid shapes; generation 0 requires 64 zeros."""
+    with pytest.raises(OperationRecordError, match=re.escape(expected)):
+        decode_operation_record(_declare(effect=effect, effect_target=target))
+
+
+@pytest.mark.parametrize(
+    "bad_generation",
+    ["-1", "01", "00", "1e3", "+1", " 1", "1 ", "1" + "0" * 18, 0, 1],
+)
+def test_base_generation_refuses_non_canonical_or_non_string_forms(bad_generation: object) -> None:
+    """Only canonical decimal strings '0' or '[1-9][0-9]{0,17}' pass."""
+    target = {
+        "chain": "/srv/app/generations",
+        "start_record": "/srv/app/started.json",
+        "base_generation": bad_generation,
+        "base_artefact_sha256": "0" * 64,
+        "artefact_sha256": SHA,
+        "revision": "v1",
+    }
+    with pytest.raises(OperationRecordError, match="base_generation has the wrong form"):
+        decode_operation_record(_declare(effect="deployment", effect_target=target))

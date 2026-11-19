@@ -159,7 +159,14 @@ does not add agent grades to protocol envelopes.
   `epoch` or `ownership_epoch`, an `effect` (`file`, `git_publication`,
   `deployment`, `migration` or `component_state`), its identifiers in
   `effect_target` (exactly `path`+`sha256`; `repository`+`branch`+`revision`;
-  `report`+`revision`; `database`+`migration`+`schema_sha256`; or, for a
+  for a deployment either `report`+`revision` or the generation-chain target
+  `chain`+`start_record`+`base_generation`+`base_artefact_sha256`+`artefact_sha256`+`revision`,
+  where `start_record` names the file the deployed service writes after loading and
+  checking the artefact, `base_generation` is `0` or `[1-9][0-9]{0,17}` and
+  `base_artefact_sha256` is 64 zeros when `base_generation` is `0`; for a migration either
+  `database`+`migration`+`schema_sha256` or
+  `database`+`migration`+`base_schema_sha256`+`schema_sha256`, never a mixture
+  of shapes; or, for a
   component's own state, the component's identity `host`+`vendor`+`component`+
   `component_version`+`os`+`transport`, `observed_by`, the dotted name of the
   catalogue `read` operation that observes the changed object, and

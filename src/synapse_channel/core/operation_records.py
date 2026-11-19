@@ -136,6 +136,8 @@ REFUSED_NOT_AUTHORISED = "not_authorised"
 _OPERATION_ID = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 _HEX40 = re.compile(r"[0-9a-f]{40}")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
+_BASE_GENERATION = re.compile(r"0|[1-9][0-9]{0,17}")
+_EMPTY_CHAIN_DIGEST = "0" * 64
 _BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
 _MAX_TASK = 256
 _MAX_PATH = 512
@@ -235,10 +237,82 @@ def _repository(value: object) -> str:
     return text
 
 
+_DEPLOYMENT_LEGACY_KEYS = frozenset({"report", "revision"})
+_DEPLOYMENT_CHAINED_KEYS = frozenset(
+    {
+        "chain",
+        "start_record",
+        "base_generation",
+        "base_artefact_sha256",
+        "artefact_sha256",
+        "revision",
+    }
+)
+_MIGRATION_LEGACY_KEYS = frozenset({"database", "migration", "schema_sha256"})
+_MIGRATION_PRESTATE_KEYS = frozenset(
+    {"database", "migration", "base_schema_sha256", "schema_sha256"}
+)
+
+
+def _deployment_target(value: Mapping[str, Any]) -> dict[str, str]:
+    """Validate either the legacy report-based or the generation-chained deployment target."""
+    keys = set(value)
+    if keys == _DEPLOYMENT_LEGACY_KEYS:
+        return {
+            "report": _bounded_text(value.get("report"), "report", _MAX_PATH),
+            "revision": _bounded_text(value.get("revision"), "revision", _MAX_NAME),
+        }
+    if keys == _DEPLOYMENT_CHAINED_KEYS:
+        base_generation = _pattern(
+            value.get("base_generation"), "base_generation", _BASE_GENERATION
+        )
+        base_artefact = _pattern(value.get("base_artefact_sha256"), "base_artefact_sha256", _HEX64)
+        if base_generation == "0" and base_artefact != _EMPTY_CHAIN_DIGEST:
+            raise OperationRecordError(
+                "an empty chain (base_generation '0') needs base_artefact_sha256 of 64 zeros"
+            )
+        return {
+            "chain": _bounded_text(value.get("chain"), "chain", _MAX_PATH),
+            "start_record": _bounded_text(value.get("start_record"), "start_record", _MAX_PATH),
+            "base_generation": base_generation,
+            "base_artefact_sha256": base_artefact,
+            "artefact_sha256": _pattern(value.get("artefact_sha256"), "artefact_sha256", _HEX64),
+            "revision": _bounded_text(value.get("revision"), "revision", _MAX_NAME),
+        }
+    raise OperationRecordError(
+        f"a deployment effect_target names exactly {sorted(_DEPLOYMENT_LEGACY_KEYS)} "
+        f"or {sorted(_DEPLOYMENT_CHAINED_KEYS)}"
+    )
+
+
+def _migration_target(value: Mapping[str, Any]) -> dict[str, str]:
+    """Validate a migration target with or without its starting schema SHA-256."""
+    keys = set(value)
+    if keys not in (_MIGRATION_LEGACY_KEYS, _MIGRATION_PRESTATE_KEYS):
+        raise OperationRecordError(
+            f"a migration effect_target names exactly {sorted(_MIGRATION_LEGACY_KEYS)} "
+            f"or {sorted(_MIGRATION_PRESTATE_KEYS)}"
+        )
+    fields = {
+        "database": _bounded_text(value.get("database"), "database", _MAX_PATH),
+        "migration": _bounded_text(value.get("migration"), "migration", _MAX_NAME),
+        "schema_sha256": _pattern(value.get("schema_sha256"), "schema_sha256", _HEX64),
+    }
+    if "base_schema_sha256" in keys:
+        fields["base_schema_sha256"] = _pattern(
+            value.get("base_schema_sha256"), "base_schema_sha256", _HEX64
+        )
+    return fields
+
+
 def _target(effect: str, value: object) -> dict[str, str]:
     """Validate one declared effect's identifiers; unknown fields are refused."""
     if not isinstance(value, Mapping):
         raise OperationRecordError("effect_target must be an object")
+    if effect == EFFECT_DEPLOYMENT:
+        return _deployment_target(value)
+    if effect == EFFECT_MIGRATION:
+        return _migration_target(value)
     if effect == EFFECT_FILE:
         fields = {
             "path": _bounded_text(value.get("path"), "path", _MAX_PATH),
@@ -250,19 +324,8 @@ def _target(effect: str, value: object) -> dict[str, str]:
             "branch": _pattern(value.get("branch"), "branch", _BRANCH),
             "revision": _commit_name(value.get("revision")),
         }
-    elif effect == EFFECT_DEPLOYMENT:
-        fields = {
-            "report": _bounded_text(value.get("report"), "report", _MAX_PATH),
-            "revision": _bounded_text(value.get("revision"), "revision", _MAX_NAME),
-        }
-    elif effect == EFFECT_COMPONENT_STATE:
-        fields = _component_target(value)
     else:
-        fields = {
-            "database": _bounded_text(value.get("database"), "database", _MAX_PATH),
-            "migration": _bounded_text(value.get("migration"), "migration", _MAX_NAME),
-            "schema_sha256": _pattern(value.get("schema_sha256"), "schema_sha256", _HEX64),
-        }
+        fields = _component_target(value)
     if set(value) != set(fields):
         raise OperationRecordError(f"a {effect} effect_target names exactly {sorted(fields)}")
     return fields
@@ -367,8 +430,16 @@ class _Entry:
 _TARGET_KEYS = {
     EFFECT_FILE: ("path", "sha256"),
     EFFECT_GIT: ("repository", "branch", "revision", "object_format"),
-    EFFECT_DEPLOYMENT: ("report", "revision"),
-    EFFECT_MIGRATION: ("database", "migration", "schema_sha256"),
+    EFFECT_DEPLOYMENT: (
+        "report",
+        "chain",
+        "start_record",
+        "base_generation",
+        "base_artefact_sha256",
+        "artefact_sha256",
+        "revision",
+    ),
+    EFFECT_MIGRATION: ("database", "migration", "base_schema_sha256", "schema_sha256"),
     EFFECT_COMPONENT_STATE: (*COMPONENT_IDENTITY, "observed_by", "expected_sha256"),
 }
 """The declaration row's fields that name each effect's target."""

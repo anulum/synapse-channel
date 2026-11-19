@@ -570,3 +570,111 @@ async def test_a_mixed_commit_length_is_refused(tmp_path: Path) -> None:
         assert not store.read_since(0, kinds=(EventKind.OPERATION_DECLARED,))
     finally:
         store.close()
+
+
+async def test_declare_accepts_chained_deployment_and_prestate_migration_targets(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI declares chained deployment and pre-state migration targets and refuses mixtures."""
+    zeros = "0" * 64
+    next_sha = "e" * 64
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (hub, uri):
+            epoch = await _claimed_epoch(uri)
+            common = ["--uri", uri, "--task", "T1", "--name", "P/worker", "--epoch", str(epoch)]
+
+            mixed = _args(
+                "declare",
+                *common,
+                "--operation-id",
+                "op-mix",
+                "--effect",
+                "deployment",
+                "--report",
+                "/srv/app/health.json",
+                "--chain",
+                "/srv/app/generations",
+                "--revision",
+                "v1",
+            )
+            assert await asyncio.to_thread(command._cmd_declare, mixed) == command.EXIT_UNREADABLE
+            assert "either --report or --chain" in capsys.readouterr().out
+
+            incomplete = _args(
+                "declare",
+                *common,
+                "--operation-id",
+                "op-inc",
+                "--effect",
+                "deployment",
+                "--chain",
+                "/srv/app/generations",
+                "--revision",
+                "v1",
+            )
+            assert (
+                await asyncio.to_thread(command._cmd_declare, incomplete) == command.EXIT_UNREADABLE
+            )
+            missing_out = capsys.readouterr().out
+            assert "--start-record" in missing_out
+            assert "--base-generation" in missing_out
+
+            chained = _args(
+                "declare",
+                *common,
+                "--operation-id",
+                "op-chain",
+                "--effect",
+                "deployment",
+                "--chain",
+                "/srv/app/generations",
+                "--start-record",
+                "/srv/app/started.json",
+                "--base-generation",
+                "0",
+                "--base-artefact-sha256",
+                zeros,
+                "--artefact-sha256",
+                SHA,
+                "--revision",
+                "v2.0.0",
+            )
+            assert await asyncio.to_thread(command._cmd_declare, chained) == command.EXIT_ACCEPTED
+
+            migration = _args(
+                "declare",
+                *common,
+                "--operation-id",
+                "op-mig-pre",
+                "--effect",
+                "migration",
+                "--database",
+                "/srv/app.db",
+                "--migration",
+                "0043",
+                "--base-schema-sha256",
+                SHA,
+                "--schema-sha256",
+                next_sha,
+            )
+            assert await asyncio.to_thread(command._cmd_declare, migration) == command.EXIT_ACCEPTED
+            live_dep = hub.operation_records.target_of("op-chain")
+            live_mig = hub.operation_records.target_of("op-mig-pre")
+    finally:
+        store.close()
+
+    assert live_dep == {
+        "chain": "/srv/app/generations",
+        "start_record": "/srv/app/started.json",
+        "base_generation": "0",
+        "base_artefact_sha256": zeros,
+        "artefact_sha256": SHA,
+        "revision": "v2.0.0",
+    }
+    assert live_mig == {
+        "database": "/srv/app.db",
+        "migration": "0043",
+        "base_schema_sha256": SHA,
+        "schema_sha256": next_sha,
+    }

@@ -51,6 +51,10 @@ execution evidence when carrying a release claim forward.
   `operation_contradiction` attention item and, under `--ladder`, an
   `incorrect_acceptance` trigger.
 
+### Added
+
+- Operation declarations (`operation_record` `declare` and `synapse operation declare`) accept a generation-chain deployment target (`chain`, `start_record`, `base_generation`, `base_artefact_sha256`, `artefact_sha256`, `revision`, requiring 64 zeros when `base_generation` is `0`) alongside the existing `report`+`revision` target, and an optional starting schema digest (`base_schema_sha256`) on migration targets, refusing mixed target shapes and preserving all declared fields across journal replay.
+
 ## [0.99.56] - 2026-11-18
 
 Core 0.99.56 applies a setup plan from the dashboard, once and only after an
