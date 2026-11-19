@@ -635,6 +635,21 @@ async def test_a_first_signal_during_a_start_finishes_that_seat_and_starts_no_ot
     assert lines[-1] == "interrupted: no further seat is started; the run stops"
 
 
+async def test_a_signal_during_a_start_that_stops_the_run_still_exits_130(tmp_path: Path) -> None:
+    run, _lines, _spawn, _clock, _grace = _run(tmp_path, {"P/a": 69, "P/b": 0})
+    real = run.spawn
+
+    async def interrupted_meanwhile(*args: Any, **kwargs: Any) -> tuple[int | None, str]:
+        run.interrupt.note()
+        return await real(*args, **kwargs)
+
+    run.spawn = interrupted_meanwhile
+    code, outcomes = await execute([_entry("P/a"), _entry("P/b")], run)
+    # The seat's own outcome is recorded as it was; the run says it was interrupted.
+    assert code == INTERRUPTED_EXIT_CODE
+    assert [(o.identity, o.state, o.code) for o in outcomes] == [("P/a", "stopped", 69)]
+
+
 async def test_a_signal_before_the_run_starts_nothing_not_even_the_wait(tmp_path: Path) -> None:
     run, lines, spawn, _clock, grace = _run(tmp_path, {"P/a": 0})
     run.interrupt.note()  # noted while the command was still taking its snapshot
