@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
 from synapse_channel.core.hub import is_loopback_host
+from synapse_channel.machine_identity import MACHINE_KEY_FILENAME, identity_dir
 from synapse_channel.terminal_text import shell_long_option, terminal_text
 from synapse_channel.waiter_identity import (
     pane_waiter_name,
@@ -76,6 +77,46 @@ class Diagnosis:
     status: DoctorStatus
     detail: str
     remedy: str = ""
+
+
+def check_machine_key_home(env: Mapping[str, str]) -> Diagnosis:
+    """Name ``XDG_DATA_HOME`` as the holder of the pinned machine key.
+
+    The auto-provisioned key lives under that data home. Pointing
+    ``XDG_DATA_HOME`` somewhere else creates a second key, and a hub that
+    already pinned the seat refuses the new key with close code 4013.
+
+    Parameters
+    ----------
+    env : Mapping[str, str]
+        Process environment. ``XDG_DATA_HOME`` selects the data home; an empty
+        value uses ``$HOME/.local/share``.
+
+    Returns
+    -------
+    Diagnosis
+        A pass when the data home is the XDG default, or a warning when
+        ``XDG_DATA_HOME`` redirects it.
+    """
+    raw = env.get("XDG_DATA_HOME", "").strip()
+    home = env.get("HOME", "").strip()
+    default_home = (Path(home) if home else Path.home()) / ".local" / "share"
+    data_home = Path(raw) if raw else default_home
+    key_path = identity_dir(base=data_home) / MACHINE_KEY_FILENAME
+    detail = f"XDG_DATA_HOME holds the pinned machine key at {key_path}"
+    if raw and Path(raw) != default_home:
+        return Diagnosis(
+            check="machine-key-home",
+            status="warn",
+            detail=detail,
+            remedy=(
+                "Redirecting XDG_DATA_HOME creates a second machine key and the hub "
+                "refuses the pinned seat with 4013. Keep one data home for every "
+                "command that must present that key."
+            ),
+        )
+    suffix = "" if raw else " (XDG_DATA_HOME is unset; the XDG default applies)"
+    return Diagnosis(check="machine-key-home", status="pass", detail=detail + suffix)
 
 
 def check_identity(identity: Identity) -> Diagnosis:

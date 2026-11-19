@@ -33,6 +33,10 @@ execution evidence when carrying a release claim forward.
   `tools/npm_audit_gate.py` warns when an active exception is not used by any
   audited lock. An expired exception still fails the audit.
 
+- `synapse doctor` names `XDG_DATA_HOME` as the holder of the pinned machine
+  key. Redirecting that variable creates a second machine key, and a hub that
+  already pinned the seat refuses the new key with close code 4013.
+
 ### Changed
 
 - **Provider routing ranks declared local candidates first and never falls back to

@@ -31,6 +31,13 @@ remain unchanged.
    pip install -e ".[dev,benchmark]"
    ```
 
+   The pinned machine key lives under `XDG_DATA_HOME` (`$XDG_DATA_HOME/synapse/identity/machine.pem`,
+   or `~/.local/share/synapse/identity/machine.pem` when that variable is unset).
+   Redirecting `XDG_DATA_HOME` creates a second machine key. A hub that already
+   pinned the seat to the first key then refuses the connection with close code
+   4013. Keep one data home for every command that must present that key.
+   `synapse doctor` names this holder in the `machine-key-home` check.
+
 3. Install the git hooks so style and hygiene checks run on every commit:
 
    ```bash

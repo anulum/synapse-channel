@@ -88,7 +88,10 @@ The ACL model and its evaluation are implemented in
   in the same directory. A pinned
   name refuses a missing signature or any other key with close code `4013`
   (`identity pin mismatch`) and names the observed key id plus the governed
-  recovery command; unsigned names keep classic semantics unless the hub runs
+  recovery command. Redirecting `XDG_DATA_HOME` creates a second machine key
+  under that new data home; the hub then refuses the pinned seat with the same
+  close code `4013`. `synapse doctor` names `XDG_DATA_HOME` as the holder.
+  Unsigned names keep classic semantics unless the hub runs
   with `--require-identity-proof`, which refuses a registration that proves
   no key (close code `4013`, `identity proof required`, verification result
   `identity_proof_required`), a signature without `identity_public_key`

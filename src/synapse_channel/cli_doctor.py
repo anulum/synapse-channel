@@ -61,6 +61,7 @@ from synapse_channel.client.diagnostics import (
     check_disk_space,
     check_exposure,
     check_identity,
+    check_machine_key_home,
     check_mcp_posture,
     check_multi_seat_posture,
     check_reachable,
@@ -327,7 +328,6 @@ async def _diagnose(
     from synapse_channel.ergonomics import resolve_identity
 
     env = os.environ if env is None else env
-    feed_tail_reader = _read_feed_tail if feed_tail_reader is None else feed_tail_reader
     cursor_names_reader = _read_cursor_names if cursor_names_reader is None else cursor_names_reader
     identity = resolve_identity(
         project=project,
@@ -340,6 +340,7 @@ async def _diagnose(
     )
     diagnoses: list[Diagnosis] = [
         check_identity(identity),
+        check_machine_key_home(env),
         check_send_identity(send_name or identity.identity, project=identity.project),
         check_exposure(uri, token),
     ]
@@ -427,7 +428,7 @@ async def _diagnose(
     )
     diagnoses.append(
         check_unread_addressees(
-            feed_lines=feed_tail_reader(env),
+            feed_lines=(_read_feed_tail if feed_tail_reader is None else feed_tail_reader)(env),
             cursor_names=cursor_names_reader(env),
             roster=roster,
         )
