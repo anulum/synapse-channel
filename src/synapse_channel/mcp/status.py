@@ -80,6 +80,7 @@ async def mcp_status(
         "mailbox_pending": counts.get(identity, 0) if counts is not None else None,
         "mailbox_pending_available": counts is not None,
         "online_agents": len(agents),
+        "peers": agents,
         "resources": _length(snapshot.get("resources")),
         "waiter_online": any(
             candidate in roster for candidate in (waiter_name(identity), pane_waiter_name(identity))

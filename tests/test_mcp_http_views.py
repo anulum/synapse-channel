@@ -119,6 +119,7 @@ async def test_project_views_hide_foreign_and_unscoped_hub_data() -> None:
             assert "dead_letters" not in state and "pending_relay_approvals" not in state
             status = json.loads(await views.status())
             assert status["online_agents"] == 2
+            assert status["peers"] == ["ALPHA/remote", "ALPHA/worker"]
             assert status["active_claims"] == 1 and status["resources"] == 1
             assert status["identity"] == "ALPHA/remote"
             manifest = await views.manifest()

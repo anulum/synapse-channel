@@ -72,6 +72,7 @@ async def test_status_projects_presence_work_and_mailbox_count() -> None:
         "mailbox_pending": 3,
         "mailbox_pending_available": True,
         "online_agents": 2,
+        "peers": ["OTHER", "PROJ/client"],
         "resources": 1,
         "waiter_online": True,
         "waiters": 1,

@@ -21,7 +21,7 @@ from synapse_channel.mcp.resource_views import (
     resource_kind_resource_to_json,
     task_resource_to_json,
 )
-from synapse_channel.waiter_identity import split_roster
+from synapse_channel.waiter_identity import pane_waiter_name, split_roster, waiter_name
 
 Result = TypeVar("Result")
 OBJECT_SNAPSHOT = TypeAdapter(dict[str, object])
@@ -153,22 +153,46 @@ class ProjectMcpViews:
         return directory_to_json(build_capability_directory(manifest=manifest, resources=resources))
 
     async def status(self) -> str:
-        """Return project counts and this identity's mailbox and waiter status."""
-        state = await self._state()
-        own = _validate(await self.bridge.status(), OBJECT_SNAPSHOT, json_input=True)
-        names = [str(row["agent"]) for row in _validate(state["agents"], ROW_SNAPSHOT)]
-        agents, waiters = split_roster(names)
+        """Return this project's online peers and this identity's mailbox status.
+
+        One who/state round trip. The board is not loaded, so the reply stays
+        inside the time a remote client will wait for.
+        """
+        source = _validate(await self.bridge.state(), OBJECT_SNAPSHOT, json_input=True)
+        claims = [
+            row
+            for row in _validate(source.get("active_claims"), ROW_SNAPSHOT)
+            if self._agent(row.get("owner"))
+        ]
+        resources = [
+            row
+            for row in _validate(source.get("resources"), ROW_SNAPSHOT)
+            if self._agent(row.get("agent"))
+        ]
+        names = [
+            str(row["agent"])
+            for row in _validate(source.get("agents"), ROW_SNAPSHOT)
+            if self._agent(row.get("agent"))
+        ]
+        peers, waiters = split_roster(names)
         return _json(
             {
                 "identity": self.bridge.name,
                 "scope": self.project,
-                "active_claims": len(_validate(state["active_claims"], ROW_SNAPSHOT)),
-                "resources": len(_validate(state["resources"], ROW_SNAPSHOT)),
-                "online_agents": len(agents),
+                "active_claims": len(claims),
+                "resources": len(resources),
+                "online_agents": len(peers),
+                "peers": peers,
                 "waiters": len(waiters),
-                "waiter_online": own.get("waiter_online"),
-                "mailbox_pending": own.get("mailbox_pending"),
-                "mailbox_pending_available": own.get("mailbox_pending_available"),
+                "waiter_online": any(
+                    candidate in names
+                    for candidate in (
+                        waiter_name(self.bridge.name),
+                        pane_waiter_name(self.bridge.name),
+                    )
+                ),
+                "mailbox_pending": None,
+                "mailbox_pending_available": False,
             }
         )
 
