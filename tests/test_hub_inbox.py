@@ -50,20 +50,30 @@ async def query(
             **fields,
         },
     )
+    # The history snapshot is the page. The bound is the inbox hang guard.
     result = await handle.recorder.wait_for(
         lambda frame: (
             frame.get("type") == "history_snapshot" and frame.get("request_id") == request_id
         ),
-        timeout=10,
+        timeout=INBOX_READY_HANG_GUARD_SECONDS,
     )
     page: dict[str, Any] = result["inbox_page"]
     return page
 
 
 async def fence(handle: AgentHandle) -> None:
+    """Wait until this connection's who reply shows earlier sends were applied.
+
+    The who request is ordered after those sends, so the snapshot is the proof.
+    The bound is the inbox readiness hang guard, not a measure of how soon the
+    snapshot should arrive. A snapshot that never comes still fails the test.
+    """
     handle.recorder.messages.clear()
     await handle.agent.request_who()
-    await handle.recorder.wait_for(lambda frame: frame.get("type") == "who_snapshot", timeout=10)
+    await handle.recorder.wait_for(
+        lambda frame: frame.get("type") == "who_snapshot",
+        timeout=INBOX_READY_HANG_GUARD_SECONDS,
+    )
 
 
 async def test_exact_recipients_private_channels_and_own_messages(tmp_path: Path) -> None:
