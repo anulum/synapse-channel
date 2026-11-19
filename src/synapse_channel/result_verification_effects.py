@@ -5,13 +5,22 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — deployment and database-migration result checks
-"""Read a health report and a database schema. Never deploy or migrate.
+"""Read a health report or generation chain + service start record, and a database schema.
 
-:func:`verify_deployment` checks what a JSON report says. That is independent
-evidence only when the deployed service, not the deploying worker, wrote the
-report. :func:`verify_migration` opens a SQLite database read-only, looks for
-one migration identity, and compares a defined digest of ``sqlite_master``.
-Neither function writes, retries, or repairs.
+:func:`verify_deployment` supports two modes:
+
+* Legacy report mode checks what a JSON health report says. That is independent
+  evidence only when the deployed service, not the deploying worker, wrote the
+  report.
+* Chained mode reads an owner-only ``synapse-generation.v1`` chain directory and
+  the deployed service's atomic ``synapse-service-start.v1`` start record,
+  distinguishing an unpublished or sealed slot, a slot claimed by another
+  attempt, a published slot that has not yet converged, an unrecognised start
+  record, and a converged deployment.
+
+:func:`verify_migration` opens a SQLite database read-only, looks for one
+migration identity, and compares a defined digest of ``sqlite_master``. Neither
+function writes, retries, or repairs.
 """
 
 from __future__ import annotations
@@ -22,10 +31,27 @@ import os
 import re
 import sqlite3
 import stat
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
+from synapse_channel.core.generation_chain import (
+    EMPTY_CHAIN_ARTEFACT,
+    KIND_SEALED,
+    MAX_GENERATION,
+    GenerationChainError,
+    GenerationRecord,
+    chain_head,
+    read_generation,
+)
 from synapse_channel.result_verification import ResultVerification
 
+START_RECORD_SCHEMA: Final = "synapse-service-start.v1"
+"""Schema identifier stored in every service start record."""
+
+_START_RECORD_KEYS: Final = frozenset({"artefact", "generation", "pid", "schema", "started_at"})
+_START_RECORD_MAX: Final = 4096
+_ATTEMPT_ID: Final = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
 _MIGRATION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
@@ -86,44 +112,282 @@ def _read_regular(path: Path, limit: int) -> tuple[bytes, str, str]:
     return raw, digest, str(info.st_mtime_ns)
 
 
-def verify_deployment(
+def _positive_json_int(value: object, *, maximum: int | None = None) -> int:
+    """Require an exact positive integer (rejecting booleans) within ``maximum``."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError("expected a positive integer")
+    if maximum is not None and value > maximum:
+        raise ValueError("integer exceeds upper bound")
+    return value
+
+
+def _require_str(value: object, label: str) -> str:
+    """Require a ``str`` value for ``label``."""
+    if not isinstance(value, str):
+        raise ValueError(f"start record {label} must be text")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class ServiceStartRecord:
+    """Immutable ``synapse-service-start.v1`` record written by a deployed service.
+
+    Attributes
+    ----------
+    generation : int
+        Chain generation ``>= 1`` loaded by the service.
+    artefact : str
+        Lower-case 64-hex SHA-256 checked by the service after loading.
+    pid : int
+        Positive process identifier of the deployed service.
+    started_at : str
+        Non-empty printable ASCII UTC timestamp text recorded at service startup.
+    schema : str
+        Fixed ``"synapse-service-start.v1"`` schema tag.
+    """
+
+    generation: int
+    artefact: str
+    pid: int
+    started_at: str
+    schema: str = START_RECORD_SCHEMA
+
+    def __post_init__(self) -> None:
+        """Validate schema, generation range, 64-hex artefact, pid, and ASCII timestamp."""
+        if _require_str(self.schema, "schema") != START_RECORD_SCHEMA:
+            raise ValueError("unsupported service start record schema")
+        _positive_json_int(self.generation, maximum=MAX_GENERATION)
+        if not _HEX64.fullmatch(_require_str(self.artefact, "artefact")):
+            raise ValueError("start record artefact must be 64 lower-case hex digits")
+        _positive_json_int(self.pid)
+        started = _require_str(self.started_at, "started_at")
+        if not started.strip() or any(ord(ch) < 0x20 or ord(ch) >= 0x7F for ch in started):
+            raise ValueError("start record started_at must be non-empty printable ASCII text")
+
+    def to_dict(self) -> dict[str, int | str]:
+        """Return the exact five-key dictionary representation."""
+        return {
+            "artefact": self.artefact,
+            "generation": self.generation,
+            "pid": self.pid,
+            "schema": self.schema,
+            "started_at": self.started_at,
+        }
+
+    def canonical_bytes(self) -> bytes:
+        """Return sorted-key compact ASCII JSON bytes with no trailing whitespace."""
+        return json.dumps(
+            self.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("ascii")
+
+
+@dataclass(frozen=True, slots=True)
+class _ChainedDeploymentSpec:
+    """Validated inputs for generation-chained deployment verification."""
+
+    revision: str
+    chain: Path
+    start_record: Path
+    base_generation: int
+    base_artefact_sha256: str
+    artefact_sha256: str
+    attempt_id: str
+
+
+def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Construct a JSON object while rejecting duplicate member names."""
+    out: dict[str, object] = {}
+    for key, value in pairs:
+        if key in out:
+            raise ValueError("duplicate key in service start record")
+        out[key] = value
+    return out
+
+
+def _decode_start_record(raw: bytes) -> ServiceStartRecord:
+    """Strictly decode ``raw`` and enforce exact keys and canonical ASCII JSON bytes."""
+    text = raw.decode("ascii")
+    parsed = json.loads(text, object_pairs_hook=_no_duplicate_keys)
+    if not isinstance(parsed, dict) or set(parsed) != _START_RECORD_KEYS:
+        raise ValueError("start record keys do not match synapse-service-start.v1")
+    record = ServiceStartRecord(
+        generation=_positive_json_int(parsed["generation"], maximum=MAX_GENERATION),
+        artefact=_require_str(parsed["artefact"], "artefact"),
+        pid=_positive_json_int(parsed["pid"]),
+        started_at=_require_str(parsed["started_at"], "started_at"),
+        schema=_require_str(parsed["schema"], "schema"),
+    )
+    if raw != record.canonical_bytes():
+        raise ValueError("start record is not in canonical JSON encoding")
+    return record
+
+
+def _validate_chained_spec(
+    revision: str,
+    chain: Path,
+    start_record: Path,
+    base_generation: int,
+    base_artefact_sha256: str,
+    artefact_sha256: str,
+    attempt_id: str,
+) -> _ChainedDeploymentSpec:
+    """Validate chained deployment arguments before touching the filesystem."""
+    if (
+        isinstance(base_generation, bool)
+        or not isinstance(base_generation, int)
+        or base_generation < 0
+        or base_generation >= MAX_GENERATION
+    ):
+        raise ValueError("base_generation must be an integer in [0, 2**64 - 2]")
+    if not _HEX64.fullmatch(base_artefact_sha256):
+        raise ValueError("base_artefact_sha256 must be 64 lower-case hex digits")
+    if not _HEX64.fullmatch(artefact_sha256):
+        raise ValueError("artefact_sha256 must be 64 lower-case hex digits")
+    if not _ATTEMPT_ID.fullmatch(attempt_id):
+        raise ValueError("attempt_id has the wrong form")
+    return _ChainedDeploymentSpec(
+        revision=revision,
+        chain=chain,
+        start_record=start_record,
+        base_generation=base_generation,
+        base_artefact_sha256=base_artefact_sha256,
+        artefact_sha256=artefact_sha256,
+        attempt_id=attempt_id,
+    )
+
+
+def _read_chain_slots(
+    chain: Path, base_generation: int
+) -> tuple[int, GenerationRecord | None, GenerationRecord | None]:
+    """Read the chain head, optional pre-state slot, and target slot ``base + 1``."""
+    head = chain_head(chain)
+    base_slot = read_generation(chain, base_generation) if base_generation > 0 else None
+    target_slot = read_generation(chain, base_generation + 1)
+    return head, base_slot, target_slot
+
+
+def _check_chain_prestate(
+    base_generation: int,
+    base_artefact_sha256: str,
+    base_slot: GenerationRecord | None,
+    evidence: dict[str, str],
+) -> bool:
+    """Check that ``base_generation`` matches ``base_artefact_sha256`` (zeros at base 0)."""
+    if base_generation == 0:
+        return base_artefact_sha256 == EMPTY_CHAIN_ARTEFACT
+    if base_slot is None:
+        return False
+    evidence["observed_base_artefact_sha256"] = base_slot.artefact
+    return base_slot.artefact == base_artefact_sha256
+
+
+def _verify_start_convergence(
+    start_record: Path,
+    target_generation: int,
+    artefact_sha256: str,
+    evidence: dict[str, str],
+) -> tuple[str, str]:
+    """Read ``start_record`` strictly and return ``(result, observation)`` for an applied slot."""
+    try:
+        raw, digest, mtime_ns = _read_regular(start_record, _START_RECORD_MAX)
+    except FileNotFoundError:
+        return "not_checked", "published_not_converged"
+    except (OSError, ValueError):
+        return "not_checked", "start_record_not_recognised"
+    evidence["start_record_sha256"] = digest
+    evidence["start_record_mtime_ns"] = mtime_ns
+    try:
+        started = _decode_start_record(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return "not_checked", "start_record_not_recognised"
+    evidence["observed_start_generation"] = str(started.generation)
+    evidence["observed_start_artefact_sha256"] = started.artefact
+    evidence["observed_start_pid"] = str(started.pid)
+    evidence["observed_started_at"] = started.started_at
+    if started.generation < target_generation:
+        return "not_checked", "published_not_converged"
+    if started.generation > target_generation:
+        return "not_checked", "superseded_before_convergence_seen"
+    if started.artefact != artefact_sha256:
+        return "not_verified", "converged_artefact_differs"
+    return "verified", "published_and_converged"
+
+
+def _build_chained_evidence(spec: _ChainedDeploymentSpec) -> dict[str, str]:
+    """Build the initial evidence dictionary for a chained deployment check."""
+    return {
+        "chain": str(spec.chain),
+        "start_record": str(spec.start_record),
+        "requested_revision": spec.revision,
+        "attempt_id": spec.attempt_id,
+        "base_generation": str(spec.base_generation),
+        "target_generation": str(spec.base_generation + 1),
+        "requested_base_artefact_sha256": spec.base_artefact_sha256,
+        "requested_artefact_sha256": spec.artefact_sha256,
+    }
+
+
+def _evaluate_target_slot(
+    slot: GenerationRecord | None,
+    spec: _ChainedDeploymentSpec,
+    evidence: dict[str, str],
+) -> tuple[str, str, str] | None:
+    """Populate slot evidence and return an early ``(effect, result, observation)``, or ``None``."""
+    if slot is None:
+        return "absent", "not_verified", "not_published"
+    evidence["slot_sha256"] = hashlib.sha256(slot.canonical_bytes()).hexdigest()
+    evidence["slot_kind"] = slot.kind
+    evidence["slot_attempt"] = slot.attempt
+    evidence["slot_artefact_sha256"] = slot.artefact
+    if slot.kind == KIND_SEALED:
+        return "absent", "not_verified", "sealed_before_publication"
+    if slot.attempt != spec.attempt_id:
+        return "absent", "not_verified", "slot_taken_by_another_attempt"
+    if slot.artefact != spec.artefact_sha256:
+        return "observed", "not_verified", "artefact_differs"
+    return None
+
+
+def _verify_chained_deployment(
+    spec: _ChainedDeploymentSpec,
+    *,
+    operation_id: str,
+    communication: str,
+) -> ResultVerification:
+    """Verify a generation-chained deployment from the chain and service start record."""
+    evidence = _build_chained_evidence(spec)
+
+    def verdict(effect: str, result: str, observation: str) -> ResultVerification:
+        return _record(
+            operation_id, "deployment", communication, effect, result, observation, evidence
+        )
+
+    try:
+        head, base_slot, slot = _read_chain_slots(spec.chain, spec.base_generation)
+    except (GenerationChainError, OSError):
+        return verdict("unknown", "not_checked", "chain_unreadable")
+    evidence["chain_head"] = str(head)
+    if not _check_chain_prestate(
+        spec.base_generation, spec.base_artefact_sha256, base_slot, evidence
+    ):
+        return verdict("observed", "not_verified", "base_differs")
+    slot_verdict = _evaluate_target_slot(slot, spec, evidence)
+    if slot_verdict is not None:
+        return verdict(*slot_verdict)
+    result, observation = _verify_start_convergence(
+        spec.start_record, spec.base_generation + 1, spec.artefact_sha256, evidence
+    )
+    return verdict("observed", result, observation)
+
+
+def _verify_report_deployment(
     report: Path,
     revision: str,
     *,
     operation_id: str,
-    communication: str = "not_supplied",
+    communication: str,
 ) -> ResultVerification:
-    """Check that ``report`` names ``revision`` and says ``health`` is ``ok``.
-
-    This reads the report. It does not observe the deployed process. The
-    report is independent evidence only when the deployed service wrote it,
-    not when the deploying worker did. Evidence records ``report_sha256`` and
-    ``report_mtime_ns`` of the bytes that were judged.
-
-    Parameters
-    ----------
-    report : pathlib.Path
-        JSON object with string fields ``revision`` and ``health``.
-    revision : str
-        The revision the report is supposed to name.
-    operation_id : str
-        The operation being verified.
-    communication : str, optional
-        The boundary state from the outcome report, or ``not_supplied``.
-
-    Returns
-    -------
-    ResultVerification
-        ``verified`` only when the report's revision matches and ``health``
-        is exactly ``ok``. The observation is ``report_names_revision_and_ok``.
-
-    Raises
-    ------
-    ValueError
-        If ``revision`` is not a plain token.
-    """
-    if not _REVISION.fullmatch(revision):
-        raise ValueError("the revision is a plain token without whitespace")
+    """Verify a legacy deployment health report naming ``revision`` and ``health == 'ok'``."""
     evidence = {"report": str(report), "requested_revision": revision}
 
     def record(effect: str, result: str, observation: str) -> ResultVerification:
@@ -162,6 +426,99 @@ def verify_deployment(
     if health != _HEALTHY:
         return record("observed", "not_verified", "report_names_revision_but_not_ok")
     return record("observed", "verified", "report_names_revision_and_ok")
+
+
+def verify_deployment(
+    report: Path | None = None,
+    revision: str = "",
+    *,
+    operation_id: str,
+    communication: str = "not_supplied",
+    chain: Path | None = None,
+    start_record: Path | None = None,
+    base_generation: int | None = None,
+    base_artefact_sha256: str | None = None,
+    artefact_sha256: str | None = None,
+    attempt_id: str | None = None,
+) -> ResultVerification:
+    """Verify a deployment from a legacy health report or from a generation chain + start record.
+
+    Parameters
+    ----------
+    report : pathlib.Path or None, optional
+        Legacy JSON health report with string fields ``revision`` and ``health``.
+        Mutually exclusive with the generation-chain keyword arguments.
+    revision : str
+        Declared revision token without whitespace.
+    operation_id : str
+        Operation being verified.
+    communication : str, optional
+        Boundary state from an outcome report, or ``not_supplied``.
+    chain : pathlib.Path or None, optional
+        Owner-only ``synapse-generation.v1`` chain directory (chained mode).
+    start_record : pathlib.Path or None, optional
+        Path to the deployed service's ``synapse-service-start.v1`` file (chained mode).
+    base_generation : int or None, optional
+        Declared pre-state generation ``>= 0`` (chained mode).
+    base_artefact_sha256 : str or None, optional
+        Declared 64-hex pre-state artefact digest (64 zeros at ``base_generation == 0``).
+    artefact_sha256 : str or None, optional
+        Declared 64-hex target artefact digest at ``base_generation + 1``.
+    attempt_id : str or None, optional
+        Attempt identifier expected to have published ``base_generation + 1``.
+
+    Returns
+    -------
+    ResultVerification
+        ``verified`` only when the legacy report names ``revision`` with ``health == 'ok'``,
+        or when chained slot ``base_generation + 1`` was ``applied`` by ``attempt_id`` with
+        ``artefact_sha256`` (with matching pre-state) and ``start_record`` converged on
+        ``base_generation + 1`` and ``artefact_sha256``.
+
+    Raises
+    ------
+    ValueError
+        If ``revision`` is malformed, both modes are mixed, or chained arguments are
+        incomplete or syntactically invalid.
+    """
+    if not _REVISION.fullmatch(revision):
+        raise ValueError("the revision is a plain token without whitespace")
+    chained = (
+        chain,
+        start_record,
+        base_generation,
+        base_artefact_sha256,
+        artefact_sha256,
+        attempt_id,
+    )
+    if report is not None:
+        if any(item is not None for item in chained):
+            raise ValueError("give either report or the generation-chain arguments, not both")
+        return _verify_report_deployment(
+            report, revision, operation_id=operation_id, communication=communication
+        )
+    if (
+        chain is None
+        or start_record is None
+        or base_generation is None
+        or base_artefact_sha256 is None
+        or artefact_sha256 is None
+        or attempt_id is None
+    ):
+        raise ValueError(
+            "give report, or chain, start_record, base_generation, base_artefact_sha256, "
+            "artefact_sha256 and attempt_id together"
+        )
+    spec = _validate_chained_spec(
+        revision,
+        chain,
+        start_record,
+        base_generation,
+        base_artefact_sha256,
+        artefact_sha256,
+        attempt_id,
+    )
+    return _verify_chained_deployment(spec, operation_id=operation_id, communication=communication)
 
 
 def _schema_text(connection: sqlite3.Connection) -> str:

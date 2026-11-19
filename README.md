@@ -1949,10 +1949,10 @@ an installed protected runtime or revocation fencing.
 | Package version | 0.99.57 |
 | Public API exports | 70 |
 | Package modules | 1061 |
-| Classes | 1520 |
+| Classes | 1522 |
 | Wire message types | 131 |
 | CLI subcommands | 322 |
-| Test functions | 14983 |
+| Test functions | 14991 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 100 |
 | GitHub Actions workflows | 29 |

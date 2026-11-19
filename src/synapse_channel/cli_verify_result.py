@@ -43,6 +43,7 @@ from synapse_channel.result_verification_effects import (
 
 _EXIT = {"verified": 0, "not_verified": 1, "not_checked": 3}
 _HEX64 = re.compile(r"[0-9a-f]{64}")
+_BASE_GENERATION = re.compile(r"0|[1-9][0-9]{0,19}")
 
 
 def _identity(args: argparse.Namespace) -> tuple[str, str]:
@@ -104,7 +105,17 @@ def _git(args: argparse.Namespace) -> int:
     )
 
 
+def _parse_base_generation(raw: str | None) -> int | None:
+    """Parse canonical non-negative decimal ``--base-generation`` digits."""
+    if raw is None:
+        return None
+    if _BASE_GENERATION.fullmatch(raw) is None:
+        raise ValueError("--base-generation must be canonical non-negative decimal digits")
+    return int(raw)
+
+
 def _deployment(args: argparse.Namespace) -> int:
+    base_generation = _parse_base_generation(args.base_generation)
     operation_id, communication = _identity(args)
     return _report(
         verify_deployment(
@@ -112,6 +123,12 @@ def _deployment(args: argparse.Namespace) -> int:
             args.revision,
             operation_id=operation_id,
             communication=communication,
+            chain=args.chain,
+            start_record=args.start_record,
+            base_generation=base_generation,
+            base_artefact_sha256=args.base_artefact_sha256,
+            artefact_sha256=args.artefact_sha256,
+            attempt_id=args.attempt_id,
         )
     )
 
@@ -256,6 +273,57 @@ def _add_component_parser(nested: argparse._SubParsersAction[argparse.ArgumentPa
     _common(parser)
 
 
+def _add_deployment_parser(nested: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register ``verify-result deployment`` for report-based and chained targets."""
+    deployment_parser = nested.add_parser(
+        "deployment",
+        help="Check a health report or a generation chain plus service start record.",
+    )
+    deployment_parser.add_argument(
+        "--revision", required=True, help="Revision the deployment must name."
+    )
+    deployment_parser.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="Legacy JSON health report (mutually exclusive with --chain).",
+    )
+    deployment_parser.add_argument(
+        "--chain",
+        type=Path,
+        default=None,
+        help="Owner-only synapse-generation.v1 directory (chained mode).",
+    )
+    deployment_parser.add_argument(
+        "--start-record",
+        type=Path,
+        default=None,
+        help="Deployed service's synapse-service-start.v1 file (chained mode).",
+    )
+    deployment_parser.add_argument(
+        "--base-generation",
+        default=None,
+        help="Declared pre-state generation >= 0 (chained mode).",
+    )
+    deployment_parser.add_argument(
+        "--base-artefact-sha256",
+        default=None,
+        help="Declared 64-hex pre-state artefact digest (64 zeros at base 0).",
+    )
+    deployment_parser.add_argument(
+        "--artefact-sha256",
+        default=None,
+        help="Declared 64-hex target artefact digest at base + 1.",
+    )
+    deployment_parser.add_argument(
+        "--attempt-id",
+        default=None,
+        help="Attempt expected to have published base + 1 (chained mode).",
+    )
+    deployment_parser.set_defaults(verify=_deployment)
+    _common(deployment_parser)
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register ``verify-result`` with file, git, deployment, migration and component.
 
@@ -283,22 +351,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     _common(file_parser)
 
     _add_git_parser(nested)
-
-    deployment_parser = nested.add_parser(
-        "deployment",
-        help="Check a health report's revision and health. It does not observe the service.",
-    )
-    deployment_parser.add_argument(
-        "--revision", required=True, help="Revision the report must name."
-    )
-    deployment_parser.add_argument(
-        "--report",
-        required=True,
-        type=Path,
-        help="JSON report. Independent only when the deployed service wrote it.",
-    )
-    deployment_parser.set_defaults(verify=_deployment)
-    _common(deployment_parser)
+    _add_deployment_parser(nested)
 
     migration_parser = nested.add_parser(
         "migration", help="Verify a migration identity and the resulting SQLite schema."

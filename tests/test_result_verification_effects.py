@@ -24,8 +24,16 @@ from pathlib import Path
 import pytest
 
 from synapse_channel.cli import main
+from synapse_channel.core.generation_chain import (
+    MAX_GENERATION,
+    publish_generation,
+    seal_generation,
+)
+from synapse_channel.core.secure_path import apply_owner_only_dir
 from synapse_channel.result_verification import read_outcome
 from synapse_channel.result_verification_effects import (
+    START_RECORD_SCHEMA,
+    ServiceStartRecord,
     schema_digest,
     verify_deployment,
     verify_migration,
@@ -574,3 +582,680 @@ def test_the_cli_verifies_deployment_and_migration(
         == 2
     )
     assert "plain token" in capsys.readouterr().err
+
+
+_ART_A = "a" * 64
+_ART_B = "b" * 64
+_ART_C = "c" * 64
+
+
+def _make_chain(tmp_path: Path, name: str = "chain") -> Path:
+    chain = tmp_path / name
+    chain.mkdir(mode=0o700)
+    apply_owner_only_dir(chain)
+    return chain
+
+
+def _write_start_record(
+    path: Path,
+    *,
+    generation: int,
+    artefact: str,
+    pid: int = 4321,
+    started_at: str = "2026-11-19T05:30:00Z",
+) -> ServiceStartRecord:
+    record = ServiceStartRecord(
+        generation=generation,
+        artefact=artefact,
+        pid=pid,
+        started_at=started_at,
+    )
+    staging = path.parent / f".{path.name}.tmp"
+    with staging.open("wb") as handle:
+        handle.write(record.canonical_bytes())
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(staging, path)
+    return record
+
+
+def test_service_start_record_validates_fields_and_canonical_bytes() -> None:
+    """ServiceStartRecord enforces exact schema, positive ints, 64-hex artefact, and ASCII time."""
+    record = ServiceStartRecord(
+        generation=1,
+        artefact=_ART_A,
+        pid=99,
+        started_at="2026-11-19T05:30:00Z",
+    )
+    assert record.schema == START_RECORD_SCHEMA
+    expected = (
+        f'{{"artefact":"{_ART_A}","generation":1,"pid":99,'
+        f'"schema":"{START_RECORD_SCHEMA}","started_at":"2026-11-19T05:30:00Z"}}'
+    ).encode("ascii")
+    assert record.canonical_bytes() == expected
+    with pytest.raises(ValueError, match="schema"):
+        ServiceStartRecord(1, _ART_A, 99, "2026-11-19T05:30:00Z", schema="wrong.v1")
+    for bad_gen in (0, -1, MAX_GENERATION + 1):
+        with pytest.raises(ValueError, match="integer|bound"):
+            ServiceStartRecord(bad_gen, _ART_A, 99, "2026-11-19T05:30:00Z")
+    with pytest.raises(ValueError, match="artefact"):
+        ServiceStartRecord(1, "ABCD", 99, "2026-11-19T05:30:00Z")
+    with pytest.raises(ValueError, match="integer"):
+        ServiceStartRecord(1, _ART_A, 0, "2026-11-19T05:30:00Z")
+    for bad_time in ("", "   ", "2026-11-19T05:30:00Z\n", "2026\x7f", "2026\u00e9"):
+        with pytest.raises(ValueError, match="started_at"):
+            ServiceStartRecord(1, _ART_A, 99, bad_time)
+
+
+def test_chained_deployment_rejects_mixed_missing_or_malformed_arguments(
+    tmp_path: Path,
+) -> None:
+    """verify_deployment refuses mixed report+chain calls, partial args, or bad tokens."""
+    chain = _make_chain(tmp_path)
+    report = tmp_path / "health.json"
+    start = tmp_path / "start.json"
+    with pytest.raises(ValueError, match="not both"):
+        verify_deployment(report, "rev-1", operation_id="op", chain=chain)
+    with pytest.raises(ValueError, match="together"):
+        verify_deployment(None, "rev-1", operation_id="op", chain=chain, start_record=start)
+    for bad_base in (True, False, -1, MAX_GENERATION):
+        with pytest.raises(ValueError, match="base_generation"):
+            verify_deployment(
+                revision="rev-1",
+                operation_id="op",
+                chain=chain,
+                start_record=start,
+                base_generation=bad_base,
+                base_artefact_sha256=_ZERO,
+                artefact_sha256=_ART_A,
+                attempt_id="att-1",
+            )
+    with pytest.raises(ValueError, match="base_artefact_sha256"):
+        verify_deployment(
+            revision="rev-1",
+            operation_id="op",
+            chain=chain,
+            start_record=start,
+            base_generation=0,
+            base_artefact_sha256="BAD",
+            artefact_sha256=_ART_A,
+            attempt_id="att-1",
+        )
+    with pytest.raises(ValueError, match="artefact_sha256"):
+        verify_deployment(
+            revision="rev-1",
+            operation_id="op",
+            chain=chain,
+            start_record=start,
+            base_generation=0,
+            base_artefact_sha256=_ZERO,
+            artefact_sha256="BAD",
+            attempt_id="att-1",
+        )
+    with pytest.raises(ValueError, match="attempt_id"):
+        verify_deployment(
+            revision="rev-1",
+            operation_id="op",
+            chain=chain,
+            start_record=start,
+            base_generation=0,
+            base_artefact_sha256=_ZERO,
+            artefact_sha256=_ART_A,
+            attempt_id="bad attempt",
+        )
+
+
+def test_chained_deployment_reports_unreadable_or_corrupt_chain(tmp_path: Path) -> None:
+    """Missing, symlinked, loose, gapped, or non-canonical chains return chain_unreadable."""
+    start = tmp_path / "start.json"
+    missing = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=tmp_path / "absent",
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert (missing.effect, missing.result, missing.observation) == (
+        "unknown",
+        "not_checked",
+        "chain_unreadable",
+    )
+    real = _make_chain(tmp_path, "real_chain")
+    linked = tmp_path / "linked_chain"
+    linked.symlink_to(real)
+    via_link = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=linked,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert (via_link.effect, via_link.result, via_link.observation) == (
+        "unknown",
+        "not_checked",
+        "chain_unreadable",
+    )
+    if os.name == "posix":
+        loose = tmp_path / "loose_chain"
+        loose.mkdir(mode=0o755)
+        os.chmod(loose, 0o755)
+        loose_verdict = verify_deployment(
+            revision="rev-1",
+            operation_id="op",
+            chain=loose,
+            start_record=start,
+            base_generation=0,
+            base_artefact_sha256=_ZERO,
+            artefact_sha256=_ART_A,
+            attempt_id="att-1",
+        )
+        assert loose_verdict.observation == "chain_unreadable"
+    gapped = _make_chain(tmp_path, "gapped_chain")
+    (gapped / "gen-00000000000000000002.json").write_bytes(b"{}")
+    gapped_verdict = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=gapped,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert (gapped_verdict.effect, gapped_verdict.result, gapped_verdict.observation) == (
+        "unknown",
+        "not_checked",
+        "chain_unreadable",
+    )
+    corrupt = _make_chain(tmp_path, "corrupt_chain")
+    (corrupt / "gen-00000000000000000001.json").write_bytes(b"not-json\n")
+    corrupt_verdict = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=corrupt,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert (corrupt_verdict.effect, corrupt_verdict.result, corrupt_verdict.observation) == (
+        "unknown",
+        "not_checked",
+        "chain_unreadable",
+    )
+
+
+def test_chained_deployment_checks_declared_prestate_at_zero_and_nonzero_base(
+    tmp_path: Path,
+) -> None:
+    """A mismatched base_artefact_sha256 (including non-zero at base 0) yields base_differs."""
+    chain = _make_chain(tmp_path)
+    start = tmp_path / "start.json"
+    publish_generation(chain, base=0, operation="op", attempt="att-1", artefact=_ART_A)
+    _write_start_record(start, generation=1, artefact=_ART_A)
+    nonzero_at_zero = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=chain,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ART_B,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert (nonzero_at_zero.effect, nonzero_at_zero.result, nonzero_at_zero.observation) == (
+        "observed",
+        "not_verified",
+        "base_differs",
+    )
+    wrong_base_slot = verify_deployment(
+        revision="rev-2",
+        operation_id="op-2",
+        chain=chain,
+        start_record=start,
+        base_generation=1,
+        base_artefact_sha256=_ART_B,
+        artefact_sha256=_ART_C,
+        attempt_id="att-2",
+    )
+    assert (wrong_base_slot.effect, wrong_base_slot.result, wrong_base_slot.observation) == (
+        "observed",
+        "not_verified",
+        "base_differs",
+    )
+    assert wrong_base_slot.evidence["observed_base_artefact_sha256"] == _ART_A
+    empty = _make_chain(tmp_path, "empty_chain")
+    missing_base_slot = verify_deployment(
+        revision="rev-2",
+        operation_id="op-2",
+        chain=empty,
+        start_record=start,
+        base_generation=1,
+        base_artefact_sha256=_ART_A,
+        artefact_sha256=_ART_B,
+        attempt_id="att-2",
+    )
+    assert (missing_base_slot.effect, missing_base_slot.result, missing_base_slot.observation) == (
+        "observed",
+        "not_verified",
+        "base_differs",
+    )
+
+
+def test_chained_deployment_distinguishes_absent_sealed_foreign_and_wrong_artefact_slots(
+    tmp_path: Path,
+) -> None:
+    """Unpublished, sealed, foreign-attempt, and wrong-artefact slots are never verified."""
+    chain = _make_chain(tmp_path)
+    start = tmp_path / "start.json"
+    _write_start_record(start, generation=1, artefact=_ART_A)
+    unpublished = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=chain,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert (unpublished.effect, unpublished.result, unpublished.observation) == (
+        "absent",
+        "not_verified",
+        "not_published",
+    )
+    sealed_chain = _make_chain(tmp_path, "sealed_chain")
+    sealed_out = seal_generation(sealed_chain, base=0, operation="op", attempt="stopper-1")
+    sealed = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=sealed_chain,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert (sealed.effect, sealed.result, sealed.observation) == (
+        "absent",
+        "not_verified",
+        "sealed_before_publication",
+    )
+    assert (
+        sealed.evidence["slot_sha256"]
+        == hashlib.sha256(sealed_out.record.canonical_bytes()).hexdigest()
+    )
+    publish_generation(chain, base=0, operation="op", attempt="att-other", artefact=_ART_A)
+    foreign = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=chain,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert (foreign.effect, foreign.result, foreign.observation) == (
+        "absent",
+        "not_verified",
+        "slot_taken_by_another_attempt",
+    )
+    wrong_art = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=chain,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_B,
+        attempt_id="att-other",
+    )
+    assert (wrong_art.effect, wrong_art.result, wrong_art.observation) == (
+        "observed",
+        "not_verified",
+        "artefact_differs",
+    )
+
+
+def test_chained_deployment_suspends_on_non_convergence_and_verifies_on_convergence(
+    tmp_path: Path,
+) -> None:
+    """Published slots suspend until start_record converges, then verify or flag drift."""
+    chain = _make_chain(tmp_path)
+    start = tmp_path / "start.json"
+    first = publish_generation(chain, base=0, operation="op-1", attempt="att-1", artefact=_ART_A)
+    absent_start = verify_deployment(
+        revision="rev-1",
+        operation_id="op-1",
+        chain=chain,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert (absent_start.effect, absent_start.result, absent_start.observation) == (
+        "observed",
+        "not_checked",
+        "published_not_converged",
+    )
+    assert absent_start.result != "not_verified"
+    written_one = _write_start_record(start, generation=1, artefact=_ART_A, pid=777)
+    converged_zero = verify_deployment(
+        revision="rev-1",
+        operation_id="op-1",
+        chain=chain,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert converged_zero.verified
+    assert (converged_zero.effect, converged_zero.result, converged_zero.observation) == (
+        "observed",
+        "verified",
+        "published_and_converged",
+    )
+    assert converged_zero.evidence["chain_head"] == "1"
+    assert (
+        converged_zero.evidence["slot_sha256"]
+        == hashlib.sha256(first.record.canonical_bytes()).hexdigest()
+    )
+    assert (
+        converged_zero.evidence["start_record_sha256"]
+        == hashlib.sha256(written_one.canonical_bytes()).hexdigest()
+    )
+    assert converged_zero.evidence["start_record_mtime_ns"] == str(start.stat().st_mtime_ns)
+    assert converged_zero.evidence["observed_start_pid"] == "777"
+
+    publish_generation(chain, base=1, operation="op-2", attempt="att-2", artefact=_ART_B)
+    lagging = verify_deployment(
+        revision="rev-2",
+        operation_id="op-2",
+        chain=chain,
+        start_record=start,
+        base_generation=1,
+        base_artefact_sha256=_ART_A,
+        artefact_sha256=_ART_B,
+        attempt_id="att-2",
+    )
+    assert (lagging.effect, lagging.result, lagging.observation) == (
+        "observed",
+        "not_checked",
+        "published_not_converged",
+    )
+    _write_start_record(start, generation=2, artefact=_ART_C, pid=888)
+    bad_converged = verify_deployment(
+        revision="rev-2",
+        operation_id="op-2",
+        chain=chain,
+        start_record=start,
+        base_generation=1,
+        base_artefact_sha256=_ART_A,
+        artefact_sha256=_ART_B,
+        attempt_id="att-2",
+    )
+    assert (bad_converged.effect, bad_converged.result, bad_converged.observation) == (
+        "observed",
+        "not_verified",
+        "converged_artefact_differs",
+    )
+    _write_start_record(start, generation=2, artefact=_ART_B, pid=889)
+    converged_one = verify_deployment(
+        revision="rev-2",
+        operation_id="op-2",
+        chain=chain,
+        start_record=start,
+        base_generation=1,
+        base_artefact_sha256=_ART_A,
+        artefact_sha256=_ART_B,
+        attempt_id="att-2",
+    )
+    assert converged_one.verified
+    assert converged_one.observation == "published_and_converged"
+    superseded = verify_deployment(
+        revision="rev-1",
+        operation_id="op-1",
+        chain=chain,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert (superseded.effect, superseded.result, superseded.observation) == (
+        "observed",
+        "not_checked",
+        "superseded_before_convergence_seen",
+    )
+
+
+def test_chained_deployment_maps_every_malformed_start_record_to_not_recognised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Present but unreadable or non-canonical start records return observed/not_checked."""
+    import synapse_channel.result_verification_effects as module
+
+    chain = _make_chain(tmp_path)
+    publish_generation(chain, base=0, operation="op", attempt="att-1", artefact=_ART_A)
+    real_start = tmp_path / "real_start.json"
+    valid = _write_start_record(real_start, generation=1, artefact=_ART_A)
+
+    def check(path: Path) -> None:
+        verdict = verify_deployment(
+            revision="rev-1",
+            operation_id="op",
+            chain=chain,
+            start_record=path,
+            base_generation=0,
+            base_artefact_sha256=_ZERO,
+            artefact_sha256=_ART_A,
+            attempt_id="att-1",
+        )
+        assert (verdict.effect, verdict.result, verdict.observation) == (
+            "observed",
+            "not_checked",
+            "start_record_not_recognised",
+        )
+
+    link = tmp_path / "link_start.json"
+    link.symlink_to(real_start)
+    check(link)
+    directory = tmp_path / "dir_start.json"
+    directory.mkdir()
+    check(directory)
+    oversize = tmp_path / "huge_start.json"
+    oversize.write_bytes(b"{" + b" " * 4096)
+    check(oversize)
+
+    bad = tmp_path / "bad_start.json"
+    payloads = [
+        b"\xff",
+        b"{",
+        b"[]",
+        valid.canonical_bytes() + b"\n",
+        json.dumps(valid.to_dict(), sort_keys=True).encode("ascii"),
+        (
+            f'{{"schema":"{START_RECORD_SCHEMA}","generation":1,'
+            f'"artefact":"{_ART_A}","pid":1,"started_at":"2026-11-19T05:30:00Z"}}'
+        ).encode("ascii"),
+        (
+            f'{{"artefact":"{_ART_A}","artefact":"{_ART_A}","generation":1,'
+            f'"pid":1,"schema":"{START_RECORD_SCHEMA}","started_at":"2026-11-19T05:30:00Z"}}'
+        ).encode("ascii"),
+        (
+            f'{{"artefact":"{_ART_A}","extra":1,"generation":1,'
+            f'"pid":1,"schema":"{START_RECORD_SCHEMA}","started_at":"2026-11-19T05:30:00Z"}}'
+        ).encode("ascii"),
+        f'{{"artefact":"{_ART_A}","generation":1,"pid":1,"schema":"{START_RECORD_SCHEMA}"}}'.encode(
+            "ascii"
+        ),
+        (
+            f'{{"artefact":"{_ART_A}","generation":"1",'
+            f'"pid":1,"schema":"{START_RECORD_SCHEMA}","started_at":"2026-11-19T05:30:00Z"}}'
+        ).encode("ascii"),
+        (
+            f'{{"artefact":"{_ART_A}","generation":true,'
+            f'"pid":1,"schema":"{START_RECORD_SCHEMA}","started_at":"2026-11-19T05:30:00Z"}}'
+        ).encode("ascii"),
+        (
+            f'{{"artefact":"{_ART_A}","generation":0,'
+            f'"pid":1,"schema":"{START_RECORD_SCHEMA}","started_at":"2026-11-19T05:30:00Z"}}'
+        ).encode("ascii"),
+        (
+            f'{{"artefact":1,"generation":1,'
+            f'"pid":1,"schema":"{START_RECORD_SCHEMA}","started_at":"2026-11-19T05:30:00Z"}}'
+        ).encode("ascii"),
+        (
+            f'{{"artefact":"{_ART_A}","generation":1,'
+            f'"pid":1,"schema":"wrong.v1","started_at":"2026-11-19T05:30:00Z"}}'
+        ).encode("ascii"),
+        (
+            f'{{"artefact":"{_ART_A}","generation":1,'
+            f'"pid":1,"schema":"{START_RECORD_SCHEMA}","started_at":"2026\\n"}}'
+        ).encode("ascii"),
+    ]
+    for raw in payloads:
+        bad.write_bytes(raw)
+        check(bad)
+
+    monkeypatch.setattr(module, "_NOFOLLOW", None)
+    check(real_start)
+
+
+def test_cli_chained_deployment_exit_codes_and_worker_session_boundary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI verify-result deployment handles chained flags, exit codes 0/1/2/3, and outcomes."""
+    chain = _make_chain(tmp_path)
+    start = tmp_path / "start.json"
+    outcome = tmp_path / "outcome.json"
+    code = (
+        "import os; from pathlib import Path; "
+        "from synapse_channel.core.generation_chain import publish_generation; "
+        f"publish_generation(Path({str(chain)!r}), base=0, "
+        "operation=os.environ['SYN_OPERATION_ID'], "
+        f"attempt='att-cli', artefact={_ART_A!r})"
+    )
+    worker = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "synapse_channel.cli",
+            "worker-session",
+            "--identity",
+            "PROJECT/worker",
+            "--outcome-file",
+            str(outcome),
+            "--",
+            sys.executable,
+            "-c",
+            code,
+        ],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+        capture_output=True,
+        check=False,
+    )
+    assert worker.returncode == 0, worker.stderr
+    common = [
+        "verify-result",
+        "deployment",
+        "--revision",
+        "rev-1",
+        "--chain",
+        str(chain),
+        "--start-record",
+        str(start),
+        "--base-generation",
+        "0",
+        "--base-artefact-sha256",
+        _ZERO,
+        "--artefact-sha256",
+        _ART_A,
+        "--attempt-id",
+        "att-cli",
+        "--outcome",
+        str(outcome),
+    ]
+    assert main(common) == 3
+    pending = json.loads(capsys.readouterr().out)
+    assert pending["communication"] == "confirmed_done"
+    assert pending["observation"] == "published_not_converged"
+
+    _write_start_record(start, generation=1, artefact=_ART_A, pid=5150)
+    sub = subprocess.run(
+        [sys.executable, "-m", "synapse_channel.cli", *common],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert sub.returncode == 0, sub.stderr
+    converged = json.loads(sub.stdout)
+    assert converged["result"] == "verified"
+    assert converged["observation"] == "published_and_converged"
+
+    assert (
+        main(
+            [
+                "verify-result",
+                "deployment",
+                "--revision",
+                "rev-1",
+                "--chain",
+                str(chain),
+                "--start-record",
+                str(start),
+                "--base-generation",
+                "0",
+                "--base-artefact-sha256",
+                _ART_B,
+                "--artefact-sha256",
+                _ART_A,
+                "--attempt-id",
+                "att-cli",
+                "--operation-id",
+                "op-cli",
+            ]
+        )
+        == 1
+    )
+    capsys.readouterr()
+    for bad_gen in ("01", "-1", "abc", "0\n"):
+        assert (
+            main(
+                [
+                    "verify-result",
+                    "deployment",
+                    "--revision",
+                    "rev-1",
+                    "--chain",
+                    str(chain),
+                    "--start-record",
+                    str(start),
+                    "--base-generation",
+                    bad_gen,
+                    "--base-artefact-sha256",
+                    _ZERO,
+                    "--artefact-sha256",
+                    _ART_A,
+                    "--attempt-id",
+                    "att-cli",
+                    "--operation-id",
+                    "op-cli",
+                ]
+            )
+            == 2
+        )
+        capsys.readouterr()

@@ -170,7 +170,16 @@ does not add agent grades to protocol envelopes.
   into an owner-only `0700` non-network/non-FUSE directory by syncing a private
   `.partial` file, hard-linking the final slot name, and syncing the directory,
   with `sealed` carrying the base generation's artefact forward or 64 zeros at
-  generation 0, and gaps or non-canonical slot bytes refused as corruption); for a migration either
+  generation 0, and gaps or non-canonical slot bytes refused as corruption; the
+  deployed service writes `start_record` atomically after loading and digesting the
+  artefact as canonical sorted-key compact ASCII JSON of
+  `{"artefact","generation","pid","schema","started_at"}` with
+  `schema="synapse-service-start.v1"`, and `verify-result deployment` reads both
+  strictly to distinguish `chain_unreadable`, `base_differs`, `not_published`,
+  `sealed_before_publication`, `slot_taken_by_another_attempt`, `artefact_differs`,
+  `published_not_converged`, `start_record_not_recognised`, `published_and_converged`,
+  `converged_artefact_differs`, and `superseded_before_convergence_seen`, with
+  independence procedural on single-user hosts); for a migration either
   `database`+`migration`+`schema_sha256` or
   `database`+`migration`+`base_schema_sha256`+`schema_sha256`, never a mixture
   of shapes; or, for a
