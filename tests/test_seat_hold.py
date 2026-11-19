@@ -673,11 +673,15 @@ async def test_a_holder_with_a_wake_target_runs_its_waiter_while_the_agent_runs(
         def close(self) -> None:
             online.append(sorted(hub_ref[0].online_agents()))
 
+    routed: list[object] = []
+
     def fake_open(target: WakeTarget, **options: Any) -> _Seat:
         events.append(("open", (target, options["agent_argv"], options["log_path"])))
+        routed.extend([options["router"], options["errors"]])
         return _Seat()
 
     monkeypatch.setattr(sys, "stdout", io.StringIO())
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
     monkeypatch.setattr(seat_waiter, "open_seat_waiter", fake_open)
     target = WakeTarget("synapse-T_seat")
     agent = _python("raise SystemExit(4)")
@@ -690,7 +694,10 @@ async def test_a_holder_with_a_wake_target_runs_its_waiter_while_the_agent_runs(
     assert events == [("open", (target, agent, tmp_path / "T_seat-holder.log"))]
     # The waiter closed while the seat was still held, before the holder let go.
     assert len(online) == 1 and "T/seat-seat" in online[0]
-    assert isinstance(sys.stdout, seat_waiter.OutputRouter)  # installed at the holder's start
+    # Both routers are installed at the holder's start.
+    assert isinstance(sys.stdout, seat_waiter.OutputRouter)
+    assert isinstance(sys.stderr, seat_waiter.OutputRouter)
+    assert routed == [sys.stdout, sys.stderr]
 
 
 async def test_a_holder_without_a_wake_target_runs_no_waiter(

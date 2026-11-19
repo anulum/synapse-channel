@@ -485,16 +485,16 @@ def reclaim_terminal(ops: ChildOps | None = None) -> None:
     ops.set_sigttou(previous)
 
 
-def _install_router() -> OutputRouter:
-    """Install the waiter's output router once, at the holder's start."""
+def _install_router() -> tuple[OutputRouter, OutputRouter]:
+    """Install the waiter's output routers once, at the holder's start: stdout and stderr."""
     from synapse_channel.seat_waiter import install_router
 
-    return install_router()
+    return install_router("stdout"), install_router("stderr")
 
 
 def _open_waiter(
     wake: WakeTarget,
-    router: OutputRouter,
+    router: tuple[OutputRouter, OutputRouter],
     identity: str,
     argv: Sequence[str],
     uri: str,
@@ -511,7 +511,8 @@ def _open_waiter(
         uri=uri,
         token=token,
         log_path=directory / f"{safe_key(identity)}-holder.log",
-        router=router,
+        router=router[0],
+        errors=router[1],
     )
 
 
@@ -520,7 +521,7 @@ class _WaiterSlot:
     """The seat's pane waiter, if it has one: prepared at the start, opened once the agent runs."""
 
     wake: WakeTarget | None
-    router: OutputRouter | None = None
+    router: tuple[OutputRouter, OutputRouter] | None = None
     seat: SeatWaiter | None = None
 
     @classmethod

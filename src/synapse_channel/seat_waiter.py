@@ -20,7 +20,7 @@ thread, and each bridge wait runs inside the process too:
   recorded in the seat's registry entry and in the holder's log.
 * **Nothing reaches the agent's terminal.** While the agent runs, the holder's
   own standard output and error (descriptors 1 and 2) point to a private log;
-  descriptor 0 is never touched. One router, installed once, sends the waiter
+  descriptor 0 is never touched. One router per stream, installed once, sends the waiter
   thread's printed lines to that wait's in-memory capture instead.
 
 If the holder dies while redirected, its last lines are in the log, not in the
@@ -43,7 +43,7 @@ import traceback
 from collections.abc import Callable, Coroutine, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Literal, TextIO
 
 from synapse_channel.agent_tmux import (
     DEFAULT_PANE_PROBE_INTERVAL,
@@ -115,13 +115,13 @@ class OutputRouter(io.TextIOBase):
             self._captures.pop(ident, None)
 
 
-def install_router() -> OutputRouter:
-    """Install the router as ``sys.stdout`` once, and return it."""
-    current = sys.stdout
+def install_router(stream: Literal["stdout", "stderr"] = "stdout") -> OutputRouter:
+    """Install a router as ``sys.stdout`` or ``sys.stderr`` once, and return it."""
+    current = getattr(sys, stream)
     if isinstance(current, OutputRouter):
         return current
     router = OutputRouter(current)
-    sys.stdout = router
+    setattr(sys, stream, router)
     return router
 
 
@@ -218,9 +218,15 @@ class InProcessWait:
     """
 
     def __init__(
-        self, *, router: OutputRouter, stop: threading.Event, quiet: QuietTerminal | None = None
+        self,
+        *,
+        router: OutputRouter,
+        stop: threading.Event,
+        quiet: QuietTerminal | None = None,
+        errors: OutputRouter | None = None,
     ) -> None:
         self._router = router
+        self._errors = errors
         self._stop = stop
         self._quiet = quiet
         self._running: tuple[asyncio.AbstractEventLoop, asyncio.Future[int]] | None = None
@@ -255,15 +261,26 @@ class InProcessWait:
         def run(coroutine: Coroutine[Any, Any, int]) -> int:
             return asyncio.run(self._probed(coroutine, interval, probe, heartbeat, refusal))
 
-        with self._router.capture() as captured:
+        crashed: Exception | None = None
+        with self._router.capture() as captured, self._capture_errors() as errors:
             try:
                 code = int(args.func(args, async_runner=run))
-            except Exception:  # a crashed wait reads as a crashed child: exit 1
-                traceback.print_exc()
-                code = 1
+            except Exception as exc:  # a crashed wait reads as a crashed child: exit 1
+                crashed, code = exc, 1
+        if crashed is not None:  # outside the capture: the trace belongs in the holder's log
+            traceback.print_exception(crashed)
         if refusal[0]:
             return _timeout_shaped(command), refusal[0]
-        return subprocess.CompletedProcess(list(command), code, captured.getvalue(), ""), 0
+        result = subprocess.CompletedProcess(
+            list(command), code, captured.getvalue(), errors.getvalue()
+        )
+        return result, 0
+
+    def _capture_errors(self) -> contextlib.AbstractContextManager[io.StringIO]:
+        """Capture the wait's standard error when a router for it is installed."""
+        if self._errors is None:
+            return contextlib.nullcontext(io.StringIO())
+        return self._errors.capture()
 
     async def _probed(
         self,
@@ -317,11 +334,12 @@ class PaneWaiter:
         quiet: QuietTerminal | None = None,
         wake: Callable[..., int] = wait_and_wake,
         record: Callable[[AgentTmuxConfig, str], None] = record_waiter_stop,
+        errors: OutputRouter | None = None,
     ) -> None:
         self.config = config
         self.reason: str | None = None
         self._stop = threading.Event()
-        self._executor = InProcessWait(router=router, stop=self._stop, quiet=quiet)
+        self._executor = InProcessWait(router=router, stop=self._stop, quiet=quiet, errors=errors)
         self._wake = wake
         self._record = record
         self._thread = threading.Thread(target=self._run, name="synapse-seat-waiter", daemon=True)
@@ -386,6 +404,7 @@ def open_seat_waiter(
     token: str | None,
     log_path: Path,
     router: OutputRouter,
+    errors: OutputRouter | None = None,
 ) -> SeatWaiter:
     """Silence the holder's output and start the pane waiter for a running agent.
 
@@ -407,6 +426,6 @@ def open_seat_waiter(
     )
     quiet = QuietTerminal(log_path)
     quiet.redirect()
-    waiter = PaneWaiter(config, router=router, quiet=quiet)
+    waiter = PaneWaiter(config, router=router, quiet=quiet, errors=errors)
     waiter.start()
     return SeatWaiter(waiter, quiet)

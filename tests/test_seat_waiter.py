@@ -34,6 +34,7 @@ import pytest
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import agent_tmux, cli_messaging_wait, seat_waiter
 from synapse_channel.agent_tmux import AgentTmuxConfig, _wait_command, record_waiter_stop
+from synapse_channel.cli_messaging_wait import registered_line
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.pane_bridge_wait import run_probed_wait
 from synapse_channel.seat_hold import SeatHolder
@@ -96,8 +97,11 @@ def test_the_router_reports_its_streams_descriptor(tmp_path: Path) -> None:
 
 def test_the_router_is_installed_once(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "stdout", io.StringIO())
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
     first = install_router()
     assert install_router() is first is sys.stdout
+    errors = install_router("stderr")
+    assert install_router("stderr") is errors is sys.stderr and errors is not first
 
 
 class _CountingHandler(logging.Handler):
@@ -620,3 +624,45 @@ def test_closing_gives_the_terminal_back_even_when_the_waiter_will_not_stop(
     with pytest.raises(RuntimeError):
         seat.close()
     assert events == ["stop", "restore"]
+
+
+@pytest.mark.parametrize("kind", ["in-process", "child"])
+async def test_both_executors_report_a_held_name_with_the_same_line(
+    kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A guarded wait proves its hold by one stderr line, whichever executor runs it."""
+    execute: Executor = _child(tmp_path)
+    if kind == "in-process":
+        router, errors = OutputRouter(io.StringIO()), OutputRouter(io.StringIO())
+        monkeypatch.setattr(sys, "stdout", router)
+        monkeypatch.setattr(sys, "stderr", errors)
+        run = InProcessWait(router=router, stop=threading.Event(), errors=errors)
+
+        def in_process(command: Sequence[str]) -> tuple[subprocess.CompletedProcess[str], int]:
+            return run(command, env={}, interval=0.2, probe=lambda: 0)
+
+        execute = in_process
+    async with running_hub() as (_hub, uri):
+        config = _config(tmp_path, uri, first_no_takeover=True)
+        command = _wait_command(config, timeout=1, parent_pid=os.getpid())
+        result, refusal = await asyncio.to_thread(execute, command)
+    assert (result.returncode, refusal) == (2, 0)
+    assert result.stderr.splitlines().count(registered_line(pane_waiter_name(IDENTITY))) == 1
+
+
+def test_a_crashed_waits_trace_goes_to_the_log_not_to_its_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def crash(*_args: Any, **_kwargs: Any) -> int:
+        raise RuntimeError("wait crashed")
+
+    monkeypatch.setattr(cli_messaging_wait, "_run_wait_with_reconnect", crash)
+    log = io.StringIO()
+    router, errors = OutputRouter(io.StringIO()), OutputRouter(log)
+    monkeypatch.setattr(sys, "stdout", router)
+    monkeypatch.setattr(sys, "stderr", errors)
+    run = InProcessWait(router=router, stop=threading.Event(), errors=errors)
+    command = _wait_command(_config(tmp_path, "ws://127.0.0.1:9"), timeout=5, parent_pid=1)
+    result, refusal = run(command, env={}, interval=1, probe=lambda: 0)
+    assert (result.returncode, result.stderr, refusal) == (1, "", 0)
+    assert "RuntimeError: wait crashed" in log.getvalue()
