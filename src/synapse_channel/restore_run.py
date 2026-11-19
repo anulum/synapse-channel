@@ -48,7 +48,10 @@ from synapse_channel.seat_hold import (
     AGENT_START_FAILED_EXIT_CODE,
     SEAT_LIVE_EXIT_CODE,
 )
-from synapse_channel.seat_restore import MARKER_WAIT_SECONDS
+from synapse_channel.seat_restore import ENV_DROPPED as SEAT_ENV_DROPPED
+from synapse_channel.seat_restore import ENV_PASSED as SEAT_ENV_PASSED
+from synapse_channel.seat_restore import ENV_PATHS as SEAT_ENV_PATHS
+from synapse_channel.seat_restore import MARKER_WAIT_SECONDS, allowed_environ
 from synapse_channel.session_ledger import (
     COLLECTOR_LOCK_WAIT_SECONDS,
     LedgerError,
@@ -56,7 +59,6 @@ from synapse_channel.session_ledger import (
     append_event,
     fold,
     read_events,
-    shared_tree,
 )
 from synapse_channel.session_ledger_collect import CollectError
 
@@ -86,35 +88,14 @@ HOST_UNREADABLE_EXIT_CODE = 3
 
 LOCK_NAME = "restore.lock"
 
-ENV_PASSED = (
-    "PATH",
-    "HOME",
-    "USER",
-    "LOGNAME",
-    "SHELL",
-    "LANG",
-    "LANGUAGE",
-    "LC_ALL",
-    "LC_CTYPE",
-    "LC_MESSAGES",
-    "TERM",
-    "TZ",
-    "SYNAPSE_TOKEN",
-)
-"""Names passed to a child as they are; nothing outside this list and the paths passes."""
+ENV_PASSED = (*SEAT_ENV_PASSED, "SYNAPSE_TOKEN")
+"""Names passed to a child as they are: the seat's list (the same list the restored pane's
+``env -i`` uses) and the hub token, which the child hands to the holder in a private file."""
 
-ENV_PATHS = (
-    "XDG_RUNTIME_DIR",
-    "XDG_CONFIG_HOME",
-    "XDG_DATA_HOME",
-    "XDG_STATE_HOME",
-    "XDG_CACHE_HOME",
-    "TMPDIR",
-    "TMUX_TMPDIR",
-)
+ENV_PATHS = SEAT_ENV_PATHS
 """Directories passed only when absolute and outside every git work tree and coordination tree."""
 
-ENV_DROPPED = ("SYN_HOME",)
+ENV_DROPPED = SEAT_ENV_DROPPED
 """Names that redirect Synapse state; always dropped, and named in the plan."""
 
 
@@ -148,20 +129,12 @@ def child_environ(
 
     The hub token, when the run has one, reaches the child in ``SYNAPSE_TOKEN``,
     never on its command line. Values are never returned for printing; names are.
+    The list is the seat's own (:func:`~synapse_channel.seat_restore.allowed_environ`),
+    so the child and the pane it restores pass the same names.
     """
-    env = {name: environ[name] for name in ENV_PASSED if name in environ}
-    dropped = [f"{name} (redirects Synapse state)" for name in ENV_DROPPED if name in environ]
-    for name in ENV_PATHS:
-        value = environ.get(name, "")
-        if not value:
-            continue
-        path = Path(value)
-        if not path.is_absolute():
-            dropped.append(f"{name} (not an absolute path)")
-        elif shared_tree(path.resolve()) is not None:
-            dropped.append(f"{name} (in a git work tree or a coordination tree)")
-        else:
-            env[name] = value
+    env, dropped = allowed_environ(environ)
+    if "SYNAPSE_TOKEN" in environ:
+        env["SYNAPSE_TOKEN"] = environ["SYNAPSE_TOKEN"]
     if token:
         env["SYNAPSE_TOKEN"] = token
     project = entry.project or entry.identity.partition("/")[0]

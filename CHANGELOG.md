@@ -104,6 +104,15 @@ execution evidence when carrying a release claim forward.
   has held the name, later waits re-arm with a takeover as before. A restored
   seat's waiter starts this way.
 
+- **A restored pane starts from an empty environment.** `synapse
+  worker-session --restore` runs the seat holder behind `env -i` and a fixed
+  list of names taken from its own environment, never from the tmux server's,
+  so a server that already runs with a stale `SYN_HOME` or an `XDG_STATE_HOME`
+  inside a repository cannot redirect the seat. `synapse ledger restore` gives
+  its child the same list. A hub token given without a file reaches the holder
+  in a private `0600` file beside its marker, which is removed when the seat is
+  not held; it is never in the environment or on a command line.
+
 ## [0.99.58] - 2026-11-19
 
 Core 0.99.58 adds a hard-linked generation chain for conditional deployments and

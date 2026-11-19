@@ -20,7 +20,7 @@ from collections.abc import Mapping, Sequence
 from functools import partial
 from pathlib import Path
 
-from synapse_channel.agent_tmux import AgentTmuxConfig, start_session
+from synapse_channel.agent_tmux import AgentTmuxConfig, start_session, without_clean_environment
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.execution_outcome import OutcomeState
@@ -493,8 +493,14 @@ def _launch_restored_worker(
 
     def after_ready(pane: Sequence[str]) -> int:
         """Record the held pane and attach the terminal; the holder runs the waiter."""
+        # The launch record names the holder, not the pane's clean-environment prefix.
         _record_started_pane(
-            identity=identity, command=pane, env=env, tmux_bin=tmux_bin, session=resolved, cwd=cwd
+            identity=identity,
+            command=without_clean_environment(tuple(pane)),
+            env=env,
+            tmux_bin=tmux_bin,
+            session=resolved,
+            cwd=cwd,
         )
         return _attach_tmux_session(session=resolved, tmux_bin=tmux_bin, env=env) if attach else 0
 

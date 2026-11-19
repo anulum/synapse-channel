@@ -249,9 +249,11 @@ def provider_command(command: Sequence[str]) -> tuple[str, ...]:
     """Return the agent's own command inside a pane command.
 
     A seat restored behind its holder runs ``synapse seat-hold <options> --
-    <agent>``. Its agent is what follows ``--``; the holder's option values
-    come first and must never decide the provider (an identity such as
-    ``ops/claude-…`` can run any agent). Every other command is its own.
+    <agent>``, after an ``env -i NAME=value …`` prefix that gives it a clean
+    environment. Its agent is what follows ``--``; the prefix's values and the
+    holder's option values come first and must never decide the provider (an
+    identity such as ``ops/claude-…``, or a path, can name any agent). Every
+    other command is its own.
 
     Parameters
     ----------
@@ -263,10 +265,20 @@ def provider_command(command: Sequence[str]) -> tuple[str, ...]:
     tuple[str, ...]
         The agent's argument vector.
     """
-    parts = tuple(command)
+    parts = without_clean_environment(tuple(command))
     if parts[1:2] == (SEAT_HOLD_SUBCOMMAND,) and "--" in parts[2:]:
         return parts[parts.index("--", 2) + 1 :]
-    return parts
+    return tuple(command)
+
+
+def without_clean_environment(parts: tuple[str, ...]) -> tuple[str, ...]:
+    """Return ``parts`` without a leading ``env -i NAME=value …`` prefix, if it has one."""
+    if parts[:2] != ("env", "-i"):
+        return parts
+    index = 2
+    while index < len(parts) and "=" in parts[index] and not parts[index].startswith("-"):
+        index += 1
+    return parts[index:]
 
 
 def agent_binary(config: AgentTmuxConfig) -> str:

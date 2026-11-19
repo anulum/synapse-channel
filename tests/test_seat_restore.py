@@ -29,6 +29,7 @@ from typing import Any
 
 import pytest
 
+import synapse_channel
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import cli_services, worker_session
 from synapse_channel.agent_tmux import (
@@ -39,8 +40,11 @@ from synapse_channel.agent_tmux import (
     _provider_family,
     agent_binary,
     provider_command,
+    provider_family_of,
+    without_clean_environment,
 )
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.secret_files import read_secret_file
 from synapse_channel.seat_hold import (
     HUB_UNAVAILABLE_EXIT_CODE,
     READY_TIMEOUT_SECONDS,
@@ -52,10 +56,14 @@ from synapse_channel.seat_restore import (
     HOLDER_START_ALLOWANCE_SECONDS,
     MARKER_EXIT_CODES,
     MARKER_WAIT_SECONDS,
+    PANE_SETTINGS,
+    allowed_environ,
     holder_command,
+    pane_environment,
     start_restored_seat,
     wait_for_marker,
 )
+from synapse_channel.session_ledger_collect import children, descendants, read_procs
 
 NONCE = "nonce-0002"
 
@@ -270,7 +278,10 @@ def test_a_held_seat_goes_on_with_the_holders_command(tmp_path: Path) -> None:
     run = _Run("ready")
     assert run.restore(tmp_path) == 7
     (pane,) = run.ready_panes
-    assert pane[:2] == ["synapse", "seat-hold"] and pane[-4:] == ["--", "codex", "resume", "x"]
+    # The pane starts from an empty environment, then runs the agent behind its holder.
+    assert pane[:2] == ["env", "-i"]
+    holder = without_clean_environment(tuple(pane))
+    assert holder[:2] == ("synapse", "seat-hold") and holder[-4:] == ("--", "codex", "resume", "x")
     # The holder in the pane also wakes that pane, so no separate waiter is needed.
     assert pane[pane.index("--wake-session") + 1] == "synapse-T_seat"
     assert "--token-file" in pane
@@ -306,7 +317,9 @@ def test_worker_session_restore_arms_the_waiter_with_the_holders_command(
 
     def fake_restore(**kwargs: Any) -> int:
         calls["restore"] = kwargs
-        return int(kwargs["after_ready"](["synapse", "seat-hold", "--", "codex"]))
+        return int(
+            kwargs["after_ready"](["env", "-i", "HOME=/h", "synapse", "seat-hold", "--", "codex"])
+        )
 
     def record(name: str, result: Any = None) -> Any:
         def recorder(**kwargs: Any) -> Any:
@@ -343,7 +356,8 @@ def test_worker_session_restore_arms_the_waiter_with_the_holders_command(
     assert calls["restore"]["session"] == "synapse-T_seat"
     assert calls["restore"]["env"]["SYN_TMUX_PROVIDER"] == "1"
     assert "waiter" not in calls
-    assert calls["pane"]["command"] == ["synapse", "seat-hold", "--", "codex"]
+    # The launch record names the holder, not the pane's clean-environment prefix.
+    assert calls["pane"]["command"] == ("synapse", "seat-hold", "--", "codex")
     if attach:
         assert code == 9 and calls["attach"]["session"] == "synapse-T_seat"
     else:
@@ -408,16 +422,24 @@ def private_tmux(tmp_path: Path) -> Iterator[str]:
 def _synapse_wrapper(tmp_path: Path) -> str:
     """A ``synapse`` executable that runs this checkout's command line.
 
-    The tmux server is started by the user manager, so the pane does not inherit
-    this session's isolated ``XDG_DATA_HOME``; the wrapper sets it, and the
-    holder presents the same test machine key as the clients in this process.
+    The tmux server is started by the user manager, and the restored pane starts
+    from an empty environment, so the pane inherits neither this session's
+    isolated ``XDG_DATA_HOME`` nor its import path. The wrapper sets the first,
+    so the holder presents the same test machine key as the clients in this
+    process, and puts the source tree this test imported first on the path, so
+    the holder runs the same code.
     """
     wrapper = tmp_path / "synapse"
     data_home = shlex.quote(os.environ["XDG_DATA_HOME"])
     runtime = shlex.quote(str(tmp_path))  # the holder's waiter keeps its registry here
+    source = str(Path(synapse_channel.__file__).resolve().parents[1])
+    script = (
+        f"import sys; sys.path.insert(0, {source!r}); "
+        "from synapse_channel.cli import main; raise SystemExit(main())"
+    )
     wrapper.write_text(
         f"#!/bin/sh\nXDG_DATA_HOME={data_home} XDG_RUNTIME_DIR={runtime} exec {sys.executable} -c "
-        "'from synapse_channel.cli import main; raise SystemExit(main())' \"$@\"\n",
+        f'{shlex.quote(script)} "$@"\n',
         encoding="utf-8",
     )
     wrapper.chmod(0o755)
@@ -504,3 +526,169 @@ def _waiter(tmp_path: Path, **guard: bool) -> list[str]:
 def test_the_restore_waiter_command_asks_for_no_first_takeover(tmp_path: Path) -> None:
     assert _waiter(tmp_path, first_no_takeover=True)[-1] == "--first-no-takeover"
     assert "--first-no-takeover" not in _waiter(tmp_path)
+
+
+# --- the pane's clean environment -----------------------------------------------------
+
+
+def _repository(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    return repo
+
+
+def test_the_pane_gets_the_list_and_its_seat_never_a_token_or_a_redirect(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    environ = {
+        "PATH": "/usr/bin",
+        "HOME": "/home/u",
+        "LC_TIME": "C",
+        "DISPLAY": ":0",
+        "SSH_AUTH_SOCK": "/run/user/1000/ssh",
+        "SYN_HOME": str(tmp_path / ".coordination"),
+        "SYN_IDENTITY": "user/terminal-1",
+        "SYN_PROJECT": "T",
+        "SYNAPSE_TOKEN": "secret-token",
+        "SECRET_API_KEY": "never",
+        "TMUX": "/tmp/tmux-1000/default,1,0",
+        "XDG_RUNTIME_DIR": "/run/user/1000",
+        "XDG_STATE_HOME": str(repo / "state"),
+        "XDG_CACHE_HOME": "relative",
+    }
+    words = pane_environment(environ, "T/seat")
+    assert words == [
+        "DISPLAY=:0",
+        "HOME=/home/u",
+        "LC_TIME=C",
+        "PATH=/usr/bin",
+        "SSH_AUTH_SOCK=/run/user/1000/ssh",
+        "XDG_RUNTIME_DIR=/run/user/1000",
+        "SYN_IDENTITY=T/seat",
+        "SYN_PROJECT=T",
+        *PANE_SETTINGS,
+    ]
+    assert not any("secret" in word.lower() or word.startswith("TMUX=") for word in words)
+    _kept, dropped = allowed_environ(environ)
+    assert dropped == [
+        "SYN_HOME (redirects Synapse state)",
+        "XDG_STATE_HOME (in a git work tree or a coordination tree)",
+        "XDG_CACHE_HOME (not an absolute path)",
+    ]
+    # Without a project of its own, the seat's project is its identity's namespace.
+    assert "SYN_PROJECT=T" in pane_environment({}, "T/seat")
+    assert "SYN_PROJECT=solo" in pane_environment({}, "solo")
+
+
+def test_the_holder_command_starts_from_an_empty_environment(tmp_path: Path) -> None:
+    pane = holder_command(
+        synapse_bin="synapse",
+        identity="T/seat",
+        nonce=NONCE,
+        marker_dir=tmp_path,
+        uri="ws://h",
+        token_file=None,
+        command=["claude"],
+        environment=["HOME=/h", "XDG_DATA_HOME=/home/u/codex"],
+    )
+    assert pane[:4] == ["env", "-i", "HOME=/h", "XDG_DATA_HOME=/home/u/codex"]
+    assert without_clean_environment(tuple(pane))[:2] == ("synapse", "seat-hold")
+    # A value that names a vendor's path never decides the provider.
+    assert provider_command(pane) == ("claude",)
+    assert provider_family_of(pane) == "claude"
+    # Every other command is its own, with or without a prefix.
+    assert without_clean_environment(("codex", "resume")) == ("codex", "resume")
+    assert provider_command(["env", "-i", "A=1", "codex"]) == ("env", "-i", "A=1", "codex")
+    assert without_clean_environment(("env", "-i", "A=1")) == ()
+    assert without_clean_environment(("env", "-i", "A=1", "-u", "x")) == ("-u", "x")
+
+
+def _restore_with_token(
+    run: _Run, tmp_path: Path, *, token: str | None, token_file: str | None, nonce: str
+) -> int:
+    return start_restored_seat(
+        identity="T/seat",
+        command=["codex"],
+        session="synapse-T_seat",
+        cwd=tmp_path,
+        uri="ws://h",
+        token=token,
+        token_file=token_file,
+        tmux_bin="tmux",
+        synapse_bin="synapse",
+        env={"XDG_RUNTIME_DIR": str(tmp_path)},
+        after_ready=run.after_ready,
+        start=run.start,
+        kill=run.kill,
+        wait=run.wait,
+        nonce=nonce,
+    )
+
+
+def test_a_token_without_a_file_reaches_the_holder_in_a_private_file(tmp_path: Path) -> None:
+    held = _Run("ready")
+    assert (
+        _restore_with_token(held, tmp_path, token="secret-token", token_file=None, nonce=NONCE) == 7
+    )
+    (pane,) = held.ready_panes
+    assert "secret-token" not in " ".join(pane)
+    path = Path(pane[pane.index("--token-file") + 1])
+    assert path == tmp_path / "synapse-seat-hold" / f"T_seat.{NONCE}.token"
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert read_secret_file(path, flag="--token-file") == "secret-token"
+    # A seat that is not held leaves no token behind; a held one keeps it for its pane.
+    for word in ("refused", None):
+        nonce = f"nonce-{word or 'none'}-1"
+        assert _restore_with_token(
+            _Run(word), tmp_path, token="secret-token", token_file=None, nonce=nonce
+        ) in (SEAT_LIVE_EXIT_CODE, HUB_UNAVAILABLE_EXIT_CODE)
+        assert not (tmp_path / "synapse-seat-hold" / f"T_seat.{nonce}.token").exists()
+    assert path.exists()
+    # A caller's own file is passed as it is, and nothing is written.
+    own = _Run("ready")
+    assert (
+        _restore_with_token(own, tmp_path, token="t", token_file="/k/token", nonce="nonce-0009")
+        == 7
+    )
+    assert own.ready_panes[0][own.ready_panes[0].index("--token-file") + 1] == "/k/token"
+    assert not (tmp_path / "synapse-seat-hold" / "T_seat.nonce-0009.token").exists()
+
+
+def _agent_environ(tmux_bin: str, session: str, name: str) -> dict[str, str]:
+    """Return the environment of the pane's process named ``name``."""
+    pane = subprocess.run(
+        [tmux_bin, "display-message", "-p", "-t", f"={session}:", "#{pane_pid}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    procs = read_procs()
+    for pid in [int(pane), *descendants(int(pane), children(procs))]:
+        proc = procs.get(pid)
+        if proc is not None and proc.argv and Path(proc.argv[0]).name == name:
+            raw = Path(f"/proc/{pid}/environ").read_bytes()
+            return dict(item.decode().partition("=")[::2] for item in raw.split(b"\0") if item)
+    raise AssertionError(f"no {name} under the pane")
+
+
+async def test_a_pane_restored_into_a_server_with_redirects_gets_none_of_them(
+    private_tmux: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    repo = _repository(tmp_path)
+    # A server that already runs, whose global environment redirects Synapse state.
+    subprocess.run([private_tmux, "new-session", "-d", "-s", "keep", "sleep", "120"], check=True)
+    for name, value in (
+        ("SYN_HOME", str(tmp_path / "elsewhere")),
+        ("XDG_STATE_HOME", str(repo / "x")),
+    ):
+        subprocess.run([private_tmux, "set-environment", "-g", name, value], check=True)
+    ready: list[Sequence[str]] = []
+    async with running_hub() as (_hub, uri):
+        assert await _restore(tmp_path, private_tmux, uri, ready) == 0
+        try:
+            agent = await asyncio.to_thread(_agent_environ, private_tmux, "synapse-T_seat", "sleep")
+            assert "SYN_HOME" not in agent and "XDG_STATE_HOME" not in agent
+            assert agent["SYN_IDENTITY"] == "T/seat" and agent["SYNAPSE_AUTO_CONNECT"] == "0"
+        finally:
+            subprocess.run([private_tmux, "kill-session", "-t", "=synapse-T_seat"], check=False)
