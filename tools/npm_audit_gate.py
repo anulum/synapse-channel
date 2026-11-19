@@ -16,7 +16,8 @@ an exception that has not expired, and every reported package is installed in
 that lock as a development dependency only. Any other advisory, an expired
 exception, a production install path or an unreadable audit fails, as plain
 ``npm audit`` would. An exception lasts at most seven days and covers
-development dependencies only; renewing it needs a new grant.
+development dependencies only; renewing it needs a new grant. An active
+exception that none of the audited locks uses is a warning.
 """
 
 from __future__ import annotations
@@ -171,14 +172,29 @@ def judge(
     return failures, used
 
 
+def unused_exception_warnings(
+    exceptions: Sequence[AdvisoryException], used: set[str], today: date
+) -> list[str]:
+    """Return warnings for active exceptions that none of the locks used.
+
+    An expired exception is already a failure. A warning is only the case where
+    the grant is still in date and no judged lock accepted that advisory.
+    """
+    return [
+        f"npm audit gate: {item.advisory} ({item.package}) is an exception no lock used"
+        for item in exceptions
+        if today < item.expires and item.advisory not in used
+    ]
+
+
 def _check_lock(
     lock_path: Path, exceptions: Sequence[AdvisoryException], today: date, runner: Runner
-) -> tuple[list[str], set[str]]:
+) -> tuple[list[str], set[str] | None]:
     try:
         lock = json.loads(lock_path.read_text(encoding="utf-8"))
         return judge(run_audit(lock_path.parent, runner), lock, exceptions, today)
     except (OSError, ValueError) as exc:
-        return [str(exc)], set()
+        return [str(exc)], None
 
 
 def main(
@@ -197,9 +213,17 @@ def main(
         return 2
     expiry = {item.advisory: item.expires for item in exceptions}
     status = 0
+    used_all: set[str] = set()
+    judged = False
     for lock_path in args.locks:
         failures, used = _check_lock(lock_path, exceptions, day, runner)
-        for advisory in sorted(used):
+        if used is None:
+            accepted: set[str] = set()
+        else:
+            judged = True
+            accepted = used
+            used_all.update(used)
+        for advisory in sorted(accepted):
             print(
                 f"{lock_path}: {advisory} accepted in development dependencies only;"
                 f" the exception expires on {expiry[advisory]}"
@@ -207,8 +231,11 @@ def main(
         for failure in failures:
             print(f"{lock_path}: {failure}", file=sys.stderr)
         status = 1 if failures else status
-        if not failures and not used:
+        if not failures and not accepted:
             print(f"{lock_path}: found 0 vulnerabilities")
+    if judged:
+        for warning in unused_exception_warnings(exceptions, used_all, day):
+            print(warning, file=sys.stderr)
     return status
 
 

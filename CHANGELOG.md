@@ -25,6 +25,14 @@ execution evidence when carrying a release claim forward.
   test that must time out. The tests now wait on a loopback port that was bound
   and then closed, and they still raise `TimeoutError`.
 
+### Security
+
+- GitHub withdrew GHSA-fc5q-39xc-vjpf on 2026-11-18. npm audit reports no
+  picomatch findings in the cockpit, JavaScript client, and VS Code extension
+  locks, so the development-only exception for that advisory is removed.
+  `tools/npm_audit_gate.py` warns when an active exception is not used by any
+  audited lock. An expired exception still fails the audit.
+
 ### Changed
 
 - **Provider routing ranks declared local candidates first and never falls back to

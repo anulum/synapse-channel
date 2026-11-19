@@ -25,6 +25,7 @@ from tools.npm_audit_gate import (
     main,
     parse_exception,
     run_audit,
+    unused_exception_warnings,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -269,6 +270,15 @@ def test_the_repository_exceptions_are_valid() -> None:
     """Each committed exception is development-only and lasts at most seven days."""
     exceptions = load_exceptions(ROOT / ".github/npm-audit-exceptions.json")
     assert all(item.expires > item.granted for item in exceptions)
+    assert all(item.advisory != ADVISORY for item in exceptions)
+
+
+def test_an_active_exception_no_lock_used_is_only_a_warning() -> None:
+    """A grant still in date is a warning when no lock accepted it, not a failure."""
+    warning = f"npm audit gate: {ADVISORY} (picomatch) is an exception no lock used"
+    assert unused_exception_warnings(_granted(), set(), TODAY) == [warning]
+    assert unused_exception_warnings(_granted(), {ADVISORY}, TODAY) == []
+    assert unused_exception_warnings(_granted(), set(), EXPIRES) == []
 
 
 class _Runner:
@@ -344,11 +354,14 @@ def test_the_cli_reports_accepted_and_clean_locks(
         == 0
     )
 
-    out = capsys.readouterr().out.splitlines()
-    assert out == [
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
         f"{lock}: {ADVISORY} accepted in development dependencies only;"
         " the exception expires on 2026-11-24",
         f"{lock}: found 0 vulnerabilities",
+    ]
+    assert captured.err.splitlines() == [
+        f"npm audit gate: {ADVISORY} (picomatch) is an exception no lock used"
     ]
 
 

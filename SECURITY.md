@@ -1079,6 +1079,10 @@ dependency, gives its reason, and lasts at most seven days from its grant. On
 its expiry date the audit fails again, whether or not the advisory is still
 reported, until the entry is removed or granted anew. An advisory reaching a
 production dependency, or any advisory without an entry, fails as before.
+An active exception that none of the audited locks uses is printed as a
+warning. GitHub withdrew GHSA-fc5q-39xc-vjpf on 2026-11-18. npm audit no
+longer reports it for the cockpit, JavaScript client, or VS Code extension
+locks, and the picomatch exception has been removed.
 
 ## Licensing
 
