@@ -123,6 +123,14 @@ execution evidence when carrying a release claim forward.
   so a start never goes on a headroom reading taken before a long wait for the
   hub.
 
+- **A seat's own late end corrects the snapshot.** When `synapse ledger
+  snapshot` finds an agent gone just before its launcher writes the agent's
+  own end, the launcher's end now names the snapshot's line, read under the
+  same hold of the ledger's lock, and replaces it. A seat ended on purpose then
+  reads as ended, and `synapse ledger restore` does not start it again. A
+  reboot's cut is never replaced, and an end written across a month's turn is
+  not corrected.
+
 ## [0.99.58] - 2026-11-19
 
 Core 0.99.58 adds a hard-linked generation chain for conditional deployments and

@@ -244,11 +244,14 @@ def append_event(
     boot: str | None = None,
     host: str | None = None,
     environ: Mapping[str, str] | None = None,
+    amend: Callable[[Path], Mapping[str, Any]] | None = None,
 ) -> int:
     """Append one event and return its ``seq``.
 
     The common fields (``schema``, ``host``, ``boot_id``, ``seq``, ``ts``) are
-    added here.
+    added here. ``amend``, when given, is called with the ledger directory
+    under the same hold of the lock, and the fields it returns are added to the
+    line: what it reads cannot change before the line is written.
 
     Raises
     ------
@@ -269,9 +272,10 @@ def append_event(
                 "seq": seq,
                 "ts": _now(),
                 **event,
+                **(amend(target) if amend is not None else {}),
             }
             line = (json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
-            _append_line(target / f"events-{time.strftime('%Y-%m', time.gmtime())}.jsonl", line)
+            _append_line(month_file(target), line)
     except LedgerError:
         raise
     except (OSError, ValueError) as exc:
@@ -279,17 +283,27 @@ def append_event(
     return seq
 
 
+def month_file(directory: Path) -> Path:
+    """Return the event file this month's lines are appended to."""
+    return directory / f"events-{time.strftime('%Y-%m', time.gmtime())}.jsonl"
+
+
+def read_file(path: Path) -> Iterator[dict[str, Any]]:
+    """Yield the v1 events of one event file, skipping an unterminated last line."""
+    data = path.read_bytes()
+    for raw in data[: data.rfind(b"\n") + 1].splitlines():
+        try:
+            event = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and event.get("schema") == SCHEMA:
+            yield event
+
+
 def read_events(directory: Path) -> Iterator[dict[str, Any]]:
     """Yield every v1 event in file order, skipping an unterminated last line."""
     for path in sorted(directory.glob("events-*.jsonl")):
-        data = path.read_bytes()
-        for raw in data[: data.rfind(b"\n") + 1].splitlines():
-            try:
-                event = json.loads(raw)
-            except ValueError:
-                continue
-            if isinstance(event, dict) and event.get("schema") == SCHEMA:
-                yield event
+        yield from read_file(path)
 
 
 @dataclass
@@ -445,12 +459,35 @@ class LauncherRecord:
                 "launcher": self.launcher,
                 "ended_at": _now(),
                 **outcome,
-            }
+            },
+            amend=self._supersedes,
         )
 
-    def _write(self, event: Mapping[str, Any]) -> None:
+    def _supersedes(self, directory: Path) -> dict[str, Any]:
+        """Name the collector's end of this row, when this month's file holds one.
+
+        The collector may have found the process gone just before this end was
+        written. Naming that line's ``seq`` lets this real end replace it
+        (:func:`fold`). A reboot's cut is never replaced. Only this month's file
+        is read, so the wait under the lock stays short; an end written across a
+        month's turn is not corrected.
+        """
+        path = month_file(directory)
+        row = fold(read_file(path)).get(str(self.row)) if path.exists() else None
+        end = row.end if row is not None else None
+        if (
+            end is None
+            or end.get("event") != "ended_unobserved"
+            or end.get("end_kind") == "boot_cut"
+        ):
+            return {}
+        return {"supersedes_seq": end.get("seq")}
+
+    def _write(
+        self, event: Mapping[str, Any], amend: Callable[[Path], Mapping[str, Any]] | None = None
+    ) -> None:
         try:
-            append_event(event, directory=self._directory, environ=self._environ)
+            append_event(event, directory=self._directory, environ=self._environ, amend=amend)
         except NoLedger:
             return
         except LedgerError as exc:

@@ -13,6 +13,7 @@ import errno
 import fcntl
 import json
 import os
+import socket
 import stat
 import subprocess
 import sys
@@ -23,6 +24,7 @@ from typing import Any
 import pytest
 
 from synapse_channel import session_ledger
+from synapse_channel.restore_plan import ENDED, Scope, end_kind, judged
 from synapse_channel.session_ledger import (
     SCHEMA,
     LedgerError,
@@ -476,6 +478,38 @@ def test_an_exit_status_and_an_unknown_signal_are_recorded(tmp_path: Path) -> No
     exit_line, signal_line = _lines(tmp_path)
     assert (exit_line["end_kind"], exit_line["exit_status"]) == ("exit", 3)
     assert (signal_line["end_kind"], signal_line["signal"]) == ("signal", "200")
+
+
+def test_a_launchers_late_end_replaces_the_collectors_and_is_no_candidate(tmp_path: Path) -> None:
+    record = _record(tmp_path)
+    record.row = "b:1:2"
+    this_boot = boot_id()
+    start = {"event": "start", "row_id": record.row, "launcher": "seat-hold", "identity": "P/a"}
+    append_event(start, directory=tmp_path, boot=this_boot)
+    gone = {"event": "ended_unobserved", "row_id": record.row, "end_kind": "observed_gone"}
+    gone_seq = append_event(gone, directory=tmp_path, boot=this_boot)
+    record.ended(0)  # the holder's own end, written just after the snapshot found the agent gone
+    assert _lines(tmp_path)[-1]["supersedes_seq"] == gone_seq
+    row = fold(read_events(tmp_path))[record.row]
+    assert row.corrected and row.end is not None
+    assert (row.end["event"], row.end["end_kind"]) == ("end", "exit")
+    scope = Scope(host=socket.gethostname(), current_boot=this_boot, boot=this_boot)
+    assert judged(row, scope, end_kind(row, this_boot, lambda _row: False)) == ENDED
+
+
+def test_a_launchers_end_names_nothing_but_the_collectors_gone(tmp_path: Path) -> None:
+    record = _record(tmp_path)
+    record.row = "b:1:2"
+    record.ended(0)  # no earlier end at all
+    cut = {"event": "ended_unobserved", "row_id": "b:3:4", "end_kind": "boot_cut"}
+    append_event(cut, directory=tmp_path, boot=boot_id())
+    other = _record(tmp_path)
+    other.row = "b:3:4"
+    other.ended(0)  # a reboot's cut is never replaced
+    assert ["supersedes_seq" in line for line in _lines(tmp_path) if line["event"] == "end"] == [
+        False,
+        False,
+    ]
 
 
 def test_nothing_is_written_without_a_row_or_a_status(tmp_path: Path) -> None:
