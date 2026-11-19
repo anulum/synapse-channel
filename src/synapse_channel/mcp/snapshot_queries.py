@@ -38,6 +38,9 @@ class _SnapshotAgent(Protocol):
     async def request_manifest(self) -> None:
         """Request the live capability-manifest snapshot."""
 
+    async def request_who(self) -> None:
+        """Request the live roster with its mailbox counts."""
+
 
 class McpSnapshotQueries:
     """Own MCP board, state, manifest, directory, and resource queries.
@@ -68,6 +71,19 @@ class McpSnapshotQueries:
             self.agent.request_board,
         )
         return self._render(reply, "board", "the hub did not return the board")
+
+    async def who(self) -> str:
+        """Return one bounded who snapshot, including mailbox counts, as JSON.
+
+        The request uses the bridge reply budget. It does not read the inbox.
+        """
+        reply = await self.await_reply(
+            lambda data: data.get("type") == MessageType.WHO_SNAPSHOT,
+            self.agent.request_who,
+        )
+        if reply is None:
+            return "the hub did not return its roster"
+        return json.dumps(reply, indent=2, sort_keys=True)
 
     async def state(self) -> str:
         """Return the live claims/checkpoints snapshot as JSON."""

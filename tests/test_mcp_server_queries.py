@@ -89,6 +89,25 @@ async def test_state_timeout() -> None:
     assert "did not return its state" in out
 
 
+async def test_who_returns_the_roster_with_mailbox_counts() -> None:
+    async with running_hub() as (_, uri):
+        handle = await start_bridge(uri)
+        try:
+            out = await handle.bridge.snapshot_queries.who()
+        finally:
+            await handle.close()
+    roster = json.loads(out)
+    assert roster["type"] == "who_snapshot"
+    assert isinstance(roster["online_agents"], list)
+    assert "mailbox_pending" in roster
+
+
+async def test_who_timeout() -> None:
+    bridge = SynapseHubBridge(request_timeout=0.05)
+    out = await bridge.snapshot_queries.who()
+    assert out == "the hub did not return its roster"
+
+
 async def test_manifest_returns_json() -> None:
     async with running_hub() as (_, uri):
         advertiser = await start_manifest_agent(uri)

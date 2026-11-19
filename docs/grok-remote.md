@@ -30,8 +30,8 @@ client to keep and stores only its digest. The gate checks that bearer on every
 request and sends the seat's current hub token to the pinned listener. The seat's
 entry in the gate configuration lists the tools the client may use. The stable
 bearer stays out of the repository, the process arguments, the URL, and the
-logs. Pass hub and issuer secrets with `--token-file` and the grant file, never
-with `--token`.
+logs. Pass hub and issuer secrets with `--token-file` and the grant file,
+never with `--token`.
 
 The listener binds a loopback address and ignores forwarded scheme and identity
 headers. Reach it through a tunnel that the operator configures. If that tunnel

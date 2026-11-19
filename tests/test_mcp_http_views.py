@@ -202,7 +202,7 @@ async def test_status_waiter_online_ignores_another_project(
                     }
                 )
 
-            monkeypatch.setattr(views.bridge, "who", _counted_who)
+            monkeypatch.setattr(views.bridge.snapshot_queries, "who", _counted_who)
             counted = json.loads(await views.status())
             assert counted["mailbox_pending"] == 2
             assert counted["mailbox_pending_available"] is True
@@ -213,7 +213,7 @@ async def test_status_waiter_online_ignores_another_project(
             async def _no_who() -> str:
                 return "the hub did not return its roster"
 
-            monkeypatch.setattr(views.bridge, "who", _no_who)
+            monkeypatch.setattr(views.bridge.snapshot_queries, "who", _no_who)
             degraded = json.loads(await views.status())
             assert degraded["mailbox_pending"] is None
             assert degraded["mailbox_pending_available"] is False

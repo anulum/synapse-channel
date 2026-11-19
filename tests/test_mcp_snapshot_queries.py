@@ -28,6 +28,9 @@ class _RecordingAgent:
     async def request_manifest(self) -> None:
         self.calls.append("manifest")
 
+    async def request_who(self) -> None:
+        self.calls.append("who")
+
 
 class _ScriptedAwaiter:
     def __init__(self, replies: Sequence[dict[str, object] | None]) -> None:

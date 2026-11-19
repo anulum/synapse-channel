@@ -179,7 +179,9 @@ class ProjectMcpViews:
             if self._agent(row.get("agent"))
         ]
         try:
-            who = _validate(await self.bridge.who(), OBJECT_SNAPSHOT, json_input=True)
+            who = _validate(
+                await self.bridge.snapshot_queries.who(), OBJECT_SNAPSHOT, json_input=True
+            )
         except RuntimeError:
             who = None
         raw_online = who.get("online_agents") if who is not None else None
