@@ -84,9 +84,16 @@ def holder_command(
     uri: str,
     token_file: str | None,
     command: Sequence[str],
+    wake_session: str | None = None,
+    tmux_bin: str = "tmux",
 ) -> list[str]:
-    """Return the pane command that runs ``command`` behind the seat holder."""
+    """Return the pane command that runs ``command`` behind the seat holder.
+
+    With ``wake_session`` the holder also runs the pane's waiter, in its own
+    process, so the seat needs no separate ``agent-tmux wait``.
+    """
     token = ["--token-file", token_file] if token_file else []
+    wake = ["--wake-session", wake_session, "--tmux-bin", tmux_bin] if wake_session else []
     return [
         synapse_bin,
         SEAT_HOLD_SUBCOMMAND,
@@ -99,6 +106,7 @@ def holder_command(
         "--uri",
         uri,
         *token,
+        *wake,
         "--",
         *command,
     ]
@@ -171,8 +179,8 @@ def start_restored_seat(
         The environment; it names the private marker directory.
     after_ready : Callable
         Called with the holder's pane command once the seat is held; its
-        result is returned. ``worker-session`` records the pane, starts the
-        waiter with that command, and attaches.
+        result is returned. ``worker-session`` records the pane and attaches;
+        the holder in the pane runs the pane's waiter itself.
     start, kill, wait : Callable
         The tmux start, the session end and the marker wait; injectable for tests.
     nonce : str or None
@@ -196,6 +204,8 @@ def start_restored_seat(
         uri=uri,
         token_file=token_file,
         command=command,
+        wake_session=session,
+        tmux_bin=tmux_bin,
     )
     started = start(
         AgentTmuxConfig(

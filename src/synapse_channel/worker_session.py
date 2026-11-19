@@ -474,9 +474,9 @@ def _launch_restored_worker(
 ) -> WorkerExit:
     """Start a cut seat again behind its seat holder, and report that outcome.
 
-    The pane runs ``synapse seat-hold``; only once it holds the seat's name are
-    the pane recorded, the waiter started and the terminal attached. The waiter
-    gets the holder's command, so a restart of the pane goes through it too.
+    The pane runs ``synapse seat-hold``, which also runs the pane's waiter in
+    its own process. Only once it holds the seat's name are the pane recorded
+    and the terminal attached.
     """
     env["SYN_TMUX_PROVIDER"] = "1"
     env["SYNAPSE_AUTO_CONNECT"] = "0"
@@ -484,22 +484,9 @@ def _launch_restored_worker(
     resolved = session or _default_tmux_session(identity)
 
     def after_ready(pane: Sequence[str]) -> int:
-        """Record the held pane, arm its waiter and attach the terminal."""
+        """Record the held pane and attach the terminal; the holder runs the waiter."""
         _record_started_pane(
             identity=identity, command=pane, env=env, tmux_bin=tmux_bin, session=resolved, cwd=cwd
-        )
-        _start_tmux_waiter(
-            identity=identity,
-            session=resolved,
-            cwd=cwd,
-            command=pane,
-            synapse_bin=synapse_bin,
-            tmux_bin=tmux_bin,
-            uri=uri,
-            token=token,
-            token_file=token_file,
-            env=env,
-            first_no_takeover=True,
         )
         return _attach_tmux_session(session=resolved, tmux_bin=tmux_bin, env=env)
 

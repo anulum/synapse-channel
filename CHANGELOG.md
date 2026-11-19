@@ -64,6 +64,16 @@ execution evidence when carrying a release claim forward.
   has held the name, later waits re-arm with a takeover as before. A restored
   seat's waiter starts this way.
 
+- **One Synapse process per held seat.** `synapse seat-hold --wake-session S`
+  also runs the pane's waiter, in its own process: the wait loop in one
+  thread, and each wait on that thread's own event loop, so a slow wait never
+  delays the holder's registration. While the agent runs, the holder's own
+  output goes to a private log beside its marker (0600, rotated once at 4 MiB),
+  never to the agent's terminal. A waiter that stops leaves the seat running and
+  records why. `worker-session --restore` uses it, so a restored seat needs no
+  separate `agent-tmux wait` and its `synapse wait` child. `--nonce` is now
+  optional: without it a fresh one is made.
+
 ## [0.99.58] - 2026-11-19
 
 Core 0.99.58 adds a hard-linked generation chain for conditional deployments and

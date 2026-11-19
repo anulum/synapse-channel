@@ -19,7 +19,9 @@ import argparse
 import asyncio
 import contextlib
 import dataclasses
+import io
 import os
+import re
 import signal
 import stat
 import subprocess
@@ -32,7 +34,7 @@ from typing import Any
 import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
-from synapse_channel import cli_seat_hold, seat_hold
+from synapse_channel import cli_seat_hold, seat_hold, seat_waiter
 from synapse_channel.client.agent_dispatch import MessageCallback
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.seat_hold import (
@@ -56,6 +58,7 @@ from synapse_channel.seat_hold import (
     unsupported_platform,
     write_marker,
 )
+from synapse_channel.seat_waiter import WakeTarget
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("linux"), reason="the seat holder's guarantee is Linux-only"
@@ -654,3 +657,99 @@ async def test_a_stop_during_a_reconnect_does_not_wait_for_the_registration() ->
     assert time.monotonic() - started < 10.0
     assert status == 128 + signal.SIGTERM
     assert _HangingAgent.closed == ["T/seat-seat"]
+
+
+# --- the holder's own pane waiter --------------------------------------------------
+
+
+async def test_a_holder_with_a_wake_target_runs_its_waiter_while_the_agent_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[tuple[str, object]] = []
+    online: list[list[str]] = []
+    hub_ref: list[SynapseHub] = []
+
+    class _Seat:
+        def close(self) -> None:
+            online.append(sorted(hub_ref[0].online_agents()))
+
+    def fake_open(target: WakeTarget, **options: Any) -> _Seat:
+        events.append(("open", (target, options["agent_argv"], options["log_path"])))
+        return _Seat()
+
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    monkeypatch.setattr(seat_waiter, "open_seat_waiter", fake_open)
+    target = WakeTarget("synapse-T_seat")
+    agent = _python("raise SystemExit(4)")
+    async with running_hub() as (hub, uri):
+        hub_ref.append(hub)
+        code = await hold_seat(
+            "T/seat", NONCE, agent, uri=uri, marker_dir=tmp_path, timing=FAST, wake=target
+        )
+    assert code == 4
+    assert events == [("open", (target, agent, tmp_path / "T_seat.log"))]
+    # The waiter closed while the seat was still held, before the holder let go.
+    assert len(online) == 1 and "T/seat-seat" in online[0]
+    assert isinstance(sys.stdout, seat_waiter.OutputRouter)  # installed at the holder's start
+
+
+async def test_a_holder_without_a_wake_target_runs_no_waiter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def never(*_args: Any, **_options: Any) -> object:
+        raise AssertionError("no waiter without a wake target")
+
+    plain = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", plain)
+    monkeypatch.setattr(seat_waiter, "open_seat_waiter", never)
+    async with running_hub() as (_hub, uri):
+        code = await hold_seat(
+            "T/seat", NONCE, _python("pass"), uri=uri, marker_dir=tmp_path, timing=FAST
+        )
+    assert code == 0 and sys.stdout is plain
+
+
+async def test_a_start_without_a_nonce_makes_a_fresh_one_each_time(tmp_path: Path) -> None:
+    async with running_hub() as (_hub, uri):
+        for _ in range(2):
+            code = await hold_seat(
+                "T/seat", None, _python("pass"), uri=uri, marker_dir=tmp_path, timing=FAST
+            )
+            assert code == 0
+    names = sorted(path.name for path in tmp_path.glob("T_seat.*"))
+    assert len(names) == 2 and all(re.fullmatch(r"T_seat\.[0-9a-f]{16}", name) for name in names)
+
+
+def test_the_command_line_passes_the_wake_target_and_an_optional_nonce(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[dict[str, Any]] = []
+
+    async def fake_hold(identity: str, nonce: str | None, argv: list[str], **options: Any) -> int:
+        seen.append({"nonce": nonce, **options})
+        return 0
+
+    monkeypatch.setattr(cli_seat_hold, "hold_seat", fake_hold)
+    parser = argparse.ArgumentParser()
+    cli_seat_hold.add_parsers(parser.add_subparsers())
+    woken = parser.parse_args(
+        [
+            "seat-hold",
+            "--identity",
+            "T/seat",
+            "--wake-session",
+            "synapse-T_seat",
+            "--tmux-bin",
+            "/x/tmux",
+            "--pane-probe-interval",
+            "2.5",
+            "--",
+            "claude",
+        ]
+    )
+    plain = parser.parse_args(["seat-hold", "--identity", "T/seat", "--", "claude"])
+    assert cli_seat_hold._cmd_seat_hold(woken, runner=asyncio.run) == 0
+    assert cli_seat_hold._cmd_seat_hold(plain, runner=asyncio.run) == 0
+    assert seen[0]["nonce"] is None
+    assert seen[0]["wake"] == WakeTarget("synapse-T_seat", "/x/tmux", 2.5)
+    assert seen[1]["wake"] is None

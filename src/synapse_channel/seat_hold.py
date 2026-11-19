@@ -48,6 +48,7 @@ import contextlib
 import ctypes
 import os
 import re
+import secrets
 import signal
 import subprocess  # nosec B404 # the agent's own argument vector, never a shell
 import sys
@@ -56,12 +57,15 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from synapse_channel.client.agent_dispatch import MessageCallback
 from synapse_channel.connect_failures import closed_after_ready, is_name_conflict_close
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.reap import private_runtime_parent, safe_key
+
+if TYPE_CHECKING:
+    from synapse_channel.seat_waiter import OutputRouter, SeatWaiter, WakeTarget
 
 SEAT_NAME_SUFFIX = "-seat"
 """Suffix of the dedicated name a seat holder registers."""
@@ -481,9 +485,65 @@ def reclaim_terminal(ops: ChildOps | None = None) -> None:
     ops.set_sigttou(previous)
 
 
+def _install_router() -> OutputRouter:
+    """Install the waiter's output router once, at the holder's start."""
+    from synapse_channel.seat_waiter import install_router
+
+    return install_router()
+
+
+def _open_waiter(
+    wake: WakeTarget,
+    router: OutputRouter,
+    identity: str,
+    argv: Sequence[str],
+    uri: str,
+    token: str | None,
+    directory: Path,
+) -> SeatWaiter:
+    """Silence the holder's output and start the pane waiter, once the agent runs."""
+    from synapse_channel.seat_waiter import open_seat_waiter
+
+    return open_seat_waiter(
+        wake,
+        identity=identity,
+        agent_argv=argv,
+        uri=uri,
+        token=token,
+        log_path=directory / f"{safe_key(identity)}.log",
+        router=router,
+    )
+
+
+@dataclass
+class _WaiterSlot:
+    """The seat's pane waiter, if it has one: prepared at the start, opened once the agent runs."""
+
+    wake: WakeTarget | None
+    router: OutputRouter | None = None
+    seat: SeatWaiter | None = None
+
+    @classmethod
+    def prepare(cls, wake: WakeTarget | None) -> _WaiterSlot:
+        """Install the output router at the holder's start when the seat has a waiter."""
+        return cls(wake, _install_router() if wake is not None else None)
+
+    def open(
+        self, identity: str, argv: Sequence[str], uri: str, token: str | None, directory: Path
+    ) -> None:
+        """Silence the holder and start the waiter; call it once the agent runs."""
+        if self.wake is not None and self.router is not None:
+            self.seat = _open_waiter(self.wake, self.router, identity, argv, uri, token, directory)
+
+    async def close(self) -> None:
+        """Stop the waiter and give the terminal back, before the seat is released."""
+        if self.seat is not None:
+            await asyncio.to_thread(self.seat.close)
+
+
 async def hold_seat(
     identity: str,
-    nonce: str,
+    nonce: str | None,
     argv: Sequence[str],
     *,
     uri: str,
@@ -493,6 +553,7 @@ async def hold_seat(
     spawner: Spawner = spawn_agent,
     platform: str = sys.platform,
     timing: HoldTiming = DEFAULT_TIMING,
+    wake: WakeTarget | None = None,
 ) -> int:
     """Hold ``<identity>-seat``, run ``argv`` as the agent while it is held, and return its status.
 
@@ -500,8 +561,9 @@ async def hold_seat(
     ----------
     identity : str
         The seat's Synapse identity.
-    nonce : str
-        This start's fresh token; the marker file is named by it.
+    nonce : str or None
+        This start's fresh token; the marker file is named by it. ``None``
+        makes a fresh one, so a start from a recorded command never reuses one.
     argv : Sequence[str]
         The agent's command.
     uri, token : str
@@ -516,6 +578,11 @@ async def hold_seat(
         The platform name checked for a parent-death signal.
     timing : HoldTiming
         The waits; the defaults are the documented constants.
+    wake : WakeTarget or None
+        The tmux session whose pane this holder also wakes on directed
+        messages, with the waiter in its own process
+        (:mod:`synapse_channel.seat_waiter`). While the agent runs, the
+        holder's own output then goes to ``<identity>.log`` beside the marker.
 
     Returns
     -------
@@ -528,6 +595,7 @@ async def hold_seat(
         started, then one final word: ``ready``, ``refused``, ``unavailable``,
         ``unsupported`` or ``failed``.
     """
+    nonce = nonce or secrets.token_hex(8)
     if not NONCE_PATTERN.match(nonce):
         raise ValueError("nonce must be 8 to 64 letters, digits, '_' or '-'")
     if factory is None:
@@ -535,7 +603,9 @@ async def hold_seat(
 
         factory = SynapseAgent
     holder = SeatHolder(identity, uri=uri, token=token, factory=factory)
-    marker = marker_path(marker_dir or default_marker_dir(), identity, nonce)
+    directory = marker_dir or default_marker_dir()
+    marker = marker_path(directory, identity, nonce)
+    slot = _WaiterSlot.prepare(wake)
     refusal = unsupported_platform(platform)
     if refusal is not None:
         print(refusal)
@@ -564,7 +634,11 @@ async def hold_seat(
             write_marker(marker, f"failed {holder.name} {nonce}")
             return AGENT_START_FAILED_EXIT_CODE
         write_marker(marker, f"ready {holder.name} {nonce}")
-        return await supervise(holder, child, stop=stop, timing=timing)
+        slot.open(identity, argv, uri, token, directory)
+        try:
+            return await supervise(holder, child, stop=stop, timing=timing)
+        finally:
+            await slot.close()
     finally:
         for signum in handled:
             loop.remove_signal_handler(signum)

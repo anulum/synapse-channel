@@ -19,8 +19,10 @@ from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.agent_tmux import DEFAULT_PANE_PROBE_INTERVAL
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.seat_hold import hold_seat
+from synapse_channel.seat_waiter import WakeTarget
 
 AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
 """Runs the holder's coroutine to completion; injectable for tests."""
@@ -44,8 +46,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     parser.add_argument("--identity", required=True, help="The seat's Synapse identity.")
     parser.add_argument(
         "--nonce",
-        required=True,
-        help="This start's fresh token (8-64 letters, digits, '_' or '-'); names the marker.",
+        default=None,
+        help="This start's fresh token (8-64 letters, digits, '_' or '-'); names the marker. "
+        "A fresh one is made when it is left out.",
     )
     parser.add_argument(
         "--marker-dir",
@@ -57,6 +60,19 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--token-file",
         default=None,
         help="File holding the shared-secret token for a secured hub.",
+    )
+    parser.add_argument(
+        "--wake-session",
+        default=None,
+        help="The tmux session whose pane this holder also wakes on directed messages; while "
+        "the agent runs, the holder's own output goes to a private log beside the marker.",
+    )
+    parser.add_argument("--tmux-bin", default="tmux", help="The tmux executable of the waiter.")
+    parser.add_argument(
+        "--pane-probe-interval",
+        type=float,
+        default=DEFAULT_PANE_PROBE_INTERVAL,
+        help="Seconds between the waiter's checks of the pane.",
     )
     parser.add_argument("command", nargs=argparse.REMAINDER, help="The agent command, after '--'.")
     parser.set_defaults(func=_cmd_seat_hold)
@@ -78,6 +94,16 @@ def _cmd_seat_hold(args: argparse.Namespace, *, runner: AsyncRunner = asyncio.ru
         reason = exc.strerror or type(exc).__name__
         print(f"synapse seat-hold: cannot read the token file {args.token_file}: {reason}")
         return USAGE_EXIT_CODE
+    session = getattr(args, "wake_session", None)
+    wake = (
+        WakeTarget(
+            session,
+            getattr(args, "tmux_bin", "tmux"),
+            getattr(args, "pane_probe_interval", DEFAULT_PANE_PROBE_INTERVAL),
+        )
+        if session
+        else None
+    )
     return runner(
         hold_seat(
             args.identity,
@@ -86,5 +112,6 @@ def _cmd_seat_hold(args: argparse.Namespace, *, runner: AsyncRunner = asyncio.ru
             uri=args.uri,
             token=token or None,
             marker_dir=Path(args.marker_dir) if args.marker_dir else None,
+            wake=wake,
         )
     )

@@ -119,6 +119,25 @@ def test_the_pane_runs_the_agent_behind_the_holder(tmp_path: Path) -> None:
         token_file=None,
         command=["codex", "resume", "x"],
     )
+    woken = holder_command(
+        synapse_bin="synapse",
+        identity="T/seat",
+        nonce=NONCE,
+        marker_dir=tmp_path,
+        uri="ws://h",
+        token_file=None,
+        command=["codex"],
+        wake_session="synapse-T_seat",
+        tmux_bin="/x/tmux",
+    )
+    assert woken[-6:] == [
+        "--wake-session",
+        "synapse-T_seat",
+        "--tmux-bin",
+        "/x/tmux",
+        "--",
+        "codex",
+    ]
     assert pane == [
         "synapse",
         "seat-hold",
@@ -251,6 +270,8 @@ def test_a_held_seat_goes_on_with_the_holders_command(tmp_path: Path) -> None:
     assert run.restore(tmp_path) == 7
     (pane,) = run.ready_panes
     assert pane[:2] == ["synapse", "seat-hold"] and pane[-4:] == ["--", "codex", "resume", "x"]
+    # The holder in the pane also wakes that pane, so no separate waiter is needed.
+    assert pane[pane.index("--wake-session") + 1] == "synapse-T_seat"
     assert "--token-file" in pane
     # The registry gets the holder's command, so a restart of the pane goes through it.
     assert run.configs[0].agent_command == tuple(pane)
@@ -301,7 +322,8 @@ def test_worker_session_restore_arms_the_waiter_with_the_holders_command(
     monkeypatch.setattr(worker_session, "_launch_terminal_worker", no_real_tmux)
     monkeypatch.setattr(worker_session, "start_session", no_real_tmux)
     monkeypatch.setattr(worker_session, "_record_started_pane", record("pane"))
-    monkeypatch.setattr(worker_session, "_start_tmux_waiter", record("waiter"))
+    # The holder in the pane runs the waiter; a separate one would be a second process.
+    monkeypatch.setattr(worker_session, "_start_tmux_waiter", no_real_tmux)
     monkeypatch.setattr(worker_session, "_attach_tmux_session", record("attach", 0))
 
     code = worker_session.run_worker_session(
@@ -316,9 +338,7 @@ def test_worker_session_restore_arms_the_waiter_with_the_holders_command(
     assert code == 0
     assert calls["restore"]["session"] == "synapse-T_seat"
     assert calls["restore"]["env"]["SYN_TMUX_PROVIDER"] == "1"
-    assert calls["waiter"]["command"] == ["synapse", "seat-hold", "--", "codex"]
-    # The restored seat's waiter never displaces a live waiter of the same seat.
-    assert calls["waiter"]["first_no_takeover"] is True
+    assert "waiter" not in calls
     assert calls["pane"]["command"] == ["synapse", "seat-hold", "--", "codex"]
     assert calls["attach"]["session"] == "synapse-T_seat"
 
@@ -368,8 +388,9 @@ def _synapse_wrapper(tmp_path: Path) -> str:
     """
     wrapper = tmp_path / "synapse"
     data_home = shlex.quote(os.environ["XDG_DATA_HOME"])
+    runtime = shlex.quote(str(tmp_path))  # the holder's waiter keeps its registry here
     wrapper.write_text(
-        f"#!/bin/sh\nXDG_DATA_HOME={data_home} exec {sys.executable} -c "
+        f"#!/bin/sh\nXDG_DATA_HOME={data_home} XDG_RUNTIME_DIR={runtime} exec {sys.executable} -c "
         "'from synapse_channel.cli import main; raise SystemExit(main())' \"$@\"\n",
         encoding="utf-8",
     )

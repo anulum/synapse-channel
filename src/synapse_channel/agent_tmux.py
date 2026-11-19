@@ -36,7 +36,9 @@ import shlex
 import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
@@ -414,6 +416,28 @@ def _write_registry(
     )
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(record.__dict__, sort_keys=True) + "\n", encoding="utf-8")
+    temp.replace(path)
+
+
+def record_waiter_stop(config: AgentTmuxConfig, reason: str) -> None:
+    """Record in the seat's registry entry that its pane waiter stopped, and why.
+
+    A seat whose waiter stopped still runs but is no longer woken; the entry
+    lets a restore, a supervisor or a person see that. The next full registry
+    write, by a new start or a new waiter, replaces the entry.
+    """
+    path = registry_path(config)
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        loaded = {}
+    entry = loaded if isinstance(loaded, dict) else {}
+    entry["waiter_stopped"] = {
+        "reason": reason,
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(entry, sort_keys=True) + "\n", encoding="utf-8")
     temp.replace(path)
 
 
@@ -1206,6 +1230,42 @@ def _pending_step(
     return _bridge_wait(config, runner=runner, heartbeat=heartbeat, attempt=attempt)
 
 
+class ProbedWait(Protocol):
+    """Runs one probed bridge wait, as ``pane_bridge_wait.run_probed_wait`` does."""
+
+    def __call__(
+        self,
+        command: Sequence[str],
+        *,
+        env: Mapping[str, str],
+        interval: float,
+        probe: Callable[[], int],
+        heartbeat: Callable[[], None] | None = None,
+    ) -> tuple[subprocess.CompletedProcess[str], int]:
+        """Run the wait ``command`` while ``probe`` re-proves its target every ``interval``."""
+
+
+_PROBED_WAIT: ContextVar[ProbedWait | None] = ContextVar(
+    "synapse_agent_tmux_probed_wait", default=None
+)
+
+
+@contextmanager
+def wait_executor(executor: ProbedWait) -> Iterator[None]:
+    """Run the calling thread's probed bridge waits through ``executor``.
+
+    Internal to Synapse. By default a bridge wait is a ``synapse wait`` child
+    process; ``seat-hold`` runs its pane waiter's waits inside its own process
+    instead. The choice lives in the calling thread's context, so it never
+    reaches another thread.
+    """
+    token = _PROBED_WAIT.set(executor)
+    try:
+        yield
+    finally:
+        _PROBED_WAIT.reset(token)
+
+
 def _bridge_wait(
     config: AgentTmuxConfig,
     *,
@@ -1265,7 +1325,7 @@ def _bridge_wait(
         refusal = target()
         return refusal if refusal or attempt is None else attempt()
 
-    wait_proc, refusal = run_probed_wait(
+    wait_proc, refusal = (_PROBED_WAIT.get() or run_probed_wait)(
         _wait_command(config, timeout=DEFAULT_BRIDGE_WAIT_TIMEOUT, parent_pid=os.getpid()),
         env=_wait_process_env(),
         interval=config.pane_probe_interval,
