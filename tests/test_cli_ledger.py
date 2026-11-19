@@ -156,6 +156,7 @@ def test_show_refuses_a_ledger_it_may_not_use(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     assert cli_ledger._cmd_show(_args()) == cli_ledger.USAGE_EXIT_CODE == 2
     assert "shared or versioned tree" in capsys.readouterr().out

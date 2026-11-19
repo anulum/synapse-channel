@@ -245,6 +245,13 @@ def test_an_open_codex_rollout_names_the_session(tmp_path: Path) -> None:
     )
 
 
+def test_a_codex_rollout_is_found_among_other_open_files_in_any_order() -> None:
+    names = ["/x/history.jsonl", "/x/rollout-notes.txt", f"/x/rollout-2026-11-19-{SID}.jsonl"]
+    found = session_ledger_collect._open_file_session("codex", names)
+    assert found == (SID, "open_rollout_file")
+    assert session_ledger_collect._open_file_session("codex", names[:2]) == (None, None)
+
+
 def _conversation(folder: Path, own: str, refers_to: str | None) -> Path:
     path = folder / f"{own}.db"
     con = sqlite3.connect(path)

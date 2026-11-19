@@ -293,15 +293,25 @@ def test_execute_reports_progress_on_standard_output_without_json(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    rechecked: list[str | None] = []
+
     async def fake_execute(entries: Sequence[Entry], run: Run) -> tuple[int, list[Outcome]]:
+        # Before each start the run takes a fresh snapshot of the host.
+        rechecked.append(run.recheck(entries[0]))
         run.report("P/a  live (75)")
         return 69, []
 
+    config = tmp_path / "config" / "synapse"
+    config.mkdir(parents=True)
+    looser = {"hosts": {socket.gethostname(): {"spacing_seconds": 5}}}
+    (config / "restore.json").write_text(json.dumps(looser), encoding="utf-8")
     monkeypatch.setattr(cli_ledger_restore, "execute", fake_execute)
     assert _restore(tmp_path, "--execute") == 69
     out = capsys.readouterr().out.splitlines()
     assert out[0].startswith("synapse ledger restore (executing) on ")
+    assert out[2] == "note: spacing_seconds: 5 is looser than the default 30.0, ignored"
     assert out[-1] == "P/a  live (75)"
+    assert rechecked == [None]  # nothing changed between the plan and the start
 
 
 def test_execute_with_nothing_to_start_connects_to_nothing(

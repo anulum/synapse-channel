@@ -1312,3 +1312,25 @@ async def test_a_name_refused_after_the_welcome_is_never_reported_held(
     )
     assert code == cli_messaging_wait.WAIT_NAME_LIVE_EXIT_CODE
     assert cli_messaging_wait.REGISTERED_PREFIX not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("code", "reason", "takeover", "exit_code"),
+    [
+        (4014, "takeover cooldown", True, 4),  # the hub protects a live holder: yield
+        (4016, "name owned by another identity", True, 4),  # a lease refuses the name: yield
+        (4013, "identity proof refused", True, 5),  # the key is refused: stop
+        (4009, "name in use", False, 6),  # without takeover, a live holder: the name is live
+        (4009, "name in use", True, 1),  # with takeover a conflict is no verdict on liveness
+        (4009, "reserved identity", False, 1),
+        (None, "", False, 1),  # no close at all: the hub cannot be reached
+    ],
+)
+def test_each_refusal_before_readiness_has_its_own_exit_code(
+    code: int | None, reason: str, takeover: bool, exit_code: int
+) -> None:
+    class Closed:
+        last_close_code, last_close_reason = code, reason
+
+    agent = cast(SynapseAgent, Closed())
+    assert cli_messaging_wait._handshake_refusal_code(agent, takeover=takeover) == exit_code
