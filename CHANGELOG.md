@@ -25,7 +25,7 @@ execution evidence when carrying a release claim forward.
 
 - **Remote Grok connector.** A Grok client on another computer uses the loopback
   HTTPS MCP listener, one issuer subject pinned to one seat, and an owner-only
-  stable bearer that a private process exchanges for the current hub token.
+  stable bearer that `synapse mcp-gate` exchanges for the current hub token.
   Directed mail for a local pane is woken by `synapse waker`; a seat without a
   pane keeps a directed mailbox waiter. `synapse_status` includes the project's
   online peer names. See [remote Grok connector](docs/grok-remote.md).
