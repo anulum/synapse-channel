@@ -226,3 +226,68 @@ def test_the_command_prints_the_chain_escaped_and_exits_by_what_is_recorded(
         cli.main(["operation", "report", str(tmp_path / "absent.db"), "--operation-id", "x"]) == 2
     )
     assert "missing event store" in capsys.readouterr().out
+
+
+def test_an_outcome_ended_attempt_sealed_by_stop_read_back_reports_sealed(tmp_path: Path) -> None:
+    """When stop_readback recomputes sealed after an outcome, the report matches the hub."""
+    from synapse_channel.core.attempt_markers import AttemptMarker
+
+    op = "op-readback-sealed"
+    attempt = "a" * 32
+    digest = "d" * 64
+    marker = AttemptMarker(op, attempt, digest)
+    path = tmp_path / "hub.db"
+    store = EventStore(path)
+    try:
+        store.append(
+            EventKind.OPERATION_DECLARED,
+            {
+                "operation_id": op,
+                "task_id": "T1",
+                "sender": scene.WORKER,
+                "recorded_at": 10.0,
+                "effect": "git_publication",
+                "intent_sha256": digest,
+            },
+        )
+        store.append(
+            EventKind.OPERATION_ATTEMPT_ANSWERED,
+            {
+                "operation_id": op,
+                "sender": scene.WORKER,
+                "answer": "approved_fresh",
+                "attempt_id": attempt,
+                "approval_seq": 1,
+                "request_key": "k1",
+            },
+        )
+        store.append(
+            EventKind.OPERATION_OUTCOME,
+            {
+                "operation_id": op,
+                "sender": scene.WORKER,
+                "state": "not_started",
+                "boundary": "worker_process",
+                "external_effect": "unknown",
+            },
+        )
+        store.append(
+            EventKind.OPERATION_STOP_READBACK,
+            {
+                "operation_id": op,
+                "sender": "R/recovery",
+                "stop_seq": 9,
+                "attempt_id": attempt,
+                "result": "sealed",
+                "marker_ref": marker.ref,
+                "object_format": "sha1",
+                "marker_object": marker.objects("sha1").sealed,
+            },
+        )
+    finally:
+        store.close()
+    report = run_operation_report(path, op)
+    assert report.state == "sealed"
+    assert [item.state for item in report.attempts] == ["sealed"]
+    assert report.chain[-1].kind == "stop_readback"
+    assert report.chain[-1].detail == {"stop_seq": 9, "attempt_id": attempt, "result": "sealed"}

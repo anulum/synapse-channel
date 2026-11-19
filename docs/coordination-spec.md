@@ -1543,14 +1543,23 @@ executor already reported a terminal outcome. The hub MUST read those attempts
 and commit the row while holding the mutation lock that requests to open
 attempts take, so an attempt opened between the list and the row cannot exist.
 A stop of a stopped scope MUST be answered `already_stopped` and record no new
-stop. A stop MUST NOT end an attempt.
+stop; the answer MUST expose the standing stop's `standing_seq`, `epoch`,
+computed `state`, and the attempts from that standing stop's own recorded list
+that remain neither `sealed` nor independently `reconciled`, so a second
+`synapse operation stop --seal` run can seal them under `standing_seq` without
+opening a new stop or epoch (while plain `synapse operation stop` keeps exit
+code `1`). A stop MUST NOT end an attempt.
 
 **Implementation.** `core/handlers/operation_stops.py` through
-`run_atomic_operation`, `core/operation_attempt_ledger.py:AttemptLedger.open_in`.
+`run_atomic_operation`, `core/operation_attempt_ledger.py:AttemptLedger.open_in`,
+`core/operation_attempt_ledger.py:AttemptLedger.standing_listed`.
 
 **Pinned by.** `tests/test_hub_operation_stops.py`
 (`test_an_attempt_opened_between_the_list_and_its_record_cannot_exist`,
-`test_the_lock_orders_a_stop_and_an_attempt_and_the_list_is_taken_under_it`).
+`test_the_lock_orders_a_stop_and_an_attempt_and_the_list_is_taken_under_it`,
+`test_standing_listed_reads_only_the_stop_s_own_list_while_still_open`),
+`tests/test_cli_operation_stop_seal.py`
+(`test_a_second_stopper_seals_what_a_standing_stop_listed_under_its_sequence`).
 
 ### INV-OS-2 — a stopped scope answers `stopped` first and admits no approval
 
@@ -1622,20 +1631,32 @@ a stop listed MUST count as closed for that stop only through a kept
 `stop_readback` of `sealed` or `applied`. An executor's outcome, a verification
 and an `unsealable` or `unread` read-back MUST NOT close it. The hub MUST keep
 `unsealable` only for an operation whose declared effect has no marker at a
-system of record, decided from the declaration, and MUST keep at most one
-closing read-back per attempt and stop. A read-back MUST NOT end an attempt and
-grants nothing.
+system of record, decided from the declaration, MUST answer a repeated
+`(stop_seq, attempt_id)` read-back carrying the same result with the kept row
+without writing a second row, and MUST refuse a different result once a closing
+read-back is kept. When a kept `stop_readback`'s marker fields recompute to
+`sealed`, the hub MUST mark the attempt `sealed` and, if the executor's outcome
+claimed `confirmed_done` on that attempt, MUST surface the contradiction in hub
+attention (`operation_contradiction`) and as an `incorrect_acceptance` trigger
+when `--ladder` is enabled. `applied`, `unsealable` and `unread` read-backs end
+no attempt here, and no read-back grants authority.
 
 **Implementation.** `core/operation_attempt_ledger.py:AttemptLedger.open_in`,
 `core/operation_attempt_ledger.py:AttemptLedger.stop_closed`,
+`core/operation_attempt_ledger.py:AttemptLedger.note_readback`,
 `core/operation_records.py:stop_readback_refusal`,
-`core/operation_stop_readbacks.py:readback_mismatch`.
+`core/operation_records.py:kept_stop_readback`,
+`core/operation_stop_readbacks.py:recompute_readback_result`,
+`core/attention.py:project_hub_attention`.
 
 **Pinned by.** `tests/test_operation_stops.py`,
 `tests/test_operation_stop_readbacks.py`,
+`tests/test_attention.py`,
 `tests/test_cli_operation_stop_seal.py`
 (`test_an_attempt_reported_before_the_stop_is_listed_sealed_and_its_late_effect_refused`,
-`test_a_reported_attempt_is_sealed_anyway_and_the_late_effect_is_refused`).
+`test_a_reported_attempt_is_sealed_anyway_and_the_late_effect_is_refused`,
+`test_two_concurrent_stop_and_seal_runs_keep_one_seal_one_read_back_and_both_exit_zero`,
+`test_a_confirmed_done_outcome_against_a_sealed_marker_surfaces_a_contradiction`).
 
 ### INV-OS-7 — the seal first, then its record
 
@@ -1646,7 +1667,10 @@ sends any record for that attempt. The hub MUST recompute the `sealed` or
 intent digest it holds, and refuse a read-back that names any other. A
 `sealed` read-back of an attempt that is still open MUST wait for the seal
 record, which names the stop's `stop_seq` and is kept only when that stop
-listed the attempt.
+listed the attempt; if `seal` is refused `attempt_ended` because the attempt
+ended concurrently after `operation_state`, `stop --seal` MUST treat that
+refusal as non-fatal and proceed to record `stop_readback` (all other `seal`
+refusals MUST remain fatal).
 
 **Implementation.** `cli_operation_stop_seal.py`,
 `core/operation_records.py:seal_refusal`,

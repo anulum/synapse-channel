@@ -395,3 +395,86 @@ def test_private_queue_refuses_unowned_or_invalid_storage_and_transitions(tmp_pa
     symlink.symlink_to(queue)
     with pytest.raises(AttentionStoreError, match="symlink"):
         queue_view(symlink, now=100)
+
+
+def test_operation_contradiction_projects_critical_open_attention(tmp_path: Path) -> None:
+    """A confirmed_done outcome contradicted by a sealed marker surfaces in hub attention."""
+    from synapse_channel.core.attempt_markers import AttemptMarker
+    from synapse_channel.core.attention import ATTENTION_EVENT_KINDS
+
+    op = "op-contradicted"
+    attempt = "a" * 32
+    digest = "d" * 64
+    marker = AttemptMarker(op, attempt, digest)
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        store.append(
+            EventKind.OPERATION_DECLARED,
+            {
+                "operation_id": op,
+                "sender": "P/worker",
+                "task_id": "T1",
+                "recorded_at": 10.0,
+                "effect": "git_publication",
+                "intent_sha256": digest,
+            },
+        )
+        store.append(
+            EventKind.OPERATION_ATTEMPT_ANSWERED,
+            {
+                "operation_id": op,
+                "sender": "P/worker",
+                "answer": "approved_fresh",
+                "attempt_id": attempt,
+                "approval_seq": 1,
+            },
+        )
+        store.append(
+            EventKind.OPERATION_OUTCOME,
+            {
+                "operation_id": op,
+                "sender": "P/worker",
+                "state": "confirmed_done",
+                "external_effect": "unknown",
+            },
+        )
+        stop_seq = store.append(
+            EventKind.OPERATION_STOPPED,
+            {
+                "scope": "project:P",
+                "epoch": 1,
+                "listed": [{"operation_id": op, "attempt_id": attempt}],
+            },
+        )
+        readback_seq = store.append(
+            EventKind.OPERATION_STOP_READBACK,
+            {
+                "operation_id": op,
+                "sender": "R/recovery",
+                "stop_seq": stop_seq,
+                "attempt_id": attempt,
+                "result": "sealed",
+                "marker_ref": marker.ref,
+                "object_format": "sha1",
+                "marker_object": marker.objects("sha1").sealed,
+            },
+        )
+        events = tuple(store.iter_events(kinds=ATTENTION_EVENT_KINDS))
+        evidence = project_hub_attention(events, now=100.0)
+        queue = tmp_path / "private" / "queue.db"
+        assert sync_evidence(queue, source="hub", evidence=evidence, now=100.0)["created"] == 1
+        view = queue_view(queue, now=100.0)
+    finally:
+        store.close()
+    assert len(evidence) == 1
+    assert (evidence[0].key, evidence[0].kind, evidence[0].subject) == (
+        f"operation-contradiction:{op}",
+        "operation_contradiction",
+        op,
+    )
+    assert (evidence[0].severity, evidence[0].state, evidence[0].source_revision) == (
+        "critical",
+        "open",
+        str(readback_seq),
+    )
+    assert view["alerts"][0]["key"] == f"operation-contradiction:{op}"

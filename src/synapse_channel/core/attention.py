@@ -23,6 +23,7 @@ from synapse_channel.core.approvals import (
 from synapse_channel.core.entitlement_view import entitlement_view
 from synapse_channel.core.entitlements import parse_time
 from synapse_channel.core.journal import EventKind
+from synapse_channel.core.operation_attempt_ledger import AttemptLedger
 from synapse_channel.core.persistence import StoredEvent
 from synapse_channel.core.review_feedback import (
     AuthorBinding,
@@ -76,6 +77,13 @@ ATTENTION_EVENT_KINDS = frozenset(
         EventKind.DELIVERY_RECEIPT_DEFERRED,
         EventKind.DELIVERY_RECEIPT_EXPIRED,
         EventKind.DEAD_LETTER_ESCALATION,
+        EventKind.OPERATION_DECLARED,
+        EventKind.OPERATION_ATTEMPT_ANSWERED,
+        EventKind.OPERATION_OUTCOME,
+        EventKind.OPERATION_VERIFIED,
+        EventKind.OPERATION_SEALED,
+        EventKind.OPERATION_STOPPED,
+        EventKind.OPERATION_STOP_READBACK,
     }
 )
 """Hub event kinds needed for an attention projection."""
@@ -222,10 +230,38 @@ def _delivery_evidence(event: StoredEvent) -> AttentionEvidence | None:
     )
 
 
+def _operation_contradiction_evidence(
+    ledger: AttemptLedger, event: StoredEvent
+) -> AttentionEvidence | None:
+    ledger.apply_event(event)
+    operation_id = event.payload.get("operation_id")
+    if (
+        not isinstance(operation_id, str)
+        or not operation_id
+        or not _valid_utf8_subject(operation_id)
+        or ledger.contradicted_at(operation_id) != event.seq
+    ):
+        return None
+    return AttentionEvidence(
+        key=_bounded_subject_key("operation-contradiction", operation_id),
+        kind="operation_contradiction",
+        subject=operation_id,
+        severity="critical",
+        state="open",
+        action=(
+            "Inspect the operation chain: the executor's outcome and the marker or "
+            "verification disagree"
+        ),
+        source_revision=str(event.seq),
+        observed_at=event.ts,
+        expires_at=None,
+    )
+
+
 def project_hub_attention(
     events: Iterable[StoredEvent], *, now: float, approval_ttl_seconds: float = 86400.0
 ) -> tuple[AttentionEvidence, ...]:
-    """Fold durable approval and delivery events into current attention evidence.
+    """Fold durable approval, delivery and operation events into attention evidence.
 
     Parameters
     ----------
@@ -249,6 +285,7 @@ def project_hub_attention(
     if approval_ttl_seconds <= 0:
         raise ValueError("approval review deadline must be positive")
     latest: dict[str, AttentionEvidence] = {}
+    ledger = AttemptLedger(None)
     for event in events:
         candidate: AttentionEvidence | None = None
         if event.kind == EventKind.LEDGER_PROGRESS:
@@ -273,6 +310,8 @@ def project_hub_attention(
                     observed_at=event.ts,
                     expires_at=None,
                 )
+        else:
+            candidate = _operation_contradiction_evidence(ledger, event)
         if candidate is not None:
             latest[candidate.key] = candidate
     return tuple(latest[key] for key in sorted(latest))

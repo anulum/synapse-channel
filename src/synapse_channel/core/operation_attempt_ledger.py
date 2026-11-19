@@ -37,7 +37,9 @@ The ledger also keeps each scope's stops (:mod:`~synapse_channel.core.operation_
 * the journal sequence of a scope's latest stop or resume is its line;
 * an ``operation_stop_readback`` row records what a stop read back for one
   attempt it listed. Only a ``sealed`` or ``applied`` read-back closes the
-  attempt for that stop; an executor's report never does;
+  attempt for that stop; an executor's report never does. When a read-back's
+  marker fields recompute to ``sealed``, the attempt is marked sealed, and any
+  ``confirmed_done`` claim on it is recorded as a contradiction;
 * an ``operation_level`` row sets its scope's autonomy level at its epoch; the
   journal sequence of a scope's latest level row is its level line;
 * a ``level_criteria`` row states what a raise of a scope must show, and a
@@ -63,7 +65,11 @@ from synapse_channel.core.operation_level_criteria import (
     CriteriaItem,
 )
 from synapse_channel.core.operation_levels import DEFAULT_LEVEL, LEVELS, lowest
-from synapse_channel.core.operation_stop_readbacks import CLOSING_RESULTS
+from synapse_channel.core.operation_stop_readbacks import (
+    CLOSING_RESULTS,
+    RESULT_UNSEALABLE,
+    marker_reads_sealed,
+)
 from synapse_channel.core.operation_stop_states import (
     STATE_AT_REST,
     STATE_STOP_REQUESTED,
@@ -183,6 +189,7 @@ class _StopRow:
     epoch: int
     listed: tuple[tuple[str, str], ...]
     readbacks: dict[str, str]
+    readback_seqs: dict[str, int] = field(default_factory=dict)
     resumed: StopState | None = None
     """The state computed when a resume lifted this stop; it stands from then on."""
     recorded_at: float = 0.0
@@ -209,6 +216,7 @@ class _Attempt:
     ended: bool = False
     sealed: bool = False
     reconciled: bool = False
+    claimed_done: bool = False
 
 
 @dataclass
@@ -356,23 +364,31 @@ class AttemptLedger:
         operation_id, sender = payload.get("operation_id"), payload.get("sender")
         if not isinstance(operation_id, str) or not isinstance(sender, str):
             return
-        if event.kind == EventKind.OPERATION_DECLARED:
+        self._restore_operation(event.kind, event.seq, operation_id, sender, payload)
+
+    def _restore_operation(
+        self, kind: str, seq: int, operation_id: str, sender: str, payload: Mapping[str, Any]
+    ) -> None:
+        if kind == EventKind.OPERATION_DECLARED:
             self._restore_declaration(operation_id, sender, payload)
-        elif event.kind == EventKind.OPERATION_OUTCOME:
-            self.note_outcome(operation_id, sender, str(payload.get("state") or ""), seq=event.seq)
-        elif event.kind == EventKind.OPERATION_VERIFIED:
-            effect, result = str(payload.get("effect") or ""), str(payload.get("result") or "")
-            self.note_verification(
-                operation_id, sender, effect=effect, result=result, seq=event.seq
+        elif kind == EventKind.OPERATION_OUTCOME:
+            self.note_outcome(
+                operation_id,
+                sender,
+                str(payload.get("state") or ""),
+                external_effect=str(payload.get("external_effect") or ""),
+                seq=seq,
             )
+        elif kind == EventKind.OPERATION_VERIFIED:
+            effect, result = str(payload.get("effect") or ""), str(payload.get("result") or "")
+            self.note_verification(operation_id, sender, effect=effect, result=result, seq=seq)
         elif (
-            event.kind == EventKind.OPERATION_ATTEMPT_ANSWERED
-            and payload.get("answer") == APPROVED_FRESH
+            kind == EventKind.OPERATION_ATTEMPT_ANSWERED and payload.get("answer") == APPROVED_FRESH
         ):
             attempt, approval = payload.get("attempt_id"), payload.get("approval_seq")
             if isinstance(attempt, str) and isinstance(approval, int):
                 self.open_attempt(operation_id, attempt, executor=sender, approval_seq=approval)
-        elif event.kind == EventKind.OPERATION_SEALED:
+        elif kind == EventKind.OPERATION_SEALED:
             self.note_seal(operation_id, str(payload.get("attempt_id") or ""))
 
     def _restore_declaration(
@@ -405,13 +421,7 @@ class AttemptLedger:
             self._restore_level(kind, seq, payload)
             return
         if kind == EventKind.OPERATION_STOP_READBACK:
-            stop_seq, attempt, result = (
-                payload.get("stop_seq"),
-                payload.get("attempt_id"),
-                payload.get("result"),
-            )
-            if type(stop_seq) is int and isinstance(attempt, str) and isinstance(result, str):
-                self.note_readback(stop_seq, attempt, result)
+            self._restore_readback(seq, payload)
             return
         scope = payload.get("scope")
         if not isinstance(scope, str):
@@ -434,6 +444,24 @@ class AttemptLedger:
         epoch = epoch if type(epoch) is int else 0
         self.note_stop(scope, seq, epoch=epoch, listed=pairs, recorded_at=_time_of(payload))
 
+    def _restore_readback(self, seq: int, payload: Mapping[str, Any]) -> None:
+        stop_seq, attempt, result = (
+            payload.get("stop_seq"),
+            payload.get("attempt_id"),
+            payload.get("result"),
+        )
+        if type(stop_seq) is int and isinstance(attempt, str) and isinstance(result, str):
+            self.note_readback(
+                stop_seq,
+                attempt,
+                result,
+                seq=seq,
+                operation_id=str(payload.get("operation_id") or ""),
+                marker_ref=str(payload.get("marker_ref") or ""),
+                object_format=str(payload.get("object_format") or ""),
+                marker_object=str(payload.get("marker_object") or ""),
+            )
+
     def note_stop(
         self,
         scope: str,
@@ -454,16 +482,64 @@ class AttemptLedger:
         row = self._stop_rows.get(stop_seq)
         return row is not None and (operation_id, attempt_id) in row.listed
 
-    def note_readback(self, stop_seq: int, attempt_id: str, result: str) -> None:
-        """Record a kept read-back of ``attempt_id`` for the stop at ``stop_seq``."""
+    def note_readback(
+        self,
+        stop_seq: int,
+        attempt_id: str,
+        result: str,
+        *,
+        seq: int = 0,
+        operation_id: str = "",
+        marker_ref: str = "",
+        object_format: str = "",
+        marker_object: str = "",
+    ) -> None:
+        """Record a kept read-back without overwriting a closed or unsealable one.
+
+        An ``unread`` read-back may be superseded only by a closing result.
+        When the marker fields recompute to ``sealed``, the attempt is marked
+        sealed, and an earlier ``confirmed_done`` claim on it records a
+        contradiction.
+        """
         row = self._stop_rows.get(stop_seq)
         if row is not None:
-            row.readbacks[attempt_id] = result
+            current = row.readbacks.get(attempt_id)
+            if current is None or (
+                current not in (*CLOSING_RESULTS, RESULT_UNSEALABLE) and result in CLOSING_RESULTS
+            ):
+                row.readbacks[attempt_id] = result
+                row.readback_seqs[attempt_id] = seq
+        entry = self._operations.get(operation_id)
+        if entry is None or (
+            self._stop_rows and not self.stop_lists(stop_seq, operation_id, attempt_id)
+        ):
+            return
+        if not marker_reads_sealed(
+            operation_id=operation_id,
+            attempt_id=attempt_id,
+            intent_sha256=entry.fact.intent_sha256,
+            marker_ref=marker_ref,
+            object_format=object_format,
+            marker_object=marker_object,
+        ):
+            return
+        for attempt in entry.attempts:
+            if attempt.attempt_id == attempt_id:
+                attempt.ended = attempt.sealed = True
+                if attempt.claimed_done and not entry.contradicted_seq:
+                    entry.contradicted_seq = seq
 
     def readback_of(self, stop_seq: int, attempt_id: str) -> str | None:
-        """Return the latest kept read-back of an attempt for a stop, or ``None``."""
+        """Return the kept read-back result of an attempt for a stop, or ``None``."""
         row = self._stop_rows.get(stop_seq)
         return None if row is None else row.readbacks.get(attempt_id)
+
+    def kept_readback(self, stop_seq: int, attempt_id: str) -> tuple[str, int] | None:
+        """Return ``(result, seq)`` of the kept read-back for ``(stop_seq, attempt_id)``."""
+        row = self._stop_rows.get(stop_seq)
+        if row is None or attempt_id not in row.readbacks:
+            return None
+        return row.readbacks[attempt_id], row.readback_seqs.get(attempt_id, 0)
 
     def note_level(self, scope: str, seq: int, *, level: str, epoch: int) -> None:
         """Record that the row at ``seq`` set ``scope`` to ``level`` at ``epoch``."""
@@ -819,6 +895,25 @@ class AttemptLedger:
                 return stopped_by
         return None
 
+    def standing_listed(self, stop_seq: int) -> tuple[OpenAttempt, ...]:
+        """Return the attempts ``stop_seq`` listed that are neither sealed nor reconciled."""
+        row = self._stop_rows.get(stop_seq)
+        if row is None:
+            return ()
+        found: list[OpenAttempt] = []
+        for operation_id, attempt_id in row.listed:
+            entry = self._operations.get(operation_id)
+            if entry is None or entry.closed:
+                continue
+            attempt = next((item for item in entry.attempts if item.attempt_id == attempt_id), None)
+            if attempt is not None and not (attempt.sealed or attempt.reconciled):
+                found.append(
+                    OpenAttempt(
+                        operation_id, attempt.attempt_id, entry.fact.task_id, attempt.executor
+                    )
+                )
+        return tuple(found)
+
     def open_in(self, scope: str) -> tuple[OpenAttempt, ...]:
         """Return every attempt in ``scope`` that is neither sealed nor reconciled."""
         found: list[OpenAttempt] = []
@@ -850,11 +945,21 @@ class AttemptLedger:
         """Record a declaration; the first declaration of an id stands."""
         self._operations.setdefault(operation_id, _Operation(fact))
 
-    def note_outcome(self, operation_id: str, sender: str, state: str, *, seq: int = 0) -> None:
+    def note_outcome(
+        self,
+        operation_id: str,
+        sender: str,
+        state: str,
+        *,
+        external_effect: str = "",
+        seq: int = 0,
+    ) -> None:
         """End the open attempt when its own executor reports a terminal state.
 
         An executor's report of an ``unknown`` outcome ends nothing; its
-        sequence is kept, as the level criteria count unknown outcomes.
+        sequence is kept, as the level criteria count unknown outcomes. An
+        executor claiming ``confirmed_done`` on a sealed attempt records a
+        contradiction.
         """
         entry = self._operations.get(operation_id)
         if entry is None:
@@ -862,6 +967,14 @@ class AttemptLedger:
         executors = {attempt.executor for attempt in entry.attempts}
         if state == "unknown" and sender in executors:
             entry.unknown_seqs.append(seq)
+        last = next(
+            (attempt for attempt in reversed(entry.attempts) if attempt.executor == sender),
+            None,
+        )
+        if "confirmed_done" in (state, external_effect) and last is not None:
+            last.claimed_done = True
+            if last.sealed and not entry.contradicted_seq:
+                entry.contradicted_seq = seq
         if state not in TERMINAL_OUTCOME_STATES:
             return
         for attempt in entry.attempts:

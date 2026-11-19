@@ -216,12 +216,18 @@ does not add agent grades to protocol envelopes.
   `applied` blob and the ref, keeps `unsealable` only for an effect without a
   marker (today every effect but `git_publication`) and any other result only
   for one with a marker (`readback_mismatch`); a `sealed` read-back of an
-  attempt that is still open waits for its seal record (`attempt_open`); and
-  once a `sealed` or `applied` read-back of an attempt is kept for a stop, no
-  further one is (`readback_closed`). A kept read-back is journalled as
-  `operation_stop_readback` and counts towards the 32 rows. It ends no attempt:
-  only `sealed` and `applied` close an attempt for its stop, and an executor's
-  own outcome never does.
+  attempt that is still open waits for its seal record (`attempt_open`);
+  repeating an already-kept `(stop_seq, attempt_id)` read-back with the same
+  result returns the kept row without writing a second row, while a different
+  result once a `sealed` or `applied` read-back is kept is refused
+  (`readback_closed`). A newly journalled read-back is recorded as
+  `operation_stop_readback` and counts towards the 32 rows. When its marker
+  fields recompute to `sealed`, the attempt is marked `sealed` (and an executor
+  outcome claiming `confirmed_done` on that attempt is surfaced as an
+  `operation_contradiction` attention item and, under `--ladder`, an
+  `incorrect_acceptance` trigger); `applied`, `unsealable` and `unread` end no
+  attempt here, only `sealed` and `applied` close an attempt for its stop, and
+  an executor's own outcome never does.
   Records are observations and grant no authority.
 - **Operation attempts:** `operation_attempt` asks to open an attempt of a
   declared operation for the exact intent the requester is about to carry out.
@@ -268,7 +274,9 @@ does not add agent grades to protocol envelopes.
   its executor's outcome report), read under the mutation lock
   that requests to open attempts take, so no attempt opens between the list
   and the row. A stop of a stopped scope is answered `already_stopped` with the
-  standing stop's sequence and records no new stop. While a scope is stopped
+  standing stop's `standing_seq`, `epoch`, computed `state`, and the attempts
+  from that standing stop's own recorded list that remain neither `sealed` nor
+  independently `reconciled`, and records no new stop. While a scope is stopped
   every request to open an attempt of an operation in it is answered
   `stopped`, and an `approved` approval note of an intent that such an
   operation declares is refused by the verdict admission, with the verdict gate
@@ -756,8 +764,9 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   when it listed nothing), `epoch`, `listed` (each with
   `operation_id`, `attempt_id`, `task_id` and `executor`) and, on a hub without
   an access file, `warning`; a resume adds `lifts_seq` and `resumed_from`;
-  `already_stopped` and `actor_of_scope` add `standing_seq`; a resume carries
-  its `case`. These are the stored answer. Beside them `live` holds
+  `already_stopped` adds `standing_seq`, `epoch`, `state` and the standing
+  stop's still-open `listed` attempts; `actor_of_scope` adds `standing_seq`; a
+  resume carries its `case`. These are the stored answer. Beside them `live` holds
   `replayed`, computed when the frame is sent.
   `identity_enroll_result` and `identity_revoke_result` are the verdicts for
   `identity_enroll` and `identity_revoke`. `entitlement_advert_result` is the

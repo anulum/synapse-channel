@@ -37,8 +37,11 @@ Rules (recovery console design, rev 2):
   (:mod:`synapse_channel.core.operation_stop_readbacks`). The handler checks
   it against ``operation-seal``; the hub keeps it only for an attempt the named
   stop listed, recomputes any marker it names, decides ``unsealable`` from the
-  declared effect, and keeps at most one closing read-back per attempt and
-  stop. It counts toward the record limit, grants nothing and ends no attempt.
+  declared effect, answers a repeat of an already-kept result with that kept
+  row without writing a second row, and refuses a different result once a
+  closing read-back is kept. A newly journalled read-back counts toward the
+  record limit; a recomputed ``sealed`` read-back marks the attempt sealed,
+  while ``applied``, ``unsealable`` and ``unread`` end no attempt.
 * A declaration may carry an authorisation intent
   (:mod:`synapse_channel.core.authorisation_intent`). Its row then keeps the
   composed intent and its digest; a declaration without one is unchanged.
@@ -510,38 +513,57 @@ MARKED_EFFECTS = frozenset({EFFECT_GIT})
 """The declared effects whose attempts have a marker at a system of record."""
 
 
+def kept_stop_readback(
+    ledger: OperationLedger, request: OperationRecordRequest
+) -> tuple[str, int] | None:
+    """Return ``(result, seq)`` when ``request`` repeats the kept read-back, else ``None``."""
+    readback = request.readback
+    assert readback is not None, "decode_operation_record gives every read-back record its body"
+    kept = ledger.attempts.kept_readback(readback.stop_seq, readback.attempt_id)
+    if kept is not None and kept[0] == readback.result:
+        return kept
+    return None
+
+
 def stop_readback_refusal(ledger: OperationLedger, request: OperationRecordRequest) -> str | None:
     """Return why a stop read-back record cannot be kept, or ``None``.
 
-    The operation must be declared on the same task, below the record limit;
-    the named stop must have listed the attempt; no ``sealed`` or ``applied``
-    read-back of that attempt may be kept for that stop yet; and the record
-    must agree with what the hub recomputes
-    (:func:`synapse_channel.core.operation_stop_readbacks.readback_mismatch`).
+    The operation must be declared on the same task; the named stop must have
+    listed the attempt; once a closing read-back is kept, a different result is
+    refused ``readback_closed`` while the same result returns the kept row; the
+    record must agree with what the hub recomputes
+    (:func:`synapse_channel.core.operation_stop_readbacks.readback_mismatch`);
+    and a newly journalled row must stay below the record limit.
     """
     task = ledger.task_of(request.operation_id)
     if task is None:
         return REFUSED_UNKNOWN
     if task != request.task_id:
         return REFUSED_TASK_MISMATCH
-    if ledger.records_of(request.operation_id) >= MAX_RECORDS_PER_OPERATION:
-        return REFUSED_RECORD_LIMIT
     readback = request.readback
     assert readback is not None, "decode_operation_record gives every read-back record its body"
     attempts = ledger.attempts
     if not attempts.stop_lists(readback.stop_seq, request.operation_id, readback.attempt_id):
         return REFUSED_STOP_UNKNOWN
-    if attempts.readback_of(readback.stop_seq, readback.attempt_id) in CLOSING_RESULTS:
+    kept = attempts.kept_readback(readback.stop_seq, readback.attempt_id)
+    if kept is not None and kept[0] in CLOSING_RESULTS and readback.result != kept[0]:
         return REFUSED_READBACK_CLOSED
     fact = attempts.operation(request.operation_id)
     state = attempts.attempt_state(request.operation_id, readback.attempt_id)
-    return readback_mismatch(
+    mismatch = readback_mismatch(
         readback,
         operation_id=request.operation_id,
         intent_sha256=None if fact is None else fact.intent_sha256,
         marked=ledger.effect_of(request.operation_id) in MARKED_EFFECTS,
         attempt_open=state == STATE_OPEN,
     )
+    if mismatch is not None:
+        return mismatch
+    if kept_stop_readback(ledger, request) is None and (
+        ledger.records_of(request.operation_id) >= MAX_RECORDS_PER_OPERATION
+    ):
+        return REFUSED_RECORD_LIMIT
+    return None
 
 
 def _digests(evidence: Mapping[str, str]) -> dict[str, str]:

@@ -137,7 +137,15 @@ def _rendered(result: dict[str, Any], fields: dict[str, Any]) -> dict[str, Any]:
         "replayed": bool(live.get("replayed", False)),
         "request_key": fields["idem_key"],
     }
-    for name in ("epoch", "listed", "lifts_seq", "standing_seq", "resumed_from", "warning"):
+    for name in (
+        "epoch",
+        "listed",
+        "lifts_seq",
+        "standing_seq",
+        "state",
+        "resumed_from",
+        "warning",
+    ):
         if name in result:
             rendered[name] = result[name]
     return rendered

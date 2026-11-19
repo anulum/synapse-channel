@@ -181,13 +181,25 @@ async def test_the_listed_attempts_the_warning_and_each_refusal_are_printed(
         "answer": "already_stopped",
         "payload": "the scope installation is already stopped (journal seq 12)",
         "standing_seq": 12,
+        "epoch": 2,
+        "state": "stop requested",
+        "listed": [{"operation_id": "op-1", "attempt_id": "b" * 32, "executor": "P/worker"}],
     }
     assert await _run(standing) == command.EXIT_REFUSED
     assert capsys.readouterr().out.splitlines() == [
         "operation stop already_stopped for installation: "
         "the scope installation is already stopped (journal seq 12)",
+        f"listed attempt {'b' * 32} of op-1 by P/worker",
         "request key: key-9",
     ]
+    rendered = command._rendered(
+        standing, {"scope": "installation", "reason": "r", "idem_key": "key-9"}
+    )
+    assert (rendered["standing_seq"], rendered["epoch"], rendered["state"]) == (
+        12,
+        2,
+        "stop requested",
+    )
 
 
 async def test_old_hubs_gate_refusals_and_silence_have_their_own_exit_codes(

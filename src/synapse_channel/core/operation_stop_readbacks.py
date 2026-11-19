@@ -24,8 +24,10 @@ and records what it read in one ``stop_readback`` record:
   cannot be told (``not_reached``, ``base_gone`` or ``unknown``).
 
 Only ``sealed`` and ``applied`` close an attempt for the stop. An executor's
-own report closes nothing for it: a stop trusts markers, not reports. A
-``stop_readback`` grants nothing and ends no attempt.
+own report closes nothing for it: a stop trusts markers, not reports. A kept
+``sealed`` read-back whose marker the hub recomputes marks the attempt sealed;
+``applied``, ``unsealable`` and ``unread`` end no attempt here, and no
+``stop_readback`` grants authority.
 
 This module is pure; the hub's handler applies the ledger's checks.
 """
@@ -172,6 +174,57 @@ def decode_stop_readback(value: object) -> StopReadback:
     )
 
 
+def recompute_readback_result(
+    readback: StopReadback,
+    *,
+    operation_id: str,
+    intent_sha256: str | None,
+    marked: bool,
+) -> str | None:
+    """Recompute the result ``readback`` shows from the declaration and marker, or ``None``.
+
+    For a marker-bearing effect, ``sealed`` and ``applied`` come from
+    recomputing :class:`~synapse_channel.core.attempt_markers.AttemptMarker`
+    for ``(operation_id, attempt_id, intent_sha256)`` and comparing its ref and
+    blob ids against the marker fields read back, never from ``readback.result``
+    alone. An effect without a marker is always ``unsealable``.
+    """
+    if not marked:
+        return RESULT_UNSEALABLE
+    if readback.result == RESULT_UNREAD:
+        return RESULT_UNREAD
+    if intent_sha256 is None:
+        return None
+    marker = AttemptMarker(operation_id, readback.attempt_id, intent_sha256)
+    if readback.marker_ref != marker.ref:
+        return None
+    objects = marker.objects(readback.object_format)
+    if readback.marker_object == objects.sealed:
+        return RESULT_SEALED
+    if readback.marker_object == objects.applied:
+        return RESULT_APPLIED
+    return None
+
+
+def marker_reads_sealed(
+    *,
+    operation_id: str,
+    attempt_id: str,
+    intent_sha256: str | None,
+    marker_ref: str,
+    object_format: str,
+    marker_object: str,
+) -> bool:
+    """Return whether the marker fields match the hub's recomputed ``sealed`` marker."""
+    if intent_sha256 is None or object_format not in OBJECT_ID_LENGTHS:
+        return False
+    try:
+        marker = AttemptMarker(operation_id, attempt_id, intent_sha256)
+    except ValueError:
+        return False
+    return marker_ref == marker.ref and marker_object == marker.objects(object_format).sealed
+
+
 def readback_mismatch(
     readback: StopReadback,
     *,
@@ -203,19 +256,14 @@ def readback_mismatch(
         recomputes, ``attempt_open`` for a ``sealed`` result of an attempt
         that no seal record has ended yet, else ``None``.
     """
-    if readback.result == RESULT_UNSEALABLE:
-        return REFUSED_READBACK_MISMATCH if marked else None
-    if not marked:
+    recomputed = recompute_readback_result(
+        readback,
+        operation_id=operation_id,
+        intent_sha256=intent_sha256,
+        marked=marked,
+    )
+    if recomputed is None or recomputed != readback.result:
         return REFUSED_READBACK_MISMATCH
-    if readback.result == RESULT_UNREAD:
-        return None
-    if intent_sha256 is None:
-        return REFUSED_READBACK_MISMATCH
-    marker = AttemptMarker(operation_id, readback.attempt_id, intent_sha256)
-    objects = marker.objects(readback.object_format)
-    expected = objects.sealed if readback.result == RESULT_SEALED else objects.applied
-    if readback.marker_ref != marker.ref or readback.marker_object != expected:
-        return REFUSED_READBACK_MISMATCH
-    if readback.result == RESULT_SEALED and attempt_open:
+    if recomputed == RESULT_SEALED and attempt_open:
         return REFUSED_ATTEMPT_OPEN
     return None

@@ -19,10 +19,12 @@ import pytest
 from synapse_channel.core.attempt_markers import AttemptMarker
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempt_ledger import AttemptLedger
+from synapse_channel.core.operation_attempts import OperationFact
 from synapse_channel.core.operation_records import (
     MAX_RECORDS_PER_OPERATION,
     OperationLedger,
     decode_operation_record,
+    kept_stop_readback,
     stop_readback_refusal,
 )
 from synapse_channel.core.operation_stop_readbacks import (
@@ -30,7 +32,9 @@ from synapse_channel.core.operation_stop_readbacks import (
     REFUSED_READBACK_MISMATCH,
     StopReadback,
     decode_stop_readback,
+    marker_reads_sealed,
     readback_mismatch,
+    recompute_readback_result,
 )
 from synapse_channel.core.persistence import EventStore
 
@@ -203,3 +207,138 @@ def test_a_read_back_past_the_operation_s_record_limit_is_refused() -> None:
     for _ in range(MAX_RECORDS_PER_OPERATION):
         ledger.add_record(OPERATION)
     assert stop_readback_refusal(ledger, request) == "record_limit"
+
+
+def test_recompute_and_marker_reads_sealed_never_trust_an_unverified_claim() -> None:
+    """Only a marker matching the recomputed sealed blob marks an attempt sealed."""
+    unknown_obj = decode_stop_readback(_body("sealed", marker_object="0" * 40))
+    assert (
+        recompute_readback_result(
+            unknown_obj, operation_id=OPERATION, intent_sha256=DIGEST, marked=True
+        )
+        is None
+    )
+    assert not marker_reads_sealed(
+        operation_id=OPERATION,
+        attempt_id=ATTEMPT,
+        intent_sha256=None,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.sealed,
+    )
+    assert not marker_reads_sealed(
+        operation_id=OPERATION,
+        attempt_id=ATTEMPT,
+        intent_sha256=DIGEST,
+        marker_ref=MARKER.ref,
+        object_format="md5",
+        marker_object=OBJECTS.sealed,
+    )
+    assert not marker_reads_sealed(
+        operation_id="",
+        attempt_id=ATTEMPT,
+        intent_sha256=DIGEST,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.sealed,
+    )
+    assert not marker_reads_sealed(
+        operation_id=OPERATION,
+        attempt_id=ATTEMPT,
+        intent_sha256=DIGEST,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.applied,
+    )
+    assert marker_reads_sealed(
+        operation_id=OPERATION,
+        attempt_id=ATTEMPT,
+        intent_sha256=DIGEST,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.sealed,
+    )
+
+
+def test_duplicate_read_backs_do_not_overwrite_and_contradiction_works_in_both_orders() -> None:
+    """A kept closing read-back is returned even at the record limit; late confirmed_done flags."""
+    ledger = OperationLedger(None)
+    ledger.declare(OPERATION, "T1", "git_publication", {"branch": "main"})
+    fact = OperationFact("T1", "P/worker", DIGEST, None, 1.0, "git_publication", "cooperative")
+    attempts = ledger.attempts
+    attempts.note_declaration(OPERATION, fact)
+    attempts.open_attempt(OPERATION, ATTEMPT, executor="P/worker", approval_seq=1)
+    attempts.note_outcome(OPERATION, "P/worker", "not_started", seq=5)
+    attempts.note_stop("project:P", 7, epoch=1, listed=((OPERATION, ATTEMPT),))
+    assert attempts.kept_readback(99, ATTEMPT) is None
+    assert attempts.kept_readback(7, ATTEMPT) is None
+
+    # Without marker fields, note_readback("sealed") does NOT mark the attempt sealed.
+    attempts.note_readback(8, ATTEMPT, "sealed", seq=6, operation_id=OPERATION)
+    assert attempts.attempt_state(OPERATION, ATTEMPT) == "ended"
+    other = "b" * 32
+    attempts.open_attempt(OPERATION, other, executor="P/worker", approval_seq=2)
+    attempts.note_readback(
+        7,
+        ATTEMPT,
+        "unread",
+        seq=8,
+        operation_id=OPERATION,
+    )
+    attempts.note_readback(7, ATTEMPT, "unread", seq=9, operation_id=OPERATION)
+    assert attempts.kept_readback(7, ATTEMPT) == ("unread", 8)
+    attempts.note_readback(
+        7,
+        ATTEMPT,
+        "sealed",
+        seq=10,
+        operation_id=OPERATION,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.sealed,
+    )
+    assert attempts.attempt_state(OPERATION, ATTEMPT) == "sealed"
+    assert attempts.attempt_state(OPERATION, other) == "open"
+    attempts.note_readback(7, ATTEMPT, "applied", seq=11, operation_id=OPERATION)
+    assert attempts.kept_readback(7, ATTEMPT) == ("sealed", 10)
+
+    # Even when the operation is at MAX_RECORDS_PER_OPERATION, repeating the kept read-back passes.
+    for _ in range(MAX_RECORDS_PER_OPERATION):
+        ledger.add_record(OPERATION)
+    repeat_req = decode_operation_record(
+        {
+            "record": "stop_readback",
+            "task_id": "T1",
+            "operation_id": OPERATION,
+            "readback": _body("sealed"),
+        }
+    )
+    assert stop_readback_refusal(ledger, repeat_req) is None
+    assert kept_stop_readback(ledger, repeat_req) == ("sealed", 10)
+
+    # Multi-attempt: other is open, so confirmed_done ends other without contradicting ATTEMPT.
+    attempts.note_outcome(OPERATION, "Q/stranger", "confirmed_done", seq=12)
+    attempts.note_outcome(OPERATION, "P/worker", "confirmed_done", seq=13)
+    assert attempts.contradicted_at(OPERATION) == 0
+
+    # Order 2: seal lands first on single attempt, then executor claims confirmed_done.
+    op2 = "git-op-2"
+    attempts.note_declaration(op2, fact)
+    attempts.open_attempt(op2, ATTEMPT, executor="P/worker", approval_seq=3)
+    attempts.note_seal(op2, ATTEMPT)
+    attempts.note_outcome(op2, "P/worker", "confirmed_done", seq=20)
+    attempts.note_outcome(op2, "P/worker", "confirmed_done", seq=21)
+    assert attempts.contradicted_at(op2) == 20
+    m2 = AttemptMarker(op2, ATTEMPT, DIGEST)
+    attempts.note_stop("project:P", 25, epoch=2, listed=((op2, ATTEMPT),))
+    attempts.note_readback(
+        25,
+        ATTEMPT,
+        "sealed",
+        seq=26,
+        operation_id=op2,
+        marker_ref=m2.ref,
+        object_format="sha1",
+        marker_object=m2.objects("sha1").sealed,
+    )
+    assert attempts.contradicted_at(op2) == 20

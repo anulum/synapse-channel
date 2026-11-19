@@ -34,6 +34,8 @@ from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.journal_export import export_store
+from synapse_channel.core.operation_attempt_ledger import AttemptLedger, OpenAttempt
+from synapse_channel.core.operation_attempts import OperationFact
 from synapse_channel.core.operation_records import decode_operation_record
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
@@ -720,3 +722,36 @@ async def test_an_attempt_opened_between_the_list_and_its_record_cannot_exist(
         seen[outcome] = seen.get(outcome, 0) + 1
     assert set(seen) == {("approved_fresh", True), ("stopped", False)}, seen
     assert sum(seen.values()) == RACE_RUNS
+
+
+def test_standing_listed_reads_only_the_stop_s_own_list_while_still_open() -> None:
+    """Ignore unlisted attempts in the scope and drop sealed or reconciled ones."""
+    ledger = AttemptLedger(None)
+    assert ledger.standing_listed(99) == ()
+    fact = OperationFact("T1", "P/worker", "d" * 64, None, 1.0, "git_publication", "cooperative")
+    ledger.note_declaration("op-1", fact)
+    ledger.note_declaration("op-2", fact)
+    ledger.note_declaration("op-3", fact)
+    ledger.open_attempt("op-1", "a1", executor="P/worker", approval_seq=1)
+    ledger.open_attempt("op-2", "b1", executor="P/worker", approval_seq=2)
+    ledger.open_attempt("op-3", "c1", executor="P/worker", approval_seq=3)
+    ledger.note_stop(
+        "project:P",
+        10,
+        epoch=1,
+        listed=(("op-1", "a1"), ("op-3", "c1"), ("op-missing", "m1"), ("op-1", "a-missing")),
+    )
+    ledger.note_outcome("op-1", "P/worker", "not_started", seq=11)
+    assert ledger.standing_listed(10) == (
+        OpenAttempt("op-1", "a1", "T1", "P/worker"),
+        OpenAttempt("op-3", "c1", "T1", "P/worker"),
+    )
+    ledger.note_seal("op-3", "c1")
+    assert ledger.standing_listed(10) == (OpenAttempt("op-1", "a1", "T1", "P/worker"),)
+    ledger.note_verification("op-1", "Q/checker", effect="absent", result="not_verified", seq=12)
+    assert ledger.standing_listed(10) == ()
+    ledger.note_declaration("op-4", fact)
+    ledger.open_attempt("op-4", "d1", executor="P/worker", approval_seq=4)
+    ledger.note_stop("project:P", 20, epoch=2, listed=(("op-4", "d1"),))
+    ledger.note_verification("op-4", "Q/checker", effect="observed", result="verified", seq=21)
+    assert ledger.standing_listed(20) == ()

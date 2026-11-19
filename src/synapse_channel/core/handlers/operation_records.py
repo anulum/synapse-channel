@@ -74,6 +74,7 @@ from synapse_channel.core.handlers.operation_triggers import record_trigger
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import OperationFact
 from synapse_channel.core.operation_records import (
+    MARKED_EFFECTS,
     RECORD_DECLARE,
     RECORD_SEAL,
     RECORD_STOP_READBACK,
@@ -90,10 +91,12 @@ from synapse_channel.core.operation_records import (
     declared_target,
     decode_operation_record,
     evidence_refusal,
+    kept_stop_readback,
     record_operation,
     seal_refusal,
     stop_readback_refusal,
 )
+from synapse_channel.core.operation_stop_readbacks import recompute_readback_result
 from synapse_channel.core.operation_triggers import CAUSE_INCORRECT_ACCEPTANCE
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.verb_registry import VerbSpec
@@ -247,6 +250,21 @@ def _reporting_stops(
     return verdict
 
 
+def _record_contradiction_trigger(
+    hub: OperationRecordContext,
+    store: EventStore,
+    ledger: OperationLedger,
+    operation_id: str,
+    seq: int,
+) -> None:
+    """Record an ``incorrect_acceptance`` trigger when ``seq`` contradicted ``operation_id``."""
+    if hub.ladder_enabled and ledger.attempts.contradicted_at(operation_id) == seq:
+        trigger = ledger.attempts.operation_trigger(
+            operation_id, CAUSE_INCORRECT_ACCEPTANCE, shown_by=seq
+        )
+        record_trigger(store, ledger.attempts, trigger, time.time())
+
+
 def _evidence(
     hub: OperationRecordContext,
     store: EventStore,
@@ -266,7 +284,11 @@ def _evidence(
     ledger.add_record(request.operation_id)
     if request.outcome is not None:
         ledger.attempts.note_outcome(
-            request.operation_id, sender, request.outcome.state.value, seq=seq
+            request.operation_id,
+            sender,
+            request.outcome.state.value,
+            external_effect=request.outcome.external_effect.value,
+            seq=seq,
         )
     else:
         verification = request.verification
@@ -278,11 +300,7 @@ def _evidence(
             result=verification.result,
             seq=seq,
         )
-        if hub.ladder_enabled and ledger.attempts.contradicted_at(request.operation_id) == seq:
-            trigger = ledger.attempts.operation_trigger(
-                request.operation_id, CAUSE_INCORRECT_ACCEPTANCE, shown_by=seq
-            )
-            record_trigger(store, ledger.attempts, trigger, time.time())
+    _record_contradiction_trigger(hub, store, ledger, request.operation_id, seq)
     return _Verdict(STATUS_ACCEPTED, f"{request.record} recorded", seq=seq)
 
 
@@ -316,7 +334,7 @@ def _stop_readback(
     sender: str,
     request: OperationRecordRequest,
 ) -> _Verdict:
-    """Journal what a stop read back for one listed attempt; it ends nothing."""
+    """Journal what a stop read back for one listed attempt, or return its kept row."""
     if not task_grant(hub.acl_policy, sender, request.task_id, OPERATION_SEAL):
         return _refused(
             REFUSED_NOT_AUTHORISED, f"{sender} lacks operation-seal for {request.task_id}"
@@ -324,12 +342,34 @@ def _stop_readback(
     refusal = stop_readback_refusal(ledger, request)
     if refusal is not None:
         return _refused(refusal, f"the stop read-back cannot be kept: {refusal}")
-    seq = record_operation(store, request, sender=sender)
-    ledger.add_record(request.operation_id)
     readback = request.readback
     assert readback is not None, "stop_readback_refusal kept a read-back with its body"
-    ledger.attempts.note_readback(readback.stop_seq, readback.attempt_id, readback.result)
-    return _Verdict(STATUS_ACCEPTED, f"stop read-back {readback.result} recorded", seq=seq)
+    kept = kept_stop_readback(ledger, request)
+    if kept is not None:
+        kept_result, kept_seq = kept
+        return _Verdict(STATUS_ACCEPTED, f"stop read-back {kept_result} recorded", seq=kept_seq)
+    fact = ledger.attempts.operation(request.operation_id)
+    recomputed = recompute_readback_result(
+        readback,
+        operation_id=request.operation_id,
+        intent_sha256=None if fact is None else fact.intent_sha256,
+        marked=ledger.effect_of(request.operation_id) in MARKED_EFFECTS,
+    )
+    assert recomputed is not None, "stop_readback_refusal recomputed the read-back"
+    seq = record_operation(store, request, sender=sender)
+    ledger.add_record(request.operation_id)
+    ledger.attempts.note_readback(
+        readback.stop_seq,
+        readback.attempt_id,
+        recomputed,
+        seq=seq,
+        operation_id=request.operation_id,
+        marker_ref=readback.marker_ref,
+        object_format=readback.object_format,
+        marker_object=readback.marker_object,
+    )
+    _record_contradiction_trigger(hub, store, ledger, request.operation_id, seq)
+    return _Verdict(STATUS_ACCEPTED, f"stop read-back {recomputed} recorded", seq=seq)
 
 
 def _declare(

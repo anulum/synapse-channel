@@ -9,29 +9,30 @@
 
 On one connection, as the stopper's identity, the command:
 
-1. records the stop, or receives its stored answer when the request key is
-   repeated, and stops unless the answer is ``stop_recorded``;
-2. for each attempt the stop listed, reads the operation's declaration from the
-   hub (``operation_state``, which needs ``operation-evidence`` or
+1. records the stop, receives its stored answer when the request key is
+   repeated, or adopts the standing stop's ``standing_seq`` and still-open
+   ``listed`` attempts when the scope is ``already_stopped``, and stops on any
+   other answer;
+2. for each attempt to seal, reads the operation's declaration from the hub
+   (``operation_state``, which needs ``operation-evidence`` or
    ``operation-seal`` on the task);
 3. for an operation whose effect has no marker at a system of record, records
    ``unsealable``; otherwise creates the attempt's ``sealed`` marker in
    ``--repository`` (or pushes it to ``--remote``) and reads it back, exactly
    as ``synapse operation seal`` does;
 4. records what it read back: ``sealed`` (after the ``seal`` record, joined to
-   the stop by its sequence, when the attempt was still open), ``applied``
-   (the effect landed first) or ``unread`` (the seal did not reach the
-   repository, or its state cannot be told).
+   the stop by its sequence, when the attempt was still open; a concurrent
+   ``attempt_ended`` refusal on the ``seal`` record is non-fatal and proceeds
+   to the read-back), ``applied`` (the effect landed first) or ``unread`` (the
+   seal did not reach the repository, or its state cannot be told).
 
-Each attempt is sealed and read back before anything is recorded for it. A run
-that was interrupted is repeated with the same ``--idem-key``: each seal is
-idempotent at the repository, and an attempt whose read-back the hub already
-closed is reported as recorded. An attempt whose task the stopper holds no
-``operation-seal`` on is reported ``not_permitted`` and left for an identity
-that holds it.
+Each attempt is sealed and read back before anything is recorded for it, and
+the request key is printed on every exit path once the hub link is entered. An
+attempt whose task the stopper holds no ``operation-seal`` on is reported
+``not_permitted`` and left for an identity that holds it.
 
-Exit codes: 0 every listed attempt is sealed or applied; 1 the stop was not
-recorded, or an attempt is not closed; 2 no verdict (the hub is unreachable or
+Exit codes: 0 every listed attempt is sealed or applied; 1 the scope was not
+stopped, or an attempt is not closed; 2 no verdict (the hub is unreachable or
 silent); 4 the hub does not know the request; 5 no ``git``.
 """
 
@@ -61,16 +62,16 @@ from synapse_channel.core.attempt_markers import (
     AttemptMarker,
     AttemptMarkerError,
 )
+from synapse_channel.core.operation_seals import REFUSED_ATTEMPT_ENDED
 from synapse_channel.core.operation_stop_readbacks import (
     CLOSING_RESULTS,
-    REFUSED_READBACK_CLOSED,
     RESULT_APPLIED,
     RESULT_SEALED,
     RESULT_UNREAD,
     RESULT_UNSEALABLE,
     UNREAD_REASONS,
 )
-from synapse_channel.core.operation_stops import STOP_RECORDED
+from synapse_channel.core.operation_stops import ALREADY_STOPPED, STOP_RECORDED
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.git.attempt_marker_changes import Target, object_format, seal
 from synapse_channel.git.git_runtime import GitError, git_executable
@@ -78,14 +79,14 @@ from synapse_channel.terminal_text import terminal_text
 
 NOT_PERMITTED = "not_permitted"
 REFUSED = "refused"
-RECORDED_BEFORE = "recorded_before"
 """Outcomes of one listed attempt that are not a read-back result."""
 
 _GIT_EFFECT = "git_publication"
+_SEALABLE_STOP_ANSWERS = (STOP_RECORDED, ALREADY_STOPPED)
 
 
 async def _stop(link: _HubLink, args: argparse.Namespace) -> dict[str, Any] | int:
-    """Record the stop and return its answer, or print why not and return an exit code."""
+    """Record the stop (or adopt the standing one) and return its answer, or an exit code."""
     key = str(args.idem_key)
     reply = await link.ask(
         MessageType.OPERATION_STOP,
@@ -97,15 +98,13 @@ async def _stop(link: _HubLink, args: argparse.Namespace) -> dict[str, Any] | in
     )
     if reply is None or reply.get("type") == MessageType.ERROR:
         refused = _hub_refusal(reply, "operation stop")
-        print(f"request key: {key}")
         return EXIT_REFUSED if refused is None else refused
     answer = str(reply.get("answer") or "")
     print(
         f"operation stop {answer} for {terminal_text(args.scope)}: "
         f"{terminal_text(str(reply.get('payload') or ''))}"
     )
-    if answer != STOP_RECORDED:
-        print(f"request key: {key}")
+    if answer not in _SEALABLE_STOP_ANSWERS:
         return EXIT_REFUSED
     return reply
 
@@ -124,9 +123,6 @@ async def _record(
 async def _read_back(link: _HubLink, item: dict[str, str], body: dict[str, Any]) -> str:
     """Record one read-back; return its result, or why it was not kept."""
     reply = await _record(link, item, "stop_readback", body)
-    if reply is not None and reply.get("reason") == REFUSED_READBACK_CLOSED:
-        print(f"attempt {item['attempt_id']}: a closing read-back is already recorded")
-        return RECORDED_BEFORE
     if _hub_refusal(reply, f"attempt {item['attempt_id']}: read-back") is not None:
         return REFUSED
     assert reply is not None
@@ -202,7 +198,16 @@ async def _seal_in_git(
                 "stop_seq": stop_seq,
             }
             kept = await _record(link, item, "seal", seal_body)
-            if _hub_refusal(kept, f"attempt {attempt_id}: seal record") is not None:
+            ended_meanwhile = (
+                kept is not None
+                and kept.get("type") == MessageType.OPERATION_RECORD_RESULT
+                and kept.get("status") == "refused"
+                and kept.get("reason") == REFUSED_ATTEMPT_ENDED
+            )
+            if (
+                not ended_meanwhile
+                and _hub_refusal(kept, f"attempt {attempt_id}: seal record") is not None
+            ):
                 print(f"attempt {attempt_id}: the seal is in place at {marker.ref}; not recorded")
                 return REFUSED
         fields = _marker_fields(marker, fmt, outcome.marker)
@@ -219,7 +224,12 @@ async def _stop_and_seal(link: _HubLink, args: argparse.Namespace, git: str) -> 
     stopped = await _stop(link, args)
     if isinstance(stopped, int):
         return stopped
-    stop_seq = int(stopped.get("seq") or 0)
+    raw_seq = (
+        stopped.get("standing_seq")
+        if stopped.get("answer") == ALREADY_STOPPED
+        else stopped.get("seq")
+    )
+    stop_seq = int(raw_seq or 0)
     listed = stopped.get("listed")
     items = [
         {key: str(item.get(key) or "") for key in ("task_id", "operation_id", "attempt_id")}
@@ -227,9 +237,8 @@ async def _stop_and_seal(link: _HubLink, args: argparse.Namespace, git: str) -> 
         if isinstance(item, dict)
     ]
     results = [await _seal_one(link, args, git, stop_seq, item) for item in items]
-    closed = sum(result in (*CLOSING_RESULTS, RECORDED_BEFORE) for result in results)
+    closed = sum(result in CLOSING_RESULTS for result in results)
     print(f"stop at journal seq {stop_seq}: {closed} of {len(items)} listed attempt(s) closed")
-    print(f"request key: {args.idem_key}")
     return EXIT_DONE if closed == len(items) else EXIT_REFUSED
 
 
@@ -249,3 +258,4 @@ async def stop_and_seal(
         return await _stop_and_seal(link, args, git)
     finally:
         await link.close()
+        print(f"request key: {args.idem_key}")

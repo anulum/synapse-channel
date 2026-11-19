@@ -126,6 +126,8 @@ class _Outcome:
     listed: tuple[OpenAttempt, ...] = ()
     earlier_seq: int | None = None
     """The standing stop's sequence: the one already standing, or the one a resume lifts."""
+    state: str = ""
+    """For an ``already_stopped`` answer, the standing stop's current computed state."""
     resumed_from: str = RESUMED_FROM_STOP_REQUESTED
     """For a resume, the lifted stop's state computed at the resume."""
 
@@ -155,8 +157,20 @@ def _decide_stop(request: StopRequest, ledger: AttemptLedger) -> _Outcome:
     scope = request.scope
     standing = ledger.standing_stop(scope)
     if standing is not None:
-        detail = f"the scope {scope} is already stopped (journal seq {standing[0]})"
-        return _Outcome(ALREADY_STOPPED, detail, now, epoch=standing[1], earlier_seq=standing[0])
+        standing_seq, epoch = standing
+        listed = ledger.standing_listed(standing_seq)
+        computed = ledger.stop_state(standing_seq)
+        state = STATE_STOP_REQUESTED if computed is None else computed.state
+        detail = f"the scope {scope} is already stopped (journal seq {standing_seq})"
+        return _Outcome(
+            ALREADY_STOPPED,
+            detail,
+            now,
+            epoch=epoch,
+            listed=listed,
+            earlier_seq=standing_seq,
+            state=state,
+        )
     listed = ledger.open_in(scope)
     detail = f"the scope {scope} is stopped; {len(listed)} open attempt(s) listed"
     return _Outcome(STOP_RECORDED, detail, now, epoch=ledger.epoch(scope) + 1, listed=listed)
@@ -257,6 +271,11 @@ def _answer_fields(
         fields["state"] = STATE_STOP_REQUESTED if outcome.listed else STATE_AT_REST
         if hub.acl_policy is None:
             fields["warning"] = NO_ACCESS_FILE_WARNING
+    elif outcome.answer == ALREADY_STOPPED:
+        fields["standing_seq"] = outcome.earlier_seq
+        fields["epoch"] = outcome.epoch
+        fields["state"] = outcome.state
+        fields["listed"] = _listed(outcome.listed)
     elif outcome.answer == RESUMED:
         fields["lifts_seq"] = outcome.earlier_seq
         fields["resumed_from"] = outcome.resumed_from

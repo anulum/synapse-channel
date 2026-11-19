@@ -32,6 +32,25 @@ execution evidence when carrying a release claim forward.
   reached only through a named paid profile. `SynapseLLMWorker` gains
   `local_endpoints=`.
 
+### Fixed
+
+- `operation_stop` answers `already_stopped` with the standing stop's
+  `standing_seq`, `epoch`, computed `state`, and the attempts from that
+  standing stop's recorded `listed` set that remain neither `sealed` nor
+  independently `reconciled`. Plain `synapse operation stop` continues to exit
+  `1` on `already_stopped`, while `synapse operation stop --seal` seals and
+  reads back those remaining attempts under `standing_seq`, prints `request key:`
+  on every exit path once the hub link is entered, and treats a concurrent
+  `attempt_ended` refusal on `record="seal"` as non-fatal so `stop_readback`
+  still closes the stop. The hub recomputes `sealed` and `applied` read-backs
+  from the attempt marker, marks the attempt `sealed` when a kept read-back's
+  marker recomputes to `sealed`, returns the already-kept row without writing a
+  second row when `(stop_seq, attempt_id)` repeats the same result (refusing
+  `readback_closed` on a different result after closure), and surfaces an
+  executor `confirmed_done` claim against a `sealed` marker as a critical
+  `operation_contradiction` attention item and, under `--ladder`, an
+  `incorrect_acceptance` trigger.
+
 ## [0.99.56] - 2026-11-18
 
 Core 0.99.56 applies a setup plan from the dashboard, once and only after an

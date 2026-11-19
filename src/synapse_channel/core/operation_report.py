@@ -76,6 +76,7 @@ _KINDS: Final = {
     EventKind.OPERATION_OUTCOME: "outcome",
     EventKind.OPERATION_VERIFIED: "verification",
     EventKind.OPERATION_SEALED: "seal",
+    EventKind.OPERATION_STOP_READBACK: "stop_readback",
 }
 _DETAIL: Final = {
     "declared": ("effect", "intent_sha256"),
@@ -83,6 +84,7 @@ _DETAIL: Final = {
     "outcome": ("state", "boundary", "external_effect"),
     "verification": ("effect", "result"),
     "seal": ("attempt_id",),
+    "stop_readback": ("stop_seq", "attempt_id", "result"),
 }
 
 

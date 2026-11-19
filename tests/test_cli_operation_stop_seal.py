@@ -24,8 +24,15 @@ from synapse_channel import cli_operation_seal as seal_command
 from synapse_channel import cli_operation_stop as stop_command
 from synapse_channel import cli_operation_stop_seal as command
 from synapse_channel.cli import build_parser
-from synapse_channel.core.acl import OPERATION_RESUME, OPERATION_SEAL, AclPolicy, AclRule
+from synapse_channel.core.acl import (
+    OPERATION_LEVEL,
+    OPERATION_RESUME,
+    OPERATION_SEAL,
+    AclPolicy,
+    AclRule,
+)
 from synapse_channel.core.attempt_markers import BASE_GONE, OTHER_PARTY_FIRST, AttemptMarker
+from synapse_channel.core.attention import project_hub_attention
 from synapse_channel.core.execution_outcome import OutcomeState
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
@@ -459,7 +466,9 @@ async def test_an_open_attempt_is_sealed_with_the_stop_s_sequence_then_read_back
     )
     assert [(row["attempt_id"], row["stop_seq"]) for row in seals] == [(attempt, seq)]
     assert [row["result"] for row in readbacks] == ["sealed"]
-    assert f"attempt {attempt}: a closing read-back is already recorded" in printed
+    assert (
+        sum(line.startswith(f"attempt {attempt}: sealed recorded at seq ") for line in printed) == 2
+    )
 
 
 async def test_an_effect_that_landed_first_is_recorded_applied_and_closes_the_attempt(
@@ -524,7 +533,6 @@ async def test_a_file_effect_is_unsealable_and_an_unreached_seal_is_unread_until
     assert by_attempt[1:] == [
         (file_op[3], "unsealable", None),
         (git_op[3], "sealed", None),
-        (file_op[3], "unsealable", None),
     ]
     assert first[-2].endswith("0 of 2 listed attempt(s) closed")
     assert second[-2].endswith("1 of 2 listed attempt(s) closed")
@@ -600,8 +608,10 @@ async def test_the_hub_keeps_a_read_back_only_as_it_recomputes_it(tmp_path: Path
                     recovery, record="seal", task_id=task, operation_id=operation_id, seal=seal
                 )
                 kept = await readback(result="applied", marker_object=objects.applied, **held)
-                closed_twice = await readback(
-                    result="applied", marker_object=objects.applied, **held
+                same_again = await readback(result="applied", marker_object=objects.applied, **held)
+                different_after_closed = await readback(result="unread", reason="unknown")
+                different_sealed = await readback(
+                    result="sealed", marker_object=objects.sealed, **held
                 )
                 unread = {"stop_seq": seq, "attempt_id": attempt, "result": "unread"}
                 unknown = await scene.record(
@@ -631,6 +641,7 @@ async def test_the_hub_keeps_a_read_back_only_as_it_recomputes_it(tmp_path: Path
                 )
             finally:
                 await close_agents(worker)
+        readback_rows = _rows(store, EventKind.OPERATION_STOP_READBACK)
     finally:
         store.close()
     assert (unknown["reason"], elsewhere["reason"]) == ("unknown_operation", "task_mismatch")
@@ -643,7 +654,10 @@ async def test_the_hub_keeps_a_read_back_only_as_it_recomputes_it(tmp_path: Path
     ]
     assert wrong_stop["reason"] == "stop_unknown"
     assert kept["status"] == "accepted"
-    assert closed_twice["reason"] == "readback_closed"
+    assert (same_again["status"], same_again["seq"]) == ("accepted", kept["seq"])
+    assert different_after_closed["reason"] == "readback_closed"
+    assert different_sealed["reason"] == "readback_closed"
+    assert len(readback_rows) == 1
 
 
 async def test_seal_without_a_repository_or_git_and_a_stop_not_recorded_are_refused(
@@ -667,6 +681,17 @@ async def test_seal_without_a_repository_or_git_and_a_stop_not_recorded_are_refu
     )
     assert "git is not installed" in capsys.readouterr().out
     monkeypatch.undo()
+    async with running_hub(SynapseHub(acl_policy=_policy())) as (_h, uri):
+        watcher = await connect_agent("X/watcher", uri)
+        try:
+            capsys.readouterr()
+            no_journal = await _command(watcher, command.stop_and_seal(_args(uri, tmp_path)))
+            no_journal_lines = capsys.readouterr().out.splitlines()
+        finally:
+            await close_agents(watcher)
+    assert no_journal == seal_command.EXIT_REFUSED
+    assert no_journal_lines[0].startswith(f"operation stop no_journal for {SCOPE}: ")
+    assert no_journal_lines[-1] == "request key: s1"
     store = EventStore(tmp_path / "hub.db")
     try:
         async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h, uri):
@@ -683,7 +708,7 @@ async def test_seal_without_a_repository_or_git_and_a_stop_not_recorded_are_refu
     finally:
         store.close()
     assert first == seal_command.EXIT_DONE
-    assert second == seal_command.EXIT_REFUSED
+    assert second == seal_command.EXIT_DONE
     assert printed[0].startswith(f"operation stop already_stopped for {SCOPE}: ")
     assert printed[-1] == "request key: s2"
 
@@ -795,9 +820,21 @@ async def test_a_silent_or_unknowing_hub_and_each_refusal_of_an_attempt_have_the
         seal_command.EXIT_REFUSED
     )
     assert f"attempt {ATTEMPT}: no marker can be named" in capsys.readouterr().out
-    refused_seal = {stop: RECORDED, state: _state(), "seal": _result("refused", "attempt_ended")}
-    assert await _scripted(tmp_path / "6", refused_seal) == seal_command.EXIT_REFUSED
-    assert "; not recorded" in capsys.readouterr().out
+    for idx, fatal_reason in enumerate(
+        ("record_limit", "attempt_unknown", "task_mismatch", "seal_not_observed")
+    ):
+        refused_seal = {stop: RECORDED, state: _state(), "seal": _result("refused", fatal_reason)}
+        assert await _scripted(tmp_path / f"6-{idx}", refused_seal) == seal_command.EXIT_REFUSED
+        out = capsys.readouterr().out
+        assert f"seal record refused ({fatal_reason})" in out and "; not recorded" in out
+    ended_seal = {
+        stop: RECORDED,
+        state: _state(),
+        "seal": _result("refused", "attempt_ended"),
+        "stop_readback": _result(),
+    }
+    assert await _scripted(tmp_path / "6-ended", ended_seal) == seal_command.EXIT_DONE
+    assert "sealed recorded at seq 9" in capsys.readouterr().out
     unsealable = {
         stop: RECORDED,
         state: _state(effect="file"),
@@ -811,6 +848,14 @@ async def test_a_silent_or_unknowing_hub_and_each_refusal_of_an_attempt_have_the
     unread = {stop: RECORDED, state: _state(), "stop_readback": _result()}
     assert await _scripted(tmp_path / "8", unread) == seal_command.EXIT_REFUSED
     assert f"attempt {ATTEMPT}: the seal was not read back (base_gone)" in capsys.readouterr().out
+
+    def interrupted_seal(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError("interrupted mid-list")
+
+    monkeypatch.setattr(command, "_seal_one", interrupted_seal)
+    with pytest.raises(RuntimeError, match="interrupted mid-list"):
+        await _scripted(tmp_path / "9", {stop: RECORDED})
+    assert capsys.readouterr().out.splitlines()[-1] == "request key: s1"
 
 
 def test_the_stop_command_dispatches_a_seal_with_a_key_of_its_own(
@@ -1041,3 +1086,398 @@ async def test_a_stop_that_lists_nothing_is_at_rest_in_its_own_transaction(
             "reconciled": 0,
         },
     }
+
+
+async def _command_as(watcher: AgentHandle, actor: str, run: Any) -> int:
+    """Run one CLI coroutine as ``actor`` and wait until the hub has released its name."""
+    earlier = {id(frame) for frame in watcher.recorder.messages}
+    code: int = await run
+    await watcher.recorder.wait_for(
+        lambda frame: (
+            id(frame) not in earlier
+            and frame.get("type") == MessageType.PRESENCE_UPDATE
+            and frame.get("event") == "left"
+            and frame.get("agent") == actor
+        ),
+        timeout=scene.WAIT,
+    )
+    return code
+
+
+async def test_a_second_stopper_seals_what_a_standing_stop_listed_under_its_sequence(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Plain stop records the stop and stays exit 1 on repeat; --seal seals under standing_seq."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (hub, uri):
+            [(_task, operation_id, _digest, attempt)] = await _opened(uri, b, x)
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                first_stop = await _command_as(
+                    watcher,
+                    "H/operator",
+                    stop_command.request_stop(
+                        uri=uri,
+                        actor="H/operator",
+                        message_type=MessageType.OPERATION_STOP,
+                        fields={"scope": SCOPE, "reason": "operator a", "idem_key": "s1"},
+                        token=None,
+                        ready_timeout=scene.WAIT,
+                        result_timeout=scene.WAIT,
+                        json_output=False,
+                    ),
+                )
+                capsys.readouterr()
+                plain_again = await _command_as(
+                    watcher,
+                    "H/operator",
+                    stop_command.request_stop(
+                        uri=uri,
+                        actor="H/operator",
+                        message_type=MessageType.OPERATION_STOP,
+                        fields={"scope": SCOPE, "reason": "operator a check", "idem_key": "s1b"},
+                        token=None,
+                        ready_timeout=scene.WAIT,
+                        result_timeout=scene.WAIT,
+                        json_output=False,
+                    ),
+                )
+                plain_lines = capsys.readouterr().out.splitlines()
+                fresh = _args(uri, work)
+                fresh.idem_key = "s2"
+                sealed = await _command(watcher, command.stop_and_seal(fresh))
+                seal_lines = capsys.readouterr().out.splitlines()
+                seq = _stop_seq(store)
+                stop_state = hub.operation_records.attempts.stop_state(seq)
+                attempt_state = hub.operation_records.attempts.attempt_state(operation_id, attempt)
+            finally:
+                await close_agents(watcher)
+        stopped_rows = _rows(store, EventKind.OPERATION_STOPPED)
+        seals = _rows(store, EventKind.OPERATION_SEALED)
+        readbacks = _rows(store, EventKind.OPERATION_STOP_READBACK)
+    finally:
+        store.close()
+    assert first_stop == stop_command.EXIT_RECORDED
+    assert plain_again == stop_command.EXIT_REFUSED
+    assert f"listed attempt {attempt} of {operation_id} by {scene.WORKER}" in plain_lines
+    assert plain_lines[-1] == "request key: s1b"
+    assert sealed == seal_command.EXIT_DONE, seal_lines
+    assert seal_lines[0].startswith(f"operation stop already_stopped for {SCOPE}: ")
+    assert seal_lines[-2:] == [
+        f"stop at journal seq {seq}: 1 of 1 listed attempt(s) closed",
+        "request key: s2",
+    ]
+    assert len(stopped_rows) == 1 and stopped_rows[0]["epoch"] == 1
+    assert [(row["attempt_id"], row["stop_seq"]) for row in seals] == [(attempt, seq)]
+    assert [(row["stop_seq"], row["result"]) for row in readbacks] == [(seq, "sealed")]
+    assert stop_state is not None and stop_state.state == "no new effect"
+    assert attempt_state == "sealed"
+
+
+async def test_an_outcome_between_state_and_seal_leaves_attempt_ended_non_fatal_and_seals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the executor ends the attempt just before seal, read-back still seals and closes it."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    original_record = command._record
+    seen_refusal: list[str] = []
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (hub, uri):
+            [(_task, operation_id, _digest, attempt)] = await _opened(uri, b, x)
+
+            async def racing_record(
+                link: Any, item: dict[str, str], record: str, body: dict[str, Any]
+            ) -> dict[str, Any] | None:
+                if record == "seal":
+                    worker = await connect_agent(scene.WORKER, uri)
+                    try:
+                        await scene.record(
+                            worker, **scene.outcome(OutcomeState.NOT_STARTED, operation_id)
+                        )
+                    finally:
+                        await close_agents(worker)
+                reply = await original_record(link, item, record, body)
+                if record == "seal" and reply is not None:
+                    seen_refusal.append(str(reply.get("reason") or ""))
+                return reply
+
+            monkeypatch.setattr(command, "_record", racing_record)
+            watcher = await connect_agent("X/watcher", uri)
+            operator = await connect_agent("H/operator", uri)
+            try:
+                code = await _command(watcher, command.stop_and_seal(_args(uri, work)))
+                seq = _stop_seq(store)
+                stop_state = hub.operation_records.attempts.stop_state(seq)
+                attempt_state = hub.operation_records.attempts.attempt_state(operation_id, attempt)
+                resumed = await scene.answer(
+                    operator,
+                    lambda: operator.agent.send_message(
+                        MessageType.OPERATION_RESUME,
+                        scope=SCOPE,
+                        reason="lifted",
+                        case="another_person",
+                        idem_key="r1",
+                    ),
+                    lambda frame: frame.get("type") == MessageType.OPERATION_STOP_RESULT,
+                )
+                second_stop = await scene.answer(
+                    operator,
+                    lambda: operator.agent.send_message(
+                        MessageType.OPERATION_STOP,
+                        scope=SCOPE,
+                        reason="check list",
+                        idem_key="s3",
+                    ),
+                    lambda frame: frame.get("type") == MessageType.OPERATION_STOP_RESULT,
+                )
+            finally:
+                await close_agents(watcher, operator)
+        seals = _rows(store, EventKind.OPERATION_SEALED)
+        readbacks = _rows(store, EventKind.OPERATION_STOP_READBACK)
+    finally:
+        store.close()
+    assert seen_refusal == ["attempt_ended"]
+    assert code == seal_command.EXIT_DONE
+    assert seals == []
+    assert [(row["stop_seq"], row["result"]) for row in readbacks] == [(seq, "sealed")]
+    assert stop_state is not None and stop_state.state == "no new effect"
+    assert attempt_state == "sealed"
+    assert resumed["resumed_from"] == "no new effect"
+    assert (second_stop["answer"], second_stop["listed"], second_stop["state"]) == (
+        "stop_recorded",
+        [],
+        "at rest",
+    )
+
+
+async def test_two_concurrent_stop_and_seal_runs_keep_one_seal_one_read_back_and_both_exit_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two stoppers racing on one standing stop write one seal and one closing read-back."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    original_attempt_state = seal_command._attempt_state
+    ready_count = 0
+    both_saw_open = asyncio.Event()
+
+    def synced_attempt_state(answer: dict[str, Any], attempt_id: str) -> str:
+        nonlocal ready_count
+        ready_count += 1
+        if ready_count >= 2:
+            both_saw_open.set()
+        return original_attempt_state(answer, attempt_id)
+
+    original_seal_in_git = command._seal_in_git
+
+    async def barrier_seal_in_git(*a: Any, **kw: Any) -> str:
+        synced_attempt_state(a[5], a[3]["attempt_id"])
+        await asyncio.wait_for(both_saw_open.wait(), timeout=scene.WAIT)
+        return await original_seal_in_git(*a, **kw)
+
+    monkeypatch.setattr(command, "_seal_in_git", barrier_seal_in_git)
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h, uri):
+            [(_task, _operation_id, _digest, attempt)] = await _opened(uri, b, x)
+            first_args = _args(uri, work)
+            first_args.idem_key = "s1"
+            second_args = _args(uri, work)
+            second_args.name = "R/recovery-2"
+            second_args.idem_key = "s2"
+            first_code, second_code = await asyncio.gather(
+                command.stop_and_seal(first_args),
+                command.stop_and_seal(second_args),
+            )
+        seq = _stop_seq(store)
+        stopped_rows = _rows(store, EventKind.OPERATION_STOPPED)
+        seals = _rows(store, EventKind.OPERATION_SEALED)
+        readbacks = _rows(store, EventKind.OPERATION_STOP_READBACK)
+        states = [row["state"] for row in _states(store)]
+    finally:
+        store.close()
+    assert (first_code, second_code) == (seal_command.EXIT_DONE, seal_command.EXIT_DONE)
+    assert len(stopped_rows) == 1
+    assert [(row["attempt_id"], row["stop_seq"]) for row in seals] == [(attempt, seq)]
+    assert [(row["stop_seq"], row["attempt_id"], row["result"]) for row in readbacks] == [
+        (seq, attempt, "sealed")
+    ]
+    assert states == ["no new effect"]
+
+
+async def test_when_the_executor_marker_lands_between_state_and_seal_read_back_is_applied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the executor wins the marker race on a standing stop, read-back is applied."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    original_seal_in_git = command._seal_in_git
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h, uri):
+            [(_task, operation_id, digest, attempt)] = await _opened(uri, b, x)
+            marker = AttemptMarker(operation_id, attempt, digest)
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                await _command_as(
+                    watcher,
+                    "H/operator",
+                    stop_command.request_stop(
+                        uri=uri,
+                        actor="H/operator",
+                        message_type=MessageType.OPERATION_STOP,
+                        fields={"scope": SCOPE, "reason": "operator a", "idem_key": "s1"},
+                        token=None,
+                        ready_timeout=scene.WAIT,
+                        result_timeout=scene.WAIT,
+                        json_output=False,
+                    ),
+                )
+
+                async def executor_wins(*a: Any, **kw: Any) -> str:
+                    apply_effect(Target(work, "main", b), marker, candidate=x, git=git_executable())
+                    worker = await connect_agent(scene.WORKER, uri)
+                    try:
+                        await scene.record(
+                            worker, **scene.outcome(OutcomeState.CONFIRMED_DONE, operation_id)
+                        )
+                    finally:
+                        await close_agents(worker)
+                    return await original_seal_in_git(*a, **kw)
+
+                monkeypatch.setattr(command, "_seal_in_git", executor_wins)
+                fresh = _args(uri, work)
+                fresh.idem_key = "s2"
+                code = await _command(watcher, command.stop_and_seal(fresh))
+                after_seal = [row["state"] for row in _states(store)]
+                checker = await connect_agent(scene.CHECKER, uri)
+                try:
+                    verified = ResultVerification(
+                        operation_id,
+                        "git_publication",
+                        "confirmed_done",
+                        "observed",
+                        "verified",
+                        "on main",
+                    ).to_json()
+                    await scene.record(
+                        checker,
+                        record="verification",
+                        task_id="T1",
+                        operation_id=operation_id,
+                        verification=verified,
+                    )
+                finally:
+                    await close_agents(checker)
+            finally:
+                await close_agents(watcher)
+        seq = _stop_seq(store)
+        readbacks = _rows(store, EventKind.OPERATION_STOP_READBACK)
+        final_states = [row["state"] for row in _states(store)]
+        alerts = [
+            item
+            for item in project_hub_attention(store.iter_events(), now=1_000_000.0)
+            if item.kind == "operation_contradiction"
+        ]
+    finally:
+        store.close()
+    assert code == seal_command.EXIT_DONE
+    assert [(row["stop_seq"], row["result"]) for row in readbacks] == [(seq, "applied")]
+    assert after_seal == ["no new effect"]
+    assert final_states == ["no new effect", "at rest"]
+    assert alerts == []
+
+
+async def test_a_confirmed_done_outcome_against_a_sealed_marker_surfaces_a_contradiction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Executor claims confirmed_done while marker reads sealed: keep sealed and surface both."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    level_rule = AclRule(OPERATION_LEVEL, "level-scope", "*", "H", "operators set levels")
+    policy = AclPolicy([*_policy().rules, level_rule])
+    original_record = command._record
+    try:
+        hub = SynapseHub(journal=store, acl_policy=policy, ladder_enabled=True)
+        async with running_hub(hub) as (_h, uri):
+            operator = await connect_agent("H/operator", uri)
+            try:
+                for idx, scope in enumerate(
+                    ("operation:op-1", "effect:git_publication", SCOPE, "installation")
+                ):
+
+                    async def send_level(sc: str = scope, i: int = idx) -> None:
+                        await operator.agent.send_message(
+                            MessageType.OPERATION_LEVEL,
+                            scope=sc,
+                            level="A2",
+                            reason="up",
+                            idem_key=f"lv-{i}",
+                        )
+
+                    ans = await scene.answer(
+                        operator,
+                        send_level,
+                        lambda frame: frame.get("type") == MessageType.OPERATION_LEVEL_RESULT,
+                    )
+                    assert ans["answer"] == "level_recorded"
+            finally:
+                await close_agents(operator)
+            [(_task, operation_id, _digest, attempt)] = await _opened(uri, b, x)
+
+            async def contradicting_record(
+                link: Any, item: dict[str, str], record: str, body: dict[str, Any]
+            ) -> dict[str, Any] | None:
+                if record == "seal":
+                    worker = await connect_agent(scene.WORKER, uri)
+                    try:
+                        await scene.record(
+                            worker, **scene.outcome(OutcomeState.CONFIRMED_DONE, operation_id)
+                        )
+                    finally:
+                        await close_agents(worker)
+                return await original_record(link, item, record, body)
+
+            monkeypatch.setattr(command, "_record", contradicting_record)
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                code = await _command(watcher, command.stop_and_seal(_args(uri, work)))
+            finally:
+                await close_agents(watcher)
+            attempt_state = hub.operation_records.attempts.attempt_state(operation_id, attempt)
+        seq = _stop_seq(store)
+        readback_events = store.read_since(0, kinds=(EventKind.OPERATION_STOP_READBACK,))
+        triggers = store.read_since(0, kinds=(EventKind.OPERATION_TRIGGER,))
+        alerts = [
+            item
+            for item in project_hub_attention(store.iter_events(), now=1_000_000.0)
+            if item.kind == "operation_contradiction"
+        ]
+    finally:
+        store.close()
+    assert code == seal_command.EXIT_DONE
+    assert attempt_state == "sealed"
+    assert len(readback_events) == 1
+    assert (readback_events[0].payload["stop_seq"], readback_events[0].payload["result"]) == (
+        seq,
+        "sealed",
+    )
+    assert len(triggers) == 1
+    assert {key: triggers[0].payload[key] for key in ("scope", "cause", "target", "shown_by")} == {
+        "scope": f"operation:{operation_id}",
+        "cause": "incorrect_acceptance",
+        "target": "A1",
+        "shown_by": readback_events[0].seq,
+    }
+    assert triggers[0].payload["lowered"] == [
+        f"operation:{operation_id}",
+        "effect:git_publication",
+        SCOPE,
+        "installation",
+    ]
+    assert len(alerts) == 1
+    assert (alerts[0].subject, alerts[0].severity, alerts[0].state) == (
+        operation_id,
+        "critical",
+        "open",
+    )
