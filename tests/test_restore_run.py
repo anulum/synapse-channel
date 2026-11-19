@@ -10,9 +10,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
+import signal
 import sys
 import time
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -184,20 +187,22 @@ async def test_the_exit_code_and_output_of_a_child_are_returned(tmp_path: Path) 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc")
 async def test_a_child_that_gives_no_answer_has_its_whole_group_ended(tmp_path: Path) -> None:
     pids = tmp_path / "pids"
+    marker = f"restore-run-test-{uuid.uuid4().hex}"  # names this test's processes, and no other
     # The child starts a grandchild that ignores SIGTERM, then hangs.
     script = (
         "import os, signal, subprocess, sys, time\n"
         "grand = subprocess.Popen([sys.executable, '-c', "
-        "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(600)'])\n"
+        "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(120)', "
+        f"{marker!r}])\n"
         f"open({str(pids)!r}, 'w').write(f'{{os.getpid()}} {{grand.pid}}')\n"
-        "time.sleep(600)\n"
+        "time.sleep(120)\n"
     )
-    began = time.monotonic()
-    code, detail = await run_child(
-        [sys.executable, "-c", script], env=dict(os.environ), cwd=str(tmp_path), timeout=2.0
-    )
-    assert code is None and "its process group was ended" in detail
-    child, grand = (int(part) for part in pids.read_text(encoding="utf-8").split())
+
+    def ours(pid: int) -> bool:
+        try:
+            return marker.encode() in Path(f"/proc/{pid}/cmdline").read_bytes()
+        except OSError:
+            return False
 
     def ended(pid: int) -> bool:
         try:
@@ -206,12 +211,29 @@ async def test_a_child_that_gives_no_answer_has_its_whole_group_ended(tmp_path: 
             return True
         return stat.rsplit(")", 1)[1].split()[0] == "Z"
 
-    # A SIGKILL takes effect once the process is scheduled; a loaded host needs a moment.
-    deadline = time.monotonic() + 10.0
-    while not (ended(child) and ended(grand)):
-        assert time.monotonic() < deadline, "the group was not ended"
-        await asyncio.sleep(0.05)
-    assert time.monotonic() - began < 30.0
+    began = time.monotonic()
+    try:
+        code, detail = await run_child(
+            [sys.executable, "-c", script, marker],
+            env=dict(os.environ),
+            cwd=str(tmp_path),
+            timeout=2.0,
+        )
+        assert code is None and "its process group was ended" in detail
+        child, grand = (int(part) for part in pids.read_text(encoding="utf-8").split())
+        # A SIGKILL takes effect once the process is scheduled; a loaded host needs a moment.
+        deadline = time.monotonic() + 10.0
+        while not (ended(child) and ended(grand)):
+            assert time.monotonic() < deadline, "the group was not ended"
+            await asyncio.sleep(0.05)
+        assert time.monotonic() - began < 30.0
+    finally:
+        # Whatever the verdict, nothing this test started outlives it.
+        if pids.exists():
+            for pid in (int(part) for part in pids.read_text(encoding="utf-8").split()):
+                if ours(pid):
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(pid, signal.SIGKILL)
 
 
 @pytest.mark.parametrize(
