@@ -1421,10 +1421,12 @@ def _waits(runner: RecordingRunner) -> list[list[str]]:
 def test_a_guarded_waiter_meeting_a_live_name_takes_nothing_over_and_wakes_nothing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    runner = RecordingRunner([_result(["synapse", "wait"], 6)])
+    # A second live answer is queued: the guard must stop at the first, where an
+    # ordinary failed wait would be retried.
+    runner = RecordingRunner([_result(["synapse", "wait"], 6), _result(["synapse", "wait"], 6)])
 
     result = wait_and_wake(
-        _guarded(tmp_path), runner=runner, sleeper=RecordingSleeper(), max_wait_failures=1
+        _guarded(tmp_path), runner=runner, sleeper=RecordingSleeper(), max_wait_failures=2
     )
 
     assert result == 6
