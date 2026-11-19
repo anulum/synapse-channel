@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from synapse_channel.agent_tmux import provider_family_of
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.private_dir import ensure_private_dir
 from synapse_channel.session_ledger import (
     COLLECTOR_LOCK_WAIT_SECONDS,
@@ -65,8 +66,10 @@ NAMED_KEYS = ("SYN_IDENTITY", "SYN_PROJECT")
 OBSERVED_FIELDS = ("native_session_id", "native_session_id_source", "label", "tmux")
 
 
-class CollectError(Exception):
+class CollectError(SynapseError):
     """A query failed; nothing is written, so a failure never reads as a gone seat."""
+
+    code = "ledger_collect"
 
 
 def agent_vendor(argv: Sequence[str]) -> str | None:

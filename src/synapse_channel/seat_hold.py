@@ -61,6 +61,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from synapse_channel.client.agent_dispatch import MessageCallback
 from synapse_channel.connect_failures import closed_after_ready, is_name_conflict_close
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.reap import private_runtime_parent, safe_key
 from synapse_channel.session_ledger import LauncherRecord
@@ -168,8 +169,10 @@ def unsupported_platform(platform: str = sys.platform) -> str | None:
     )
 
 
-class ChildSetupError(RuntimeError):
+class ChildSetupError(SynapseError, RuntimeError):
     """The agent's child could not set up its fence; the agent is never executed."""
+
+    code = "seat_child_setup"
 
 
 @dataclass(frozen=True, slots=True)

@@ -53,6 +53,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.private_dir import ensure_private_dir
 
 SCHEMA = "synapse.session-ledger.v1"
@@ -71,12 +72,16 @@ END_KINDS = frozenset({"exit", "signal"})
 UNOBSERVED_END_KINDS = frozenset({"observed_gone", "boot_cut"})
 
 
-class LedgerError(Exception):
+class LedgerError(SynapseError):
     """The ledger cannot be used here, or a line could not be written."""
+
+    code = "session_ledger"
 
 
 class NoLedger(LedgerError):
     """The environment names no state or home directory, so there is no ledger."""
+
+    code = "no_session_ledger"
 
 
 def ledger_dir(environ: Mapping[str, str] | None = None) -> Path:
