@@ -136,7 +136,10 @@ interfaces, maturity, and release commitments.
 - An optional **MCP server** over stdio or
   [authenticated private HTTPS](docs/mcp-http.md) and a fail-closed outbound MCP client
   path, while the hub and core install remain MCP-agnostic. See the
-  [MCP guide](docs/mcp.md).
+  [MCP guide](docs/mcp.md). A remote client that keeps only one static secret
+  reaches the HTTPS listener through `synapse mcp-gate`, which checks a
+  stable bearer on every request and forwards it with the seat's current
+  issuer token to the pinned listener. See [MCP bearer gate](docs/mcp-gate.md).
 - History read queries answered only to the identity they name, an inbox page
   and an owned-work listing on the MCP stdio bridge, and remote MCP mutations
   that carry their operation identifier as a tool argument, with lease fences
@@ -263,9 +266,13 @@ interfaces, maturity, and release commitments.
   [observability](docs/observability.md).
 - Capability cards, signed advisory cards, directories, manifests, and
   evidence-preserving local routing. Cards and routing recommendations do not
-  grant authority.
+  grant authority. Provider routing ranks declared local candidates first and
+  uses a hosted priced candidate only with an explicit `metered_ref`, and
+  `ollama` and `tiered` workers reach only the operator's declared local
+  endpoints.
 - Stopping governed operations: `synapse operation stop` stops a scope and,
-  with `--seal`, seals each attempt it listed and records what it read back;
+  with `--seal`, seals each attempt it listed and records what it read back,
+  also the attempts a standing stop still lists;
   every stop reports its state and the profile it claims, and a resume needs
   `operation-resume`. Autonomy levels per scope: `synapse operation level`
   sets a scope's level, a judged and recounted record raises it one step, and
@@ -337,7 +344,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.56 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.57 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities

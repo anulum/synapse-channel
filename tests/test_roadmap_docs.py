@@ -180,7 +180,15 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     ):
         assert released_in_0_99_56 in shipped, released_in_0_99_56
         assert released_in_0_99_56 not in unreleased, released_in_0_99_56
-    assert "At 0.99.56 nothing on `main` is outside a release." in unreleased
+    for released_in_0_99_57 in (
+        "`synapse mcp-gate`",
+        "an explicit `metered_ref`",
+        "workers reach only the operator's declared local",
+        "also the attempts a standing stop still lists",
+    ):
+        assert released_in_0_99_57 in shipped, released_in_0_99_57
+        assert released_in_0_99_57 not in unreleased, released_in_0_99_57
+    assert "At 0.99.57 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:

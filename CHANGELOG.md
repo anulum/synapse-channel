@@ -18,12 +18,87 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.57] - 2026-11-19
+
+Core 0.99.57 adds `synapse mcp-gate`, a stable-bearer gate that lets a remote MCP
+client with one static secret reach the authenticated HTTP listener; keeps
+`ollama` and `tiered` workers on the operator's declared local endpoints; ranks
+local model candidates first and never routes to metered use without an explicit
+reference; seals the remaining attempts of a standing stop; and records a
+deployment's generation chain on an operation declaration.
+
+### Added
+
+- **`synapse mcp-gate`: a stable-bearer gate in front of the authenticated HTTP
+  MCP listener,** for a remote client that can keep only one static secret. The
+  gate checks a 256-bit bearer on every request, stored as a digest that expires
+  after 90 days. It replaces the bearer with the seat's current issuer token and
+  forwards one request per connection, with allow-listed headers, to the listener,
+  whose certificate it pins. Its framing is strict, its deadlines are total and
+  its connections, sessions and responses are bounded. It refuses to start for a
+  seat holding a work-changing grant. See [MCP bearer gate](docs/mcp-gate.md).
+
+- Operation declarations (`operation_record` `declare` and
+  `synapse operation declare`) accept a generation-chain deployment target
+  (`chain`, `start_record`, `base_generation`, `base_artefact_sha256`,
+  `artefact_sha256`, `revision`, requiring 64 zeros when `base_generation` is `0`)
+  alongside the existing `report`+`revision` target, and an optional starting
+  schema digest (`base_schema_sha256`) on migration targets, refusing mixed target
+  shapes and preserving all declared fields across journal replay.
+
+### Changed
+
+- **Provider routing ranks declared local candidates first and never falls back to
+  metered use on its own.** `ModelCandidate` gains `locality` (`"local"` or
+  `"hosted"`, default `"hosted"`), and every local candidate ranks before every
+  hosted one; inside each tier the order is unchanged and the choice's reason
+  names the tier. A hosted candidate with a priced quote is now excluded with
+  `metered_without_reference` unless `TaskProfile.metered_ref` names the explicit
+  choice of metered use. Callers that route among priced hosted candidates must
+  set `metered_ref`.
+
+- **`ollama` and `tiered` workers now refuse non-local endpoints.** Every HTTP
+  tier's base URL (the `ollama` model, and `tiered`'s SLM and HEAVY tiers) must be
+  on the operator's local endpoint list, checked when the worker is built; an
+  undeclared one is a configuration error. Before, a hosted base URL with a key in
+  the environment sent paid calls without `--allow-paid-api`, a budget or a quote,
+  and `tiered` escalated to such a HEAVY tier per prompt. The list is an
+  owner-only `synapse-local-endpoints.v1` file named by
+  `synapse worker --local-endpoints FILE` or found at
+  `$XDG_CONFIG_HOME/synapse/local-endpoints.json`; without it only the local
+  Ollama default is declared. Loopback is not assumed local. A hosted model is
+  reached only through a named paid profile. `SynapseLLMWorker` gains
+  `local_endpoints=`.
+
 ### Fixed
 
-- The first-minute demo timeout tests no longer probe port 0. That value is
-  mapped to port 80 by the WebSocket client, so a listener there can satisfy a
-  test that must time out. The tests now wait on a loopback port that was bound
-  and then closed, and they still raise `TimeoutError`.
+- `operation_stop` answers `already_stopped` with the standing stop's
+  `standing_seq`, `epoch`, computed `state`, and the attempts from that standing
+  stop's recorded `listed` set that remain neither `sealed` nor independently
+  `reconciled`. Plain `synapse operation stop` continues to exit `1` on
+  `already_stopped`, while `synapse operation stop --seal` seals and reads back
+  those remaining attempts under `standing_seq`, prints `request key:` on every
+  exit path once the hub link is entered, and treats a concurrent `attempt_ended`
+  refusal on `record="seal"` as non-fatal so `stop_readback` still closes the
+  stop. The hub recomputes `sealed` and `applied` read-backs from the attempt
+  marker, marks the attempt `sealed` when a kept read-back's marker recomputes to
+  `sealed`, returns the already-kept row without writing a second row when
+  `(stop_seq, attempt_id)` repeats the same result (refusing `readback_closed` on
+  a different result after closure), and surfaces an executor `confirmed_done`
+  claim against a `sealed` marker as a critical `operation_contradiction`
+  attention item and, under `--ladder`, an `incorrect_acceptance` trigger.
+
+- `synapse doctor` names `XDG_DATA_HOME` as the holder of the pinned machine key.
+  Redirecting that variable creates a second machine key, and a hub that already
+  pinned the seat refuses the new key with close code 4013.
+
+- The first-minute demo timeout tests no longer probe port 0. That value is mapped
+  to port 80 by the WebSocket client, so a listener there can satisfy a test that
+  must time out. The tests now wait on a loopback port that was bound and then
+  closed, and they still raise `TimeoutError`.
+
+- The pane-bridge tests unlink the private tmux socket `kill-server` leaves
+  behind. A `synapse-test-*` socket is removed only when no server answers on it.
 
 ### Security
 
@@ -32,68 +107,6 @@ execution evidence when carrying a release claim forward.
   locks, so the development-only exception for that advisory is removed.
   `tools/npm_audit_gate.py` warns when an active exception is not used by any
   audited lock. An expired exception still fails the audit.
-
-- `synapse doctor` names `XDG_DATA_HOME` as the holder of the pinned machine
-  key. Redirecting that variable creates a second machine key, and a hub that
-  already pinned the seat refuses the new key with close code 4013.
-
-- The pane-bridge tests unlink the private tmux socket `kill-server` leaves
-  behind. A `synapse-test-*` socket is removed only when no server answers
-  on it.
-
-### Changed
-
-- **Provider routing ranks declared local candidates first and never falls back to
-  metered use on its own.** `ModelCandidate` gains `locality` (`"local"` or
-  `"hosted"`, default `"hosted"`), and every local candidate ranks before every hosted
-  one; inside each tier the order is unchanged and the choice's reason names the tier.
-  A hosted candidate with a priced quote is now excluded with
-  `metered_without_reference` unless `TaskProfile.metered_ref` names the explicit
-  choice of metered use. Callers that route among priced hosted candidates must set
-  `metered_ref`.
-- **`ollama` and `tiered` workers now refuse non-local endpoints.** Every HTTP tier's
-  base URL (the `ollama` model, and `tiered`'s SLM and HEAVY tiers) must be on the
-  operator's local endpoint list, checked when the worker is built; an undeclared
-  one is a configuration error. Before, a hosted base URL with a key in the
-  environment sent paid calls without `--allow-paid-api`, a budget or a quote, and
-  `tiered` escalated to such a HEAVY tier per prompt. The list is an owner-only
-  `synapse-local-endpoints.v1` file named by `synapse worker --local-endpoints FILE`
-  or found at `$XDG_CONFIG_HOME/synapse/local-endpoints.json`; without it only the
-  local Ollama default is declared. Loopback is not assumed local. A hosted model is
-  reached only through a named paid profile. `SynapseLLMWorker` gains
-  `local_endpoints=`.
-
-### Fixed
-
-- `operation_stop` answers `already_stopped` with the standing stop's
-  `standing_seq`, `epoch`, computed `state`, and the attempts from that
-  standing stop's recorded `listed` set that remain neither `sealed` nor
-  independently `reconciled`. Plain `synapse operation stop` continues to exit
-  `1` on `already_stopped`, while `synapse operation stop --seal` seals and
-  reads back those remaining attempts under `standing_seq`, prints `request key:`
-  on every exit path once the hub link is entered, and treats a concurrent
-  `attempt_ended` refusal on `record="seal"` as non-fatal so `stop_readback`
-  still closes the stop. The hub recomputes `sealed` and `applied` read-backs
-  from the attempt marker, marks the attempt `sealed` when a kept read-back's
-  marker recomputes to `sealed`, returns the already-kept row without writing a
-  second row when `(stop_seq, attempt_id)` repeats the same result (refusing
-  `readback_closed` on a different result after closure), and surfaces an
-  executor `confirmed_done` claim against a `sealed` marker as a critical
-  `operation_contradiction` attention item and, under `--ladder`, an
-  `incorrect_acceptance` trigger.
-
-### Added
-
-- **`synapse mcp-gate`: a stable-bearer gate in front of the authenticated HTTP MCP
-  listener,** for a remote client that can keep only one static secret. The gate
-  checks a 256-bit bearer on every request, stored as a digest that expires after
-  90 days. It replaces the bearer with the seat's current issuer token and forwards
-  one request per connection, with allow-listed headers, to the listener, whose
-  certificate it pins. Its framing is strict, its deadlines are total and its
-  connections, sessions and responses are bounded. It refuses to start for a seat
-  holding a work-changing grant. See [MCP bearer gate](docs/mcp-gate.md).
-
-- Operation declarations (`operation_record` `declare` and `synapse operation declare`) accept a generation-chain deployment target (`chain`, `start_record`, `base_generation`, `base_artefact_sha256`, `artefact_sha256`, `revision`, requiring 64 zeros when `base_generation` is `0`) alongside the existing `report`+`revision` target, and an optional starting schema digest (`base_schema_sha256`) on migration targets, refusing mixed target shapes and preserving all declared fields across journal replay.
 
 ## [0.99.56] - 2026-11-18
 
