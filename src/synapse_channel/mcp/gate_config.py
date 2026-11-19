@@ -32,7 +32,6 @@ from urllib.parse import urlsplit
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secure_path import SecurePathError, read_owner_only_file_bytes
-from synapse_channel.mcp.http_config import HttpConfigError, load_http_auth_config
 
 GATE_CONFIG_SCHEMA = "synapse-mcp-gate.v1"
 """The schema name every gate configuration carries."""
@@ -93,7 +92,7 @@ class GateConfigError(SynapseError, ValueError):
     code = "mcp_gate_config"
 
 
-class SeatTokenUnavailable(SynapseError, RuntimeError):
+class SeatTokenError(SynapseError, RuntimeError):
     """A seat's issuer token is missing, malformed or expired; the gate answers 503."""
 
     code = "mcp_gate_seat_token"
@@ -275,6 +274,9 @@ def check_seat_grants(config: GateConfig) -> None:
         When the listener's grant file cannot be read, does not grant a gate
         seat, or grants one of :data:`GATE_DENIED_TOOLS` to it.
     """
+    # The listener's grant model needs the MCP extra; import it only when a gate starts.
+    from synapse_channel.mcp.http_config import HttpConfigError, load_http_auth_config
+
     try:
         grants = load_http_auth_config(config.grant_file)
     except HttpConfigError as exc:
@@ -373,7 +375,7 @@ def new_bearer(path: Path, *, now: datetime | None = None, replace: bool = False
 
 
 def read_seat_token(path: Path, *, now: datetime | None = None) -> bytes:
-    """Return a seat's current issuer token, or raise :class:`SeatTokenUnavailable`.
+    """Return a seat's current issuer token, or raise :class:`SeatTokenError`.
 
     The token is read at every request, so the renewal job's atomic rewrite is
     picked up at once. Its shape and its ``exp`` claim are checked; its
@@ -382,19 +384,19 @@ def read_seat_token(path: Path, *, now: datetime | None = None) -> bytes:
     try:
         raw = read_owner_only_file_bytes(path, purpose="seat token", max_bytes=_MAX_SECRET_BYTES)
     except (OSError, SecurePathError) as exc:
-        raise SeatTokenUnavailable("the seat token cannot be read") from exc
+        raise SeatTokenError("the seat token cannot be read") from exc
     token = raw.strip()
     match = _TOKEN.fullmatch(token)
     if match is None:
-        raise SeatTokenUnavailable("the seat token is not an issuer token")
+        raise SeatTokenError("the seat token is not an issuer token")
     payload = match.group(1)
     try:
         claims = json.loads(base64.urlsafe_b64decode(payload + b"=" * (-len(payload) % 4)))
     except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError):
-        raise SeatTokenUnavailable("the seat token is not an issuer token") from None
+        raise SeatTokenError("the seat token is not an issuer token") from None
     expiry = claims.get("exp") if isinstance(claims, dict) else None
     if isinstance(expiry, bool) or not isinstance(expiry, int):
-        raise SeatTokenUnavailable("the seat token has no expiry")
+        raise SeatTokenError("the seat token has no expiry")
     if expiry <= (now or datetime.now(UTC)).timestamp():
-        raise SeatTokenUnavailable("the seat token has expired")
+        raise SeatTokenError("the seat token has expired")
     return token

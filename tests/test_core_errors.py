@@ -503,7 +503,7 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         ValueError,
     ),
     "GateConfigError": ("synapse_channel.mcp.gate_config", "mcp_gate_config", ValueError),
-    "SeatTokenUnavailable": (
+    "SeatTokenError": (
         "synapse_channel.mcp.gate_config",
         "mcp_gate_seat_token",
         RuntimeError,

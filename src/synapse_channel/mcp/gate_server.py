@@ -38,7 +38,7 @@ from synapse_channel.mcp.gate import (
     response_values,
     upstream_head,
 )
-from synapse_channel.mcp.gate_config import SeatTokenUnavailable, read_seat_token
+from synapse_channel.mcp.gate_config import SeatTokenError, read_seat_token
 
 LOG = logging.getLogger("synapse.mcp.gate")
 _STREAM_CHUNK = 65536
@@ -158,7 +158,7 @@ async def exchange(
         state.sessions.check(session[0], seat.seat)
     try:
         token = read_seat_token(seat.token_file, now=state.clock())
-    except SeatTokenUnavailable as exc:
+    except SeatTokenError as exc:
         LOG.warning("seat token of %s unavailable: %s", seat.seat, exc)
         raise Refusal(503, "seat token unavailable") from None
     try:

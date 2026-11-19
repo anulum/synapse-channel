@@ -26,7 +26,7 @@ from synapse_channel.mcp.gate_config import (
     GATE_CONFIG_SCHEMA,
     GATE_DENIED_TOOLS,
     GateConfigError,
-    SeatTokenUnavailable,
+    SeatTokenError,
     bearer_digest,
     check_bearers,
     check_seat_grants,
@@ -317,10 +317,10 @@ def test_a_current_seat_token_is_read(tmp_path: Path) -> None:
     ],
 )
 def test_an_unusable_seat_token_is_unavailable(tmp_path: Path, content: str, message: str) -> None:
-    with pytest.raises(SeatTokenUnavailable, match=message):
+    with pytest.raises(SeatTokenError, match=message):
         read_seat_token(owner_file(tmp_path / "bot.token", content), now=NOW)
 
 
 def test_a_missing_seat_token_is_unavailable(tmp_path: Path) -> None:
-    with pytest.raises(SeatTokenUnavailable, match="cannot be read"):
+    with pytest.raises(SeatTokenError, match="cannot be read"):
         read_seat_token(tmp_path / "absent.token")
