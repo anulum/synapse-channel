@@ -49,7 +49,6 @@ execution evidence when carrying a release claim forward.
   restart of the pane goes through the holder too. The provider, its wake
   patterns and the managed Codex update setting come from the agent's own
   command after `--`, never from the seat's name, which can name another
-  provider.
 
 - **A pane waiter that never displaces a live one.** `synapse agent-tmux wait
   --first-no-takeover` joins an existing session only, and registers the pane
@@ -89,6 +88,10 @@ execution evidence when carrying a release claim forward.
   cut by a reboot; a failed tmux query writes nothing. `ledger read-v0` reads
   the interim tool's v0 files. There is no retention yet: every monthly file
   is kept.
+
+  provider. With `--no-attach`, the restored pane is recorded and this
+  terminal is not attached to it, for a caller that has no terminal to give
+  the seat; `--no-attach` without `--restore` is refused (exit 2).
 
 ## [0.99.58] - 2026-11-19
 

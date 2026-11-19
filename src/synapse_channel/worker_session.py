@@ -17,6 +17,7 @@ import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 import sys
 import threading
 from collections.abc import Mapping, Sequence
+from functools import partial
 from pathlib import Path
 
 from synapse_channel.agent_tmux import AgentTmuxConfig, start_session
@@ -476,12 +477,14 @@ def _launch_restored_worker(
     synapse_bin: str,
     session: str | None,
     cwd: Path,
+    attach: bool = True,
 ) -> WorkerExit:
     """Start a cut seat again behind its seat holder, and report that outcome.
 
     The pane runs ``synapse seat-hold``, which also runs the pane's waiter in
     its own process. Only once it holds the seat's name are the pane recorded
-    and the terminal attached.
+    and, unless ``attach`` is false, the terminal attached. A caller with no
+    terminal to give the seat passes ``attach`` false.
     """
     env["SYN_TMUX_PROVIDER"] = "1"
     env["SYNAPSE_AUTO_CONNECT"] = "0"
@@ -493,7 +496,7 @@ def _launch_restored_worker(
         _record_started_pane(
             identity=identity, command=pane, env=env, tmux_bin=tmux_bin, session=resolved, cwd=cwd
         )
-        return _attach_tmux_session(session=resolved, tmux_bin=tmux_bin, env=env)
+        return _attach_tmux_session(session=resolved, tmux_bin=tmux_bin, env=env) if attach else 0
 
     return outcome.tmux_result(
         lambda: start_restored_seat(
@@ -571,6 +574,7 @@ def run_worker_session(
     sidecar_shutdown_timeout_seconds: float = SIDECAR_SHUTDOWN_TIMEOUT_SECONDS,
     outcome_file: Path | None = None,
     restore: bool = False,
+    attach: bool = True,
 ) -> WorkerExit:
     """Run ``command`` with ``SYN_PROJECT``/``SYN_IDENTITY`` and an optional waker.
 
@@ -586,9 +590,13 @@ def run_worker_session(
 
     ``restore`` starts a seat that a crash or reboot cut: always through tmux,
     and only behind its seat holder (:mod:`synapse_channel.seat_restore`).
+    ``attach`` false leaves the restored pane unattached; without ``restore``
+    it is refused before anything starts.
     """
     if not command:
         raise ValueError("worker-session requires a provider command")
+    if not (attach or restore):
+        raise ValueError("worker-session --no-attach needs --restore")
     resolved_cwd, env, outcome = _prepare_worker_launch(
         identity=identity,
         project=project,
@@ -597,7 +605,9 @@ def run_worker_session(
         outcome_file=outcome_file,
     )
     if restore or _terminal_tmux_enabled(command=command, mode=terminal_tmux, env=env):
-        launch = _launch_restored_worker if restore else _launch_terminal_worker
+        launch = (
+            partial(_launch_restored_worker, attach=attach) if restore else _launch_terminal_worker
+        )
         return launch(
             outcome=outcome,
             env=env,

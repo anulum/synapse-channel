@@ -101,6 +101,8 @@ def _cmd_worker_session(
         outcome_options["outcome_file"] = args.outcome_file
     if getattr(args, "restore", False):
         outcome_options["restore"] = True
+    if getattr(args, "no_attach", False):
+        outcome_options["attach"] = False
     try:
         return session_runner(
             identity=args.identity,
@@ -188,6 +190,11 @@ def _add_worker_parser(
         action="store_true",
         help="Start a seat that a crash or reboot cut, only behind its seat holder: exit 75 when "
         "the seat is live, 69, 70 or 78 when the restore must stop.",
+    )
+    worker.add_argument(
+        "--no-attach",
+        action="store_true",
+        help="With --restore: record the restored pane but do not attach this terminal to it.",
     )
     worker.add_argument(
         "--terminal-tmux",

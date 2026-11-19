@@ -23,6 +23,7 @@ import subprocess
 import sys
 import uuid
 from collections.abc import Iterator, Sequence
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -297,8 +298,9 @@ def test_a_pane_that_cannot_be_started_stops_the_restore(tmp_path: Path) -> None
     assert run.ready_panes == [] and run.killed == []
 
 
+@pytest.mark.parametrize("attach", [True, False])
 def test_worker_session_restore_arms_the_waiter_with_the_holders_command(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, attach: bool
 ) -> None:
     calls: dict[str, Any] = {}
 
@@ -324,9 +326,10 @@ def test_worker_session_restore_arms_the_waiter_with_the_holders_command(
     monkeypatch.setattr(worker_session, "_record_started_pane", record("pane"))
     # The holder in the pane runs the waiter; a separate one would be a second process.
     monkeypatch.setattr(worker_session, "_start_tmux_waiter", no_real_tmux)
-    monkeypatch.setattr(worker_session, "_attach_tmux_session", record("attach", 0))
-
-    code = worker_session.run_worker_session(
+    # A failed attach would show as 9; without attaching, the started seat is 0.
+    monkeypatch.setattr(worker_session, "_attach_tmux_session", record("attach", 9))
+    run = partial(
+        worker_session.run_worker_session,
         identity="T/seat",
         command=["codex"],
         restore=True,
@@ -334,13 +337,18 @@ def test_worker_session_restore_arms_the_waiter_with_the_holders_command(
         cwd=tmp_path,
         environ={"XDG_RUNTIME_DIR": str(tmp_path)},
     )
+    # The default attaches; only an explicit false leaves the pane alone.
+    code = run() if attach else run(attach=False)
 
-    assert code == 0
     assert calls["restore"]["session"] == "synapse-T_seat"
     assert calls["restore"]["env"]["SYN_TMUX_PROVIDER"] == "1"
     assert "waiter" not in calls
     assert calls["pane"]["command"] == ["synapse", "seat-hold", "--", "codex"]
-    assert calls["attach"]["session"] == "synapse-T_seat"
+    if attach:
+        assert code == 9 and calls["attach"]["session"] == "synapse-T_seat"
+    else:
+        # The planner has no terminal to give the seat: the pane is recorded, nothing attaches.
+        assert code == 0 and "attach" not in calls
 
 
 def test_the_restore_flag_reaches_the_session_runner() -> None:
@@ -352,11 +360,29 @@ def test_the_restore_flag_reaches_the_session_runner() -> None:
 
     parser = argparse.ArgumentParser()
     cli_services.add_parsers(parser.add_subparsers())
-    for extra in (["--restore"], []):
+    for extra in (["--restore"], [], ["--restore", "--no-attach"]):
         args = parser.parse_args(["worker-session", "--identity", "T/seat", *extra, "--", "codex"])
         assert cli_services._cmd_worker_session(args, session_runner=runner) == 0
-    assert seen[0]["restore"] is True
-    assert "restore" not in seen[1]
+    assert seen[0]["restore"] is True and "attach" not in seen[0]
+    assert "restore" not in seen[1] and "attach" not in seen[1]
+    assert seen[2]["restore"] is True and seen[2]["attach"] is False
+
+
+def test_no_attach_without_restore_is_refused_before_anything_starts(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def nothing_starts(**_kwargs: Any) -> Any:
+        raise AssertionError("a refused option prepares and starts nothing")
+
+    monkeypatch.setattr(worker_session, "_prepare_worker_launch", nothing_starts)
+    parser = argparse.ArgumentParser()
+    cli_services.add_parsers(parser.add_subparsers())
+    args = parser.parse_args(
+        ["worker-session", "--identity", "T/seat", "--no-attach", "--", "codex"]
+    )
+    runner = worker_session.run_worker_session
+    assert cli_services._cmd_worker_session(args, session_runner=runner) == 2
+    assert capsys.readouterr().out == "worker-session --no-attach needs --restore\n"
 
 
 # --- journeys on real tmux, a real hub and a real seat holder ---------------------
