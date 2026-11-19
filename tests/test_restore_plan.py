@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from collections.abc import Callable, Collection, Iterable
@@ -317,6 +318,18 @@ def test_no_resume_form_carries_a_permission_flag() -> None:
         assert not [word for word in PERMISSION_WORDS for part in form if word in part.lower()]
 
 
+def _lists_flag(text: str, flag: str) -> bool:
+    """Return whether ``text`` lists ``flag`` as a whole word, never inside a longer flag."""
+    return re.search(rf"(?<![\w-]){re.escape(flag)}(?![\w-])", text) is not None
+
+
+def test_a_flag_is_listed_only_as_a_whole_word() -> None:
+    assert _lists_flag("  -r, --resume [ID]  resume a session", "--resume")
+    assert _lists_flag("--resume=ID", "--resume")
+    assert not _lists_flag("  --resume-last  resume the last session", "--resume")
+    assert not _lists_flag("  --no--resume", "--resume")
+
+
 def _cli_knows(binary: str, word: str) -> bool:
     """Return whether the installed CLI lists ``word``: a flag in its help, or a subcommand."""
     probe = ["--help"] if word.startswith("-") else [word, "--help"]
@@ -324,7 +337,7 @@ def _cli_knows(binary: str, word: str) -> bool:
     text = shown.stdout + shown.stderr
     # A flag must be listed; a subcommand must answer and take the session id as its argument.
     return shown.returncode == 0 and (
-        word in text if word.startswith("-") else "SESSION_ID" in text
+        _lists_flag(text, word) if word.startswith("-") else "SESSION_ID" in text
     )
 
 
