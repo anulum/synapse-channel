@@ -129,6 +129,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_hub_sigkill_durability.py": (1, "platform-guard"),
     # Dual-stack loopback listens skip when this host cannot bind both families.
     "tests/test_hub_bound_address.py": (3, "platform-guard"),
+    # The seat holder fences its agent with a parent-death signal, which only Linux has.
+    "tests/test_seat_hold.py": (1, "platform-guard"),
     "tests/test_path_identity_inode_reuse.py": (3, "platform-guard"),
     "tests/test_token_set.py": (1, "platform-guard"),
     "tests/test_cli_token_set.py": (1, "platform-guard"),
