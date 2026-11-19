@@ -19,6 +19,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -1259,3 +1260,207 @@ def test_cli_chained_deployment_exit_codes_and_worker_session_boundary(
             == 2
         )
         capsys.readouterr()
+
+
+def test_fifo_at_start_record_or_report_refuses_without_blocking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A writerless FIFO at start_record or report refuses promptly without hanging."""
+    import synapse_channel.result_verification_effects as module
+
+    chain = _make_chain(tmp_path)
+    publish_generation(chain, base=0, operation="op", attempt="att-1", artefact=_ART_A)
+    regular_start = tmp_path / "regular_start.json"
+    _write_start_record(regular_start, generation=1, artefact=_ART_A)
+    regular_report = tmp_path / "regular_report.json"
+    _report(regular_report, "rev-1", "ok")
+    with monkeypatch.context() as patched:
+        patched.setattr(module, "_NONBLOCK", None)
+        no_nb_start = verify_deployment(
+            revision="rev-1",
+            operation_id="op",
+            chain=chain,
+            start_record=regular_start,
+            base_generation=0,
+            base_artefact_sha256=_ZERO,
+            artefact_sha256=_ART_A,
+            attempt_id="att-1",
+        )
+        assert (no_nb_start.effect, no_nb_start.result, no_nb_start.observation) == (
+            "observed",
+            "not_checked",
+            "start_record_not_recognised",
+        )
+        no_nb_report = verify_deployment(regular_report, "rev-1", operation_id="op")
+        assert (no_nb_report.effect, no_nb_report.result, no_nb_report.observation) == (
+            "unknown",
+            "not_checked",
+            "report_not_a_readable_regular_file",
+        )
+
+    fifo_start = tmp_path / "start.fifo"
+    fifo_report = tmp_path / "report.fifo"
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(fifo_start, 0o600)
+        os.mkfifo(fifo_report, 0o600)
+    else:
+        fifo_start.mkdir()
+        fifo_report.mkdir()
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+
+    chained_sub = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "synapse_channel.cli",
+            "verify-result",
+            "deployment",
+            "--revision",
+            "rev-1",
+            "--chain",
+            str(chain),
+            "--start-record",
+            str(fifo_start),
+            "--base-generation",
+            "0",
+            "--base-artefact-sha256",
+            _ZERO,
+            "--artefact-sha256",
+            _ART_A,
+            "--attempt-id",
+            "att-1",
+            "--operation-id",
+            "op",
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=2.0,
+        check=False,
+    )
+    assert chained_sub.returncode == 3, chained_sub.stderr
+    chained_json = json.loads(chained_sub.stdout)
+    assert (
+        chained_json["effect"],
+        chained_json["result"],
+        chained_json["observation"],
+    ) == ("observed", "not_checked", "start_record_not_recognised")
+
+    report_sub = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "synapse_channel.cli",
+            "verify-result",
+            "deployment",
+            "--revision",
+            "rev-1",
+            "--report",
+            str(fifo_report),
+            "--operation-id",
+            "op",
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=2.0,
+        check=False,
+    )
+    assert report_sub.returncode == 3, report_sub.stderr
+    report_json = json.loads(report_sub.stdout)
+    assert (
+        report_json["effect"],
+        report_json["result"],
+        report_json["observation"],
+    ) == ("unknown", "not_checked", "report_not_a_readable_regular_file")
+
+    started = time.monotonic()
+    in_proc_start = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=chain,
+        start_record=fifo_start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    in_proc_report = verify_deployment(fifo_report, "rev-1", operation_id="op")
+    assert time.monotonic() - started < 1.0
+    assert (in_proc_start.effect, in_proc_start.result, in_proc_start.observation) == (
+        "observed",
+        "not_checked",
+        "start_record_not_recognised",
+    )
+    assert (in_proc_report.effect, in_proc_report.result, in_proc_report.observation) == (
+        "unknown",
+        "not_checked",
+        "report_not_a_readable_regular_file",
+    )
+
+
+def test_short_reads_reassemble_regular_start_record_and_report_to_eof_or_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Short os.read calls loop until EOF or limit + 1 without truncating regular files."""
+    chain = _make_chain(tmp_path)
+    publish_generation(chain, base=0, operation="op", attempt="att-1", artefact=_ART_A)
+    start = tmp_path / "start.json"
+    written = _write_start_record(start, generation=1, artefact=_ART_A, pid=1234)
+    report = tmp_path / "health.json"
+    _report(report, "rev-1", "ok")
+    oversize = tmp_path / "oversize_start.json"
+    oversize.write_bytes(b"{" + b" " * 4096)
+
+    target_inodes = {(item.stat().st_dev, item.stat().st_ino) for item in (start, report, oversize)}
+    real_read = os.read
+    calls = 0
+
+    def short_read(descriptor: int, length: int) -> bytes:
+        nonlocal calls
+        info = os.fstat(descriptor)
+        if (info.st_dev, info.st_ino) in target_inodes:
+            calls += 1
+            return real_read(descriptor, min(length, 7))
+        return real_read(descriptor, length)
+
+    monkeypatch.setattr(os, "read", short_read)
+    chained = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=chain,
+        start_record=start,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert chained.verified
+    assert chained.observation == "published_and_converged"
+    assert (
+        chained.evidence["start_record_sha256"]
+        == hashlib.sha256(written.canonical_bytes()).hexdigest()
+    )
+    assert calls > 10
+
+    legacy = verify_deployment(report, "rev-1", operation_id="op")
+    assert legacy.verified
+    assert legacy.observation == "report_names_revision_and_ok"
+
+    too_big = verify_deployment(
+        revision="rev-1",
+        operation_id="op",
+        chain=chain,
+        start_record=oversize,
+        base_generation=0,
+        base_artefact_sha256=_ZERO,
+        artefact_sha256=_ART_A,
+        attempt_id="att-1",
+    )
+    assert (too_big.effect, too_big.result, too_big.observation) == (
+        "observed",
+        "not_checked",
+        "start_record_not_recognised",
+    )

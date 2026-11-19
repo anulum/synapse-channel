@@ -58,6 +58,7 @@ _MIGRATION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
 _REPORT_MAX = 65536
 _NOFOLLOW: int | None = getattr(os, "O_NOFOLLOW", None)
+_NONBLOCK: int | None = getattr(os, "O_NONBLOCK", None)
 _HEALTHY = "ok"
 
 
@@ -83,29 +84,41 @@ class _DatabaseReplaced(OSError):
 def _read_regular(path: Path, limit: int) -> tuple[bytes, str, str]:
     """Return a regular file's bytes, their SHA-256, and its mtime in nanoseconds.
 
-    At most ``limit + 1`` bytes are read. A longer file is refused so a file
-    that grows after ``fstat`` cannot pass the limit. The descriptor is closed
-    if ``fstat`` or the read fails.
+    Opens ``path`` with ``O_NOFOLLOW | O_NONBLOCK`` so a FIFO or device node
+    cannot block the verifier before ``fstat`` refuses non-regular inodes, then
+    reads in a loop up to ``limit + 1`` bytes or EOF so short reads do not
+    truncate valid files and post-``fstat`` growth past ``limit`` is refused.
+    The descriptor is always closed.
 
     Raises
     ------
     PermissionError
-        If this platform cannot open a file without following a final link.
+        If this platform lacks ``O_NOFOLLOW`` or ``O_NONBLOCK``.
     IsADirectoryError
         If the opened inode is not a regular file.
     ValueError
         If the file contains more than ``limit`` bytes.
     """
-    if _NOFOLLOW is None:
-        raise PermissionError("this platform cannot open a file without following a final link")
-    descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW)
+    if _NOFOLLOW is None or _NONBLOCK is None:
+        raise PermissionError(
+            "this platform cannot open a file without blocking or following a final link"
+        )
+    descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW | _NONBLOCK)
     try:
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode):
             raise IsADirectoryError(str(path))
-        raw = os.read(descriptor, limit + 1)
+        chunks: list[bytes] = []
+        remaining = limit + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
     finally:
         os.close(descriptor)
+    raw = b"".join(chunks)
     if len(raw) > limit:
         raise ValueError("report exceeds the read limit")
     digest = hashlib.sha256(raw).hexdigest()
