@@ -82,7 +82,7 @@ _RECORD_KEYS: Final = frozenset(
 )
 _IDENTIFIER: Final = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 _HEX64: Final = re.compile(r"[0-9a-f]{64}")
-_GEN_FILE: Final = re.compile(r"^gen-([0-9]{20})\.json$")
+_GEN_FILE: Final = re.compile(r"gen-([0-9]{20})\.json")
 _MAX_RECORD_BYTES: Final = 4096
 
 StatfsProbe = Callable[[Path], int | None]
@@ -286,7 +286,7 @@ def chain_head(chain: str | Path, *, statfs_probe: StatfsProbe = _linux_statfs_t
     directory = validate_chain_dir(chain, statfs_probe=statfs_probe)
     numbers: list[int] = []
     for entry in os.listdir(directory):
-        match = _GEN_FILE.match(entry)
+        match = _GEN_FILE.fullmatch(entry)
         if match is None:
             continue
         number = int(match.group(1))

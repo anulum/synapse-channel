@@ -364,6 +364,22 @@ def test_gap_below_head_and_invalid_generation_filenames_are_refused(tmp_path: P
         chain_head(huge_chain)
 
 
+def test_newline_suffixed_generation_filename_is_ignored(tmp_path: Path) -> None:
+    """Ignore newline-suffixed names both alone and beside a real generation file."""
+    chain = _private_chain(tmp_path, "newline-chain")
+    rec1 = GenerationRecord(
+        generation=1, operation="op-1", attempt="a1", kind=KIND_APPLIED, artefact=OLD_SHA
+    )
+    (chain / (generation_name(1) + "\n")).write_bytes(rec1.canonical_bytes())
+    assert chain_head(chain) == 0
+    assert read_generation(chain, 1) is None
+
+    published = publish_generation(chain, base=0, operation="op-1", attempt="a1", artefact=OLD_SHA)
+    assert published.status == STATUS_CREATED
+    assert chain_head(chain) == 1
+    assert read_generation(chain, 1) == published.record
+
+
 def test_directory_security_and_network_or_fuse_statfs_refusals(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
