@@ -116,6 +116,45 @@ def _add_logging_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_worker_model_args(parser: argparse.ArgumentParser) -> None:
+    """Add the worker's provider, model, endpoint and paid-spend arguments."""
+    parser.add_argument(
+        "--provider",
+        choices=[
+            "ollama",
+            "rule",
+            "tiered",
+            "openai",
+            "deepseek",
+            "openrouter",
+            "qwen",
+            "mistral",
+            "anthropic",
+            "google",
+            "xai",
+            "moonshot",
+        ],
+        default="ollama",
+    )
+    parser.add_argument("--model", default="llama3")
+    parser.add_argument(
+        "--heavy-model", default="", help="Model for the heavy tier when --provider tiered."
+    )
+    parser.add_argument("--base-url", default=DEFAULT_OLLAMA_BASE_URL)
+    parser.add_argument(
+        "--local-endpoints",
+        default=None,
+        metavar="FILE",
+        help="Owner-only list of the base URLs the ollama and tiered providers may reach "
+        "(synapse-local-endpoints.v1); default: $XDG_CONFIG_HOME/synapse/local-endpoints.json, "
+        "or only the local Ollama default when that file is absent.",
+    )
+    parser.add_argument("--api-key-env", default="OPENAI_API_KEY")
+    parser.add_argument("--allow-paid-api", action="store_true")
+    parser.add_argument("--paid-budget-usd", type=float, default=None)
+    parser.add_argument("--price-quote-file", default=None)
+
+
 def _add_peer_token_file(hub: argparse.ArgumentParser, stem: str) -> None:
     """Add ``--<stem>-token-file``, the rotating file form of ``--<stem>-token``.
 
@@ -675,33 +714,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "'remanentia/' so the same role runs per project without a name clash.",
     )
     worker.add_argument("--uri", default=default_hub_uri())
-    worker.add_argument(
-        "--provider",
-        choices=[
-            "ollama",
-            "rule",
-            "tiered",
-            "openai",
-            "deepseek",
-            "openrouter",
-            "qwen",
-            "mistral",
-            "anthropic",
-            "google",
-            "xai",
-            "moonshot",
-        ],
-        default="ollama",
-    )
-    worker.add_argument("--model", default="llama3")
-    worker.add_argument(
-        "--heavy-model", default="", help="Model for the heavy tier when --provider tiered."
-    )
-    worker.add_argument("--base-url", default=DEFAULT_OLLAMA_BASE_URL)
-    worker.add_argument("--api-key-env", default="OPENAI_API_KEY")
-    worker.add_argument("--allow-paid-api", action="store_true")
-    worker.add_argument("--paid-budget-usd", type=float, default=None)
-    worker.add_argument("--price-quote-file", default=None)
+    _add_worker_model_args(worker)
     worker.add_argument("--max-context", type=int, default=8)
     worker.add_argument("--reply-target-mode", choices=["all", "sender"], default="all")
     worker.add_argument("--min-reply-interval", type=float, default=0.7)

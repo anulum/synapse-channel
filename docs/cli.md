@@ -2043,6 +2043,26 @@ synapse worker --prefix remanentia/ --name FAST --provider rule
 A `tiered` worker classifies each request and routes trivial requests to a cheap
 rule path and hard requests to the heavy model.
 
+The `ollama` and `tiered` providers reach only the model endpoints the operator
+declares as local. Each HTTP tier's base URL is checked when the worker starts,
+and an undeclared one is a configuration error (exit 2). The declaration is an
+owner-only JSON file, read without following a symlink:
+
+```json
+{"schema": "synapse-local-endpoints.v1", "endpoints": ["http://ml350-host:11434/v1"]}
+```
+
+`--local-endpoints FILE` names it; by default it is
+`$XDG_CONFIG_HOME/synapse/local-endpoints.json` (or `~/.config/synapse/…`). When
+no file exists, only the local Ollama default (`http://localhost:11434/v1` and its
+`127.0.0.1` form) is declared, so a default setup keeps working. Matching is exact
+on scheme, host and port after normalisation (case, default ports, a trailing
+slash), and on the path up to a `/` boundary. Loopback is never assumed to be
+local: a gateway on `localhost` can forward to a paid API, so it counts only when
+it is listed, and a listed endpoint that forwards to a paid API is the operator's
+responsibility. A hosted model is reached only through a named paid profile, with
+`--allow-paid-api`, a budget and a quote.
+
 `--prefix` is prepended to `--name` to form the identity the worker registers
 under (here `remanentia/FAST`), so the same role can run under several projects on
 one hub without a name clash. `synapse team --prefix remanentia/` namespaces a

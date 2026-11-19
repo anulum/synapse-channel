@@ -15,6 +15,7 @@ import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
@@ -30,6 +31,12 @@ from synapse_channel.client.llm_worker import (
 )
 from synapse_channel.client.provider_http import ProviderWorkerBackend
 from synapse_channel.core.hub import SynapseHub
+
+
+@pytest.fixture(autouse=True)
+def _isolated_local_endpoint_list(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the operator's real local endpoint list out of these tests."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
 
 
 @contextmanager
@@ -127,8 +134,12 @@ def test_build_client_ollama_redirects_openai_default() -> None:
     assert worker.client.base_url == DEFAULT_OLLAMA_BASE_URL
 
 
-def test_build_client_ollama_keeps_custom_base() -> None:
-    worker = _worker(provider="ollama", base_url="http://gpu:11434/v1")
+def test_build_client_ollama_keeps_a_listed_custom_base() -> None:
+    worker = _worker(
+        provider="ollama",
+        base_url="http://gpu:11434/v1",
+        local_endpoints=["http://gpu:11434/v1"],
+    )
     assert isinstance(worker.client, OpenAIChatClient)
     assert worker.client.base_url == "http://gpu:11434/v1"
 
@@ -255,6 +266,7 @@ async def test_process_item_sends_reply_to_room() -> None:
                 name="ALPHA",
                 provider="ollama",
                 base_url=f"{server.url}/v1",
+                local_endpoints=[f"{server.url}/v1"],
             )
             try:
                 await worker._process_item({"sender": "USER", "payload": "go"})
@@ -298,6 +310,7 @@ async def test_process_item_reports_backend_error() -> None:
                 name="ALPHA",
                 provider="ollama",
                 base_url=f"{server.url}/v1",
+                local_endpoints=[f"{server.url}/v1"],
             )
             try:
                 await worker._process_item({"sender": "USER", "payload": "go"})

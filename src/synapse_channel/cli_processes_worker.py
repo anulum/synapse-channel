@@ -12,11 +12,13 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable, Coroutine
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL, SynapseLLMWorker
+from synapse_channel.client.local_endpoints import load_local_endpoints
 from synapse_channel.client.provider_profiles import PROFILES, provider_profile
 from synapse_channel.core.identity_keys import IdentityKeyError
 from synapse_channel.core.logging_setup import configure_logging
@@ -101,6 +103,11 @@ def _cmd_worker(
             capability_card_project=getattr(args, "capability_card_project", ""),
             capability_card_lifetime_seconds=getattr(
                 args, "capability_card_lifetime_seconds", 300.0
+            ),
+            local_endpoints=(
+                load_local_endpoints(Path(args.local_endpoints))
+                if getattr(args, "local_endpoints", None)
+                else None
             ),
         )
     except (ImportError, IdentityKeyError, ValueError) as exc:

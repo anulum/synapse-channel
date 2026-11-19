@@ -18,6 +18,20 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- **`ollama` and `tiered` workers now refuse non-local endpoints.** Every HTTP tier's
+  base URL (the `ollama` model, and `tiered`'s SLM and HEAVY tiers) must be on the
+  operator's local endpoint list, checked when the worker is built; an undeclared
+  one is a configuration error. Before, a hosted base URL with a key in the
+  environment sent paid calls without `--allow-paid-api`, a budget or a quote, and
+  `tiered` escalated to such a HEAVY tier per prompt. The list is an owner-only
+  `synapse-local-endpoints.v1` file named by `synapse worker --local-endpoints FILE`
+  or found at `$XDG_CONFIG_HOME/synapse/local-endpoints.json`; without it only the
+  local Ollama default is declared. Loopback is not assumed local. A hosted model is
+  reached only through a named paid profile. `SynapseLLMWorker` gains
+  `local_endpoints=`.
+
 ## [0.99.56] - 2026-11-18
 
 Core 0.99.56 applies a setup plan from the dashboard, once and only after an

@@ -127,6 +127,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_hub_restart.py": (2, "platform-guard"),
     # A whole-hub kill -9 needs POSIX SIGKILL.
     "tests/test_hub_sigkill_durability.py": (1, "platform-guard"),
+    # Symlink refusal and permission bits of the local endpoint list are POSIX-specific.
+    "tests/test_local_endpoints.py": (1, "platform-guard"),
     # Dual-stack loopback listens skip when this host cannot bind both families.
     "tests/test_hub_bound_address.py": (3, "platform-guard"),
     "tests/test_path_identity_inode_reuse.py": (3, "platform-guard"),

@@ -21,6 +21,7 @@ import contextlib
 import os
 import time
 from collections import deque
+from collections.abc import Sequence
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
@@ -30,6 +31,11 @@ from synapse_channel.client.chat_backends import (
     RuleBasedClient,
     sanitize_text,
 )
+from synapse_channel.client.local_endpoints import (
+    LocalEndpointError,
+    endpoint_is_listed,
+    load_local_endpoints,
+)
 from synapse_channel.client.provider_budget import EstimatedSpendGuard, ProviderQuote
 from synapse_channel.client.provider_http import ProviderHTTPClient, ProviderWorkerBackend
 from synapse_channel.client.provider_profiles import PROFILES, provider_profile
@@ -37,6 +43,7 @@ from synapse_channel.core.capability_card_signing import (
     DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.terminal_text import terminal_text
 
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
@@ -138,6 +145,12 @@ class SynapseLLMWorker:
         opt-in; unsigned advisory discovery remains the default.
     capability_card_lifetime_seconds : float, optional
         Lifetime recorded in each signed advertisement.
+    local_endpoints : Sequence[str] or None, optional
+        The base URLs the ``ollama`` and ``tiered`` providers may reach. ``None``
+        reads the operator's list at its default path, or declares only the local
+        Ollama default when there is none (see
+        :mod:`synapse_channel.client.local_endpoints`). A hosted model is reached
+        only through a named paid profile.
     """
 
     def __init__(
@@ -163,6 +176,7 @@ class SynapseLLMWorker:
         capability_card_key_id: str = "",
         capability_card_project: str = "",
         capability_card_lifetime_seconds: float = DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
+        local_endpoints: Sequence[str] | None = None,
     ) -> None:
         self.name = name
         self.uri = uri
@@ -181,6 +195,7 @@ class SynapseLLMWorker:
         self.context: deque[tuple[str, str]] = deque(maxlen=max(max_context, 2))
         self.inbox: asyncio.Queue[dict[str, str]] = asyncio.Queue()
         self.last_reply_ts = 0.0
+        self._local_endpoints = None if local_endpoints is None else tuple(local_endpoints)
 
         self.agent = SynapseAgent(
             self.name,
@@ -206,11 +221,13 @@ class SynapseLLMWorker:
         ------
         RuntimeError
             If ``provider`` has no registered profile.
+        LocalEndpointError
+            If an ``ollama`` or ``tiered`` endpoint is not a declared local one.
         """
         if self.provider == "rule":
             return RuleBasedClient()
         if self.provider == "ollama":
-            return self._http_client(self.model)
+            return self._http_client(self.model, tier="ollama")
         if self.provider in PROFILES:
             profile = provider_profile(self.provider)
             key_env = self.api_key_env if self.api_key_env != "OPENAI_API_KEY" else profile.key_env
@@ -233,14 +250,25 @@ class SynapseLLMWorker:
             f"Unsupported provider '{self.provider}'. Use a named profile, rule, or tiered."
         )
 
-    def _http_client(self, model: str) -> OpenAIChatClient:
-        """Build an OpenAI-compatible HTTP client for ``model``."""
+    def _http_client(self, model: str, *, tier: str) -> OpenAIChatClient:
+        """Build an OpenAI-compatible HTTP client for ``model`` on a declared local endpoint.
+
+        ``tier`` names the provider or the tiered backend's tier in a refusal.
+        """
         api_key = os.getenv(self.api_key_env, "").strip() or "ollama"
         effective_base = self.base_url
         # A local Ollama preset left on the OpenAI default is redirected to the
         # local server, which speaks the same /v1 protocol.
         if self.provider in ("ollama", "tiered") and self.base_url == OPENAI_DEFAULT_BASE_URL:
             effective_base = DEFAULT_OLLAMA_BASE_URL
+        if self._local_endpoints is None:
+            self._local_endpoints = load_local_endpoints()
+        if not endpoint_is_listed(effective_base, self._local_endpoints):
+            raise LocalEndpointError(
+                f"the {tier} endpoint {terminal_text(effective_base)} is not a declared local "
+                "endpoint; list it in the local endpoint list (--local-endpoints), or reach a "
+                "hosted model through a paid profile with --allow-paid-api"
+            )
         return OpenAIChatClient(
             api_key=api_key, model=model, base_url=effective_base, timeout_seconds=60.0
         )
@@ -252,8 +280,8 @@ class SynapseLLMWorker:
         return TieredChatClient(
             {
                 TaskClass.RULE: RuleBasedClient(),
-                TaskClass.SLM: self._http_client(self.model),
-                TaskClass.HEAVY: self._http_client(self.heavy_model),
+                TaskClass.SLM: self._http_client(self.model, tier="SLM"),
+                TaskClass.HEAVY: self._http_client(self.heavy_model, tier="HEAVY"),
             }
         )
 
