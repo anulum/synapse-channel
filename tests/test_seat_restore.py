@@ -292,7 +292,14 @@ def test_worker_session_restore_arms_the_waiter_with_the_holders_command(
 
         return recorder
 
+    def no_real_tmux(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("a restore never takes the plain tmux path")
+
     monkeypatch.setattr(worker_session, "start_restored_seat", fake_restore)
+    # Every real tmux boundary is closed, so a wrong path fails here instead of
+    # starting a real session on the user's tmux server.
+    monkeypatch.setattr(worker_session, "_launch_terminal_worker", no_real_tmux)
+    monkeypatch.setattr(worker_session, "start_session", no_real_tmux)
     monkeypatch.setattr(worker_session, "_record_started_pane", record("pane"))
     monkeypatch.setattr(worker_session, "_start_tmux_waiter", record("waiter"))
     monkeypatch.setattr(worker_session, "_attach_tmux_session", record("attach", 0))
