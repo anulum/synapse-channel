@@ -687,7 +687,7 @@ async def test_a_holder_with_a_wake_target_runs_its_waiter_while_the_agent_runs(
             "T/seat", NONCE, agent, uri=uri, marker_dir=tmp_path, timing=FAST, wake=target
         )
     assert code == 4
-    assert events == [("open", (target, agent, tmp_path / "T_seat.log"))]
+    assert events == [("open", (target, agent, tmp_path / "T_seat-holder.log"))]
     # The waiter closed while the seat was still held, before the holder let go.
     assert len(online) == 1 and "T/seat-seat" in online[0]
     assert isinstance(sys.stdout, seat_waiter.OutputRouter)  # installed at the holder's start

@@ -103,7 +103,8 @@ def _capture(tmux: str) -> str:
 
 
 def _seat_processes() -> list[str]:
-    listing = subprocess.run(["ps", "-eo", "args"], capture_output=True, text=True).stdout
+    # -ww: never cut a command line to the 80 columns ps assumes for a pipe
+    listing = subprocess.run(["ps", "-ww", "-eo", "args"], capture_output=True, text=True).stdout
     return [line for line in listing.splitlines() if IDENTITY in line and "ps -eo" not in line]
 
 
@@ -215,7 +216,7 @@ async def test_a_waiter_that_stops_leaves_the_seat_running_and_says_why_off_scre
                     for path in registry.glob("*.json")
                 )
             )
-            log = (tmp_path / "markers" / "T_hold.log").read_text(encoding="utf-8")
+            log = (tmp_path / "markers" / "T_hold-holder.log").read_text(encoding="utf-8")
             assert "the pane waiter of T/hold stopped" in log
             assert f"{IDENTITY}-seat" in hub.online_agents()  # the seat is still held
             assert (

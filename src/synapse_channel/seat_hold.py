@@ -510,7 +510,7 @@ def _open_waiter(
         agent_argv=argv,
         uri=uri,
         token=token,
-        log_path=directory / f"{safe_key(identity)}.log",
+        log_path=directory / f"{safe_key(identity)}-holder.log",
         router=router,
     )
 
@@ -582,7 +582,8 @@ async def hold_seat(
         The tmux session whose pane this holder also wakes on directed
         messages, with the waiter in its own process
         (:mod:`synapse_channel.seat_waiter`). While the agent runs, the
-        holder's own output then goes to ``<identity>.log`` beside the marker.
+        holder's own output then goes to ``<identity>-holder.log`` beside the
+        marker, a name no marker ever has.
 
     Returns
     -------
