@@ -1481,3 +1481,56 @@ async def test_a_confirmed_done_outcome_against_a_sealed_marker_surfaces_a_contr
         "critical",
         "open",
     )
+
+
+async def test_a_second_stopper_receiving_readback_closed_counts_the_attempt_as_closed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """After an applied read-back is kept, a second stopper's readback_closed still exits 0."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_hub, uri):
+            [(_task, operation_id, digest, attempt)] = await _opened(uri, b, x)
+            marker = AttemptMarker(operation_id, attempt, digest)
+            apply_effect(Target(work, "main", b), marker, candidate=x, git=git_executable())
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                first = await _command(watcher, command.stop_and_seal(_args(uri, work)))
+                capsys.readouterr()
+                missing = tmp_path / "missing-repository"
+                second_args = build_parser(command="operation").parse_args(
+                    [
+                        "operation",
+                        "stop",
+                        "--name",
+                        RECOVERY,
+                        "--uri",
+                        uri,
+                        "--scope",
+                        SCOPE,
+                        "--reason",
+                        "second stopper",
+                        "--ready-timeout",
+                        "15",
+                        "--timeout",
+                        "15",
+                        "--idem-key",
+                        "s2",
+                        "--seal",
+                        "--repository",
+                        str(missing),
+                    ]
+                )
+                second = await _command(watcher, command.stop_and_seal(second_args))
+                printed = capsys.readouterr().out.splitlines()
+            finally:
+                await close_agents(watcher)
+        readbacks = _rows(store, EventKind.OPERATION_STOP_READBACK)
+        seq = _stop_seq(store)
+    finally:
+        store.close()
+    assert (first, second) == (seal_command.EXIT_DONE, seal_command.EXIT_DONE), printed
+    assert f"attempt {attempt}: a closing read-back is already recorded" in printed
+    assert f"stop at journal seq {seq}: 1 of 1 listed attempt(s) closed" in printed
+    assert [row["result"] for row in readbacks] == ["applied"]

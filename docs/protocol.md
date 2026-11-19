@@ -221,7 +221,9 @@ does not add agent grades to protocol envelopes.
   result returns the kept row without writing a second row, while a different
   result once a `sealed` or `applied` read-back is kept is refused
   (`readback_closed`). A newly journalled read-back is recorded as
-  `operation_stop_readback` and counts towards the 32 rows. When its marker
+  `operation_stop_readback` and counts towards the 32 rows (an `unread`
+  read-back superseded by a closing one therefore uses two rows from that
+  shared 32-row limit). When its marker
   fields recompute to `sealed`, the attempt is marked `sealed` (and an executor
   outcome claiming `confirmed_done` on that attempt is surfaced as an
   `operation_contradiction` attention item and, under `--ladder`, an

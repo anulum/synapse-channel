@@ -510,9 +510,7 @@ class AttemptLedger:
                 row.readbacks[attempt_id] = result
                 row.readback_seqs[attempt_id] = seq
         entry = self._operations.get(operation_id)
-        if entry is None or (
-            self._stop_rows and not self.stop_lists(stop_seq, operation_id, attempt_id)
-        ):
+        if entry is None or not self.stop_lists(stop_seq, operation_id, attempt_id):
             return
         if not marker_reads_sealed(
             operation_id=operation_id,

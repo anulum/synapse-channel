@@ -342,3 +342,23 @@ def test_duplicate_read_backs_do_not_overwrite_and_contradiction_works_in_both_o
         marker_object=m2.objects("sha1").sealed,
     )
     assert attempts.contradicted_at(op2) == 20
+
+
+def test_note_readback_never_marks_an_attempt_sealed_when_no_stop_row_exists() -> None:
+    """A read-back naming a non-existent stop is ignored even on an empty stop table."""
+    empty = AttemptLedger(None)
+    fact = OperationFact("T1", "P/worker", DIGEST, None, 1.0, "git_publication", "cooperative")
+    empty.note_declaration(OPERATION, fact)
+    empty.open_attempt(OPERATION, ATTEMPT, executor="P/worker", approval_seq=1)
+    assert not empty.stop_rows
+    empty.note_readback(
+        99,
+        ATTEMPT,
+        "sealed",
+        seq=2,
+        operation_id=OPERATION,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.sealed,
+    )
+    assert empty.attempt_state(OPERATION, ATTEMPT) == "open"

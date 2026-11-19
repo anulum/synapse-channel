@@ -65,6 +65,7 @@ from synapse_channel.core.attempt_markers import (
 from synapse_channel.core.operation_seals import REFUSED_ATTEMPT_ENDED
 from synapse_channel.core.operation_stop_readbacks import (
     CLOSING_RESULTS,
+    REFUSED_READBACK_CLOSED,
     RESULT_APPLIED,
     RESULT_SEALED,
     RESULT_UNREAD,
@@ -79,6 +80,7 @@ from synapse_channel.terminal_text import terminal_text
 
 NOT_PERMITTED = "not_permitted"
 REFUSED = "refused"
+RECORDED_BEFORE = "recorded_before"
 """Outcomes of one listed attempt that are not a read-back result."""
 
 _GIT_EFFECT = "git_publication"
@@ -123,6 +125,9 @@ async def _record(
 async def _read_back(link: _HubLink, item: dict[str, str], body: dict[str, Any]) -> str:
     """Record one read-back; return its result, or why it was not kept."""
     reply = await _record(link, item, "stop_readback", body)
+    if reply is not None and reply.get("reason") == REFUSED_READBACK_CLOSED:
+        print(f"attempt {item['attempt_id']}: a closing read-back is already recorded")
+        return RECORDED_BEFORE
     if _hub_refusal(reply, f"attempt {item['attempt_id']}: read-back") is not None:
         return REFUSED
     assert reply is not None
@@ -237,7 +242,7 @@ async def _stop_and_seal(link: _HubLink, args: argparse.Namespace, git: str) -> 
         if isinstance(item, dict)
     ]
     results = [await _seal_one(link, args, git, stop_seq, item) for item in items]
-    closed = sum(result in CLOSING_RESULTS for result in results)
+    closed = sum(result in (*CLOSING_RESULTS, RECORDED_BEFORE) for result in results)
     print(f"stop at journal seq {stop_seq}: {closed} of {len(items)} listed attempt(s) closed")
     return EXIT_DONE if closed == len(items) else EXIT_REFUSED
 
