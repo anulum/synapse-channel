@@ -231,16 +231,20 @@ def sweep_stale_token_files(
     live_nonces: Set[str],
     *,
     execute: bool,
+    minimum_age: float,
     uid: int | None = None,
 ) -> int:
     """Count stale token files, and remove them only when ``execute`` is true.
 
     A file counts when its name is ``<safe key>.<nonce>.token``, ``lstat``
-    shows a regular file owned by this user, and that nonce has no live
-    holder. The count is the only result: names and contents are not returned.
+    shows a regular file owned by this user, that nonce has no live holder,
+    and the file's mtime is at least ``minimum_age`` seconds ago. A younger
+    file is left: a restore writes it before the holder process exists.
+    The count is the only result: names and contents are not returned.
     A dry run (``execute`` false) does not remove anything.
     """
     owner = os.geteuid() if uid is None else uid
+    clock = time.time()
     try:
         directory_info = directory.lstat()
     except OSError:
@@ -257,6 +261,8 @@ def sweep_stale_token_files(
         except OSError:
             continue
         if not stat.S_ISREG(info.st_mode) or info.st_uid != owner:
+            continue
+        if clock - info.st_mtime < minimum_age:
             continue
         if not execute:
             stale += 1

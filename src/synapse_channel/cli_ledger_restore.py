@@ -13,12 +13,12 @@ writes nothing at all: no ledger line, no ``seq``, no ``current.json``, no
 would do with it, the headroom limits it would wait for, and the names of the
 environment variables a seat's child would get and would not, never their
 values. It also counts stale token files a cut holder left, and prints only
-that count.
+that count. A file younger than the marker wait plus 120 seconds is not counted.
 
-With ``--execute`` it first removes those stale token files, then holds
-``restore.lock``, takes a real snapshot, and starts the planned seats one at a
-time (see :mod:`synapse_channel.restore_run`). It restores agent sessions only;
-it never arranges windows.
+With ``--execute`` it holds ``restore.lock`` and, while holding it, removes
+those stale token files, then takes a real snapshot and starts the planned
+seats one at a time (see :mod:`synapse_channel.restore_run`). It restores agent
+sessions only; it never arranges windows.
 """
 
 from __future__ import annotations
@@ -58,6 +58,7 @@ from synapse_channel.seat_hold import (
     nonces_of_live_holders,
     sweep_stale_token_files,
 )
+from synapse_channel.seat_restore import MARKER_WAIT_SECONDS
 from synapse_channel.session_ledger import (
     LedgerError,
     Row,
@@ -77,6 +78,8 @@ from synapse_channel.session_ledger_collect import (
 
 USAGE_EXIT_CODE = 2
 HOST_UNREADABLE_EXIT_CODE = 3
+TOKEN_SWEEP_MARGIN_SECONDS = 120.0
+"""How long after the marker wait a token file is still too young to sweep."""
 
 
 def add_restore_parser(nested: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -191,6 +194,16 @@ def _live_holder_nonces() -> frozenset[str]:
     return nonces_of_live_holders(commands, uid=os.geteuid(), owner_of=_process_uid)
 
 
+def _sweep_token_files(*, execute: bool) -> int:
+    """Count token files old enough to sweep; remove them only when executing."""
+    return sweep_stale_token_files(
+        default_marker_dir(),
+        _live_holder_nonces(),
+        execute=execute,
+        minimum_age=MARKER_WAIT_SECONDS + TOKEN_SWEEP_MARGIN_SECONDS,
+    )
+
+
 def _host(args: argparse.Namespace) -> Host:
     home = os.environ.get("HOME")
     return Host(read_procs(), tmux_bin=args.tmux_bin, home=Path(home) if home else None)
@@ -254,22 +267,19 @@ def _cmd_restore(args: argparse.Namespace) -> int:
     if synapse_bin is None:
         print(f"synapse ledger restore: {args.synapse_bin} is not an executable on PATH")
         return USAGE_EXIT_CODE
-    head = {
+    head: dict[str, Any] = {
         "headroom": describe(limits),
         "limits": asdict(limits),
         "notes": notes,
         "environment": environment_summary(os.environ, args.token),
-        "stale_token_files": sweep_stale_token_files(
-            default_marker_dir(),
-            _live_holder_nonces(),
-            execute=args.execute,
-        ),
     }
     if not args.execute:
+        head["stale_token_files"] = _sweep_token_files(execute=False)
         return _dry_run(args, directory, host_name, head)
     try:
         ensure_private_dir(directory, parents=True, purpose="session ledger")
         with restore_lock(directory):
+            head["stale_token_files"] = _sweep_token_files(execute=True)
             return _execute(args, directory, host_name, head, limits, synapse_bin)
     except RestoreBusyError as exc:
         print(f"synapse ledger restore: {exc}; this run stops")

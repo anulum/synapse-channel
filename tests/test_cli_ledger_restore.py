@@ -16,6 +16,7 @@ import signal
 import socket
 import stat
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ from synapse_channel.seat_hold import (
     sweep_stale_token_files,
     token_file_nonce,
 )
+from synapse_channel.seat_restore import MARKER_WAIT_SECONDS
 from synapse_channel.session_ledger import (
     SCHEMA,
     LedgerError,
@@ -363,10 +365,13 @@ def test_execute_with_nothing_to_start_connects_to_nothing(
 
 
 def test_a_second_execute_while_one_runs_exits_75(
-    tmp_path: Path, ledger: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, ledger: Path, marker_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    old = _token(marker_dir, f"T_seat.{NONCE}.token")
+    _age(old)
     with restore_lock(ledger):
         assert _restore(tmp_path, "--execute") == 75
+    assert old.is_file()
     assert capsys.readouterr().out == (
         "synapse ledger restore: another restore run holds the lock; this run stops\n"
     )
@@ -380,6 +385,13 @@ def _token(directory: Path, name: str, text: str = "secret\n") -> Path:
     path = directory / name
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def _age(path: Path) -> None:
+    """Move ``path``'s mtime far enough past the sweep's young-file bound."""
+    bound = MARKER_WAIT_SECONDS + cli_ledger_restore.TOKEN_SWEEP_MARGIN_SECONDS
+    old = time.time() - bound - 10
+    os.utime(path, (old, old))
 
 
 def test_only_a_cut_holders_regular_token_file_is_stale(marker_dir: Path) -> None:
@@ -396,15 +408,23 @@ def test_only_a_cut_holders_regular_token_file_is_stale(marker_dir: Path) -> Non
     nested.mkdir()
     link = marker_dir / "T_seat.nonce-0004.token"
     link.symlink_to(kept)
-    assert sweep_stale_token_files(marker_dir, frozenset(), execute=False) == 1
+    assert sweep_stale_token_files(marker_dir, frozenset(), execute=False, minimum_age=0) == 1
     assert stale.is_file() and kept.is_file() and nested.is_dir() and link.is_symlink()
-    assert sweep_stale_token_files(marker_dir, frozenset({NONCE}), execute=True) == 0
+    assert sweep_stale_token_files(marker_dir, frozenset({NONCE}), execute=True, minimum_age=0) == 0
     assert stale.is_file()
-    assert sweep_stale_token_files(marker_dir, frozenset(), execute=True, uid=os.geteuid() + 1) == 0
+    assert (
+        sweep_stale_token_files(
+            marker_dir, frozenset(), execute=True, minimum_age=0, uid=os.geteuid() + 1
+        )
+        == 0
+    )
     assert stale.read_text(encoding="utf-8") == "secret\n"
-    assert sweep_stale_token_files(marker_dir / "missing", frozenset(), execute=True) == 0
-    assert sweep_stale_token_files(kept, frozenset(), execute=True) == 0
-    assert sweep_stale_token_files(marker_dir, frozenset(), execute=True) == 1
+    assert (
+        sweep_stale_token_files(marker_dir / "missing", frozenset(), execute=True, minimum_age=0)
+        == 0
+    )
+    assert sweep_stale_token_files(kept, frozenset(), execute=True, minimum_age=0) == 0
+    assert sweep_stale_token_files(marker_dir, frozenset(), execute=True, minimum_age=0) == 1
     assert not stale.exists()
     assert kept.is_file() and nested.is_dir() and link.is_symlink()
 
@@ -422,14 +442,14 @@ def test_a_token_file_that_vanishes_or_cannot_be_removed_is_not_counted(
 
     with monkeypatch.context() as patch:
         patch.setattr(Path, "lstat", gone)
-        assert sweep_stale_token_files(marker_dir, frozenset(), execute=True) == 0
+        assert sweep_stale_token_files(marker_dir, frozenset(), execute=True, minimum_age=0) == 0
     assert stale.is_file()
 
     def refuse(path: Path, uid: int) -> None:
         raise OSError("busy")
 
     monkeypatch.setattr("synapse_channel.seat_hold._unlink_own_regular", refuse)
-    assert sweep_stale_token_files(marker_dir, frozenset(), execute=True) == 0
+    assert sweep_stale_token_files(marker_dir, frozenset(), execute=True, minimum_age=0) == 0
     assert stale.is_file()
 
 
@@ -472,16 +492,18 @@ def test_a_dry_run_counts_a_cut_token_file_and_execute_removes_it(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     stale = _token(marker_dir, f"T_seat.{NONCE}.token")
+    fresh = _token(marker_dir, "T_seat.nonce-0008.token", "fresh\n")
+    _age(stale)
     assert _restore(tmp_path) == 0
     dry = capsys.readouterr().out
     assert "stale token files: 1" in dry
-    assert NONCE not in dry and "T_seat" not in dry and "secret" not in dry
-    assert stale.is_file()
+    assert NONCE not in dry and "T_seat" not in dry and "secret" not in dry and "fresh" not in dry
+    assert stale.is_file() and fresh.is_file()
     assert _restore(tmp_path, "--execute", "--only", "P/none") == 0
     done = capsys.readouterr().out
     assert "stale token files: 1" in done
-    assert NONCE not in done and "secret" not in done
-    assert not stale.exists()
+    assert NONCE not in done and "secret" not in done and "fresh" not in done
+    assert not stale.exists() and fresh.is_file()
 
 
 def test_the_restore_sees_a_live_holder_nonce(

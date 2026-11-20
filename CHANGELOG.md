@@ -70,7 +70,6 @@ execution evidence when carrying a release claim forward.
   whose last two restores could not start the agent, needs `--only`. A row
   without a resume handle, with a permission profile, a lost working
   directory or a tmux name in use is held back. Without `--execute` it is a
-  `restore.lock`, holds its own hub connection as `<host>-restore-planner`
   (45 s up before the first start, an answer within 5 s before every start, a
   drop starts the wait again, another hub stops the run), waits for headroom
   (memory, load, memory pressure, 30 s spacing; a host may only tighten
@@ -191,10 +190,14 @@ execution evidence when carrying a release claim forward.
   restore, with a new nonce and a new file. The provider, its wake
 
   dry run that writes nothing; it only counts stale token files a cut holder
-  left, and never prints a name or a value. With `--execute`, before it plans,
-  it removes those regular files when their name is
-  `<safe-key>.<nonce>.token`, this user owns them, and no live `seat-hold
-  --nonce` process of this user still holds that nonce. One run at a time holds
+
+  left that are older than the marker wait plus 120 seconds, and never prints
+  a name or a value. With `--execute` one run at a time holds `restore.lock`
+  and, while holding it, before it plans, removes those regular files when
+  their name is `<safe-key>.<nonce>.token`, this user owns them, they are
+  older than that bound, and no live `seat-hold --nonce` process of this user
+  still holds that nonce. A younger file is left. It then holds its own hub
+  connection as `<host>-restore-planner`
 
 ## [0.99.58] - 2026-11-19
 
