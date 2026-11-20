@@ -70,6 +70,27 @@ def _agy_live_region(screen: str) -> str | None:
     return screen[rules[-2 if len(rules) > 1 else -1].start() :]
 
 
+_GROK_TURN_END = re.compile(r"(?m)^[ \t]*Worked for \d[^\n]*$")
+"""The line Grok prints when it finishes a turn, such as ``Worked for 12m9s``."""
+
+_GROK_BUSY_FOOTER = re.compile(r"Ctrl\+c:cancel|Enter:send now|Ctrl\+;:queue")
+"""Footer keys Grok shows only while a turn runs: Enter then sends at once or queues."""
+
+
+def _grok_live_region(screen: str) -> str:
+    """Return the part of a Grok pane after its last finished turn.
+
+    Grok ends each turn with a ``Worked for <time>`` line and keeps every
+    earlier answer above it. An answer may hold a numbered line or the word
+    "approve", which would read as a chooser or a busy marker. A busy spinner,
+    a modal chooser and a new turn's output all come after the last finished
+    turn, so only that part says what the pane does now. Without such a line
+    the whole screen is read, as before.
+    """
+    ends = list(_GROK_TURN_END.finditer(screen))
+    return screen[ends[-1].start() :] if ends else screen
+
+
 def _agy_pane_state(screen: str) -> str:
     """Classify an Antigravity CLI pane from its composer and footer only."""
     region = _agy_live_region(screen)
@@ -115,7 +136,10 @@ def pane_state(provider: str, screen: str) -> str:
     -------
     str
         ``update-required``, ``blocked``, ``idle`` or ``unknown``. Busy or
-        modal markers take precedence over an idle marker.
+        modal markers take precedence over an idle marker. An Antigravity CLI
+        pane is read from its composer and footer only, and a Grok pane only
+        after its last finished turn; Grok's running-turn footer (cancel, send
+        now, queue) is busy.
 
     Raises
     ------
@@ -126,6 +150,11 @@ def pane_state(provider: str, screen: str) -> str:
         return "update-required"
     if provider == "agy":
         return _agy_pane_state(screen)
+    if provider == "grok":
+        screen = _grok_live_region(screen)
+        # The spinner line comes and goes during a turn; the footer stays.
+        if _GROK_BUSY_FOOTER.search(screen):
+            return "blocked"
     if _UNSAFE_PANE_PATTERN.search(screen):
         return "blocked"
     if PROVIDER_IDLE_PATTERNS[provider].search(screen):

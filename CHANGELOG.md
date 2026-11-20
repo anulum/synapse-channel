@@ -18,6 +18,16 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Grok wake reads only what Grok is doing now.** A numbered line or the
+  word "approve" in an earlier answer made the whole pane read as a chooser,
+  so a wake waited while Grok sat idle with an empty composer. A Grok pane is
+  now read from its last finished turn on, the line `Worked for <time>`. While a
+  turn runs, the spinner line comes and goes, so a wake could be pasted between
+  two frames and Enter then queued it. Grok's running-turn footer
+  (`Ctrl+c:cancel`, `Enter:send now`, `Ctrl+;:queue`) now counts as busy.
+
 ## [0.99.59] - 2026-11-20
 
 Core 0.99.59 adds seats that survive a crash or a reboot. `synapse seat-hold`

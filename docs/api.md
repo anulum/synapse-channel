@@ -593,7 +593,11 @@ Provider marker classification belongs to `agent_pane_state`: it retains the
 existing update/busy/idle precedence, complete staged-hint checks and terminal
 wrapping rules, including the box edges a boxed composer draws where it wraps a
 long hint. Grok always draws its composer, so a hint that is no longer visible
-settles a staged wake there only when an empty composer row is visible.
+settles a staged wake there only when an empty composer row is visible. A Grok pane is classified
+only from its last finished turn on (the line `Worked for <time>`), so a numbered
+line or the word "approve" in an earlier answer is not a chooser, and its
+running-turn footer (`Ctrl+c:cancel`, `Enter:send now`, `Ctrl+;:queue`) is busy
+even between spinner frames.
 `agent_tmux` continues to bind the current capture, provider and
 registry through its existing API. These terminal observations do not prove
 that a model received or completed work.

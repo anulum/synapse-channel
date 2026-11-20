@@ -652,6 +652,166 @@
       "websockets": "17.1"
     }
   },
+  "grok_live_region": {
+    "before_head": "4f27efe2b95bf6344b9091202c95427a3f341991",
+    "host": {
+      "cores": 24,
+      "cpu": "Intel(R) Xeon(R) CPU E5-2640 0 @ 2.50GHz",
+      "isolation": "shared host (ML350, load about 11 to 14), serial, nice 19",
+      "python": "3.12.16"
+    },
+    "median_of_run_medians_us": {
+      "after": 846494.1480197012,
+      "before": 845104.9370924011
+    },
+    "note": "Three alternating before/after pairs on ML350, serial, nice 19, each five real tmux wakes into a new owned session running the harness's harmless composer (measure_pane). The change reads a Grok pane from its last finished turn and its running-turn footer; the harness composer is not Grok, so this measures the cost on the default path. Shared-host regression evidence, not an isolated claim.",
+    "runs": [
+      {
+        "at": "2026-11-20T20:04:16.553030+00:00",
+        "load": [
+          10.63671875,
+          11.0283203125,
+          11.7998046875
+        ],
+        "pair": 1,
+        "result": {
+          "injected": 5,
+          "max_us": 856212.9560159519,
+          "measured": true,
+          "min_us": 838707.9529929906,
+          "p50_us": 845340.4010506347,
+          "wakes": 5
+        },
+        "side": "before",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "a033232050ddf039654e905a7fdbce853b496590f8051699284eac6b3dc70083",
+          "src/synapse_channel/agent_tmux.py": "7e200c502ae2850bd0fadbea657c46ca3fb88dd8de5e7124ce6b0caeaea3bb33",
+          "src/synapse_channel/pane_wake.py": "54214808807ae119887cc281dcc24ea733b5c30780def05f50013f2dc33be7b5"
+        }
+      },
+      {
+        "at": "2026-11-20T20:04:23.474055+00:00",
+        "load": [
+          11.3818359375,
+          11.17626953125,
+          11.83984375
+        ],
+        "pair": 1,
+        "result": {
+          "injected": 5,
+          "max_us": 848902.2289868444,
+          "measured": true,
+          "min_us": 842771.1010444909,
+          "p50_us": 846494.1480197012,
+          "wakes": 5
+        },
+        "side": "after",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "76c2cf45fdfa771889c537bd79098418e9370eff34d1ceab5018706149437f6b",
+          "src/synapse_channel/agent_tmux.py": "7e200c502ae2850bd0fadbea657c46ca3fb88dd8de5e7124ce6b0caeaea3bb33",
+          "src/synapse_channel/pane_wake.py": "54214808807ae119887cc281dcc24ea733b5c30780def05f50013f2dc33be7b5"
+        }
+      },
+      {
+        "at": "2026-11-20T20:04:30.512530+00:00",
+        "load": [
+          11.751953125,
+          11.2568359375,
+          11.8623046875
+        ],
+        "pair": 2,
+        "result": {
+          "injected": 5,
+          "max_us": 856428.8660418242,
+          "measured": true,
+          "min_us": 837613.1800469011,
+          "p50_us": 845104.9370924011,
+          "wakes": 5
+        },
+        "side": "before",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "a033232050ddf039654e905a7fdbce853b496590f8051699284eac6b3dc70083",
+          "src/synapse_channel/agent_tmux.py": "7e200c502ae2850bd0fadbea657c46ca3fb88dd8de5e7124ce6b0caeaea3bb33",
+          "src/synapse_channel/pane_wake.py": "54214808807ae119887cc281dcc24ea733b5c30780def05f50013f2dc33be7b5"
+        }
+      },
+      {
+        "at": "2026-11-20T20:04:38.658734+00:00",
+        "load": [
+          13.85986328125,
+          11.712890625,
+          12.00390625
+        ],
+        "pair": 2,
+        "result": {
+          "injected": 5,
+          "max_us": 848099.5439458638,
+          "measured": true,
+          "min_us": 841731.6910345107,
+          "p50_us": 846656.5000126138,
+          "wakes": 5
+        },
+        "side": "after",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "76c2cf45fdfa771889c537bd79098418e9370eff34d1ceab5018706149437f6b",
+          "src/synapse_channel/agent_tmux.py": "7e200c502ae2850bd0fadbea657c46ca3fb88dd8de5e7124ce6b0caeaea3bb33",
+          "src/synapse_channel/pane_wake.py": "54214808807ae119887cc281dcc24ea733b5c30780def05f50013f2dc33be7b5"
+        }
+      },
+      {
+        "at": "2026-11-20T20:04:45.447181+00:00",
+        "load": [
+          14.111328125,
+          11.80078125,
+          12.03076171875
+        ],
+        "pair": 3,
+        "result": {
+          "injected": 5,
+          "max_us": 850036.3640487194,
+          "measured": true,
+          "min_us": 840880.820993334,
+          "p50_us": 844612.9520889372,
+          "wakes": 5
+        },
+        "side": "before",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "a033232050ddf039654e905a7fdbce853b496590f8051699284eac6b3dc70083",
+          "src/synapse_channel/agent_tmux.py": "7e200c502ae2850bd0fadbea657c46ca3fb88dd8de5e7124ce6b0caeaea3bb33",
+          "src/synapse_channel/pane_wake.py": "54214808807ae119887cc281dcc24ea733b5c30780def05f50013f2dc33be7b5"
+        }
+      },
+      {
+        "at": "2026-11-20T20:04:52.178290+00:00",
+        "load": [
+          14.32861328125,
+          11.9228515625,
+          12.068359375
+        ],
+        "pair": 3,
+        "result": {
+          "injected": 5,
+          "max_us": 847385.1960152388,
+          "measured": true,
+          "min_us": 833011.1359246075,
+          "p50_us": 834355.0349818543,
+          "wakes": 5
+        },
+        "side": "after",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "76c2cf45fdfa771889c537bd79098418e9370eff34d1ceab5018706149437f6b",
+          "src/synapse_channel/agent_tmux.py": "7e200c502ae2850bd0fadbea657c46ca3fb88dd8de5e7124ce6b0caeaea3bb33",
+          "src/synapse_channel/pane_wake.py": "54214808807ae119887cc281dcc24ea733b5c30780def05f50013f2dc33be7b5"
+        }
+      }
+    ]
+  },
   "harness_sha256": "d4d06490cb2451d1aff18111a321d9e18fb01cb5b0c53456ebe85e7a159c5730",
   "isolation": "shared workstation; serial nice19; MemoryMax1536M; no reserved CPU/storage",
   "measurement_cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",

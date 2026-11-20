@@ -43,7 +43,26 @@ _HINT = build_wake_prompt("E2E/pane-classification")
 _UPDATE = "Update available! 0.1 -> 0.2\nSkip until next version\nPress enter to continue\n› "
 
 
-def _grok_box(composer: str, *, extra_row: str = "", width: int = 60) -> str:
+_GROK_ANSWER = (
+    "     ❯ read the inbox\n"
+    "     The release run lists these jobs:\n"
+    "     2759) test (3.12, 1) passed\n"
+    "     I would approve the merge once the last shard is green.\n"
+)
+"""A finished Grok answer with a numbered line and the word "approve"."""
+
+
+_GROK_BUSY = "Enter:send now  │  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+;:queue"
+"""The footer Grok shows while a turn runs."""
+
+
+def _grok_box(
+    composer: str,
+    *,
+    extra_row: str = "",
+    width: int = 60,
+    footer: str = "Enter:send  │  Ctrl+x:quit",
+) -> str:
     """A Grok screen whose boxed composer wraps ``composer`` at word edges over its rows."""
     words = composer.split()
     rows: list[str] = []
@@ -60,9 +79,7 @@ def _grok_box(composer: str, *, extra_row: str = "", width: int = 60) -> str:
         "  │ " + ("❯ " if index == 0 else "  ") + row.ljust(width) + " │"
         for index, row in enumerate(rows)
     ]
-    return "\n".join(
-        ["  ╭" + edge + "╮", *body, "  ╰" + edge + "╯", "  Enter:send  │  Ctrl+x:quit"]
-    )
+    return "\n".join(["  ╭" + edge + "╮", *body, "  ╰" + edge + "╯", "  " + footer])
 
 
 _AGY_RULE = "─" * 60
@@ -96,6 +113,36 @@ _AGY_TRUST = "Do you trust the contents of this project?\n> Yes, I trust this fo
         ("grok", "  │ ❯" + (" " * 8) + "│", "idle"),
         ("grok", "  ╰─ Grok 4.7 (high) · always-approve ─╯\n  │ ❯" + (" " * 4) + "│", "idle"),
         ("grok", "Approve this tool?\n  │ ❯ ", "blocked"),
+        # A finished answer may hold a numbered line or the word "approve"; only
+        # what follows Grok's last "Worked for" line says what the pane does.
+        ("grok", _GROK_ANSWER + "     Worked for 12m9s\n\n" + _grok_box(""), "idle"),
+        (
+            "grok",
+            _GROK_ANSWER + "     Worked for 3s\n     ❯ go on\n     Approve this tool?\n"
+            "       1. Yes\n" + _grok_box(""),
+            "blocked",
+        ),
+        (
+            "grok",
+            _GROK_ANSWER + "     Worked for 3s\n   ⠹ Thinking… 4s\n" + _grok_box(""),
+            "blocked",
+        ),
+        # The last finished turn counts: an answer between two of them is history.
+        (
+            "grok",
+            "     Worked for 1s\n" + _GROK_ANSWER + "     Worked for 2s\n" + _grok_box(""),
+            "idle",
+        ),
+        # Without a finished turn on the screen, the whole screen is read.
+        ("grok", _GROK_ANSWER + _grok_box(""), "blocked"),
+        # A running turn keeps its footer while the spinner line comes and goes;
+        # Enter there would send at once or queue the hint.
+        (
+            "grok",
+            "     Worked for 3s\n     ❯ go on\n" + _grok_box("", footer=_GROK_BUSY),
+            "blocked",
+        ),
+        ("grok", _grok_box("", footer=_GROK_BUSY), "blocked"),
         ("gemini", "Ask Gemini", "idle"),
         ("opencode", "Ask anything...", "idle"),
         ("codex", _UPDATE, "update-required"),

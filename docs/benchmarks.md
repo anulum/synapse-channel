@@ -564,6 +564,25 @@ these numbers. Every run, its load and the source digests are in
 `staged_wake_recovery` in `external_surfaces_benchmark.json`. The terminal
 transport has no second language implementation.
 
+### Grok pane classification
+
+The 2026-11-20 comparison measures source `4f27efe2` against the change that
+reads a Grok pane from its last finished turn and treats Grok's running-turn
+footer as busy. The unchanged Python pane harness delivers five wakes per run
+into a new owned tmux session with the same harmless composer, in three
+alternating before/after pairs on ML350 (Xeon E5-2640, shared, load about 11 to
+14, serial nice-19). Each row is the median of the three per-run medians, in
+microseconds:
+
+| Operation | Before p50 (us) | After p50 (us) |
+| --- | ---: | ---: |
+| Pane wake | 845104.937 | 846494.148 |
+
+All 30 wakes were injected. The medians differ by 0.16 %, inside the spread of
+the runs. The harness composer is not Grok, so this measures the cost on the
+default path. Every run, its load and the source digests are in
+`grok_live_region` in `external_surfaces_benchmark.json`.
+
 ### Scoped execution observations
 
 The `execution_outcome_contract` section records a new baseline `06c53087` and
