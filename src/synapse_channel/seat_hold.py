@@ -142,6 +142,33 @@ def marker_path(directory: Path, identity: str, nonce: str) -> Path:
     return directory / f"{safe_key(identity)}.{nonce}"
 
 
+def own_token_path(directory: Path, identity: str, nonce: str) -> Path:
+    """Return this start's private hub-token file, beside its marker."""
+    return directory / f"{safe_key(identity)}.{nonce}.token"
+
+
+def discard_own_token_file(
+    directory: Path, identity: str, nonce: str, token_file: Path | None
+) -> None:
+    """Remove this holder's token file when the seat ends, and no other file.
+
+    ``--token-file`` is removed only when it is this start's
+    ``<marker dir>/<identity key>.<nonce>.token``. A caller's own file is left
+    in place. A hub reconnect does not call this: the same holder is still
+    running, and a later start of the recorded pane command still needs the file.
+    """
+    if token_file is None:
+        return
+    own = own_token_path(directory, identity, nonce)
+    try:
+        same = token_file.resolve() == own.resolve()
+    except OSError:
+        return
+    if not same:
+        return
+    own.unlink(missing_ok=True)
+
+
 def write_marker(path: Path, line: str) -> None:
     """Write ``line`` to ``path`` atomically, readable by its owner only.
 
@@ -562,6 +589,62 @@ class _WaiterSlot:
             await asyncio.to_thread(self.seat.close)
 
 
+async def _serve_held_seat(
+    holder: SeatHolder,
+    identity: str,
+    nonce: str,
+    argv: Sequence[str],
+    uri: str,
+    token: str | None,
+    directory: Path,
+    marker: Path,
+    slot: _WaiterSlot,
+    spawner: Spawner,
+    timing: HoldTiming,
+    token_file: Path | None,
+) -> int:
+    """Run the agent while the seat is held, then remove this holder's token file.
+
+    A hub reconnect stays inside :func:`supervise` and does not remove the file.
+    The file is removed when this function returns, which is the seat's final end.
+    """
+    write_marker(marker, f"held {holder.name} {nonce}")
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    handled = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+    for signum in handled:
+        loop.add_signal_handler(signum, stop.set)
+    try:
+        try:
+            child = await spawner(argv, os.getpid())
+        except (OSError, subprocess.SubprocessError) as exc:
+            print(f"synapse seat-hold: the agent could not be started with its fence: {exc}")
+            write_marker(marker, f"failed {holder.name} {nonce}")
+            return AGENT_START_FAILED_EXIT_CODE
+        write_marker(marker, f"ready {holder.name} {nonce}")
+        record = LauncherRecord("seat-hold")
+        slot.open(identity, argv, uri, token, directory, record)
+        record.started(
+            child.pid,
+            identity=identity,
+            argv=argv,
+            cwd=Path.cwd(),
+            holder=holder.name,
+            tmux=slot.tmux(),
+        )
+        try:
+            return await supervise(holder, child, stop=stop, timing=timing)
+        finally:
+            await slot.close()
+            record.ended(child.returncode)
+    finally:
+        for signum in handled:
+            loop.remove_signal_handler(signum)
+        await holder.release()
+        reclaim_terminal()
+        discard_own_token_file(directory, identity, nonce, token_file)
+
+
 async def hold_seat(
     identity: str,
     nonce: str | None,
@@ -569,6 +652,7 @@ async def hold_seat(
     *,
     uri: str,
     token: str | None = None,
+    token_file: Path | None = None,
     marker_dir: Path | None = None,
     factory: AgentFactory | None = None,
     spawner: Spawner = spawn_agent,
@@ -589,6 +673,11 @@ async def hold_seat(
         The agent's command.
     uri, token : str
         The hub and its shared-secret token, if it is secured.
+    token_file : Path or None
+        The file ``--token-file`` named. When it is this start's own
+        ``<marker-dir>/<identity key>.<nonce>.token``, the holder removes it
+        as the seat ends. Any other path is left alone. A reconnect does not
+        remove it.
     marker_dir : Path or None
         Where the marker is written; :func:`default_marker_dir` by default.
     factory : AgentFactory or None
@@ -632,6 +721,7 @@ async def hold_seat(
     if refusal is not None:
         print(refusal)
         write_marker(marker, f"unsupported {holder.name} {nonce}")
+        discard_own_token_file(directory, identity, nonce, token_file)
         return UNSUPPORTED_PLATFORM_EXIT_CODE
     verdict = await holder.acquire(timeout=timing.ready_timeout)
     if verdict != "held":
@@ -641,38 +731,19 @@ async def hold_seat(
             + ("is held by a live connection; nothing started" if live else "could not be held")
         )
         write_marker(marker, f"{'refused' if live else 'unavailable'} {holder.name} {nonce}")
+        discard_own_token_file(directory, identity, nonce, token_file)
         return SEAT_LIVE_EXIT_CODE if live else HUB_UNAVAILABLE_EXIT_CODE
-    write_marker(marker, f"held {holder.name} {nonce}")
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    handled = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
-    for signum in handled:
-        loop.add_signal_handler(signum, stop.set)
-    try:
-        try:
-            child = await spawner(argv, os.getpid())
-        except (OSError, subprocess.SubprocessError) as exc:
-            print(f"synapse seat-hold: the agent could not be started with its fence: {exc}")
-            write_marker(marker, f"failed {holder.name} {nonce}")
-            return AGENT_START_FAILED_EXIT_CODE
-        write_marker(marker, f"ready {holder.name} {nonce}")
-        record = LauncherRecord("seat-hold")
-        slot.open(identity, argv, uri, token, directory, record)
-        record.started(
-            child.pid,
-            identity=identity,
-            argv=argv,
-            cwd=Path.cwd(),
-            holder=holder.name,
-            tmux=slot.tmux(),
-        )
-        try:
-            return await supervise(holder, child, stop=stop, timing=timing)
-        finally:
-            await slot.close()
-            record.ended(child.returncode)
-    finally:
-        for signum in handled:
-            loop.remove_signal_handler(signum)
-        await holder.release()
-        reclaim_terminal()
+    return await _serve_held_seat(
+        holder,
+        identity,
+        nonce,
+        argv,
+        uri,
+        token,
+        directory,
+        marker,
+        slot,
+        spawner,
+        timing,
+        token_file,
+    )

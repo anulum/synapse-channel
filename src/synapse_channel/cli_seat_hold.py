@@ -111,6 +111,7 @@ def _cmd_seat_hold(args: argparse.Namespace, *, runner: AsyncRunner = asyncio.ru
             command,
             uri=args.uri,
             token=token or None,
+            token_file=Path(args.token_file) if args.token_file else None,
             marker_dir=Path(args.marker_dir) if args.marker_dir else None,
             wake=wake,
         )

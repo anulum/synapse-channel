@@ -246,8 +246,10 @@ def seat_token_file(directory: Path, identity: str, nonce: str, token: str) -> P
     """Write the hub token where only the seat's holder reads it, and return the path.
 
     The file is new (``O_EXCL``), ``0600``, in the holder's private marker
-    directory, and named by this start's nonce. It stays while the seat is held,
-    so a later restart of the pane through its recorded command still finds it.
+    directory, and named by this start's nonce. It stays while this holder
+    runs, including a hub reconnect, so the recorded pane command still finds
+    it. The holder removes it when the seat ends. A caller's own token file
+    is a different path and is not removed.
     """
     ensure_private_dir(directory, parents=True, purpose="seat holder marker directory")
     path = directory / f"{safe_key(identity)}.{nonce}.token"

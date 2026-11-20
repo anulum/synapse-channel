@@ -33,7 +33,6 @@ execution evidence when carrying a release claim forward.
   `unsupported` or `failed`. An agent that cannot be started with its fence is
   never run (exit 70). The fence's library is resolved before the fork, so the
   child loads nothing. Other platforms are refused by name, and an unreadable
-  token file is refused with exit 2.
 
 - **Restore a cut seat without evicting a live one.** `synapse worker-session
   --restore --identity ID -- <agent>` starts the agent in tmux behind
@@ -181,6 +180,11 @@ execution evidence when carrying a release claim forward.
 - A verification record keeps a 32-hex `attempt_id` with its other digest-shaped
   evidence. A 32-hex value under any other key is still dropped, as is every
   value that is not 40 or 64 lower-case hex.
+
+  token file is refused with exit 2. When the holder ends, it removes
+  `--token-file` only when that path is this start's
+  `<marker-dir>/<identity-key>.<nonce>.token`. A hub reconnect leaves the
+  file, and a caller's own token file is left in place.
 
 ## [0.99.58] - 2026-11-19
 

@@ -50,8 +50,10 @@ from synapse_channel.seat_hold import (
     SignalHandler,
     child_setup,
     default_marker_dir,
+    discard_own_token_file,
     hold_seat,
     marker_path,
+    own_token_path,
     seat_name,
     spawn_agent,
     supervise,
@@ -791,3 +793,158 @@ async def test_a_held_seat_writes_its_ledger_row(
     )
     assert start["tmux"] is None and start["identity"] == "T/seat"
     assert (end["event"], end["row_id"], end["exit_status"]) == ("end", start["row_id"], 4)
+
+
+def test_discard_removes_only_this_starts_own_token_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    own = own_token_path(tmp_path, "T/seat", NONCE)
+    assert own == tmp_path / f"T_seat.{NONCE}.token"
+    own.write_text("secret\n", encoding="utf-8")
+    other = tmp_path / "other.token"
+    other.write_text("keep\n", encoding="utf-8")
+    discard_own_token_file(tmp_path, "T/seat", NONCE, None)
+    assert own.is_file()
+    discard_own_token_file(tmp_path, "T/seat", NONCE, other)
+    assert own.read_text(encoding="utf-8") == "secret\n"
+    assert other.read_text(encoding="utf-8") == "keep\n"
+
+    def unresolvable(self: Path, strict: bool = False) -> Path:
+        raise OSError("unresolvable")
+
+    monkeypatch.setattr(Path, "resolve", unresolvable)
+    discard_own_token_file(tmp_path, "T/seat", NONCE, own)
+    assert own.is_file()
+
+
+def test_an_unsupported_platform_removes_its_own_token_file(tmp_path: Path) -> None:
+    own = own_token_path(tmp_path, "T/seat", NONCE)
+    own.write_text("secret\n", encoding="utf-8")
+    other = tmp_path / "other.token"
+    other.write_text("keep\n", encoding="utf-8")
+
+    async def never(*_args: object) -> Any:
+        raise AssertionError("no agent may start")
+
+    code = asyncio.run(
+        hold_seat(
+            "T/seat",
+            NONCE,
+            ["true"],
+            uri="ws://unused",
+            marker_dir=tmp_path,
+            factory=_factory(),
+            spawner=never,
+            platform="darwin",
+            token_file=own,
+        )
+    )
+    assert code == UNSUPPORTED_PLATFORM_EXIT_CODE
+    assert not own.exists()
+    assert other.is_file()
+
+
+async def test_an_unheld_start_removes_its_own_token_file(tmp_path: Path) -> None:
+    own = own_token_path(tmp_path, "T/seat", NONCE)
+    own.write_text("secret\n", encoding="utf-8")
+    other = tmp_path / "other.token"
+    other.write_text("keep\n", encoding="utf-8")
+    code = await hold_seat(
+        "T/seat",
+        NONCE,
+        ["true"],
+        uri=f"ws://127.0.0.1:{free_port()}",
+        marker_dir=tmp_path,
+        timing=FAST,
+        token_file=own,
+    )
+    assert code == HUB_UNAVAILABLE_EXIT_CODE
+    assert not own.exists()
+    assert other.is_file()
+
+
+async def test_the_holder_removes_only_its_own_token_file_when_the_seat_ends(
+    tmp_path: Path,
+) -> None:
+    own = own_token_path(tmp_path, "T/seat", NONCE)
+    own.write_text("secret\n", encoding="utf-8")
+    other = tmp_path / "other.token"
+    other.write_text("keep\n", encoding="utf-8")
+    caller = tmp_path / "caller.token"
+    caller.write_text("caller\n", encoding="utf-8")
+    async with running_hub() as (_hub, uri):
+        ended = await hold_seat(
+            "T/seat",
+            NONCE,
+            _python("raise SystemExit(0)"),
+            uri=uri,
+            marker_dir=tmp_path,
+            timing=FAST,
+            token_file=own,
+        )
+        kept = await hold_seat(
+            "T/seat",
+            NONCE,
+            _python("raise SystemExit(0)"),
+            uri=uri,
+            marker_dir=tmp_path,
+            timing=FAST,
+            token_file=caller,
+        )
+    assert ended == 0 and kept == 0
+    assert not own.exists()
+    assert other.read_text(encoding="utf-8") == "keep\n"
+    assert caller.read_text(encoding="utf-8") == "caller\n"
+
+
+async def test_a_hub_restart_leaves_the_token_file_until_the_holder_ends(tmp_path: Path) -> None:
+    port = free_port()
+    own = own_token_path(tmp_path, "T/seat", NONCE)
+    own.write_text("secret\n", encoding="utf-8")
+    other = tmp_path / "other.token"
+    other.write_text("keep\n", encoding="utf-8")
+    pid_file = tmp_path / "agent.pid"
+    agent = _python(
+        "import os, pathlib, time\n"
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid()))\n"
+        "time.sleep(60)\n"
+    )
+    task = None
+    async with _hub_on(port) as uri:
+        task = asyncio.create_task(
+            hold_seat(
+                "T/seat",
+                NONCE,
+                agent,
+                uri=uri,
+                marker_dir=tmp_path,
+                timing=FAST,
+                token_file=own,
+            )
+        )
+        try:
+            await _until(pid_file.exists, timeout=15.0)
+            assert own.is_file()
+            assert not task.done()
+        except BaseException:
+            task.cancel()
+            raise
+    assert task is not None and own.is_file() and not task.done()
+    try:
+        async with _hub_on(port):
+            await asyncio.sleep(1.0)
+            assert own.is_file()
+            assert not task.done()
+            os.kill(int(pid_file.read_text(encoding="utf-8")), signal.SIGTERM)
+            code = await asyncio.wait_for(task, timeout=15.0)
+    finally:
+        if not task.done():
+            if pid_file.is_file():
+                with contextlib.suppress(ProcessLookupError, ValueError):
+                    os.kill(int(pid_file.read_text(encoding="utf-8")), signal.SIGKILL)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+    assert code == 128 + signal.SIGTERM
+    assert not own.exists()
+    assert other.is_file()
