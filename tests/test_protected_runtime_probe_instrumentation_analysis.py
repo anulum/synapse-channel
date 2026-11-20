@@ -403,6 +403,9 @@ def test_actual_ordinary_analysis_refuses_changed_associations_bytes_contexts_or
     with pytest.raises((ValueError, OSError)) as failure:
         analyze_recordings(report_path, report_sha, analysis_inputs[0], datasets, source, output)
     expected = {
+        "incomplete": "recording report lacks complete quiescent successful producers",
+        "producer-exit": "recording report lacks complete quiescent successful producers",
+        "component-grade-type": "recording report lacks complete quiescent successful producers",
         "role-bindings": "recording report lacks parent role bindings",
         "sealed-owner": "recording dataset process or sealed metadata differs",
         "zero-pid": "recording dataset process or sealed metadata differs",
