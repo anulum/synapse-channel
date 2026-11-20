@@ -133,6 +133,10 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- A seat whose project is its group keeps the tab form `<abbreviation> ·
+  <vendor>`. `synapse label --refresh` leaves a title set by hand and records
+  `operator` in `@synapse_label_title_owner`.
+
 - `synapse task declare` with no `--project` sends the project of a
   `PROJECT/name` identity as the default used when the task is created. A
   re-declare with no `--project` keeps the task's scope. A bare identity

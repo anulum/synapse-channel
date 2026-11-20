@@ -14,7 +14,8 @@ With several agent terminals open, a tab that says `tmux` tells you nothing.
 `synapse label` makes the terminal say who works in it:
 
 - the **tab label** is short: the group's abbreviation, the project when a
-  specific focus is assigned to the seat, and the vendor;
+  specific focus is assigned and that project is not the group itself, and
+  the vendor. A seat of the group uses `<abbreviation> · <vendor>`;
 - the **status lines** at the bottom of the terminal wrap the declared details
   within tmux's five-line limit. Overflow is truncated; `--show` prints every
   detail in full.
@@ -42,7 +43,7 @@ synapse label --restore                           # put the earlier label and st
 | Option | Meaning |
 | --- | --- |
 | `--identity` | Seat identity, `PROJECT/seat`. Defaults to `SYN_IDENTITY`, which is used only until a seat is stored on the session. Connection suffixes such as `-rx`, `-tx` and `-presence` are dropped. |
-| `--focus` | The specific focus assigned to the seat. Without one the tab label omits the project. |
+| `--focus` | The specific focus assigned to the seat. Without one the tab label omits the project. A project that is the group itself is omitted even with a focus, so the tab is the abbreviation and the vendor. |
 | `--vendor`, `--model` | Vendor and exact model id. Declared values; the command never guesses them. |
 | `--session-name`, `--native-session`, `--terminal-identity` | Further details for the status lines. |
 | `--session` | Exact tmux session; defaults to the one the command runs in. |
@@ -101,6 +102,10 @@ attached. tmux draws at most five status lines.
 
 When the terminal is resized or a client attaches, a session hook runs
 `synapse label --refresh` and the lines are laid out again. Nothing polls.
+A refresh does not replace a tab title someone set by hand after the label
+was applied. The session option `@synapse_label_title_owner` then reads
+`operator`. While the label command itself last wrote the title, the option
+reads the seat. An explicit `synapse label` sets the title again.
 
 ## What the command changes, and how to undo it
 

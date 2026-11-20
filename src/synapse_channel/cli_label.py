@@ -108,6 +108,7 @@ def _cmd_label(args: argparse.Namespace) -> int:
                 f"--session={session}",
                 f"--tmux-bin={args.tmux_bin}",
             ],
+            keep_hand_title=args.refresh,
         )
     print(result.detail)
     if result.applied or result.detail.startswith("disabled"):

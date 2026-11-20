@@ -38,9 +38,11 @@ from synapse_channel.cli import main as cli_main
 from synapse_channel.terminal_label import NOT_DECLARED, TerminalDetails
 from synapse_channel.terminal_label_tmux import (
     SAVED_OPTION,
+    TITLE_OWNER_OPTION,
     LabelResult,
     apply,
     enabled,
+    hand_owns_title,
     own_session,
     restore,
     stored_details,
@@ -154,8 +156,73 @@ def server(tmp_path: Path) -> Iterator[Server]:
         owned.close()
 
 
-def _apply(server: Server, name: str, details: TerminalDetails = _DETAILS) -> LabelResult:
-    return apply(server.tmux_bin, name, details, runner=subprocess.run, refresh_command=_NO_REFRESH)
+def _apply(
+    server: Server,
+    name: str,
+    details: TerminalDetails = _DETAILS,
+    *,
+    keep_hand_title: bool = False,
+) -> LabelResult:
+    return apply(
+        server.tmux_bin,
+        name,
+        details,
+        runner=subprocess.run,
+        refresh_command=_NO_REFRESH,
+        keep_hand_title=keep_hand_title,
+    )
+
+
+def test_a_refresh_keeps_a_title_the_operator_set(server: Server) -> None:
+    """A later refresh records the operator and does not write over that title."""
+    name = server.session("work")
+    assert _apply(server, name).applied
+    assert server.option(name, TITLE_OWNER_OPTION) == _DETAILS.seat
+    server.tmux("set-option", "-t", f"={name}:", "set-titles-string", "mine")
+
+    kept = _apply(server, name, keep_hand_title=True)
+
+    assert kept.applied and kept.label == "mine"
+    assert server.option(name, "set-titles-string") == "mine"
+    assert server.option(name, TITLE_OWNER_OPTION) == "operator"
+    again = _apply(server, name, replace(_DETAILS, focus="other work"), keep_hand_title=True)
+    assert again.label == "mine"
+    assert server.option(name, "set-titles-string") == "mine"
+
+
+def test_an_explicit_label_replaces_a_hand_set_title(server: Server) -> None:
+    name = server.session("work")
+    _apply(server, name)
+    server.tmux("set-option", "-t", f"={name}:", "set-titles-string", "mine")
+    _apply(server, name, keep_hand_title=True)
+
+    replaced = _apply(server, name)
+
+    assert replaced.label == "ACAACS · SYNAPSE-CHANNEL · claude"
+    assert server.option(name, "set-titles-string") == replaced.label
+    assert server.option(name, TITLE_OWNER_OPTION) == _DETAILS.seat
+
+
+@pytest.mark.parametrize(
+    ("keep", "owner", "current", "expected"),
+    [
+        (False, "operator", "mine", False),
+        (True, "operator", "mine", True),
+        (True, None, "tmux", False),
+        (True, "SYNAPSE-CHANNEL/claude-7f3a", "ACAACS · SYNAPSE-CHANNEL · claude", False),
+        (True, "SYNAPSE-CHANNEL/claude-7f3a", "mine", True),
+    ],
+)
+def test_hand_owns_title(keep: bool, owner: str | None, current: str, expected: bool) -> None:
+    assert (
+        hand_owns_title(
+            keep=keep,
+            owner=owner,
+            current=current,
+            label="ACAACS · SYNAPSE-CHANNEL · claude",
+        )
+        is expected
+    )
 
 
 def test_apply_sets_only_the_named_session_and_no_global_option(server: Server) -> None:

@@ -102,6 +102,7 @@ def test_identity_and_profile_establish_group_project_and_seat_only() -> None:
     [
         (_FULL, "ACAACS · SYNAPSE-CHANNEL · claude"),
         (replace(_FULL, focus=NOT_DECLARED), "ACAACS · claude"),
+        (replace(_FULL, project=_GROUP), "ACAACS · claude"),
         (replace(_FULL, vendor=NOT_DECLARED), "ACAACS · SYNAPSE-CHANNEL"),
         (replace(_FULL, project=NOT_DECLARED), "ACAACS · claude"),
         (TerminalDetails(project="OTHER", seat="OTHER/s", vendor="codex"), "OTHER · codex"),

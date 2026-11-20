@@ -34,6 +34,7 @@ from typing import Protocol
 
 from synapse_channel.terminal_label import (
     MAX_STATUS_LINES,
+    NOT_DECLARED,
     TerminalDetails,
     inert,
     status_lines,
@@ -48,6 +49,9 @@ DETAILS_OPTION = "@synapse_label_details"
 
 SAVED_OPTION = "@synapse_label_saved"
 """Session option holding the session's earlier option values as JSON."""
+
+TITLE_OWNER_OPTION = "@synapse_label_title_owner"
+"""Who set the tab title: the seat, ``synapse``, or ``operator``."""
 
 HOOKS = ("client-resized", "client-attached")
 """Session hooks that lay the status lines out again."""
@@ -184,6 +188,43 @@ def stored_details(tmux_bin: str, session: str, *, runner: CommandRunner) -> Ter
     return TerminalDetails.from_json(value) if value else TerminalDetails()
 
 
+def title_writes(
+    *,
+    keep: bool,
+    owner: str | None,
+    current: str | None,
+    label: str,
+    seat: str,
+) -> tuple[str, tuple[tuple[str, str], ...]]:
+    """Return the title to report and the title options a call should write.
+
+    A refresh that finds a hand-set title writes only the operator marker.
+    Any other call writes the label and records the seat that set it.
+    """
+    if hand_owns_title(keep=keep, owner=owner, current=current, label=label):
+        shown = current or label
+        if owner == "operator":
+            return shown, ()
+        return shown, ((TITLE_OWNER_OPTION, "operator"),)
+    setter = seat if seat != NOT_DECLARED else "synapse"
+    return label, (("set-titles-string", label), (TITLE_OWNER_OPTION, setter))
+
+
+def hand_owns_title(*, keep: bool, owner: str | None, current: str | None, label: str) -> bool:
+    """Return whether a refresh must leave the tab title as it stands.
+
+    An explicit request sets the title. A refresh leaves a title this command
+    did not write, and any title already marked as the operator's.
+    """
+    if not keep:
+        return False
+    if owner == "operator":
+        return True
+    if not owner:
+        return False
+    return bool(current) and current != label
+
+
 def apply(
     tmux_bin: str,
     session: str,
@@ -192,6 +233,7 @@ def apply(
     runner: CommandRunner,
     refresh_command: Sequence[str],
     environ: Mapping[str, str] | None = None,
+    keep_hand_title: bool = False,
 ) -> LabelResult:
     """Set the tab label and the status lines of one exact session.
 
@@ -208,6 +250,9 @@ def apply(
         for example ``["synapse", "label", "--refresh", "--session", name]``.
     environ : mapping or None
         Environment read for the opt-out; the process environment by default.
+    keep_hand_title : bool, optional
+        When true, a title this command did not write is left in place and
+        ``@synapse_label_title_owner`` records ``operator``.
 
     Returns
     -------
@@ -226,16 +271,23 @@ def apply(
             return LabelResult(False, "could not save the session's earlier options")
     label = tab_label(details)
     lines = status_lines(details, tmux.width() - MARGIN)
+    shown, title_options = title_writes(
+        keep=keep_hand_title,
+        owner=tmux.option(TITLE_OWNER_OPTION),
+        current=tmux.option("set-titles-string"),
+        label=label,
+        seat=details.seat,
+    )
     wanted = [
         (DETAILS_OPTION, details.to_json()),
         ("set-titles", "on"),
-        ("set-titles-string", label),
+        *title_options,
         ("status", "on" if len(lines) == 1 else str(len(lines))),
         *((f"status-format[{index}]", _STYLE + line) for index, line in enumerate(lines)),
     ]
     for name, value in wanted:
         if not tmux.set(name, value):
-            return LabelResult(False, f"tmux refused {name}", label, tuple(lines))
+            return LabelResult(False, f"tmux refused {name}", shown, tuple(lines))
     for index in range(len(lines), MAX_STATUS_LINES):
         tmux.unset(f"status-format[{index}]")
     # tmux shows what a ``run-shell -b`` command prints in view mode over the
@@ -246,8 +298,8 @@ def apply(
     hook = "run-shell -b " + shlex.quote(inert(silent))
     for name in HOOKS:
         if not tmux.ok("set-hook", "-t", tmux.target, name, hook):
-            return LabelResult(False, f"tmux refused the {name} hook", label, tuple(lines))
-    return LabelResult(True, f"label and {len(lines)} status line(s) set", label, tuple(lines))
+            return LabelResult(False, f"tmux refused the {name} hook", shown, tuple(lines))
+    return LabelResult(True, f"label and {len(lines)} status line(s) set", shown, tuple(lines))
 
 
 def restore(tmux_bin: str, session: str, *, runner: CommandRunner) -> LabelResult:
@@ -275,5 +327,6 @@ def restore(tmux_bin: str, session: str, *, runner: CommandRunner) -> LabelResul
     for name in HOOKS:
         tmux.ok("set-hook", "-u", "-t", tmux.target, name)
     tmux.unset(DETAILS_OPTION)
+    tmux.unset(TITLE_OWNER_OPTION)
     tmux.unset(SAVED_OPTION)
     return LabelResult(True, "the session's earlier label and status were restored")

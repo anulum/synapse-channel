@@ -257,18 +257,34 @@ def _declared(value: str) -> bool:
     return value != NOT_DECLARED
 
 
+def project_for_tab(details: TerminalDetails) -> str | None:
+    """Return the project the tab shows, or None.
+
+    A specific project is shown when a focus is assigned. A project that is
+    the group itself is not shown: that seat uses the broadcast form, the
+    abbreviation and then the vendor.
+    """
+    if not (_declared(details.focus) and _declared(details.project)):
+        return None
+    if _declared(details.group) and details.project == details.group:
+        return None
+    return details.project
+
+
 def tab_label(details: TerminalDetails) -> str:
     """Return the tab label, ready for display.
 
     ``<group abbreviation> · <project, when a focus is assigned> · <vendor>``.
-    Without a group the project stands first; without a seat the label says
-    so. The text is cut at 60 characters and made inert.
+    A seat whose project is the group itself omits that project. Without a
+    group the project stands first; without a seat the label says so. The
+    text is cut at 60 characters and made inert.
     """
     parts = []
     if _declared(details.abbreviation):
         parts.append(details.abbreviation)
-        if _declared(details.focus) and _declared(details.project):
-            parts.append(details.project)
+        project = project_for_tab(details)
+        if project is not None:
+            parts.append(project)
     elif _declared(details.project):
         parts.append(details.project)
     elif not _declared(details.seat):
