@@ -1168,8 +1168,10 @@ retain their explicit refusal meaning. Uncorrelated legacy errors stay unknown.
 
 `--reply-timeout` bounds each complete send/reply exchange, including a blocked
 send: default 30 seconds, finite and greater than zero, at most 300. After one
-unanswered release, the CLI makes one read-only confirmation query. It never
-automatically repeats the mutation. A remaining unknown result prints its
+unanswered release, the CLI makes one read-only confirmation query. That read
+sees a receipt only once the hub has kept it. A budget that ends before the
+keep reports the outcome unknown; it is not proof that the receipt is absent.
+The CLI never automatically repeats the mutation. A remaining unknown result prints its
 unique operation key, semantic SHA-256 digest, and exact recovery command:
 
 ```bash

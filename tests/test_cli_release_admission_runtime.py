@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -85,32 +86,51 @@ async def test_invalid_or_missing_probe_never_sends_release(tmp_path: Path, mode
             assert tuple(journal.iter_events()) == before
 
 
+def _release_arguments(receipt_json: bool, reply_timeout: str) -> list[str]:
+    """Build one release command. The timeout is a bound, not proof of a kept receipt."""
+    arguments = [
+        "release",
+        "release-proof",
+        "--name=release-owner",
+        f"--reply-timeout={reply_timeout}",
+        "--idem-key=pre-send-historical",
+    ]
+    if receipt_json:
+        arguments.append("--receipt-json")
+    return arguments
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("receipt_json", [False, True])
 async def test_probe_returns_existing_exact_receipt_without_replaying(
     tmp_path: Path, receipt_json: bool
 ) -> None:
-    """The pre-send read recovers a committed intent through the actual CLI."""
+    """The pre-send read recovers a committed intent through the actual CLI.
+
+    The hub keeps the receipt and then drops the grant. The test waits until
+    that keep is signalled, and only then reads it back. A short reply budget
+    is not the signal: under load it can end before the keep, and the command
+    then reports the outcome unknown.
+    """
     repo = git_repo(tmp_path / "repository")
     with EventStore(tmp_path / "hub.db") as journal:
-        async with running_hub(LostReleaseReplyHub(journal=journal)) as (_hub, uri):
+        hub = LostReleaseReplyHub(journal=journal)
+        async with running_hub(hub) as (_hub, uri):
             await claim(repo, uri)
-            arguments = [
-                "release",
-                "release-proof",
-                "--name=release-owner",
-                "--reply-timeout=0.1",
-                "--idem-key=pre-send-historical",
-            ]
-            if receipt_json:
-                arguments.append("--receipt-json")
-            first = await command(repo, uri, *arguments)
-            assert first.ok(), first.output
+            creator = asyncio.create_task(
+                command(repo, uri, *_release_arguments(receipt_json, "2"))
+            )
+            await asyncio.wait_for(hub.committed.wait(), timeout=8)
+            await creator
             before = tuple(journal.iter_events())
-            recovered = await command(repo, uri, *arguments)
+            recovered = await command(repo, uri, *_release_arguments(receipt_json, "5"))
+            again = await command(repo, uri, *_release_arguments(receipt_json, "5"))
             assert recovered.ok(), recovered.output
+            assert again.ok(), again.output
             if receipt_json:
-                assert recovered.stdout == first.stdout
+                assert json.loads(recovered.stdout)["released"] is True
+                assert again.stdout == recovered.stdout
             else:
                 assert "historical operation; no mutation replay" in recovered.stdout
+                assert "historical operation; no mutation replay" in again.stdout
             assert tuple(journal.iter_events()) == before
