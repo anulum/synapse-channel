@@ -133,10 +133,13 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+  lock, so two readers on POSIX no longer report that the root is busy. On
+  Windows that request takes the exclusive byte lock, so readers there still
+  exclude one another. The read still refuses a damaged root and does not
+  initialise it. A write, and the first admission of a root that is not yet
+  initialised, keeps the exclusive lock.
+
 - A read of an existing notification ledger takes the state root's shared
-  lock, so two readers no longer report that the root is busy. The read still
-  refuses a damaged root and does not initialise it. A write, and the first
-  admission of a root that is not yet initialised, keeps the exclusive lock.
 
   error log cannot be created. Each session carries its own `sh -c` script,
   so one label does not replace another's, and no script file is written.

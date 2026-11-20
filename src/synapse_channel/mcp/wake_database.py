@@ -28,7 +28,11 @@ from synapse_channel.mcp.wake_pointer import (
     WakeLedgerError,
     WakeScope,
 )
-from synapse_channel.mcp.wake_root import _NeedsExclusive, admit_wake_database, locked_wake_root
+from synapse_channel.mcp.wake_root import (
+    WakeRootNeedsExclusive,
+    admit_wake_database,
+    locked_wake_root,
+)
 from synapse_channel.mcp.wake_root_catalogue import read_generation_phase
 from synapse_channel.mcp.wake_sqlite import configure_wake_sqlite
 
@@ -139,12 +143,12 @@ def _shared_wake_read(path: Path, scope: WakeScope) -> Iterator[sqlite3.Connecti
     Shared holders do not exclude one another. An exclusive writer still
     makes this call report that the root is busy. The root inventory and the
     catalogue are checked, and this path does not initialise the root. A
-    generation that is not yet active raises ``_NeedsExclusive``. The
+    generation that is not yet active raises ``WakeRootNeedsExclusive``. The
     connection cannot write.
     """
     with locked_wake_root(path.parent, shared=True) as _inventory:
         if read_generation_phase(path.parent, scope.key) != "active":
-            raise _NeedsExclusive
+            raise WakeRootNeedsExclusive
         with closing(sqlite3.connect(path, timeout=0.1)) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA query_only=ON")
@@ -175,7 +179,7 @@ def wake_database(
                 with _shared_wake_read(path, scope) as connection:
                     yield connection
                 return
-            except _NeedsExclusive:
+            except WakeRootNeedsExclusive:
                 pass
         with admit_wake_database(path, scope):
             fresh = _prepare(path)

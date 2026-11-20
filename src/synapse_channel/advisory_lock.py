@@ -5,9 +5,11 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — one advisory file lock for POSIX and Windows
-"""Hold an advisory lock on a file, the same way on POSIX and on Windows.
+"""Hold an advisory lock on a file.
 
-``flock`` on POSIX, a byte-range lock through ``msvcrt`` on Windows. The lock
+``flock`` on POSIX, a byte-range lock through ``msvcrt`` on Windows. A shared
+request is a shared ``flock`` on POSIX. On Windows it takes that same
+exclusive byte lock, so readers there still exclude one another. The lock
 belongs to the open file: it ends with the block and with the process if it
 dies, so no stale lock is left behind.
 """
@@ -35,13 +37,12 @@ if sys.platform == "win32":
     def _take(descriptor: int, blocking: bool, shared: bool = False) -> bool:
         """Lock the first byte; a blocking request asks again until it has it.
 
-        A shared request uses ``LockFileEx`` without the exclusive flag, so
-        other shared holders are admitted. An exclusive request keeps the C
-        runtime byte lock. Only a region held incompatibly is waited for or
-        reported as busy. Any other error of the descriptor is raised.
+        Windows has no tested shared byte lock. A shared request takes this
+        same exclusive lock, so readers on Windows still exclude one another.
+        Only a region held incompatibly is waited for or reported as busy.
+        Any other error of the descriptor is raised.
         """
-        if shared:
-            return _take_shared(descriptor, blocking)
+        del shared
         while True:
             try:
                 os.lseek(descriptor, 0, os.SEEK_SET)
@@ -53,33 +54,6 @@ if sys.platform == "win32":
                 if not blocking:
                     return False
                 time.sleep(0.02)
-
-    def _take_shared(descriptor: int, blocking: bool) -> bool:
-        """Take a shared lock of the first byte, or report that it is busy."""
-        import ctypes
-        from ctypes import wintypes
-
-        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel.LockFileEx.argtypes = [
-            wintypes.HANDLE,
-            wintypes.DWORD,
-            wintypes.DWORD,
-            wintypes.DWORD,
-            wintypes.DWORD,
-            ctypes.c_void_p,
-        ]
-        kernel.LockFileEx.restype = wintypes.BOOL
-        overlapped = (ctypes.c_byte * 32)()
-        handle = msvcrt.get_osfhandle(descriptor)
-        while True:
-            locked_region = kernel.LockFileEx(handle, 0x1, 0, 1, 0, overlapped)
-            if locked_region:
-                return True
-            if ctypes.get_last_error() != 33:
-                raise ctypes.WinError(ctypes.get_last_error())
-            if not blocking:
-                return False
-            time.sleep(0.02)
 
     def _release(descriptor: int) -> None:
         """Unlock the first byte."""
@@ -271,8 +245,9 @@ def locked(
 ) -> Iterator[bool]:
     """Hold an advisory lock on the file ``path``.
 
-    The default is exclusive. ``shared`` admits other shared holders and
-    still refuses an exclusive holder.
+    The default is exclusive. On POSIX ``shared`` admits other shared holders
+    and still refuses an exclusive holder. On Windows a shared request takes
+    the exclusive byte lock, so readers there still exclude one another.
 
     Parameters
     ----------

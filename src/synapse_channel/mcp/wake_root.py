@@ -130,8 +130,12 @@ def _mark_initialized(lock: Path) -> None:
         os.fsync(stream.fileno())
 
 
-class _NeedsExclusive(Exception):
-    """The root is valid and still needs the exclusive initialisation path."""
+class WakeRootNeedsExclusive(Exception):
+    """The root is valid and still needs the exclusive initialisation path.
+
+    ``wake_database`` catches this and takes the writer path. A shared read
+    raises it only after the read-only checks have accepted the root.
+    """
 
 
 @contextmanager
@@ -147,7 +151,7 @@ def locked_wake_root(
     ``shared`` admits other shared holders and still runs the read-only
     inventory checks. It does not create catalogue metadata or mark the lock
     initialised. A valid root that is not yet initialised raises
-    ``_NeedsExclusive`` so the caller can take the exclusive path. A refusal
+    ``WakeRootNeedsExclusive`` so the caller can take the exclusive path. A refusal
     from ``_verify_first_root`` propagates either way.
     """
     if not create and not root.is_dir():
@@ -161,7 +165,7 @@ def locked_wake_root(
         if inventory.sizes[ROOT_LOCK] < ROOT_INITIALIZED_LOCK_BYTES:
             _verify_first_root(root, inventory)
             if shared:
-                raise _NeedsExclusive
+                raise WakeRootNeedsExclusive
             with root_catalogue(root, allow_create=ROOT_CATALOGUE not in inventory.sizes):
                 pass
             _mark_initialized(lock)

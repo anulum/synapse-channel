@@ -20,6 +20,45 @@ import synapse_channel.advisory_lock as advisory_lock
 from synapse_channel.advisory_lock import locked
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX shared flock; Windows takes the exclusive byte lock"
+)
+def test_two_shared_holders_both_hold_the_lock(tmp_path: Path) -> None:
+    """Two shared holders overlap. An exclusive lock in this path would refuse the second."""
+    path = tmp_path / "nest" / "lock"
+
+    with locked(path, blocking=False, purpose="advisory lock test", shared=True) as first:
+        assert first is True
+        with locked(path, blocking=False, purpose="advisory lock test", shared=True) as second:
+            assert second is True
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX shared flock; Windows takes the exclusive byte lock"
+)
+def test_an_exclusive_request_is_refused_while_a_shared_lock_is_held(tmp_path: Path) -> None:
+    """A shared holder refuses an exclusive request."""
+    path = tmp_path / "nest" / "lock"
+
+    with locked(path, blocking=False, purpose="advisory lock test", shared=True) as shared:
+        assert shared is True
+        with locked(path, blocking=False, purpose="advisory lock test") as exclusive:
+            assert exclusive is False
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX shared flock; Windows takes the exclusive byte lock"
+)
+def test_a_shared_request_is_refused_while_an_exclusive_lock_is_held(tmp_path: Path) -> None:
+    """An exclusive holder refuses a shared request."""
+    path = tmp_path / "nest" / "lock"
+
+    with locked(path, blocking=False, purpose="advisory lock test") as exclusive:
+        assert exclusive is True
+        with locked(path, blocking=False, purpose="advisory lock test", shared=True) as shared:
+            assert shared is False
+
+
 def test_a_second_taker_does_not_hold_the_lock(tmp_path: Path) -> None:
     """One holder excludes another, and the file can be held again after release."""
     path = tmp_path / "nest" / "lock"
