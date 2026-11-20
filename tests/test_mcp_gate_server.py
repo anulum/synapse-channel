@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import ssl
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -25,7 +26,14 @@ from mcp_gate_helpers import owner_file, seat_token
 from mcp_http_helpers import tls_files
 from synapse_channel.mcp import gate_server
 from synapse_channel.mcp.gate import GateState, Refusal
-from synapse_channel.mcp.gate_config import GateConfig, GateSeat, new_bearer
+from synapse_channel.mcp.gate_config import (
+    GateConfig,
+    GateSeat,
+    check_seat_grants,
+    grant_file_identity,
+    new_bearer,
+)
+from test_mcp_gate_config import grant_file
 
 FUTURE = int(datetime(2099, 1, 1, tzinfo=UTC).timestamp())
 
@@ -149,6 +157,10 @@ async def rig(
         tls_key_file=gate_key,
         grant_file=tmp_path / "grants.json",
         seats=tuple(seats),
+    )
+    grant_file(
+        config.grant_file,
+        {"PROJ/a": ["synapse_send"], "PROJ/b": ["synapse_send"]},
     )
     state = GateState(config)
     ready: asyncio.Future[int] = asyncio.get_running_loop().create_future()
@@ -349,6 +361,65 @@ async def test_upstream_content_length_is_bounded_before_it_is_parsed(
         with pytest.raises(Refusal) as refusal:
             await gate_server.read_response_body(asyncio.StreamReader(), _upstream_head(declared))
         assert refusal.value.status == 502
+
+
+async def test_an_unchanged_grant_file_is_not_read_on_every_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two requests state the file and do not parse it again."""
+    calls = 0
+
+    def counting(config: GateConfig) -> None:
+        nonlocal calls
+        calls += 1
+        check_seat_grants(config)
+
+    monkeypatch.setattr("synapse_channel.mcp.gate_server.check_seat_grants", counting)
+    async with rig(tmp_path) as gate:
+        assert status(await gate.post("PROJ/a")) == 200
+        assert status(await gate.post("PROJ/a")) == 200
+    assert calls == 0
+
+
+def test_a_missing_grant_file_has_no_identity(tmp_path: Path) -> None:
+    """A path that cannot be stated is not a remembered grant file."""
+    assert grant_file_identity(tmp_path / "absent.json") is None
+
+
+async def test_a_grant_file_that_adds_an_unlisted_tool_answers_unavailable(
+    tmp_path: Path,
+) -> None:
+    """A changed file that grants a tool the seat entry does not list is 503."""
+    async with rig(tmp_path) as gate:
+        assert status(await gate.post("PROJ/a")) == 200
+        grant_file(
+            tmp_path / "grants.json",
+            {"PROJ/a": ["synapse_send", "synapse_claim"], "PROJ/b": ["synapse_send"]},
+        )
+        assert status(await gate.post("PROJ/a")) == 503
+        assert status(await gate.post("PROJ/a")) == 503
+
+
+async def test_a_still_valid_grant_file_change_is_read_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A new mtime is checked, and the following request does not read the file."""
+    calls = 0
+
+    def counting(config: GateConfig) -> None:
+        nonlocal calls
+        calls += 1
+        check_seat_grants(config)
+
+    monkeypatch.setattr("synapse_channel.mcp.gate_server.check_seat_grants", counting)
+    async with rig(tmp_path) as gate:
+        path = tmp_path / "grants.json"
+        info = path.stat()
+        os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
+        assert status(await gate.post("PROJ/a")) == 200
+        assert calls == 1
+        assert status(await gate.post("PROJ/a")) == 200
+        assert calls == 1
 
 
 async def test_responses_are_relayed_and_bounded(

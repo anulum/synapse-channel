@@ -39,7 +39,13 @@ from synapse_channel.mcp.gate import (
     response_values,
     upstream_head,
 )
-from synapse_channel.mcp.gate_config import SeatTokenError, read_seat_token
+from synapse_channel.mcp.gate_config import (
+    GateConfigError,
+    SeatTokenError,
+    check_seat_grants,
+    grant_file_identity,
+    read_seat_token,
+)
 
 LOG = logging.getLogger("synapse.mcp.gate")
 _CHUNK_SIZE = re.compile(rb"[0-9A-Fa-f]{1,8}")
@@ -155,10 +161,29 @@ async def open_upstream(state: GateState) -> tuple[asyncio.StreamReader, asyncio
     return reader, writer
 
 
+def refresh_grants(state: GateState) -> None:
+    """Re-check the grant file only when its inode, size or mtime has changed.
+
+    An unchanged file is not read. A file that now grants a tool the seat's
+    entry does not list, or that cannot be used, refuses the request. The
+    remembered identity stays on the last file that passed, so a refusal is
+    checked again on the next request.
+    """
+    identity = grant_file_identity(state.config.grant_file)
+    if identity == state.grant_identity:
+        return
+    try:
+        check_seat_grants(state.config)
+    except GateConfigError:
+        raise Refusal(503, "seat grants refused") from None
+    state.grant_identity = identity
+
+
 async def exchange(
     state: GateState, request: Request, body: bytes, client: asyncio.StreamWriter
 ) -> str:
     """Forward one authorised request and relay its response; return the seat name."""
+    refresh_grants(state)
     seat = resolve_seat(state.config, presented_bearer(request), now=state.clock())
     session = request.values(b"mcp-session-id")
     if session:

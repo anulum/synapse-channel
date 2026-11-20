@@ -33,6 +33,7 @@ from synapse_channel.mcp.gate_config import (
     GateConfigError,
     GateSeat,
     bearer_digest,
+    grant_file_identity,
     load_bearer,
 )
 
@@ -328,3 +329,8 @@ class GateState:
     throttle: FailureThrottle = field(default_factory=FailureThrottle)
     open_connections: int = 0
     clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
+    grant_identity: tuple[int, int, int] | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        """Remember the grant file that start-up already accepted."""
+        self.grant_identity = grant_file_identity(self.config.grant_file)

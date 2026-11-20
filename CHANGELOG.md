@@ -133,6 +133,10 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- While the gate is running, a changed listener grant file is checked again.
+  A file that now grants a tool the seat's entry does not list answers `503`.
+  An unchanged file is not read on every request.
+
 - An upstream `Content-Length` wider than the decimal width of the buffered
   response bound is a `502`. It is not parsed as an integer.
 

@@ -62,7 +62,9 @@ The configuration is an owner-only JSON file, `synapse-mcp-gate.v1`:
 - **`public_host`** is the `Host` the listener's resource URL expects.
 - **`grant_file`** is the listener's `--http-auth-file`, and **`tools`** is the operator's explicit list of the tools
   each seat may hold. The gate refuses to start when a configured seat is not granted there, or when the listener
-  grants it a tool its entry does not list. A tool that changes work (`synapse_claim`, `synapse_release`,
+  grants it a tool its entry does not list. While the gate is running it states that file before each request.
+  The same inode, size and mtime is not read again. A change is checked the same way as at start; a file that now
+  grants a tool the seat's entry does not list answers `503`. A tool that changes work (`synapse_claim`, `synapse_release`,
   `synapse_handoff`, `synapse_task_declare`, `synapse_task_update`) is therefore held through the gate only when the
   operator writes it into that seat's list, and a tool added to the profile later is refused until it is listed.
 - **`token_file`** is read at every request. The operator's renewal job rewrites it with a temporary file and a

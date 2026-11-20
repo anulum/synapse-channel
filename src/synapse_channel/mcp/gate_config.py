@@ -276,6 +276,15 @@ def load_gate_config(path: Path) -> GateConfig:
     )
 
 
+def grant_file_identity(path: Path) -> tuple[int, int, int] | None:
+    """Return the grant file's inode, size and mtime, or None when it cannot be stated."""
+    try:
+        info = path.stat()
+    except OSError:
+        return None
+    return (info.st_ino, info.st_size, info.st_mtime_ns)
+
+
 def check_seat_grants(config: GateConfig) -> None:
     """Refuse a gate whose seat is not granted, or is granted a tool it does not list.
 
