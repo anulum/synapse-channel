@@ -20,24 +20,24 @@ import synapse_channel.advisory_lock as advisory_lock
 from synapse_channel.advisory_lock import locked
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="POSIX shared flock; Windows takes the exclusive byte lock"
-)
-def test_two_shared_holders_both_hold_the_lock(tmp_path: Path) -> None:
-    """Two shared holders overlap. An exclusive lock in this path would refuse the second."""
+def test_two_shared_holders_overlap_on_posix_and_exclude_each_other_on_windows(
+    tmp_path: Path,
+) -> None:
+    """Two shared holders overlap on POSIX; Windows takes its exclusive byte lock for both.
+
+    An exclusive lock on POSIX would refuse the second holder. On Windows the
+    module's documented contract is that readers still exclude one another.
+    """
     path = tmp_path / "nest" / "lock"
 
     with locked(path, blocking=False, purpose="advisory lock test", shared=True) as first:
         assert first is True
         with locked(path, blocking=False, purpose="advisory lock test", shared=True) as second:
-            assert second is True
+            assert second is (sys.platform != "win32")
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="POSIX shared flock; Windows takes the exclusive byte lock"
-)
 def test_an_exclusive_request_is_refused_while_a_shared_lock_is_held(tmp_path: Path) -> None:
-    """A shared holder refuses an exclusive request."""
+    """A shared holder refuses an exclusive request, on POSIX and on Windows."""
     path = tmp_path / "nest" / "lock"
 
     with locked(path, blocking=False, purpose="advisory lock test", shared=True) as shared:
@@ -46,11 +46,8 @@ def test_an_exclusive_request_is_refused_while_a_shared_lock_is_held(tmp_path: P
             assert exclusive is False
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="POSIX shared flock; Windows takes the exclusive byte lock"
-)
 def test_a_shared_request_is_refused_while_an_exclusive_lock_is_held(tmp_path: Path) -> None:
-    """An exclusive holder refuses a shared request."""
+    """An exclusive holder refuses a shared request, on POSIX and on Windows."""
     path = tmp_path / "nest" / "lock"
 
     with locked(path, blocking=False, purpose="advisory lock test") as exclusive:
