@@ -133,6 +133,9 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- The label refresh hooks print nothing on success. Errors from the refresh
+  are appended to `label-hook.log` under the state directory.
+
 - The test suite sets `SYNAPSE_URI` to a closed loopback port, so a test that
   omits a hub address cannot reach a hub already running on the machine.
 

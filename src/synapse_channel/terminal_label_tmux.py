@@ -30,6 +30,7 @@ import shlex
 import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from synapse_channel.terminal_label import (
@@ -237,6 +238,35 @@ def hand_owns_title(
     return bool(current) and current != written
 
 
+def label_hook_log(environ: Mapping[str, str]) -> Path:
+    """Return the file that keeps errors from a label refresh hook."""
+    state = environ.get("XDG_STATE_HOME", "").strip()
+    if not state:
+        home = environ.get("HOME", "").strip() or str(Path.home())
+        state = str(Path(home) / ".local" / "state")
+    return Path(state) / "synapse" / "label-hook.log"
+
+
+def refresh_hook(refresh_command: Sequence[str], log: Path) -> str:
+    """Return a background tmux hook that prints nothing.
+
+    Success text is discarded, so tmux does not open view mode over the pane.
+    The command's errors are appended to ``log``.
+    """
+    command = shlex.join(refresh_command)
+    directory = shlex.quote(str(log.parent))
+    target = shlex.quote(str(log))
+    script = f"mkdir -p {directory} >/dev/null 2>&1; {command} >/dev/null 2>>{target}"
+    return "run-shell -b " + shlex.quote(inert(script))
+
+
+def _resolved_hook_log(hook_log: Path | None, environ: Mapping[str, str] | None) -> Path:
+    """Return the caller's log, or the log for the environment."""
+    if hook_log is not None:
+        return hook_log
+    return label_hook_log(os.environ if environ is None else environ)
+
+
 def apply(
     tmux_bin: str,
     session: str,
@@ -246,6 +276,7 @@ def apply(
     refresh_command: Sequence[str],
     environ: Mapping[str, str] | None = None,
     keep_hand_title: bool = False,
+    hook_log: Path | None = None,
 ) -> LabelResult:
     """Set the tab label and the status lines of one exact session.
 
@@ -265,6 +296,9 @@ def apply(
     keep_hand_title : bool, optional
         When true, a title this command did not write is left in place and
         ``@synapse_label_title_owner`` records ``operator``.
+    hook_log : path or None, optional
+        File that receives the refresh hook's errors. The default is the
+        label hook log under the state directory.
 
     Returns
     -------
@@ -304,11 +338,8 @@ def apply(
     for index in range(len(lines), MAX_STATUS_LINES):
         tmux.unset(f"status-format[{index}]")
     # tmux shows what a ``run-shell -b`` command prints in view mode over the
-    # session's active pane, so a refresh that printed anything would cover
-    # the agent until someone pressed q. The hook therefore discards the
-    # refresh's output, success and failure alike.
-    silent = shlex.join(refresh_command) + " >/dev/null 2>&1"
-    hook = "run-shell -b " + shlex.quote(inert(silent))
+    # session's active pane. Success text is discarded. Errors go to the log.
+    hook = refresh_hook(refresh_command, _resolved_hook_log(hook_log, environ))
     for name in HOOKS:
         if not tmux.ok("set-hook", "-t", tmux.target, name, hook):
             return LabelResult(False, f"tmux refused the {name} hook", shown, tuple(lines))

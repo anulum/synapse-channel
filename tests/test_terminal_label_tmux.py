@@ -44,7 +44,9 @@ from synapse_channel.terminal_label_tmux import (
     apply,
     enabled,
     hand_owns_title,
+    label_hook_log,
     own_session,
+    refresh_hook,
     restore,
     stored_details,
     title_writes,
@@ -69,6 +71,20 @@ _DETAILS = TerminalDetails(
     terminal_identity="user/terminal-1485372",
 )
 _NO_REFRESH = ["true"]
+
+
+def test_the_refresh_hook_prints_nothing_and_keeps_errors(tmp_path: Path) -> None:
+    """The hook text discards success output and appends errors to the log."""
+    log = tmp_path / "synapse" / "label-hook.log"
+    hook = refresh_hook(["synapse", "label", "--refresh"], log)
+
+    assert hook.startswith("run-shell -b ")
+    assert ">/dev/null 2>>" in hook
+    assert "label-hook.log" in hook
+    assert label_hook_log({"XDG_STATE_HOME": str(tmp_path)}) == log
+    assert label_hook_log({"HOME": str(tmp_path)}) == (
+        tmp_path / ".local" / "state" / "synapse" / "label-hook.log"
+    )
 
 
 class Server:
@@ -434,9 +450,16 @@ def test_a_refresh_that_prints_leaves_the_active_pane_out_of_view_mode(
         " print('a warning', file=sys.stderr); pathlib.Path(sys.argv[1]).touch()"
     )
     refresh = [sys.executable, "-c", script, str(marker)]
+    log = tmp_path / "hook.log"
     assert apply(
-        server.tmux_bin, name, _DETAILS, runner=subprocess.run, refresh_command=refresh
+        server.tmux_bin,
+        name,
+        _DETAILS,
+        runner=subprocess.run,
+        refresh_command=refresh,
+        hook_log=log,
     ).applied
+    assert ">/dev/null" in server.tmux("show-hooks", "-t", f"={name}:")
 
     server.resize(master, 90)
 
@@ -447,6 +470,9 @@ def test_a_refresh_that_prints_leaves_the_active_pane_out_of_view_mode(
     time.sleep(1.0)
     in_mode = server.tmux("display-message", "-p", "-t", f"={name}:", "#{pane_in_mode}")
     assert in_mode.strip() == "0"
+    recorded = log.read_text(encoding="utf-8")
+    assert "a warning" in recorded
+    assert "label and 3 status line(s) set" not in recorded
 
 
 def test_the_hook_passes_format_characters_on_without_expanding_them(
