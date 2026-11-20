@@ -33,6 +33,12 @@ execution evidence when carrying a release claim forward.
   `unsupported` or `failed`. An agent that cannot be started with its fence is
   never run (exit 70). The fence's library is resolved before the fork, so the
   child loads nothing. Other platforms are refused by name, and an unreadable
+  token file is refused with exit 2. When the holder ends, it removes
+  `--token-file` only when that path is this start's
+  `<marker-dir>/<identity-key>.<nonce>.token`. A hub reconnect leaves the
+  file, and a caller's own token file is left in place. A holder killed
+  outright leaves that file until the next restore sweeps it, or until the
+  private runtime directory is cleared at logout or reboot.
 
 - **Restore a cut seat without evicting a live one.** `synapse worker-session
   --restore --identity ID -- <agent>` starts the agent in tmux behind
@@ -42,6 +48,9 @@ execution evidence when carrying a release claim forward.
   cannot start, or no final answer stops the restore (69, 70 or 78) and ends
   the session it created. The holder's final word is awaited for 35 s: twice
   its registration timeout and an allowance for its start on a loaded host.
+  The waiter and the session record get the holder's command. Nothing
+  re-runs that command after the holder returned. A new start is a new
+  restore, with a new nonce and a new file. The provider, its wake
   patterns and the managed Codex update setting come from the agent's own
   command after `--`, never from the seat's name, which can name another
   provider. With `--no-attach`, the restored pane is recorded and this
@@ -70,6 +79,14 @@ execution evidence when carrying a release claim forward.
   whose last two restores could not start the agent, needs `--only`. A row
   without a resume handle, with a permission profile, a lost working
   directory or a tmux name in use is held back. Without `--execute` it is a
+  dry run that writes nothing; it only counts stale token files a cut holder
+  left that are older than the marker wait plus 120 seconds, and never prints
+  a name or a value. With `--execute` one run at a time holds `restore.lock`
+  and, while holding it, before it plans, removes those regular files when
+  their name is `<safe-key>.<nonce>.token`, this user owns them, they are
+  older than that bound, and no live `seat-hold --nonce` process of this user
+  still holds that nonce. A younger file is left. It then holds its own hub
+  connection as `<host>-restore-planner`
   (45 s up before the first start, an answer within 5 s before every start, a
   drop starts the wait again, another hub stops the run), waits for headroom
   (memory, load, memory pressure, 30 s spacing; a host may only tighten
@@ -144,29 +161,26 @@ execution evidence when carrying a release claim forward.
 - An upstream `Content-Length` wider than the decimal width of the buffered
   response bound is a `502`. It is not parsed as an integer.
 
+- A read of an existing notification ledger takes the state root's shared
   lock, so two readers on POSIX no longer report that the root is busy. On
   Windows that request takes the exclusive byte lock, so readers there still
   exclude one another. The read still refuses a damaged root and does not
   initialise it. A write, and the first admission of a root that is not yet
   initialised, keeps the exclusive lock.
 
-- A read of an existing notification ledger takes the state root's shared
-
+- The label refresh hooks print nothing and exit zero, including when the
   error log cannot be created. Each session carries its own `sh -c` script,
   so one label does not replace another's, and no script file is written.
   Errors are appended to `label-hook.log` under the state directory, and a
   log over 256 KiB is moved to `label-hook.log.1`.
 
-- The label refresh hooks print nothing and exit zero, including when the
-
 - The test suite sets `SYNAPSE_URI` to a closed loopback port, so a test that
   omits a hub address cannot reach a hub already running on the machine.
 
-  `operator` in `@synapse_label_title_owner`. A refresh compares the title
-  with the one the command last wrote, not with the title it would write now.
-
 - A seat whose project is its group keeps the tab form `<abbreviation> ·
   <vendor>`. `synapse label --refresh` leaves a title set by hand and records
+  `operator` in `@synapse_label_title_owner`. A refresh compares the title
+  with the one the command last wrote, not with the title it would write now.
 
 - `synapse task declare` with no `--project` sends the project of a
   `PROJECT/name` identity as the default used when the task is created. A
@@ -176,29 +190,6 @@ execution evidence when carrying a release claim forward.
 - A verification record keeps a 32-hex `attempt_id` with its other digest-shaped
   evidence. A 32-hex value under any other key is still dropped, as is every
   value that is not 40 or 64 lower-case hex.
-
-  token file is refused with exit 2. When the holder ends, it removes
-  `--token-file` only when that path is this start's
-  `<marker-dir>/<identity-key>.<nonce>.token`. A hub reconnect leaves the
-
-  file, and a caller's own token file is left in place. A holder killed
-  outright leaves that file until the next restore sweeps it, or until the
-  private runtime directory is cleared at logout or reboot.
-
-  The waiter and the session record get the holder's command. Nothing
-  re-runs that command after the holder returned. A new start is a new
-  restore, with a new nonce and a new file. The provider, its wake
-
-  dry run that writes nothing; it only counts stale token files a cut holder
-
-  left that are older than the marker wait plus 120 seconds, and never prints
-  a name or a value. With `--execute` one run at a time holds `restore.lock`
-  and, while holding it, before it plans, removes those regular files when
-  their name is `<safe-key>.<nonce>.token`, this user owns them, they are
-  older than that bound, and no live `seat-hold --nonce` process of this user
-  still holds that nonce. A younger file is left. It then holds its own hub
-  connection as `<host>-restore-planner`
-
 ## [0.99.58] - 2026-11-19
 
 Core 0.99.58 adds a hard-linked generation chain for conditional deployments and
