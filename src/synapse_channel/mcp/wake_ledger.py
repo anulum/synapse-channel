@@ -179,12 +179,12 @@ class WakeLedger(WakeObservation):
 
     def receipts(self) -> list[WakeReceipt]:
         """Inspect retained transport and operator receipts without delivery bodies."""
-        with wake_database(self.path, self.scope) as connection:
+        with wake_database(self.path, self.scope, write=False) as connection:
             return delivery_receipts(connection, self.scope)
 
     def inspect(self) -> WakeInspection:
         """Read aggregate counters and receipt metadata in one storage transaction."""
-        with wake_database(self.path, self.scope) as connection:
+        with wake_database(self.path, self.scope, write=False) as connection:
             return {
                 "summary": delivery_summary(connection, self.scope),
                 "deliveries": delivery_receipts(connection, self.scope),
@@ -263,5 +263,5 @@ class WakeLedger(WakeObservation):
 
     def summary(self) -> dict[str, int]:
         """Expose bounded resource and transport counts without bodies or credentials."""
-        with wake_database(self.path, self.scope) as connection:
+        with wake_database(self.path, self.scope, write=False) as connection:
             return delivery_summary(connection, self.scope)

@@ -177,7 +177,7 @@ class WakeStreamObservation:
 
     def recovery_cursor(self) -> int:
         """Read stream-aware progress; legacy cursor migration starts at zero."""
-        with wake_database(self.path, self.scope) as connection:
+        with wake_database(self.path, self.scope, write=False) as connection:
             value = _progress(connection)
             return int(value["cursor"]) if value is not None else 0
 

@@ -133,6 +133,11 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- A read of an existing notification ledger takes the state root's shared
+  lock, so two readers no longer report that the root is busy. The read still
+  refuses a damaged root and does not initialise it. A write, and the first
+  admission of a root that is not yet initialised, keeps the exclusive lock.
+
   error log cannot be created. Each session carries its own `sh -c` script,
   so one label does not replace another's, and no script file is written.
   Errors are appended to `label-hook.log` under the state directory, and a

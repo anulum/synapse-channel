@@ -28,7 +28,8 @@ from synapse_channel.mcp.wake_pointer import (
     WakeLedgerError,
     WakeScope,
 )
-from synapse_channel.mcp.wake_root import admit_wake_database
+from synapse_channel.mcp.wake_root import _NeedsExclusive, admit_wake_database, locked_wake_root
+from synapse_channel.mcp.wake_root_catalogue import read_generation_phase
 from synapse_channel.mcp.wake_sqlite import configure_wake_sqlite
 
 _APPLICATION_ID = WAKE_DATABASE_APPLICATION_ID
@@ -117,16 +118,65 @@ def _create(connection: sqlite3.Connection, scope: WakeScope) -> None:
     connection.execute(f"PRAGMA user_version={WAKE_LEDGER_VERSION}")
 
 
+def _shared_candidate(path: Path) -> bool:
+    """Return whether an existing ledger can be read without the writer path.
+
+    An empty file stays on the writer path so a lost active ledger is still
+    reported as disappeared, and so an interrupted first commit can finish.
+    An oversized file stays there too: that path refuses it before SQLite
+    opens it.
+    """
+    if not path.is_file():
+        return False
+    size = path.stat().st_size
+    return 0 < size <= MAX_WAKE_DATABASE_BYTES
+
+
 @contextmanager
-def wake_database(path: Path, scope: WakeScope) -> Iterator[sqlite3.Connection]:
+def _shared_wake_read(path: Path, scope: WakeScope) -> Iterator[sqlite3.Connection]:
+    """Read one existing ledger under the root's shared non-blocking lock.
+
+    Shared holders do not exclude one another. An exclusive writer still
+    makes this call report that the root is busy. The root inventory and the
+    catalogue are checked, and this path does not initialise the root. A
+    generation that is not yet active raises ``_NeedsExclusive``. The
+    connection cannot write.
+    """
+    with locked_wake_root(path.parent, shared=True) as _inventory:
+        if read_generation_phase(path.parent, scope.key) != "active":
+            raise _NeedsExclusive
+        with closing(sqlite3.connect(path, timeout=0.1)) as connection:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA query_only=ON")
+            _configure(connection, fresh=False)
+            _verify(connection, scope)
+            yield connection
+
+
+@contextmanager
+def wake_database(
+    path: Path, scope: WakeScope, *, write: bool = True
+) -> Iterator[sqlite3.Connection]:
     """Commit one private bounded transaction under aggregate root admission.
 
-    FULL/DELETE commits retain process-restart custody. The root lock serializes
-    cooperating writers and reserves catalogue/rollback headroom before mutation;
-    it is not an OS quota or a hardware power-loss qualification. A writer that
-    does not take the root lock must be stopped before a root is archived.
+    FULL/DELETE commits retain process-restart custody. Writers take the
+    root's exclusive lock and reserve catalogue headroom before mutation.
+    A read of an existing ledger takes the shared lock instead, so readers
+    do not crowd one another out. That read still refuses a damaged root and
+    does not initialise one. A missing ledger, an empty file, or a root that
+    is not yet initialised still uses the writer path. The lock is not an OS
+    quota or a power-loss qualification.
+    A writer that does not take the root lock must be stopped before a root
+    is archived.
     """
     try:
+        if not write and _shared_candidate(path):
+            try:
+                with _shared_wake_read(path, scope) as connection:
+                    yield connection
+                return
+            except _NeedsExclusive:
+                pass
         with admit_wake_database(path, scope):
             fresh = _prepare(path)
             with closing(sqlite3.connect(path, timeout=0.1)) as connection:

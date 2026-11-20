@@ -95,7 +95,7 @@ class WakeObservation(WakeStreamObservation, WakePendingObservation):
         """Read an observer's committed scan marker, independently of delivery."""
         if source not in WAKE_SOURCES:
             raise WakeLedgerError("invalid wake source")
-        with wake_database(self.path, self.scope) as connection:
+        with wake_database(self.path, self.scope, write=False) as connection:
             row = connection.execute(
                 "SELECT position FROM sources WHERE source=?", (source,)
             ).fetchone()
@@ -156,7 +156,7 @@ class WakeObservation(WakeStreamObservation, WakePendingObservation):
 
     def scan_cursor(self) -> int:
         """Return committed activity progress, or zero for a genuinely new scope."""
-        with wake_database(self.path, self.scope) as connection:
+        with wake_database(self.path, self.scope, write=False) as connection:
             scan = _activity_scan(connection)
             return scan.cursor if scan is not None else 0
 

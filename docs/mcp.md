@@ -437,6 +437,13 @@ turn that POST into a GET. Those answers are recorded as the status the
 receiver sent, not as status 0. Same-origin 307 and 308 still repeat the
 signed POST.
 
+A read of an existing notification ledger takes the state root's shared lock.
+Readers do not exclude one another. The read still refuses a damaged root,
+including a missing catalogue, an emptied active ledger, or an unmanaged
+file, and it does not initialise the root. A write, and the first admission
+of a root that is not yet initialised, keeps the exclusive lock, so a read
+during that write reports that the root is busy.
+
 ## Resources
 
 Four read-only resources let an agent pull live coordination context without

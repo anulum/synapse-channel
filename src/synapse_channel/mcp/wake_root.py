@@ -130,24 +130,38 @@ def _mark_initialized(lock: Path) -> None:
         os.fsync(stream.fileno())
 
 
+class _NeedsExclusive(Exception):
+    """The root is valid and still needs the exclusive initialisation path."""
+
+
 @contextmanager
-def locked_wake_root(root: Path, *, create: bool = False) -> Iterator[RootInventory]:
+def locked_wake_root(
+    root: Path, *, create: bool = False, shared: bool = False
+) -> Iterator[RootInventory]:
     """Initialize metadata before yielding one guarded caller transaction.
 
     A caller refusal cannot undo completed root initialization. The durable
     second lock byte distinguishes unfinished setup from known metadata loss;
     the first byte remains reserved for the Windows process lock.
+
+    ``shared`` admits other shared holders and still runs the read-only
+    inventory checks. It does not create catalogue metadata or mark the lock
+    initialised. A valid root that is not yet initialised raises
+    ``_NeedsExclusive`` so the caller can take the exclusive path. A refusal
+    from ``_verify_first_root`` propagates either way.
     """
     if not create and not root.is_dir():
         raise WakeLedgerError("wake state root unavailable")
     private_dir(root, purpose="MCP wake state root")
     lock = _prepare_lock(root)
-    with locked(lock, blocking=False, purpose="MCP wake state root") as held:
+    with locked(lock, blocking=False, shared=shared, purpose="MCP wake state root") as held:
         if not held:
             raise WakeLedgerError("wake state root is busy")
         inventory = scan_wake_root(root)
         if inventory.sizes[ROOT_LOCK] < ROOT_INITIALIZED_LOCK_BYTES:
             _verify_first_root(root, inventory)
+            if shared:
+                raise _NeedsExclusive
             with root_catalogue(root, allow_create=ROOT_CATALOGUE not in inventory.sizes):
                 pass
             _mark_initialized(lock)

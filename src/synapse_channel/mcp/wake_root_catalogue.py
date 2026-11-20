@@ -384,3 +384,22 @@ class RootCatalogue:
             (key,),
         )
         self._touch()
+
+
+def read_generation_phase(root: Path, key: str) -> str | None:
+    """Read one generation's phase without reserving it or writing the catalogue.
+
+    A damaged catalogue is refused with the same error admission uses. An
+    archive or retirement in progress is refused here so a shared read cannot
+    treat that generation as ordinary ledger state.
+    """
+    _prepare(root / ROOT_CATALOGUE, allow_create=False)
+    with closing(sqlite3.connect(root / ROOT_CATALOGUE, timeout=0.1)) as db:
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA query_only=ON")
+        _check_layout(db)
+        _verify(db)
+        entry = RootCatalogue(db, root).get(key)
+    if entry is not None and entry.phase in ("archiving", "retired"):
+        raise WakeLedgerError("wake generation is archived or retiring")
+    return None if entry is None else entry.phase

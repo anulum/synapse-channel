@@ -32,12 +32,16 @@ if sys.platform == "win32":
     _HELD_BY_ANOTHER = (errno.EACCES, errno.EDEADLK)
     """What the C runtime reports for a region locked by someone else."""
 
-    def _take(descriptor: int, blocking: bool) -> bool:
+    def _take(descriptor: int, blocking: bool, shared: bool = False) -> bool:
         """Lock the first byte; a blocking request asks again until it has it.
 
-        Only a region held by someone else is waited for or reported as busy.
-        Any other error of the descriptor or the file system is raised.
+        A shared request uses ``LockFileEx`` without the exclusive flag, so
+        other shared holders are admitted. An exclusive request keeps the C
+        runtime byte lock. Only a region held incompatibly is waited for or
+        reported as busy. Any other error of the descriptor is raised.
         """
+        if shared:
+            return _take_shared(descriptor, blocking)
         while True:
             try:
                 os.lseek(descriptor, 0, os.SEEK_SET)
@@ -49,6 +53,33 @@ if sys.platform == "win32":
                 if not blocking:
                     return False
                 time.sleep(0.02)
+
+    def _take_shared(descriptor: int, blocking: bool) -> bool:
+        """Take a shared lock of the first byte, or report that it is busy."""
+        import ctypes
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.LockFileEx.argtypes = [
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            ctypes.c_void_p,
+        ]
+        kernel.LockFileEx.restype = wintypes.BOOL
+        overlapped = (ctypes.c_byte * 32)()
+        handle = msvcrt.get_osfhandle(descriptor)
+        while True:
+            locked_region = kernel.LockFileEx(handle, 0x1, 0, 1, 0, overlapped)
+            if locked_region:
+                return True
+            if ctypes.get_last_error() != 33:
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not blocking:
+                return False
+            time.sleep(0.02)
 
     def _release(descriptor: int) -> None:
         """Unlock the first byte."""
@@ -143,10 +174,15 @@ if sys.platform == "win32":
 else:
     import fcntl
 
-    def _take(descriptor: int, blocking: bool) -> bool:
-        """Take an exclusive ``flock``; a blocking request waits for it."""
+    def _take(descriptor: int, blocking: bool, shared: bool = False) -> bool:
+        """Take a ``flock``; a blocking request waits for it.
+
+        Shared holders do not exclude one another. An exclusive holder
+        excludes both.
+        """
+        mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+            fcntl.flock(descriptor, mode | (0 if blocking else fcntl.LOCK_NB))
         except BlockingIOError:
             return False
         return True
@@ -190,7 +226,7 @@ _IDENTITY_ATTEMPTS = 4
 """How many times a removable lock may open again after the name moves."""
 
 
-def _acquire(path: Path, *, blocking: bool, removable: bool) -> int | None:
+def _acquire(path: Path, *, blocking: bool, removable: bool, shared: bool = False) -> int | None:
     """Return a descriptor holding the lock, or None when it was not acquired.
 
     Callers that do not remove the file try once and do not compare inodes.
@@ -210,7 +246,7 @@ def _acquire(path: Path, *, blocking: bool, removable: bool) -> int | None:
             raise
         keep = False
         try:
-            if not _take(descriptor, blocking):
+            if not _take(descriptor, blocking, shared):
                 return None
             if not removable or _same_inode(descriptor, path):
                 keep = True
@@ -231,8 +267,12 @@ def locked(
     blocking: bool,
     purpose: str = "lock directory",
     removable: bool = False,
+    shared: bool = False,
 ) -> Iterator[bool]:
-    """Hold an exclusive advisory lock on the file ``path``.
+    """Hold an advisory lock on the file ``path``.
+
+    The default is exclusive. ``shared`` admits other shared holders and
+    still refuses an exclusive holder.
 
     Parameters
     ----------
@@ -265,7 +305,7 @@ def locked(
         removable lock exhausts its identity attempts.
     """
     private_dir(path.parent, purpose=purpose)
-    descriptor = _acquire(path, blocking=blocking, removable=removable)
+    descriptor = _acquire(path, blocking=blocking, removable=removable, shared=shared)
     if descriptor is None:
         yield False
         return
