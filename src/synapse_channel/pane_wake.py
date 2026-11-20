@@ -65,6 +65,10 @@ class PaneWakeBindings:
         Existing provider classifiers; captured text remains local.
     submit, record
         Existing submission and durable registry callbacks in their old order.
+    adopt_visible_stage
+        Whether a composer that holds exactly the fixed hint, while the registry
+        does not record it as staged, is adopted as the staged wake. False for a
+        target whose staging is proven by its own composer files.
     buffer_key
         Deferred safe buffer-name calculation, evaluated only before staging.
     result, binding_refusal_code
@@ -84,6 +88,7 @@ class PaneWakeBindings:
     buffer_key: Callable[[], str]
     result: type[AgentTmuxWakeResult]
     binding_refusal_code: int
+    adopt_visible_stage: bool
 
 
 @dataclass(frozen=True)
@@ -145,7 +150,19 @@ def _admit_pane(ports: PaneWakeBindings) -> _ReadyPane | AgentTmuxWakeResult:
         )
     prompt, staged = ports.prompt(), ports.staged()
     outcome = _probe_prompt(ports, provider, prompt, staged)
-    return outcome if outcome is not None else _ReadyPane(provider, prompt, staged)
+    if outcome is None:
+        return _ReadyPane(provider, prompt, staged)
+    if (
+        not staged
+        and ports.adopt_visible_stage
+        and ports.pane_safe(provider, required_text=prompt)[0]
+    ):
+        # The composer still holds exactly the hint of a paste the registry no
+        # longer records as staged. It is adopted: Enter is retried, and the
+        # hint is never pasted a second time.
+        ports.record(last_inject_returncode=0, pending_wake=True, wake_prompt_staged=True)
+        return _ReadyPane(provider, prompt, staged=True)
+    return outcome
 
 
 def _paste_prompt(

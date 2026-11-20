@@ -41,6 +41,30 @@ from synapse_channel.opencode_composer_state import set_stage_verified, stage_is
 
 _HINT = build_wake_prompt("E2E/pane-classification")
 _UPDATE = "Update available! 0.1 -> 0.2\nSkip until next version\nPress enter to continue\n› "
+
+
+def _grok_box(composer: str, *, extra_row: str = "", width: int = 60) -> str:
+    """A Grok screen whose boxed composer wraps ``composer`` at word edges over its rows."""
+    words = composer.split()
+    rows: list[str] = []
+    for word in words:
+        if rows and len(rows[-1]) + 1 + len(word) <= width:
+            rows[-1] += " " + word
+        else:
+            rows.append(word)
+    rows = rows or [""]
+    if extra_row:
+        rows.append(extra_row)
+    edge = "─" * (width + 4)
+    body = [
+        "  │ " + ("❯ " if index == 0 else "  ") + row.ljust(width) + " │"
+        for index, row in enumerate(rows)
+    ]
+    return "\n".join(
+        ["  ╭" + edge + "╮", *body, "  ╰" + edge + "╯", "  Enter:send  │  Ctrl+x:quit"]
+    )
+
+
 _AGY_RULE = "─" * 60
 
 
@@ -134,6 +158,11 @@ def test_provider_state_preserves_precedence(provider: str, capture: str, expect
         ("grok", "  │ ❯ " + _HINT + " and more │", _HINT, False),
         # Rows below the composer that are not prompt rows do not block the wake.
         ("grok", "  │ ❯ " + _HINT + " │\n  ╰─ Grok 4.7 (high) · always-approve ─╯", _HINT, True),
+        # The box wraps the long hint over several rows, each edged with │.
+        ("grok", _grok_box(_HINT), _HINT, True),
+        # A draft on a new composer row under the hint would be sent with it.
+        ("grok", _grok_box(_HINT, extra_row="owner's draft"), _HINT, False),
+        ("grok", _grok_box(_HINT + " and more"), _HINT, False),
         ("agy", _agy(" " + _HINT), _HINT, True),
         ("agy", _agy(" " + _HINT, history=_AGY_PAST_TURN), _HINT, True),
         ("agy", _agy(" owner's draft"), _HINT, False),
@@ -182,6 +211,13 @@ def test_submit_readiness_preserves_exact_staged_hint(
             True,
         ),
         ("agy", _agy(" " + _HINT, history="> " + _HINT + "\n"), False),
+        # A hint wrapped in Grok's box is still staged, not consumed.
+        ("grok", _grok_box(_HINT), False),
+        # Grok always draws its composer: only an empty one settles a hint it no
+        # longer shows, never a draft or a screen without any composer row.
+        ("grok", _grok_box(""), True),
+        ("grok", _grok_box("owner's draft"), False),
+        ("grok", "working on the task\n", False),
     ],
 )
 def test_staged_hint_observation_uses_last_rendered_occurrence(

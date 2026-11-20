@@ -24,6 +24,7 @@ from synapse_channel.agent_tmux import (
     DEFAULT_AGENT_PANE_COMMANDS,
     NO_TAKEOVER_UNSUPPORTED_EXIT_CODE,
     AgentTmuxConfig,
+    AgentTmuxWakeResult,
     _backoff_delay,
     _bounded_native_command,
     _pane_is_safe_for_submit,
@@ -1556,3 +1557,30 @@ def test_only_the_exact_registered_line_drops_the_guard(
     )
     assert refusal == 0 and proc.returncode == code
     assert config.first_no_takeover is (not held)
+
+
+@pytest.mark.parametrize("readback", [False, True])
+def test_a_visible_stage_is_adopted_unless_composer_files_prove_the_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, readback: bool
+) -> None:
+    """Only a target without its own composer files adopts a hint the registry lost."""
+    import contextlib
+
+    from synapse_channel import opencode_composer_probe, pane_wake
+
+    adopted: list[bool] = []
+
+    def capture_ports(
+        config: AgentTmuxConfig, ports: pane_wake.PaneWakeBindings, **_: object
+    ) -> AgentTmuxWakeResult:
+        adopted.append(ports.adopt_visible_stage)
+        return AgentTmuxWakeResult(False, False, 0, "probed")
+
+    monkeypatch.setattr(pane_wake, "inject_pane_wake", capture_ports)
+    monkeypatch.setattr(
+        opencode_composer_probe, "native_wake_transaction", lambda config: contextlib.nullcontext()
+    )
+    config = replace(_config(tmp_path), opencode_editor_readback=readback)
+
+    assert inject_wake(config).detail == "probed"
+    assert adopted == [not readback]

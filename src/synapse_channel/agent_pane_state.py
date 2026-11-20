@@ -134,8 +134,12 @@ def pane_state(provider: str, screen: str) -> str:
 
 
 def _rendered_text_match(screen: str, required_text: str) -> re.Match[str] | None:
-    """Return the last whitespace-tolerant match for terminal-rendered text."""
-    pattern = r"\s+".join(re.escape(token) for token in required_text.split())
+    """Return the last match of terminal-rendered text, tolerant of wrapping.
+
+    Words may be separated by any whitespace and by the box edges (``│``) that a
+    boxed composer draws where it wraps a long line onto its next row.
+    """
+    pattern = r"[\s│]+".join(re.escape(token) for token in required_text.split())
     matches = list(re.finditer(pattern, screen))
     return matches[-1] if matches else None
 
@@ -152,17 +156,23 @@ def _grok_composer_holds_only(screen: str, required_text: str) -> bool:
     screen as a past turn while the owner types a draft in the composer.
     Sending Enter then would submit that draft. The hint therefore counts only
     when the prompt marker is all that precedes it on its row, only the box
-    edge follows it on that row, and no prompt row follows below.
+    edge follows it on its last row, and no prompt row follows below. The box
+    wraps the long hint over several rows; any composer row below the hint and
+    above the box's bottom edge (``╰``) must be empty, so a draft typed on a
+    new composer row is never submitted with the hint.
     """
     match = _rendered_text_match(screen, required_text)
     if match is None:
         return False
     line_prefix = screen[: match.start()].rsplit("\n", 1)[-1]
     row_tail, _newline, below = screen[match.end() :].partition("\n")
+    rows = below.split("\n")
+    bottom = next((index for index, row in enumerate(rows) if row.lstrip().startswith("╰")), 0)
     return (
         re.fullmatch(r"[\s│]*(?:›|❯|>)\s*", line_prefix) is not None
         and re.fullmatch(r"[\s│]*", row_tail) is not None
         and re.search(r"(?m)^[\s│]*[›❯>]", below) is None
+        and all(re.fullmatch(r"[\s│]*", row) is not None for row in rows[:bottom])
     )
 
 
@@ -254,6 +264,9 @@ def staged_wake_was_consumed(
 
     A disappeared hint cannot safely be replayed. A visible hint is settled
     only by a later idle composer or the existing native streaming markers.
+    Grok always draws its composer: there a hint that cannot be seen settles the
+    attempt only when an empty composer row is visible, so a rendering the match
+    misses never reads as delivery.
     This preserves the legacy observation contract; it is not model receipt
     or completion acknowledgement.
 
@@ -278,7 +291,9 @@ def staged_wake_was_consumed(
     """
     prompt_match = _rendered_text_match(screen, prompt)
     if prompt_match is None:
-        return True
+        # Grok always draws its composer, so a hint the match cannot see is
+        # settled only by an empty composer row, never by its absence alone.
+        return provider != "grok" or PROVIDER_IDLE_PATTERNS[provider].search(screen) is not None
     if provider == "opencode":
         # Mini renders a submitted user turn with › and an interrupt footer
         # while streaming. The staged input has neither that turn prefix nor

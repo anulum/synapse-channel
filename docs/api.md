@@ -583,12 +583,18 @@ connection, which is now treated like a reset one.
 Pane wake preparation binds the exact configuration's existing probes and
 registry callbacks. A real paste failure records a pending, unstaged wake;
 successful pasting is recorded before the second safety check. An uncertain
-staged prompt is retried through submission without another paste. These
+staged prompt is retried through submission without another paste. A wake the
+registry no longer records as staged, while the composer still holds exactly the
+fixed hint, is adopted as staged and submitted, never pasted again; a target
+whose stage is proven by its own composer files is excluded. These
 implementation stages retain the existing response fields and CLI vocabulary.
 
 Provider marker classification belongs to `agent_pane_state`: it retains the
 existing update/busy/idle precedence, complete staged-hint checks and terminal
-wrapping rules. `agent_tmux` continues to bind the current capture, provider and
+wrapping rules, including the box edges a boxed composer draws where it wraps a
+long hint. Grok always draws its composer, so a hint that is no longer visible
+settles a staged wake there only when an empty composer row is visible.
+`agent_tmux` continues to bind the current capture, provider and
 registry through its existing API. These terminal observations do not prove
 that a model received or completed work.
 

@@ -1204,5 +1204,166 @@
     "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
     "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]"
   },
-  "recorded_at": "2026-10-12T19:31:12.556592+00:00"
+  "recorded_at": "2026-10-12T19:31:12.556592+00:00",
+  "staged_wake_recovery": {
+    "before_head": "5d7f518dc0e35ad0e79354fb5de294eb925438d3",
+    "host": {
+      "cores": 24,
+      "cpu": "Intel(R) Xeon(R) CPU E5-2640 0 @ 2.50GHz",
+      "isolation": "shared host (ML350, load about 26 to 29), serial, nice 19",
+      "platform": "Linux-6.8.0-149-generic-x86_64-with-glibc2.39",
+      "python": "3.12.16"
+    },
+    "median_of_run_medians_us": {
+      "after": 852344.8470514268,
+      "before": 854153.7369601429
+    },
+    "note": "Three alternating before/after pairs on ML350, serial, nice 19, each five real tmux wakes into a new owned session running the harness's harmless composer (measure_pane). The change matches the hint across box edges and adopts a lost stage only when a pane is not safe; this composer is never boxed, so the measurement shows the cost of the wider match on the default path. Shared-host regression evidence, not an isolated performance claim.",
+    "runs": [
+      {
+        "at": "2026-11-20T04:14:37.895731+00:00",
+        "load": [
+          25.75146484375,
+          28.47119140625,
+          29.13134765625
+        ],
+        "pair": 1,
+        "result": {
+          "injected": 5,
+          "max_us": 867625.3299927339,
+          "measured": true,
+          "min_us": 852033.0080064014,
+          "p50_us": 853213.3110566065,
+          "wakes": 5
+        },
+        "side": "before",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "5fa3b7673214e1a73ec4fc06287bcdc83085a31c04268fe509f5f8afab695164",
+          "src/synapse_channel/agent_tmux.py": "ed1695ac1792b998516758050a1bf8330a7ebf3279a8f5c6937f8f4464717eec",
+          "src/synapse_channel/pane_wake.py": "5aa99a5cf0457ce139209f6cdcb7a0dd2db7a0dd3672c3fa24e0caee912b146e"
+        }
+      },
+      {
+        "at": "2026-11-20T04:14:45.525328+00:00",
+        "load": [
+          25.931640625,
+          28.462890625,
+          29.125
+        ],
+        "pair": 1,
+        "result": {
+          "injected": 5,
+          "max_us": 879122.6650355384,
+          "measured": true,
+          "min_us": 850725.8229656145,
+          "p50_us": 850848.6909558997,
+          "wakes": 5
+        },
+        "side": "after",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "a033232050ddf039654e905a7fdbce853b496590f8051699284eac6b3dc70083",
+          "src/synapse_channel/agent_tmux.py": "7e200c502ae2850bd0fadbea657c46ca3fb88dd8de5e7124ce6b0caeaea3bb33",
+          "src/synapse_channel/pane_wake.py": "54214808807ae119887cc281dcc24ea733b5c30780def05f50013f2dc33be7b5"
+        }
+      },
+      {
+        "at": "2026-11-20T04:14:53.618045+00:00",
+        "load": [
+          25.7021484375,
+          28.33154296875,
+          29.07470703125
+        ],
+        "pair": 2,
+        "result": {
+          "injected": 5,
+          "max_us": 863503.9780056104,
+          "measured": true,
+          "min_us": 849752.5060083717,
+          "p50_us": 854153.7369601429,
+          "wakes": 5
+        },
+        "side": "before",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "5fa3b7673214e1a73ec4fc06287bcdc83085a31c04268fe509f5f8afab695164",
+          "src/synapse_channel/agent_tmux.py": "ed1695ac1792b998516758050a1bf8330a7ebf3279a8f5c6937f8f4464717eec",
+          "src/synapse_channel/pane_wake.py": "5aa99a5cf0457ce139209f6cdcb7a0dd2db7a0dd3672c3fa24e0caee912b146e"
+        }
+      },
+      {
+        "at": "2026-11-20T04:15:01.472166+00:00",
+        "load": [
+          25.8955078125,
+          28.28662109375,
+          29.05224609375
+        ],
+        "pair": 2,
+        "result": {
+          "injected": 5,
+          "max_us": 874255.1400791854,
+          "measured": true,
+          "min_us": 849657.0700081065,
+          "p50_us": 856178.589980118,
+          "wakes": 5
+        },
+        "side": "after",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "a033232050ddf039654e905a7fdbce853b496590f8051699284eac6b3dc70083",
+          "src/synapse_channel/agent_tmux.py": "7e200c502ae2850bd0fadbea657c46ca3fb88dd8de5e7124ce6b0caeaea3bb33",
+          "src/synapse_channel/pane_wake.py": "54214808807ae119887cc281dcc24ea733b5c30780def05f50013f2dc33be7b5"
+        }
+      },
+      {
+        "at": "2026-11-20T04:15:09.513117+00:00",
+        "load": [
+          25.82373046875,
+          28.23193359375,
+          29.0302734375
+        ],
+        "pair": 3,
+        "result": {
+          "injected": 5,
+          "max_us": 862190.9329667687,
+          "measured": true,
+          "min_us": 854333.296068944,
+          "p50_us": 855521.4999942109,
+          "wakes": 5
+        },
+        "side": "before",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "5fa3b7673214e1a73ec4fc06287bcdc83085a31c04268fe509f5f8afab695164",
+          "src/synapse_channel/agent_tmux.py": "ed1695ac1792b998516758050a1bf8330a7ebf3279a8f5c6937f8f4464717eec",
+          "src/synapse_channel/pane_wake.py": "5aa99a5cf0457ce139209f6cdcb7a0dd2db7a0dd3672c3fa24e0caee912b146e"
+        }
+      },
+      {
+        "at": "2026-11-20T04:15:16.882977+00:00",
+        "load": [
+          25.7451171875,
+          28.14111328125,
+          28.9921875
+        ],
+        "pair": 3,
+        "result": {
+          "injected": 5,
+          "max_us": 864339.9509601295,
+          "measured": true,
+          "min_us": 848811.3110652193,
+          "p50_us": 852344.8470514268,
+          "wakes": 5
+        },
+        "side": "after",
+        "source": {
+          "benchmarks/external_surfaces_benchmark.py": "d7883f9950feb2d8eb859e3ac9852d48c226e72f037f53bc3d985f3dcaebe2d3",
+          "src/synapse_channel/agent_pane_state.py": "a033232050ddf039654e905a7fdbce853b496590f8051699284eac6b3dc70083",
+          "src/synapse_channel/agent_tmux.py": "7e200c502ae2850bd0fadbea657c46ca3fb88dd8de5e7124ce6b0caeaea3bb33",
+          "src/synapse_channel/pane_wake.py": "54214808807ae119887cc281dcc24ea733b5c30780def05f50013f2dc33be7b5"
+        }
+      }
+    ]
+  }
 }

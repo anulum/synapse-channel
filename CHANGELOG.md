@@ -133,6 +133,15 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A Grok wake whose hint wraps over the composer box is no longer lost.** The
+  fixed wake hint is longer than one row of Grok's boxed composer, so the box
+  wrapped it with its edges between the words. The wake no longer saw its own
+  pasted hint: it took the hint as delivered, and the next wake only queued
+  while the hint stayed in the composer until someone pressed Enter. The hint is
+  now matched across the box edges; Grok counts a hint as delivered only when an
+  empty composer row is visible; and a composer that holds exactly the hint
+  while the registry lost its stage is submitted, never pasted a second time.
+
 - While the gate is running, a changed listener grant file is checked again.
   A file that now grants a tool the seat's entry does not list answers `503`.
   An unchanged file is not read on every request.

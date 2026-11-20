@@ -541,6 +541,29 @@ loads and full distributions are in `native_readback_default_profile` in
 language implementation; this measurement does not qualify the JS/Go wire
 clients or cockpit.
 
+### Staged-wake recovery
+
+The 2026-11-20 comparison measures source `5d7f518d` against the change that
+matches a wake hint across the edges of a boxed composer, counts a Grok hint as
+delivered only beside an empty composer row, and adopts a stage the registry
+lost. The unchanged Python pane harness delivers five wakes per run, each into a
+new owned tmux session running the same harmless composer, in three alternating
+before/after pairs on ML350 (Xeon E5-2640, shared, load about 26 to 29, serial
+nice-19). Each row is the median of the three per-run medians, in
+microseconds:
+
+| Operation | Before p50 (us) | After p50 (us) |
+| --- | ---: | ---: |
+| Pane wake | 854153.737 | 852344.847 |
+
+All 30 wakes were injected. The medians differ by 0.21 %, inside the spread of
+the runs, so no regression is shown and no improvement is claimed. The harness
+composer is not boxed, so this measures the cost of the wider match on the
+default path; the recovery itself is exercised by the real tmux tests, not by
+these numbers. Every run, its load and the source digests are in
+`staged_wake_recovery` in `external_surfaces_benchmark.json`. The terminal
+transport has no second language implementation.
+
 ### Scoped execution observations
 
 The `execution_outcome_contract` section records a new baseline `06c53087` and

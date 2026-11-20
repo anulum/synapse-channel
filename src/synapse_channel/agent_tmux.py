@@ -910,6 +910,7 @@ def inject_wake(
         buffer_key=partial(_safe_key, config.identity),
         result=AgentTmuxWakeResult,
         binding_refusal_code=BINDING_REFUSAL_EXIT_CODE,
+        adopt_visible_stage=not config.opencode_editor_readback,
     )
     if config.opencode_editor_readback:
         from synapse_channel.opencode_composer_files import ComposerError
