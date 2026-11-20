@@ -1090,7 +1090,12 @@ def test_a_direct_worker_writes_its_ledger_row(
         environ={"HOME": str(tmp_path)},
     )
     assert code == 3
-    start, end = list(session_ledger.read_events(ledger))
+    events = list(session_ledger.read_events(ledger))
+    if session_ledger.pid_starttime(os.getpid()) is None:
+        # No start ticks on this host (no /proc, as on macOS): the ledger records nothing.
+        assert events == []
+        return
+    start, end = events
     assert (start["event"], start["launcher"], start["identity"]) == (
         "start",
         "worker-session",

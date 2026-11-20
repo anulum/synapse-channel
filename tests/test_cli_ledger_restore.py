@@ -359,10 +359,11 @@ def test_a_second_execute_while_one_runs_exits_75(
 
 
 def test_a_rows_process_is_alive_only_with_its_own_start_ticks() -> None:
+    """A row is alive only by its own start ticks; a host without them has no live row."""
     mine = pid_starttime(os.getpid())
     assert cli_ledger_restore.process_alive(
         Row("r", start={"pid": os.getpid(), "pid_starttime": mine})
-    )
+    ) is (mine is not None)
     assert not cli_ledger_restore.process_alive(
         Row("r", start={"pid": os.getpid(), "pid_starttime": (mine or 0) + 1})
     )

@@ -41,8 +41,11 @@ _TEST_OWNED_STORES: list[EventStore] = []
 def _reserve_closed_hub() -> tuple[socket.socket, str]:
     """Bind one loopback port and leave it unable to accept a connection.
 
-    A bound socket that is not listening refuses connections, and holding it
-    stops another process from opening that port for the rest of the run.
+    On Linux and Windows a bound socket that is not listening refuses
+    connections, and holding it stops another process from opening that port
+    for the rest of the run. A BSD stack (macOS) drops a connection attempt to
+    a bound socket that is not listening, so the client would wait out its
+    timeout; there the socket is closed again and the unbound port refuses.
     Port 0 is not usable: a WebSocket client can map it to 80.
     """
     held = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -51,6 +54,8 @@ def _reserve_closed_hub() -> tuple[socket.socket, str]:
     if port in (0, 8876):
         held.close()
         raise RuntimeError("the closed hub port is not usable")
+    if sys.platform == "darwin":
+        held.close()
     return held, f"ws://127.0.0.1:{port}"
 
 
