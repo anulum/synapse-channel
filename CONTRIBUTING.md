@@ -348,6 +348,9 @@ installed authority, migration exclusion or recovery custody.
   every conditional skip in `tests/` is enumerated with a justification class
   in `tests/test_coverage_exclusion_ledger.py`; the suite fails the moment the
   tree and the ledger disagree, so adding one is a deliberate, reviewed edit.
+  The `coverage-exclusion-ledger` pre-commit hook runs that test whenever a
+  commit changes a Python file under `src/` or `tests/`, so the disagreement is
+  refused at the commit, not first in CI.
   Unconditional skips and xfails are not accepted.
 - **Types.** `mypy` runs in strict mode and must pass with no new ignores.
 - **Style.** Code is formatted with `ruff format` and linted with `ruff`
