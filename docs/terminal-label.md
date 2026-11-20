@@ -108,7 +108,9 @@ was applied. The session option `@synapse_label_title_owner` then reads
 reads the seat. An explicit `synapse label` sets the title again.
 
 The hook prints nothing and exits zero, including when the error log cannot
-be created, so tmux does not cover the pane. Errors from the command are appended to
+be created, so tmux does not cover the pane. Each session's hook carries its
+own `sh -c` script, so labelling one session does not replace another's, and
+no script file is written. Errors from the command are appended to
 `$XDG_STATE_HOME/synapse/label-hook.log`, or to
 `~/.local/state/synapse/label-hook.log` when the variable is unset. A log
 over 256 KiB is moved to `label-hook.log.1` before the next error is written.

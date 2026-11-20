@@ -28,7 +28,6 @@ import json
 import os
 import shlex
 import subprocess  # nosec B404 # fixed argument vectors only, never a shell
-import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -273,33 +272,16 @@ def refresh_script(refresh_command: Sequence[str], log: Path) -> str:
     return f"{group} >/dev/null 2>&1 || true"
 
 
-def _write_hook_script(log: Path, body: str) -> Path:
-    """Store the refresh script where ``sh`` can run it.
-
-    When the log directory cannot be created, the script is kept in a
-    temporary file so the hook text itself stays a short ``sh`` command.
-    """
-    try:
-        log.parent.mkdir(parents=True, exist_ok=True)
-        path = log.with_name("label-refresh.sh")
-        path.write_text(body, encoding="utf-8")
-    except OSError:
-        descriptor, name = tempfile.mkstemp(prefix="synapse-label-", suffix=".sh")
-        os.write(descriptor, body.encode())
-        os.close(descriptor)
-        path = Path(name)
-    path.chmod(0o700)
-    return path
-
-
 def refresh_hook(refresh_command: Sequence[str], log: Path) -> str:
     """Return a background tmux hook that prints nothing.
 
-    The script runs under ``sh``. A failed redirect stays inside the silenced
-    group, including when tmux's own shell is not a POSIX shell.
+    The script is inline under ``sh -c``, so each session keeps its own
+    command and nothing is written beside the log. ``sh`` runs the group even
+    when tmux's own shell is not a POSIX shell. A failed redirect stays inside
+    the silenced group.
     """
-    script = _write_hook_script(log, refresh_script(refresh_command, log) + "\n")
-    return "run-shell -b " + shlex.quote(inert("sh " + shlex.quote(str(script))))
+    command = "sh -c " + shlex.quote(refresh_script(refresh_command, log))
+    return "run-shell -b " + shlex.quote(inert(command))
 
 
 def _resolved_hook_log(hook_log: Path | None, environ: Mapping[str, str] | None) -> Path:

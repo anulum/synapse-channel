@@ -133,9 +133,12 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+  error log cannot be created. Each session carries its own `sh -c` script,
+  so one label does not replace another's, and no script file is written.
+  Errors are appended to `label-hook.log` under the state directory, and a
+  log over 256 KiB is moved to `label-hook.log.1`.
+
 - The label refresh hooks print nothing and exit zero, including when the
-  error log cannot be created. Errors are appended to `label-hook.log` under
-  the state directory, and a log over 256 KiB is moved to `label-hook.log.1`.
 
 - The test suite sets `SYNAPSE_URI` to a closed loopback port, so a test that
   omits a hub address cannot reach a hub already running on the machine.

@@ -24,6 +24,7 @@ import signal
 import struct
 import subprocess
 import sys
+import tempfile
 import termios
 import threading
 import time
@@ -82,7 +83,8 @@ def test_the_refresh_hook_prints_nothing_and_keeps_errors(tmp_path: Path) -> Non
 
     assert body.startswith("{") and body.endswith(">/dev/null 2>&1 || true")
     assert ">/dev/null 2>>" in body
-    assert hook.startswith("run-shell -b ") and "sh " in hook
+    assert hook.startswith("run-shell -b ") and "sh -c " in hook
+    assert not (log.parent / "label-refresh.sh").exists()
     assert label_hook_log({"XDG_STATE_HOME": str(tmp_path)}) == log
     assert label_hook_log({"HOME": str(tmp_path)}) == (
         tmp_path / ".local" / "state" / "synapse" / "label-hook.log"
@@ -461,10 +463,10 @@ def test_a_refresh_that_prints_leaves_the_active_pane_out_of_view_mode(
         refresh_command=refresh,
         hook_log=log,
     ).applied
-    script_file = log.with_name("label-refresh.sh")
     hook_text = server.tmux("show-hooks", "-t", f"={name}:")
-    assert str(script_file) in hook_text
-    assert ">/dev/null 2>&1" in script_file.read_text(encoding="utf-8")
+    assert "sh -c " in hook_text
+    assert "label-refresh.sh" not in hook_text
+    assert not (log.parent / "label-refresh.sh").exists()
 
     server.resize(master, 90)
 
@@ -480,6 +482,52 @@ def test_a_refresh_that_prints_leaves_the_active_pane_out_of_view_mode(
     assert "label and 3 status line(s) set" not in recorded
 
 
+def test_each_session_keeps_its_own_refresh_and_writes_no_script(
+    server: Server, tmp_path: Path
+) -> None:
+    """A resize of the first session runs only the command stored on that session."""
+    first = server.session("one", 125)
+    second = server.session("two", 125)
+    master = server.attach(first, 125)
+    own = tmp_path / "own"
+    other = tmp_path / "other"
+    log = tmp_path / "hook.log"
+    code = "import pathlib, sys; pathlib.Path(sys.argv[1]).touch()"
+
+    def command(path: Path) -> list[str]:
+        return [sys.executable, "-c", code, str(path)]
+
+    assert apply(
+        server.tmux_bin,
+        first,
+        _DETAILS,
+        runner=subprocess.run,
+        refresh_command=command(own),
+        hook_log=log,
+    ).applied
+    assert apply(
+        server.tmux_bin,
+        second,
+        _DETAILS,
+        runner=subprocess.run,
+        refresh_command=command(other),
+        hook_log=log,
+    ).applied
+    assert not list(tmp_path.rglob("*.sh"))
+    first_hook = server.tmux("show-hooks", "-t", f"={first}:")
+    second_hook = server.tmux("show-hooks", "-t", f"={second}:")
+    assert str(own) in first_hook and str(other) not in first_hook
+    assert str(other) in second_hook
+
+    server.resize(master, 90)
+    deadline = time.monotonic() + 20.0
+    while time.monotonic() < deadline and not own.exists():
+        time.sleep(0.2)
+    assert own.exists()
+    time.sleep(0.5)
+    assert not other.exists()
+
+
 def test_an_uncreatable_log_does_not_cover_the_pane(server: Server, tmp_path: Path) -> None:
     """A redirect the shell cannot open stays off the pane."""
     name = server.session("blocked", 125)
@@ -488,6 +536,7 @@ def test_an_uncreatable_log_does_not_cover_the_pane(server: Server, tmp_path: Pa
     blocker.write_text("not a directory", encoding="utf-8")
     log = blocker / "synapse" / "label-hook.log"
     script = "import sys; print('label and 3 status line(s) set'); print('boom', file=sys.stderr)"
+    before = set(Path(tempfile.gettempdir()).glob("synapse-label-*.sh"))
     assert apply(
         server.tmux_bin,
         name,
@@ -496,6 +545,7 @@ def test_an_uncreatable_log_does_not_cover_the_pane(server: Server, tmp_path: Pa
         refresh_command=[sys.executable, "-c", script],
         hook_log=log,
     ).applied
+    assert set(Path(tempfile.gettempdir()).glob("synapse-label-*.sh")) == before
 
     server.resize(master, 90)
     time.sleep(1.0)
