@@ -13,6 +13,7 @@ import functools
 import importlib.util
 import logging
 import os
+import socket
 import sqlite3
 import sys
 from collections.abc import Callable, Iterator
@@ -35,6 +36,27 @@ _TEST_OWNED_HUBS: list[SynapseHub] = []
 """Hubs the running test constructed itself, in creation order."""
 _TEST_OWNED_STORES: list[EventStore] = []
 """Event stores the running test constructed itself, in creation order."""
+
+
+def _reserve_closed_hub() -> tuple[socket.socket, str]:
+    """Bind one loopback port and leave it unable to accept a connection.
+
+    A bound socket that is not listening refuses connections, and holding it
+    stops another process from opening that port for the rest of the run.
+    Port 0 is not usable: a WebSocket client can map it to 80.
+    """
+    held = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    held.bind(("127.0.0.1", 0))
+    port = int(held.getsockname()[1])
+    if port in (0, 8876):
+        held.close()
+        raise RuntimeError("the closed hub port is not usable")
+    return held, f"ws://127.0.0.1:{port}"
+
+
+_CLOSED_HUB_SOCKET, CLOSED_HUB_URI = _reserve_closed_hub()
+# Set before collection. Parser defaults call ``default_hub_uri()`` at import.
+os.environ["SYNAPSE_URI"] = CLOSED_HUB_URI
 
 
 def _release_errors() -> tuple[type[BaseException], ...]:
@@ -87,6 +109,22 @@ def pytest_configure(config: pytest.Config) -> None:
     if config.pluginmanager.has_plugin(_HANG_IDENTITY_NAME):
         return
     config.pluginmanager.register(_hang_identity_module(), _HANG_IDENTITY_NAME)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _closed_default_hub() -> Iterator[str]:
+    """Point every test at a closed hub so none can reach one already running.
+
+    The CLI reads ``SYNAPSE_URI`` when ``--uri`` is omitted, including the
+    inbox path that otherwise falls back to the workstation port. A test that
+    needs the built-in default unsets the variable. The socket stays open
+    until the session ends.
+    """
+    os.environ["SYNAPSE_URI"] = CLOSED_HUB_URI
+    try:
+        yield CLOSED_HUB_URI
+    finally:
+        _CLOSED_HUB_SOCKET.close()
 
 
 @pytest.fixture(autouse=True, scope="session")

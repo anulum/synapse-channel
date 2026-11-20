@@ -39,11 +39,15 @@ CLOSED_HUB = "ws://127.0.0.1:1"
 
 
 def _child_environment(**changes: str) -> dict[str, str]:
-    """Return this process's environment without the settings a seat's shell may carry."""
+    """Return this process's environment without the seat identity a shell may carry.
+
+    ``SYNAPSE_URI`` stays. The suite sets it to a closed port, and dropping it
+    would restore the built-in address of a hub on this machine.
+    """
     environment = {
         name: value
         for name, value in os.environ.items()
-        if name not in ("SYN_INBOX_SOURCE", "SYNAPSE_URI", "SYN_IDENTITY", "SYN_PROJECT")
+        if name not in ("SYN_INBOX_SOURCE", "SYN_IDENTITY", "SYN_PROJECT")
     }
     environment.update(changes)
     return environment

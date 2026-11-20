@@ -133,6 +133,9 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- The test suite sets `SYNAPSE_URI` to a closed loopback port, so a test that
+  omits a hub address cannot reach a hub already running on the machine.
+
   `operator` in `@synapse_label_title_owner`. A refresh compares the title
   with the one the command last wrote, not with the title it would write now.
 

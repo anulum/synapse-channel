@@ -16,7 +16,6 @@ from synapse_channel.git.semantic_scope import semantic_scope_path
 _CLEAN_IDENTITY_ENV = {
     "SYN_PROJECT": "",
     "SYN_IDENTITY": "",
-    "SYNAPSE_URI": "",
     "SYNAPSE_TOKEN": "",
 }
 

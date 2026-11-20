@@ -19,7 +19,6 @@ _CLEAN_ENV = {
     "PYTHONPATH": str(_PROJECT_ROOT / "src"),
     "SYN_PROJECT": "",
     "SYN_IDENTITY": "",
-    "SYNAPSE_URI": "",
     "SYNAPSE_TOKEN": "",
 }
 

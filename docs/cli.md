@@ -2038,6 +2038,9 @@ synapse board          # so does every other command
 
 An explicit `--uri` on a single command overrides the environment for that call,
 and unsetting `SYNAPSE_URI` (or leaving it blank) restores the loopback default.
+The test suite sets `SYNAPSE_URI` to a closed loopback port before any test runs,
+so a command that omits `--uri` is refused there and cannot reach a hub already
+running on the machine. A test that needs the built-in default unsets the variable.
 The companion `SYNAPSE_TOKEN` supplies the shared secret for a secured hub the
 same way.
 
