@@ -218,7 +218,9 @@ does not add agent grades to protocol envelopes.
   `operation-evidence` grant, a declared operation on the same task and fewer
   than 32 earlier rows for it. The hub journals `operation_declared`,
   `operation_outcome` or `operation_verified`; verification evidence keeps only
-  digest-shaped values. A `seal` carries one `seal` object naming exactly
+  digest-shaped values: 40 or 64 lower-case hex, and a 32-hex `attempt_id`.
+  A 32-hex value under any other key is dropped, as is free text. A `seal`
+  carries one `seal` object naming exactly
   `attempt_id`, `marker_ref`, `object_format` (`sha1` or `sha256`),
   `marker_object` and `observation`, the answer read back after the sealed
   marker was written, and may name `stop_seq`, the stop it was made for, which

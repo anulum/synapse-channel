@@ -131,6 +131,12 @@ execution evidence when carrying a release claim forward.
   reboot's cut is never replaced, and an end written across a month's turn is
   not corrected.
 
+### Fixed
+
+- A verification record keeps a 32-hex `attempt_id` with its other digest-shaped
+  evidence. A 32-hex value under any other key is still dropped, as is every
+  value that is not 40 or 64 lower-case hex.
+
 ## [0.99.58] - 2026-11-19
 
 Core 0.99.58 adds a hard-linked generation chain for conditional deployments and

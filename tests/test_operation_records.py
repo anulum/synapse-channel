@@ -81,7 +81,11 @@ def _outcome_report(operation_id: str = "op-1") -> dict[str, object]:
     ).to_json()
 
 
-def _verification(operation_id: str = "op-1", verifier: str = "file_change") -> dict[str, object]:
+def _verification(
+    operation_id: str = "op-1",
+    verifier: str = "file_change",
+    evidence: dict[str, str] | None = None,
+) -> dict[str, object]:
     return ResultVerification(
         operation_id,
         verifier,
@@ -89,7 +93,7 @@ def _verification(operation_id: str = "op-1", verifier: str = "file_change") -> 
         "observed",
         "verified",
         "content_matches",
-        {"sha256": SHA, "path": "out/result.txt"},
+        {"sha256": SHA, "path": "out/result.txt"} if evidence is None else evidence,
     ).to_json()
 
 
@@ -385,6 +389,42 @@ def test_rows_carry_only_checked_fields_and_the_ledger_restores(tmp_path: Path) 
         )
     finally:
         reopened.close()
+
+
+def test_a_verification_keeps_a_32_hex_attempt_id(tmp_path: Path) -> None:
+    """A Git attempt id is journalled; the same length under another key is not."""
+    attempt = "b" * 32
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        ledger = OperationLedger(store)
+        _journal_declaration(store, ledger)
+        verified = decode_operation_record(
+            {
+                "record": "verification",
+                "task_id": "T",
+                "operation_id": "op-1",
+                "verification": _verification(
+                    evidence={
+                        "sha256": SHA,
+                        "commit": "a" * 40,
+                        "attempt_id": attempt,
+                        "note": "c" * 32,
+                        "short": "d" * 31,
+                        "upper": "e" * 31 + "F",
+                        "path": "out/result.txt",
+                    }
+                ),
+            }
+        )
+        record_operation(store, verified, sender="P/checker")
+        (checked,) = store.read_since(0, kinds=(EventKind.OPERATION_VERIFIED,))
+        assert checked.payload["evidence"] == {
+            "sha256": SHA,
+            "commit": "a" * 40,
+            "attempt_id": attempt,
+        }
+    finally:
+        store.close()
 
 
 def test_a_restored_component_state_declaration_keeps_its_whole_target(tmp_path: Path) -> None:

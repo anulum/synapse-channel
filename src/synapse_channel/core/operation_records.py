@@ -134,8 +134,10 @@ REFUSED_RECORD_LIMIT = "record_limit"
 REFUSED_NOT_AUTHORISED = "not_authorised"
 
 _OPERATION_ID = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+_HEX32 = re.compile(r"[0-9a-f]{32}")
 _HEX40 = re.compile(r"[0-9a-f]{40}")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
+_EVIDENCE_LENGTHS = frozenset({40, 64})
 _BASE_GENERATION = re.compile(r"0|[1-9][0-9]{0,17}")
 _EMPTY_CHAIN_DIGEST = "0" * 64
 _BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
@@ -638,12 +640,21 @@ def stop_readback_refusal(ledger: OperationLedger, request: OperationRecordReque
 
 
 def _digests(evidence: Mapping[str, str]) -> dict[str, str]:
-    """Keep only digest-shaped evidence values; free text is not journalled."""
-    return {
-        key: value
-        for key, value in evidence.items()
-        if _HEX40.fullmatch(value) or _HEX64.fullmatch(value)
-    }
+    """Keep 40- and 64-hex evidence, and a 32-hex ``attempt_id``.
+
+    Free text is not journalled. A 32-hex value is kept only when its key is
+    ``attempt_id``. Every other length, and that length under another key, is
+    dropped.
+    """
+    kept: dict[str, str] = {}
+    for key, value in evidence.items():
+        if key == "attempt_id" and _HEX32.fullmatch(value):
+            kept[key] = value
+        elif len(value) in _EVIDENCE_LENGTHS and (
+            _HEX40.fullmatch(value) is not None or _HEX64.fullmatch(value) is not None
+        ):
+            kept[key] = value
+    return kept
 
 
 def record_operation(
