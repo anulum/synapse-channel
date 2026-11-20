@@ -364,7 +364,7 @@ def test_execute_with_nothing_to_start_connects_to_nothing(
     assert capsys.readouterr().out.splitlines()[-1] == "0 to start"
 
 
-def test_a_second_execute_while_one_runs_exits_75(
+def test_a_held_lock_does_not_sweep_a_stale_token_file(
     tmp_path: Path, ledger: Path, marker_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     old = _token(marker_dir, f"T_seat.{NONCE}.token")
@@ -429,6 +429,34 @@ def test_only_a_cut_holders_regular_token_file_is_stale(marker_dir: Path) -> Non
     assert kept.is_file() and nested.is_dir() and link.is_symlink()
 
 
+def test_a_dry_run_does_not_count_another_users_stale_token_file(marker_dir: Path) -> None:
+    stale = _token(marker_dir, f"T_seat.{NONCE}.token")
+    _age(stale)
+    assert (
+        sweep_stale_token_files(
+            marker_dir, frozenset(), execute=False, minimum_age=0, uid=os.geteuid() + 1
+        )
+        == 0
+    )
+    assert stale.is_file()
+
+
+def test_a_live_holders_stale_token_file_is_not_counted(
+    tmp_path: Path,
+    ledger: Path,
+    marker_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    stale = _token(marker_dir, f"T_seat.{NONCE}.token")
+    _age(stale)
+    holder = Proc(os.getpid(), 1, ("synapse", "seat-hold", "--nonce", NONCE), 1)
+    monkeypatch.setattr(cli_ledger_restore, "read_procs", lambda: {os.getpid(): holder})
+    assert _restore(tmp_path) == 0
+    assert "stale token files: 0" in capsys.readouterr().out
+    assert stale.is_file()
+
+
 def test_a_token_file_that_vanishes_or_cannot_be_removed_is_not_counted(
     marker_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -481,6 +509,7 @@ def test_live_holder_nonces_come_only_from_this_users_seat_hold() -> None:
 
     assert nonces_of_live_holders(commands, uid=7, owner_of=owner_of) == frozenset({nonce})
     assert nonces_of_live_holders(commands, uid=9, owner_of=owner_of) == frozenset()
+    assert nonces_of_live_holders({4: commands[4]}, uid=7, owner_of=owner_of) == frozenset()
     assert cli_ledger_restore._process_uid(os.getpid()) == os.getuid()
     assert cli_ledger_restore._process_uid(1 << 30) is None
 

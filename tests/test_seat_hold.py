@@ -774,6 +774,36 @@ def test_the_command_line_passes_the_wake_target_and_an_optional_nonce(
     assert seen[1]["wake"] is None
 
 
+def test_unlink_refuses_another_users_regular_token_file(tmp_path: Path) -> None:
+    path = tmp_path / f"T_seat.{NONCE}.token"
+    path.write_text("secret\n", encoding="utf-8")
+    with pytest.raises(OSError):
+        seat_hold._unlink_own_regular(path, os.geteuid() + 1)
+    assert path.read_text(encoding="utf-8") == "secret\n"
+
+
+def test_the_cli_passes_the_token_file_to_the_holder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[dict[str, Any]] = []
+
+    async def fake_hold(identity: str, nonce: str | None, argv: list[str], **options: Any) -> int:
+        seen.append(options)
+        return 0
+
+    monkeypatch.setattr(cli_seat_hold, "hold_seat", fake_hold)
+    token = tmp_path / "seat.token"
+    token.write_text("secret\n", encoding="utf-8")
+    parser = argparse.ArgumentParser()
+    cli_seat_hold.add_parsers(parser.add_subparsers())
+    args = parser.parse_args(
+        ["seat-hold", "--identity", "T/seat", "--token-file", str(token), "--", "true"]
+    )
+    assert cli_seat_hold._cmd_seat_hold(args, runner=asyncio.run) == 0
+    assert seen[0]["token_file"] == token
+    assert seen[0]["token"] == "secret"
+
+
 async def test_a_held_seat_writes_its_ledger_row(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

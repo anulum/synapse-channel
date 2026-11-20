@@ -216,7 +216,7 @@ def _own_regular(mode: int, file_uid: int, uid: int) -> bool:
 
 def _unlink_own_regular(path: Path, uid: int) -> None:
     """Remove ``path`` only when it is still this user's regular file."""
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         info = os.fstat(descriptor)
     finally:
