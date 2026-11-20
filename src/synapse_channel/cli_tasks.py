@@ -99,30 +99,27 @@ async def _task_action(
     )
 
 
-def declare_project(project: str | None, name: str) -> str | None:
-    """Return the project a declare sends.
+def declare_scope(project: str | None, name: str) -> tuple[str, str]:
+    """Return the explicit project and the create-only default.
 
-    An omitted or blank project is the namespace of a ``PROJECT/name``
-    identity. A name with no slash has no project, and the declare is refused.
+    An explicit ``--project`` is the task's scope. An omitted project sends
+    the namespace of a ``PROJECT/name`` identity as ``default_project``. A
+    bare identity sends neither, so a new task stays unscoped. The hub
+    applies the default only when it creates the task.
     """
-    chosen = project if project else project_of(name)
-    return chosen or None
+    explicit = project.strip() if isinstance(project, str) else ""
+    if explicit:
+        return explicit, ""
+    return "", project_of(name)
 
 
 def _cmd_task_declare(
     args: argparse.Namespace, *, agent_factory: AgentFactory = SynapseAgent
 ) -> int:
-    """Declare a task on the shared blackboard.
-
-    A declare that still has no project exits 2 before connecting.
-    """
-    project = declare_project(getattr(args, "project", None), getattr(args, "name", "") or "")
-    if project is None:
-        print(
-            "task declare needs a project: pass --project, or declare as PROJECT/name",
-            file=sys.stderr,
-        )
-        return 2
+    """Declare a task on the shared blackboard."""
+    project, default_project = declare_scope(
+        getattr(args, "project", None), getattr(args, "name", "") or ""
+    )
     deps = tuple(args.depends_on) if args.depends_on else ()
 
     async def send(agent: SynapseAgent) -> None:
@@ -131,6 +128,7 @@ def _cmd_task_declare(
             title=args.title,
             depends_on=deps,
             project=project,
+            default_project=default_project,
             expected_version=getattr(args, "expected_version", None),
             causal_parent=getattr(args, "causal_parent", None),
             idem_key=getattr(args, "idem_key", None),
@@ -233,6 +231,27 @@ def _cmd_task_help(args: argparse.Namespace) -> int:
     return 1
 
 
+def _parse_causal_parent(value: str) -> TaskCausalParent:
+    """Parse a reference while keeping unexpected diagnostics out of stderr."""
+    try:
+        return parse_task_causal_parent_ref(value)
+    except TaskCausalParentInputError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    except Exception as exc:
+        raise argparse.ArgumentTypeError("causal parent validation failed") from exc
+
+
+def _add_causal_parent(parser_: argparse.ArgumentParser) -> None:
+    """Register a parent reference with authored refusals and fixed fault text."""
+    parser_.add_argument(
+        "--causal-parent",
+        type=_parse_causal_parent,
+        default=None,
+        metavar="HUB_ID:SEQ:SHA256",
+        help="Content-bound observed task event this write follows.",
+    )
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``task`` subparser and its declare/update/progress subcommands."""
     task = subparsers.add_parser("task", help="Declare and update the shared task plan.")
@@ -249,26 +268,6 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             help="Stable retry key; changed-payload reuse is refused on a durable hub.",
         )
 
-    def _add_causal_parent(parser_: argparse.ArgumentParser) -> None:
-        """Register a parent reference with authored refusals and fixed fault text."""
-
-        def parse(value: str) -> TaskCausalParent:
-            """Parse a reference while keeping unexpected diagnostics out of stderr."""
-            try:
-                return parse_task_causal_parent_ref(value)
-            except TaskCausalParentInputError as exc:
-                raise argparse.ArgumentTypeError(str(exc)) from exc
-            except Exception as exc:
-                raise argparse.ArgumentTypeError("causal parent validation failed") from exc
-
-        parser_.add_argument(
-            "--causal-parent",
-            type=parse,
-            default=None,
-            metavar="HUB_ID:SEQ:SHA256",
-            help="Content-bound observed task event this write follows.",
-        )
-
     declare = task_sub.add_parser("declare", help="Declare a task on the blackboard.")
     declare.add_argument("task_id")
     declare.add_argument("--title", default="")
@@ -281,7 +280,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     declare.add_argument(
         "--project",
         default=None,
-        help="Project of a PROJECT/name identity when omitted. Refused when none.",
+        help=(
+            "Defaults to the project of a PROJECT/name identity when the task "
+            "is created; on a re-declare an omitted project keeps the task's "
+            "scope."
+        ),
     )
     declare.add_argument(
         "--expected-version",

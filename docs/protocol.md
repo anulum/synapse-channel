@@ -688,7 +688,11 @@ entry; legacy consumers ignore them.
 
 A `ledger_task` may carry the additive `project` string (a namespace scope for
 the task; absent means unscoped, and a re-declaration with a conflicting
-non-empty scope is refused) and both `ledger_task` and `ledger_task_update`
+non-empty scope is refused) and the additive `default_project` string. The hub
+uses `default_project` only when `project` is empty and the task is created.
+A re-declaration with an empty `project` keeps the existing scope and ignores
+`default_project`. An older hub ignores the unknown field, so the task stays
+unscoped. Both `ledger_task` and `ledger_task_update`
 may carry the additive `expected_version` integer — a compare-and-set guard
 refused with a private `error` unless the task's current monotonic `version`
 matches (an absent task counts as version `0`). `ledger_task_update` may also

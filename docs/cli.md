@@ -3496,11 +3496,11 @@ the key or either request payload. The key is scoped by authenticated sender and
 message type, so declare, update, and progress keys do not collide. Omitting the
 flag retains the documented at-least-once behaviour.
 
-A declare carries a project. With no `--project`, the command uses the
-project of the declaring identity (`PROJECT/name`). When that identity has
-no project, the command exits 2 and names `--project`. It does not declare
-a task without a project. Tasks also carry a monotonic version for
-compare-and-set updates:
+A declare may carry a project. With no `--project`, a `PROJECT/name` identity
+sends that project as the default used when the task is created. A bare
+identity sends no project, so a new task stays unscoped. On a re-declare an
+omitted `--project` keeps the task's scope. Tasks also carry a monotonic
+version for compare-and-set updates:
 
 ```bash
 synapse task declare FIX --title "Repair parser" --project SYNAPSE-CHANNEL

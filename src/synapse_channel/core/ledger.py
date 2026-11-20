@@ -214,6 +214,16 @@ def _clean_depends_on(task_id: str, depends_on: tuple[str, ...] | list[str]) -> 
     return tuple(seen)
 
 
+def created_scope(project: str, default_project: str) -> str:
+    """Return the scope stored when a task is created.
+
+    An explicit project wins. Otherwise the create-only default is used.
+    Both empty leaves the task unscoped.
+    """
+    scope = project.strip()
+    return scope or default_project.strip()
+
+
 class Blackboard:
     """The team's shared plan: a task ledger plus an append-only progress stream.
 
@@ -328,6 +338,7 @@ class Blackboard:
         depends_on: tuple[str, ...] | list[str] = (),
         suggested_owner: str = "",
         project: str = "",
+        default_project: str = "",
         expected_version: int | None = None,
         now: float | None = None,
     ) -> tuple[bool, str]:
@@ -347,9 +358,13 @@ class Blackboard:
             Advisory proposed owner.
         project : str, optional
             Project namespace. On a first declaration ``""`` leaves the task
-            unscoped; on a re-declaration ``""`` keeps the existing scope, and
-            a non-empty value conflicting with an already-scoped task is
-            refused (fail-closed against accidental re-scoping).
+            unscoped unless ``default_project`` is set; on a re-declaration
+            ``""`` keeps the existing scope, and a non-empty value conflicting
+            with an already-scoped task is refused (fail-closed against
+            accidental re-scoping).
+        default_project : str, optional
+            Namespace used only when the task is created and ``project`` is
+            empty. A re-declaration ignores it.
         expected_version : int or None, optional
             Compare-and-set guard: when given, the mutation is refused unless
             the task's current ``version`` equals it (a missing task counts as
@@ -393,7 +408,7 @@ class Blackboard:
                 description=description.strip(),
                 depends_on=deps,
                 suggested_owner=suggested_owner.strip(),
-                project=scope,
+                project=created_scope(project, default_project),
                 created_by=author,
             )
             self._index_task(self.tasks[tid], current_assignment=True)

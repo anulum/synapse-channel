@@ -31,6 +31,7 @@ class AgentLedgerMixin:
         depends_on: tuple[str, ...] | list[str] = (),
         suggested_owner: str = "",
         project: str = "",
+        default_project: str = "",
         expected_version: int | None = None,
         causal_parent: TaskCausalParent | None = None,
         idem_key: str | None = None,
@@ -45,6 +46,8 @@ class AgentLedgerMixin:
             extra["suggested_owner"] = suggested_owner
         if project:
             extra["project"] = project
+        if default_project:
+            extra["default_project"] = default_project
         if expected_version is not None:
             extra["expected_version"] = expected_version
         if causal_parent is not None:

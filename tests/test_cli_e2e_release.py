@@ -99,9 +99,7 @@ def test_merkle_committed_receipt_round_trips_through_policy_check(tmp_path: Pat
     the prefix and passes while the log has only grown append-only.
     """
     with isolated_hub(tmp_path) as hub:
-        run_cli(
-            "task", "declare", "--project", "TEST", "BUILD", "--title", "build step", uri=hub.uri
-        )
+        run_cli("task", "declare", "BUILD", "--title", "build step", uri=hub.uri)
         run_cli("lock", "BUILD", "--paths", "src/app.py", "--", "true", uri=hub.uri)
 
         receipt = tmp_path / "receipt.json"
@@ -156,9 +154,7 @@ def test_hub_signed_receipt_round_trips_through_policy_check(tmp_path: Path) -> 
     assert "key_id:" in keygen.stdout
 
     with isolated_hub(tmp_path) as hub:
-        run_cli(
-            "task", "declare", "--project", "TEST", "BUILD", "--title", "build step", uri=hub.uri
-        )
+        run_cli("task", "declare", "BUILD", "--title", "build step", uri=hub.uri)
         receipt = tmp_path / "receipt.json"
         built = run_cli(
             "verify-release",

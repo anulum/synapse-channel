@@ -148,9 +148,7 @@ def test_status_one_liner_exits_nonzero_when_the_hub_is_down() -> None:
 def test_task_lifecycle_declare_then_complete(tmp_path: Path) -> None:
     """A task declared over the CLI appears on the board and completes."""
     with isolated_hub(tmp_path) as hub:
-        declared = run_cli(
-            "task", "declare", "--project", "TEST", "T1", "--title", "first task", uri=hub.uri
-        )
+        declared = run_cli("task", "declare", "T1", "--title", "first task", uri=hub.uri)
         assert declared.ok(), declared.output
         assert "declared T1" in declared.stdout
 
@@ -166,19 +164,8 @@ def test_task_lifecycle_declare_then_complete(tmp_path: Path) -> None:
 def test_dependent_task_unblocks_when_prerequisite_completes(tmp_path: Path) -> None:
     """A declared dependency keeps a task blocked until the prerequisite is done."""
     with isolated_hub(tmp_path) as hub:
-        run_cli("task", "declare", "--project", "TEST", "BUILD", "--title", "build", uri=hub.uri)
-        run_cli(
-            "task",
-            "declare",
-            "--project",
-            "TEST",
-            "TEST",
-            "--title",
-            "test",
-            "--depends-on",
-            "BUILD",
-            uri=hub.uri,
-        )
+        run_cli("task", "declare", "BUILD", "--title", "build", uri=hub.uri)
+        run_cli("task", "declare", "TEST", "--title", "test", "--depends-on", "BUILD", uri=hub.uri)
 
         before = run_cli("board", uri=hub.uri)
         assert "BUILD" in before.stdout and "TEST" in before.stdout

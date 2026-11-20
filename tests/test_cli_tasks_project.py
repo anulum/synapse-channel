@@ -112,10 +112,8 @@ async def test_declare_without_project_uses_the_identity_namespace() -> None:
         assert hub.blackboard.tasks["BUILD"].project == "SYNAPSE-CHANNEL"
 
 
-async def test_declare_without_a_derivable_project_refuses(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """A bare identity cannot declare a task, and the refusal names --project."""
+async def test_a_bare_identity_declares_an_unscoped_task() -> None:
+    """A name with no project still declares, and the task stays unscoped."""
     async with running_hub(SynapseHub()) as (hub, uri):
         ns = argparse.Namespace(
             task_id="BUILD",
@@ -127,9 +125,60 @@ async def test_declare_without_a_derivable_project_refuses(
             token=None,
         )
         code = await asyncio.to_thread(cli_tasks._cmd_task_declare, ns)
-        assert code == 2
-        assert "--project" in capsys.readouterr().err
-        assert "BUILD" not in hub.blackboard.tasks
+        assert code == 0
+        assert hub.blackboard.tasks["BUILD"].project == ""
+
+
+async def test_a_redeclare_keeps_an_unscoped_task_unscoped() -> None:
+    """An omitted project does not infer a scope onto a task that has none."""
+    async with running_hub(SynapseHub()) as (hub, uri):
+        hub.blackboard.post_task(task_id="BUILD", title="Compile", author="seed")
+        ns = argparse.Namespace(
+            task_id="BUILD",
+            title="Compile again",
+            depends_on=None,
+            project=None,
+            uri=uri,
+            name="SYNAPSE-CHANNEL/seat",
+            token=None,
+        )
+        code = await asyncio.to_thread(cli_tasks._cmd_task_declare, ns)
+        assert code == 0
+        assert hub.blackboard.tasks["BUILD"].project == ""
+
+
+async def test_a_redeclare_by_another_project_keeps_the_existing_scope() -> None:
+    """A seat of project Q does not take a task that is already scoped to P."""
+    async with running_hub(SynapseHub()) as (hub, uri):
+        hub.blackboard.post_task(task_id="BUILD", title="Compile", author="seed", project="P")
+        ns = argparse.Namespace(
+            task_id="BUILD",
+            title="Compile again",
+            depends_on=None,
+            project=None,
+            uri=uri,
+            name="Q/seat",
+            token=None,
+        )
+        code = await asyncio.to_thread(cli_tasks._cmd_task_declare, ns)
+        assert code == 0
+        assert hub.blackboard.tasks["BUILD"].project == "P"
+
+
+async def test_an_explicit_project_wins_over_the_identity_default() -> None:
+    async with running_hub(SynapseHub()) as (hub, uri):
+        ns = argparse.Namespace(
+            task_id="BUILD",
+            title="Compile",
+            depends_on=None,
+            project="OTHER",
+            uri=uri,
+            name="SYNAPSE-CHANNEL/seat",
+            token=None,
+        )
+        code = await asyncio.to_thread(cli_tasks._cmd_task_declare, ns)
+        assert code == 0
+        assert hub.blackboard.tasks["BUILD"].project == "OTHER"
 
 
 async def test_cmd_task_update_with_stale_expected_version_fails_loudly(

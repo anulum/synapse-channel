@@ -50,16 +50,7 @@ def _text_payload(result: Any) -> str:
 
 async def test_mcp_bridge_lists_and_reads_hub_tools_over_stdio(tmp_path: Path) -> None:
     with isolated_hub(tmp_path) as hub:
-        declared = run_cli(
-            "task",
-            "declare",
-            "--project",
-            "TEST",
-            "MCP-1",
-            "--title",
-            "wire the bridge",
-            uri=hub.uri,
-        )
+        declared = run_cli("task", "declare", "MCP-1", "--title", "wire the bridge", uri=hub.uri)
         assert declared.ok(), declared.output
 
         async with mcp_stdio.stdio_client(_bridge_params(hub.uri)) as (read, write):

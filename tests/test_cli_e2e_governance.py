@@ -24,7 +24,7 @@ from cli_e2e_helpers import isolated_hub, run_cli
 
 def _populate(uri: str) -> None:
     """Declare a task and take then release a file-scoped lease."""
-    run_cli("task", "declare", "--project", "TEST", "BUILD", "--title", "build step", uri=uri)
+    run_cli("task", "declare", "BUILD", "--title", "build step", uri=uri)
     run_cli("lock", "BUILD", "--paths", "src/app.py", "--", "true", uri=uri)
 
 

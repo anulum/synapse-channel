@@ -185,6 +185,31 @@ async def _causal_parent(
     return None, False
 
 
+def _declare_task(
+    board: Blackboard,
+    events: TaskEventRecorder,
+    sender: str,
+    data: dict[str, Any],
+    task_id: str,
+    depends_on: list[str],
+    expected: int | None,
+) -> tuple[bool, str, LedgerTask | None]:
+    """Declare the task, using ``default_project`` only when it is created."""
+    events.capture_owner(board, task_id)
+    ok, message = board.post_task(
+        task_id=task_id,
+        title=str(data.get("title") or ""),
+        author=sender,
+        description=str(data.get("description") or ""),
+        depends_on=depends_on,
+        suggested_owner=str(data.get("suggested_owner") or ""),
+        project=str(data.get("project") or ""),
+        default_project=str(data.get("default_project") or ""),
+        expected_version=expected,
+    )
+    return ok, message, board.tasks.get(task_id) if ok else None
+
+
 async def handle_ledger_task(
     hub: PlanningContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
@@ -206,18 +231,7 @@ async def handle_ledger_task(
     events = TaskEventRecorder(sender, causal_parent)
 
     def mutate(board: Blackboard) -> tuple[bool, str, LedgerTask | None]:
-        events.capture_owner(board, task_id)
-        ok, message = board.post_task(
-            task_id=task_id,
-            title=str(data.get("title") or ""),
-            author=sender,
-            description=str(data.get("description") or ""),
-            depends_on=depends_on,
-            suggested_owner=str(data.get("suggested_owner") or ""),
-            project=str(data.get("project") or ""),
-            expected_version=expected,
-        )
-        return ok, message, board.tasks.get(task_id) if ok else None
+        return _declare_task(board, events, sender, data, task_id, depends_on, expected)
 
     def persist(result: tuple[bool, str, LedgerTask | None]) -> None:
         task = result[2]
