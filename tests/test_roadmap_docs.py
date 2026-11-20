@@ -196,7 +196,14 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     ):
         assert released_in_0_99_58 in shipped, released_in_0_99_58
         assert released_in_0_99_58 not in unreleased, released_in_0_99_58
-    assert "At 0.99.58 nothing on `main` is outside a release." in unreleased
+    for released_in_0_99_59 in (
+        "`synapse seat-hold` runs an agent",
+        "`synapse ledger restore` starts again the seats",
+        "next restore sweeps the file a killed holder left",
+    ):
+        assert released_in_0_99_59 in shipped, released_in_0_99_59
+        assert released_in_0_99_59 not in unreleased, released_in_0_99_59
+    assert "At 0.99.59 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:

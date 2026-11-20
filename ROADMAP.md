@@ -117,6 +117,15 @@ interfaces, maturity, and release commitments.
   `synapse wait --no-takeover` registers only a free name and never displaces
   a live holder, and a new tmux server keeps only a fixed set of global
   variables, so one seat's environment does not reach the others.
+- Seats that survive a crash or a reboot: `synapse seat-hold` runs an agent
+  only while its seat's dedicated name is held, and never displaces a live
+  holder. A per-host session ledger (`synapse ledger show` and `snapshot`)
+  records each agent session on a Linux host by boot, process and start time,
+  and `synapse ledger restore` starts again the seats a crash or a reboot cut,
+  behind the holder and from an empty environment, one at a time within the
+  host's headroom. A restored seat's token file ends with its holder, and the
+  next restore sweeps the file a killed holder left. See the
+  [CLI reference](docs/cli.md).
 - Mail that no session will collect can be found, handed to a successor or
   closed (`synapse mailbox orphans`, `handover`, `close` and `drain`, and
   `synapse doctor --mailbox-orphans`), and mail addressed to a role waits in
@@ -348,7 +357,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.58 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.59 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities

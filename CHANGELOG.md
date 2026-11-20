@@ -18,6 +18,23 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.59] - 2026-11-20
+
+Core 0.99.59 adds seats that survive a crash or a reboot. `synapse seat-hold`
+holds a seat's dedicated name for its agent's whole lifetime without displacing
+a live holder; a session ledger records every agent session on a Linux host; and
+`synapse ledger restore` starts again the seats a crash or a reboot cut, behind
+the holder, from an empty environment, within the host's headroom, and with an
+honest record when it is interrupted. A restored seat's token file ends with its
+holder, and the next restore sweeps the file a killed holder left. It fixes a
+Grok wake whose hint wraps over the composer box, re-checks a changed gate grant
+file, refuses an upstream length before parsing it, lets notification ledger
+readers share the state root, keeps label refresh hooks off the pane, keeps the
+test suite off a hub already running, keeps a group seat's tab form, defaults a
+task's project only at creation, and keeps a verification's 32-hex attempt id.
+
+### Added
+
 - **One live holder per seat.** `synapse seat-hold --identity ID --nonce N --
   <agent>` holds the seat's dedicated name, `<identity>-seat`, for the agent's
   whole lifetime, and starts the agent only once the hub has accepted it. The
