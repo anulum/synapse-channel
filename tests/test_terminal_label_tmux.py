@@ -39,6 +39,7 @@ from synapse_channel.terminal_label import NOT_DECLARED, TerminalDetails
 from synapse_channel.terminal_label_tmux import (
     SAVED_OPTION,
     TITLE_OWNER_OPTION,
+    TITLE_WRITTEN_OPTION,
     LabelResult,
     apply,
     enabled,
@@ -46,6 +47,7 @@ from synapse_channel.terminal_label_tmux import (
     own_session,
     restore,
     stored_details,
+    title_writes,
 )
 
 pytestmark = pytest.mark.skipif(
@@ -201,28 +203,76 @@ def test_an_explicit_label_replaces_a_hand_set_title(server: Server) -> None:
     assert replaced.label == "ACAACS · SYNAPSE-CHANNEL · claude"
     assert server.option(name, "set-titles-string") == replaced.label
     assert server.option(name, TITLE_OWNER_OPTION) == _DETAILS.seat
+    assert server.option(name, TITLE_WRITTEN_OPTION) == replaced.label
+
+
+def test_a_refresh_rewrites_a_title_this_command_wrote(server: Server) -> None:
+    """A new label is written when the current title is the one synapse recorded."""
+    name = server.session("work")
+    _apply(server, name)
+    changed = replace(_DETAILS, project=_GROUP)
+    refreshed = _apply(server, name, changed, keep_hand_title=True)
+
+    assert refreshed.label == "ACAACS · claude"
+    assert server.option(name, "set-titles-string") == "ACAACS · claude"
+    assert server.option(name, TITLE_OWNER_OPTION) == _DETAILS.seat
+    assert server.option(name, TITLE_WRITTEN_OPTION) == "ACAACS · claude"
+
+
+def test_restore_clears_both_title_markers(server: Server) -> None:
+    name = server.session("work")
+    _apply(server, name)
+    assert restore(server.tmux_bin, name, runner=subprocess.run).applied
+    listed = server.options(name)
+    assert TITLE_OWNER_OPTION not in listed
+    assert TITLE_WRITTEN_OPTION not in listed
+
+
+def test_a_changed_label_is_not_treated_as_hand_set() -> None:
+    """The recorded title, not the newly computed one, decides ownership."""
+    old = "ACAACS · AGENTIC-COORDINATION-ASSURANCE-AND-CONTINUITY-SYSTEMS · claude"
+    shown, options = title_writes(
+        keep=True,
+        owner="AGENTIC/claude-f636",
+        current=old,
+        written=old,
+        label="ACAACS · claude",
+        seat="AGENTIC/claude-f636",
+    )
+    assert shown == "ACAACS · claude"
+    assert (TITLE_OWNER_OPTION, "operator") not in options
+    assert (TITLE_WRITTEN_OPTION, "ACAACS · claude") in options
+    assert (
+        hand_owns_title(keep=True, owner="AGENTIC/claude-f636", current=old, written=None) is False
+    )
 
 
 @pytest.mark.parametrize(
-    ("keep", "owner", "current", "expected"),
+    ("keep", "owner", "current", "written", "expected"),
     [
-        (False, "operator", "mine", False),
-        (True, "operator", "mine", True),
-        (True, None, "tmux", False),
-        (True, "SYNAPSE-CHANNEL/claude-7f3a", "ACAACS · SYNAPSE-CHANNEL · claude", False),
-        (True, "SYNAPSE-CHANNEL/claude-7f3a", "mine", True),
+        (False, "operator", "mine", "old", False),
+        (True, "operator", "mine", "old", True),
+        (True, None, "tmux", None, False),
+        (
+            True,
+            "SYNAPSE-CHANNEL/claude-7f3a",
+            "ACAACS · SYNAPSE-CHANNEL · claude",
+            "ACAACS · SYNAPSE-CHANNEL · claude",
+            False,
+        ),
+        (
+            True,
+            "SYNAPSE-CHANNEL/claude-7f3a",
+            "mine",
+            "ACAACS · SYNAPSE-CHANNEL · claude",
+            True,
+        ),
     ],
 )
-def test_hand_owns_title(keep: bool, owner: str | None, current: str, expected: bool) -> None:
-    assert (
-        hand_owns_title(
-            keep=keep,
-            owner=owner,
-            current=current,
-            label="ACAACS · SYNAPSE-CHANNEL · claude",
-        )
-        is expected
-    )
+def test_hand_owns_title(
+    keep: bool, owner: str | None, current: str, written: str | None, expected: bool
+) -> None:
+    assert hand_owns_title(keep=keep, owner=owner, current=current, written=written) is expected
 
 
 def test_apply_sets_only_the_named_session_and_no_global_option(server: Server) -> None:

@@ -133,9 +133,11 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+  `operator` in `@synapse_label_title_owner`. A refresh compares the title
+  with the one the command last wrote, not with the title it would write now.
+
 - A seat whose project is its group keeps the tab form `<abbreviation> ·
   <vendor>`. `synapse label --refresh` leaves a title set by hand and records
-  `operator` in `@synapse_label_title_owner`.
 
 - `synapse task declare` with no `--project` sends the project of a
   `PROJECT/name` identity as the default used when the task is created. A

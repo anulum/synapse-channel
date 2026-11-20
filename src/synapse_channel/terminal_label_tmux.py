@@ -53,6 +53,9 @@ SAVED_OPTION = "@synapse_label_saved"
 TITLE_OWNER_OPTION = "@synapse_label_title_owner"
 """Who set the tab title: the seat, ``synapse``, or ``operator``."""
 
+TITLE_WRITTEN_OPTION = "@synapse_label_title_written"
+"""The exact title this command last wrote."""
+
 HOOKS = ("client-resized", "client-attached")
 """Session hooks that lay the status lines out again."""
 
@@ -193,36 +196,45 @@ def title_writes(
     keep: bool,
     owner: str | None,
     current: str | None,
+    written: str | None,
     label: str,
     seat: str,
 ) -> tuple[str, tuple[tuple[str, str], ...]]:
     """Return the title to report and the title options a call should write.
 
     A refresh that finds a hand-set title writes only the operator marker.
-    Any other call writes the label and records the seat that set it.
+    Any other call writes the label and records the title it wrote.
     """
-    if hand_owns_title(keep=keep, owner=owner, current=current, label=label):
+    if hand_owns_title(keep=keep, owner=owner, current=current, written=written):
         shown = current or label
         if owner == "operator":
             return shown, ()
         return shown, ((TITLE_OWNER_OPTION, "operator"),)
     setter = seat if seat != NOT_DECLARED else "synapse"
-    return label, (("set-titles-string", label), (TITLE_OWNER_OPTION, setter))
+    return label, (
+        ("set-titles-string", label),
+        (TITLE_OWNER_OPTION, setter),
+        (TITLE_WRITTEN_OPTION, label),
+    )
 
 
-def hand_owns_title(*, keep: bool, owner: str | None, current: str | None, label: str) -> bool:
+def hand_owns_title(
+    *, keep: bool, owner: str | None, current: str | None, written: str | None
+) -> bool:
     """Return whether a refresh must leave the tab title as it stands.
 
-    An explicit request sets the title. A refresh leaves a title this command
-    did not write, and any title already marked as the operator's.
+    The title is hand-set when it differs from the title this command last
+    wrote, or when the owner marker already says ``operator``. A session
+    labelled by an older release has no written title and is not treated as
+    hand-set. An explicit request always rewrites.
     """
     if not keep:
         return False
     if owner == "operator":
         return True
-    if not owner:
+    if not written:
         return False
-    return bool(current) and current != label
+    return bool(current) and current != written
 
 
 def apply(
@@ -275,6 +287,7 @@ def apply(
         keep=keep_hand_title,
         owner=tmux.option(TITLE_OWNER_OPTION),
         current=tmux.option("set-titles-string"),
+        written=tmux.option(TITLE_WRITTEN_OPTION),
         label=label,
         seat=details.seat,
     )
@@ -328,5 +341,6 @@ def restore(tmux_bin: str, session: str, *, runner: CommandRunner) -> LabelResul
         tmux.ok("set-hook", "-u", "-t", tmux.target, name)
     tmux.unset(DETAILS_OPTION)
     tmux.unset(TITLE_OWNER_OPTION)
+    tmux.unset(TITLE_WRITTEN_OPTION)
     tmux.unset(SAVED_OPTION)
     return LabelResult(True, "the session's earlier label and status were restored")
