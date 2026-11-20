@@ -188,17 +188,35 @@ def _process_uid(pid: int) -> int | None:
         return None
 
 
-def _live_holder_nonces() -> frozenset[str]:
-    """Return nonces of this user's live seat holders, read in memory only."""
-    commands = {pid: proc.argv for pid, proc in read_procs().items()}
+def _live_holder_nonces() -> frozenset[str] | None:
+    """Return nonces of this user's live seat holders, read in memory only.
+
+    ``None`` means this host's process table cannot be read: it is missing (no
+    ``/proc``), or it does not show this very process with its owner. Then no
+    holder can be ruled out.
+    """
+    try:
+        procs = read_procs()
+    except OSError:
+        return None
+    if os.getpid() not in procs or _process_uid(os.getpid()) is None:
+        return None
+    commands = {pid: proc.argv for pid, proc in procs.items()}
     return nonces_of_live_holders(commands, uid=os.geteuid(), owner_of=_process_uid)
 
 
-def _sweep_token_files(*, execute: bool) -> int:
-    """Count token files old enough to sweep; remove them only when executing."""
+def _sweep_token_files(*, execute: bool) -> int | None:
+    """Count token files old enough to sweep; remove them only when executing.
+
+    ``None`` means the sweep did not run, because no live holder could be ruled
+    out, so no file was counted or removed.
+    """
+    live = _live_holder_nonces()
+    if live is None:
+        return None
     return sweep_stale_token_files(
         default_marker_dir(),
-        _live_holder_nonces(),
+        live,
         execute=execute,
         minimum_age=MARKER_WAIT_SECONDS + TOKEN_SWEEP_MARGIN_SECONDS,
     )
@@ -236,7 +254,12 @@ def _print_plan(
     print(f"environment: passes {', '.join(env['passes'])}; drops {', '.join(env['drops']) or '-'}")
     for entry in entries:
         print(_entry_line(entry))
-    print(f"stale token files: {head['stale_token_files']}")
+    stale = head["stale_token_files"]
+    print(
+        "stale token files: not checked (this host's process table cannot be read)"
+        if stale is None
+        else f"stale token files: {stale}"
+    )
     print(f"{sum(entry.state == START for entry in entries)} to start")
 
 

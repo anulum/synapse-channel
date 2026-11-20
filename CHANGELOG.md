@@ -102,7 +102,8 @@ task's project only at creation, and keeps a verification's 32-hex attempt id.
   and, while holding it, before it plans, removes those regular files when
   their name is `<safe-key>.<nonce>.token`, this user owns them, they are
   older than that bound, and no live `seat-hold --nonce` process of this user
-  still holds that nonce. A younger file is left. It then holds its own hub
+  still holds that nonce. A younger file is left, and a host whose process
+  table cannot be read sweeps nothing and says so. It then holds its own hub
   connection as `<host>-restore-planner`
   (45 s up before the first start, an answer within 5 s before every start, a
   drop starts the wait again, another hub stops the run), waits for headroom

@@ -17,7 +17,7 @@ import socket
 import stat
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -452,6 +452,7 @@ def test_a_live_holders_stale_token_file_is_not_counted(
     _age(stale)
     holder = Proc(os.getpid(), 1, ("synapse", "seat-hold", "--nonce", NONCE), 1)
     monkeypatch.setattr(cli_ledger_restore, "read_procs", lambda: {os.getpid(): holder})
+    monkeypatch.setattr(cli_ledger_restore, "_process_uid", lambda pid: os.geteuid())
     assert _restore(tmp_path) == 0
     assert "stale token files: 0" in capsys.readouterr().out
     assert stale.is_file()
@@ -510,7 +511,9 @@ def test_live_holder_nonces_come_only_from_this_users_seat_hold() -> None:
     assert nonces_of_live_holders(commands, uid=7, owner_of=owner_of) == frozenset({nonce})
     assert nonces_of_live_holders(commands, uid=9, owner_of=owner_of) == frozenset()
     assert nonces_of_live_holders({4: commands[4]}, uid=7, owner_of=owner_of) == frozenset()
-    assert cli_ledger_restore._process_uid(os.getpid()) == os.getuid()
+    # A process's owner is read from /proc; a host without it states no owner.
+    own = os.getuid() if Path("/proc").is_dir() else None
+    assert cli_ledger_restore._process_uid(os.getpid()) == own
     assert cli_ledger_restore._process_uid(1 << 30) is None
 
 
@@ -518,8 +521,13 @@ def test_a_dry_run_counts_a_cut_token_file_and_execute_removes_it(
     tmp_path: Path,
     ledger: Path,
     marker_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    # A readable process table: this process with its owner, and no seat holder.
+    me = Proc(os.getpid(), 1, ("python",), 1)
+    monkeypatch.setattr(cli_ledger_restore, "read_procs", lambda: {os.getpid(): me})
+    monkeypatch.setattr(cli_ledger_restore, "_process_uid", lambda pid: os.geteuid())
     stale = _token(marker_dir, f"T_seat.{NONCE}.token")
     fresh = _token(marker_dir, "T_seat.nonce-0008.token", "fresh\n")
     _age(stale)
@@ -540,7 +548,40 @@ def test_the_restore_sees_a_live_holder_nonce(
 ) -> None:
     proc = Proc(os.getpid(), 1, ("synapse", "seat-hold", "--nonce", NONCE), 1)
     monkeypatch.setattr(cli_ledger_restore, "read_procs", lambda: {os.getpid(): proc})
+    monkeypatch.setattr(cli_ledger_restore, "_process_uid", lambda pid: os.geteuid())
     assert cli_ledger_restore._live_holder_nonces() == frozenset({NONCE})
+
+
+def _no_table() -> dict[int, Proc]:
+    raise OSError("no process table")
+
+
+@pytest.mark.parametrize(
+    ("procs", "owner"),
+    [
+        (_no_table, os.geteuid()),
+        (lambda: {}, os.geteuid()),
+        (lambda: {os.getpid(): Proc(os.getpid(), 1, ("python",), 1)}, None),
+    ],
+    ids=["unreadable", "without-this-process", "without-an-owner"],
+)
+def test_an_unreadable_process_table_sweeps_nothing(
+    tmp_path: Path,
+    ledger: Path,
+    marker_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    procs: Callable[[], dict[int, Proc]],
+    owner: int | None,
+) -> None:
+    """No live holder can be ruled out, so no token file is counted or removed."""
+    stale = _token(marker_dir, f"T_seat.{NONCE}.token")
+    _age(stale)
+    monkeypatch.setattr(cli_ledger_restore, "read_procs", procs)
+    monkeypatch.setattr(cli_ledger_restore, "_process_uid", lambda pid: owner)
+    assert cli_ledger_restore._live_holder_nonces() is None
+    assert cli_ledger_restore._sweep_token_files(execute=True) is None
+    assert stale.is_file()
 
 
 # --- the host's facts ----------------------------------------------------------------
