@@ -47,6 +47,7 @@ from synapse_channel.terminal_label_tmux import (
     label_hook_log,
     own_session,
     refresh_hook,
+    refresh_script,
     restore,
     stored_details,
     title_writes,
@@ -76,11 +77,12 @@ _NO_REFRESH = ["true"]
 def test_the_refresh_hook_prints_nothing_and_keeps_errors(tmp_path: Path) -> None:
     """The hook text discards success output and appends errors to the log."""
     log = tmp_path / "synapse" / "label-hook.log"
-    hook = refresh_hook(["synapse", "label", "--refresh"], log)
+    body = refresh_script(["synapse", "label", "--refresh"], log)
+    hook = refresh_hook(["true"], log)
 
-    assert hook.startswith("run-shell -b ")
-    assert ">/dev/null 2>>" in hook
-    assert "label-hook.log" in hook
+    assert body.startswith("{") and body.endswith(">/dev/null 2>&1 || true")
+    assert ">/dev/null 2>>" in body
+    assert hook.startswith("run-shell -b ") and "sh " in hook
     assert label_hook_log({"XDG_STATE_HOME": str(tmp_path)}) == log
     assert label_hook_log({"HOME": str(tmp_path)}) == (
         tmp_path / ".local" / "state" / "synapse" / "label-hook.log"
@@ -459,7 +461,10 @@ def test_a_refresh_that_prints_leaves_the_active_pane_out_of_view_mode(
         refresh_command=refresh,
         hook_log=log,
     ).applied
-    assert ">/dev/null" in server.tmux("show-hooks", "-t", f"={name}:")
+    script_file = log.with_name("label-refresh.sh")
+    hook_text = server.tmux("show-hooks", "-t", f"={name}:")
+    assert str(script_file) in hook_text
+    assert ">/dev/null 2>&1" in script_file.read_text(encoding="utf-8")
 
     server.resize(master, 90)
 
@@ -473,6 +478,45 @@ def test_a_refresh_that_prints_leaves_the_active_pane_out_of_view_mode(
     recorded = log.read_text(encoding="utf-8")
     assert "a warning" in recorded
     assert "label and 3 status line(s) set" not in recorded
+
+
+def test_an_uncreatable_log_does_not_cover_the_pane(server: Server, tmp_path: Path) -> None:
+    """A redirect the shell cannot open stays off the pane."""
+    name = server.session("blocked", 125)
+    master = server.attach(name, 125)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    log = blocker / "synapse" / "label-hook.log"
+    script = "import sys; print('label and 3 status line(s) set'); print('boom', file=sys.stderr)"
+    assert apply(
+        server.tmux_bin,
+        name,
+        _DETAILS,
+        runner=subprocess.run,
+        refresh_command=[sys.executable, "-c", script],
+        hook_log=log,
+    ).applied
+
+    server.resize(master, 90)
+    time.sleep(1.0)
+    in_mode = server.tmux("display-message", "-p", "-t", f"={name}:", "#{pane_in_mode}")
+    assert in_mode.strip() == "0"
+
+
+def test_the_hook_log_rotates_past_256_kib(tmp_path: Path) -> None:
+    """One generation is kept, and the new log holds only the new error."""
+    log = tmp_path / "label-hook.log"
+    log.write_bytes(b"old\n" + b"x" * (256 * 1024))
+    body = refresh_script(
+        [sys.executable, "-c", "import sys; print('new-error', file=sys.stderr)"],
+        log,
+    )
+    completed = subprocess.run(["sh", "-c", body], capture_output=True, text=True, check=False)
+
+    assert completed.returncode == 0
+    assert completed.stdout == "" and completed.stderr == ""
+    assert (tmp_path / "label-hook.log.1").read_bytes().startswith(b"old\n")
+    assert log.read_text(encoding="utf-8") == "new-error\n"
 
 
 def test_the_hook_passes_format_characters_on_without_expanding_them(

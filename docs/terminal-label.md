@@ -107,9 +107,11 @@ was applied. The session option `@synapse_label_title_owner` then reads
 `operator`. While the label command itself last wrote the title, the option
 reads the seat. An explicit `synapse label` sets the title again.
 
-The hook prints nothing on success, so tmux does not cover the pane. Errors
-from that command are appended to `$XDG_STATE_HOME/synapse/label-hook.log`,
-or to `~/.local/state/synapse/label-hook.log` when the variable is unset.
+The hook prints nothing and exits zero, including when the error log cannot
+be created, so tmux does not cover the pane. Errors from the command are appended to
+`$XDG_STATE_HOME/synapse/label-hook.log`, or to
+`~/.local/state/synapse/label-hook.log` when the variable is unset. A log
+over 256 KiB is moved to `label-hook.log.1` before the next error is written.
 
 ## What the command changes, and how to undo it
 

@@ -28,6 +28,7 @@ import json
 import os
 import shlex
 import subprocess  # nosec B404 # fixed argument vectors only, never a shell
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -247,17 +248,58 @@ def label_hook_log(environ: Mapping[str, str]) -> Path:
     return Path(state) / "synapse" / "label-hook.log"
 
 
-def refresh_hook(refresh_command: Sequence[str], log: Path) -> str:
-    """Return a background tmux hook that prints nothing.
+_LOG_LIMIT = 256 * 1024
+"""Rotate the label hook log once it passes this many bytes."""
 
-    Success text is discarded, so tmux does not open view mode over the pane.
-    The command's errors are appended to ``log``.
+
+def refresh_script(refresh_command: Sequence[str], log: Path) -> str:
+    """Return the silenced shell script a label hook runs.
+
+    The whole group discards the shell's own errors, including a redirect
+    that cannot create the log. The command's errors are appended to the log.
+    A log over 256 KiB is moved to ``label-hook.log.1`` first. The script
+    exits 0: tmux opens view mode when a hook command exits non-zero, even
+    when that command printed nothing.
     """
     command = shlex.join(refresh_command)
     directory = shlex.quote(str(log.parent))
     target = shlex.quote(str(log))
-    script = f"mkdir -p {directory} >/dev/null 2>&1; {command} >/dev/null 2>>{target}"
-    return "run-shell -b " + shlex.quote(inert(script))
+    previous = shlex.quote(str(log.with_name(f"{log.name}.1")))
+    rotate = (
+        f'[ ! -f {target} ] || [ "$(wc -c < {target})" -le {_LOG_LIMIT} ]'
+        f" || mv -f {target} {previous}"
+    )
+    group = f"{{ mkdir -p {directory}; {rotate}; {command} >/dev/null 2>>{target}; }}"
+    return f"{group} >/dev/null 2>&1 || true"
+
+
+def _write_hook_script(log: Path, body: str) -> Path:
+    """Store the refresh script where ``sh`` can run it.
+
+    When the log directory cannot be created, the script is kept in a
+    temporary file so the hook text itself stays a short ``sh`` command.
+    """
+    try:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        path = log.with_name("label-refresh.sh")
+        path.write_text(body, encoding="utf-8")
+    except OSError:
+        descriptor, name = tempfile.mkstemp(prefix="synapse-label-", suffix=".sh")
+        os.write(descriptor, body.encode())
+        os.close(descriptor)
+        path = Path(name)
+    path.chmod(0o700)
+    return path
+
+
+def refresh_hook(refresh_command: Sequence[str], log: Path) -> str:
+    """Return a background tmux hook that prints nothing.
+
+    The script runs under ``sh``. A failed redirect stays inside the silenced
+    group, including when tmux's own shell is not a POSIX shell.
+    """
+    script = _write_hook_script(log, refresh_script(refresh_command, log) + "\n")
+    return "run-shell -b " + shlex.quote(inert("sh " + shlex.quote(str(script))))
 
 
 def _resolved_hook_log(hook_log: Path | None, environ: Mapping[str, str] | None) -> Path:
