@@ -49,7 +49,7 @@ def test_parser_task_update_project_and_expected_version() -> None:
 
 def test_parser_task_new_flags_default_cleanly() -> None:
     declare = cli.build_parser().parse_args(["task", "declare", "BUILD"])
-    assert declare.project == ""
+    assert declare.project is None
     assert declare.expected_version is None
     update = cli.build_parser().parse_args(["task", "update", "BUILD"])
     assert update.project is None
@@ -94,21 +94,42 @@ async def test_cmd_task_update_with_matching_expected_version() -> None:
         assert task.version == 2
 
 
-async def test_cmd_task_declare_without_flags_keeps_legacy_defaults() -> None:
+async def test_declare_without_project_uses_the_identity_namespace() -> None:
+    """A PROJECT/name identity supplies the project when --project is omitted."""
     async with running_hub(SynapseHub()) as (hub, uri):
         ns = argparse.Namespace(
             task_id="BUILD",
             title="Compile",
             depends_on=None,
+            project=None,
+            expected_version=None,
             uri=uri,
-            name="P",
+            name="SYNAPSE-CHANNEL/seat",
             token=None,
         )
         code = await asyncio.to_thread(cli_tasks._cmd_task_declare, ns)
         assert code == 0
-        task = hub.blackboard.tasks["BUILD"]
-        assert task.project == ""
-        assert task.version == 1
+        assert hub.blackboard.tasks["BUILD"].project == "SYNAPSE-CHANNEL"
+
+
+async def test_declare_without_a_derivable_project_refuses(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A bare identity cannot declare a task, and the refusal names --project."""
+    async with running_hub(SynapseHub()) as (hub, uri):
+        ns = argparse.Namespace(
+            task_id="BUILD",
+            title="Compile",
+            depends_on=None,
+            project=None,
+            uri=uri,
+            name="USER",
+            token=None,
+        )
+        code = await asyncio.to_thread(cli_tasks._cmd_task_declare, ns)
+        assert code == 2
+        assert "--project" in capsys.readouterr().err
+        assert "BUILD" not in hub.blackboard.tasks
 
 
 async def test_cmd_task_update_with_stale_expected_version_fails_loudly(

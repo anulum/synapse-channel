@@ -171,7 +171,9 @@ async def test_registered_advisory_storage_errors_remain_safe_and_retryable(
     if fault == "invalid-key":
         args["event_store_key_file"] = str(key)
     with isolated_hub(tmp_path) as hub:
-        declared = run_cli("task", "declare", _TASK, "--title", "recovery", uri=hub.uri)
+        declared = run_cli(
+            "task", "declare", "--project", "TEST", _TASK, "--title", "recovery", uri=hub.uri
+        )
         assert declared.ok(), declared.output
         async with _session(hub.uri, tmp_path, feed, cursor) as session:
             for _ in range(2):
@@ -206,7 +208,9 @@ async def test_registered_advisory_preserves_authored_missing_store_refusal(
     else:
         args["task_id"] = _TASK
     with isolated_hub(tmp_path) as hub:
-        declared = run_cli("task", "declare", _TASK, "--title", "recovery", uri=hub.uri)
+        declared = run_cli(
+            "task", "declare", "--project", "TEST", _TASK, "--title", "recovery", uri=hub.uri
+        )
         assert declared.ok(), declared.output
         async with _session(hub.uri, tmp_path, tmp_path / "feed", tmp_path / "cursor") as session:
             assert _text(await session.call_tool(tool, args)) == f"missing event store: {db}"

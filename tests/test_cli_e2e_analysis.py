@@ -36,7 +36,9 @@ def _claim_seq(db_path: Path) -> int:
 
 def _populate(uri: str) -> None:
     """Declare a task and take then release a file-scoped lease on the hub."""
-    declared = run_cli("task", "declare", "BUILD", "--title", "build step", uri=uri)
+    declared = run_cli(
+        "task", "declare", "--project", "TEST", "BUILD", "--title", "build step", uri=uri
+    )
     assert declared.ok(), declared.output
     # `lock <task> --paths ... -- <cmd>`: hold the lease while a trivial command
     # runs, writing a claim then a release to the log.

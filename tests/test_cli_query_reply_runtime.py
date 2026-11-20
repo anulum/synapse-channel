@@ -47,7 +47,7 @@ async def _wait_until_the_socket_retires(
     [
         (
             "declare",
-            ("--title", "Compile"),
+            ("--project", "TEST", "--title", "Compile"),
             MessageType.LEDGER_TASK,
             MessageType.LEDGER_TASK_POSTED,
         ),
@@ -74,7 +74,15 @@ async def test_lost_task_confirmation_is_unknown_without_repeating_a_write(
         async with running_hub(SynapseHub(journal=journal)) as (hub, uri):
             if action != "declare":
                 seed = await asyncio.to_thread(
-                    run_cli, "task", "declare", "BUILD", "--title", "Compile", uri=uri
+                    run_cli,
+                    "task",
+                    "declare",
+                    "--project",
+                    "TEST",
+                    "BUILD",
+                    "--title",
+                    "Compile",
+                    uri=uri,
                 )
                 assert seed.ok(), seed.output
             async with query_reply_proxy(uri, response_type=reply_type, lose_reply=True) as (

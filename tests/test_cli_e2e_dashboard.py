@@ -24,7 +24,9 @@ from cli_e2e_helpers import http_get, isolated_dashboard, isolated_hub, run_cli
 def test_dashboard_serves_the_read_only_fleet_snapshot(tmp_path: Path) -> None:
     """``dashboard`` publishes ``/snapshot.json`` with the fleet snapshot shape."""
     with isolated_hub(tmp_path) as hub:
-        run_cli("task", "declare", "BUILD", "--title", "build step", uri=hub.uri)
+        run_cli(
+            "task", "declare", "--project", "TEST", "BUILD", "--title", "build step", uri=hub.uri
+        )
         with isolated_dashboard(hub.uri) as (base, token):
             status, body = http_get(
                 f"{base}/snapshot.json", headers={"Authorization": f"Bearer {token}"}

@@ -24,7 +24,7 @@ from cli_e2e_helpers import isolated_hub, run_cli
 
 def _declare(uri: str) -> None:
     """Declare a single board task for the routing/bidding journeys."""
-    run_cli("task", "declare", "BUILD", "--title", "build step", uri=uri)
+    run_cli("task", "declare", "--project", "TEST", "BUILD", "--title", "build step", uri=uri)
 
 
 # --- event-log advisories ----------------------------------------------------

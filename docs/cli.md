@@ -3480,8 +3480,8 @@ until its TTL or the hub's offline-holder policy releases it on a later claim
 attempt, unless explicitly released):
 
 ```bash
-synapse task declare BUILD --title "Compile the package"
-synapse task declare TEST --title "Run the suite" --depends-on BUILD
+synapse task declare BUILD --title "Compile the package" --name SYNAPSE-CHANNEL/planner
+synapse task declare TEST --title "Run the suite" --depends-on BUILD --name SYNAPSE-CHANNEL/planner
 synapse board                                  # BUILD ready, TEST blocked on it
 synapse task update BUILD --status done        # TEST now unblocks
 synapse task progress TEST "started" --kind note
@@ -3496,7 +3496,10 @@ the key or either request payload. The key is scoped by authenticated sender and
 message type, so declare, update, and progress keys do not collide. Omitting the
 flag retains the documented at-least-once behaviour.
 
-Tasks carry an optional project scope and a monotonic version for
+A declare carries a project. With no `--project`, the command uses the
+project of the declaring identity (`PROJECT/name`). When that identity has
+no project, the command exits 2 and names `--project`. It does not declare
+a task without a project. Tasks also carry a monotonic version for
 compare-and-set updates:
 
 ```bash
@@ -3505,11 +3508,11 @@ synapse task declare FIX --title "Repair parser" --expected-version 0   # create
 synapse task update FIX --suggested-owner SYNAPSE-CHANNEL/kimi-3dcd --expected-version 2
 ```
 
-A re-declaration with a conflicting non-empty `--project` is refused (a blank
-value keeps the existing scope); `--expected-version` refuses the write unless
-the board's current `version` matches, so two planners cannot silently
-overwrite each other's assignment. A refusal (stale version, scope conflict)
-prints the hub's reason and exits non-zero.
+A re-declaration with a conflicting `--project` is refused.
+`--expected-version` refuses the write unless the board's current `version`
+matches, so two planners cannot silently overwrite each other's assignment.
+A refusal (stale version, scope conflict) prints the hub's reason and exits
+non-zero.
 
 When a write follows a task event observed from another hub, bind that fact to
 the complete event rather than relying on wall-clock order:

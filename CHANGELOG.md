@@ -133,6 +133,10 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- `synapse task declare` with no `--project` uses the project of a
+  `PROJECT/name` identity. When that identity has no project, the command
+  exits 2 and names `--project`. It does not declare a task without a project.
+
 - A verification record keeps a 32-hex `attempt_id` with its other digest-shaped
   evidence. A 32-hex value under any other key is still dropped, as is every
   value that is not 40 or 64 lower-case hex.

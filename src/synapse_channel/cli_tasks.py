@@ -32,6 +32,7 @@ from typing import Any
 
 from synapse_channel.cli_queries import _query_hub
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
+from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.ledger import progress_note_refusal
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.task_causality import (
@@ -98,10 +99,30 @@ async def _task_action(
     )
 
 
+def declare_project(project: str | None, name: str) -> str | None:
+    """Return the project a declare sends.
+
+    An omitted or blank project is the namespace of a ``PROJECT/name``
+    identity. A name with no slash has no project, and the declare is refused.
+    """
+    chosen = project if project else project_of(name)
+    return chosen or None
+
+
 def _cmd_task_declare(
     args: argparse.Namespace, *, agent_factory: AgentFactory = SynapseAgent
 ) -> int:
-    """Declare a task on the shared blackboard."""
+    """Declare a task on the shared blackboard.
+
+    A declare that still has no project exits 2 before connecting.
+    """
+    project = declare_project(getattr(args, "project", None), getattr(args, "name", "") or "")
+    if project is None:
+        print(
+            "task declare needs a project: pass --project, or declare as PROJECT/name",
+            file=sys.stderr,
+        )
+        return 2
     deps = tuple(args.depends_on) if args.depends_on else ()
 
     async def send(agent: SynapseAgent) -> None:
@@ -109,7 +130,7 @@ def _cmd_task_declare(
             args.task_id,
             title=args.title,
             depends_on=deps,
-            project=getattr(args, "project", ""),
+            project=project,
             expected_version=getattr(args, "expected_version", None),
             causal_parent=getattr(args, "causal_parent", None),
             idem_key=getattr(args, "idem_key", None),
@@ -259,8 +280,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     declare.add_argument(
         "--project",
-        default="",
-        help="Project namespace scope (empty keeps an existing scope on re-declare).",
+        default=None,
+        help="Project of a PROJECT/name identity when omitted. Refused when none.",
     )
     declare.add_argument(
         "--expected-version",

@@ -52,7 +52,9 @@ def _supervisor_assessments(db_path: Path, name: str) -> list[str]:
 
 def test_supervisor_reoffers_a_stalled_task(tmp_path: Path) -> None:
     with isolated_hub(tmp_path) as hub:
-        declared = run_cli("task", "declare", "T1", "--title", "stalled work", uri=hub.uri)
+        declared = run_cli(
+            "task", "declare", "--project", "TEST", "T1", "--title", "stalled work", uri=hub.uri
+        )
         assert declared.ok(), declared.output
         in_progress = run_cli("task", "update", "T1", "--status", "in_progress", uri=hub.uri)
         assert in_progress.ok(), in_progress.output

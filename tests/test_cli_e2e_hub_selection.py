@@ -24,7 +24,14 @@ def test_env_uri_routes_a_command_to_the_named_hub(tmp_path: Path) -> None:
     """A task declared with only ``SYNAPSE_URI`` set lands on that exact hub."""
     with isolated_hub(tmp_path) as hub:
         declared = run_cli(
-            "task", "declare", "ENVROUTE", "--title", "env routing", env={"SYNAPSE_URI": hub.uri}
+            "task",
+            "declare",
+            "--project",
+            "TEST",
+            "ENVROUTE",
+            "--title",
+            "env routing",
+            env={"SYNAPSE_URI": hub.uri},
         )
         assert declared.ok(), declared.output
         assert "declared ENVROUTE" in declared.stdout

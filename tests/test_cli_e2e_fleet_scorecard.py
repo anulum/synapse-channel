@@ -43,7 +43,9 @@ def test_packaged_command_pushes_real_trace_and_metric_batches(tmp_path: Path) -
     thread.start()
     try:
         with isolated_hub(tmp_path) as hub:
-            declared = run_cli("task", "declare", "BUILD", "--title", "build", uri=hub.uri)
+            declared = run_cli(
+                "task", "declare", "--project", "TEST", "BUILD", "--title", "build", uri=hub.uri
+            )
             assert declared.ok(), declared.output
             locked = run_cli("lock", "BUILD", "--paths", "src/app.py", "--", "true", uri=hub.uri)
             assert locked.ok(), locked.output

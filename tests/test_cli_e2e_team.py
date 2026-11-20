@@ -38,7 +38,14 @@ def test_team_launcher_stands_up_a_usable_hub(tmp_path: Path) -> None:
         assert who.ok(), who.output
 
         declared = run_cli(
-            "task", "declare", "TEAM-1", "--title", "coordinate the fleet", uri=hub_uri
+            "task",
+            "declare",
+            "--project",
+            "TEST",
+            "TEAM-1",
+            "--title",
+            "coordinate the fleet",
+            uri=hub_uri,
         )
         assert declared.ok(), declared.output
         assert _board_shows(hub_uri, "TEAM-1"), (

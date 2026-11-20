@@ -79,7 +79,9 @@ def test_install_shell_hook_writes_a_guarded_block_to_the_home_rc(tmp_path: Path
 def test_ingest_drains_events_and_a_cursor_resumes_without_repeats(tmp_path: Path) -> None:
     """``ingest`` prints the log as JSON lines and a cursor makes a re-run empty."""
     with isolated_hub(tmp_path) as hub:
-        run_cli("task", "declare", "INGEST-1", "--title", "drain me", uri=hub.uri)
+        run_cli(
+            "task", "declare", "--project", "TEST", "INGEST-1", "--title", "drain me", uri=hub.uri
+        )
 
         cursor = tmp_path / "cursor"
         first = run_cli("ingest", str(hub.db_path), "--cursor", str(cursor))
@@ -96,7 +98,9 @@ def test_ingest_drains_events_and_a_cursor_resumes_without_repeats(tmp_path: Pat
 def test_multihub_observe_folds_a_peer_logs_board(tmp_path: Path) -> None:
     """``multihub observe`` reads a peer hub's db file and reports its board."""
     with isolated_hub(tmp_path) as hub:
-        run_cli("task", "declare", "PEER-1", "--title", "peer task", uri=hub.uri)
+        run_cli(
+            "task", "declare", "--project", "TEST", "PEER-1", "--title", "peer task", uri=hub.uri
+        )
 
         observed = run_cli(
             "multihub", "observe", "--peer-db", str(hub.db_path), "--peer-id", "peerA", "--json"
@@ -118,7 +122,15 @@ async def test_multihub_follow_pulls_a_peers_board_over_a_connection(tmp_path: P
     try:
         async with running_hub(hub) as (_, uri):
             declared = await asyncio.to_thread(
-                run_cli, "task", "declare", "FOLLOW-1", "--title", "followed task", uri=uri
+                run_cli,
+                "task",
+                "declare",
+                "--project",
+                "TEST",
+                "FOLLOW-1",
+                "--title",
+                "followed task",
+                uri=uri,
             )
             assert declared.ok(), declared.output
 

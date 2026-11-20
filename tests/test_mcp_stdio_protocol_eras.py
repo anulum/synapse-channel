@@ -62,7 +62,9 @@ async def test_server_discover_opens_the_stateless_revision_with_the_same_tools(
 ) -> None:
     """A host that opens with ``server/discover`` gets ``2026-07-28`` and every tool."""
     with isolated_hub(tmp_path) as hub:
-        declared = run_cli("task", "declare", "ERA-1", "--title", "stdio era", uri=hub.uri)
+        declared = run_cli(
+            "task", "declare", "--project", "TEST", "ERA-1", "--title", "stdio era", uri=hub.uri
+        )
         assert declared.ok(), declared.output
         async with stdio_client(_bridge(hub.uri)) as (read, write):
             async with ClientSession(read, write) as session:
