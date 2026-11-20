@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import errno
-import fcntl
 import json
 import os
 import socket
@@ -24,6 +23,7 @@ from typing import Any
 import pytest
 
 from synapse_channel import session_ledger
+from synapse_channel.advisory_lock import locked
 from synapse_channel.restore_plan import ENDED, Scope, end_kind, judged
 from synapse_channel.session_ledger import (
     SCHEMA,
@@ -222,15 +222,12 @@ def test_other_lines_are_not_read_as_v1(tmp_path: Path) -> None:
 def test_a_held_lock_costs_a_launcher_its_line_not_its_time(tmp_path: Path) -> None:
     """The wait is bounded; the line is given up and reported."""
     append_event({"event": "start", "row_id": "r"}, directory=tmp_path, boot=BOOT)
-    fd = os.open(tmp_path / "ledger.lock", os.O_RDWR)
-    fcntl.flock(fd, fcntl.LOCK_EX)
-    try:
+    with locked(tmp_path / "ledger.lock", blocking=True, purpose="ledger test") as held:
+        assert held
         started = time.monotonic()
         with pytest.raises(LedgerError, match="the line was given up after 0.2 s"):
             append_event({"event": "end", "row_id": "r"}, directory=tmp_path, boot=BOOT, wait=0.2)
         assert time.monotonic() - started < 1.0
-    finally:
-        os.close(fd)
 
 
 def test_an_unusable_directory_is_a_ledger_error(tmp_path: Path) -> None:

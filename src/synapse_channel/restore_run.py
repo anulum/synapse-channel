@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import fcntl
 import os
 import signal
 import time
@@ -50,6 +49,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, TypeVar
 
+from synapse_channel.advisory_lock import locked
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.restore_grace import HubGraceError
 from synapse_channel.restore_pacing import Limits, Reading, wait_for_headroom
@@ -130,19 +130,14 @@ class RestoreBusyError(SynapseError):
 
 @contextlib.contextmanager
 def restore_lock(directory: Path) -> Iterator[None]:
-    """Hold the restore lock for the whole run, or raise :class:`RestoreBusyError` at once."""
-    fd = os.open(directory / LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
-    try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RestoreBusyError("another restore run holds the lock") from None
-        try:
-            yield
-        finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-    finally:
-        os.close(fd)
+    """Hold the restore lock for the whole run, or raise :class:`RestoreBusyError` at once.
+
+    The lock is the shared advisory lock, so this module imports on Windows too.
+    """
+    with locked(directory / LOCK_NAME, blocking=False, purpose="session ledger") as held:
+        if not held:
+            raise RestoreBusyError("another restore run holds the lock")
+        yield
 
 
 def child_environ(

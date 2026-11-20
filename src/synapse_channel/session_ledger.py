@@ -41,7 +41,6 @@ than ``SYN_IDENTITY`` and ``SYN_PROJECT``, screen text, or a token.
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import json
 import os
 import signal
@@ -53,6 +52,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.advisory_lock import locked
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.private_dir import ensure_private_dir
 
@@ -162,25 +162,20 @@ def _now() -> str:
 def _locked(
     directory: Path, wait: float, *, sleep: Callable[[float], None] = time.sleep
 ) -> Iterator[None]:
-    fd = os.open(directory / "ledger.lock", os.O_RDWR | os.O_CREAT, 0o600)
-    try:
-        deadline = time.monotonic() + wait
-        while True:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if time.monotonic() >= deadline:
-                    raise LedgerError(
-                        f"the ledger is locked; the line was given up after {wait:g} s"
-                    ) from None
-                sleep(0.05)
-        try:
-            yield
-        finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-    finally:
-        os.close(fd)
+    """Hold ``ledger.lock``, asking again until ``wait`` seconds have passed.
+
+    The lock is the shared advisory lock: ``flock`` on POSIX and a byte-range
+    lock on Windows, so importing the ledger needs no POSIX-only module.
+    """
+    deadline = time.monotonic() + wait
+    while True:
+        with locked(directory / "ledger.lock", blocking=False, purpose="session ledger") as held:
+            if held:
+                yield
+                return
+        if time.monotonic() >= deadline:
+            raise LedgerError(f"the ledger is locked; the line was given up after {wait:g} s")
+        sleep(0.05)
 
 
 def _next_seq(directory: Path, boot: str) -> int:
