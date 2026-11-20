@@ -24,7 +24,7 @@ import pytest
 from mcp_gate_helpers import owner_file, seat_token
 from mcp_http_helpers import tls_files
 from synapse_channel.mcp import gate_server
-from synapse_channel.mcp.gate import GateState
+from synapse_channel.mcp.gate import GateState, Refusal
 from synapse_channel.mcp.gate_config import GateConfig, GateSeat, new_bearer
 
 FUTURE = int(datetime(2099, 1, 1, tzinfo=UTC).timestamp())
@@ -329,6 +329,26 @@ async def test_connections_past_the_limit_are_closed(
 
 
 # --- responses ----------------------------------------------------------------------------
+
+
+def _upstream_head(length: bytes) -> bytes:
+    """One upstream response head with a single Content-Length."""
+    return b"HTTP/1.1 200 OK\r\nContent-Length: " + length + b"\r\n\r\n"
+
+
+async def test_upstream_content_length_is_bounded_before_it_is_parsed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A length wider than the bound is a 502 and is never parsed as an integer."""
+    monkeypatch.setattr(gate_server, "MAX_RESPONSE", 100)
+    reader = asyncio.StreamReader()
+    reader.feed_data(b"x" * 10)
+    reader.feed_eof()
+    assert await gate_server.read_response_body(reader, _upstream_head(b"10")) == b"x" * 10
+    for declared in (b"1000", b"12x", b"9" * 5000):
+        with pytest.raises(Refusal) as refusal:
+            await gate_server.read_response_body(asyncio.StreamReader(), _upstream_head(declared))
+        assert refusal.value.status == 502
 
 
 async def test_responses_are_relayed_and_bounded(

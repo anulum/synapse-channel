@@ -78,7 +78,7 @@ The configuration is an owner-only JSON file, `synapse-mcp-gate.v1`:
 | Headers | Only `Content-Type`, `Accept`, `Mcp-Session-Id`, `MCP-Protocol-Version`, `Last-Event-ID` and `User-Agent` are forwarded. The gate sets `Host`, `Authorization`, `Content-Length` and `Connection: close`. |
 | Framing | Origin-form targets only; no `CONNECT` or `TRACE`. Exactly one `Content-Length` of at most seven digits, or `Transfer-Encoding: chunked` alone with hex chunk sizes of at most eight digits; at most 1 MiB, forwarded with an exact `Content-Length`. Folded lines, NUL, bare CR, duplicate `Host` and every other framing give `400`. |
 | Deadlines | 10 s for the TLS handshake and the whole head, 30 s for the whole body. Event streams close after 120 s of silence. |
-| Bounds | 64 KiB heads (`431` above), 16 MiB buffered responses (`502` above), 32 connections, 1,024 remembered sessions. After 20 failed authentications in 10 s, each refusal waits a second. |
+| Bounds | 64 KiB heads (`431` above), 16 MiB buffered responses (`502` above). A `Content-Length` wider than the decimal width of that 16 MiB bound is the same `502` and is not parsed as an integer. 32 connections, 1,024 remembered sessions. After 20 failed authentications in 10 s, each refusal waits a second. |
 | Logs | Method, path without its query, seat and status. Never a bearer, a token, a body or a header value. |
 
 ## Exposure

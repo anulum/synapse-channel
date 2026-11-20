@@ -133,6 +133,9 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- An upstream `Content-Length` wider than the decimal width of the buffered
+  response bound is a `502`. It is not parsed as an integer.
+
   lock, so two readers on POSIX no longer report that the root is busy. On
   Windows that request takes the exclusive byte lock, so readers there still
   exclude one another. The read still refuses a damaged root and does not

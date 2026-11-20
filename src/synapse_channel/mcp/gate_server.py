@@ -97,9 +97,13 @@ async def read_response_body(reader: asyncio.StreamReader, head: bytes) -> bytes
     """Read a buffered upstream body of at most :data:`MAX_RESPONSE` bytes."""
     lengths = response_values(head, b"content-length")
     if lengths:
-        if not lengths[0].isdigit() or int(lengths[0]) > MAX_RESPONSE:
+        declared = lengths[0]
+        # Wider than the decimal width of the bound, ``int`` can raise before the comparison.
+        if not declared.isdigit() or len(declared) > len(str(MAX_RESPONSE)):
             raise Refusal(502, "upstream response too large")
-        return await reader.readexactly(int(lengths[0]))
+        if int(declared) > MAX_RESPONSE:
+            raise Refusal(502, "upstream response too large")
+        return await reader.readexactly(int(declared))
     if b"chunked" in b",".join(response_values(head, b"transfer-encoding")).lower():
         try:
             return await read_chunked(reader, MAX_RESPONSE)
