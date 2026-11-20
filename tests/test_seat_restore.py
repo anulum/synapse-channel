@@ -274,6 +274,14 @@ def test_each_final_refusal_decides_the_restore(word: str, code: int, tmp_path: 
     assert run.killed == [("tmux", "synapse-T_seat")]
 
 
+def test_the_session_ends_when_the_holder_returns(tmp_path: Path) -> None:
+    run = _Run("failed")
+    assert run.restore(tmp_path) == MARKER_EXIT_CODES["failed"]
+    assert run.killed == [("tmux", "synapse-T_seat")]
+    assert run.ready_panes == []
+    assert len(run.configs) == 1
+
+
 def test_a_held_seat_goes_on_with_the_holders_command(tmp_path: Path) -> None:
     run = _Run("ready")
     assert run.restore(tmp_path) == 7
@@ -285,7 +293,7 @@ def test_a_held_seat_goes_on_with_the_holders_command(tmp_path: Path) -> None:
     # The holder in the pane also wakes that pane, so no separate waiter is needed.
     assert pane[pane.index("--wake-session") + 1] == "synapse-T_seat"
     assert "--token-file" in pane
-    # The registry gets the holder's command, so a restart of the pane goes through it.
+    # Started once with the holder's command. Its return does not run that command again.
     assert run.configs[0].agent_command == tuple(pane)
     assert run.configs[0].session == "synapse-T_seat"
 

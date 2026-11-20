@@ -50,10 +50,11 @@ import os
 import re
 import secrets
 import signal
+import stat
 import subprocess  # nosec B404 # the agent's own argument vector, never a shell
 import sys
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence, Set
 from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
@@ -62,6 +63,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from synapse_channel.client.agent_dispatch import MessageCallback
 from synapse_channel.connect_failures import closed_after_ready, is_name_conflict_close
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.private_dir import ensure_private_dir
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.reap import private_runtime_parent, safe_key
 from synapse_channel.session_ledger import LauncherRecord
@@ -169,14 +171,113 @@ def discard_own_token_file(
     own.unlink(missing_ok=True)
 
 
+def token_file_nonce(name: str) -> str | None:
+    """Return the nonce of ``<safe key>.<nonce>.token``, or ``None`` when it is not one."""
+    if not name.endswith(".token"):
+        return None
+    key, dot, nonce = name[: -len(".token")].rpartition(".")
+    if not dot or not key or NONCE_PATTERN.fullmatch(nonce) is None:
+        return None
+    if re.fullmatch(r"[A-Za-z0-9_.-]+", key) is None:
+        return None
+    return nonce
+
+
+def nonces_of_live_holders(
+    commands: Mapping[int, Sequence[str]],
+    *,
+    uid: int,
+    owner_of: Callable[[int], int | None],
+) -> frozenset[str]:
+    """Return nonces of this user's live ``seat-hold --nonce`` processes.
+
+    Each argument vector is read only to find ``--nonce``. The vector itself
+    is not returned or stored.
+    """
+    found: set[str] = set()
+    for pid, argv in commands.items():
+        if owner_of(pid) != uid or "seat-hold" not in argv:
+            continue
+        for index, arg in enumerate(argv):
+            nonce = ""
+            if arg == "--nonce" and index + 1 < len(argv):
+                nonce = argv[index + 1]
+            elif arg.startswith("--nonce="):
+                nonce = arg.removeprefix("--nonce=")
+            if NONCE_PATTERN.fullmatch(nonce):
+                found.add(nonce)
+    return frozenset(found)
+
+
+def _own_regular(mode: int, file_uid: int, uid: int) -> bool:
+    """Return whether ``mode`` and ``file_uid`` are this user's regular file."""
+    return stat.S_ISREG(mode) and file_uid == uid
+
+
+def _unlink_own_regular(path: Path, uid: int) -> None:
+    """Remove ``path`` only when it is still this user's regular file."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    if not _own_regular(info.st_mode, info.st_uid, uid):
+        raise OSError(0, "not this user's regular token file")
+    path.unlink()
+
+
+def sweep_stale_token_files(
+    directory: Path,
+    live_nonces: Set[str],
+    *,
+    execute: bool,
+    uid: int | None = None,
+) -> int:
+    """Count stale token files, and remove them only when ``execute`` is true.
+
+    A file counts when its name is ``<safe key>.<nonce>.token``, ``lstat``
+    shows a regular file owned by this user, and that nonce has no live
+    holder. The count is the only result: names and contents are not returned.
+    A dry run (``execute`` false) does not remove anything.
+    """
+    owner = os.geteuid() if uid is None else uid
+    try:
+        directory_info = directory.lstat()
+    except OSError:
+        return 0
+    if not stat.S_ISDIR(directory_info.st_mode):
+        return 0
+    stale = 0
+    for path in directory.iterdir():
+        nonce = token_file_nonce(path.name)
+        if nonce is None or nonce in live_nonces:
+            continue
+        try:
+            info = path.lstat()
+        except OSError:
+            continue
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != owner:
+            continue
+        if not execute:
+            stale += 1
+            continue
+        try:
+            _unlink_own_regular(path, owner)
+        except OSError:
+            continue
+        stale += 1
+    return stale
+
+
 def write_marker(path: Path, line: str) -> None:
     """Write ``line`` to ``path`` atomically, readable by its owner only.
 
-    The directory is created ``0700``. The line is written to a new ``0600``
+    The directory is owner-only (``0700``); an existing looser directory is
+    tightened. The line is written to a new ``0600``
     file beside the target and moved into place, so a reader sees either no
     marker or the whole line.
     """
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    ensure_private_dir(path.parent, parents=True, purpose="seat holder marker directory")
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:

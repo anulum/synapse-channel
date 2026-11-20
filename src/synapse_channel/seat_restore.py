@@ -27,7 +27,8 @@ so no pane outlives its holder (a ``remain-on-exit`` setting would keep it);
   this host: exit :data:`SEAT_LIVE_EXIT_CODE`, and nothing is started.
 
 The waiter and the session registry are given the holder's command, not the
-bare agent's, so a later restart of the pane goes through the holder too.
+bare agent's. Nothing re-runs a recorded holder command after its holder
+returned. A new start is always a new restore, with a new nonce and a new file.
 
 **The pane starts from an empty environment.** A tmux server that already runs
 gives a new pane its own global environment, which may hold a stale or

@@ -42,8 +42,6 @@ execution evidence when carrying a release claim forward.
   cannot start, or no final answer stops the restore (69, 70 or 78) and ends
   the session it created. The holder's final word is awaited for 35 s: twice
   its registration timeout and an allowance for its start on a loaded host.
-  The waiter and the session record get the holder's command, so a later
-  restart of the pane goes through the holder too. The provider, its wake
   patterns and the managed Codex update setting come from the agent's own
   command after `--`, never from the seat's name, which can name another
   provider. With `--no-attach`, the restored pane is recorded and this
@@ -72,7 +70,6 @@ execution evidence when carrying a release claim forward.
   whose last two restores could not start the agent, needs `--only`. A row
   without a resume handle, with a permission profile, a lost working
   directory or a tmux name in use is held back. Without `--execute` it is a
-  dry run that writes nothing. With `--execute` one run at a time holds
   `restore.lock`, holds its own hub connection as `<host>-restore-planner`
   (45 s up before the first start, an answer within 5 s before every start, a
   drop starts the wait again, another hub stops the run), waits for headroom
@@ -184,7 +181,20 @@ execution evidence when carrying a release claim forward.
   token file is refused with exit 2. When the holder ends, it removes
   `--token-file` only when that path is this start's
   `<marker-dir>/<identity-key>.<nonce>.token`. A hub reconnect leaves the
-  file, and a caller's own token file is left in place.
+
+  file, and a caller's own token file is left in place. A holder killed
+  outright leaves that file until the next restore sweeps it, or until the
+  private runtime directory is cleared at logout or reboot.
+
+  The waiter and the session record get the holder's command. Nothing
+  re-runs that command after the holder returned. A new start is a new
+  restore, with a new nonce and a new file. The provider, its wake
+
+  dry run that writes nothing; it only counts stale token files a cut holder
+  left, and never prints a name or a value. With `--execute`, before it plans,
+  it removes those regular files when their name is
+  `<safe-key>.<nonce>.token`, this user owns them, and no live `seat-hold
+  --nonce` process of this user still holds that nonce. One run at a time holds
 
 ## [0.99.58] - 2026-11-19
 

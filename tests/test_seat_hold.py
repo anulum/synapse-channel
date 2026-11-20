@@ -113,6 +113,16 @@ def test_names_markers_and_their_directory(tmp_path: Path) -> None:
     assert [p.name for p in target.parent.iterdir()] == ["one"]
 
 
+def test_a_looser_marker_directory_is_tightened(tmp_path: Path) -> None:
+    directory = tmp_path / "markers"
+    directory.mkdir()
+    os.chmod(directory, 0o755)
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o755
+    write_marker(directory / "one", "ready X-seat n")
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+    assert (directory / "one").read_text(encoding="utf-8") == "ready X-seat n\n"
+
+
 def test_a_platform_without_a_parent_death_signal_is_refused_by_name(tmp_path: Path) -> None:
     assert unsupported_platform("linux") is None
     refusal = unsupported_platform("darwin")

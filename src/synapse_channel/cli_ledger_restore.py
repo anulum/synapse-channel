@@ -12,11 +12,13 @@ writes nothing at all: no ledger line, no ``seq``, no ``current.json``, no
 ``boots/`` file and no lock. It prints each identity's last row with what a run
 would do with it, the headroom limits it would wait for, and the names of the
 environment variables a seat's child would get and would not, never their
-values.
+values. It also counts stale token files a cut holder left, and prints only
+that count.
 
-With ``--execute`` it holds ``restore.lock``, takes a real snapshot, and starts
-the planned seats one at a time (see :mod:`synapse_channel.restore_run`). It
-restores agent sessions only; it never arranges windows.
+With ``--execute`` it first removes those stale token files, then holds
+``restore.lock``, takes a real snapshot, and starts the planned seats one at a
+time (see :mod:`synapse_channel.restore_run`). It restores agent sessions only;
+it never arranges windows.
 """
 
 from __future__ import annotations
@@ -50,7 +52,12 @@ from synapse_channel.restore_run import (
     recheck,
     restore_lock,
 )
-from synapse_channel.seat_hold import SEAT_LIVE_EXIT_CODE
+from synapse_channel.seat_hold import (
+    SEAT_LIVE_EXIT_CODE,
+    default_marker_dir,
+    nonces_of_live_holders,
+    sweep_stale_token_files,
+)
 from synapse_channel.session_ledger import (
     LedgerError,
     Row,
@@ -170,6 +177,20 @@ def environment_summary(environ: Mapping[str, str], token: str | None) -> dict[s
     return {"passes": sorted(env), "drops": dropped}
 
 
+def _process_uid(pid: int) -> int | None:
+    """Return the user id of process ``pid``, or ``None`` when it cannot be stated."""
+    try:
+        return (Path("/proc") / str(pid)).stat().st_uid
+    except OSError:
+        return None
+
+
+def _live_holder_nonces() -> frozenset[str]:
+    """Return nonces of this user's live seat holders, read in memory only."""
+    commands = {pid: proc.argv for pid, proc in read_procs().items()}
+    return nonces_of_live_holders(commands, uid=os.geteuid(), owner_of=_process_uid)
+
+
 def _host(args: argparse.Namespace) -> Host:
     home = os.environ.get("HOME")
     return Host(read_procs(), tmux_bin=args.tmux_bin, home=Path(home) if home else None)
@@ -202,6 +223,7 @@ def _print_plan(
     print(f"environment: passes {', '.join(env['passes'])}; drops {', '.join(env['drops']) or '-'}")
     for entry in entries:
         print(_entry_line(entry))
+    print(f"stale token files: {head['stale_token_files']}")
     print(f"{sum(entry.state == START for entry in entries)} to start")
 
 
@@ -237,6 +259,11 @@ def _cmd_restore(args: argparse.Namespace) -> int:
         "limits": asdict(limits),
         "notes": notes,
         "environment": environment_summary(os.environ, args.token),
+        "stale_token_files": sweep_stale_token_files(
+            default_marker_dir(),
+            _live_holder_nonces(),
+            execute=args.execute,
+        ),
     }
     if not args.execute:
         return _dry_run(args, directory, host_name, head)

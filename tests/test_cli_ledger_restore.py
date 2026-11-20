@@ -14,6 +14,7 @@ import json
 import os
 import signal
 import socket
+import stat
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -25,6 +26,13 @@ from synapse_channel import cli_ledger_restore
 from synapse_channel.cli import main as cli_main
 from synapse_channel.restore_plan import Entry
 from synapse_channel.restore_run import Outcome, RestoreBusyError, Run, restore_lock
+from synapse_channel.seat_hold import (
+    _own_regular,
+    _unlink_own_regular,
+    nonces_of_live_holders,
+    sweep_stale_token_files,
+    token_file_nonce,
+)
 from synapse_channel.session_ledger import (
     SCHEMA,
     LedgerError,
@@ -33,6 +41,7 @@ from synapse_channel.session_ledger import (
     boot_id,
     pid_starttime,
 )
+from synapse_channel.session_ledger_collect import Proc
 
 SID = "11111111-2222-3333-4444-555555555555"
 PREV = "boot-prev"
@@ -79,6 +88,14 @@ def _seat(ledger: Path, identity: str, pid: int, cwd: Path, *, end: str = "boot_
         {"event": "ended_unobserved", "row_id": row, "end_kind": end}, directory=ledger, boot=PREV
     )
     return row
+
+
+@pytest.fixture(autouse=True)
+def marker_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Keep the token sweep on a private directory, never the host's runtime directory."""
+    directory = tmp_path / "seat-markers"
+    monkeypatch.setattr(cli_ledger_restore, "default_marker_dir", lambda environ=None: directory)
+    return directory
 
 
 @pytest.fixture
@@ -353,6 +370,126 @@ def test_a_second_execute_while_one_runs_exits_75(
     assert capsys.readouterr().out == (
         "synapse ledger restore: another restore run holds the lock; this run stops\n"
     )
+
+
+NONCE = "nonce-0001"
+
+
+def _token(directory: Path, name: str, text: str = "secret\n") -> Path:
+    directory.mkdir(exist_ok=True)
+    path = directory / name
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_only_a_cut_holders_regular_token_file_is_stale(marker_dir: Path) -> None:
+    stale = _token(marker_dir, f"T_seat.{NONCE}.token")
+    kept = _token(marker_dir, "other.token", "keep\n")
+    _token(marker_dir, "T_seat.short.token")
+    _token(marker_dir, "T seat.nonce-0002.token")
+    assert token_file_nonce(stale.name) == NONCE
+    assert token_file_nonce("notes.txt") is None
+    assert token_file_nonce(f"{NONCE}.token") is None
+    assert token_file_nonce(f".{NONCE}.token") is None
+    assert token_file_nonce("a.b.nonce-0002.token") == "nonce-0002"
+    nested = marker_dir / "T_seat.nonce-0003.token"
+    nested.mkdir()
+    link = marker_dir / "T_seat.nonce-0004.token"
+    link.symlink_to(kept)
+    assert sweep_stale_token_files(marker_dir, frozenset(), execute=False) == 1
+    assert stale.is_file() and kept.is_file() and nested.is_dir() and link.is_symlink()
+    assert sweep_stale_token_files(marker_dir, frozenset({NONCE}), execute=True) == 0
+    assert stale.is_file()
+    assert sweep_stale_token_files(marker_dir, frozenset(), execute=True, uid=os.geteuid() + 1) == 0
+    assert stale.read_text(encoding="utf-8") == "secret\n"
+    assert sweep_stale_token_files(marker_dir / "missing", frozenset(), execute=True) == 0
+    assert sweep_stale_token_files(kept, frozenset(), execute=True) == 0
+    assert sweep_stale_token_files(marker_dir, frozenset(), execute=True) == 1
+    assert not stale.exists()
+    assert kept.is_file() and nested.is_dir() and link.is_symlink()
+
+
+def test_a_token_file_that_vanishes_or_cannot_be_removed_is_not_counted(
+    marker_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stale = _token(marker_dir, f"T_seat.{NONCE}.token")
+    real_lstat = Path.lstat
+
+    def gone(self: Path) -> os.stat_result:
+        if self.name == stale.name:
+            raise OSError("gone")
+        return real_lstat(self)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "lstat", gone)
+        assert sweep_stale_token_files(marker_dir, frozenset(), execute=True) == 0
+    assert stale.is_file()
+
+    def refuse(path: Path, uid: int) -> None:
+        raise OSError("busy")
+
+    monkeypatch.setattr("synapse_channel.seat_hold._unlink_own_regular", refuse)
+    assert sweep_stale_token_files(marker_dir, frozenset(), execute=True) == 0
+    assert stale.is_file()
+
+
+def test_unlink_refuses_a_directory_that_matches_the_token_name(tmp_path: Path) -> None:
+    directory = tmp_path / f"T_seat.{NONCE}.token"
+    directory.mkdir()
+    uid = os.geteuid()
+    assert _own_regular(stat.S_IFREG, uid, uid)
+    assert not _own_regular(stat.S_IFDIR, uid, uid)
+    assert not _own_regular(stat.S_IFREG, uid + 1, uid)
+    with pytest.raises(OSError):
+        _unlink_own_regular(directory, uid)
+    assert directory.is_dir()
+
+
+def test_live_holder_nonces_come_only_from_this_users_seat_hold() -> None:
+    nonce = NONCE
+    commands = {
+        1: ("synapse", "seat-hold", "--nonce", nonce, "--", "true"),
+        2: ("synapse", "seat-hold", f"--nonce={nonce}"),
+        3: ("synapse", "seat-hold", "--nonce"),
+        4: ("python", "--nonce", nonce),
+        5: ("synapse", "seat-hold", "--identity", "T/seat"),
+    }
+    owners = {1: 7, 2: 7, 3: 7, 4: 7, 5: 9}
+
+    def owner_of(pid: int) -> int | None:
+        return owners.get(pid)
+
+    assert nonces_of_live_holders(commands, uid=7, owner_of=owner_of) == frozenset({nonce})
+    assert nonces_of_live_holders(commands, uid=9, owner_of=owner_of) == frozenset()
+    assert cli_ledger_restore._process_uid(os.getpid()) == os.getuid()
+    assert cli_ledger_restore._process_uid(1 << 30) is None
+
+
+def test_a_dry_run_counts_a_cut_token_file_and_execute_removes_it(
+    tmp_path: Path,
+    ledger: Path,
+    marker_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    stale = _token(marker_dir, f"T_seat.{NONCE}.token")
+    assert _restore(tmp_path) == 0
+    dry = capsys.readouterr().out
+    assert "stale token files: 1" in dry
+    assert NONCE not in dry and "T_seat" not in dry and "secret" not in dry
+    assert stale.is_file()
+    assert _restore(tmp_path, "--execute", "--only", "P/none") == 0
+    done = capsys.readouterr().out
+    assert "stale token files: 1" in done
+    assert NONCE not in done and "secret" not in done
+    assert not stale.exists()
+
+
+def test_the_restore_sees_a_live_holder_nonce(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proc = Proc(os.getpid(), 1, ("synapse", "seat-hold", "--nonce", NONCE), 1)
+    monkeypatch.setattr(cli_ledger_restore, "read_procs", lambda: {os.getpid(): proc})
+    assert cli_ledger_restore._live_holder_nonces() == frozenset({NONCE})
 
 
 # --- the host's facts ----------------------------------------------------------------
