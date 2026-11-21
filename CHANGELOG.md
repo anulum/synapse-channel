@@ -20,30 +20,28 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
-  not restart on 78. A log that a crashed hub left with a `-wal` is checked
-  read-only, so the refusal does not fold that WAL into the log. Every other
-  command that opens the log, and the
-
-  `mode=ro`. It never creates, migrates or writes the log, refuses a missing file,
-  a path that is not a regular file and a file without the event table, refuses a
-  newer store format, and in WAL mode
-
-- **Offline readers can open the event log read-only.** `EventLogReader`, in
-  `synapse_channel.core.persistence_reader`, opens an existing log with SQLite's
-  never blocks the hub's writer. It offers the writer's read methods and decodes
-  rows the same way; an SQLCipher log is read with its key file. `synapse
-  event-query` now reads this way. Before, it opened the hub's writer, which wrote
-  the format record into a log from before the store-format floor.
-
 - **The event log records its store format, and a release refuses a newer one.** The
   log's SQLite header (`user_version`) and a one-row `store_format` table hold the format
   and the release that last raised it; this release writes format 1. A release that
   finds a higher format refuses the log before it reads or creates any table, and
   changes nothing: `synapse hub` exits 78, and the generated and shipped hub units do
+  not restart on 78. A log that a crashed hub left with a `-wal` is checked
+  read-only, so the refusal does not fold that WAL into the log. Every other
+  command that opens the log, and the
   plaintext-to-SQLCipher conversion, refuses it the same way; the encrypted copy
   records this release's format. Releases from before this one do not read the
   format, so a downgrade below it is not guarded, and the deployment guide's upgrade
   steps now keep an offline copy of the stopped log as the way back.
+
+- **Offline readers can open the event log read-only.** `EventLogReader`, in
+  `synapse_channel.core.persistence_reader`, opens an existing log with SQLite's
+  `mode=ro`. It never creates, migrates or writes the log, refuses a missing file,
+  a path that is not a regular file and a file without the event table, refuses a
+  newer store format, and in WAL mode
+  never blocks the hub's writer. It offers the writer's read methods and decodes
+  rows the same way; an SQLCipher log is read with its key file. `synapse
+  event-query` now reads this way. Before, it opened the hub's writer, which wrote
+  the format record into a log from before the store-format floor.
 
 ### Fixed
 
