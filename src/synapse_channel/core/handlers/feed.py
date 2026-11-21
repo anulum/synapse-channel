@@ -24,6 +24,7 @@ from synapse_channel.core.feed import (
     parse_feed_query,
     read_page,
 )
+from synapse_channel.core.feed_retention import consumer_bound
 from synapse_channel.core.journal import EventKind, record_feed_ack, record_feed_bind
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.verb_access import feed_ack_access, feed_bind_access
@@ -242,6 +243,17 @@ async def handle_feed_ack(
     )
 
 
+def _refuse_a_second_position(hub: FeedContext, journal: Any, consumer: str, instance: str) -> None:
+    """Refuse a consumer that is already bound, or already acknowledged, in ``instance``."""
+    if hub.feed_ledger.acked(journal, consumer, instance) > 0 or consumer_bound(
+        journal, consumer, instance
+    ):
+        raise FeedRefused(
+            "the consumer already has a feed position in this journal instance",
+            "already_bound",
+        )
+
+
 async def handle_feed_bind(
     hub: FeedContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
@@ -275,11 +287,7 @@ async def handle_feed_bind(
             raise FeedRefused("feed binding names a different hub")
         if instance is None:
             raise FeedRefused("the journal records no instance; a feed cursor cannot be bound")
-        if hub.feed_ledger.acked(journal, binding.consumer, instance.instance) > 0:
-            raise FeedRefused(
-                "the consumer already has a feed position in this journal instance",
-                "already_bound",
-            )
+        _refuse_a_second_position(hub, journal, binding.consumer, instance.instance)
         if not hub.feed_ledger.admit_bind(binding.consumer, instance.instance, time.monotonic()):
             raise FeedRefused("one feed binding attempt per consumer per minute", "rate_limited")
         after_seq = bind_legacy_position(journal, binding, hub.feed_ledger.markers)

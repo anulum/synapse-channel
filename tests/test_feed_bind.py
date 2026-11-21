@@ -334,6 +334,29 @@ async def test_binding_is_rate_limited_and_refused_once_the_consumer_has_an_ack(
     assert after_ack["code"] == "already_bound"
 
 
+async def test_a_consumer_binds_once_per_journal_instance_even_across_a_restart(
+    tmp_path: Path,
+) -> None:
+    journal = EventStore(tmp_path / "hub.db")
+    finding = _finding(journal, "a finding")
+    proof = {"kind": "finding", "seq": finding, "payload_sha256": _digest(journal, finding)}
+    try:
+        replies: list[dict[str, Any]] = []
+        for _ in range(2):  # the second hub has no memory of the first one's rate limit
+            async with running_hub(SynapseHub(journal=journal, hub_id=_HUB)) as (_, uri):
+                holder = await _holder(uri)
+                try:
+                    replies.append(await _bind(holder, _ROLES[0], legacy_seq=finding, proof=proof))
+                finally:
+                    await close_agents(holder)
+    finally:
+        journal.close()
+
+    first, second = replies
+    assert (first["bound"], first["after_seq"]) == (True, finding)
+    assert (second["bound"], second["code"]) == (False, "already_bound")
+
+
 async def test_the_bind_grant_is_the_proof_kind_and_the_consumer_owns_the_connection(
     tmp_path: Path,
 ) -> None:

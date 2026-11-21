@@ -118,6 +118,30 @@ def consumer_acks(journal: RetentionJournal, instance: str) -> dict[str, int]:
     return highest
 
 
+def consumer_bound(journal: RetentionJournal, consumer: str, instance: str) -> bool:
+    """Return whether ``consumer`` already bound a legacy position in ``instance``.
+
+    Parameters
+    ----------
+    journal : RetentionJournal
+        The journal to read.
+    consumer : str
+        The consumer.
+    instance : str
+        The journal instance.
+
+    Returns
+    -------
+    bool
+        Whether a ``feed_bind`` row of the consumer in the instance is retained.
+    """
+    return any(
+        event.payload.get("consumer") == consumer
+        and event.payload.get("journal_instance") == instance
+        for event in _events(journal, (EventKind.FEED_BIND,))
+    )
+
+
 def feed_ack_floor(journal: RetentionJournal) -> FeedAckFloor | None:
     """Return the floor the registered feed consumers hold, or ``None`` without any.
 

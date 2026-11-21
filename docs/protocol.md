@@ -1793,8 +1793,9 @@ position onto a bound cursor, once, by proof of the last row it ingested:
   match, or more than one, is refused with `code: legacy_binding_unverified`;
   the consumer then proves an earlier unique row, or reads from 0 and relies on
   its idempotent admission.
-- **It is a one-time act.** A consumer that already holds an ack in this
-  journal instance is refused with `code: already_bound`, and one attempt per
+- **It is a one-time act.** A consumer that is already bound, or already holds
+  an ack, in this journal instance is refused with `code: already_bound`; the
+  binding is journalled, so this holds across hub restarts. One attempt per
   consumer and instance is admitted a minute (`code: rate_limited`), because a
   digest search scans every retained row of its kind.
 
