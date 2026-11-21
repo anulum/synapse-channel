@@ -379,7 +379,9 @@ opens it), or a file without the event table is refused with `ReadOnlyOpenRefuse
 and nothing is created. A store with a newer format than this release reads is
 refused as it is for the writer. It offers the writer's read methods: `iter_events`,
 `stream_events`, `read_all`, `read_since`, `read_latest`, `read_window`,
-`corrupt_rows`, `count`, `event_metrics`, `max_seq` and `latest_at_or_before`.
+`corrupt_rows`, `count`, `event_metrics`, `max_seq`, `latest_at_or_before` and
+`journal_instance`, which returns the store's instance and its floor, or `None` for a
+store that has none yet; the reader never writes one.
 They decode rows exactly as the writer does. An SQLCipher store is read with its
 key file.
 
@@ -397,6 +399,56 @@ readers) read this way.
 Merkle checkpoint verification and the multihub peer fetcher make (`iter_events`,
 `read_since`, `max_seq`, `latest_at_or_before`, `get_operation`). Both
 `EventStore` and `EventLogReader` satisfy it, so those take either.
+
+## Forward event feed client
+
+A memory consumer reads the live hub's findings and marked chat through its own
+authenticated connection, never by opening the journal:
+
+```python
+import asyncio
+
+from synapse_channel.hub_feed import request_feed_page, send_feed_ack
+
+
+async def read_once(cursor: dict[str, object]) -> dict[str, object]:
+    page = await request_feed_page(
+        uri="ws://localhost:8876",
+        identity="PROJ/memory",
+        token=None,
+        consumer="PROJ/memory",
+        kinds=["finding", "chat_marker"],
+        **cursor,
+    )
+    if page.get("error"):
+        raise RuntimeError(page["error"])
+    ...  # ingest page["rows"] durably, then acknowledge them
+    await send_feed_ack(
+        uri="ws://localhost:8876",
+        identity="PROJ/memory",
+        token=None,
+        consumer="PROJ/memory",
+        hub_id=page["hub_id"],
+        journal_instance=page["journal_instance"],
+        acked_seq=page["next_after"],
+    )
+    return {
+        "after_seq": page["next_after"],
+        "hub_id": page["hub_id"],
+        "journal_instance": page["journal_instance"],
+    }
+```
+
+A refusal, an access-control denial included, comes back in `error`;
+`FeedUnavailable` means the hub could not be reached or gave no answer. A page
+with `source_changed` names a different journal instance: rebind deliberately,
+never continue. The frames are described in
+[The forward event feed](protocol.md#the-forward-event-feed).
+
+::: synapse_channel.hub_feed
+    options:
+      show_root_heading: true
+      show_source: false
 
 ## Read-only delivery receipts
 

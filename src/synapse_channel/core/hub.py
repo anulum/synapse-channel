@@ -28,6 +28,7 @@ import socket
 import ssl
 from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
 from contextlib import AsyncExitStack
+from pathlib import Path
 from typing import Any, Unpack
 
 from websockets.asyncio.server import Server, serve
@@ -541,7 +542,6 @@ class SynapseHub(HubConfigView):
         self.identity_trust_bundle = security.identity_trust
         self.identity_enrollment_namespaces = security.enrollment_namespaces
         self.enrollment_rate = security.enrollment_rate
-        self.identity_pin_path = security.pin_path
         self.identity_pins = security.pins
 
     def _receive_clients(self, components: HubComponents) -> None:
@@ -567,6 +567,8 @@ class SynapseHub(HubConfigView):
         self.relay_peers = routing.relay_peers
         self.message_peers = routing.message_peers
         self.message_forward_ledger = routing.message_forward_ledger
+        # What this hub served each feed consumer; acks themselves live in the journal.
+        self.feed_ledger = routing.feed_ledger
         self.federation_offer_path = routing.federation_offer_path
         self._federation_gate = routing.federation_gate
         self.multihub_serving_policy = routing.serving_policy
@@ -642,6 +644,11 @@ class SynapseHub(HubConfigView):
     def _idempotency(self) -> IdempotencyCache:
         """Read the cache from its ledger owner without retaining another alias."""
         return self._operations.ledger.idempotency
+
+    @property
+    def identity_pin_path(self) -> Path | None:
+        """Return the identity-pin file this hub keeps, read from its pin store."""
+        return self.identity_pins.path
 
     # -- helpers --------------------------------------------------------------
 

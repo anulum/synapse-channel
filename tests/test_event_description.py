@@ -33,7 +33,7 @@ def _kinds() -> set[str]:
 
 def test_every_journal_kind_has_words_and_nothing_else_does() -> None:
     assert set(EVENT_WORDS) == _kinds()
-    assert len(EVENT_WORDS) == 74
+    assert len(EVENT_WORDS) == 75
 
 
 def _written(tmp_path: Path) -> list[tuple[str, EventWords | None]]:
@@ -48,6 +48,9 @@ def _written(tmp_path: Path) -> list[tuple[str, EventWords | None]]:
     journal.record_resource(store, ResourceOffer(agent="P/alice", kind="llm", name="local"))
     journal.record_role_binding(store, identity="P/alice", roles=("P/reviewer",))
     journal.record_mailbox_watermark(store, identity="P/alice", through_seq=4, source="cursor")
+    journal.record_feed_ack(
+        store, consumer="P/memory", hub_id="hub-a", journal_instance="0" * 32, acked_seq=7
+    )
     journal.record_ledger_task(
         store,
         LedgerTask(task_id="T-2", title="t", created_at=1.0, updated_at=1.0, created_by="P/bob"),
@@ -81,6 +84,7 @@ def test_each_writer_s_own_fields_name_the_actor_and_the_line(tmp_path: Path) ->
         ("resource", EventWords("P/alice", "offered llm local")),
         ("role_binding", EventWords("P/alice", "roles: P/reviewer")),
         ("mailbox_watermark", EventWords("P/alice", "mailbox read through 4")),
+        ("feed_ack", EventWords("P/memory", "feed acknowledged through 7")),
         ("ledger_task", EventWords("P/bob", "task T-2 (open)")),
         ("ledger_progress", EventWords("P/bob", "T-2: started")),
         ("chat", EventWords("P/carol", "hello")),
@@ -104,6 +108,7 @@ def test_a_payload_missing_its_fields_reads_without_inventing_them() -> None:
     assert describe["release"] == EventWords("", "released ")
     assert describe["role_binding"] == EventWords("", "roles cleared")
     assert describe["mailbox_watermark"] == EventWords("", "mailbox read")
+    assert describe["feed_ack"] == EventWords("", "feed acknowledged")
     assert describe["identity_pin_reclaim"] is not None
 
 

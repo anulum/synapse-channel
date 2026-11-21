@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from synapse_channel.core.feed import FeedLedger
 from synapse_channel.core.hub_component_callbacks import HubComponentCallbacks
 from synapse_channel.core.hub_component_security import HubSecurityComponents
 from synapse_channel.core.hub_config import HubConfig
@@ -31,6 +32,7 @@ class HubRoutingComponents:
     relay_peers: dict[str, OperatorRelayPeer] | None
     message_peers: dict[str, MessageForwardPeer] | None
     message_forward_ledger: MessageForwardLedger
+    feed_ledger: FeedLedger
     federation_gate: HubFederationGate
     federation_offer_path: Path | None
     serving_policy: MultiHubServingPolicy | None
@@ -57,6 +59,7 @@ def build_routing(
             if config.journal is not None
             else MessageForwardLedger.in_memory()
         ),
+        feed_ledger=FeedLedger(),
         federation_offer_path=(
             Path(config.federation.federation_offer_path)
             if config.federation.federation_offer_path is not None

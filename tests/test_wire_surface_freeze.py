@@ -95,6 +95,8 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "HANDOFF_DENIED": "handoff_denied",
     "HANDOFF_GRANTED": "handoff_granted",
     "HEARTBEAT": "heartbeat",
+    "FEED_ACK": "feed_ack",
+    "FEED_ACK_RESULT": "feed_ack_result",
     "HISTORY_REQUEST": "history_request",
     "HISTORY_SNAPSHOT": "history_snapshot",
     "ENTITLEMENT_ADVERT": "entitlement_advert",

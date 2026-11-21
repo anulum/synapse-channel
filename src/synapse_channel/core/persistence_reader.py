@@ -46,6 +46,7 @@ from synapse_channel.core.persistence_connection import StoreConnection, create_
 from synapse_channel.core.persistence_event_reads import EventReader
 from synapse_channel.core.persistence_operations import OperationTable
 from synapse_channel.core.persistence_sqlcipher import ReadOnlyOpenRefused, connect_event_store
+from synapse_channel.core.persistence_store_format import JournalInstance, read_journal_instance
 
 if TYPE_CHECKING:
     from synapse_channel.core.persistence import StoredEvent, StoredOperation
@@ -257,6 +258,12 @@ class EventLogReader:
     def latest_at_or_before(self, through_seq: int) -> StoredEvent | None:
         """Return the newest retained event at or below ``through_seq``."""
         return self._families.reads.latest_at_or_before(through_seq)
+
+    @inherit_documentation(read_journal_instance)
+    def journal_instance(self) -> JournalInstance | None:
+        """Return this store's journal instance and its sequence floor, reading only."""
+        with self._lock:
+            return read_journal_instance(self._connection)
 
     @inherit_documentation(OperationTable.get_operation)
     def get_operation(self, operation_key: str) -> StoredOperation | None:

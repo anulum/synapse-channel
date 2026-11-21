@@ -179,6 +179,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "generation": EXPERIMENTAL,
     "effect-suite": EXPERIMENTAL,
     "work-state": EXPERIMENTAL,
+    "feed": EXPERIMENTAL,
 }
 """Every CLI subcommand mapped to exactly one stability tier."""
 

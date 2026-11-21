@@ -11,7 +11,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from synapse_channel.core.acl import CLAIM, MAILBOX, MESSAGE, OWNED_WORK, RECALL, RELEASE, Target
+from synapse_channel.core.acl import (
+    CLAIM,
+    FEED_READ,
+    MAILBOX,
+    MESSAGE,
+    OWNED_WORK,
+    RECALL,
+    RELEASE,
+    Target,
+)
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS, normalize_paths
 from synapse_channel.core.verb_registry import AccessMapper
 
@@ -95,7 +104,13 @@ def _claim_targets(data: dict[str, Any], task_id: str) -> list[tuple[str, Target
 
 
 def history_access(data: dict[str, Any]) -> list[tuple[str, Target]]:
-    """Authorize an exact mailbox query or the ordinary global history read."""
+    """Authorize an exact mailbox query, a feed query or the ordinary global history read.
+
+    The selectors are checked in the order the history handler serves them, so a
+    frame is authorised for the query it will be answered with. A feed query needs
+    ``feed-read`` on every kind it asks for; a malformed kind list maps to one empty
+    target, which no pattern but ``*`` grants, and the handler refuses it.
+    """
     if "owned_work_query" in data:
         query = data.get("owned_work_query")
         identity = query.get("identity") if isinstance(query, dict) else None
@@ -107,4 +122,17 @@ def history_access(data: dict[str, Any]) -> list[tuple[str, Target]]:
         query = data.get(selector)
         identity = query.get("identity") if isinstance(query, dict) else None
         return [(MAILBOX, Target("agent", identity if isinstance(identity, str) else ""))]
+    if "feed_query" in data:
+        query = data.get("feed_query")
+        kinds = query.get("kinds") if isinstance(query, dict) else None
+        names = [kind for kind in kinds if isinstance(kind, str)] if isinstance(kinds, list) else []
+        return [(FEED_READ, Target("feed", kind)) for kind in names] or [
+            (FEED_READ, Target("feed", ""))
+        ]
     return [(RECALL, Target("history", "global"))]
+
+
+def feed_ack_access(data: dict[str, Any]) -> list[tuple[str, Target]]:
+    """Authorize a feed acknowledgement: ``feed-read`` on the ``ack`` feed target."""
+    del data  # every acknowledgement needs the same grant
+    return [(FEED_READ, Target("feed", "ack"))]

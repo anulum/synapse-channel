@@ -287,3 +287,11 @@ class TestFromKwargs:
         original = HubConfig(limits=HubLimits(max_clients=8), auth=HubAuthConfig(require_acl=True))
         regrouped = HubConfig.from_kwargs(original.to_kwargs())
         assert config_fingerprint(regrouped) == config_fingerprint(original)
+
+
+def test_the_hub_reads_its_identity_pin_path_from_its_pin_store(tmp_path: Path) -> None:
+    pins = tmp_path / "pins.json"
+    pinned = SynapseHub.from_config(HubConfig(auth=HubAuthConfig(identity_pin_path=str(pins))))
+    unpinned = SynapseHub.from_config(HubConfig())
+    assert pinned.identity_pin_path == pins == pinned.identity_pins.path
+    assert unpinned.identity_pin_path is None

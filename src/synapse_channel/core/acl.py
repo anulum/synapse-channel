@@ -59,6 +59,7 @@ DELIVERY_CONTROL = "delivery-control"
 ATTACHMENT_READ = "attachment-read"
 ATTACHMENT_WRITE = "attachment-write"
 ATTACHMENT_ADMIN = "attachment-admin"
+FEED_READ = "feed-read"
 
 PERMISSIONS = frozenset(
     {
@@ -91,6 +92,7 @@ PERMISSIONS = frozenset(
         ATTACHMENT_READ,
         ATTACHMENT_WRITE,
         ATTACHMENT_ADMIN,
+        FEED_READ,
     }
 )
 """The auditable permission vocabulary an ACL rule may grant.
@@ -109,6 +111,12 @@ the federation follower) read the retained feed and never need it.
 via a mailbox heartbeat (``mailbox_for``). Target kind is ``agent``; the pattern matches
 the identity whose backlog is requested. Self and ``-rx`` sidecar naming still work
 without a grant; this verb is the policy-file path for a trusted monitor that is neither.
+
+``FEED_READ`` grants a memory consumer the hub's forward event feed through
+``history_request.feed_query`` and the right to acknowledge it with ``feed_ack``.
+Target kind is ``feed``; the pattern matches the feed kind (``finding`` or
+``chat_marker``) for a page and ``ack`` for an acknowledgement, so ``feed:*``
+grants both. Hold it on a role, such as ``REMANENTIA/role/memory-consumer``.
 
 ``OWNED_WORK`` grants the connected identity access to full current work
 assigned to itself through ``history_request.owned_work_query``. Target kind

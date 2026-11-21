@@ -33,13 +33,14 @@ if TYPE_CHECKING:
     from synapse_channel.core.claim_holder_presence import ClaimHolderPresence
     from synapse_channel.core.dead_letters import DeadLetterLedger
     from synapse_channel.core.event_row_recovery import CorruptEventRow
+    from synapse_channel.core.handlers.feed import FeedContext
     from synapse_channel.core.handlers.inbox import InboxContext
     from synapse_channel.core.ledger import Blackboard
     from synapse_channel.core.mailbox_pending import MailboxPendingTracker
     from synapse_channel.core.message_forward_origin import ForwardOriginContext
     from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 
-    class SnapshotsContext(ForwardOriginContext, InboxContext, Protocol):
+    class SnapshotsContext(ForwardOriginContext, InboxContext, FeedContext, Protocol):
         """Capabilities consumed by snapshots handlers and their callees."""
 
         @property
@@ -260,6 +261,11 @@ async def handle_history_request(
         from synapse_channel.core.handlers.inbox import handle_inbox_query
 
         await handle_inbox_query(hub, sender, data, websocket)
+        return
+    if "feed_query" in data:
+        from synapse_channel.core.handlers.feed import handle_feed_query
+
+        await handle_feed_query(hub, sender, data, websocket)
         return
     history = list(hub.chat_history)
     for selector, field in (

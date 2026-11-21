@@ -19,10 +19,18 @@ The check reads the header and changes nothing, so a refused store keeps every
 byte. Releases from before the first one that records a floor do not read the
 field; a downgrade below that release is not guarded, and the only way back
 across a raised floor is a copy of the store taken before the upgrade.
+
+The same record names the store's journal instance: a random identifier written
+once, when the store is created or when a writer first opens an older store, with
+the sequence floor it starts from. A forward feed binds its cursors to it, so a
+consumer can tell this journal from another one under the same hub id. An
+ordinary open never rewrites it, and a reader never writes it.
 """
 
 from __future__ import annotations
 
+import secrets
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +43,23 @@ Format 1 is the event-store layout of the first release that records a floor.
 # The statements below name this table literally: SQL built from it would be flagged as
 # string-built (bandit B608), and the name is fixed.
 _RECORD_TABLE = "store_format"
+
+
+@dataclass(frozen=True)
+class JournalInstance:
+    """The store's journal instance and the sequence floor it starts from.
+
+    Attributes
+    ----------
+    instance : str
+        32 lower-case hexadecimal digits from :func:`secrets.token_hex`.
+    floor : int
+        The highest sequence the store held when the instance was written; rows at
+        or below it were written before the instance existed.
+    """
+
+    instance: str
+    floor: int
 
 
 class StoreFormatRefused(ValueError):
@@ -112,6 +137,55 @@ def _stored_record(connection: Any) -> tuple[object, object, object] | None:
     return floor, floor_release, last_writer
 
 
+def _record_columns(connection: Any) -> set[str]:
+    """Return the record table's column names, or an empty set without the table."""
+    return {str(row[1]) for row in connection.execute("PRAGMA table_info(store_format)")}
+
+
+def read_journal_instance(connection: Any) -> JournalInstance | None:
+    """Return the store's journal instance, reading only.
+
+    Parameters
+    ----------
+    connection : connection
+        An open SQLite or SQLCipher DB-API connection to the event store.
+
+    Returns
+    -------
+    JournalInstance or None
+        The recorded instance, or ``None`` for a store that has none yet: no record
+        table, a record from before the instance columns, or no value written.
+    """
+    if not {"journal_instance", "instance_floor"} <= _record_columns(connection):
+        return None
+    row = connection.execute(
+        "SELECT journal_instance, instance_floor FROM store_format WHERE id = 1"
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return JournalInstance(instance=str(row[0]), floor=int(row[1]))
+
+
+def _assign_journal_instance(connection: Any) -> None:
+    """Write a new journal instance with the current sequence floor, once.
+
+    The columns are added to a record that predates them; older readers ignore
+    them, so the format does not change. The update only fills an empty value, so
+    it can never replace an instance.
+    """
+    columns = _record_columns(connection)
+    if "journal_instance" not in columns:
+        connection.execute("ALTER TABLE store_format ADD COLUMN journal_instance TEXT")
+    if "instance_floor" not in columns:
+        connection.execute("ALTER TABLE store_format ADD COLUMN instance_floor INTEGER")
+    floor = int(connection.execute("SELECT coalesce(max(seq), 0) FROM events").fetchone()[0])
+    connection.execute(
+        "UPDATE store_format SET journal_instance = ?, instance_floor = ? "
+        "WHERE id = 1 AND journal_instance IS NULL",
+        (secrets.token_hex(16), floor),
+    )
+
+
 def _floor_release(connection: Any) -> str | None:
     """Return the release recorded as having raised the floor, without writing."""
     record = _stored_record(connection)
@@ -160,10 +234,12 @@ def record_store_format(connection: Any, *, release: str) -> int:
     The caller has already passed :func:`refuse_newer_store_format` on this store,
     so its floor is at most :data:`STORE_FORMAT` and recording this release's format
     never lowers it. The record names the release that last raised the floor and the
-    release that last wrote the store. When the store already holds exactly that
-    record, nothing is written, so a reopen by the same release, such as a reader
-    beside a running hub, adds no write to the log. Nothing is committed here; the
-    store's owner commits the floor with its other opening writes.
+    release that last wrote the store, and the store's journal instance, written
+    once when it is missing (:func:`read_journal_instance`). When the store already
+    holds exactly that record and an instance, nothing is written, so a reopen by
+    the same release, such as a reader beside a running hub, adds no write to the
+    log. Nothing is committed here; the store's owner commits the floor with its
+    other opening writes.
 
     Parameters
     ----------
@@ -180,22 +256,31 @@ def record_store_format(connection: Any, *, release: str) -> int:
     current = stored_store_format(connection)
     floor = STORE_FORMAT
     raised_by = release if floor > current else (_floor_release(connection) or release)
-    if current == floor and _stored_record(connection) == (floor, raised_by, release):
-        return floor
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS store_format ("
-        "id INTEGER PRIMARY KEY CHECK (id = 1), "
-        "floor INTEGER NOT NULL, "
-        "floor_release TEXT NOT NULL, "
-        "last_writer_release TEXT NOT NULL)"
+    record_current = current == floor and _stored_record(connection) == (
+        floor,
+        raised_by,
+        release,
     )
-    connection.execute(
-        "INSERT INTO store_format (id, floor, floor_release, last_writer_release) "
-        "VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET floor = excluded.floor, "
-        "floor_release = excluded.floor_release, "
-        "last_writer_release = excluded.last_writer_release",
-        (floor, raised_by, release),
-    )
-    if current != floor:
-        connection.execute(f"PRAGMA user_version = {floor}")
+    if not record_current:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS store_format ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1), "
+            "floor INTEGER NOT NULL, "
+            "floor_release TEXT NOT NULL, "
+            "last_writer_release TEXT NOT NULL, "
+            "journal_instance TEXT, "
+            "instance_floor INTEGER)"
+        )
+        # The update names the release columns only: an instance is never rewritten.
+        connection.execute(
+            "INSERT INTO store_format (id, floor, floor_release, last_writer_release) "
+            "VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET floor = excluded.floor, "
+            "floor_release = excluded.floor_release, "
+            "last_writer_release = excluded.last_writer_release",
+            (floor, raised_by, release),
+        )
+        if current != floor:
+            connection.execute(f"PRAGMA user_version = {floor}")
+    if read_journal_instance(connection) is None:
+        _assign_journal_instance(connection)
     return floor

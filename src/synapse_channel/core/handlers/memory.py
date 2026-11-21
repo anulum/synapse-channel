@@ -38,6 +38,7 @@ from synapse_channel.core.acl import BOARD
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
 from synapse_channel.core.emit_gate import REJECT, admit
 from synapse_channel.core.finding import Finding
+from synapse_channel.core.handlers.feed import VERB_SPECS as FEED_VERB_SPECS
 from synapse_channel.core.journal import EventKind, record_finding, record_recall
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.verb_access import field_access
@@ -346,4 +347,6 @@ VERB_SPECS = (
         minimum_wire_version=1,
         commands=(),
     ),
+    # The forward feed is how memory consumers read the findings back.
+    *FEED_VERB_SPECS,
 )

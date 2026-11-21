@@ -76,7 +76,11 @@ from synapse_channel.core.persistence_schema import (
     create_operation_schema,
     create_receipt_schema,
 )
-from synapse_channel.core.persistence_store_format import record_store_format
+from synapse_channel.core.persistence_store_format import (
+    JournalInstance,
+    read_journal_instance,
+    record_store_format,
+)
 
 BUSY_TIMEOUT_MS = 5000
 logger = logging.getLogger(__name__)
@@ -591,6 +595,12 @@ class EventStore:
     def latest_at_or_before(self, through_seq: int) -> StoredEvent | None:
         """Return the newest retained event at or below ``through_seq``."""
         return self._families.reads.latest_at_or_before(through_seq)
+
+    @inherit_documentation(read_journal_instance)
+    def journal_instance(self) -> JournalInstance | None:
+        """Return this store's journal instance and its sequence floor."""
+        with self._lock:
+            return read_journal_instance(self._conn)
 
     @inherit_documentation(EventMaintenance.delete)
     def delete(self, seqs: Iterable[int]) -> int:

@@ -1647,3 +1647,92 @@ that digest; callers join ASCII fragments, verify SHA-256, then parse JSON.
 Ownership, scope, terminal status, lease expiry and body generation are checked
 at every read. Each fragment is at most 32,768 characters; no full global board or
 state snapshot is constructed. Reading does not acknowledge business processing.
+
+## The forward event feed
+
+A memory consumer reads the hub's findings and its marked chat through
+`history_request.feed_query`, on its own authenticated connection. It never
+opens the hub's journal. The query has its own `version: 1`; the wire version
+is unchanged:
+
+```json
+{"type":"history_request","sender":"PROJ/memory","target":"System",
+ "request_id":"memory-unique-request",
+ "feed_query":{"version":1,"consumer":"PROJ/memory","hub_id":"",
+               "journal_instance":"","after_seq":0,
+               "kinds":["finding","chat_marker"],"limit":100}}
+```
+
+- **Kinds** are a closed list. `finding` serves the hub's findings.
+  `chat_marker` serves chat that is undirected (no target, or `all`), carries
+  no channel, and whose text begins with `Finding:` or `Decision:`. Directed
+  chat and channel chat are never served, and plain `chat` is not a kind. The
+  markers are fixed in this release.
+- **The consumer** is the connection itself or one of the roles it holds.
+- **A first query** leaves `hub_id` and `journal_instance` empty and starts at
+  `after_seq` 0. Every later query passes the cursor of the page before. An
+  unbound query with a non-zero sequence is refused.
+- **`limit`** is 1 to 500 rows. A page scans at most 1,000 journal rows of the
+  requested kinds and holds at most 7 MiB of encoded rows.
+
+The private `history_snapshot` echoes the request id and carries `feed_page`:
+`version`, `available`, `hub_id`, `consumer`, `after_seq`, `next_after`,
+`journal_instance`, `instance_floor`, `max_seq`, `has_more` and `rows`. Each row
+is `{seq, kind, ts, payload, payload_sha256}`, ascending by `seq`.
+`payload_sha256` is the SHA-256 of the payload encoded as JSON with sorted
+keys, `,` and `:` separators, unescaped Unicode and no non-finite numbers,
+then as UTF-8. A finding the journal cannot decode is served as
+`{seq, kind: "finding", corrupt: true}`. `next_after` passes every scanned row,
+served or not, so a page without rows still moves the consumer forward. A page
+is a pure read: the same query returns the same rows, apart from rows deleted
+since.
+
+**The cursor is bound** to the hub and to the journal instance. The instance is
+16 random bytes, written once into the store's format record when the journal
+is created, or at the first writer open of an older journal, with that
+journal's highest sequence as its `instance_floor`. It is never rewritten, and
+a read-only reader never writes it. The hub refuses:
+
+- a cursor of a different hub;
+- a cursor above the journal's highest sequence;
+- a different journal instance, answered with
+  `source_changed: {journal_instance, instance_floor}`. A consumer never
+  continues across an instance by itself; it rebinds deliberately.
+
+A journal copied back from an older file outside the hub keeps its instance,
+so the hub cannot tell it apart. It fails closed only while its highest
+sequence is below the consumer's cursor. No hub command restores or promotes a
+live journal today: `encrypt-key restore` restores key envelopes, and
+multi-hub recovery appends.
+
+The feed needs a journal and a configured `--hub-id`, as session-bound
+delivery does. A hub without a configured id draws a new one at every start,
+which would end every cursor. Without either, both verbs are refused.
+
+**`feed_ack`** records, durably, the highest sequence a consumer has ingested:
+
+```json
+{"type":"feed_ack","sender":"PROJ/memory","target":"System",
+ "request_id":"memory-unique-ack","consumer":"PROJ/memory",
+ "hub_id":"hub-a","journal_instance":"<32 hex>","acked_seq":4211}
+```
+
+The private `feed_ack_result` carries `feed_ack`: `version`, `recorded`,
+`consumer`, `journal_instance`, `acked_seq` and, on a refusal, `error`. The hub
+journals a higher ack as a `feed_ack` event before it answers. An ack at or
+below the kept one is a no-op, answered `recorded: false` with the kept value.
+An ack above the highest `next_after` this hub process served the consumer is
+refused. That record is held in memory, so after a hub restart the consumer
+reads a page before its next ack. An ack is the consumer's statement, not its
+cursor. A hub that recovered around corrupt rows refuses mutations until the
+operator removes them, but it still serves the feed and keeps acks: removing
+them waits for every consumer to settle the corrupt prefix. **Compaction does not yet read acks:** until it does, an operator who
+runs `synapse compact --floor-seq` chooses a floor at or below every
+consumer's ack.
+
+**Access.** The `feed-read` permission takes target kind `feed`, with the
+pattern `finding`, `chat_marker` or `ack`. A query needs the grant for every
+kind it names, and an ack needs `feed:ack`. `feed:*` grants all three; hold it
+on a role such as `PROJ/role/memory-consumer`, not on a seat. Identity
+admission applies first. `synapse feed read` and `synapse feed ack` send these
+frames; see the [CLI reference](cli.md).

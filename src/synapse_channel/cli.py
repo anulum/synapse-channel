@@ -252,6 +252,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_ops:add_parsers", ("ops",)),
     ("synapse_channel.cli_workflow:add_parsers", ("workflow",)),
     ("synapse_channel.cli_doctor:add_parsers", ("doctor",)),
+    ("synapse_channel.cli_feed:add_parsers", ("feed",)),
 )
 
 

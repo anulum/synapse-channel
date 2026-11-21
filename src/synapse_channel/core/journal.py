@@ -174,6 +174,7 @@ class EventKind:
     MULTIHUB_HEAL = "multihub_heal"
     MULTIHUB_EQUIVOCATION = "multihub_equivocation"
     MULTIHUB_EQUIVOCATION_RECOVERY = "multihub_equivocation_recovery"
+    FEED_ACK = "feed_ack"
     CONNECT_TOKEN_ADMITTED = ADMITTED_KIND
     CONNECT_TOKEN_REFUSED = REFUSED_KIND
     CONNECT_TOKEN_SET_APPLIED = SET_APPLIED_KIND
@@ -736,6 +737,34 @@ def record_mailbox_watermark(
             "through_seq": int(through_seq),
             "source": source,
         },
+    )
+
+
+def record_feed_ack(
+    store: EventStore,
+    *,
+    consumer: str,
+    hub_id: str,
+    journal_instance: str,
+    acked_seq: int,
+) -> None:
+    """Append a feed consumer's acknowledgement, durably, before the hub answers it.
+
+    The ack is the consumer's own statement that it has ingested every feed row
+    through ``acked_seq`` of ``journal_instance``. Replay ignores it; the feed
+    ledger reads the highest one back (:class:`~synapse_channel.core.feed.FeedLedger`).
+    It is journalled ``durable`` because it is what protects the unread rows
+    from compaction.
+    """
+    store.append(
+        EventKind.FEED_ACK,
+        {
+            "consumer": consumer,
+            "hub_id": hub_id,
+            "journal_instance": journal_instance,
+            "acked_seq": int(acked_seq),
+        },
+        durable=True,
     )
 
 

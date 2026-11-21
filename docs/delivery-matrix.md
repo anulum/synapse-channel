@@ -62,6 +62,7 @@ provider hooks and the staged Git gate stop an edit itself.
 | `ledger_task`, `ledger_task_update`, `finding` | apply-once with `idem_key` | `idem_key` | hub clock | FULL |
 | `ledger_progress`, `recall_log`, `resource`, `offer_resource`, `resource_offer` | apply-once with `idem_key` | `idem_key` | hub clock | FULL with `idem_key`; NORMAL without |
 | `native_message_record` | apply-once with `idem_key` | `idem_key`, which it requires | hub clock | FULL |
+| `feed_ack` | at-least-once | none needed: the hub keeps the consumer's highest ack per journal instance, so a repeat or a lower ack is answered `recorded: false` and writes nothing | none | FULL `feed_ack` event before the answer; a refusal is not journalled, and the served high-water it is checked against is memory |
 | `delivery_request`, `delivery_ack`, `delivery_boundary`, `delivery_outcome`, `delivery_cancel`, `delivery_status_request` | at-least-once | `request_id`, `idempotency_key` and `mutation_id` bind each step to one delivery record ([delivery recovery](delivery-journal-recovery.md)) | hub clock for deadlines | FULL in the hub's delivery ledger |
 | `wait_request`, `advertise` | at-least-once | none | hub clock | memory |
 | `channel_create`, `channel_invite`, `channel_join`, `channel_leave` | at-least-once | none | none | memory; channel chat itself follows `chat` |

@@ -43,6 +43,21 @@ execution evidence when carrying a release claim forward.
   event-query` now reads this way. Before, it opened the hub's writer, which wrote
   the format record into a log from before the store-format floor.
 
+- **A forward event feed for memory consumers (experimental).** A consumer reads the
+  hub's findings and its marked chat (undirected, untagged chat that begins with
+  `Finding:` or `Decision:`) through `history_request.feed_query` on its own
+  authenticated connection, in bounded ascending pages, and acknowledges what it has
+  ingested with the new `feed_ack` frame, which the hub journals durably and never
+  moves backwards. Each row carries the canonical SHA-256 of its payload. The cursor
+  is bound to the hub and to a new journal instance: 16 random bytes in the store's
+  format record, written once and never by a reader. A cursor of another instance is
+  answered `source_changed`, and the consumer rebinds deliberately. The new
+  `feed-read` permission is granted per kind; the hub needs a journal and a
+  configured `--hub-id`. `synapse feed read` and `synapse feed ack` drive it. A
+  journal copied back from an older file outside the hub keeps its instance and is
+  refused only while it holds fewer rows than the cursor; compaction does not yet
+  read the acks.
+
 ### Fixed
 
 - **The dashboard's feeds read the journal read-only.** Every store-backed

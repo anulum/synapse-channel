@@ -156,6 +156,12 @@ def _mailbox_watermark(p: Mapping[str, Any]) -> EventWords:
     return EventWords(_text(p, "identity"), line)
 
 
+def _feed_ack(p: Mapping[str, Any]) -> EventWords:
+    acked = p.get("acked_seq")
+    line = f"feed acknowledged through {acked}" if isinstance(acked, int) else "feed acknowledged"
+    return EventWords(_text(p, "consumer"), line)
+
+
 def _mailbox_handover(p: Mapping[str, Any]) -> EventWords:
     line = f"mailbox {_text(p, 'action')}: {_text(p, 'from')} → {_text(p, 'to')}"
     return EventWords(_text(p, "actor"), line)
@@ -237,6 +243,7 @@ EVENT_WORDS: Mapping[str, Describer] = {
     EventKind.CORRUPT: _fixed(lambda _p: "unreadable event"),
     EventKind.MAILBOX_WATERMARK: _mailbox_watermark,
     EventKind.MAILBOX_HANDOVER: _mailbox_handover,
+    EventKind.FEED_ACK: _feed_ack,
     EventKind.ROLE_BINDING: _role_binding,
     EventKind.OPERATION_DECLARED: _operation("declared"),
     EventKind.OPERATION_OUTCOME: _operation("outcome"),
