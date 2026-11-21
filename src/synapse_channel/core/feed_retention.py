@@ -18,7 +18,10 @@ whose cursor lies below it that rows there may be gone
 (:func:`applied_compaction_floor`).
 
 Acknowledgements and floors of another journal instance never count: a
-restored or promoted journal starts with no registered consumer.
+restored or promoted journal starts with no registered consumer. A consumer
+the operator released by name in a compaction of the instance is not
+registered again until it acknowledges after that release, so a release
+holds in every later run.
 """
 
 from __future__ import annotations
@@ -67,11 +70,13 @@ class FeedAckFloor:
         return tuple(item for item in self.consumers if item[1] < requested)
 
 
-def _events(journal: RetentionJournal, kind: str, after_seq: int = 0) -> Iterator[StoredEvent]:
-    """Yield every retained event of ``kind`` above ``after_seq``, a page at a time."""
+def _events(
+    journal: RetentionJournal, kinds: tuple[str, ...], after_seq: int = 0
+) -> Iterator[StoredEvent]:
+    """Yield every retained event of ``kinds`` above ``after_seq`` in order, a page at a time."""
     after = after_seq
     while True:
-        page = journal.read_since(after, kinds=(kind,), limit=RETENTION_SCAN_PAGE)
+        page = journal.read_since(after, kinds=kinds, limit=RETENTION_SCAN_PAGE)
         yield from page
         if len(page) < RETENTION_SCAN_PAGE:
             return
@@ -92,17 +97,23 @@ def consumer_acks(journal: RetentionJournal, instance: str) -> dict[str, int]:
     -------
     dict[str, int]
         Highest acknowledged sequence by consumer; a row of another instance, or
-        one whose fields are not a text consumer and an integer, is ignored.
+        one whose fields are not a text consumer and an integer, is ignored. A
+        consumer released by name in a compaction of the instance is left out
+        until an acknowledgement after that release registers it again.
     """
     highest: dict[str, int] = {}
-    for event in _events(journal, EventKind.FEED_ACK):
+    for event in _events(journal, (EventKind.FEED_ACK, EventKind.COMPACTION_FLOOR)):
         payload = event.payload
+        if payload.get("journal_instance") != instance:
+            continue
+        if event.kind == EventKind.COMPACTION_FLOOR:
+            released = payload.get("released")
+            for name in released if isinstance(released, list) else ():
+                if isinstance(name, str):
+                    highest.pop(name, None)
+            continue
         consumer, acked = payload.get("consumer"), payload.get("acked_seq")
-        if (
-            payload.get("journal_instance") == instance
-            and isinstance(consumer, str)
-            and type(acked) is int
-        ):
+        if isinstance(consumer, str) and type(acked) is int:
             highest[consumer] = max(highest.get(consumer, 0), acked)
     return highest
 
@@ -157,7 +168,7 @@ def applied_compaction_floor(
     the highest floor survives every compaction.
     """
     highest = 0
-    for event in _events(journal, EventKind.COMPACTION_FLOOR, after_seq):
+    for event in _events(journal, (EventKind.COMPACTION_FLOOR,), after_seq):
         applied = event.payload.get("applied_floor")
         if event.payload.get("journal_instance") == instance and type(applied) is int:
             highest = max(highest, applied)

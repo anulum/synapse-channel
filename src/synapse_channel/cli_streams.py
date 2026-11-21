@@ -153,7 +153,8 @@ def _cmd_compact(args: argparse.Namespace) -> int:
     ``--finding-grace-seconds`` ago, deleting only events at or below a floor
     sequence. A registered feed consumer's acknowledgement lowers that floor;
     ``--past-feed-acks`` overrides it, ``--release-feed-consumer NAME`` leaves one
-    consumer out of it, and the consumers passed are journalled. A consumer
+    consumer out of it until that consumer acknowledges again, and the consumers
+    passed are journalled. A consumer
     that only keeps a sequence cursor is not registered, so the caller still
     establishes that it has ingested the floor. Pass it with ``--floor-seq``, or
     ``--all`` to treat the whole log as settled when no read-side consumer lags.
@@ -475,7 +476,8 @@ def _add_compact_floor_arguments(compact_parser: argparse.ArgumentParser) -> Non
         metavar="NAME",
         help=(
             "Leave one registered feed consumer, such as one that is gone, out of the "
-            "floor (repeatable); the others still hold it, and it is journalled as passed."
+            "floor (repeatable) until it acknowledges again; the others still hold it, "
+            "and it is journalled as passed."
         ),
     )
     compact_parser.add_argument(

@@ -256,6 +256,8 @@ def compact(
         Registered feed consumers to leave out of the floor, such as one that is
         gone for good; the others still hold it. A released consumer whose
         acknowledgement lies below the floor applied is journalled as passed.
+        The release is journalled with the floor and holds in every later run
+        until that consumer acknowledges again.
 
     Returns
     -------

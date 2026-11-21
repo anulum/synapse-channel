@@ -58,7 +58,8 @@ execution evidence when carrying a release claim forward.
   journal copied back from an older file outside the hub keeps its instance and is
   refused only while it holds fewer rows than the cursor. `synapse compact` never
   deletes above the lowest acknowledgement of a consumer that holds one, unless
-  `--release-feed-consumer NAME` leaves a gone consumer out or `--past-feed-acks`
+  `--release-feed-consumer NAME` leaves a gone consumer out, until it acks again,
+  or `--past-feed-acks`
   passes them all; a run that removes a row, or passes a consumer,
   journals the floor it applied with the consumers it held at or passed, and a page
   whose cursor lies below that floor carries `retention_gap`. A consumer that kept only a legacy, sequence-only position binds

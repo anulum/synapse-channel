@@ -148,6 +148,38 @@ def test_a_consumer_released_by_name_no_longer_holds_the_floor(tmp_path: Path) -
     assert [(f["released"], f["passed_consumers"]) for f in other_floors] == [(["R/fast"], [])]
 
 
+def test_a_release_holds_in_later_runs_until_the_consumer_acks_again(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        findings = _registered(store)
+        released = compact(
+            store, _AGED, floor_seq=store.max_seq(), now=1000.0, release_feed_consumers=["R/slow"]
+        )
+        later = [_expired(store, f"later {index}") for index in range(2)]
+        instance = _instance(store)
+        record_feed_ack(
+            store, consumer="R/fast", hub_id=_HUB, journal_instance=instance, acked_seq=later[1]
+        )
+        ordinary = compact(store, _AGED, floor_seq=store.max_seq(), now=1000.0)
+        _expired(store, "after the slow consumer's return")
+        record_feed_ack(
+            store, consumer="R/slow", hub_id=_HUB, journal_instance=instance, acked_seq=later[1]
+        )
+        returned = compact(store, _AGED, floor_seq=store.max_seq(), now=1000.0)
+        statements = _statements(store)
+    finally:
+        store.close()
+
+    assert released.passed_feed_acks == (("R/slow", findings[1]),)
+    # The release holds: the next ordinary run is held by the fast consumer alone.
+    assert ordinary.held_by_feed_acks == (("R/fast", later[1]),)
+    assert (ordinary.floor_seq, ordinary.findings_removed) == (later[1], 2)
+    # An ack after the release registers the slow consumer again, and it holds too.
+    assert returned.held_by_feed_acks == (("R/fast", later[1]), ("R/slow", later[1]))
+    assert (returned.floor_seq, returned.findings_removed) == (later[1], 0)
+    assert statements == ["after the slow consumer's return"]
+
+
 def test_an_unknown_release_or_one_with_the_override_is_refused_before_any_deletion(
     tmp_path: Path,
 ) -> None:

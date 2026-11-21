@@ -343,9 +343,9 @@ durable log's compaction:
 - **Acks hold compaction.** `synapse compact` does not remove rows above the
   lowest ack of a registered consumer of the current journal instance, so a
   stopped consumer holds the journal's growth until the operator releases it
-  by name with `--release-feed-consumer`, or passes every ack with
-  `--past-feed-acks`. A run that removes rows or passes a consumer is
-  journalled as a `compaction_floor` event.
+  by name with `--release-feed-consumer`, which holds until that consumer acks
+  again, or passes every ack with `--past-feed-acks`. A run that removes rows
+  or passes a consumer is journalled as a `compaction_floor` event.
 
 ### Deployment profiles
 

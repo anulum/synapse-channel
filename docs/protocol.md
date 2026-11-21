@@ -1758,8 +1758,11 @@ journal instance is registered. `synapse compact` never deletes above the
 lowest of the registered consumers' highest acks: it applies the lower of the
 requested floor and that ack, and names every registered consumer below the
 requested floor. `--release-feed-consumer NAME` leaves one consumer, such as one
-that is gone for good, out of the floor while the others still hold it; a name
-that holds no ack in the instance is refused before anything is deleted.
+that is gone for good, out of the floor while the others still hold it. The
+release is journalled with the run and holds in every later run, until that
+consumer acks again and so registers anew. A name that holds no ack in the
+instance, a consumer already released included, is refused before anything is
+deleted.
 `--past-feed-acks` applies the requested floor past every consumer. A run that
 removes a row, or passes a registered consumer, journals a durable
 `compaction_floor` event with the requested and applied floors, the consumers
