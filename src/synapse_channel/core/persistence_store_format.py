@@ -32,6 +32,8 @@ STORE_FORMAT = 1
 Format 1 is the event-store layout of the first release that records a floor.
 """
 
+# The statements below name this table literally: SQL built from it would be flagged as
+# string-built (bandit B608), and the name is fixed.
 _RECORD_TABLE = "store_format"
 
 
@@ -103,9 +105,9 @@ def _stored_record(connection: Any) -> tuple[object, object, object] | None:
     if present is None:
         return None
     floor, floor_release, last_writer = connection.execute(
-        f"SELECT (SELECT floor FROM {_RECORD_TABLE} WHERE id = 1), "
-        f"(SELECT floor_release FROM {_RECORD_TABLE} WHERE id = 1), "
-        f"(SELECT last_writer_release FROM {_RECORD_TABLE} WHERE id = 1)"
+        "SELECT (SELECT floor FROM store_format WHERE id = 1), "
+        "(SELECT floor_release FROM store_format WHERE id = 1), "
+        "(SELECT last_writer_release FROM store_format WHERE id = 1)"
     ).fetchone()
     return floor, floor_release, last_writer
 
@@ -181,14 +183,14 @@ def record_store_format(connection: Any, *, release: str) -> int:
     if current == floor and _stored_record(connection) == (floor, raised_by, release):
         return floor
     connection.execute(
-        f"CREATE TABLE IF NOT EXISTS {_RECORD_TABLE} ("
+        "CREATE TABLE IF NOT EXISTS store_format ("
         "id INTEGER PRIMARY KEY CHECK (id = 1), "
         "floor INTEGER NOT NULL, "
         "floor_release TEXT NOT NULL, "
         "last_writer_release TEXT NOT NULL)"
     )
     connection.execute(
-        f"INSERT INTO {_RECORD_TABLE} (id, floor, floor_release, last_writer_release) "
+        "INSERT INTO store_format (id, floor, floor_release, last_writer_release) "
         "VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET floor = excluded.floor, "
         "floor_release = excluded.floor_release, "
         "last_writer_release = excluded.last_writer_release",
