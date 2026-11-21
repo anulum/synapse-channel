@@ -44,6 +44,15 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **The dashboard's feeds read the journal read-only.** Every store-backed
+  dashboard feed opened the hub's writer on each request against the live journal;
+  it now opens the read-only reader, so a feed request never takes the writer's
+  path or writes the journal. `synapse entitlements suggest-compute`, `synapse
+  merkle checkpoint --verify` and `synapse multihub observe` read the same way.
+  Journal replay, checkpoint verification and the peer fetcher accept either the
+  writer or the reader through `ReadableEventLog`, and the reader gains
+  `get_operation`.
+
 - **Offline reports no longer write the journal they read.** Twenty-seven readers
   of a hub's event log opened the hub's writer and now open it read-only. They are
   the accounting, adaptive TTL, approval, capability-observation, reliability,

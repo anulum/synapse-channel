@@ -39,6 +39,7 @@ from synapse_channel.core.cross_repo_graph import run_cross_repo_graph
 from synapse_channel.core.fleet_health import run_local_fleet_health
 from synapse_channel.core.memory_projection import read_memory_recall
 from synapse_channel.core.merkle import run_proof, run_root
+from synapse_channel.core.merkle_checkpoint import MerkleCheckpointStore
 from synapse_channel.core.operation_report import run_operation_report, run_operation_reports
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import connect_sqlcipher, sqlcipher_available
@@ -48,6 +49,19 @@ from synapse_channel.core.replay import load_task_for_seq, run_fork
 from synapse_channel.core.reproduce import run_reproduction
 from synapse_channel.core.trust_graph import run_trust_graph
 from synapse_channel.core.yield_advice import run_yield_advice
+from synapse_channel.dashboard_store_feeds import (
+    build_causality_feed,
+    build_events_tail,
+    build_findings_feed,
+    build_metrics_feed,
+    build_operator_actions_feed,
+    build_receipts_feed,
+    build_state_at_feed,
+    build_waits_feed,
+    latest_cursor,
+    resolve_task_last_seq,
+    store_task_projects,
+)
 from synapse_channel.effect_suite.observer import journal_reading
 from synapse_channel.native_query import run_native_query
 from synapse_channel.participants.session_metric_report import run_session_metric_report
@@ -75,6 +89,30 @@ def _digest(path: Path) -> str:
 def _cli(*args: str) -> None:
     result = run_cli(*args)
     assert "Traceback" not in result.stderr, result.stderr
+
+
+def _suggest_compute(db: Path, work: Path) -> None:
+    tasks = work / "tasks.json"
+    tasks.write_text('{"tasks": []}', encoding="utf-8")
+    tasks.chmod(0o600)
+    _cli(
+        "entitlements",
+        "suggest-compute",
+        "--file",
+        str(tasks),
+        "--hub-db",
+        str(db),
+        "--reviewer",
+        "CEO/claude",
+        "--store",
+        str(work / "ledger.db"),
+    )
+
+
+def _merkle_checkpoint_verify(db: Path, work: Path) -> None:
+    checkpoints = work / "checkpoints.db"
+    MerkleCheckpointStore(checkpoints).close()
+    _cli("merkle", "checkpoint", str(db), "--checkpoint-db", str(checkpoints), "--verify")
 
 
 READERS: dict[str, Callable[[Path, Path], object]] = {
@@ -110,6 +148,22 @@ READERS: dict[str, Callable[[Path, Path], object]] = {
     ),
     "cli-ingest": lambda db, _: _cli("ingest", str(db)),
     "cli-verdict-status": lambda db, _: _cli("verdict", "status", str(db)),
+    "cli-entitlements-suggest-compute": _suggest_compute,
+    "cli-merkle-checkpoint-verify": _merkle_checkpoint_verify,
+    "cli-multihub-observe": lambda db, _: _cli(
+        "multihub", "observe", "--peer-db", str(db), "--peer-id", "peer-a", "--json"
+    ),
+    "dashboard-events-tail": lambda db, _: build_events_tail(db),
+    "dashboard-state-at": lambda db, _: build_state_at_feed(db, seq=1),
+    "dashboard-task-projects": lambda db, _: store_task_projects(db),
+    "dashboard-waits": lambda db, _: build_waits_feed(db),
+    "dashboard-operator-actions": lambda db, _: build_operator_actions_feed(db),
+    "dashboard-receipts": lambda db, _: build_receipts_feed(db),
+    "dashboard-metrics": lambda db, _: build_metrics_feed(db),
+    "dashboard-findings": lambda db, _: build_findings_feed(db),
+    "dashboard-latest-cursor": lambda db, _: latest_cursor(db),
+    "dashboard-task-last-seq": lambda db, _: resolve_task_last_seq(db, "T-absent"),
+    "dashboard-causality": lambda db, _: build_causality_feed(db, direction="causes", seq=1),
 }
 
 

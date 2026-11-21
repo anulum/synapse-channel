@@ -14,7 +14,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import ReadableEventLog
 from synapse_channel.core.protected_write_admission import (
     ProtectedAdmissionContext,
     ProtectedWriteAdmission,
@@ -106,7 +107,7 @@ def protected_admission_event_payload(
 def restore_protected_admission(
     event: StoredEvent,
     *,
-    store: EventStore,
+    store: ReadableEventLog,
     state: SynapseState,
     policies: Mapping[str, ProtectedAdmissionReplayPolicy],
     through_seq: int | None = None,

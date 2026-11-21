@@ -39,14 +39,10 @@ def test_merkle_refuses_a_directory_as_the_event_store(
     assert cli.main([*command, str(directory), *extra]) == 2
     captured = capsys.readouterr()
     assert captured.out == ""
-    if command[1] == "checkpoint":
-        # The checkpoint verification still opens the hub's writer, and SQLite refuses.
-        assert captured.err == "unable to open database file\n"
-    else:
-        # root and prove read through the read-only open, which refuses before SQLite.
-        assert captured.err == (
-            f"event store is not a regular file: {directory}; a read-only open creates nothing\n"
-        )
+    # Every merkle action reads through the read-only open, which refuses before SQLite.
+    assert captured.err == (
+        f"event store is not a regular file: {directory}; a read-only open creates nothing\n"
+    )
     assert list(directory.iterdir()) == []
 
 

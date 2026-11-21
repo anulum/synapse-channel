@@ -43,7 +43,7 @@ from synapse_channel.core.merkle_checkpoint import (
     MerkleCheckpointStore,
     checkpoint_path_for,
 )
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.receipt_signing import (
     ReceiptSigningError,
     generate_receipt_signing_key,
@@ -188,7 +188,7 @@ def _cmd_checkpoint(args: argparse.Namespace) -> int:
         _emit_checkpoint(latest, json_mode=args.json)
         return 0
     try:
-        events = EventStore(db_path, key_file=getattr(args, "db_key_file", None))
+        events = EventLogReader(db_path, key_file=getattr(args, "db_key_file", None))
     except (ValueError, OSError, RuntimeError, sqlite3.Error) as exc:
         print(str(exc), file=sys.stderr)
         return 2

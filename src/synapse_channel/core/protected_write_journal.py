@@ -12,11 +12,11 @@ from __future__ import annotations
 import hashlib
 import json
 
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_reader import ReadableEventLog
 
 
 def protected_operation_response(
-    store: EventStore,
+    store: ReadableEventLog,
     *,
     operation_key: str,
     request_digest: str,

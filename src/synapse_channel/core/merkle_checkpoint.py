@@ -47,6 +47,7 @@ from typing import Any
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.merkle import RunningRoot
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_reader import ReadableEventLog
 
 __all__ = [
     "DEFAULT_CHECKPOINT_INTERVAL",
@@ -111,7 +112,7 @@ def _checkpoint_hash(seq: int, root: str, created_at: float, prev_hash: str) -> 
     return hashlib.sha256(payload).hexdigest()
 
 
-def _root_through(store: EventStore, through_seq: int | None) -> str:
+def _root_through(store: ReadableEventLog, through_seq: int | None) -> str:
     """Stream the log into a Merkle root without materialising it."""
     running = RunningRoot()
     for event in store.iter_events(through_seq=through_seq, apply_row_quarantine=False):
@@ -196,7 +197,7 @@ class MerkleCheckpointStore:
         """
         return self.append(store.max_seq(), _root_through(store, None))
 
-    def verify(self, store: EventStore) -> None:
+    def verify(self, store: ReadableEventLog) -> None:
         """Verify the event store against the latest checkpoint, fail-closed.
 
         Raises

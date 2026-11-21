@@ -16,7 +16,9 @@ form: a missing file is refused and nothing is created, SQLite refuses every
 write, and a reader in WAL mode never blocks the hub's writer. A store whose
 format is newer than this release reads is refused as it is for the writer.
 
-The reader offers the writer's read methods only. Rows are decoded exactly as the
+The reader offers the writer's read methods only, and :class:`ReadableEventLog`
+names the reads that replay, checkpoint verification and a peer fetcher need, so
+those take either the writer or the reader. Rows are decoded exactly as the
 writer decodes them; a malformed row comes back as the same non-secret corrupt-row
 marker.
 
@@ -35,17 +37,51 @@ from collections.abc import Iterable, Iterator, Mapping
 from contextlib import closing, contextmanager
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from synapse_channel.core.event_row_recovery import CorruptEventRow
 from synapse_channel.core.persistence import BUSY_TIMEOUT_MS
 from synapse_channel.core.persistence_api import READ_ALL_DOCUMENTATION, inherit_documentation
 from synapse_channel.core.persistence_connection import StoreConnection, create_families
 from synapse_channel.core.persistence_event_reads import EventReader
+from synapse_channel.core.persistence_operations import OperationTable
 from synapse_channel.core.persistence_sqlcipher import ReadOnlyOpenRefused, connect_event_store
 
 if TYPE_CHECKING:
-    from synapse_channel.core.persistence import StoredEvent
+    from synapse_channel.core.persistence import StoredEvent, StoredOperation
+
+
+class ReadableEventLog(Protocol):
+    """The reads that journal replay, checkpoint verification and a peer fetcher make.
+
+    Both the writer, :class:`~synapse_channel.core.persistence.EventStore`, and the
+    read-only :class:`EventLogReader` satisfy it, so a caller that only reads can be
+    handed either.
+    """
+
+    def iter_events(
+        self,
+        *,
+        through_seq: int | None = None,
+        kinds: Iterable[str] | None = None,
+        after_seq: int | None = None,
+        apply_row_quarantine: bool = True,
+    ) -> Iterator[StoredEvent]:
+        """Yield events in ascending sequence order without materialising the log."""
+
+    def read_since(
+        self, after_seq: int, *, kinds: Iterable[str] | None = None, limit: int | None = None
+    ) -> list[StoredEvent]:
+        """Return events whose sequence is greater than a cursor, in order."""
+
+    def max_seq(self) -> int:
+        """Return the highest sequence number stored, or ``0`` when the log is empty."""
+
+    def latest_at_or_before(self, through_seq: int) -> StoredEvent | None:
+        """Return the newest retained event at or below ``through_seq``."""
+
+    def get_operation(self, operation_key: str) -> StoredOperation | None:
+        """Return one completed operation, or ``None`` when it is not recorded."""
 
 
 class EventLogReader:
@@ -221,6 +257,11 @@ class EventLogReader:
     def latest_at_or_before(self, through_seq: int) -> StoredEvent | None:
         """Return the newest retained event at or below ``through_seq``."""
         return self._families.reads.latest_at_or_before(through_seq)
+
+    @inherit_documentation(OperationTable.get_operation)
+    def get_operation(self, operation_key: str) -> StoredOperation | None:
+        """Return one completed operation without exposing the key in errors."""
+        return self._families.operations.get_operation(operation_key)
 
     def close(self) -> None:
         """Close the read-only connection."""

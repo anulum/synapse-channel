@@ -52,10 +52,12 @@ from synapse_channel.core.multihub_transport import (
     pinned_connector,
 )
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.persistence_sqlcipher import SqlCipherKeyError
 from synapse_channel.terminal_text import terminal_text
 
-StoreFactory = Callable[[str], EventStore]
+# Observe reads only; an injected factory may still build the writer.
+StoreFactory = Callable[[str], EventStore | EventLogReader]
 FetcherFactory = Callable[..., EventFetcher]
 
 
@@ -110,7 +112,7 @@ def _render(state: ObservedState, peer_id: str, *, json_out: bool) -> None:
             )
 
 
-def _cmd_observe(args: argparse.Namespace, *, store_factory: StoreFactory = EventStore) -> int:
+def _cmd_observe(args: argparse.Namespace, *, store_factory: StoreFactory = EventLogReader) -> int:
     """Open a peer hub's event store, fold its log, and print the observed state."""
     if not Path(args.peer_db).is_file():
         print(f"peer database not found: {terminal_text(args.peer_db)}", file=sys.stderr)
@@ -119,8 +121,9 @@ def _cmd_observe(args: argparse.Namespace, *, store_factory: StoreFactory = Even
     key_file = getattr(args, "db_key_file", None)
     try:
         # Production opens honour SQLCipher; test injectables take path only.
-        if store_factory is EventStore:
-            store = EventStore(args.peer_db, key_file=key_file)
+        store: EventStore | EventLogReader
+        if store_factory is EventLogReader:
+            store = EventLogReader(args.peer_db, key_file=key_file)
         else:
             store = store_factory(args.peer_db)
     except (sqlite3.Error, SqlCipherKeyError, MultiHubIntegrityError, ValueError) as exc:

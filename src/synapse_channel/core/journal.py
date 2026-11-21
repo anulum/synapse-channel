@@ -70,6 +70,7 @@ from synapse_channel.core.notification_events import NOTIFICATION_FIELD, notific
 from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.path_identity import parse_optional_claim_scope_identity
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence_reader import ReadableEventLog
 from synapse_channel.core.protected_write_admission_journal import (
     ADMISSION_EVENT_KIND,
     ProtectedAdmissionReplayPolicy,
@@ -991,7 +992,7 @@ def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
 
 
 def _protected_replay_callbacks(
-    store: EventStore,
+    store: ReadableEventLog,
     state: SynapseState,
     policies: Mapping[str, ProtectedAdmissionReplayPolicy] | None,
     through_seq: int | None,
@@ -1016,7 +1017,7 @@ def _protected_replay_callbacks(
 
 
 def replay(
-    store: EventStore,
+    store: ReadableEventLog,
     *,
     default_ttl_seconds: float = 3600.0,
     max_progress: int = DEFAULT_MAX_PROGRESS,

@@ -15,7 +15,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING, Literal, cast
 
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import ReadableEventLog
 from synapse_channel.core.protected_write_admission_journal import ProtectedAdmissionReplayPolicy
 from synapse_channel.core.protected_write_journal import protected_operation_response
 from synapse_channel.core.protected_write_lifecycle import (
@@ -179,7 +180,7 @@ def finalize_protected_transition(
 def restore_protected_transition(
     event: StoredEvent,
     *,
-    store: EventStore,
+    store: ReadableEventLog,
     state: SynapseState,
     policies: Mapping[str, ProtectedAdmissionReplayPolicy],
     through_seq: int | None = None,

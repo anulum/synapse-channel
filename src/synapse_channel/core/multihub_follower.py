@@ -52,6 +52,7 @@ from synapse_channel.core.multihub_fold import (
 )
 from synapse_channel.core.multihub_merge import HubEvent, hub_cursors, merge_event_logs, tag_events
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence_reader import ReadableEventLog
 from synapse_channel.core.protocol import ProtocolNegotiation
 
 EventFetcher = Callable[[int], Awaitable[Sequence[StoredEvent]]]
@@ -68,8 +69,8 @@ class ProtocolAwareEventFetcher(Protocol):
     """Most recent peer clock-skew observation exposed by the fetcher."""
 
 
-def store_fetcher(store: EventStore) -> EventFetcher:
-    """Return a fetcher that reads a peer :class:`EventStore` over its ``read_since`` seam."""
+def store_fetcher(store: ReadableEventLog) -> EventFetcher:
+    """Return a fetcher that reads a peer event log over its ``read_since`` seam."""
 
     async def fetch(after_seq: int) -> Sequence[StoredEvent]:
         return store.read_since(after_seq)

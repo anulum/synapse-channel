@@ -387,9 +387,16 @@ The store's bytes never change. Reading a WAL journal that no process has open
 leaves SQLite's empty `-wal` file and its `-shm` index, with the store's own
 permissions, because a read-only connection cannot checkpoint them away. The next
 writer uses and removes them. `synapse event-query`, `synapse ingest`, `synapse
-attention sync`, `synapse verdict status`, the SQLCipher check of `synapse doctor`
-and the offline reports (causality, Merkle, replay, postmortem, reliability and
-the other analysis readers) read this way.
+attention sync`, `synapse verdict status`, `synapse entitlements suggest-compute`,
+`synapse merkle checkpoint --verify`, `synapse multihub observe`, the SQLCipher
+check of `synapse doctor`, the dashboard's store-backed feeds and the offline
+reports (causality, Merkle, replay, postmortem, reliability and the other analysis
+readers) read this way.
+
+`ReadableEventLog`, in the same module, names the reads that journal replay,
+Merkle checkpoint verification and the multihub peer fetcher make (`iter_events`,
+`read_since`, `max_seq`, `latest_at_or_before`, `get_operation`). Both
+`EventStore` and `EventLogReader` satisfy it, so those take either.
 
 ## Read-only delivery receipts
 

@@ -45,7 +45,7 @@ from synapse_channel.core.entitlements import (
     validate_event,
 )
 from synapse_channel.core.journal import EventKind, replay
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.secure_path import SecurePathError, read_owner_only_file_bytes
 
@@ -211,7 +211,7 @@ def _suggest_compute(args: argparse.Namespace) -> int:
         hub_path = Path(args.hub_db)
         if not hub_path.is_file():
             raise ComputeCreditError("hub event store is unavailable")
-        board_store = EventStore(hub_path)
+        board_store = EventLogReader(hub_path)
         try:
             observed = tuple(board_store.read_all())
             approvals = build_approval_report(observed)

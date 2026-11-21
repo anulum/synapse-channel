@@ -202,6 +202,28 @@ def test_a_corrupt_row_comes_back_as_the_writers_marker(tmp_path: Path) -> None:
     _assert_read_left_only_wal_sidecars(db, before)
 
 
+def test_the_reader_returns_a_committed_operation_as_the_writer_does(tmp_path: Path) -> None:
+    """Replay's protected restorers read an operation through either log."""
+    db = tmp_path / "hub.db"
+    with EventStore(db) as store:
+        store.commit_operation(
+            operation_key="seat\0claim\0op-1",
+            request_digest="a" * 64,
+            response={"type": "claim_result", "accepted": True},
+            events=(("claim", {"task_id": "T-1"}),),
+            intent={"family": "claim"},
+        )
+        expected = store.get_operation("seat\0claim\0op-1")
+    assert expected is not None
+    before = _snapshot(db)
+
+    with EventLogReader(db) as reader:
+        assert reader.get_operation("seat\0claim\0op-1") == expected
+        assert reader.get_operation("seat\0claim\0absent") is None
+
+    _assert_read_left_only_wal_sidecars(db, before)
+
+
 def test_the_reader_offers_no_write(tmp_path: Path) -> None:
     db = tmp_path / "hub.db"
     _journal(db)

@@ -68,7 +68,8 @@ from synapse_channel.core.journal import EventKind, replay
 from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES, Blackboard
 from synapse_channel.core.merkle import proof_to_json, run_proof
 from synapse_channel.core.multihub_wire import LogSnapshot, encode_log_snapshot
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.universal_receipts import (
     UNIVERSAL_RECEIPT_EVENT_KINDS,
     universal_receipt_to_json,
@@ -110,9 +111,9 @@ def event_store_key(key_file: str | Path | None) -> Iterator[None]:
         _event_store_key_file.reset(token)
 
 
-def _open_event_store(db_path: str | Path) -> EventStore:
-    """Open a hub event store, honouring an optional SQLCipher key context."""
-    return EventStore(db_path, key_file=_event_store_key_file.get())
+def _open_event_store(db_path: str | Path) -> EventLogReader:
+    """Open a hub event store read-only, honouring an optional SQLCipher key context."""
+    return EventLogReader(db_path, key_file=_event_store_key_file.get())
 
 
 DEFAULT_EVENTS_LIMIT = 200
@@ -650,7 +651,7 @@ def _finding_row(event: StoredEvent) -> dict[str, object]:
     }
 
 
-def _newest_findings(store: EventStore, ceiling: int, wanted: int) -> list[StoredEvent]:
+def _newest_findings(store: EventLogReader, ceiling: int, wanted: int) -> list[StoredEvent]:
     """Read at most ``wanted`` findings at or below ``ceiling``, newest first.
 
     The log is walked backwards in :data:`FINDINGS_SCAN_SPAN` sequence windows,

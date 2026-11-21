@@ -22,6 +22,7 @@ from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.dashboard import DashboardServer
 from synapse_channel.dashboard_store_feeds import (
@@ -175,13 +176,14 @@ def test_the_walk_reads_backwards_window_by_window_and_stops_when_full(
     length = 3 * FINDINGS_SCAN_SPAN
     _store_with_spread_findings(db, (5, FINDINGS_SCAN_SPAN + 7, length - 3), length)
     windows: list[tuple[int | None, int | None]] = []
-    original = EventStore.read_window
+    original = EventLogReader.read_window
 
-    def counted(self: EventStore, **kwargs: Any) -> Any:
+    def counted(self: EventLogReader, **kwargs: Any) -> Any:
         windows.append((kwargs.get("min_seq"), kwargs.get("max_seq")))
         return original(self, **kwargs)
 
-    monkeypatch.setattr(EventStore, "read_window", counted)
+    # The feed reads through the read-only open, so the counter sits on its class.
+    monkeypatch.setattr(EventLogReader, "read_window", counted)
     newest = build_findings_feed(db, limit=1)
 
     assert [row["statement"] for row in _rows(newest)] == [f"finding at {length - 3}"]
