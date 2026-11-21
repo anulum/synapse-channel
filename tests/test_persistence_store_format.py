@@ -35,6 +35,7 @@ from synapse_channel.core.persistence_sqlcipher import (
 from synapse_channel.core.persistence_store_format import (
     STORE_FORMAT,
     StoreFormatRefused,
+    read_journal_instance,
     record_store_format,
 )
 from synapse_channel.service_templates import render_hub_unit
@@ -344,6 +345,8 @@ def test_an_encrypted_log_records_and_refuses_the_same_way(tmp_path: Path) -> No
 def test_the_conversion_carries_the_format_and_refuses_a_newer_source(tmp_path: Path) -> None:
     """The encrypted copy records this release's format; a newer source is refused uncopied.
 
+    The copy also starts a new journal instance, at the copied journal's highest
+    sequence, so a feed cursor of the plaintext journal never carries over to it.
     Without a SQLCipher driver the conversion is refused with the documented error
     and writes no destination. The newer source is refused in both cases, because
     its format is read before any encrypted copy is opened.
@@ -352,6 +355,9 @@ def test_the_conversion_carries_the_format_and_refuses_a_newer_source(tmp_path: 
     source = tmp_path / "plain.db"
     with EventStore(source) as store:
         store.append("chat", {"text": "carried"})
+    with closing(sqlite3.connect(source)) as plain:
+        source_instance = read_journal_instance(plain)
+    assert source_instance is not None
     destination = tmp_path / "encrypted.db"
 
     if sqlcipher_available():
@@ -359,8 +365,12 @@ def test_the_conversion_carries_the_format_and_refuses_a_newer_source(tmp_path: 
         connection = connect_sqlcipher(destination, key.read_bytes())
         try:
             assert _record(connection) == (STORE_FORMAT, __version__, __version__)
+            copied = read_journal_instance(connection)
         finally:
             connection.close()
+        assert copied is not None
+        assert copied.instance != source_instance.instance
+        assert copied.floor == 1
         with EventStore(destination, key_file=key) as store:
             assert [event.payload["text"] for event in store.read_all()] == ["carried"]
     else:

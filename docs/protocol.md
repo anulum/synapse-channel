@@ -1713,6 +1713,15 @@ sequence is below the consumer's cursor. No hub command restores or promotes a
 live journal today: `encrypt-key restore` restores key envelopes, and
 multi-hub recovery appends.
 
+A plaintext-to-SQLCipher conversion (`synapse sqlcipher migrate`) copies the
+events but writes a fresh format record into the encrypted copy, so the copy
+starts a new journal instance, with the copied journal's highest sequence as
+its `instance_floor`. A consumer bound to the plaintext journal is answered
+`source_changed` by a hub that serves the encrypted one, and rebinds
+deliberately. Its acks travel with the rows but belong to the old instance, so
+they register no consumer there until it acks again. This fails closed: no
+cursor carries across the conversion.
+
 The feed needs a journal and a configured `--hub-id`, as session-bound
 delivery does. A hub without a configured id draws a new one at every start,
 which would end every cursor. Without either, both verbs are refused.
