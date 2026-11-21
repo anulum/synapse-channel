@@ -12,6 +12,17 @@ optional advisory metadata on `client_timestamp`; non-finite or malformed client
 values are discarded. A Byzantine future or backdated client stamp therefore
 cannot poison history or dead-letter ordering.
 
+A `chat` frame carries text, never authority. Approvals, verdicts, evidence and
+corrections are read only from `ledger_progress` notes of their declared `kind`,
+attributed to the connection's bound name and admitted through their gates. No
+handler or journal reader parses a chat body as a verb, an approval, a verdict or
+a declaration, and a chat is never a receipt. The hub keeps an inbound chat
+frame's undeclared top-level fields, such as a `kind`, `text` or `author` the
+frame supplies, in the journal as they arrived; they carry no meaning, because
+every authority reader selects its rows by event kind first. Chat bodies are
+delivered, replayed, queried and described, and the forward feed serves marker
+chat; none of these paths records an approval, a verdict or a declaration.
+
 Covered coordination mutations may carry an `idem_key` for canonical retry
 suppression. A journal-backed hub retains their atomic operation result across
 restart; without a journal the suppression is process-local. Chat has its

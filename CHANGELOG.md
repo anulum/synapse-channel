@@ -69,6 +69,17 @@ execution evidence when carrying a release claim forward.
   SQLite creates it, and an empty ledger file is completed rather than refused as
   unversioned. A version 0 database that already holds tables is still refused.
 
+### Security
+
+- **A chat is never an approval, a verdict or a declaration, and a test now pins
+  it.** On a real hub, a seat sends canonical approval, evidence and verdict
+  bodies as room chats, as direct chats and as raw chat frames that also claim a
+  note `kind`, `text` and `author`. No approval, verdict, declared object,
+  approver-kind row, attention item or receipt results. The same bodies sent as
+  typed progress notes by the proper seats reach every one of those readers. The
+  wire protocol and the security policy state the rule. The code already behaved
+  this way; nothing in the hub changed.
+
 ## [0.99.60] - 2026-11-21
 
 Core 0.99.60 makes the event log safe to read beside a running hub and adds a

@@ -322,6 +322,18 @@ checkpoint, which detects cut or rewritten history but not appended rows. The ke
 file is the trust boundary; keep it on the same owner-only footing as the
 checkpoint store, or on separate custody.
 
+### Chat is never authority
+
+A chat body is data, and so is any field a chat frame adds. Approvals, verdicts,
+evidence and corrections come only from `ledger_progress` notes of their declared
+kind, attributed to the sender the hub bound to the connection and admitted
+through their gates. A chat whose text is a canonical approval or verdict body,
+or whose frame claims a note `kind`, `text` or `author`, records none of them and
+yields no receipt; the [wire protocol](docs/protocol.md) states the rule. This
+covers what SYNAPSE records. It does not cover what a person or an agent does
+after reading a message: content from outside the group stays untrusted input for
+whoever acts on it.
+
 ### The forward event feed
 
 The [forward event feed](docs/protocol.md#the-forward-event-feed) adds one
