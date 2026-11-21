@@ -19,7 +19,7 @@ import pytest
 
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel import cli
-from synapse_channel.core.compaction import RetentionPolicy, compact
+from synapse_channel.core.compaction import FeedConsumerUnknown, RetentionPolicy, compact
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import (
     EventKind,
@@ -100,9 +100,94 @@ def test_the_lowest_registered_ack_holds_the_floor_and_the_run_is_journalled(
             "past_feed_acks": False,
             "held_by": [["R/fast", findings[3]], ["R/slow", findings[1]]],
             "passed_consumers": [],
+            "released": [],
             "removed": 2,
         }
     ]
+
+
+def test_a_consumer_released_by_name_no_longer_holds_the_floor(tmp_path: Path) -> None:
+    gone, behind = tmp_path / "gone", tmp_path / "behind"
+    gone.mkdir()
+    behind.mkdir()
+    store = EventStore(gone / "hub.db")
+    try:
+        findings = _registered(store)
+        requested = store.max_seq()
+        result = compact(
+            store, _AGED, floor_seq=requested, now=1000.0, release_feed_consumers=["R/slow"]
+        )
+        floors, statements = _floors(store), _statements(store)
+    finally:
+        store.close()
+    other = EventStore(behind / "hub.db")
+    try:
+        other_findings = _registered(other)
+        ahead = compact(
+            other, _AGED, floor_seq=other.max_seq(), now=1000.0, release_feed_consumers=["R/fast"]
+        )
+        other_floors = _floors(other)
+    finally:
+        other.close()
+
+    # The slow consumer is gone: the fast one alone holds the floor, and the slow one is passed.
+    assert (result.floor_seq, result.requested_floor_seq) == (findings[3], requested)
+    assert result.held_by_feed_acks == (("R/fast", findings[3]),)
+    assert result.passed_feed_acks == (("R/slow", findings[1]),)
+    assert (result.findings_removed, statements) == (4, [])
+    assert [
+        (f["applied_floor"], f["past_feed_acks"], f["released"], f["passed_consumers"])
+        for f in floors
+    ] == [(findings[3], False, ["R/slow"], [["R/slow", findings[1]]])]
+    # A released consumer at or above the floor the others hold loses nothing, so none is passed.
+    assert (ahead.floor_seq, ahead.held_by_feed_acks) == (
+        other_findings[1],
+        (("R/slow", other_findings[1]),),
+    )
+    assert (ahead.passed_feed_acks, ahead.findings_removed) == ((), 2)
+    assert [(f["released"], f["passed_consumers"]) for f in other_floors] == [(["R/fast"], [])]
+
+
+def test_an_unknown_release_or_one_with_the_override_is_refused_before_any_deletion(
+    tmp_path: Path,
+) -> None:
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        _registered(store)
+        before = store.count()
+        requested = store.max_seq()
+        with pytest.raises(
+            FeedConsumerUnknown, match="not a registered feed consumer: R/gone, R/x"
+        ):
+            # R/gone holds an ack of another instance only, so it is not registered
+            compact(
+                store,
+                _AGED,
+                floor_seq=requested,
+                now=1000.0,
+                release_feed_consumers=["R/x", "R/gone"],
+            )
+        with pytest.raises(ValueError, match="not both"):
+            compact(
+                store,
+                _AGED,
+                floor_seq=requested,
+                past_feed_acks=True,
+                release_feed_consumers=["R/slow"],
+            )
+        counted, floors = store.count(), _floors(store)
+    finally:
+        store.close()
+    bare = EventStore(tmp_path / "bare.db")
+    try:
+        _expired(bare, "f0")
+        with pytest.raises(FeedConsumerUnknown, match="R/slow"):
+            compact(bare, _AGED, floor_seq=bare.max_seq(), release_feed_consumers=["R/slow"])
+        bare_count = bare.count()
+    finally:
+        bare.close()
+
+    assert (counted, floors, bare_count) == (before, [], 1)
 
 
 def test_an_explicit_override_compacts_past_the_acks_and_journals_whom_it_passed(
@@ -320,3 +405,39 @@ def test_the_command_names_the_consumers_that_held_or_were_passed(
         f"R/slow at {findings[1]}"
     ) in passed
     assert "the floor was held" not in passed
+
+
+def test_the_command_releases_a_consumer_by_name_and_refuses_an_unknown_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    findings = _registered(store)
+    store.close()
+    report = tmp_path / "report.html"
+    grace = ["--all", "--finding-grace-seconds", "0"]
+
+    unknown_rc = cli.main(["compact", str(db), *grace, "--release-feed-consumer", "R/x"])
+    unknown = capsys.readouterr().err
+    archived_rc = cli.main(
+        ["compact", str(db), "--all", "--drop-corrupt", "--archive-report", str(report)]
+        + ["--release-feed-consumer", "R/x"]
+    )
+    archived = capsys.readouterr().err
+    released_rc = cli.main(["compact", str(db), *grace, "--release-feed-consumer", "R/slow"])
+    released = capsys.readouterr().out
+    with pytest.raises(SystemExit) as both:
+        cli.main(
+            ["compact", str(db), *grace, "--past-feed-acks", "--release-feed-consumer", "R/slow"]
+        )
+    capsys.readouterr()
+
+    assert (unknown_rc, archived_rc) == (2, 2)
+    assert "compact: not a registered feed consumer: R/x" in unknown
+    assert "compact: not a registered feed consumer: R/x" in archived
+    assert not report.exists()  # the refusal comes before the planned archive
+    assert released_rc == 0
+    assert "removed 0 checkpoint(s), 4 finding(s)" in released
+    assert f"by feed acknowledgements: R/fast at {findings[3]}" in released
+    assert f"compacted past feed acknowledgements (journalled): R/slow at {findings[1]}" in released
+    assert both.value.code == 2  # the two options are exclusive

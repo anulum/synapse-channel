@@ -33,6 +33,7 @@ from synapse_channel.core.archive_report import (
 )
 from synapse_channel.core.compaction import (
     CompactionResult,
+    FeedConsumerUnknown,
     RetentionPolicy,
     compact,
 )
@@ -151,7 +152,8 @@ def _cmd_compact(args: argparse.Namespace) -> int:
     per task and ages out findings whose validity window closed more than
     ``--finding-grace-seconds`` ago, deleting only events at or below a floor
     sequence. A registered feed consumer's acknowledgement lowers that floor;
-    ``--past-feed-acks`` overrides it and journals the consumers passed. A consumer
+    ``--past-feed-acks`` overrides it, ``--release-feed-consumer NAME`` leaves one
+    consumer out of it, and the consumers passed are journalled. A consumer
     that only keeps a sequence cursor is not registered, so the caller still
     establishes that it has ingested the floor. Pass it with ``--floor-seq``, or
     ``--all`` to treat the whole log as settled when no read-side consumer lags.
@@ -206,7 +208,10 @@ def _cmd_compact(args: argparse.Namespace) -> int:
             )
             return 2
         archive_events = store.read_all() if args.archive_report else []
-        feed = {"past_feed_acks": bool(args.past_feed_acks)}
+        feed = {
+            "past_feed_acks": bool(args.past_feed_acks),
+            "release_feed_consumers": tuple(args.release_feed_consumer or ()),
+        }
         result = _compact_with_archive(args, store, policy, floor, archive_events, feed)
         if result is None:
             return 2
@@ -228,9 +233,27 @@ def _compact_with_archive(
 ) -> CompactionResult | None:
     """Write the planned archive when corrupt rows go, then compact.
 
-    Returns ``None`` when the planned archive cannot be written; nothing is
-    deleted then.
+    Returns ``None``, after naming the reason, when a released feed consumer is
+    not registered or the planned archive cannot be written; nothing is written or
+    deleted then. The first sweep refuses an unknown release: the dry run when an
+    archive is planned.
     """
+    try:
+        return _archive_then_compact(args, store, policy, floor, archive_events, feed)
+    except FeedConsumerUnknown as exc:
+        print(f"compact: {exc}", file=sys.stderr)
+        return None
+
+
+def _archive_then_compact(
+    args: argparse.Namespace,
+    store: EventStore,
+    policy: RetentionPolicy,
+    floor: int,
+    archive_events: list[StoredEvent],
+    feed: dict[str, Any],
+) -> CompactionResult | None:
+    """Write the planned archive when corrupt rows go, then compact, or return ``None``."""
     if args.drop_corrupt and args.archive_report:
         preview = compact(store, policy, floor_seq=floor, dry_run=True, **feed)
         preview_report = render_archive_report(
@@ -378,7 +401,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
 
 
 def _add_compact_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the ``compact`` subparser: the retention knobs, the floor and the feed override."""
+    """Register the ``compact`` subparser: the retention knobs, the floor and the feed release."""
     compact_parser = subparsers.add_parser(
         "compact",
         help="Bound the durable event log: keep the latest-N checkpoints per task and "
@@ -420,7 +443,7 @@ def _add_compact_parser(subparsers: argparse._SubParsersAction[argparse.Argument
 
 
 def _add_compact_floor_arguments(compact_parser: argparse.ArgumentParser) -> None:
-    """Register the floor, the feed override and the archive options of ``compact``."""
+    """Register the floor, the feed-release and the archive options of ``compact``."""
     floor_group = compact_parser.add_mutually_exclusive_group()
     floor_group.add_argument(
         "--floor-seq",
@@ -436,12 +459,23 @@ def _add_compact_floor_arguments(compact_parser: argparse.ArgumentParser) -> Non
             "a registered feed consumer still holds the floor at its acknowledgement)."
         ),
     )
-    compact_parser.add_argument(
+    feed_release = compact_parser.add_mutually_exclusive_group()
+    feed_release.add_argument(
         "--past-feed-acks",
         action="store_true",
         help=(
             "Apply the floor even above a registered feed consumer's acknowledgement; "
             "the consumers passed are journalled and their next page reports the gap."
+        ),
+    )
+    feed_release.add_argument(
+        "--release-feed-consumer",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help=(
+            "Leave one registered feed consumer, such as one that is gone, out of the "
+            "floor (repeatable); the others still hold it, and it is journalled as passed."
         ),
     )
     compact_parser.add_argument(

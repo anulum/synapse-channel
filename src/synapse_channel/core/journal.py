@@ -813,14 +813,16 @@ def record_compaction_floor(
     held_by: tuple[tuple[str, int], ...],
     passed_consumers: tuple[tuple[str, int], ...],
     removed: int,
+    released: tuple[str, ...] = (),
 ) -> None:
     """Append the floor one compaction applied, durably.
 
-    ``held_by`` names the feed consumers whose acknowledgements lowered the
-    requested floor; ``passed_consumers`` names those an explicit override
-    compacted past, with their acknowledgements. The feed reports the highest
-    applied floor of the journal instance, so a consumer whose cursor lies below
-    it is told that rows may be gone.
+    ``held_by`` names the feed consumers whose acknowledgements lay below the
+    requested floor and held it; ``passed_consumers`` names those an explicit
+    override or release compacted past, with their acknowledgements, and
+    ``released`` the consumers the operator released by name. The feed reports
+    the highest applied floor of the journal instance, so a consumer whose
+    cursor lies below it is told that rows may be gone.
     """
     store.append(
         EventKind.COMPACTION_FLOOR,
@@ -831,6 +833,7 @@ def record_compaction_floor(
             "past_feed_acks": bool(past_feed_acks),
             "held_by": [[consumer, int(acked)] for consumer, acked in held_by],
             "passed_consumers": [[consumer, int(acked)] for consumer, acked in passed_consumers],
+            "released": list(released),
             "removed": int(removed),
         },
         durable=True,

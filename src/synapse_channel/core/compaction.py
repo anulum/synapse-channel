@@ -26,11 +26,12 @@ readers of the log at once:
   cursor. Compaction never deletes an event above a caller-supplied ``floor_seq``,
   and never above the acknowledgement of a registered feed consumer
   (:mod:`~synapse_channel.core.feed_retention`): the floor it applies is the lower
-  of the two, unless ``past_feed_acks`` is set, and then the consumers it passes
-  are journalled. A consumer that reads only sequence cursors and never
-  acknowledges is not registered, so the caller still chooses a floor no higher
-  than its cursor. Deleting a row never recycles its sequence (the primary key only
-  ever increases), so a cursor skips the gap; the feed reports the floor applied.
+  of the two, unless ``past_feed_acks`` is set or a consumer is released by
+  name, and then the consumers it passes are journalled. A consumer that reads
+  only sequence cursors and never acknowledges is not registered, so the caller
+  still chooses a floor no higher than its cursor. Deleting a row never recycles
+  its sequence (the primary key only ever increases), so a cursor skips the gap;
+  the feed reports the floor applied.
 
 The policy is declarative (:class:`RetentionPolicy`) and the sweep
 (:func:`compact`) reports exactly what it removed (:class:`CompactionResult`).
@@ -40,11 +41,16 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
+from collections.abc import Collection
 from dataclasses import dataclass
 
-from synapse_channel.core.feed_retention import feed_ack_floor
+from synapse_channel.core.feed_retention import FeedAckFloor, feed_ack_floor
 from synapse_channel.core.journal import EventKind, record_compaction_floor
 from synapse_channel.core.persistence import EventStore
+
+
+class FeedConsumerUnknown(ValueError):
+    """Raised when a consumer released by name holds no acknowledgement in the journal."""
 
 
 @dataclass(frozen=True)
@@ -115,7 +121,7 @@ class CompactionResult:
         Registered feed consumers whose acknowledgement lies below the requested
         floor; the lowest of them is ``floor_seq``.
     passed_feed_acks : tuple of (str, int)
-        Registered feed consumers an explicit override compacted past.
+        Registered feed consumers an explicit override or release compacted past.
     """
 
     checkpoints_removed: int
@@ -179,16 +185,38 @@ def _expired_findings(store: EventStore, *, floor: int, cutoff: float) -> list[i
 
 
 def _feed_floor(
-    store: EventStore, requested: int, *, past_feed_acks: bool
+    acks: FeedAckFloor | None,
+    requested: int,
+    *,
+    past_feed_acks: bool,
+    released: frozenset[str],
 ) -> tuple[int, tuple[tuple[str, int], ...], tuple[tuple[str, int], ...]]:
     """Return the floor to apply, the consumers that hold it and the consumers passed."""
-    acks = feed_ack_floor(store)
     if acks is None:
         return requested, (), ()
-    holding = acks.holding(requested)
     if past_feed_acks:
-        return requested, (), holding
-    return min(requested, acks.floor), holding, ()
+        return requested, (), acks.holding(requested)
+    kept = tuple(item for item in acks.consumers if item[0] not in released)
+    floor = min([requested, *(acked for _, acked in kept)])
+    held = tuple(item for item in kept if item[1] < requested)
+    passed = tuple(item for item in acks.consumers if item[0] in released and item[1] < floor)
+    return floor, held, passed
+
+
+def _resolve_feed_floor(
+    store: EventStore,
+    requested: int,
+    *,
+    past_feed_acks: bool,
+    released: frozenset[str],
+) -> tuple[int, tuple[tuple[str, int], ...], tuple[tuple[str, int], ...]]:
+    """Read the registered consumers, refuse an unknown release, and return the feed floor."""
+    acks = feed_ack_floor(store)
+    registered = {name for name, _ in acks.consumers} if acks is not None else set()
+    unknown = sorted(released - registered)
+    if unknown:
+        raise FeedConsumerUnknown(f"not a registered feed consumer: {', '.join(unknown)}")
+    return _feed_floor(acks, requested, past_feed_acks=past_feed_acks, released=released)
 
 
 def compact(
@@ -199,6 +227,7 @@ def compact(
     now: float | None = None,
     dry_run: bool = False,
     past_feed_acks: bool = False,
+    release_feed_consumers: Collection[str] = (),
 ) -> CompactionResult:
     """Apply a retention policy to the durable log, deleting only below the floor.
 
@@ -223,11 +252,23 @@ def compact(
     past_feed_acks : bool, optional
         Apply ``floor_seq`` even above a registered feed consumer's
         acknowledgement. The consumers passed are journalled with the floor.
+    release_feed_consumers : collection of str, optional
+        Registered feed consumers to leave out of the floor, such as one that is
+        gone for good; the others still hold it. A released consumer whose
+        acknowledgement lies below the floor applied is journalled as passed.
 
     Returns
     -------
     CompactionResult
         Counts of what was removed and the floor that was honoured.
+
+    Raises
+    ------
+    ValueError
+        When ``past_feed_acks`` and ``release_feed_consumers`` are both given.
+    FeedConsumerUnknown
+        When a released name holds no acknowledgement in the journal's current
+        instance; nothing is deleted.
 
     Notes
     -----
@@ -237,9 +278,14 @@ def compact(
     and a sweep that removes nothing and passes no one, journals nothing.
     """
     requested = int(floor_seq)
+    released = frozenset(release_feed_consumers)
+    if past_feed_acks and released:
+        raise ValueError("pass past_feed_acks or release_feed_consumers, not both")
     if policy.is_noop:
         return CompactionResult(checkpoints_removed=0, findings_removed=0, floor_seq=requested)
-    floor, held, passed = _feed_floor(store, requested, past_feed_acks=past_feed_acks)
+    floor, held, passed = _resolve_feed_floor(
+        store, requested, past_feed_acks=past_feed_acks, released=released
+    )
     ts = time.time() if now is None else float(now)
 
     doomed_checkpoints: list[int] = []
@@ -272,6 +318,7 @@ def compact(
             held_by=held,
             passed_consumers=passed,
             removed=len(seqs),
+            released=tuple(sorted(released)),
         )
     return CompactionResult(
         checkpoints_removed=len(doomed_checkpoints),

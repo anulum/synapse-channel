@@ -1735,11 +1735,14 @@ them waits for every consumer to settle the corrupt prefix.
 journal instance is registered. `synapse compact` never deletes above the
 lowest of the registered consumers' highest acks: it applies the lower of the
 requested floor and that ack, and names every registered consumer below the
-requested floor. `--past-feed-acks` applies the requested floor anyway. A run
-that removes a row, or passes a registered consumer, journals a durable
+requested floor. `--release-feed-consumer NAME` leaves one consumer, such as one
+that is gone for good, out of the floor while the others still hold it; a name
+that holds no ack in the instance is refused before anything is deleted.
+`--past-feed-acks` applies the requested floor past every consumer. A run that
+removes a row, or passes a registered consumer, journals a durable
 `compaction_floor` event with the requested and applied floors, the consumers
-that held it or were passed with their acks, and the rows removed; the page
-reports the highest. A consumer that keeps only a sequence cursor and never
+that held it or were passed with their acks, the consumers released by name and
+the rows removed; the page reports the highest. A consumer that keeps only a sequence cursor and never
 acks is not registered, so the operator still chooses a floor at or below its
 cursor. Acks of another instance never count, and a journal whose format record
 lost its instance registers no consumer, as the feed then binds no cursor.

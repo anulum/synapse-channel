@@ -2296,8 +2296,11 @@ created by `synapse hub --db`. It needs either `--floor-seq <seq>` (the lowest
 sequence every read-side consumer has ingested) or `--all` (only when the whole
 log is settled). A feed consumer that has acknowledged rows (`synapse feed ack`)
 holds the floor at its highest acknowledgement: the command applies the lower
-floor and prints the consumers that held it. `--past-feed-acks` compacts past
-them and prints them as passed. A run that removes a row, or passes a consumer,
+floor and prints the consumers that held it. `--release-feed-consumer NAME`
+(repeatable) leaves one consumer, such as one that is gone, out of the floor; a
+name that holds no acknowledgement is refused before anything is written or
+deleted. `--past-feed-acks` compacts past every consumer. Both print the
+consumers passed. A run that removes a row, or passes a consumer,
 journals the floor it applied, and a feed page whose cursor lies below that floor
 reports the gap. `--archive-report PATH` writes an owner-only static HTML report
 from the pre-compaction event snapshot, then records the actual checkpoint and

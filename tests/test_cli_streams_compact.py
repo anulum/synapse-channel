@@ -29,6 +29,7 @@ def _compact_ns(**overrides: Any) -> argparse.Namespace:
         "floor_seq": None,
         "all": False,
         "past_feed_acks": False,
+        "release_feed_consumer": [],
         "vacuum": False,
         "archive_report": None,
         "archive_report_limit": 200,
