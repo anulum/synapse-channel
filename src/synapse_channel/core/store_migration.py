@@ -37,6 +37,8 @@ from typing import Literal
 
 from synapse_channel.core.sqlite_schema import schema_digest
 
+# The statements of this module name both tables literally: SQL built from these
+# constants would be flagged as string-built (bandit B608), and the names are fixed.
 MIGRATIONS_TABLE = "schema_migrations"
 """Table of applied migration identities, as the migration verifier reads it by default."""
 
@@ -188,7 +190,7 @@ def _recorded(connection: sqlite3.Connection, identity: str) -> bool:
     if present is None:
         return False
     found = connection.execute(
-        f"SELECT 1 FROM {MIGRATIONS_TABLE} WHERE version = ? LIMIT 1", (identity,)
+        "SELECT 1 FROM schema_migrations WHERE version = ? LIMIT 1", (identity,)
     ).fetchone()
     return found is not None
 
@@ -236,14 +238,15 @@ def apply_declared_migration(
             raise MigrationRefused(migration.identity, "base_schema_differs", observed)
         # A later migration's base may already hold both bookkeeping tables.
         connection.execute(
-            f"CREATE TABLE IF NOT EXISTS {MIGRATIONS_TABLE} (version TEXT PRIMARY KEY)"
+            "CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)"
         )
         connection.execute(
-            f"CREATE TABLE IF NOT EXISTS {ATTEMPTS_TABLE} (attempt TEXT PRIMARY KEY, "
+            "CREATE TABLE IF NOT EXISTS store_migration_attempts (attempt TEXT PRIMARY KEY, "
             "migration TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('applied', 'sealed')))"
         )
         connection.execute(
-            f"INSERT INTO {ATTEMPTS_TABLE} (attempt, migration, kind) VALUES (?, ?, 'applied')",
+            "INSERT INTO store_migration_attempts (attempt, migration, kind) "
+            "VALUES (?, ?, 'applied')",
             (attempt, migration.identity),
         )
         for statement in migration.statements:
@@ -251,7 +254,7 @@ def apply_declared_migration(
         if migration.step is not None:
             migration.step(connection)
         connection.execute(
-            f"INSERT INTO {MIGRATIONS_TABLE} (version) VALUES (?)", (migration.identity,)
+            "INSERT INTO schema_migrations (version) VALUES (?)", (migration.identity,)
         )
         produced = schema_digest(connection)
         if produced != migration.schema_sha256:
