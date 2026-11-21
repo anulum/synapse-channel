@@ -127,6 +127,8 @@ async def test_bound_cli_records_uncertainty_for_actual_held_mailbox_and_does_no
             SEAT,
             "--directed-only",
             "--mailbox",
+            "--since",
+            "0",
             "--max-wakes",
             "1",
         )

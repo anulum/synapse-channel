@@ -910,6 +910,14 @@ offline can ask for them on reconnect. On its *registration* heartbeat it sets:
   missing or malformed value degrades to `0` (the whole retained window). Mail
   addressed to a role the connection holds is replayed from the role's mailbox
   instead (see **Role mailboxes** below), however far back it lies.
+- `mailbox_cursor` — `"absent"` when the waiter has no cursor file, sent
+  without `since_seq`. The hub does not replay that identity's personal
+  history. It anchors at the journal tip (`0` when there is no journal) and
+  sends one system frame, payload `mailbox cursor anchored`, with
+  `mailbox_anchor` set to that tip and `mailbox_pending_before` set to the
+  pending count for the identity read before the watermark advances. Role mail
+  is still replayed. An older hub ignores `mailbox_cursor`. With no `since_seq`
+  it replays from `0` and sends no anchor frame.
 - `mailbox_for` (optional) — the identity whose backlog to replay, when it differs
   from the connection name. A wake-listener connects under a receive-only `-rx` name
   but waits on its bare identity, so it names that identity here; absent or blank,

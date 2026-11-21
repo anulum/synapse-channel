@@ -1103,7 +1103,12 @@ its chat event MUST remain available for replay while retained. A reconnecting
 mailbox receiver MUST be able to request the retained directed backlog it missed,
 bounded by a monotonic
 receiver watermark it advances by acknowledging (`ack`) or by a registration
-`since_seq`. Presence MUST NOT be promoted to a positive delivery verdict, and
+`since_seq`. A registration that sends `mailbox_cursor` `"absent"` and omits
+`since_seq` MUST NOT replay that identity's personal history: the hub anchors
+at the journal tip and names the pending count in `mailbox_pending_before` on
+the `mailbox_anchor` system frame. An older hub ignores `mailbox_cursor`,
+replays from `0`, and sends no anchor. Presence MUST NOT be promoted to a
+positive delivery verdict, and
 the pending count is a transport fact, not proof a model read the message.
 Mail addressed to a role MUST be pending once, in the role's mailbox
 `role:<project>/<role>`, and remain replayable to a later holder until a holder

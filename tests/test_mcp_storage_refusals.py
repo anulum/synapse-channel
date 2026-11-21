@@ -106,7 +106,11 @@ async def test_registered_inbox_refuses_storage_faults_and_recovers(
             cursor.mkdir(parents=True)
         else:
             cursor.parent.write_text("blocked parent", encoding="utf-8")
-        expected = "cannot persist MCP inbox cursor; messages may repeat"
+        expected = (
+            "mailbox cursor is unreadable"
+            if fault == "cursor-directory"
+            else "cannot persist MCP inbox cursor; messages may repeat"
+        )
     with isolated_hub(tmp_path) as hub:
         async with _session(hub.uri, tmp_path, feed, cursor) as session:
             first = json.loads(_text(await session.call_tool("synapse_inbox", {})))
@@ -118,7 +122,7 @@ async def test_registered_inbox_refuses_storage_faults_and_recovers(
             assert "PRIVATE_CURSOR_CANARY" not in first["error"]
             assert "Errno" not in first["error"]
             assert first["messages"] == second["messages"]
-            assert first["has_more"] is (fault != "feed-directory")
+            assert first["has_more"] is (fault == "cursor-parent-file")
             assert load_cursor(cursor) == 0
             _text(await session.call_tool("synapse_board", {}))
             if fault == "feed-directory":

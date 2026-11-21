@@ -135,6 +135,38 @@ class _LifecycleAgent(Protocol):
         """Send one message envelope to the hub."""
 
 
+def _mailbox_heartbeat_fields(enabled: bool, since_seq: int, mailbox_for: str) -> dict[str, Any]:
+    """Return the registration fields that ask for a mailbox replay.
+
+    A negative cursor means the file is missing. The hub then anchors at its
+    tip instead of replaying personal history from sequence 0.
+
+    Parameters
+    ----------
+    enabled : bool
+        Whether this connection replays a mailbox.
+    since_seq : int
+        Resume sequence. Negative means the cursor file is missing.
+    mailbox_for : str
+        Identity whose backlog to replay, when it differs from the connection.
+
+    Returns
+    -------
+    dict
+        Empty when mailbox replay is off.
+    """
+    if not enabled:
+        return {}
+    fields: dict[str, Any] = {"mailbox": True}
+    if since_seq < 0:
+        fields["mailbox_cursor"] = "absent"
+    else:
+        fields["since_seq"] = since_seq
+    if mailbox_for:
+        fields["mailbox_for"] = mailbox_for
+    return fields
+
+
 class AgentLifecycleMixin:
     """Manage WebSocket connection setup, readiness, heartbeat, and shutdown."""
 
@@ -231,17 +263,11 @@ class AgentLifecycleMixin:
                     # to this socket: /who shows them and a directed message to a role
                     # is delivered to its holder instead of counted a dead letter.
                     extra["roles"] = list(self.roles)
-                if self.mailbox:
-                    # Ask the hub to replay the directed messages this identity missed
-                    # while offline, resuming from the cursor it has already processed —
-                    # only on this registration heartbeat, never a keepalive tick, so a
-                    # reconnect wakes on its backlog without a keepalive re-storming it.
-                    extra["mailbox"] = True
-                    extra["since_seq"] = self._mailbox_since_seq
-                    if self.mailbox_for:
-                        # A wake-listener connects under an -rx name but waits on its
-                        # bare identity; name it so the hub filters the replay by it.
-                        extra["mailbox_for"] = self.mailbox_for
+                extra.update(
+                    _mailbox_heartbeat_fields(
+                        self.mailbox, self._mailbox_since_seq, self.mailbox_for
+                    )
+                )
                 await self.send_message(
                     MessageType.HEARTBEAT,
                     target="System",

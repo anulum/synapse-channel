@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pytest
 
+import synapse_channel
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import wake_marks
 from synapse_channel.core.hub import SynapseHub
@@ -63,9 +64,15 @@ PROMPT = "fixed wake prompt of the relay"
 
 
 def _environment(tmp_path: Path) -> dict[str, str]:
-    """Return an environment whose home and configuration are the test's own."""
+    """Return an environment whose home and configuration are the test's own.
+
+    The child starts in the temporary directory. Point it at the package this
+    process already imported, or a relative source entry resolves inside that
+    directory and the installed package answers instead.
+    """
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
+    package = Path(synapse_channel.__file__).resolve().parent.parent
     kept = {
         key: os.environ[key]
         for key in ("PATH", "SYSTEMROOT", "LANG", "COVERAGE_PROCESS_CONFIG")
@@ -79,6 +86,7 @@ def _environment(tmp_path: Path) -> dict[str, str]:
         "XDG_DATA_HOME": str(home / "data"),
         "XDG_STATE_HOME": str(home / "state"),
         "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": package.as_posix(),
     }
 
 
@@ -259,6 +267,8 @@ async def test_a_mailbox_reading_waiter_that_connects_later_takes_the_message(
             SEAT,
             "--directed-only",
             "--mailbox",
+            "--since",
+            "0",
             "--max-wakes",
             "1",
         )

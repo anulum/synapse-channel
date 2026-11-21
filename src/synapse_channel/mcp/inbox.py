@@ -21,7 +21,7 @@ from urllib.parse import quote
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType, is_recipient
 from synapse_channel.core.relay import decode_lite
-from synapse_channel.mailbox_cursor import load_cursor, save_cursor
+from synapse_channel.mailbox_cursor import read_feed_cursor, save_cursor
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +140,10 @@ class McpFeedInbox:
 
     def _read_page(self, limit: int) -> McpInboxPage:
         """Scan complete relay lines until ``limit`` matching chats are collected."""
-        original = load_cursor(self.cursor_path)
+        original = read_feed_cursor(self.cursor_path)
+        if original is None:
+            logger.error("mailbox cursor is unreadable")
+            return McpInboxPage((), 0, False, False, "mailbox cursor is unreadable")
         try:
             with self.feed_path.open("rb") as handle:
                 size = _file_size(handle)

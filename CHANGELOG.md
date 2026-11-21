@@ -69,6 +69,14 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A new mailbox waiter does not replay old personal traffic.** The first
+  `syn-wait` or `synapse arm --mailbox` with no cursor file anchors at the
+  hub's current sequence. It says how many earlier messages were addressed to
+  that name, or that none were. Personal history stays in the journal.
+  `--since 0` asks for it, including a message sent to the identity before
+  the first arm. Mail for a role the waiter holds is still replayed. An
+  unreadable cursor file stops the waiter instead of replaying everything.
+
 - **The dashboard's feeds read the journal read-only.** Every store-backed
   dashboard feed opened the hub's writer on each request against the live journal;
   it now opens the read-only reader, so a feed request never takes the writer's

@@ -65,6 +65,7 @@ async def test_a_replay_burst_surfaces_every_message_not_just_the_last(
                 directed_only=True,
                 mailbox=True,
                 mailbox_cursor_path=cursor,
+                mailbox_since=0,
             )
     finally:
         store.close()
@@ -93,6 +94,7 @@ async def test_the_persisted_cursor_covers_exactly_the_surfaced_frames(
                 directed_only=True,
                 mailbox=True,
                 mailbox_cursor_path=cursor,
+                mailbox_since=0,
             )
             saved = load_cursor(cursor)
             # A second arm resumes past the surfaced frames: nothing replays,
@@ -137,6 +139,7 @@ async def test_max_wakes_one_surfaces_the_full_backlog_before_rearm(
                 reconnect_delay=0.0,
                 mailbox=True,
                 mailbox_cursor_path=cursor,
+                mailbox_since=0,
             )
             second_arm = asyncio.create_task(
                 _arm(
@@ -178,11 +181,10 @@ async def test_a_refused_frame_stays_pending_for_the_next_waiter(
     tmp_path: Path,
     capsys: Any,
 ) -> None:
-    # A waiter whose filter refuses the frame (here: a waiter for a DIFFERENT
-    # seat holding the same cursor file) must not consume it: the correctly
-    # bound waiter that arms next still receives it on replay.
+    # A waiter for a different seat must not consume the frame. Each seat has
+    # its own cursor file. The seat the message names can still read it with
+    # an explicit resume at sequence 0.
     db = tmp_path / "hub.db"
-    cursor = tmp_path / "cursor"
     store = EventStore(db)
     try:
         async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
@@ -194,7 +196,7 @@ async def test_a_refused_frame_stays_pending_for_the_next_waiter(
                 timeout=0.5,
                 directed_only=True,
                 mailbox=True,
-                mailbox_cursor_path=cursor,
+                mailbox_cursor_path=tmp_path / "other-cursor",
             )
             right = await _wait(
                 uri=uri,
@@ -203,7 +205,8 @@ async def test_a_refused_frame_stays_pending_for_the_next_waiter(
                 timeout=5.0,
                 directed_only=True,
                 mailbox=True,
-                mailbox_cursor_path=cursor,
+                mailbox_cursor_path=tmp_path / "seat-cursor",
+                mailbox_since=0,
             )
     finally:
         store.close()
@@ -242,11 +245,17 @@ async def test_a_live_frame_the_filter_drops_does_not_advance_the_cursor(
             await asyncio.sleep(0.3)  # let the waiter connect
             await _seed_backlog(uri, ["routine broadcast"], target="all")
             code = await wait_task
+            broadcast_seq = max(
+                event.seq
+                for event in store.iter_events(kinds=frozenset({"chat"}))
+                if str(event.payload.get("target") or "") == "all"
+            )
     finally:
         store.close()
 
     assert code == 2  # broadcast does not wake a directed-only waiter
-    assert load_cursor(cursor) == 0, "an unsurfaced broadcast advanced the cursor"
+    # The broadcast must not move the resume point onto its own sequence.
+    assert load_cursor(cursor) < broadcast_seq
 
 
 async def _online(hub: SynapseHub, name: str, waiter: asyncio.Task[int]) -> None:

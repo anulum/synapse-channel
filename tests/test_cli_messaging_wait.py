@@ -859,8 +859,8 @@ async def test_wait_mailbox_replays_a_gap_message_and_persists_the_cursor(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A directed message to BOB lands while no BOB waiter is connected (the reconnect gap).
-    # A mailbox waiter connecting as BOB-rx is replayed the message, wakes on it, and writes
-    # the advanced cursor — the gap message is not lost until an unrelated wake drains it.
+    # An explicit resume at zero replays it, wakes on it, and writes the advanced cursor.
+    # A missing cursor file does not: it anchors at the tip and prints how to ask.
     store = EventStore(tmp_path / "events.db")
     cursor = tmp_path / "cursor"
     async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
@@ -873,6 +873,7 @@ async def test_wait_mailbox_replays_a_gap_message_and_persists_the_cursor(
             directed_only=True,
             mailbox=True,
             mailbox_cursor_path=cursor,
+            mailbox_since=0,
         )
     store.close()
     assert code == 0
@@ -881,9 +882,9 @@ async def test_wait_mailbox_replays_a_gap_message_and_persists_the_cursor(
 
 
 async def test_wait_mailbox_resumes_from_the_persisted_cursor(tmp_path: Path) -> None:
-    # After a first mailbox waiter consumes the gap message and persists its cursor, a second
-    # waiter seeded from that cursor is not replayed the same message again — it times out with
-    # nothing new rather than waking on stale backlog, which is what stops a re-arm wake storm.
+    # After a first mailbox waiter consumes the gap from an explicit resume at zero and
+    # persists its cursor, a second waiter seeded from that file is not replayed the same
+    # message again. It times out with nothing new, which stops a re-arm wake storm.
     store = EventStore(tmp_path / "events.db")
     cursor = tmp_path / "cursor"
     async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
@@ -896,6 +897,7 @@ async def test_wait_mailbox_resumes_from_the_persisted_cursor(tmp_path: Path) ->
             directed_only=True,
             mailbox=True,
             mailbox_cursor_path=cursor,
+            mailbox_since=0,
         )
         assert first == 0
         assert load_cursor(cursor) > 0
@@ -918,8 +920,8 @@ async def test_wait_marks_an_era_old_replayed_directed_message_as_stale(
     # Required regression for the 2026-07-16 stale-mailbox incident:
     # a replayed era-old directed message must be withheld or unambiguously
     # marked stale — it must never present itself in the shape of a live wake.
-    # A directive sent 90 days ago replays to a fresh mailbox waiter (lost or
-    # absent cursor) and surfaces WITH the age marker.
+    # A directive sent 90 days ago, read with an explicit resume at zero,
+    # surfaces with the age marker.
     store = EventStore(tmp_path / "events.db")
     sent_at = time.time() - 90 * 86400
     store.append(
@@ -942,6 +944,7 @@ async def test_wait_marks_an_era_old_replayed_directed_message_as_stale(
             directed_only=True,
             mailbox=True,
             mailbox_cursor_path=tmp_path / "cursor",
+            mailbox_since=0,
         )
     store.close()
     assert code == 0

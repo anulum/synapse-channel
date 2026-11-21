@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
@@ -76,6 +77,73 @@ def load_cursor(path: str | Path) -> int:
         return max(0, int(marker.read_text(encoding="utf-8").strip()))
     except (ValueError, OSError):
         return 0
+
+
+@dataclass(frozen=True)
+class WaiterCursor:
+    """A waiter resume point, or the reason the file cannot supply one.
+
+    ``seq is None`` with ``unreadable`` false means the file is missing. The
+    waiter then anchors at the hub tip instead of replaying old traffic.
+    ``unreadable`` means the file exists and is not a non-negative integer.
+    """
+
+    seq: int | None
+    unreadable: bool
+
+
+def read_waiter_cursor(path: str | Path) -> WaiterCursor:
+    """Read a waiter cursor without treating a broken file as sequence 0.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        File holding one integer sequence.
+
+    Returns
+    -------
+    WaiterCursor
+        The stored sequence, a missing file, or an unreadable file.
+    """
+    marker = Path(path)
+    if not marker.exists():
+        return WaiterCursor(seq=None, unreadable=False)
+    try:
+        seq = int(marker.read_text(encoding="utf-8").strip())
+    except (ValueError, OSError):
+        return WaiterCursor(seq=None, unreadable=True)
+    if seq < 0:
+        return WaiterCursor(seq=None, unreadable=True)
+    return WaiterCursor(seq=seq, unreadable=False)
+
+
+def read_feed_cursor(path: str | Path) -> int | None:
+    """Read an MCP feed byte cursor.
+
+    A missing file is byte 0, the start of that seat's local feed. A corrupt
+    or unreadable file is ``None``, so the caller does not reread the feed.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        File holding one integer byte offset.
+
+    Returns
+    -------
+    int or None
+        The offset, ``0`` when the file is missing, or ``None`` when it cannot
+        be read as a non-negative integer.
+    """
+    marker = Path(path)
+    if not marker.exists():
+        return 0
+    try:
+        seq = int(marker.read_text(encoding="utf-8").strip())
+    except (ValueError, OSError):
+        return None
+    if seq < 0:
+        return None
+    return seq
 
 
 def save_cursor(path: str | Path, seq: int) -> None:

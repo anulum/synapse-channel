@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from synapse_channel.mailbox_cursor import load_cursor, save_cursor
+from synapse_channel.mailbox_cursor import load_cursor, read_feed_cursor, save_cursor
 from synapse_channel.mcp.inbox import McpFeedInbox, default_inbox_paths
 from synapse_channel.relay import append_jsonl, encode_lite
 
@@ -70,6 +70,43 @@ def test_inbox_pages_only_matching_messages_without_skipping_the_tail(tmp_path: 
     from synapse_channel.core.secure_path import assert_owner_only_file_path
 
     assert_owner_only_file_path(cursor, purpose="mailbox cursor")
+
+
+def test_a_negative_feed_cursor_is_unreadable(tmp_path: Path) -> None:
+    path = tmp_path / "cursor"
+    path.write_text("-3", encoding="utf-8")
+    assert read_feed_cursor(path) is None
+
+
+def test_a_blocked_cursor_parent_keeps_the_message_for_a_later_read(tmp_path: Path) -> None:
+    feed = tmp_path / "feed.ndjson"
+    parent = tmp_path / "blocked"
+    parent.write_text("not a directory", encoding="utf-8")
+    _append(feed, sender="PEER", target="PROJ/client", payload="repeatable")
+    inbox = McpFeedInbox("PROJ/client", feed_path=feed, cursor_path=parent / "cursor")
+
+    payload = json.loads(inbox.drain())
+
+    assert payload["error"] == "cannot persist MCP inbox cursor; messages may repeat"
+    assert payload["has_more"] is True
+    assert [message["payload"] for message in payload["messages"]] == ["repeatable"]
+
+
+def test_an_unreadable_cursor_does_not_reread_the_feed(tmp_path: Path) -> None:
+    feed = tmp_path / "feed.ndjson"
+    cursor = tmp_path / "cursor"
+    _append(feed, sender="PEER", target="PROJ/client", payload="kept")
+    cursor.write_text("not-a-number", encoding="utf-8")
+    inbox = McpFeedInbox("PROJ/client", feed_path=feed, cursor_path=cursor)
+
+    refused = json.loads(inbox.drain())
+
+    assert refused["error"] == "mailbox cursor is unreadable"
+    assert refused["messages"] == []
+    assert refused["available"] is False
+    cursor.unlink()
+    drained = json.loads(inbox.drain())
+    assert [message["payload"] for message in drained["messages"]] == ["kept"]
 
 
 def test_partial_tail_is_retried_after_it_becomes_complete(tmp_path: Path) -> None:
@@ -159,9 +196,12 @@ def test_cursor_persistence_failure_is_explicit_and_replay_safe(tmp_path: Path) 
 
     assert payload["available"] is False
     assert payload["cursor"] == 0
-    assert payload["has_more"] is True
-    assert [message["payload"] for message in payload["messages"]] == ["repeatable"]
-    assert payload["error"] == "cannot persist MCP inbox cursor; messages may repeat"
+    assert payload["has_more"] is False
+    assert payload["messages"] == []
+    assert payload["error"] == "mailbox cursor is unreadable"
+    cursor_directory.rmdir()
+    recovered = json.loads(inbox.drain())
+    assert [message["payload"] for message in recovered["messages"]] == ["repeatable"]
 
 
 def test_blank_identity_is_refused(tmp_path: Path) -> None:

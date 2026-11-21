@@ -1132,9 +1132,63 @@ def test_a_wake_for_a_lost_pane_is_not_injected_and_stays_in_the_hub(tmp_path: P
             entry.get("target") == _IDENTITY and entry.get("payload") == "wake for a gone pane"
             for entry in payloads
         )
-        # The identity's ordinary inbox path still delivers it: a mailbox arm replays it.
+        # A fresh home has no cursor file. The arm anchors at the tip, names the
+        # one message already addressed to this identity, and waits for live mail.
         home = tmp_path / "reader-home"
         home.mkdir()
+        fresh = subprocess.Popen(
+            [
+                sys.executable,
+                "-u",
+                "-m",
+                "synapse_channel.cli",
+                "arm",
+                "--name",
+                _IDENTITY,
+                "--for",
+                _IDENTITY,
+                "--mailbox",
+                "--max-wakes",
+                "1",
+                "--uri",
+                hub.uri,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=_candidate_environment(redirect_home({}, home)),
+        )
+        try:
+            deadline = time.monotonic() + 8
+            while _IDENTITY not in run_cli("who", uri=hub.uri, timeout=2).stdout:
+                assert time.monotonic() < deadline, "the fresh arm did not register"
+                assert fresh.poll() is None, "the fresh arm ended before it registered"
+                time.sleep(0.05)
+            live = run_cli(
+                "send",
+                "live after the anchor",
+                "--name",
+                "A",
+                "--target",
+                _IDENTITY,
+                uri=hub.uri,
+            )
+            assert live.ok(), live.output
+            fresh_out, fresh_err = fresh.communicate(timeout=8)
+        except subprocess.TimeoutExpired:
+            fresh.kill()
+            fresh_out, fresh_err = fresh.communicate()
+            raise AssertionError(f"the fresh arm hung\n{fresh_out}\n{fresh_err}") from None
+        finally:
+            if fresh.poll() is None:
+                fresh.kill()
+                fresh.communicate()
+        assert fresh.returncode == 0, fresh_err
+        assert "mailbox cursor starts at" in fresh_out
+        assert f"1 earlier message addressed to {_IDENTITY}" in fresh_out
+        assert "wake for a gone pane" not in fresh_out
+        assert "live after the anchor" in fresh_out
+        # The journal still holds the earlier message. An explicit resume reads it.
         inbox = run_cli(
             "arm",
             "--name",
@@ -1142,6 +1196,8 @@ def test_a_wake_for_a_lost_pane_is_not_injected_and_stays_in_the_hub(tmp_path: P
             "--for",
             _IDENTITY,
             "--mailbox",
+            "--since",
+            "0",
             "--max-wakes",
             "1",
             uri=hub.uri,

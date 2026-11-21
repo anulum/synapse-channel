@@ -32,7 +32,7 @@ from synapse_channel.connect_failures import (
 from synapse_channel.core.protocol import MessageType, is_directed, wakes
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 from synapse_channel.machine_identity import machine_identity_agent_kwargs
-from synapse_channel.mailbox_cursor import load_cursor, save_cursor
+from synapse_channel.mailbox_cursor import read_waiter_cursor, save_cursor
 from synapse_channel.owner_lease import lease_agent_kwargs, lease_path
 from synapse_channel.parent_binding import bind_to_parent, parent_alive
 from synapse_channel.shell_integration import has_active_tmux_provider
@@ -43,6 +43,9 @@ from synapse_channel.waiter_identity import (
     waiter_owner,
 )
 from synapse_channel.wake_staleness import message_age_seconds, stale_marker
+
+UNREADABLE_CURSOR_EXIT_CODE = 7
+"""Exit when the mailbox cursor file exists and cannot be read as a sequence."""
 
 WaitRunner = Callable[..., Coroutine[Any, Any, int]]
 WaitAttempt = Callable[[], Coroutine[Any, Any, int]]
@@ -343,6 +346,139 @@ def _closed_connection_code(
     return 3
 
 
+def _resume_point(
+    *,
+    mailbox: bool,
+    mailbox_cursor_path: Path | None,
+    mailbox_since: int | None,
+) -> tuple[int, bool, bool]:
+    """Return the resume sequence, whether the file is missing, and a refusal.
+
+    Parameters
+    ----------
+    mailbox : bool
+        Whether this wait replays a mailbox.
+    mailbox_cursor_path : pathlib.Path or None
+        Cursor file. ``None`` keeps the whole-window resume.
+    mailbox_since : int or None
+        Explicit sequence, when the caller passed one.
+
+    Returns
+    -------
+    tuple of int, bool, bool
+        Sequence to declare, whether the hub should anchor a missing file, and
+        whether the file is unreadable.
+    """
+    if not mailbox or mailbox_cursor_path is None:
+        return 0, False, False
+    if mailbox_since is not None:
+        return max(0, mailbox_since), False, False
+    state = read_waiter_cursor(mailbox_cursor_path)
+    if state.unreadable:
+        return 0, False, True
+    if state.seq is None:
+        return 0, True, False
+    return state.seq, False, False
+
+
+def _highest_seq(frames: list[dict[str, Any]], floor: int) -> int:
+    """Return the higher of ``floor`` and the largest integer sequence in ``frames``.
+
+    Parameters
+    ----------
+    frames : list of dict
+        Surfaced chat frames.
+    floor : int
+        Resume point that must not move backwards.
+
+    Returns
+    -------
+    int
+        The persisted sequence.
+    """
+    highest = floor
+    for frame in frames:
+        seq = frame.get("seq")
+        if isinstance(seq, int) and not isinstance(seq, bool) and seq > highest:
+            highest = seq
+    return highest
+
+
+def _pending_before(data: dict[str, Any]) -> int:
+    """Return the anchor frame's earlier-mail count, or zero when it is unusable.
+
+    Parameters
+    ----------
+    data : dict
+        One hub frame.
+
+    Returns
+    -------
+    int
+        A non-negative count. A missing, boolean, or negative field is zero.
+    """
+    raw = data.get("mailbox_pending_before")
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+        return 0
+    return raw
+
+
+def _earlier_mail_clause(pending: int, name: str) -> str:
+    """Return the clause that names mail addressed to this identity.
+
+    Parameters
+    ----------
+    pending : int
+        Messages addressed to ``name`` that are still pending before the anchor.
+    name : str
+        Identity the waiter is armed for.
+
+    Returns
+    -------
+    str
+        The count and how to replay it, or the statement that none is waiting.
+    """
+    if pending == 1:
+        return f"1 earlier message addressed to {name}: syn-wait --since 0 replays them"
+    if pending > 1:
+        return f"{pending} earlier messages addressed to {name}: syn-wait --since 0 replays them"
+    return f"no earlier mail addressed to {name}"
+
+
+def _note_anchor(
+    data: dict[str, Any],
+    surfaced_seq: list[int],
+    announced: list[bool],
+    *,
+    cursor_absent: bool,
+    for_name: str,
+) -> None:
+    """Remember a first-arm anchor and say once what it left unread.
+
+    Parameters
+    ----------
+    data : dict
+        One hub frame.
+    surfaced_seq : list of int
+        Mutable resume point. The anchor raises it and never lowers it.
+    announced : list of bool
+        Mutable one-shot flag for the anchor line.
+    cursor_absent : bool
+        Whether this wait started without a cursor file.
+    for_name : str
+        Identity whose earlier mail the line names.
+    """
+    anchor = data.get("mailbox_anchor")
+    if isinstance(anchor, bool) or not isinstance(anchor, int) or anchor < 0:
+        return
+    if anchor > surfaced_seq[0]:
+        surfaced_seq[0] = anchor
+    if cursor_absent and not announced[0]:
+        announced[0] = True
+        clause = _earlier_mail_clause(_pending_before(data), for_name)
+        print(f"mailbox cursor starts at {anchor}; {clause}")
+
+
 async def _wait(
     *,
     uri: str,
@@ -359,6 +495,7 @@ async def _wait(
     poll_interval: float = 0.1,
     mailbox: bool = False,
     mailbox_cursor_path: Path | None = None,
+    mailbox_since: int | None = None,
     wake_capability: str = WAKE_PASSIVE,
     owner_lease_path: Path | None = None,
     identity_key_path: str | None = None,
@@ -417,8 +554,12 @@ async def _wait(
         File holding the ``since_seq`` cursor to resume the mailbox from, read on
         entry and rewritten from the agent's advanced cursor on exit. Persisting it
         across re-arms is what stops each fresh waiter process from being replayed —
-        and waking on — the whole retained backlog again. ``None`` disables
-        persistence (the mailbox replays the whole window each connect).
+        and waking on — the whole retained backlog again. A missing file anchors at
+        the hub tip. ``None`` disables persistence (the mailbox replays the whole
+        window each connect).
+    mailbox_since : int or None, optional
+        Explicit ``--since`` sequence. It overrides the file, including ``0`` for
+        the retained window. ``None`` reads the file.
     wake_capability : str, optional
         Receiver capability declared to the hub. A bare wait socket defaults to
         ``passive`` because receiving a frame does not prove an agent pane was woken.
@@ -467,10 +608,22 @@ async def _wait(
         held by another identity refused the claim (the caller must *yield*),
         ``5`` when the identity pin or binding refused this key (the caller
         must stop and surface the governed recovery path, never re-arm), and
-        ``6`` when a wait without takeover met a live holder of its name.
+        ``6`` when a wait without takeover met a live holder of its name, and
+        ``7`` when the cursor file is unreadable.
     """
     received: list[dict[str, Any]] = []
     seen: set[tuple[str, int]] = set()
+    since_seq, cursor_absent, refused = _resume_point(
+        mailbox=mailbox,
+        mailbox_cursor_path=mailbox_cursor_path,
+        mailbox_since=mailbox_since,
+    )
+    if refused:
+        print(
+            f"mailbox cursor is unreadable: {mailbox_cursor_path}; "
+            "pass --since <seq> or replace the file"
+        )
+        return UNREADABLE_CURSOR_EXIT_CODE
 
     def matches(data: dict[str, Any]) -> bool:
         """Bind one target predicate for collection and mailbox advancement."""
@@ -485,6 +638,7 @@ async def _wait(
 
     async def collect(data: dict[str, Any]) -> None:
         """Collect each durable mailbox event once within its connected hub."""
+        _note_anchor(data, surfaced_seq, announced, cursor_absent=cursor_absent, for_name=for_name)
         if matches(data):
             seq = data.get("seq")
             if mailbox and isinstance(seq, int) and not isinstance(seq, bool) and seq > 0:
@@ -496,18 +650,10 @@ async def _wait(
 
     if not bind_to_parent(parent_pid):
         return 2  # the bridge exited before this wait started; never register for it
-    # A re-arming waiter takes over its own name, evicting a ghost holder of
-    # ``<name>-rx`` instead of failing with a name conflict, unless the caller
-    # asked for no takeover: then a live holder is never displaced. In mailbox mode it
-    # resumes from the persisted cursor and declares ``for_name`` as the identity to
-    # replay for, since it connects under an ``-rx`` name but waits on the bare one.
-    since_seq = (
-        load_cursor(mailbox_cursor_path) if mailbox and mailbox_cursor_path is not None else 0
-    )
-    # Highest durable seq this waiter actually SURFACED (printed). The persisted
-    # resume point advances only through here — never past a frame the operator
-    # was not shown (see the finally block).
+    # A re-arm takes over ``<name>-rx`` unless takeover is off. A missing file
+    # does not send sequence 0, and an anchor never moves the resume point back.
     surfaced_seq = [since_seq]
+    announced = [False]
     agent = agent_factory(
         name,
         collect,
@@ -517,7 +663,7 @@ async def _wait(
         takeover=takeover,
         roles=roles,
         mailbox=mailbox,
-        mailbox_since_seq=since_seq,
+        mailbox_since_seq=-1 if cursor_absent else since_seq,
         mailbox_for=for_name if mailbox else "",
         mailbox_advance=matches,
         wake_capability=wake_capability,
@@ -588,14 +734,7 @@ async def _wait(
                 # incident); a stale line carries its age up front.
                 marker = stale_marker(message_age_seconds(message))
                 print(marker + terminal_chat_line(message.get("sender"), message.get("payload")))
-            surfaced_seq[0] = max(
-                (
-                    seq
-                    for seq in (frame.get("seq") for frame in to_surface)
-                    if isinstance(seq, int) and not isinstance(seq, bool)
-                ),
-                default=surfaced_seq[0],
-            )
+            surfaced_seq[0] = _highest_seq(to_surface, surfaced_seq[0])
             return 0
         if conn_task.done():
             return _closed_connection_code(agent, name=name, uri=uri, takeover=takeover)

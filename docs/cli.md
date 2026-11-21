@@ -1444,9 +1444,22 @@ unrelated wake happens to drain it. With a durable journal and retained backlog,
 connect the waiter asks the hub to replay the directed messages it missed and wakes
 on them as it would on a live message. It resumes from a `since_seq` cursor kept per
 identity under `~/synapse/mailbox-cursor/`, so a re-arm picks up where it left off
-rather than being replayed — and woken by — the whole retained backlog again. It is
-off by default; a plain `arm` is unchanged, and against a hub older than wire version
-`2` the mailbox request is simply ignored.
+rather than being replayed — and woken by — the whole retained backlog again.
+A missing cursor file does not mean sequence 0. The first `syn-wait` or
+`synapse arm --mailbox` anchors at the hub's current sequence and does not
+replay personal history. It prints either `mailbox cursor starts at <seq>;
+<n> earlier message(s) addressed to <name>: syn-wait --since 0 replays them`
+or `mailbox cursor starts at <seq>; no earlier mail addressed to <name>`.
+The count is mail addressed to that name and still pending before the anchor.
+A project glob is not that mail, and it does not wake the seat. Mail for a
+role the waiter holds is still replayed. `--since SEQ` overrides the file;
+`--since 0` asks for the retained window, which is how a seat reads a message
+that was addressed to it before the first arm. An unreadable cursor file
+stops the waiter. `syn-wait` accepts the same `--since` because it is
+`synapse arm` with mailbox replay and one wake. Mailbox replay is off by
+default on a plain `arm`. An older hub ignores `mailbox_cursor`, replays from
+0, and sends no anchor. Against a hub older than wire version `2` the mailbox
+request is simply ignored.
 
 One wake surfaces a whole delivery burst. After the first matching message the
 waiter keeps collecting until 50 ms pass with no new message, for at most half a

@@ -66,6 +66,8 @@ async def test_actual_cli_reports_transport_truth_and_preserves_replay(
                     SEAT,
                     "--directed-only",
                     "--mailbox",
+                    "--since",
+                    "0",
                     "--max-wakes",
                     "1",
                 )

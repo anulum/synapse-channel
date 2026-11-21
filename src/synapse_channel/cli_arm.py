@@ -23,6 +23,7 @@ from synapse_channel.cli_arm_install import (
     maybe_install_arm,
 )
 from synapse_channel.cli_messaging import AgentFactory, _wait
+from synapse_channel.cli_messaging_wait import UNREADABLE_CURSOR_EXIT_CODE
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.machine_identity import machine_identity_agent_kwargs
@@ -104,6 +105,7 @@ async def _arm(
     owner_check_interval: float = OWNER_CHECK_INTERVAL_SECONDS,
     mailbox: bool = False,
     mailbox_cursor_path: Path | None = None,
+    mailbox_since: int | None = None,
     wake_capability: str = WAKE_PASSIVE,
     owner_lease_path: Path | None = None,
     identity_key_path: str | None = None,
@@ -162,6 +164,7 @@ async def _arm(
                 token=token,
                 mailbox=mailbox,
                 mailbox_cursor_path=mailbox_cursor_path,
+                mailbox_since=mailbox_since,
                 wake_capability=wake_capability,
                 owner_lease_path=owner_lease_path,
                 identity_key_path=identity_key_path,
@@ -196,8 +199,9 @@ async def _arm(
         if code == 4:
             print(f"[{name}] another connection holds this name; disarming.")
             return NO_RESTART_EXIT_CODE
-        if code == 5:
-            print(f"[{name}] identity recovery required; disarming without restart.")
+        if code == 5 or code == UNREADABLE_CURSOR_EXIT_CODE:
+            if code == 5:
+                print(f"[{name}] identity recovery required; disarming without restart.")
             return NO_RESTART_EXIT_CODE
         if reconnect_delay > 0:
             await sleep_runner(reconnect_delay)
@@ -262,10 +266,8 @@ def _cmd_arm(
     provider_identities = (for_name, waiter_owner(connect_name))
     mailbox = bool(getattr(args, "mailbox", False))
 
-    # Provider-aware early yield for redundant plain-passive arms. A mailbox arm
-    # keeps the conventional ``-rx`` name while agent-tmux now uses the distinct
-    # ``-pane-rx`` sidecar, so those two documented layers can coexist: the arm
-    # owns durable gap replay and the bridge owns active pane injection.
+    # A mailbox arm keeps ``-rx``; agent-tmux uses ``-pane-rx``. They coexist.
+    # A plain passive arm yields when that provider is already live.
     live_provider_identity = next(
         (identity for identity in provider_identities if has_active_tmux_provider(identity)),
         None,
@@ -312,6 +314,7 @@ def _cmd_arm(
                 owner_pid=args.owner_pid,
                 mailbox=mailbox,
                 mailbox_cursor_path=mailbox_cursor_path,
+                mailbox_since=getattr(args, "since", None),
                 wake_capability=getattr(args, "wake_capability", WAKE_PASSIVE),
                 owner_lease_path=lease_path(connect_name),
                 identity_key_path=machine.get("identity_key_path"),
@@ -321,6 +324,52 @@ def _cmd_arm(
     except KeyboardInterrupt:
         print(f"\n[{connect_name}] stopped arming for {for_name}.")
         return 0
+
+
+def _add_since_argument(parser: argparse.ArgumentParser) -> None:
+    """Add the history override to an arm parser.
+
+    Parameters
+    ----------
+    parser : argparse.ArgumentParser
+        The ``arm`` subcommand parser.
+    """
+    parser.add_argument(
+        "--since",
+        type=_since_seq,
+        default=None,
+        metavar="SEQ",
+        help="Mailbox resume sequence. Overrides the cursor file. 0 replays the "
+        "retained window. Omit it to resume from the file, or to anchor a missing "
+        "file at the hub tip.",
+    )
+
+
+def _since_seq(value: str) -> int:
+    """Parse a non-negative ``--since`` sequence.
+
+    Parameters
+    ----------
+    value : str
+        The text the operator passed.
+
+    Returns
+    -------
+    int
+        The sequence.
+
+    Raises
+    ------
+    argparse.ArgumentTypeError
+        If ``value`` is not a non-negative integer.
+    """
+    try:
+        seq = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("since must be a non-negative integer") from exc
+    if seq < 0:
+        raise argparse.ArgumentTypeError("since must be a non-negative integer")
+    return seq
 
 
 def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -362,9 +411,8 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "--mailbox",
         action="store_true",
         default=False,
-        help="Also wake on directed messages that arrived while disconnected (a reconnect or "
-        "re-arm gap): the hub replays them on connect. The resume cursor is persisted per "
-        "identity so a re-arm is not replayed the whole backlog again.",
+        help="Also wake on directed messages that arrived while disconnected. The resume "
+        "cursor is persisted per identity so a re-arm is not replayed the whole backlog.",
     )
     arm.add_argument(
         "--no-mailbox",
@@ -373,6 +421,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
         help="Do not replay the reconnect-gap backlog. The `syn-wait` alias enables mailbox by "
         "default, so use this to opt a waiter out; a bare `synapse arm` is already off.",
     )
+    _add_since_argument(arm)
     arm.add_argument(
         "--wake-jitter",
         type=float,

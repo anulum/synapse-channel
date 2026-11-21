@@ -69,7 +69,7 @@ from synapse_channel.core.message_forward_origin import forward_chat
 from synapse_channel.core.message_response import validate_semantic_response
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
-from synapse_channel.core.protocol import MessageType, is_recipient
+from synapse_channel.core.protocol import MessageType, is_recipient, system_message
 from synapse_channel.core.verb_access import message_access
 from synapse_channel.core.verb_registry import VerbSpec
 from synapse_channel.core.wake_capability import normalize_wake_capability
@@ -772,7 +772,21 @@ async def _replay_directed_backlog(
         and is_recipient(str(event.payload.get("target") or "all"), recipient)
     ]
     role_mail = hub.mailbox_pending.role_backlog(roles, limit=MAILBOX_REPLAY_READ_CAP)
-    frames = replayed_frames(personal, role_mail)
+    await _send_frames(hub, websocket, replayed_frames(personal, role_mail))
+
+
+async def _send_frames(hub: MessagingContext, websocket: Any, frames: list[dict[str, Any]]) -> None:
+    """Write replay frames in order, holding the socket until the batch is out.
+
+    Parameters
+    ----------
+    hub : MessagingContext
+        Hub that owns the socket's broadcaster.
+    websocket : Any
+        The reconnecting socket.
+    frames : list of dict
+        Frames already marked for replay. An empty list writes nothing.
+    """
     if not frames:
         return
     # One backlog write holds live frames for this socket until the older
@@ -784,6 +798,48 @@ async def _replay_directed_backlog(
         return
     for frame in frames:
         await hub.send_json(websocket, frame)
+
+
+async def _replay_absent_cursor(
+    hub: MessagingContext, name: str, recipient: str, websocket: Any
+) -> None:
+    """Anchor a missing waiter cursor without replaying personal history.
+
+    The anchor is the journal tip at this heartbeat. Personal mail already in
+    the journal stays there. The anchor frame carries ``mailbox_pending_before``,
+    the pending count for this identity read before the watermark moves, so the
+    waiter can say how many messages addressed to that name are still unread.
+    ``--since 0`` reaches them. Mail for a role this connection holds is still
+    pushed, because a role's backlog is not one seat's old transcript. The
+    socket is told the anchor even when nothing was replayed.
+
+    Parameters
+    ----------
+    hub : MessagingContext
+        Hub whose journal and mailbox tracker supply the replay.
+    name : str
+        Connection name the roles were bound to.
+    recipient : str
+        Identity whose exact-name mailbox is wanted.
+    websocket : Any
+        Socket to push the replay and the anchor notice to.
+    """
+    journal = hub.journal
+    anchor = journal.max_seq() if journal is not None else 0
+    roles = hub.roles_of(name)
+    pending_before = hub.mailbox_pending.pending_count(recipient)
+    role_mail = hub.mailbox_pending.role_backlog(roles, limit=MAILBOX_REPLAY_READ_CAP)
+    await _send_frames(hub, websocket, replayed_frames(role_mail))
+    await hub.send_json(
+        websocket,
+        system_message(
+            "mailbox cursor anchored",
+            hub_id=str(getattr(hub, "hub_id", "") or ""),
+            mailbox_anchor=anchor,
+            mailbox_pending_before=pending_before,
+        ),
+    )
+    hub.mailbox_pending.advance(recipient, anchor, roles=roles, source="cursor")
 
 
 def _mailbox_acl_allows(hub: MessagingContext, connection: str, requested: str) -> bool:
@@ -860,9 +916,12 @@ async def handle_heartbeat(
     durable chat ``seq`` it processed) on its *registration* heartbeat, and the hub
     replays the directed messages it missed while offline from the journal — turning
     the pull-based ``syn-inbox`` catch-up into an automatic push on reconnect. Only a
-    literal ``True`` triggers a replay, and a missing or malformed ``since_seq``
-    degrades to ``0`` (replay the whole retained window) rather than dropping the
-    socket. A keepalive omits ``mailbox``, so it never re-storms the backlog.
+    literal ``True`` triggers a replay. ``mailbox_cursor`` of ``"absent"`` with
+    no ``since_seq`` anchors at the journal tip. Personal history stays in the
+    journal and role mail is still replayed. Any other missing or malformed
+    ``since_seq`` degrades to ``0``
+    (replay the whole retained window) rather than dropping the socket. A
+    keepalive omits ``mailbox``, so it never re-storms the backlog.
 
     An optional ``mailbox_for`` string names the identity whose backlog is wanted when
     it differs from the connection ``sender`` — a wake-listener connects under a
@@ -883,15 +942,18 @@ async def handle_heartbeat(
     if "wake_capability" in data:
         hub.set_wake_capability(sender, normalize_wake_capability(data.get("wake_capability")))
     if data.get("mailbox") is True:
-        since_seq = safe_int(data.get("since_seq"), default=0, min_value=0, allow_bool=False)
         recipient = _mailbox_recipient(sender, data.get("mailbox_for"), hub=hub)
-        hub.mailbox_pending.advance(
-            recipient,
-            since_seq,
-            roles=hub.roles_of(sender),
-            source="cursor",
-        )
-        await _replay_directed_backlog(hub, sender, recipient, since_seq, websocket)
+        if data.get("mailbox_cursor") == "absent" and "since_seq" not in data:
+            await _replay_absent_cursor(hub, sender, recipient, websocket)
+        else:
+            since_seq = safe_int(data.get("since_seq"), default=0, min_value=0, allow_bool=False)
+            hub.mailbox_pending.advance(
+                recipient,
+                since_seq,
+                roles=hub.roles_of(sender),
+                source="cursor",
+            )
+            await _replay_directed_backlog(hub, sender, recipient, since_seq, websocket)
 
 
 VERB_SPECS = (

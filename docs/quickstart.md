@@ -209,6 +209,8 @@ synapse hub --port 8876 --db ~/synapse/hub.db --token-file ~/synapse/token &
 # 3. For a manual harness, arm a one-shot waiter in each agent terminal
 export SYNAPSE_TOKEN=$(cat ~/synapse/token)
 syn-wait --directed-only   # background; re-arm after each wake
+# a missing mailbox cursor anchors at the hub tip and says how many
+# messages addressed to this name are still unread; syn-wait --since 0 replays them
 
 # For unattended tmux-provider delivery, store only the token-file path:
 synapse waker install --identity myproj/alice --session myproj-alice \

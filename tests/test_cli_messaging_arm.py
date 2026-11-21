@@ -237,8 +237,10 @@ def test_cmd_mailbox_arm_coexists_when_tmux_provider_is_live(
 async def test_mailbox_arm_and_pane_bridge_coexist_on_a_real_hub(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The arm replays a gap, then both distinct receivers accept a live wake."""
+    """An arm whose cursor file is zero replays a gap, then both receivers take a live wake."""
     store = EventStore(tmp_path / "events.db")
+    cursor = tmp_path / "mailbox.cursor"
+    cursor.write_text("0", encoding="utf-8")
     try:
         async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
             observer = await connect_agent("OBSERVER", uri)
@@ -252,7 +254,7 @@ async def test_mailbox_arm_and_pane_bridge_coexist_on_a_real_hub(
                     max_wakes=2,
                     reconnect_delay=0.0,
                     mailbox=True,
-                    mailbox_cursor_path=tmp_path / "mailbox.cursor",
+                    mailbox_cursor_path=cursor,
                 )
             )
             pane_task = asyncio.create_task(
@@ -746,6 +748,56 @@ async def test_arm_passes_mailbox_and_cursor_to_each_wait(tmp_path: Path) -> Non
     assert code == cli_arm.NO_RESTART_EXIT_CODE
     assert captured["mailbox"] is True
     assert captured["mailbox_cursor_path"] == cursor
+
+
+async def test_an_unreadable_cursor_disarms_the_arm_without_an_identity_lecture(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exit 7 stops the arm. A timeout re-arms, and only a yield ends that loop."""
+
+    async def unreadable(**_kwargs: Any) -> int:
+        return 7
+
+    stopped = await cli_arm._arm(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        reconnect_delay=0.0,
+        wait_runner=unreadable,
+        mailbox=True,
+    )
+    assert stopped == cli_arm.NO_RESTART_EXIT_CODE
+    assert "identity recovery" not in capsys.readouterr().out
+
+    async def identity_refused(**_kwargs: Any) -> int:
+        return 5
+
+    refused = await cli_arm._arm(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        reconnect_delay=0.0,
+        wait_runner=identity_refused,
+        mailbox=True,
+    )
+    assert refused == cli_arm.NO_RESTART_EXIT_CODE
+    assert "identity recovery required" in capsys.readouterr().out
+
+    calls = {"n": 0}
+
+    async def timeout_then_yield(**_kwargs: Any) -> int:
+        calls["n"] += 1
+        return 2 if calls["n"] == 1 else 4
+
+    yielded = await cli_arm._arm(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        reconnect_delay=0.0,
+        wait_runner=timeout_then_yield,
+    )
+    assert yielded == cli_arm.NO_RESTART_EXIT_CODE
+    assert calls["n"] == 2
 
 
 def test_add_parser_registers_the_mailbox_flag() -> None:

@@ -170,7 +170,14 @@ async def test_cli_arm_surfaces_distinct_events_without_repeating_durable_rows(
                 assert result.stdout.count(repeated) == 2 * copies
                 assert result.stdout.count(last) == copies
                 if mailbox:
-                    assert load_cursor(cursor) == (max(observed) if sequence == "valid" else 0)
+                    saved = load_cursor(cursor)
+                    if sequence == "valid":
+                        assert saved == max(observed)
+                    else:
+                        # A missing file anchors at the hub tip. A frame whose
+                        # sequence is missing, a boolean, or zero must not
+                        # rewind that anchor.
+                        assert saved > 0
                 else:
                     assert not cursor.exists()
     finally:

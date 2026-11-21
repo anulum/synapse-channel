@@ -101,7 +101,9 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         The durable journal ``seq`` the agent has already processed, used to seed
         the cursor so a caller that persists it across reconnects resumes from where
         it left off rather than replaying the whole retained window. Floored at ``0``
-        (the whole window). Defaults to ``0``.
+        (the whole window). Defaults to ``0``. A negative value means the cursor
+        file is missing: the registration omits ``since_seq`` and the hub anchors
+        at its tip.
     mailbox_for : str, optional
         The identity whose backlog to replay, when it differs from ``name``. A
         wake-listener connects under a receive-only ``name`` (an ``-rx`` suffix) but
@@ -265,7 +267,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.takeover = bool(takeover)
         self.roles = tuple(roles)
         self.mailbox = bool(mailbox)
-        self._mailbox_since_seq = max(0, int(mailbox_since_seq))
+        self._mailbox_since_seq = max(int(mailbox_since_seq), -1)
         self.mailbox_for = str(mailbox_for)
         self.mailbox_advance = mailbox_advance
         self.wake_capability = normalize_wake_capability(wake_capability, default=WAKE_DIRECT)
