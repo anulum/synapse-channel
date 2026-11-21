@@ -166,8 +166,8 @@ def parse_feed_query(query: object) -> FeedQuery:
     if after_seq is None or limit is None:
         raise FeedRefused("invalid feed query")
     kinds = _query_kinds(query.get("kinds"))
-    if not hub_id and not instance and after_seq != 0:
-        raise FeedRefused("an unbound feed query starts at sequence 0")
+    if after_seq != 0 and not (hub_id and instance):
+        raise FeedRefused("a feed query past sequence 0 names its hub and journal instance")
     return FeedQuery(consumer, hub_id, instance, after_seq, kinds, limit)
 
 

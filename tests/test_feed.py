@@ -199,6 +199,10 @@ async def test_a_cursor_is_bound_to_the_hub_and_the_journal_instance(tmp_path: P
                 )
                 ahead = await _page(consumer, after_seq=first["max_seq"] + 1, **bound)
                 unbound_ahead = await _page(consumer, after_seq=1)
+                hub_only = await _page(consumer, after_seq=1, hub_id=first["hub_id"])
+                instance_only = await _page(
+                    consumer, after_seq=1, journal_instance=first["journal_instance"]
+                )
             finally:
                 await close_agents(consumer)
     finally:
@@ -211,7 +215,9 @@ async def test_a_cursor_is_bound_to_the_hub_and_the_journal_instance(tmp_path: P
         "instance_floor": first["instance_floor"],
     }
     assert "exceeds the retained journal" in ahead["error"]
-    assert "unbound feed query starts at sequence 0" in unbound_ahead["error"]
+    for half_bound in (unbound_ahead, hub_only, instance_only):
+        assert "past sequence 0 names its hub and journal instance" in half_bound["error"]
+        assert half_bound["available"] is False and half_bound["rows"] == []
 
 
 async def test_kinds_are_closed_and_the_consumer_owns_the_connection(tmp_path: Path) -> None:

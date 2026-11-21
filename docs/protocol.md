@@ -1675,8 +1675,10 @@ is unchanged:
   binding proves a position only with a row the current markers serve.
 - **The consumer** is the connection itself or one of the roles it holds.
 - **A first query** leaves `hub_id` and `journal_instance` empty and starts at
-  `after_seq` 0. Every later query passes the cursor of the page before. An
-  unbound query with a non-zero sequence is refused.
+  `after_seq` 0. Every later query passes the cursor of the page before. A
+  query past sequence 0 names both `hub_id` and `journal_instance`; one that
+  names only one of them, or neither, is refused, so the instance is always
+  compared.
 - **`limit`** is 1 to 500 rows. A page scans at most 1,000 journal rows of the
   requested kinds and holds at most 7 MiB of encoded rows.
 
