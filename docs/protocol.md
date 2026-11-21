@@ -1680,7 +1680,9 @@ is unchanged:
   names only one of them, or neither, is refused, so the instance is always
   compared.
 - **`limit`** is 1 to 500 rows. A page scans at most 1,000 journal rows of the
-  requested kinds and holds at most 7 MiB of encoded rows.
+  requested kinds and holds at most 7 MiB of encoded rows. When the first row
+  to serve alone exceeds 7 MiB, the query is refused; the row is never split or
+  skipped.
 
 The private `history_snapshot` echoes the request id and carries `feed_page`:
 `version`, `available`, `hub_id`, `consumer`, `after_seq`, `next_after`,
@@ -1689,8 +1691,11 @@ is `{seq, kind, ts, payload, payload_sha256}`, ascending by `seq`.
 `payload_sha256` is the SHA-256 of the payload encoded as JSON with sorted
 keys, `,` and `:` separators, unescaped Unicode and no non-finite numbers,
 then as UTF-8. A finding the journal cannot decode is served as
-`{seq, kind: "finding", corrupt: true}`. `next_after` passes every scanned row,
-served or not, so a page without rows still moves the consumer forward. A page
+`{seq, kind: "finding", corrupt: true}`. A finding or marked chat whose payload
+is not finite JSON is served the same way, with its kind. A chat row the journal
+cannot decode is not served, because its marker cannot be read. `next_after`
+passes every scanned row, served or not, so a page without rows still moves the
+consumer forward. A page
 is a pure read: the same query returns the same rows, apart from rows deleted
 since. `compaction_floor` is the highest floor a compaction applied in this
 journal instance, or 0. When `after_seq` lies below it, the page also carries
@@ -1726,7 +1731,8 @@ cursor carries across the conversion.
 
 The feed needs a journal and a configured `--hub-id`, as session-bound
 delivery does. A hub without a configured id draws a new one at every start,
-which would end every cursor. Without either, both verbs are refused.
+which would end every cursor. Without either, all three frames, `feed_query`,
+`feed_ack` and `feed_bind`, are refused.
 
 **`feed_ack`** records, durably, the highest sequence a consumer has ingested:
 
