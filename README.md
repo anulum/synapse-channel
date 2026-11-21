@@ -1952,7 +1952,7 @@ an installed protected runtime or revocation fencing.
 | Classes | 1572 |
 | Wire message types | 133 |
 | CLI subcommands | 331 |
-| Test functions | 15384 |
+| Test functions | 15385 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 101 |
 | GitHub Actions workflows | 29 |
