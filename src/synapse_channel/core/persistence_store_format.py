@@ -90,21 +90,30 @@ def stored_store_format(connection: Any) -> int:
     return value
 
 
-def _floor_release(connection: Any) -> str | None:
-    """Return the release recorded as having raised the floor, without writing.
+def _stored_record(connection: Any) -> tuple[object, object, object] | None:
+    """Return the record's floor and release names, or ``None`` without the table.
 
     The table is looked up in the schema first, so the same code serves the stock
-    and the SQLCipher driver without catching either driver's error class.
+    and the SQLCipher driver without catching either driver's error class. The
+    scalar subqueries yield one row even when the record row itself is missing.
     """
     present = connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (_RECORD_TABLE,)
     ).fetchone()
     if present is None:
         return None
-    # The scalar subquery yields one row even when the record row is missing.
-    value = connection.execute(
-        f"SELECT (SELECT floor_release FROM {_RECORD_TABLE} WHERE id = 1)"
-    ).fetchone()[0]
+    floor, floor_release, last_writer = connection.execute(
+        f"SELECT (SELECT floor FROM {_RECORD_TABLE} WHERE id = 1), "
+        f"(SELECT floor_release FROM {_RECORD_TABLE} WHERE id = 1), "
+        f"(SELECT last_writer_release FROM {_RECORD_TABLE} WHERE id = 1)"
+    ).fetchone()
+    return floor, floor_release, last_writer
+
+
+def _floor_release(connection: Any) -> str | None:
+    """Return the release recorded as having raised the floor, without writing."""
+    record = _stored_record(connection)
+    value = record[1] if record is not None else None
     return str(value) if value else None
 
 
@@ -149,8 +158,10 @@ def record_store_format(connection: Any, *, release: str) -> int:
     The caller has already passed :func:`refuse_newer_store_format` on this store,
     so its floor is at most :data:`STORE_FORMAT` and recording this release's format
     never lowers it. The record names the release that last raised the floor and the
-    release that last wrote the store. Nothing is committed here; the store's owner
-    commits the floor with its other opening writes.
+    release that last wrote the store. When the store already holds exactly that
+    record, nothing is written, so a reopen by the same release, such as a reader
+    beside a running hub, adds no write to the log. Nothing is committed here; the
+    store's owner commits the floor with its other opening writes.
 
     Parameters
     ----------
@@ -166,6 +177,9 @@ def record_store_format(connection: Any, *, release: str) -> int:
     """
     current = stored_store_format(connection)
     floor = STORE_FORMAT
+    raised_by = release if floor > current else (_floor_release(connection) or release)
+    if current == floor and _stored_record(connection) == (floor, raised_by, release):
+        return floor
     connection.execute(
         f"CREATE TABLE IF NOT EXISTS {_RECORD_TABLE} ("
         "id INTEGER PRIMARY KEY CHECK (id = 1), "
@@ -173,7 +187,6 @@ def record_store_format(connection: Any, *, release: str) -> int:
         "floor_release TEXT NOT NULL, "
         "last_writer_release TEXT NOT NULL)"
     )
-    raised_by = release if floor > current else (_floor_release(connection) or release)
     connection.execute(
         f"INSERT INTO {_RECORD_TABLE} (id, floor, floor_release, last_writer_release) "
         "VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET floor = excluded.floor, "
@@ -181,5 +194,6 @@ def record_store_format(connection: Any, *, release: str) -> int:
         "last_writer_release = excluded.last_writer_release",
         (floor, raised_by, release),
     )
-    connection.execute(f"PRAGMA user_version = {floor}")
+    if current != floor:
+        connection.execute(f"PRAGMA user_version = {floor}")
     return floor

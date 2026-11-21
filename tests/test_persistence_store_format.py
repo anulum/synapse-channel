@@ -30,7 +30,11 @@ from synapse_channel.core.persistence_sqlcipher import (
     migrate_plaintext_to_sqlcipher,
     sqlcipher_available,
 )
-from synapse_channel.core.persistence_store_format import STORE_FORMAT, StoreFormatRefused
+from synapse_channel.core.persistence_store_format import (
+    STORE_FORMAT,
+    StoreFormatRefused,
+    record_store_format,
+)
 from synapse_channel.service_templates import render_hub_unit
 
 requires_sqlcipher = pytest.mark.skipif(
@@ -106,16 +110,37 @@ def test_a_log_from_before_the_floor_is_raised_once_and_keeps_its_events(tmp_pat
     assert _plain_record(db) == (STORE_FORMAT, __version__, __version__)
 
 
-def test_the_release_that_raised_the_floor_stays_named_and_the_floor_never_falls(
+def test_a_later_release_keeps_the_raiser_named_and_records_itself_as_the_writer(
     tmp_path: Path,
 ) -> None:
     db = tmp_path / "hub.db"
     EventStore(db).close()
-    _rewrite_plain(db, "UPDATE store_format SET floor_release = '0.0.1' WHERE id = 1")
+    _rewrite_plain(
+        db,
+        "UPDATE store_format SET floor_release = '0.0.1', last_writer_release = '0.0.2' "
+        "WHERE id = 1",
+    )
 
     EventStore(db).close()
 
     assert _plain_record(db) == (STORE_FORMAT, "0.0.1", __version__)
+
+
+def test_a_reopen_by_the_same_release_writes_nothing(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    EventStore(db).close()
+    before = _snapshot(db)
+
+    connection, _encrypted = connect_event_store(db)
+    try:
+        changes = connection.total_changes
+        assert record_store_format(connection, release=__version__) == STORE_FORMAT
+        assert connection.total_changes == changes
+        assert not connection.in_transaction
+    finally:
+        connection.close()
+
+    assert _snapshot(db) == before
 
 
 @pytest.mark.parametrize("release", ["9.0.0", None])
