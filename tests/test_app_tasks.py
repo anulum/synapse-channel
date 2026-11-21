@@ -9,15 +9,24 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import multiprocessing
 import os
+import re
+import shlex
 import sqlite3
+import threading
+from collections.abc import Callable
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+from cli_e2e_helpers import run_cli
 from synapse_channel.core.app_tasks import (
+    VERSION_1_TO_2_MIGRATION,
     AppTaskError,
     advance,
     attach,
@@ -28,6 +37,17 @@ from synapse_channel.core.app_tasks import (
     verify,
 )
 from synapse_channel.core.entitlement_store import append_event
+
+# The version 1 layout exactly as releases up to 0.99.26 created it.
+_VERSION_1_LAYOUT = (
+    "CREATE TABLE tasks (task_id TEXT PRIMARY KEY, state TEXT NOT NULL, "
+    "bundle TEXT NOT NULL, allowance TEXT NOT NULL, result TEXT, usage TEXT, "
+    "created_at TEXT NOT NULL, updated_at TEXT NOT NULL);"
+    "CREATE TABLE events (event_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "task_id TEXT NOT NULL REFERENCES tasks(task_id), action TEXT NOT NULL, "
+    "at TEXT NOT NULL, detail TEXT NOT NULL);"
+    "PRAGMA user_version=1;"
+)
 
 
 def _at() -> datetime:
@@ -416,3 +436,180 @@ def test_expiry_refuses_a_task_that_vanishes_inside_the_transition(tmp_path: Pat
             "offered",
         )
     db.close()
+
+
+def _version_1_store(path: Path, at: datetime) -> None:
+    """Leave a store as a release up to 0.99.26 left it, holding one offered task."""
+    path.parent.mkdir(mode=0o700)
+    with closing(sqlite3.connect(path)) as db:
+        db.executescript(_VERSION_1_LAYOUT)
+        bundle = json.dumps(_bundle("legacy", at), sort_keys=True, separators=(",", ":"))
+        db.execute(
+            "INSERT INTO tasks (task_id, state, bundle, allowance, created_at, updated_at) "
+            "VALUES ('legacy', 'offered', ?, '{}', ?, ?)",
+            (bundle, at.isoformat(), at.isoformat()),
+        )
+        db.execute(
+            "INSERT INTO events (task_id, action, at, detail) VALUES ('legacy', 'offer', ?, '{}')",
+            (at.isoformat(),),
+        )
+        db.commit()
+    path.chmod(0o600)
+
+
+def _documented_verification(store: Path) -> list[str]:
+    """Return the guide's migration check as CLI arguments, pointed at ``store``."""
+    guide = (Path(__file__).resolve().parents[1] / "docs" / "app-tasks.md").read_text(
+        encoding="utf-8"
+    )
+    block = re.search(r"```bash\n(synapse verify-result migration .*?)\n```", guide, re.DOTALL)
+    assert block is not None, "the guide shows how to verify a migrated queue"
+    words = shlex.split(block.group(1).replace("\\\n", " "))
+    words[words.index("--database") + 1] = str(store)
+    return words[1:]
+
+
+def _digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_a_released_version_1_store_takes_the_declared_migration_and_verifies(
+    tmp_path: Path,
+) -> None:
+    """The open migrates a real version 1 layout once; the verifier confirms the result."""
+    at = _at()
+    store = tmp_path / "queue" / "queue.sqlite3"
+    _version_1_store(store, at)
+
+    legacy = get(store, "legacy", now=at)
+    assert (legacy["state"], legacy["offered_by"]) == ("offered", "operator:legacy")
+    assert history(store, "legacy")[0]["action"] == "offer"
+
+    with closing(sqlite3.connect(store)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("SELECT version FROM schema_migrations").fetchall() == [("app-tasks-2",)]
+        assert db.execute("SELECT * FROM store_migration_attempts").fetchall() == [
+            ("app-tasks-2", "app-tasks-2", "applied")
+        ]
+    documented = _documented_verification(store)
+    assert documented[documented.index("--migration") + 1] == VERSION_1_TO_2_MIGRATION.identity
+    assert (
+        documented[documented.index("--schema-sha256") + 1]
+        == VERSION_1_TO_2_MIGRATION.schema_sha256
+    )
+    verified = run_cli(*documented)
+    assert verified.returncode == 0, verified.output
+    assert json.loads(verified.stdout)["result"] == "verified"
+
+
+def test_a_version_1_store_with_a_changed_layout_is_refused_unchanged(tmp_path: Path) -> None:
+    """An operator's extra index is not a layout the migration was declared for."""
+    at = _at()
+    store = tmp_path / "queue" / "queue.sqlite3"
+    _version_1_store(store, at)
+    with closing(sqlite3.connect(store)) as db:
+        db.execute("CREATE INDEX tasks_by_state ON tasks(state)")
+        db.commit()
+    before = _digest(store)
+
+    with pytest.raises(
+        AppTaskError, match="cannot migrate the app task store: .*base_schema_differs"
+    ):
+        get(store, "legacy", now=at)
+
+    assert _digest(store) == before
+
+
+def _open_concurrently(store: str, task_id: str, barrier: threading.Barrier) -> None:
+    barrier.wait()
+    history(Path(store), task_id)
+
+
+def _concurrent(
+    target: Callable[..., None], *argument_sets: tuple[object, ...]
+) -> list[int | None]:
+    """Start one spawned process per argument set behind a common barrier; return exit codes."""
+    context = multiprocessing.get_context("spawn")
+    barrier = context.Barrier(len(argument_sets))
+    processes = [
+        context.Process(target=target, args=(*arguments, barrier)) for arguments in argument_sets
+    ]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(timeout=60)
+    return [process.exitcode for process in processes]
+
+
+def test_concurrent_openers_of_a_version_1_store_both_succeed(tmp_path: Path) -> None:
+    """Before the declared migration the second opener failed on a duplicate column."""
+    at = _at()
+    for round_number in range(3):
+        store = tmp_path / f"queue-{round_number}" / "queue.sqlite3"
+        _version_1_store(store, at)
+
+        assert _concurrent(_open_concurrently, (str(store), "legacy"), (str(store), "legacy")) == [
+            0,
+            0,
+        ]
+        with closing(sqlite3.connect(store)) as db:
+            assert db.execute("SELECT count(*) FROM store_migration_attempts").fetchone() == (1,)
+
+
+def _offer_concurrently(
+    store: str, ledger: str, task_id: str, at: str, barrier: threading.Barrier
+) -> None:
+    moment = datetime.fromisoformat(at)
+    barrier.wait()
+    offer(Path(store), _bundle(task_id, moment), ledger=Path(ledger), now=moment)
+
+
+def test_concurrent_first_offers_create_the_store_once(tmp_path: Path) -> None:
+    """Two first uses of a new store no longer collide on its tables."""
+    at = _at()
+    ledger = tmp_path / "ledger" / "ledger.sqlite3"
+    _ledger(ledger, at)
+    for round_number in range(3):
+        store = tmp_path / f"queue-{round_number}" / "queue.sqlite3"
+        arguments = [
+            (str(store), str(ledger), f"first-{index}", at.isoformat()) for index in range(2)
+        ]
+
+        assert _concurrent(_offer_concurrently, *arguments) == [0, 0]
+        assert [get(store, f"first-{index}", now=at)["state"] for index in range(2)] == [
+            "offered",
+            "offered",
+        ]
+
+
+def test_a_store_file_of_another_layout_at_version_0_is_refused_unchanged(tmp_path: Path) -> None:
+    """A version 0 database that already holds tables is not taken over."""
+    directory = tmp_path / "queue"
+    directory.mkdir(mode=0o700)
+    store = directory / "queue.sqlite3"
+    with closing(sqlite3.connect(store)) as db:
+        db.execute("CREATE TABLE notes (body TEXT)")
+        db.commit()
+    store.chmod(0o600)
+    before = _digest(store)
+
+    with pytest.raises(AppTaskError, match="^unsupported app task store version 0$"):
+        get(store, "any", now=_at())
+
+    assert _digest(store) == before
+
+
+def test_an_empty_store_file_becomes_a_version_2_store(tmp_path: Path) -> None:
+    """The file a racing first opener created, still empty, is completed, not refused."""
+    at = _at()
+    ledger = tmp_path / "ledger" / "ledger.sqlite3"
+    _ledger(ledger, at)
+    directory = tmp_path / "queue"
+    directory.mkdir(mode=0o700)
+    store = directory / "queue.sqlite3"
+    store.touch(mode=0o600)
+
+    offer(store, _bundle("first", at), ledger=ledger, now=at)
+
+    with closing(sqlite3.connect(store)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2

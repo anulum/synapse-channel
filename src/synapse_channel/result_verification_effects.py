@@ -44,6 +44,7 @@ from synapse_channel.core.generation_chain import (
     chain_head,
     read_generation,
 )
+from synapse_channel.core.sqlite_schema import schema_digest as _schema_digest
 from synapse_channel.result_verification import ResultVerification
 
 START_RECORD_SCHEMA: Final = "synapse-service-start.v1"
@@ -534,26 +535,6 @@ def verify_deployment(
     return _verify_chained_deployment(spec, operation_id=operation_id, communication=communication)
 
 
-def _schema_text(connection: sqlite3.Connection) -> str:
-    """Return the exact text whose SHA-256 is the schema digest.
-
-    Each sqlite_master row with SQL, excluding internal sqlite_ names, is one
-    block of type, a tab, name, a newline, the stored SQL, and a newline,
-    ordered by type then name. The SQL text is copied as SQLite stored it.
-    Different whitespace is a different digest.
-    """
-    rows = connection.execute(
-        "SELECT type, name, sql FROM sqlite_master "
-        "WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type, name"
-    ).fetchall()
-    return "".join(f"{kind}\t{name}\n{sql}\n" for kind, name, sql in rows)
-
-
-def _schema_digest(connection: sqlite3.Connection) -> str:
-    """Return the SHA-256 of :func:`_schema_text`."""
-    return hashlib.sha256(_schema_text(connection).encode("utf-8")).hexdigest()
-
-
 def _open_readonly(path: Path) -> sqlite3.Connection:
     """Open a regular database file in SQLite read-only mode.
 
@@ -683,7 +664,7 @@ def verify_migration(
     The database is opened with SQLite ``mode=ro`` after a no-follow check, so
     a symbolic link is not treated as the database and nothing is migrated.
     The held inode must still be the resolved path after connect. The schema
-    digest is the SHA-256 of :func:`_schema_text`. A missing migration column
+    digest is :func:`synapse_channel.core.sqlite_schema.schema_digest`. A missing migration column
     is ``migration_column_absent``, not an unread database. A WAL file in a
     directory the reader cannot write may be ``database_not_readable``.
 

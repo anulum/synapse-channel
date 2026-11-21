@@ -21,6 +21,26 @@ debit the ledger. The owner-local queue is under
 `$XDG_STATE_HOME/synapse-channel/app-tasks/queue.sqlite3` by default. Its
 directory and SQLite file are owner-only.
 
+The queue's SQLite header (`user_version`) holds its layout version. This
+release writes version 2; releases up to 0.99.26 wrote version 1. The first
+command that opens a version 1 queue applies the declared migration
+`app-tasks-2`, which adds the offerer column and gives earlier tasks the offerer
+`operator:legacy`. It applies only when the queue's schema is exactly the version
+1 layout, and the change, its record in the `schema_migrations` table and the new
+version are one transaction, so a queue is either untouched or fully migrated. A
+second command opening the queue at the same moment waits for the first and then
+uses the migrated queue. A version 1 queue whose schema was changed, for example
+by an added index, is refused unchanged, as is a database of another layout or a
+newer version. Confirm a migrated queue against the declared schema digest:
+
+```bash
+synapse verify-result migration \
+  --database "$XDG_STATE_HOME/synapse-channel/app-tasks/queue.sqlite3" \
+  --migration app-tasks-2 \
+  --schema-sha256 1589b0d7811aa96f76ca49c55e1096f68d48833a4c77c9696c72026ae6d28d25 \
+  --operation-id app-task-queue-upgrade
+```
+
 Create an owner-only JSON file such as `offer.json`:
 
 ```json

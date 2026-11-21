@@ -18,6 +18,26 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- **An earlier app task queue takes a declared migration that can be verified.**
+  A queue written by a release up to 0.99.26 (layout version 1) takes the declared
+  migration `app-tasks-2` only when its schema is exactly that layout. The new
+  offerer column, its record in `schema_migrations` and the new layout version are
+  one transaction, and `synapse verify-result migration` confirms the result
+  against the schema digest the app task guide publishes. A version 1 queue
+  whose schema was changed is now refused unchanged; before, the column was added
+  regardless and the version was set outside the column's transaction.
+
+### Fixed
+
+- **Two commands opening an app task queue at the same moment no longer fail.**
+  Two first offers into a new queue failed on its directory or on its tables, and
+  two openers of a version 1 queue failed on a duplicate column. The directory,
+  file and layout are now created once and the migration applies once; the file
+  is created owner-only instead of being restricted after SQLite creates it, and
+  an empty queue file left by such an opener is completed rather than refused.
+
 ## [0.99.60] - 2026-11-21
 
 Core 0.99.60 makes the event log safe to read beside a running hub and adds a

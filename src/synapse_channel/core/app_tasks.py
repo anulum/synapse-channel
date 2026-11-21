@@ -14,7 +14,7 @@ import json
 import os
 import re
 import sqlite3
-from contextlib import closing
+from contextlib import closing, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -33,6 +33,11 @@ from synapse_channel.core.secure_path import (
     assert_owner_only_dir_path,
     assert_owner_only_file_path,
 )
+from synapse_channel.core.store_migration import (
+    DeclaredMigration,
+    MigrationRefused,
+    apply_declared_migration,
+)
 
 _ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _STEPS: Final = {
@@ -42,6 +47,30 @@ _STEPS: Final = {
     "cancel": (("offered", "accepted", "running", "result_attached"), "cancelled"),
 }
 _MAX_JSON: Final = 1_048_576
+_LAYOUT_VERSION_2: Final = (
+    "CREATE TABLE tasks (task_id TEXT PRIMARY KEY, state TEXT NOT NULL, "
+    "bundle TEXT NOT NULL, allowance TEXT NOT NULL, result TEXT, usage TEXT, "
+    "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+    "offered_by TEXT NOT NULL)",
+    "CREATE TABLE events (event_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "task_id TEXT NOT NULL REFERENCES tasks(task_id), action TEXT NOT NULL, "
+    "at TEXT NOT NULL, detail TEXT NOT NULL)",
+)
+VERSION_1_TO_2_MIGRATION: Final = DeclaredMigration(
+    identity="app-tasks-2",
+    # The version 1 layout exactly as releases up to 0.99.26 created it.
+    base_schema_sha256="a71927ab8182893aa28a625cc75e8aa849ace2929dc3c0df7d0cbc6074ec9388",
+    statements=("ALTER TABLE tasks ADD COLUMN offered_by TEXT NOT NULL DEFAULT 'operator:legacy'",),
+    # Version 2 as migrated, with the migration bookkeeping tables.
+    schema_sha256="1589b0d7811aa96f76ca49c55e1096f68d48833a4c77c9696c72026ae6d28d25",
+    user_version=2,
+)
+"""The migration a version 1 store takes when it is opened.
+
+``synapse verify-result migration --database STORE --migration app-tasks-2
+--schema-sha256`` with this declaration's ``schema_sha256`` verifies a migrated
+store; a store created at version 2 has no migration to verify.
+"""
 
 
 class AppTaskError(SynapseError, ValueError):
@@ -77,42 +106,85 @@ def _id(value: object, field: str) -> str:
     return value
 
 
+def _layout_version(db: sqlite3.Connection) -> int:
+    return int(db.execute("PRAGMA user_version").fetchone()[0])
+
+
+def _create_layout(db: sqlite3.Connection) -> None:
+    """Create the version 2 layout once, even when another opener creates it meanwhile.
+
+    The layout is written inside one immediate transaction after the version is
+    read again, so a second opener of a new store waits for the first and then
+    finds version 2. A store of version 0 that already holds tables belongs to
+    something else and is refused unchanged.
+    """
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        if _layout_version(db) == 0:
+            if db.execute("SELECT count(*) FROM sqlite_master").fetchone()[0]:
+                raise AppTaskError("unsupported app task store version 0")
+            for statement in _LAYOUT_VERSION_2:
+                db.execute(statement)
+            db.execute("PRAGMA user_version=2")
+        db.execute("COMMIT")
+    except BaseException:
+        with suppress(sqlite3.OperationalError):
+            db.execute("ROLLBACK")
+        raise
+
+
+def _create_private_directory(directory: Path) -> None:
+    """Create ``directory`` owner-only, or keep the one that already exists.
+
+    A concurrent first opener may create it between any check and this call;
+    the caller proves the directory owner-only either way.
+    """
+    try:
+        directory.mkdir(mode=0o700, parents=True)
+    except FileExistsError:
+        return
+    apply_owner_only_dir(directory)
+
+
+def _create_private_file(path: Path) -> bool:
+    """Create ``path`` empty and owner-only, and return whether this call created it.
+
+    The file is created exclusively with mode ``0o600``, so a concurrent opener
+    never sees it readable by others, and an existing path, a symlink included,
+    is never followed or replaced.
+    """
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return False
+    os.close(descriptor)
+    apply_owner_only_file(path)
+    return True
+
+
 def _open(path: Path) -> sqlite3.Connection:
     parent = path.parent
     try:
-        if not parent.exists():
-            parent.mkdir(mode=0o700, parents=True)
-            apply_owner_only_dir(parent)
+        _create_private_directory(parent)
         assert_owner_only_dir_path(parent, purpose="app task directory")
-        if path.is_symlink():
-            raise AppTaskError("app task store must not be a symlink")
-        existed = path.exists()
-        if existed:
+        if not _create_private_file(path):
+            if path.is_symlink():
+                raise AppTaskError("app task store must not be a symlink")
             assert_owner_only_file_path(path, purpose="app task store")
         db = sqlite3.connect(path, timeout=5.0)
         db.row_factory = sqlite3.Row
-        if not existed:
-            apply_owner_only_file(path)
         db.execute("PRAGMA foreign_keys=ON")
-        version = int(db.execute("PRAGMA user_version").fetchone()[0])
-        if version == 0 and not existed:
-            db.executescript(
-                "CREATE TABLE tasks (task_id TEXT PRIMARY KEY, state TEXT NOT NULL, "
-                "bundle TEXT NOT NULL, allowance TEXT NOT NULL, result TEXT, usage TEXT, "
-                "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
-                "offered_by TEXT NOT NULL);"
-                "CREATE TABLE events (event_id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "task_id TEXT NOT NULL REFERENCES tasks(task_id), action TEXT NOT NULL, "
-                "at TEXT NOT NULL, detail TEXT NOT NULL);"
-                "PRAGMA user_version=2;"
-            )
-        elif version == 1:
-            with db:
-                db.execute(
-                    "ALTER TABLE tasks ADD COLUMN offered_by TEXT NOT NULL "
-                    "DEFAULT 'operator:legacy'"
+        version = _layout_version(db)
+        if version == 0:
+            _create_layout(db)
+            version = _layout_version(db)
+        if version == 1:
+            try:
+                apply_declared_migration(
+                    db, VERSION_1_TO_2_MIGRATION, attempt=VERSION_1_TO_2_MIGRATION.identity
                 )
-                db.execute("PRAGMA user_version=2")
+            except MigrationRefused as exc:
+                raise AppTaskError(f"cannot migrate the app task store: {exc}") from exc
         elif version != 2:
             raise AppTaskError(f"unsupported app task store version {version}")
         if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
