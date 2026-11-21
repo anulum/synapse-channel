@@ -16,6 +16,7 @@ from synapse_channel.core.agent_liveness import (
     DEFAULT_WAITER_LIVENESS_WINDOW,
 )
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
+from synapse_channel.core.feed import feed_chat_markers
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_config import HubConfig
 from synapse_channel.core.hub_defaults import (
@@ -69,11 +70,18 @@ def normalize_transport(config: HubConfig) -> HubConfig:
 
 
 def normalize_liveness_and_routing(config: HubConfig) -> HubConfig:
-    """Normalize liveness windows and multi-hub routing posture."""
+    """Normalize liveness windows and multi-hub routing posture, and check the feed markers.
+
+    Raises
+    ------
+    ValueError
+        When the feed's chat markers fail :func:`~synapse_channel.core.feed.feed_chat_markers`.
+    """
     live = config.liveness
     routing = config.multihub
     return replace(
         config,
+        feed_chat_markers=feed_chat_markers(config.feed_chat_markers),
         liveness=replace(
             live,
             warn_stale_recipients=bool(live.warn_stale_recipients),

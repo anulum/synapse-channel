@@ -19,6 +19,7 @@ from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_l
 from synapse_channel.core.hub_defaults import (
     DEFAULT_AUTH_TIMEOUT,
     DEFAULT_COMPACT_HINT_THRESHOLD,
+    DEFAULT_FEED_CHAT_MARKERS,
     DEFAULT_MAX_CLIENTS,
     DEFAULT_MAX_CONNECTIONS_PER_HOST,
     DEFAULT_MAX_FINDINGS_PER_AGENT,
@@ -64,6 +65,7 @@ LEGACY_DEFAULTS: dict[str, object] = {
     "max_history": DEFAULT_MAX_HISTORY,
     "relay_log": None,
     "relay_max_lines": DEFAULT_RELAY_MAX_LINES,
+    "feed_chat_markers": DEFAULT_FEED_CHAT_MARKERS,
     "max_progress": DEFAULT_MAX_PROGRESS,
     "max_progress_per_author": DEFAULT_MAX_PROGRESS_PER_AUTHOR,
     "max_progress_per_task": DEFAULT_MAX_PROGRESS_PER_TASK,

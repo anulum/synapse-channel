@@ -58,6 +58,7 @@ from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.hub_defaults import (
     DEFAULT_AUTH_TIMEOUT,
     DEFAULT_COMPACT_HINT_THRESHOLD,
+    DEFAULT_FEED_CHAT_MARKERS,
     DEFAULT_MAX_CLIENTS,
     DEFAULT_MAX_CONNECTIONS_PER_HOST,
     DEFAULT_MAX_FINDINGS_PER_AGENT,
@@ -332,6 +333,7 @@ class HubConfig:
     durable_ingress_quota: DurableIngressQuota | None = None
     relay_log: str | Path | None = None
     relay_max_lines: int = DEFAULT_RELAY_MAX_LINES
+    feed_chat_markers: tuple[str, ...] = DEFAULT_FEED_CHAT_MARKERS
     shutdown_close_timeout: float = DEFAULT_SHUTDOWN_CLOSE_TIMEOUT
     limits: HubLimits = field(default_factory=HubLimits)
     takeover: TakeoverDamping = field(default_factory=TakeoverDamping)

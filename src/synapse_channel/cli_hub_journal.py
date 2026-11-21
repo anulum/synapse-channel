@@ -21,6 +21,7 @@ from synapse_channel.core.event_row_mac import (
     load_or_create_row_mac_key,
     row_mac_key_path,
 )
+from synapse_channel.core.feed import feed_chat_markers
 from synapse_channel.core.message_auth_durable import SequenceFloorMode
 from synapse_channel.core.persistence_sqlcipher import connect_event_store
 from synapse_channel.core.persistence_store_format import StoreFormatRefused
@@ -101,6 +102,18 @@ def configure_aef_outbox(ctx: HubStartup) -> None:
         except (ReceiptSigningError, ValueError) as exc:
             print(f"synapse hub: {exc}", file=sys.stderr)
             raise HubStartupRefused() from None
+
+
+def refuse_invalid_feed_chat_markers(ctx: HubStartup) -> None:
+    """Refuse ``--feed-chat-marker`` values the feed could not serve, before any stage runs."""
+    named = getattr(ctx.args, "feed_chat_marker", None)
+    if not named:
+        return
+    try:
+        feed_chat_markers(named)
+    except ValueError as exc:
+        print(f"synapse hub: invalid --feed-chat-marker: {exc}", file=sys.stderr)
+        raise HubStartupRefused() from None
 
 
 def refuse_unreadable_journal(ctx: HubStartup) -> None:

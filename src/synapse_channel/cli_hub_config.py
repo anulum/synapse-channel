@@ -174,6 +174,7 @@ def build_cli_hub_config(args: argparse.Namespace, loaded: HubConfig) -> HubConf
         hub_id=args.hub_id,
         relay_log=args.relay_log,
         relay_max_lines=args.relay_max_lines,
+        feed_chat_markers=tuple(args.feed_chat_marker or loaded.feed_chat_markers),
         checkpoint_interval=args.checkpoint_interval,
         shutdown_close_timeout=args.shutdown_close_timeout,
         limits=_limits(args, loaded.limits),

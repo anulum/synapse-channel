@@ -19,6 +19,8 @@ DEFAULT_MAX_QUEUE = 64
 DEFAULT_MAX_FINDINGS_PER_AGENT = 512
 """Maximum durable findings one agent may admit before private rejection."""
 DEFAULT_RELAY_MAX_LINES = 5000
+DEFAULT_FEED_CHAT_MARKERS = ("Finding:", "Decision:")
+"""The chat markers the forward feed serves as ``chat_marker`` when the operator names none."""
 DEFAULT_PING_INTERVAL = 15.0
 """Seconds between server keepalive pings, so a dead socket is detected promptly."""
 DEFAULT_PING_TIMEOUT = 15.0

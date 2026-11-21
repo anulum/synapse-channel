@@ -2281,7 +2281,11 @@ binds a consumer that kept only a legacy position: `--digest` is the
 the one row with that digest. It exits like `read` and `ack`, and with `2` when
 only one of `--seq` and `--legacy-seq` is given. The hub needs a journal (`--db`)
 and a configured `--hub-id`; the grant and the refusals are in
-[The forward event feed](protocol.md#the-forward-event-feed).
+[The forward event feed](protocol.md#the-forward-event-feed). The hub serves
+as `chat_marker` the chat that begins with `Finding:` or `Decision:`, or with the
+markers named by `synapse hub --feed-chat-marker TEXT` (repeatable, replacing
+those two); a marker the feed could not serve stops the hub with exit `2` before
+it opens its journal.
 
 `synapse supervisor` watches the shared board and re-offers stalled plan tasks.
 The fixed `--idle-seconds` threshold remains the operator ceiling. By default the

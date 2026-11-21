@@ -59,7 +59,7 @@ def build_routing(
             if config.journal is not None
             else MessageForwardLedger.in_memory()
         ),
-        feed_ledger=FeedLedger(),
+        feed_ledger=FeedLedger(config.feed_chat_markers),
         federation_offer_path=(
             Path(config.federation.federation_offer_path)
             if config.federation.federation_offer_path is not None

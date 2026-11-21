@@ -221,6 +221,10 @@ class SynapseHub(HubConfigView):
         Upper bound on the relay log: it is trimmed back to its last this-many
         lines once it grows that far past the bound, so the mirror cannot grow
         without limit. Defaults to :data:`DEFAULT_RELAY_MAX_LINES`.
+    feed_chat_markers : tuple of str, optional
+        The markers whose undirected, untagged chat the forward feed serves as
+        ``chat_marker``, checked by :func:`~synapse_channel.core.feed.feed_chat_markers`.
+        Defaults to :data:`~synapse_channel.core.hub_defaults.DEFAULT_FEED_CHAT_MARKERS`.
     max_progress : int, optional
         Maximum progress notes retained on the shared blackboard; the oldest are
         dropped beyond this bound. The durable log (when attached) still records

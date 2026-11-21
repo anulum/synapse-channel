@@ -1665,9 +1665,14 @@ is unchanged:
 
 - **Kinds** are a closed list. `finding` serves the hub's findings.
   `chat_marker` serves chat that is undirected (no target, or `all`), carries
-  no channel, and whose text begins with `Finding:` or `Decision:`. Directed
+  no channel, and whose text begins with one of the hub's chat markers. Directed
   chat and channel chat are never served, and plain `chat` is not a kind. The
-  markers are fixed in this release.
+  markers are `Finding:` and `Decision:` unless the operator names others with
+  `synapse hub --feed-chat-marker TEXT` (repeatable), which replaces them: at
+  most 16, each printable text of up to 64 characters without surrounding
+  whitespace, none twice. A marker matches case-sensitively at the start of the
+  text. The hub refuses other values at start, before it opens its journal. A
+  binding proves a position only with a row the current markers serve.
 - **The consumer** is the connection itself or one of the roles it holds.
 - **A first query** leaves `hub_id` and `journal_instance` empty and starts at
   `after_seq` 0. Every later query passes the cursor of the page before. An

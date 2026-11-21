@@ -155,6 +155,30 @@ def _add_worker_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--price-quote-file", default=None)
 
 
+def _add_memory_feed_args(hub: argparse.ArgumentParser) -> None:
+    """Register how a memory consumer follows the hub: the relay log and the forward feed."""
+    hub.add_argument(
+        "--relay-log",
+        default=None,
+        help="Mirror every broadcast to this lite NDJSON log for file-based observers.",
+    )
+    hub.add_argument(
+        "--relay-max-lines",
+        type=int,
+        default=DEFAULT_RELAY_MAX_LINES,
+        help="Upper bound on the relay log before it is trimmed.",
+    )
+    hub.add_argument(
+        "--feed-chat-marker",
+        action="append",
+        default=None,
+        metavar="TEXT",
+        help="A marker whose undirected, untagged chat the forward feed serves as "
+        "chat_marker (repeatable; replaces the defaults Finding: and Decision:). At most "
+        "16, each printable text of up to 64 characters without surrounding whitespace.",
+    )
+
+
 def _add_peer_token_file(hub: argparse.ArgumentParser, stem: str) -> None:
     """Add ``--<stem>-token-file``, the rotating file form of ``--<stem>-token``.
 
@@ -325,17 +349,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=DEFAULT_MAX_FINDINGS_PER_AGENT,
         help="Maximum durable findings one agent may admit before private rejection.",
     )
-    hub.add_argument(
-        "--relay-log",
-        default=None,
-        help="Mirror every broadcast to this lite NDJSON log for file-based observers.",
-    )
-    hub.add_argument(
-        "--relay-max-lines",
-        type=int,
-        default=DEFAULT_RELAY_MAX_LINES,
-        help="Upper bound on the relay log before it is trimmed.",
-    )
+    _add_memory_feed_args(hub)
     hub.add_argument(
         "--max-clients",
         type=int,

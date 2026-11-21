@@ -43,6 +43,7 @@ from typing import Any, Protocol
 
 from synapse_channel.core.event_row_recovery import CORRUPT_EVENT_KIND
 from synapse_channel.core.feed_retention import applied_compaction_floor, consumer_acks
+from synapse_channel.core.hub_defaults import DEFAULT_FEED_CHAT_MARKERS
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import StoredEvent
 from synapse_channel.core.persistence_store_format import JournalInstance
@@ -56,8 +57,12 @@ FEED_CHAT_MARKER = "chat_marker"
 FEED_KINDS = frozenset({FEED_FINDING, FEED_CHAT_MARKER})
 """Every kind a feed may serve; chat and directed messages are never among them."""
 
-DEFAULT_FEED_CHAT_MARKERS = ("Finding:", "Decision:")
-"""The chat markers a hub serves as ``chat_marker`` when its operator names none."""
+
+FEED_CHAT_MARKERS_MAX = 16
+"""Most chat markers one hub serves."""
+
+FEED_CHAT_MARKER_MAX_CHARS = 64
+"""Longest chat marker, in characters."""
 
 FEED_SCAN_LIMIT = 1000
 """Maximum journal rows one feed request inspects."""
@@ -212,6 +217,51 @@ def payload_sha256(payload: Mapping[str, Any]) -> str:
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
     )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def feed_chat_markers(values: Iterable[object]) -> tuple[str, ...]:
+    """Return a hub's chat markers, in the operator's order, after checking them.
+
+    Parameters
+    ----------
+    values : iterable
+        The markers the operator named.
+
+    Returns
+    -------
+    tuple of str
+        The markers, unchanged.
+
+    Raises
+    ------
+    ValueError
+        When there are none, or more than :data:`FEED_CHAT_MARKERS_MAX`; when one
+        is not text, is empty, begins or ends with whitespace, is longer than
+        :data:`FEED_CHAT_MARKER_MAX_CHARS` or holds a character that is not
+        printable; or when one repeats.
+    """
+    named = tuple(values)
+    if not 1 <= len(named) <= FEED_CHAT_MARKERS_MAX:
+        raise ValueError(
+            f"a hub serves 1 to {FEED_CHAT_MARKERS_MAX} chat markers, not {len(named)}"
+        )
+    markers: list[str] = []
+    for marker in named:
+        if not isinstance(marker, str) or not marker or marker != marker.strip():
+            raise ValueError(
+                f"a chat marker is text without surrounding whitespace, not {marker!r:.80}"
+            )
+        if len(marker) > FEED_CHAT_MARKER_MAX_CHARS:
+            raise ValueError(
+                f"a chat marker is at most {FEED_CHAT_MARKER_MAX_CHARS} characters, "
+                f"not {len(marker)}"
+            )
+        if not marker.isprintable():
+            raise ValueError(f"a chat marker holds only printable characters, not {marker!r:.80}")
+        if marker in markers:
+            raise ValueError(f"the chat marker {marker!r} is named twice")
+        markers.append(marker)
+    return tuple(markers)
 
 
 def is_chat_marker(payload: Mapping[str, Any], markers: Sequence[str]) -> bool:
@@ -441,11 +491,12 @@ class FeedLedger:
     Parameters
     ----------
     markers : sequence of str
-        The chat markers this hub serves as ``chat_marker``.
+        The chat markers this hub serves as ``chat_marker``, checked by
+        :func:`feed_chat_markers`.
     """
 
     def __init__(self, markers: Sequence[str] = DEFAULT_FEED_CHAT_MARKERS) -> None:
-        self.markers = tuple(markers)
+        self.markers = feed_chat_markers(markers)
         self._served: dict[tuple[str, str], int] = {}
         self._acked: dict[tuple[str, str], int] = {}
         self._bind_attempts: dict[tuple[str, str], float] = {}

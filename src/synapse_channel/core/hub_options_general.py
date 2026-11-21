@@ -34,6 +34,7 @@ class HubGeneralOptions(TypedDict, total=False):
     durable_ingress_quota: DurableIngressQuota | None
     relay_log: str | Path | None
     relay_max_lines: int
+    feed_chat_markers: tuple[str, ...]
     shutdown_close_timeout: float
     clock: Callable[[], float] | None
     protected_write_policies: Mapping[str, ProtectedAdmissionReplayPolicy] | None

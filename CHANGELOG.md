@@ -45,7 +45,8 @@ execution evidence when carrying a release claim forward.
 
 - **A forward event feed for memory consumers (experimental).** A consumer reads the
   hub's findings and its marked chat (undirected, untagged chat that begins with
-  `Finding:` or `Decision:`) through `history_request.feed_query` on its own
+  `Finding:` or `Decision:`, or with the markers `synapse hub --feed-chat-marker`
+  names instead) through `history_request.feed_query` on its own
   authenticated connection, in bounded ascending pages, and acknowledges what it has
   ingested with the new `feed_ack` frame, which the hub journals durably and never
   moves backwards. Each row carries the canonical SHA-256 of its payload. The cursor
