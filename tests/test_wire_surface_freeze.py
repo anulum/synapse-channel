@@ -97,6 +97,8 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "HEARTBEAT": "heartbeat",
     "FEED_ACK": "feed_ack",
     "FEED_ACK_RESULT": "feed_ack_result",
+    "FEED_BIND": "feed_bind",
+    "FEED_BIND_RESULT": "feed_bind_result",
     "HISTORY_REQUEST": "history_request",
     "HISTORY_SNAPSHOT": "history_snapshot",
     "ENTITLEMENT_ADVERT": "entitlement_advert",

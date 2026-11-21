@@ -5,11 +5,11 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — `synapse feed`: read and acknowledge the forward event feed
-"""Read one feed page, or acknowledge one, and print the hub's answer as JSON.
+"""Read one feed page, acknowledge one, or bind a legacy position, as JSON.
 
-Exit status 0 means the hub served the page or kept the acknowledgement, 1 that
-it refused the request (the reason is in ``error``), and 2 that it could not be
-reached.
+Exit status 0 means the hub served the page, kept the acknowledgement or bound
+the position, 1 that it refused the request (the reason is in ``error``), and 2
+that it could not be reached.
 """
 
 from __future__ import annotations
@@ -22,7 +22,12 @@ from typing import Any
 
 from synapse_channel.client.agent_lifecycle import default_hub_uri
 from synapse_channel.core.feed import FEED_KINDS, FEED_MAX_LIMIT
-from synapse_channel.hub_feed import FeedUnavailable, request_feed_page, send_feed_ack
+from synapse_channel.hub_feed import (
+    FeedUnavailable,
+    request_feed_page,
+    send_feed_ack,
+    send_feed_bind,
+)
 
 
 def _print(body: dict[str, Any]) -> int:
@@ -71,6 +76,32 @@ def _cmd_ack(args: argparse.Namespace) -> int:
         )
     except FeedUnavailable as exc:
         print(f"feed ack: {exc}", file=sys.stderr)
+        return 2
+    return _print(body)
+
+
+def _cmd_bind(args: argparse.Namespace) -> int:
+    """Bind ``--consumer``'s legacy position by the proof of its last ingested row."""
+    if (args.seq is None) != (args.legacy_seq is None):
+        print("feed bind: --seq and --legacy-seq go together", file=sys.stderr)
+        return 2
+    try:
+        body = asyncio.run(
+            send_feed_bind(
+                uri=args.uri,
+                identity=args.name,
+                token=args.token,
+                consumer=args.consumer,
+                kind=args.kind,
+                payload_sha256=args.digest,
+                seq=args.seq,
+                legacy_seq=args.legacy_seq,
+                hub_id=args.hub_id,
+                timeout=args.timeout,
+            )
+        )
+    except FeedUnavailable as exc:
+        print(f"feed bind: {exc}", file=sys.stderr)
         return 2
     return _print(body)
 
@@ -127,3 +158,18 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     ack.add_argument("--instance", required=True, help="The page's journal instance.")
     ack.add_argument("--seq", type=int, required=True, help="Highest ingested sequence.")
     ack.set_defaults(func=_cmd_ack)
+
+    bind = group.add_parser(
+        "bind", help="Bind a legacy position once, by the proof of the last row ingested."
+    )
+    _connection(bind)
+    bind.add_argument(
+        "--kind", choices=sorted(FEED_KINDS), required=True, help="The proof row's feed kind."
+    )
+    bind.add_argument("--digest", required=True, help="The proof row's payload_sha256.")
+    bind.add_argument("--seq", type=int, default=None, help="The proof row's sequence.")
+    bind.add_argument(
+        "--legacy-seq", type=int, default=None, help="The legacy cursor; needs --seq."
+    )
+    bind.add_argument("--hub-id", default="", help="The hub the legacy position was read from.")
+    bind.set_defaults(func=_cmd_bind)

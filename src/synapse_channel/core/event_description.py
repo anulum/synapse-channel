@@ -162,6 +162,12 @@ def _feed_ack(p: Mapping[str, Any]) -> EventWords:
     return EventWords(_text(p, "consumer"), line)
 
 
+def _feed_bind(p: Mapping[str, Any]) -> EventWords:
+    after = p.get("after_seq")
+    line = f"feed bound after {after}" if isinstance(after, int) else "feed bound"
+    return EventWords(_text(p, "consumer"), line)
+
+
 def _mailbox_handover(p: Mapping[str, Any]) -> EventWords:
     line = f"mailbox {_text(p, 'action')}: {_text(p, 'from')} → {_text(p, 'to')}"
     return EventWords(_text(p, "actor"), line)
@@ -244,6 +250,7 @@ EVENT_WORDS: Mapping[str, Describer] = {
     EventKind.MAILBOX_WATERMARK: _mailbox_watermark,
     EventKind.MAILBOX_HANDOVER: _mailbox_handover,
     EventKind.FEED_ACK: _feed_ack,
+    EventKind.FEED_BIND: _feed_bind,
     EventKind.ROLE_BINDING: _role_binding,
     EventKind.OPERATION_DECLARED: _operation("declared"),
     EventKind.OPERATION_OUTCOME: _operation("outcome"),

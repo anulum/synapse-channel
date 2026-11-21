@@ -59,7 +59,7 @@ everything, since they need the whole command table.
 | `synapse route-task` | Recommend agents for a board task using local capability signals. |
 | `synapse resource-bids` | Rank live resource offers for a board task without reserving capacity. |
 | `synapse memory-recall` | Recall matching durable memory records from a local event store. |
-| `synapse feed` | `read` prints one page of the hub's forward event feed (findings and marked chat) after a cursor bound to the hub and its journal instance; `ack` records, durably, the highest sequence a consumer has ingested. Needs the `feed-read` grant. Experimental. See [The forward event feed](protocol.md#the-forward-event-feed). |
+| `synapse feed` | `read` prints one page of the hub's forward event feed (findings and marked chat) after a cursor bound to the hub and its journal instance; `ack` records, durably, the highest sequence a consumer has ingested; `bind` moves a legacy, sequence-only position onto a bound cursor once, by proof of its last row. Needs the `feed-read` grant. Experimental. See [The forward event feed](protocol.md#the-forward-event-feed). |
 | `synapse send` | Connect, send one message, optionally await replies, and exit. |
 | `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
 | `synapse listen` | Connect and stream channel messages until interrupted. |
@@ -2274,8 +2274,13 @@ through `SEQ`. The consumer is the connection itself or one of its roles. Both
 print the hub's answer as JSON and exit `0` when it served the page or kept the
 ack, `1` when it refused (the reason is in `error`, including an access-control
 denial), and `2` when the hub could not be reached or gave no answer in
-`--timeout` seconds. The hub needs a journal (`--db`) and a configured
-`--hub-id`; the grant and the refusals are in
+`--timeout` seconds. `synapse feed bind --kind KIND --digest SHA256 [--seq SEQ --legacy-seq SEQ]`
+binds a consumer that kept only a legacy position: `--digest` is the
+`payload_sha256` of the last row it ingested, `--seq` that row's sequence and
+`--legacy-seq` its legacy cursor, both or neither; without them the hub binds at
+the one row with that digest. It exits like `read` and `ack`, and with `2` when
+only one of `--seq` and `--legacy-seq` is given. The hub needs a journal (`--db`)
+and a configured `--hub-id`; the grant and the refusals are in
 [The forward event feed](protocol.md#the-forward-event-feed).
 
 `synapse supervisor` watches the shared board and re-offers stalled plan tasks.

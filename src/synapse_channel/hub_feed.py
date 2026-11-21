@@ -9,8 +9,9 @@
 
 A memory consumer calls :func:`request_feed_page` with its cursor and keeps the
 returned ``next_after``, ``hub_id`` and ``journal_instance`` as its next cursor.
-After it has durably ingested a page it calls :func:`send_feed_ack`. The hub
-decides; this module only carries the request and returns the hub's answer.
+After it has durably ingested a page it calls :func:`send_feed_ack`. A consumer
+that kept only a legacy position binds it once with :func:`send_feed_bind`. The
+hub decides; this module only carries the request and returns the hub's answer.
 """
 
 from __future__ import annotations
@@ -194,5 +195,70 @@ async def send_feed_ack(
         timeout=timeout,
         reply_type=MessageType.FEED_ACK_RESULT,
         reply_key="feed_ack",
+        send=send,
+    )
+
+
+async def send_feed_bind(
+    *,
+    uri: str,
+    identity: str,
+    token: str | None,
+    consumer: str,
+    kind: str,
+    payload_sha256: str,
+    seq: int | None = None,
+    legacy_seq: int | None = None,
+    hub_id: str = "",
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    """Bind a legacy position by proof; return the hub's answer.
+
+    Parameters
+    ----------
+    uri, identity, token : str, str, str or None
+        The hub and the connection's identity and shared secret.
+    consumer : str
+        The consumer, the identity itself or one of its roles.
+    kind : str
+        The feed kind of the last row the consumer ingested.
+    payload_sha256 : str
+        That row's payload digest, as the feed serves it.
+    seq, legacy_seq : int or None
+        The row's sequence and the consumer's legacy cursor, both or neither.
+        Without them the hub binds at the one row with that digest.
+    hub_id : str
+        The hub the consumer believes it read; empty when it does not know.
+    timeout : float
+        Seconds to wait for the connection and for the answer.
+
+    Raises
+    ------
+    FeedUnavailable
+        When the hub cannot be reached or gives no answer.
+    """
+    proof: dict[str, Any] = {"kind": kind, "payload_sha256": payload_sha256}
+    if seq is not None:
+        proof["seq"] = seq
+    fields: dict[str, Any] = {"consumer": consumer, "hub_id": hub_id, "proof": proof}
+    if legacy_seq is not None:
+        fields["legacy_seq"] = legacy_seq
+
+    async def send(agent: SynapseAgent, request_id: str) -> None:
+        await agent.send_message(
+            MessageType.FEED_BIND,
+            target="System",
+            payload="feed binding",
+            request_id=request_id,
+            **fields,
+        )
+
+    return await _exchange(
+        uri=uri,
+        identity=identity,
+        token=token,
+        timeout=timeout,
+        reply_type=MessageType.FEED_BIND_RESULT,
+        reply_key="feed_bind",
         send=send,
     )

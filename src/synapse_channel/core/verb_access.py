@@ -136,3 +136,15 @@ def feed_ack_access(data: dict[str, Any]) -> list[tuple[str, Target]]:
     """Authorize a feed acknowledgement: ``feed-read`` on the ``ack`` feed target."""
     del data  # every acknowledgement needs the same grant
     return [(FEED_READ, Target("feed", "ack"))]
+
+
+def feed_bind_access(data: dict[str, Any]) -> list[tuple[str, Target]]:
+    """Authorize a legacy feed binding: ``feed-read`` on the proof row's feed kind.
+
+    A binding confirms whether a row of that kind exists with a given digest, so it
+    needs the same grant as reading that kind. A proof without a text kind maps to
+    the empty target, which only ``*`` grants, and the handler refuses it.
+    """
+    proof = data.get("proof")
+    kind = proof.get("kind") if isinstance(proof, dict) else None
+    return [(FEED_READ, Target("feed", kind if isinstance(kind, str) else ""))]

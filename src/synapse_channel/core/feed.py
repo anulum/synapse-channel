@@ -20,6 +20,11 @@ the same rows, apart from rows deleted since.
 ack never moves backwards and never runs ahead of the pages this hub served the
 consumer. It is the consumer's own statement, not its cursor.
 
+``feed_bind`` moves a consumer that kept only a legacy, sequence-only position
+onto a bound cursor, by proof: the consumer names the last row it ingested by
+its feed kind, its payload digest and, when it kept it, its sequence. The hub
+binds only when exactly that row is one the feed serves the consumer.
+
 Feed kinds are a closed list. ``finding`` serves the hub's findings. ``chat_marker``
 serves undirected, untagged chat whose text begins with one of the hub's
 configured markers; directed and channel chat are never served, and plain
@@ -30,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -63,6 +69,15 @@ FEED_MAX_LIMIT = 500
 
 _JOURNAL_KINDS = {FEED_FINDING: EventKind.FINDING, FEED_CHAT_MARKER: EventKind.CHAT}
 
+FEED_BIND_INTERVAL_SECONDS = 60.0
+"""Least time between two binding attempts of one consumer on one journal instance."""
+
+LEGACY_BINDING_UNVERIFIED = "legacy_binding_unverified"
+"""Refusal code of a binding whose proof names no single row the feed serves."""
+
+_MAX_SEQ = 9223372036854775807
+_DIGEST = re.compile(r"[0-9a-f]{64}")
+
 
 class FeedJournal(Protocol):
     """The journal reads a feed page makes."""
@@ -80,7 +95,19 @@ class FeedJournal(Protocol):
 
 
 class FeedRefused(ValueError):
-    """A feed request the hub answers with a refusal and no rows."""
+    """A feed request the hub answers with a refusal and no rows.
+
+    Parameters
+    ----------
+    message : str
+        The refusal the consumer reads.
+    code : str
+        A stable code a consumer may branch on; empty for most refusals.
+    """
+
+    def __init__(self, message: str, code: str = "") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -128,7 +155,7 @@ def parse_feed_query(query: object) -> FeedQuery:
     if not isinstance(query, Mapping) or query.get("version") != 1:
         raise FeedRefused("invalid feed query")
     consumer, hub_id, instance = _query_names(query)
-    after_seq = _plain_int(query.get("after_seq"), 0, 9223372036854775807)
+    after_seq = _plain_int(query.get("after_seq"), 0, _MAX_SEQ)
     limit = _plain_int(query.get("limit"), 1, FEED_MAX_LIMIT)
     if after_seq is None or limit is None:
         raise FeedRefused("invalid feed query")
@@ -278,6 +305,129 @@ def read_page(journal: FeedJournal, query: FeedQuery, markers: Sequence[str]) ->
     return FeedPage(tuple(rows), cursor, scanned < len(events))
 
 
+@dataclass(frozen=True)
+class LegacyBinding:
+    """One validated ``feed_bind`` request.
+
+    Attributes
+    ----------
+    consumer : str
+        The consumer to bind: the connection or one of its roles.
+    hub_id : str
+        The hub the consumer believes it read; empty when it does not know.
+    kind : str
+        The feed kind of the proof row.
+    payload_sha256 : str
+        The proof row's payload digest, as :func:`payload_sha256` computes it.
+    seq : int or None
+        The proof row's sequence, or ``None`` for a digest-only proof.
+    legacy_seq : int or None
+        The consumer's legacy cursor, at or above ``seq``; ``None`` with a
+        digest-only proof, which binds at the matched row.
+    """
+
+    consumer: str
+    hub_id: str
+    kind: str
+    payload_sha256: str
+    seq: int | None
+    legacy_seq: int | None
+
+
+def parse_feed_bind(data: Mapping[str, Any]) -> LegacyBinding:
+    """Validate a ``feed_bind`` frame.
+
+    Raises
+    ------
+    FeedRefused
+        When a field is missing, of the wrong type or out of range, the kind is
+        not a feed kind, or the legacy cursor lies below the proof row.
+    """
+    consumer, hub_id, proof = data.get("consumer"), data.get("hub_id", ""), data.get("proof")
+    if (
+        not isinstance(consumer, str)
+        or not consumer.strip()
+        or not isinstance(hub_id, str)
+        or not isinstance(proof, Mapping)
+    ):
+        raise FeedRefused("invalid feed binding")
+    kind, digest, seq = proof.get("kind"), proof.get("payload_sha256"), proof.get("seq")
+    if (
+        not isinstance(kind, str)
+        or kind not in FEED_KINDS
+        or not isinstance(digest, str)
+        or not _DIGEST.fullmatch(digest)
+    ):
+        raise FeedRefused("invalid feed binding")
+    if seq is None:
+        if data.get("legacy_seq") is not None:
+            raise FeedRefused("a digest-only binding carries no legacy_seq")
+        return LegacyBinding(consumer, hub_id, kind, digest, None, None)
+    proof_seq = _plain_int(seq, 1, _MAX_SEQ)
+    legacy_seq = _plain_int(data.get("legacy_seq"), 1, _MAX_SEQ)
+    if proof_seq is None or legacy_seq is None or legacy_seq < proof_seq:
+        raise FeedRefused("invalid feed binding")
+    return LegacyBinding(consumer, hub_id, kind, digest, proof_seq, legacy_seq)
+
+
+def _served_digest(event: StoredEvent, kind: str, markers: Sequence[str]) -> str | None:
+    """Return the digest the feed serves for ``event`` as ``kind``, or ``None``."""
+    row = _row(event, (kind,), markers)
+    digest = None if row is None else row.get("payload_sha256")
+    return digest if isinstance(digest, str) else None
+
+
+def bind_legacy_position(
+    journal: FeedJournal, binding: LegacyBinding, markers: Sequence[str]
+) -> int:
+    """Return the cursor a verified legacy position binds to.
+
+    A proof with a sequence binds at ``legacy_seq`` when the row at that sequence
+    is one the feed serves as the proof's kind, with that digest. A digest-only
+    proof searches the retained rows of its kind and binds at the one row the
+    feed serves with that digest. A row the feed would not serve, such as a
+    directed chat or a corrupt row, never proves a position.
+
+    Raises
+    ------
+    FeedRefused
+        With :data:`LEGACY_BINDING_UNVERIFIED` when the proof names no such row,
+        or several; without a code when the legacy cursor lies above the
+        journal's highest sequence.
+    """
+    journal_kind = _JOURNAL_KINDS[binding.kind]
+    if binding.seq is not None and binding.legacy_seq is not None:
+        if binding.legacy_seq > journal.max_seq():
+            raise FeedRefused("feed binding exceeds the retained journal")
+        events = journal.read_since(binding.seq - 1, kinds=(journal_kind,), limit=1)
+        if (
+            not events
+            or events[0].seq != binding.seq
+            or _served_digest(events[0], binding.kind, markers) != binding.payload_sha256
+        ):
+            raise FeedRefused(
+                "the proof row is not served by this journal with that digest",
+                LEGACY_BINDING_UNVERIFIED,
+            )
+        return binding.legacy_seq
+    matches: list[int] = []
+    after = 0
+    while len(matches) < 2:
+        events = journal.read_since(after, kinds=(journal_kind,), limit=FEED_SCAN_LIMIT)
+        matches += [
+            event.seq
+            for event in events
+            if _served_digest(event, binding.kind, markers) == binding.payload_sha256
+        ]
+        if len(events) < FEED_SCAN_LIMIT:
+            break
+        after = events[-1].seq
+    if len(matches) != 1:
+        found = "no served row" if not matches else "more than one served row"
+        raise FeedRefused(f"the proof digest matches {found}", LEGACY_BINDING_UNVERIFIED)
+    return matches[0]
+
+
 class FeedLedger:
     """What this hub served each consumer, and the acks its journal holds.
 
@@ -296,6 +446,7 @@ class FeedLedger:
         self.markers = tuple(markers)
         self._served: dict[tuple[str, str], int] = {}
         self._acked: dict[tuple[str, str], int] = {}
+        self._bind_attempts: dict[tuple[str, str], float] = {}
         self._lock = threading.Lock()
 
     def served(self, consumer: str, instance: str, next_after: int) -> None:
@@ -334,6 +485,21 @@ class FeedLedger:
         with self._lock:
             self._acked[key] = max(self._acked.get(key, 0), highest)
             return self._acked[key]
+
+    def admit_bind(self, consumer: str, instance: str, now: float) -> bool:
+        """Return whether ``consumer`` may attempt a binding at monotonic time ``now``.
+
+        One attempt, verified or not, is admitted per consumer and journal instance
+        every :data:`FEED_BIND_INTERVAL_SECONDS`, because a digest-only proof scans
+        every retained row of its kind.
+        """
+        with self._lock:
+            key = (consumer, instance)
+            last = self._bind_attempts.get(key)
+            if last is not None and now - last < FEED_BIND_INTERVAL_SECONDS:
+                return False
+            self._bind_attempts[key] = now
+            return True
 
     def record(self, consumer: str, instance: str, acked_seq: int) -> None:
         """Keep ``acked_seq`` as the consumer's highest ack after it was journalled."""

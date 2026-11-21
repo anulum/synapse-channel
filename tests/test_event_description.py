@@ -33,7 +33,7 @@ def _kinds() -> set[str]:
 
 def test_every_journal_kind_has_words_and_nothing_else_does() -> None:
     assert set(EVENT_WORDS) == _kinds()
-    assert len(EVENT_WORDS) == 75
+    assert len(EVENT_WORDS) == 76
 
 
 def _written(tmp_path: Path) -> list[tuple[str, EventWords | None]]:
@@ -50,6 +50,16 @@ def _written(tmp_path: Path) -> list[tuple[str, EventWords | None]]:
     journal.record_mailbox_watermark(store, identity="P/alice", through_seq=4, source="cursor")
     journal.record_feed_ack(
         store, consumer="P/memory", hub_id="hub-a", journal_instance="0" * 32, acked_seq=7
+    )
+    journal.record_feed_bind(
+        store,
+        consumer="P/memory",
+        hub_id="hub-a",
+        journal_instance="0" * 32,
+        after_seq=7,
+        proof_kind="finding",
+        proof_seq=None,
+        payload_sha256="a" * 64,
     )
     journal.record_ledger_task(
         store,
@@ -85,6 +95,7 @@ def test_each_writer_s_own_fields_name_the_actor_and_the_line(tmp_path: Path) ->
         ("role_binding", EventWords("P/alice", "roles: P/reviewer")),
         ("mailbox_watermark", EventWords("P/alice", "mailbox read through 4")),
         ("feed_ack", EventWords("P/memory", "feed acknowledged through 7")),
+        ("feed_bind", EventWords("P/memory", "feed bound after 7")),
         ("ledger_task", EventWords("P/bob", "task T-2 (open)")),
         ("ledger_progress", EventWords("P/bob", "T-2: started")),
         ("chat", EventWords("P/carol", "hello")),
@@ -109,6 +120,7 @@ def test_a_payload_missing_its_fields_reads_without_inventing_them() -> None:
     assert describe["role_binding"] == EventWords("", "roles cleared")
     assert describe["mailbox_watermark"] == EventWords("", "mailbox read")
     assert describe["feed_ack"] == EventWords("", "feed acknowledged")
+    assert describe["feed_bind"] == EventWords("", "feed bound")
     assert describe["identity_pin_reclaim"] is not None
 
 

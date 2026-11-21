@@ -55,6 +55,7 @@ _FROZEN_DISPATCH = {
     "entitlement_advert": "entitlement_adverts.handle_entitlement_advert",
     "federation_offer_request": "federation_offer.handle_federation_offer_request",
     "feed_ack": "feed.handle_feed_ack",
+    "feed_bind": "feed.handle_feed_bind",
     "finding": "memory.handle_finding",
     "guard_denial": "guard_evidence.handle_guard_denial",
     "handoff": "leasing.handle_handoff",

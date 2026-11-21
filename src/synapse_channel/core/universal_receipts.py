@@ -77,6 +77,7 @@ NON_RECEIPT_EVENT_KINDS = frozenset(
         EventKind.MAILBOX_WATERMARK,
         EventKind.MAILBOX_HANDOVER,
         EventKind.FEED_ACK,
+        EventKind.FEED_BIND,
         EventKind.ROLE_BINDING,
         EventKind.OPERATION_DECLARED,
         EventKind.OPERATION_OUTCOME,
@@ -126,7 +127,8 @@ notification view; projecting them as legacy transport receipts would conflate
 queue admission, boundary acknowledgement, and task execution. Connect-token and
 metrics-token audit rows, mailbox handovers and role bindings stay plain journal
 rows until a receipt mapping for them is defined. A feed acknowledgement is a
-consumer's own progress statement, like a mailbox watermark, not a receipt.
+consumer's own progress statement, like a mailbox watermark, and a feed binding
+is the audit of a migration act; neither is a receipt.
 """
 
 

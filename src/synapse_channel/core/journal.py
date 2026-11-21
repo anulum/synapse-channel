@@ -175,6 +175,7 @@ class EventKind:
     MULTIHUB_EQUIVOCATION = "multihub_equivocation"
     MULTIHUB_EQUIVOCATION_RECOVERY = "multihub_equivocation_recovery"
     FEED_ACK = "feed_ack"
+    FEED_BIND = "feed_bind"
     CONNECT_TOKEN_ADMITTED = ADMITTED_KIND
     CONNECT_TOKEN_REFUSED = REFUSED_KIND
     CONNECT_TOKEN_SET_APPLIED = SET_APPLIED_KIND
@@ -763,6 +764,39 @@ def record_feed_ack(
             "hub_id": hub_id,
             "journal_instance": journal_instance,
             "acked_seq": int(acked_seq),
+        },
+        durable=True,
+    )
+
+
+def record_feed_bind(
+    store: EventStore,
+    *,
+    consumer: str,
+    hub_id: str,
+    journal_instance: str,
+    after_seq: int,
+    proof_kind: str,
+    proof_seq: int | None,
+    payload_sha256: str,
+) -> None:
+    """Append a verified legacy binding of a feed consumer, durably.
+
+    The record names the cursor the consumer was bound to and the proof that
+    bound it: the proof row's feed kind, its sequence when the consumer kept one,
+    and its payload digest. Replay ignores it; it is the audit of a one-time
+    migration act.
+    """
+    store.append(
+        EventKind.FEED_BIND,
+        {
+            "consumer": consumer,
+            "hub_id": hub_id,
+            "journal_instance": journal_instance,
+            "after_seq": int(after_seq),
+            "proof_kind": proof_kind,
+            "proof_seq": proof_seq,
+            "payload_sha256": payload_sha256,
         },
         durable=True,
     )

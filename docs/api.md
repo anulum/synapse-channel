@@ -439,6 +439,11 @@ async def read_once(cursor: dict[str, object]) -> dict[str, object]:
     }
 ```
 
+A consumer that kept only a legacy, sequence-only position calls
+`send_feed_bind` once, with the kind and `payload_sha256` of the last row it
+ingested and, when it kept them, that row's `seq` and its `legacy_seq`; the
+answer's `after_seq` starts its cursor.
+
 A refusal, an access-control denial included, comes back in `error`;
 `FeedUnavailable` means the hub could not be reached or gave no answer. A page
 with `source_changed` names a different journal instance: rebind deliberately,

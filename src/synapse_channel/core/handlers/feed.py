@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — feed pages and acknowledgements on the authenticated connection
-"""Answer ``history_request.feed_query`` with a page and ``feed_ack`` with its record.
+"""Answer ``history_request.feed_query``, ``feed_ack`` and ``feed_bind``.
 
 Both run on the consumer's own authenticated connection, behind the ``feed-read``
 grant (:data:`~synapse_channel.core.acl.FEED_READ`). The consumer they name is the
@@ -14,12 +14,19 @@ connection itself or one of its roles. See :mod:`synapse_channel.core.feed`.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.core.feed import FeedRefused, parse_feed_query, read_page
-from synapse_channel.core.journal import EventKind, record_feed_ack
+from synapse_channel.core.feed import (
+    FeedRefused,
+    bind_legacy_position,
+    parse_feed_bind,
+    parse_feed_query,
+    read_page,
+)
+from synapse_channel.core.journal import EventKind, record_feed_ack, record_feed_bind
 from synapse_channel.core.protocol import MessageType
-from synapse_channel.core.verb_access import feed_ack_access
+from synapse_channel.core.verb_access import feed_ack_access, feed_bind_access
 from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
@@ -227,6 +234,74 @@ async def handle_feed_ack(
     )
 
 
+async def handle_feed_bind(
+    hub: FeedContext, sender: str, data: dict[str, Any], websocket: Any
+) -> None:
+    """Bind a consumer's legacy, sequence-only position to a cursor, by proof.
+
+    It is a one-time migration act. A consumer that already holds an ack in this
+    journal instance has a feed position and is refused. One attempt per consumer
+    and instance is admitted per :data:`~synapse_channel.core.feed.FEED_BIND_INTERVAL_SECONDS`.
+    A verified binding is journalled as a ``feed_bind`` event before the answer;
+    a refusal writes nothing.
+
+    Parameters
+    ----------
+    hub : FeedContext
+        The hub whose journal holds the proof row.
+    sender : str
+        Connection identity already admitted with ``feed-read`` on the proof's kind.
+    data : dict[str, Any]
+        The ``feed_bind`` frame.
+    websocket : object
+        Requesting transport; the reply is never broadcast.
+    """
+    result: dict[str, Any] = {"version": 1, "bound": False}
+    try:
+        binding = parse_feed_bind(data)
+        result.update(consumer=binding.consumer)
+        journal = _owned_journal(hub, sender, binding.consumer)
+        instance = journal.journal_instance()
+        result.update(hub_id=hub.hub_id, journal_instance=instance.instance if instance else "")
+        if binding.hub_id and binding.hub_id != hub.hub_id:
+            raise FeedRefused("feed binding names a different hub")
+        if instance is None:
+            raise FeedRefused("the journal records no instance; a feed cursor cannot be bound")
+        if hub.feed_ledger.acked(journal, binding.consumer, instance.instance) > 0:
+            raise FeedRefused(
+                "the consumer already has a feed position in this journal instance",
+                "already_bound",
+            )
+        if not hub.feed_ledger.admit_bind(binding.consumer, instance.instance, time.monotonic()):
+            raise FeedRefused("one feed binding attempt per consumer per minute", "rate_limited")
+        after_seq = bind_legacy_position(journal, binding, hub.feed_ledger.markers)
+        record_feed_bind(
+            journal,
+            consumer=binding.consumer,
+            hub_id=hub.hub_id,
+            journal_instance=instance.instance,
+            after_seq=after_seq,
+            proof_kind=binding.kind,
+            proof_seq=binding.seq,
+            payload_sha256=binding.payload_sha256,
+        )
+        result.update(bound=True, after_seq=after_seq)
+    except FeedRefused as exc:
+        result["error"] = str(exc)
+        if exc.code:
+            result["code"] = exc.code
+    await hub.send_json(
+        websocket,
+        hub.system(
+            "Feed binding",
+            msg_type=MessageType.FEED_BIND_RESULT,
+            target=sender,
+            **_correlation(data),
+            feed_bind=result,
+        ),
+    )
+
+
 VERB_SPECS = (
     VerbSpec(
         request_types=(MessageType.FEED_ACK,),
@@ -240,5 +315,17 @@ VERB_SPECS = (
         minimum_wire_version=7,
         commands=("feed ack",),
     ),
+    VerbSpec(
+        request_types=(MessageType.FEED_BIND,),
+        handler=handle_feed_bind,
+        reply_types=(MessageType.FEED_BIND_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=feed_bind_access,
+        event_kinds=(EventKind.FEED_BIND,),
+        minimum_wire_version=7,
+        commands=("feed bind",),
+    ),
 )
-"""The feed acknowledgement verb; the feed page is served by ``history_request``."""
+"""The feed acknowledgement and binding verbs; the page is served by ``history_request``."""

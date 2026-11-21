@@ -1730,9 +1730,42 @@ them waits for every consumer to settle the corrupt prefix. **Compaction does no
 runs `synapse compact --floor-seq` chooses a floor at or below every
 consumer's ack.
 
+**`feed_bind`** moves a consumer that kept only a legacy, sequence-only
+position onto a bound cursor, once, by proof of the last row it ingested:
+
+```json
+{"type":"feed_bind","sender":"PROJ/memory","target":"System",
+ "request_id":"memory-unique-bind","consumer":"PROJ/memory","hub_id":"",
+ "legacy_seq":4211,
+ "proof":{"kind":"finding","seq":4198,"payload_sha256":"<64 hex>"}}
+```
+
+- **With a sequence**, the hub binds at `legacy_seq` when the row at `seq` is
+  one the feed serves the consumer as `kind`, with that digest. `legacy_seq` is
+  at or above `seq` and at or below the journal's highest sequence.
+- **Without a sequence** (`proof` holds only `kind` and `payload_sha256`, and the
+  frame no `legacy_seq`), the hub searches the retained rows of that kind and
+  binds at the one row the feed serves with that digest.
+- **A row the feed would not serve never proves a position**: a directed or
+  channel chat, an unmarked chat, a corrupt row, or a row of another kind. No
+  match, or more than one, is refused with `code: legacy_binding_unverified`;
+  the consumer then proves an earlier unique row, or reads from 0 and relies on
+  its idempotent admission.
+- **It is a one-time act.** A consumer that already holds an ack in this
+  journal instance is refused with `code: already_bound`, and one attempt per
+  consumer and instance is admitted a minute (`code: rate_limited`), because a
+  digest search scans every retained row of its kind.
+
+The private `feed_bind_result` carries `feed_bind`: `version`, `bound`,
+`consumer`, `hub_id`, `journal_instance`, `after_seq` when bound, and `error`
+with an optional `code` when refused. A binding is journalled as a `feed_bind`
+event before the answer; a refusal writes nothing. The consumer then reads with
+the cursor `{hub_id, journal_instance, after_seq}`.
+
 **Access.** The `feed-read` permission takes target kind `feed`, with the
 pattern `finding`, `chat_marker` or `ack`. A query needs the grant for every
-kind it names, and an ack needs `feed:ack`. `feed:*` grants all three; hold it
-on a role such as `PROJ/role/memory-consumer`, not on a seat. Identity
-admission applies first. `synapse feed read` and `synapse feed ack` send these
+kind it names, an ack needs `feed:ack`, and a binding needs the grant for its
+proof's kind. `feed:*` grants all three; hold it on a role such as
+`PROJ/role/memory-consumer`, not on a seat. Identity admission applies first.
+`synapse feed read`, `synapse feed ack` and `synapse feed bind` send these
 frames; see the [CLI reference](cli.md).
