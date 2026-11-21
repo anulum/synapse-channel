@@ -1764,7 +1764,8 @@ consumer acks again and so registers anew. A name that holds no ack in the
 instance, a consumer already released included, is refused before anything is
 deleted.
 `--past-feed-acks` applies the requested floor past every consumer. A run that
-removes a row, or passes a registered consumer, journals a durable
+removes a row, or passes a registered consumer, journals, before it deletes
+anything, a durable
 `compaction_floor` event with the requested and applied floors, the consumers
 that held it or were passed with their acks, the consumers released by name and
 the rows removed; the page reports the highest. A consumer that keeps only a sequence cursor and never

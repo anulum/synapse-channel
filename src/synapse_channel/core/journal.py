@@ -822,7 +822,9 @@ def record_compaction_floor(
     override or release compacted past, with their acknowledgements, and
     ``released`` the consumers the operator released by name. The feed reports
     the highest applied floor of the journal instance, so a consumer whose
-    cursor lies below it is told that rows may be gone.
+    cursor lies below it is told that rows may be gone. Compaction records the
+    floor before it deletes, so ``removed`` counts the rows the run then
+    deletes.
     """
     store.append(
         EventKind.COMPACTION_FLOOR,

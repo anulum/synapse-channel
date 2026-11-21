@@ -308,8 +308,6 @@ def compact(
 
     seqs = doomed_checkpoints + doomed_findings + doomed_corrupt
     if not dry_run and (seqs or passed):
-        if seqs:
-            store.delete(seqs)
         instance = store.journal_instance()
         record_compaction_floor(
             store,
@@ -322,6 +320,8 @@ def compact(
             removed=len(seqs),
             released=tuple(sorted(released)),
         )
+        if seqs:
+            store.delete(seqs)
     return CompactionResult(
         checkpoints_removed=len(doomed_checkpoints),
         findings_removed=len(doomed_findings),

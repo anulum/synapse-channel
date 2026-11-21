@@ -148,6 +148,30 @@ def test_a_consumer_released_by_name_no_longer_holds_the_floor(tmp_path: Path) -
     assert [(f["released"], f["passed_consumers"]) for f in other_floors] == [(["R/fast"], [])]
 
 
+def test_the_floor_is_journalled_before_any_row_is_deleted(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    try:
+        _registered(store)
+        # A second connection records, at every deletion, how many floors are journalled.
+        with closing(sqlite3.connect(db)) as observer:
+            observer.execute("CREATE TABLE deletion_witness (floors INTEGER NOT NULL)")
+            observer.execute(
+                "CREATE TRIGGER witness BEFORE DELETE ON events BEGIN "
+                "INSERT INTO deletion_witness SELECT count(*) FROM events "
+                f"WHERE kind = '{EventKind.COMPACTION_FLOOR}'; END"
+            )
+            observer.commit()
+        result = compact(store, _AGED, floor_seq=store.max_seq(), now=1000.0)
+    finally:
+        store.close()
+    with closing(sqlite3.connect(db)) as observer:
+        witnessed = [row[0] for row in observer.execute("SELECT floors FROM deletion_witness")]
+
+    assert result.findings_removed == len(witnessed) == 2
+    assert witnessed == [1, 1]  # the run's floor was durable before each row went
+
+
 def test_a_release_holds_in_later_runs_until_the_consumer_acks_again(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "hub.db")
     try:
