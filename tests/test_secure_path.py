@@ -28,6 +28,7 @@ from synapse_channel.core.secure_path import (
     apply_owner_only_file,
     assert_owner_only_dir_path,
     assert_owner_only_file_path,
+    create_owner_only_file,
     current_user_key,
     owner_only_floor_available,
     private_temp_user_segment,
@@ -57,6 +58,16 @@ def test_apply_and_assert_owner_only_file_round_trip(tmp_path: Path) -> None:
     apply_owner_only_file(path)
     assert_owner_only_file_path(path, purpose="unit-secret")
     assert read_secret_file(path, flag="--unit-token-file") == "token-value"
+
+
+def test_create_owner_only_file_creates_once_and_keeps_an_existing_file(tmp_path: Path) -> None:
+    path = tmp_path / "store.sqlite3"
+    assert create_owner_only_file(path) is True
+    assert path.read_bytes() == b""
+    assert_owner_only_file_path(path, purpose="store")
+    path.write_bytes(b"kept")
+    assert create_owner_only_file(path) is False
+    assert path.read_bytes() == b"kept"
 
 
 def test_apply_and_assert_owner_only_dir_round_trip(tmp_path: Path) -> None:

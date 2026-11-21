@@ -27,6 +27,7 @@ from synapse_channel.core.store_migration import (
     DeclaredMigration,
     MigrationRefused,
     apply_declared_migration,
+    create_layout,
 )
 from synapse_channel.result_verification_effects import verify_migration
 
@@ -48,11 +49,17 @@ def _store(path: Path, *rows: tuple[str, float]) -> str:
         return schema_digest(connection)
 
 
+def _leave_rows(connection: sqlite3.Connection) -> None:
+    """A data step that changes nothing, so a probe may declare no statement."""
+
+
 def _produced_digest(base: Path, *statements: str) -> str:
     """Return the digest a migration of a copy of ``base`` produces, bookkeeping included."""
     with closing(sqlite3.connect(":memory:")) as scratch, closing(sqlite3.connect(base)) as source:
         source.backup(scratch)
-        migration = DeclaredMigration("probe", schema_digest(scratch), statements, "0" * 64, 2)
+        migration = DeclaredMigration(
+            "probe", schema_digest(scratch), statements, "0" * 64, 2, _leave_rows
+        )
         with pytest.raises(MigrationRefused) as refused:
             apply_declared_migration(scratch, migration, attempt="probe")
         return refused.value.observed_schema_sha256
@@ -206,3 +213,140 @@ def test_a_declaration_the_verifier_could_not_check_is_refused(
     valid = DeclaredMigration("readings-2", "0" * 64, (_ADD_UNIT,), "1" * 64, 2)
     with pytest.raises(ValueError, match=message):
         dataclasses.replace(valid, **fields)
+
+
+def _double_values(connection: sqlite3.Connection) -> None:
+    connection.execute("UPDATE readings SET value = value * 2")
+
+
+def _no_match(connection: sqlite3.Connection) -> None:
+    connection.execute("UPDATE readings SET value = 0")
+    raise LookupError("a row has no match")
+
+
+def test_a_data_step_runs_inside_the_migration_after_the_statements(tmp_path: Path) -> None:
+    store = tmp_path / "readings.sqlite3"
+    base = _store(store, ("north", 1.5))
+    migration = DeclaredMigration(
+        "readings-2", base, (_ADD_UNIT,), _produced_digest(store, _ADD_UNIT), 2, _double_values
+    )
+
+    assert _apply(store, migration, "first") == "applied"
+
+    with closing(sqlite3.connect(store)) as connection:
+        assert connection.execute("SELECT sensor, value, unit FROM readings").fetchall() == [
+            ("north", 3.0, "kelvin")
+        ]
+
+
+def test_a_step_alone_migrates_the_rows_and_records_the_migration(tmp_path: Path) -> None:
+    store = tmp_path / "readings.sqlite3"
+    base = _store(store, ("north", 1.5))
+    migration = DeclaredMigration(
+        "readings-2", base, (), _produced_digest(store), 2, _double_values
+    )
+
+    assert _apply(store, migration, "first") == "applied"
+
+    verdict = verify_migration(store, "readings-2", migration.schema_sha256, operation_id="op-2")
+    assert verdict.result == "verified"
+
+
+def test_a_step_that_raises_rolls_back_the_statements_rows_and_marker(tmp_path: Path) -> None:
+    store = tmp_path / "readings.sqlite3"
+    base = _store(store, ("north", 1.5))
+    migration = DeclaredMigration(
+        "readings-2", base, (_ADD_UNIT,), _produced_digest(store, _ADD_UNIT), 2, _no_match
+    )
+    before = _fingerprint(store)
+
+    with pytest.raises(LookupError, match="no match"):
+        _apply(store, migration, "first")
+
+    assert _fingerprint(store) == before
+
+
+def test_a_declaration_with_no_statement_and_no_step_is_refused() -> None:
+    with pytest.raises(ValueError, match="at least one statement or a step"):
+        DeclaredMigration("readings-2", "0" * 64, (), "1" * 64, 2)
+
+
+def _layout(path: Path, *statements: str) -> bool:
+    with closing(sqlite3.connect(path, timeout=30)) as connection:
+        return create_layout(connection, statements or _BASE_LAYOUT, user_version=1)
+
+
+def test_a_new_store_receives_its_layout_and_version(tmp_path: Path) -> None:
+    store = tmp_path / "readings.sqlite3"
+
+    assert _layout(store) is True
+
+    assert _fingerprint(store)[1] == 1
+    with closing(sqlite3.connect(store)) as connection:
+        assert connection.execute("SELECT name FROM sqlite_master").fetchall() == [("readings",)]
+
+
+def test_a_store_with_a_layout_is_left_as_it_is(tmp_path: Path) -> None:
+    store = tmp_path / "readings.sqlite3"
+    _store(store, ("north", 1.5))
+    before = _fingerprint(store)
+
+    assert _layout(store, "CREATE TABLE extra (id INTEGER)") is True
+
+    assert _fingerprint(store) == before
+
+
+def test_a_version_0_database_with_tables_is_reported_and_left_unchanged(tmp_path: Path) -> None:
+    store = tmp_path / "notes.sqlite3"
+    with closing(sqlite3.connect(store)) as connection:
+        connection.execute("CREATE TABLE notes (body TEXT)")
+        connection.commit()
+    before = _fingerprint(store)
+
+    assert _layout(store) is False
+
+    assert _fingerprint(store) == before
+
+
+def test_a_failing_layout_statement_leaves_the_store_empty(tmp_path: Path) -> None:
+    store = tmp_path / "readings.sqlite3"
+    with pytest.raises(sqlite3.OperationalError):
+        _layout(store, _BASE_LAYOUT[0], "CREATE TABLE readings (id INTEGER)")
+
+    assert _fingerprint(store)[1] == 0
+    with closing(sqlite3.connect(store)) as connection:
+        assert connection.execute("SELECT count(*) FROM sqlite_master").fetchone() == (0,)
+
+
+def test_a_layout_version_must_be_positive(tmp_path: Path) -> None:
+    with (
+        closing(sqlite3.connect(tmp_path / "readings.sqlite3")) as connection,
+        pytest.raises(ValueError, match="positive"),
+    ):
+        create_layout(connection, _BASE_LAYOUT, user_version=0)
+
+
+def _creator(
+    path: str, barrier: threading.Barrier, outcomes: multiprocessing.SimpleQueue[bool]
+) -> None:
+    barrier.wait()
+    outcomes.put(_layout(Path(path)))
+
+
+def test_concurrent_first_openers_create_the_layout_once(tmp_path: Path) -> None:
+    context = multiprocessing.get_context("spawn")
+    for round_number in range(5):
+        store = tmp_path / f"readings-{round_number}.sqlite3"
+        barrier = context.Barrier(2)
+        queue: multiprocessing.SimpleQueue[bool] = context.SimpleQueue()
+        creators = [
+            context.Process(target=_creator, args=(str(store), barrier, queue)) for _ in range(2)
+        ]
+        for creator in creators:
+            creator.start()
+        for creator in creators:
+            creator.join(timeout=60)
+        assert [creator.exitcode for creator in creators] == [0, 0]
+        assert [queue.get() for _ in creators] == [True, True]
+        queue.close()
+        assert _fingerprint(store)[1] == 1

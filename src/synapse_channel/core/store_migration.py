@@ -4,16 +4,20 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — declared migrations of Core's own SQLite stores
-"""Apply a declared migration from exactly its base schema, in one immediate transaction.
+# SYNAPSE CHANNEL — first layouts and declared migrations of Core's own SQLite stores
+"""Create a store's first layout once, and migrate it only from exactly a declared base.
+
+:func:`create_layout` writes a new store's layout inside one ``BEGIN IMMEDIATE``
+transaction after reading the layout version again, so concurrent first openers
+create it once, and it never takes over a database that already holds tables.
 
 A declared migration names its identity, the digest of the schema it starts
-from, its statements, the digest of the schema it produces and the layout
-version it sets. Applying it checks the base digest, records an ``applied``
-marker for the attempt and the migration's identity, runs the statements,
-checks the produced digest and sets the version, all inside one ``BEGIN
-IMMEDIATE`` transaction. Any failure rolls the whole transaction back, so a
-store is either untouched or completely migrated.
+from, its statements, an optional data step, the digest of the schema it
+produces and the layout version it sets. Applying it checks the base digest,
+records an ``applied`` marker for the attempt and the migration's identity, runs
+the statements and the step, checks the produced digest and sets the version,
+all inside one ``BEGIN IMMEDIATE`` transaction. Any failure rolls the whole
+transaction back, so a store is either untouched or completely migrated.
 
 The identity goes to ``schema_migrations(version)`` and the digests use
 :func:`synapse_channel.core.sqlite_schema.schema_digest`, which is what
@@ -27,6 +31,7 @@ from __future__ import annotations
 import contextlib
 import re
 import sqlite3
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -63,12 +68,16 @@ class DeclaredMigration:
         Schema digest of the layout it produces, bookkeeping tables included.
     user_version : int
         Layout version set by the migration.
+    step : callable, optional
+        Data step run with the connection after the statements, inside the same
+        transaction; raising refuses the migration and rolls everything back.
 
     Raises
     ------
     ValueError
         When the identity is not a plain token, a digest is not 64 lower-case
-        hexadecimal digits, there is no statement, or the version is not positive.
+        hexadecimal digits, there is neither a statement nor a step, or the
+        version is not positive.
     """
 
     identity: str
@@ -76,6 +85,7 @@ class DeclaredMigration:
     statements: tuple[str, ...]
     schema_sha256: str
     user_version: int
+    step: Callable[[sqlite3.Connection], None] | None = None
 
     def __post_init__(self) -> None:
         """Refuse a declaration the verifier could not check."""
@@ -83,8 +93,8 @@ class DeclaredMigration:
             raise ValueError("a migration identity is a plain token")
         if not (_HEX64.fullmatch(self.base_schema_sha256) and _HEX64.fullmatch(self.schema_sha256)):
             raise ValueError("a migration's schema digests are 64 lower-case hex digits")
-        if not self.statements:
-            raise ValueError("a migration has at least one statement")
+        if not self.statements and self.step is None:
+            raise ValueError("a migration has at least one statement or a step")
         if self.user_version < 1:
             raise ValueError("a migration sets a positive layout version")
 
@@ -110,6 +120,64 @@ class MigrationRefused(ValueError):
             f"migration {identity} refused ({reason}): observed schema "
             f"{observed_schema_sha256}; the store is unchanged"
         )
+
+
+def _rollback(connection: sqlite3.Connection) -> None:
+    """Roll back, tolerating SQLite having rolled back already after an I/O error."""
+    with contextlib.suppress(sqlite3.OperationalError):
+        connection.execute("ROLLBACK")
+
+
+def create_layout(
+    connection: sqlite3.Connection, statements: Sequence[str], *, user_version: int
+) -> bool:
+    """Create a new store's layout once; return ``False`` for a database of another layout.
+
+    Inside one ``BEGIN IMMEDIATE`` transaction the layout version is read again,
+    so a store that a concurrent opener created meanwhile is left as it is. A
+    version 0 file without tables, new or left empty by such an opener, receives
+    ``statements`` and ``user_version``. A version 0 file that already holds tables
+    belongs to something else: nothing is written and the call returns ``False``.
+
+    Parameters
+    ----------
+    connection : sqlite3.Connection
+        The store owner's connection, outside any transaction.
+    statements : sequence of str
+        The layout's statements, applied in order.
+    user_version : int
+        The layout version to set; positive.
+
+    Returns
+    -------
+    bool
+        ``True`` when the store now has a layout, ``False`` when it holds another one.
+
+    Raises
+    ------
+    ValueError
+        When ``user_version`` is not positive.
+    sqlite3.Error
+        When a statement fails; the transaction is rolled back first.
+    """
+    if user_version < 1:
+        raise ValueError("a layout version is positive")
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        if int(connection.execute("PRAGMA user_version").fetchone()[0]) != 0:
+            connection.execute("ROLLBACK")
+            return True
+        if connection.execute("SELECT count(*) FROM sqlite_master").fetchone()[0]:
+            connection.execute("ROLLBACK")
+            return False
+        for statement in statements:
+            connection.execute(statement)
+        connection.execute(f"PRAGMA user_version = {int(user_version)}")
+        connection.execute("COMMIT")
+    except BaseException:
+        _rollback(connection)
+        raise
+    return True
 
 
 def _recorded(connection: sqlite3.Connection, identity: str) -> bool:
@@ -152,10 +220,11 @@ def apply_declared_migration(
     Raises
     ------
     MigrationRefused
-        When the store's schema is not the declared base, or the statements did
-        not produce the declared schema.
+        When the store's schema is not the declared base, or the statements and
+        the step did not produce the declared schema.
     sqlite3.Error
-        When a statement fails; the transaction is rolled back first.
+        When a statement fails; the transaction is rolled back first. An exception
+        the step raises is likewise re-raised after the rollback.
     """
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -179,6 +248,8 @@ def apply_declared_migration(
         )
         for statement in migration.statements:
             connection.execute(statement)
+        if migration.step is not None:
+            migration.step(connection)
         connection.execute(
             f"INSERT INTO {MIGRATIONS_TABLE} (version) VALUES (?)", (migration.identity,)
         )
@@ -188,9 +259,7 @@ def apply_declared_migration(
         connection.execute(f"PRAGMA user_version = {int(migration.user_version)}")
         connection.execute("COMMIT")
     except BaseException:
-        # SQLite may already have rolled back after an I/O error; the original
-        # exception is the one to report.
-        with contextlib.suppress(sqlite3.OperationalError):
-            connection.execute("ROLLBACK")
+        # The original exception is the one to report.
+        _rollback(connection)
         raise
     return "applied"

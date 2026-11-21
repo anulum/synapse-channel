@@ -155,6 +155,35 @@ def apply_owner_only_file(path: str | Path) -> None:
     raise SecurePathError(f"cannot apply owner-only mode on this platform: {target}")
 
 
+def create_owner_only_file(path: str | Path) -> bool:
+    """Create ``path`` empty and owner-only; return ``False`` when it already exists.
+
+    The file is created exclusively (``O_CREAT | O_EXCL``) with mode ``0o600`` and
+    then restricted with :func:`apply_owner_only_file`, so on POSIX a concurrent
+    opener never finds it readable by others. An existing path is left unchanged
+    for the caller to prove owner-only; on POSIX ``O_EXCL`` also refuses a
+    symlink at ``path``, wherever it points.
+
+    Parameters
+    ----------
+    path : str or Path
+        The file to create inside an owner-only directory.
+
+    Returns
+    -------
+    bool
+        ``True`` when this call created the file, ``False`` when the path existed.
+    """
+    target = Path(path)
+    try:
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return False
+    os.close(descriptor)
+    apply_owner_only_file(target)
+    return True
+
+
 def apply_owner_only_dir(path: str | Path) -> None:
     """Restrict ``path`` to owner-only directory access (``0o700`` / NT DACL)."""
     target = Path(path)

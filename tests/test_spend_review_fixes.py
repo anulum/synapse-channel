@@ -12,8 +12,12 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import multiprocessing
 import os
+import re
+import shlex
 import sqlite3
+import threading
 from datetime import timedelta
 from decimal import Context, Decimal, localcontext
 from pathlib import Path
@@ -21,8 +25,14 @@ from typing import Any
 
 import pytest
 
+from cli_e2e_helpers import run_cli
 from synapse_channel.core.spend_epoch import SpendEpochError, usable_grant
-from synapse_channel.core.spend_ledger import NOT_ADMITTED, SpendLedger, SpendLedgerError
+from synapse_channel.core.spend_ledger import (
+    NOT_ADMITTED,
+    VERSION_1_TO_2_MIGRATION,
+    SpendLedger,
+    SpendLedgerError,
+)
 from test_spend_ledger import OWNER, PEER, T0, _config, _ledger, _request, _settle
 
 NEXT_WINDOW = {
@@ -302,7 +312,13 @@ def _open_handles(path: Path) -> int:
 
 
 def _legacy_ledger(tmp_path: Path) -> tuple[SpendLedger, dict[str, Any]]:
-    """Restore the rows a released Core 0.99.35 ledger wrote, byte for byte."""
+    """Restore the rows a released Core 0.99.35 ledger wrote, byte for byte, and open it."""
+    path, dump = _restored_legacy_ledger(tmp_path)
+    return SpendLedger(path, owner_hub_id=OWNER), dump
+
+
+def _restored_legacy_ledger(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
+    """Restore the rows a released Core 0.99.35 ledger wrote, byte for byte, unopened."""
     dump: dict[str, Any] = json.loads(FIXTURE.read_text(encoding="utf-8"))
     home = tmp_path / "legacy"
     home.mkdir(mode=0o700)
@@ -320,7 +336,7 @@ def _legacy_ledger(tmp_path: Path) -> tuple[SpendLedger, dict[str, Any]]:
         )
         connection.execute(f"PRAGMA user_version={dump['user_version']}")
     path.chmod(0o600)
-    return SpendLedger(path, owner_hub_id=OWNER), dump
+    return path, dump
 
 
 def test_a_core_0_99_35_ledger_is_migrated_without_losing_an_answer(tmp_path: Path) -> None:
@@ -400,3 +416,126 @@ def test_a_legacy_ledger_that_cannot_be_matched_is_refused(
     assert hashlib.sha256(path.read_bytes()).hexdigest() == before  # nothing changed
     with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+
+
+def _documented_verification(ledger: Path) -> list[str]:
+    """Return the CLI guide's ledger migration check as arguments, pointed at ``ledger``."""
+    guide = (Path(__file__).resolve().parents[1] / "docs" / "cli.md").read_text(encoding="utf-8")
+    block = re.search(
+        r"```bash\n\s*(synapse verify-result migration --database LEDGER .*?)\n\s*```",
+        guide,
+        re.DOTALL,
+    )
+    assert block is not None, "the CLI guide shows how to verify a migrated ledger"
+    words = shlex.split(block.group(1).replace("\\\n", " "))
+    words[words.index("--database") + 1] = str(ledger)
+    return words[1:]
+
+
+def test_a_migrated_0_99_35_ledger_verifies_against_the_documented_digest(
+    tmp_path: Path,
+) -> None:
+    """The guide's own command confirms the declared migration on the released rows."""
+    ledger, _dump = _legacy_ledger(tmp_path)
+    with contextlib.closing(sqlite3.connect(ledger.path)) as connection:
+        assert connection.execute("SELECT version FROM schema_migrations").fetchall() == [
+            ("spend-ledger-2",)
+        ]
+        assert connection.execute("SELECT * FROM store_migration_attempts").fetchall() == [
+            ("spend-ledger-2", "spend-ledger-2", "applied")
+        ]
+    documented = _documented_verification(ledger.path)
+    assert documented[documented.index("--migration") + 1] == VERSION_1_TO_2_MIGRATION.identity
+    assert (
+        documented[documented.index("--schema-sha256") + 1]
+        == VERSION_1_TO_2_MIGRATION.schema_sha256
+    )
+
+    verified = run_cli(*documented)
+
+    assert verified.returncode == 0, verified.output
+    assert json.loads(verified.stdout)["result"] == "verified"
+
+
+def test_a_0_99_35_ledger_with_a_changed_schema_is_refused_unchanged(tmp_path: Path) -> None:
+    """An added index is not the layout the migration was declared for."""
+    path, _dump = _restored_legacy_ledger(tmp_path)
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
+        connection.execute("CREATE INDEX operations_by_digest ON operations (digest)")
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    with pytest.raises(SpendLedgerError, match="cannot migrate the spend ledger: .*base_schema"):
+        SpendLedger(path, owner_hub_id=OWNER)
+
+    assert _open_handles(path) == 0
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+def test_an_empty_ledger_file_becomes_a_ledger(tmp_path: Path) -> None:
+    """The empty file a racing first open created is completed, not refused."""
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    path = home / "ledger.sqlite3"
+    path.touch(mode=0o600)
+
+    SpendLedger(path, owner_hub_id=OWNER)
+
+    with contextlib.closing(sqlite3.connect(path)) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+
+
+def test_a_dangling_symlink_at_the_ledger_path_is_refused_and_not_followed(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    target = home / "elsewhere.sqlite3"
+    (home / "ledger.sqlite3").symlink_to(target)
+
+    with pytest.raises(SpendLedgerError, match="symlink"):
+        SpendLedger(home / "ledger.sqlite3", owner_hub_id=OWNER)
+
+    assert not target.exists()
+
+
+def _open_concurrently(path: str, barrier: threading.Barrier) -> None:
+    barrier.wait()
+    SpendLedger(Path(path), owner_hub_id=OWNER)
+
+
+def _concurrent_opens(path: Path) -> list[int | None]:
+    context = multiprocessing.get_context("spawn")
+    barrier = context.Barrier(2)
+    openers = [
+        context.Process(target=_open_concurrently, args=(str(path), barrier)) for _ in range(2)
+    ]
+    for opener in openers:
+        opener.start()
+    for opener in openers:
+        opener.join(timeout=60)
+    return [opener.exitcode for opener in openers]
+
+
+def test_concurrent_first_opens_of_a_new_ledger_both_succeed(tmp_path: Path) -> None:
+    """Before the shared layout step the second open failed on an existing table."""
+    for round_number in range(3):
+        home = tmp_path / f"home-{round_number}"
+        home.mkdir(mode=0o700)
+        path = home / "ledger.sqlite3"
+
+        assert _concurrent_opens(path) == [0, 0]
+        with contextlib.closing(sqlite3.connect(path)) as connection:
+            assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+
+
+def test_concurrent_opens_of_a_0_99_35_ledger_migrate_it_once(tmp_path: Path) -> None:
+    for round_number in range(3):
+        root = tmp_path / f"round-{round_number}"
+        root.mkdir()
+        path, _dump = _restored_legacy_ledger(root)
+
+        assert _concurrent_opens(path) == [0, 0]
+        with contextlib.closing(sqlite3.connect(path)) as connection:
+            assert connection.execute(
+                "SELECT count(*) FROM store_migration_attempts"
+            ).fetchone() == (1,)

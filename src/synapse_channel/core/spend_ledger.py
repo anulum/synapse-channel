@@ -23,9 +23,10 @@ may share the file, and SQLite serializes them.
   :data:`~synapse_channel.core.spend_pool.EXACT` context, so no sum, difference,
   sign or comparison of an amount can round; one that would fails closed.
 - **Schema.** Version 2 adds the window to reservation scopes. A version 1 ledger
-  (Core 0.99.35) is migrated in place when first opened: each stored reservation
-  answer is re-keyed to the window in effect when it was decided, so a retry still
-  replays it. A record that cannot be matched refuses the ledger.
+  (Core 0.99.35) takes the declared migration :data:`VERSION_1_TO_2_MIGRATION` when
+  first opened: each stored reservation answer is re-keyed to the window in effect
+  when it was decided, so a retry still replays it. A record that cannot be matched
+  refuses the ledger, and a schema other than the released one is refused unchanged.
 - **Uniform refusal.** A refused requester sees only
   ``{"admitted": false, "reason": "not-admitted"}``. The detailed reason is an audit
   row that only the operator reads.
@@ -49,9 +50,9 @@ from typing import Any, Final, ParamSpec, TypeVar, cast
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secure_path import (
     SecurePathError,
-    apply_owner_only_file,
     assert_owner_only_dir_path,
     assert_owner_only_file_path,
+    create_owner_only_file,
 )
 from synapse_channel.core.spend_epoch import (
     OwnerRevocation,
@@ -71,6 +72,12 @@ from synapse_channel.core.spend_pool import (
     token,
     validate_config,
     validate_request,
+)
+from synapse_channel.core.store_migration import (
+    DeclaredMigration,
+    MigrationRefused,
+    apply_declared_migration,
+    create_layout,
 )
 
 SCHEMA_VERSION: Final = 2
@@ -159,6 +166,98 @@ def _require_aware(now: datetime) -> None:
         raise SpendLedgerError("the evaluation time must include a UTC offset")
 
 
+def _legacy_decision(scope: str, response: object) -> str:
+    """Return the grant id of a stored grant, or ``scope`` for a stored refusal."""
+    try:
+        answer = json.loads(response) if isinstance(response, str) else None
+    except ValueError:
+        answer = None
+    if isinstance(answer, dict) and answer.get("admitted") is not True:
+        return scope
+    grant_id = answer.get("reservation_id") if isinstance(answer, dict) else None
+    if not isinstance(grant_id, str):
+        raise SpendLedgerError(
+            "a version 1 reservation answer is malformed; "
+            "the ledger needs operator repair before it can be used"
+        )
+    return grant_id
+
+
+def _legacy_windows(connection: sqlite3.Connection) -> dict[str, str]:
+    """Map each grant id and each refused scope to the window it was decided in."""
+    windows: dict[str, str] = {}
+    current: dict[str, str] = {}
+    rows = connection.execute("SELECT pool_id, kind, body FROM events ORDER BY seq")
+    try:
+        for pool_id, kind, raw in rows:
+            body = json.loads(raw)
+            if kind == "pool_config":
+                current[pool_id] = validate_config(body).window_id
+            elif kind == "grant":
+                windows[body["reservation_id"]] = current.get(pool_id, "")
+            elif kind == "refusal" and "key" in body["request"]:
+                request = body["request"]
+                scope = _scope(
+                    "reserve",
+                    body["caller"],
+                    pool_id,
+                    request["seat"],
+                    request["task"],
+                    request["operation"],
+                    request["key"],
+                )
+                windows[scope] = current.get(pool_id, "")
+    except (SpendPoolError, KeyError, TypeError, ValueError) as exc:
+        raise SpendLedgerError(
+            f"a version 1 ledger event cannot be read for migration: {exc}"
+        ) from exc
+    return windows
+
+
+def _rekey_window_scopes(connection: sqlite3.Connection) -> None:
+    """Re-key version 1 reservation answers to their window, losing none.
+
+    Core 0.99.35 stored a reservation's answer under a scope without the quota
+    window. Each such answer is moved to the scope of the window in effect when it
+    was decided, so an identical retry or a query still finds it. A record it cannot
+    match raises instead of dropping an answer, which rolls the migration back.
+    """
+    windows = _legacy_windows(connection)
+    rows = connection.execute("SELECT scope, response FROM operations").fetchall()
+    for scope, response in rows:
+        parts = scope.split("\x00")
+        if parts[0] != "reserve" or len(parts) != 7:
+            continue
+        window = windows.get(_legacy_decision(scope, response))
+        if window is None:
+            raise SpendLedgerError(
+                "a version 1 reservation answer has no matching ledger event; "
+                "the ledger needs operator repair before it can be used"
+            )
+        connection.execute(
+            "UPDATE operations SET scope = ? WHERE scope = ?",
+            (_scope(*parts[:3], window, *parts[3:]), scope),
+        )
+
+
+VERSION_1_TO_2_MIGRATION: Final = DeclaredMigration(
+    identity="spend-ledger-2",
+    # The layout released Core 0.99.35 wrote; version 2 keeps it and re-keys rows.
+    base_schema_sha256="627b9c335c67e3fcfbc54764d719ba3577d1113ae512004a6b6852594d1514c9",
+    statements=(),
+    # Version 2 as migrated, with the migration bookkeeping tables.
+    schema_sha256="4a4f6e31d16d55ac1eb3057a3fb2eb6e0933f1fd617144aa78445a702bb847d0",
+    user_version=SCHEMA_VERSION,
+    step=_rekey_window_scopes,
+)
+"""The migration a version 1 (Core 0.99.35) ledger takes when it is opened.
+
+``synapse verify-result migration --database LEDGER --migration spend-ledger-2
+--schema-sha256`` with this declaration's ``schema_sha256`` verifies a migrated
+ledger; a ledger created at version 2 has no migration to verify.
+"""
+
+
 class SpendLedger:
     """The owner-only spend ledger of one pool-owner hub.
 
@@ -181,10 +280,9 @@ class SpendLedger:
         """Open the version-checked ledger inside its owner-only directory."""
         try:
             assert_owner_only_dir_path(self.path.parent, purpose="spend ledger directory")
-            if self.path.is_symlink():
-                raise SpendLedgerError("the spend ledger must not be a symlink")
-            existed = self.path.exists()
-            if existed:
+            if not create_owner_only_file(self.path):
+                if self.path.is_symlink():
+                    raise SpendLedgerError("the spend ledger must not be a symlink")
                 assert_owner_only_file_path(self.path, purpose="spend ledger")
             connection = sqlite3.connect(self.path, timeout=10.0, isolation_level=None)
         except SecurePathError as exc:
@@ -192,23 +290,22 @@ class SpendLedger:
         except (sqlite3.Error, OSError) as exc:
             raise SpendLedgerError("cannot open the spend ledger") from exc
         try:
-            if not existed:
-                apply_owner_only_file(self.path)
             version = int(connection.execute("PRAGMA user_version").fetchone()[0])
             if version == 0:
-                if existed:
+                # An empty file is new; a version 0 file with tables is someone else's.
+                if not create_layout(connection, _SCHEMA, user_version=SCHEMA_VERSION):
                     raise SpendLedgerError("an unversioned spend ledger is refused")
-                connection.execute("BEGIN IMMEDIATE")
-                for statement in _SCHEMA:
-                    connection.execute(statement)
-                connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-                connection.execute("COMMIT")
-            elif version == _LEGACY_SCHEMA_VERSION:
-                self._migrate_window_scopes(connection)
+                version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            if version == _LEGACY_SCHEMA_VERSION:
+                apply_declared_migration(
+                    connection, VERSION_1_TO_2_MIGRATION, attempt=VERSION_1_TO_2_MIGRATION.identity
+                )
             elif version != SCHEMA_VERSION:
                 raise SpendLedgerError(f"unsupported spend ledger version {version}")
         except BaseException as exc:
-            connection.close()  # on every failure, interrupts included; only sqlite maps
+            connection.close()  # on every failure, interrupts included; only these map
+            if isinstance(exc, MigrationRefused):
+                raise SpendLedgerError(f"cannot migrate the spend ledger: {exc}") from exc
             if isinstance(exc, sqlite3.Error):
                 raise SpendLedgerError("the spend ledger is not a valid database") from exc
             raise
@@ -240,88 +337,6 @@ class SpendLedger:
             str(request["operation"]),
             str(request["key"]),
         )
-
-    @classmethod
-    def _migrate_window_scopes(cls, connection: sqlite3.Connection) -> None:
-        """Re-key version 1 reservation answers to their window, losing none (schema 2).
-
-        Core 0.99.35 stored a reservation's answer under a scope without the quota
-        window. Each such answer is moved to the scope of the window in effect when it
-        was decided, so an identical retry or a query still finds it. The migration is
-        idempotent and runs in one transaction; a record it cannot match refuses the
-        ledger instead of dropping an answer.
-        """
-        connection.execute("BEGIN IMMEDIATE")
-        try:
-            windows = cls._legacy_windows(connection)
-            rows = connection.execute("SELECT scope, response FROM operations").fetchall()
-            for scope, response in rows:
-                parts = scope.split("\x00")
-                if parts[0] != "reserve" or len(parts) != 7:
-                    continue
-                window = windows.get(cls._legacy_decision(scope, response))
-                if window is None:
-                    raise SpendLedgerError(
-                        "a version 1 reservation answer has no matching ledger event; "
-                        "the ledger needs operator repair before it can be used"
-                    )
-                connection.execute(
-                    "UPDATE operations SET scope = ? WHERE scope = ?",
-                    (_scope(*parts[:3], window, *parts[3:]), scope),
-                )
-            connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-        except BaseException:
-            connection.execute("ROLLBACK")
-            raise
-        connection.execute("COMMIT")
-
-    @staticmethod
-    def _legacy_decision(scope: str, response: object) -> str:
-        """Return the grant id of a stored grant, or ``scope`` for a stored refusal."""
-        try:
-            answer = json.loads(response) if isinstance(response, str) else None
-        except ValueError:
-            answer = None
-        if isinstance(answer, dict) and answer.get("admitted") is not True:
-            return scope
-        grant_id = answer.get("reservation_id") if isinstance(answer, dict) else None
-        if not isinstance(grant_id, str):
-            raise SpendLedgerError(
-                "a version 1 reservation answer is malformed; "
-                "the ledger needs operator repair before it can be used"
-            )
-        return grant_id
-
-    @staticmethod
-    def _legacy_windows(connection: sqlite3.Connection) -> dict[str, str]:
-        """Map each grant id and each refused scope to the window it was decided in."""
-        windows: dict[str, str] = {}
-        current: dict[str, str] = {}
-        rows = connection.execute("SELECT pool_id, kind, body FROM events ORDER BY seq")
-        try:
-            for pool_id, kind, raw in rows:
-                body = json.loads(raw)
-                if kind == "pool_config":
-                    current[pool_id] = validate_config(body).window_id
-                elif kind == "grant":
-                    windows[body["reservation_id"]] = current.get(pool_id, "")
-                elif kind == "refusal" and "key" in body["request"]:
-                    request = body["request"]
-                    scope = _scope(
-                        "reserve",
-                        body["caller"],
-                        pool_id,
-                        request["seat"],
-                        request["task"],
-                        request["operation"],
-                        request["key"],
-                    )
-                    windows[scope] = current.get(pool_id, "")
-        except (SpendPoolError, KeyError, TypeError, ValueError) as exc:
-            raise SpendLedgerError(
-                f"a version 1 ledger event cannot be read for migration: {exc}"
-            ) from exc
-        return windows
 
     @staticmethod
     def _events(connection: sqlite3.Connection, pool_id: str) -> list[dict[str, Any]]:

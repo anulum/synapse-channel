@@ -3082,10 +3082,21 @@ reaches a peer.
     reservation is open.
   - The fixed fee and minimum charge can change, because each grant keeps the
     exposure it was granted with.
-- **Upgrading a 0.99.35 ledger.** The first open migrates it to schema 2. Each
-  stored answer is moved to the window it was decided in, so a retry or a query
-  still finds it. A record that cannot be matched or read refuses the ledger and
-  changes nothing. Once migrated, 0.99.35 refuses to open the ledger.
+- **Upgrading a 0.99.35 ledger.** The first open applies the declared migration
+  `spend-ledger-2`, and only to a ledger whose schema is exactly the one 0.99.35
+  wrote. Each stored answer is moved to the window it was decided in, so a retry
+  or a query still finds it. A record that cannot be matched or read, or a
+  changed schema, refuses the ledger and changes nothing. The moved answers, the
+  migration's record in `schema_migrations` and schema 2 are one transaction; a
+  second open at the same moment waits and then finds schema 2. Once migrated,
+  0.99.35 refuses to open the ledger. Confirm a migrated ledger against the
+  declared schema digest:
+
+  ```bash
+  synapse verify-result migration --database LEDGER --migration spend-ledger-2 \
+    --schema-sha256 4a4f6e31d16d55ac1eb3057a3fb2eb6e0933f1fd617144aa78445a702bb847d0 \
+    --operation-id spend-ledger-upgrade
+  ```
 - **Handing a pool to a new owner.** It takes three pieces of evidence:
   1. `checkpoint --pool ID` gives the ledger sequence and chain digest.
   2. `sign-revocation --key PEM --key-id ID --file BODY.json` signs a revocation

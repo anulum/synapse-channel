@@ -14,7 +14,7 @@ import json
 import os
 import re
 import sqlite3
-from contextlib import closing, suppress
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -29,14 +29,15 @@ from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secure_path import (
     SecurePathError,
     apply_owner_only_dir,
-    apply_owner_only_file,
     assert_owner_only_dir_path,
     assert_owner_only_file_path,
+    create_owner_only_file,
 )
 from synapse_channel.core.store_migration import (
     DeclaredMigration,
     MigrationRefused,
     apply_declared_migration,
+    create_layout,
 )
 
 _ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
@@ -111,29 +112,6 @@ def _layout_version(db: sqlite3.Connection) -> int:
     return int(db.execute("PRAGMA user_version").fetchone()[0])
 
 
-def _create_layout(db: sqlite3.Connection) -> None:
-    """Create the version 2 layout once, even when another opener creates it meanwhile.
-
-    The layout is written inside one immediate transaction after the version is
-    read again, so a second opener of a new store waits for the first and then
-    finds version 2. A store of version 0 that already holds tables belongs to
-    something else and is refused unchanged.
-    """
-    db.execute("BEGIN IMMEDIATE")
-    try:
-        if _layout_version(db) == 0:
-            if db.execute("SELECT count(*) FROM sqlite_master").fetchone()[0]:
-                raise AppTaskError("unsupported app task store version 0")
-            for statement in _LAYOUT_VERSION_2:
-                db.execute(statement)
-            db.execute("PRAGMA user_version=2")
-        db.execute("COMMIT")
-    except BaseException:
-        with suppress(sqlite3.OperationalError):
-            db.execute("ROLLBACK")
-        raise
-
-
 def _create_private_directory(directory: Path) -> None:
     """Create ``directory`` owner-only, or keep the one that already exists.
 
@@ -147,28 +125,12 @@ def _create_private_directory(directory: Path) -> None:
     apply_owner_only_dir(directory)
 
 
-def _create_private_file(path: Path) -> bool:
-    """Create ``path`` empty and owner-only, and return whether this call created it.
-
-    The file is created exclusively with mode ``0o600``, so a concurrent opener
-    never sees it readable by others, and an existing path, a symlink included,
-    is never followed or replaced.
-    """
-    try:
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        return False
-    os.close(descriptor)
-    apply_owner_only_file(path)
-    return True
-
-
 def _open(path: Path) -> sqlite3.Connection:
     parent = path.parent
     try:
         _create_private_directory(parent)
         assert_owner_only_dir_path(parent, purpose="app task directory")
-        if not _create_private_file(path):
+        if not create_owner_only_file(path):
             if path.is_symlink():
                 raise AppTaskError("app task store must not be a symlink")
             assert_owner_only_file_path(path, purpose="app task store")
@@ -177,7 +139,9 @@ def _open(path: Path) -> sqlite3.Connection:
         db.execute("PRAGMA foreign_keys=ON")
         version = _layout_version(db)
         if version == 0:
-            _create_layout(db)
+            # A version 0 database that already holds tables belongs to something else.
+            if not create_layout(db, _LAYOUT_VERSION_2, user_version=2):
+                raise AppTaskError("unsupported app task store version 0")
             version = _layout_version(db)
         if version == 1:
             try:

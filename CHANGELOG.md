@@ -31,6 +31,14 @@ execution evidence when carrying a release claim forward.
   column was added regardless and the version was set outside the column's
   transaction.
 
+- **A 0.99.35 spend ledger takes a declared migration that can be verified.** The
+  ledger's first open re-keys each stored answer to its window, as before, but as
+  the declared migration `spend-ledger-2`. It applies only when the ledger's schema
+  is exactly the one 0.99.35 wrote, records itself in `schema_migrations` in the
+  same transaction, and `synapse verify-result migration` confirms the result
+  against the schema digest the CLI guide publishes. A 0.99.35 ledger whose schema
+  was changed is now refused unchanged.
+
 ### Fixed
 
 - **Two commands opening an app task queue at the same moment no longer fail.**
@@ -39,6 +47,13 @@ execution evidence when carrying a release claim forward.
   file and layout are now created once and the migration applies once; the file
   is created owner-only instead of being restricted after SQLite creates it, and
   an empty queue file left by such an opener is completed rather than refused.
+
+- **Two hubs or commands opening a new spend ledger at the same moment no longer
+  fail.** The second open failed on an existing table and reported the ledger as
+  not a valid database. The layout is now created once under an immediate
+  transaction, the file is created owner-only instead of being restricted after
+  SQLite creates it, and an empty ledger file is completed rather than refused as
+  unversioned. A version 0 database that already holds tables is still refused.
 
 ## [0.99.60] - 2026-11-21
 
