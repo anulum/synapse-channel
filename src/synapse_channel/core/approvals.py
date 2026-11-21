@@ -31,7 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 
 APPROVAL_NOTE_KIND = "approval"
 """Progress-note ``kind`` marking a structured approval-workflow record."""
@@ -242,7 +243,7 @@ def run_approval_report(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         events = tuple(store.read_all())
     finally:

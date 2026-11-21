@@ -28,7 +28,7 @@ from typing import Any
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.ledger import progress_note_refusal
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.verdict_hub import VerdictHubPolicy, parse_verdict_authority
 from synapse_channel.core.verdict_records import (
     CORRECTION_NOTE_KIND,
@@ -167,7 +167,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
         print(f"missing event store: {path}", file=sys.stderr)
         return 2
     policy = verdict_policy_from_args(args)
-    store = EventStore(path, key_file=args.db_key_file)
+    store = EventLogReader(path, key_file=args.db_key_file)
     try:
         events = tuple(store.iter_events(kinds=VERDICT_REPORT_EVENT_KINDS))
     finally:

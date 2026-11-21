@@ -98,6 +98,17 @@ def test_a_missing_store_is_refused_and_nothing_is_created(tmp_path: Path) -> No
     assert list(tmp_path.iterdir()) == []
 
 
+def test_a_directory_at_the_store_path_is_refused_before_sqlite_opens_it(tmp_path: Path) -> None:
+    """Anything but a regular file is refused first, so a FIFO could never block the open."""
+    store = tmp_path / "hub.db"
+    store.mkdir()
+
+    with pytest.raises(ReadOnlyOpenRefused, match="is not a regular file: .*creates nothing"):
+        EventLogReader(store)
+
+    assert list(store.iterdir()) == []
+
+
 @pytest.mark.parametrize("content", ["empty", "foreign"])
 def test_a_file_without_an_event_table_is_refused_unchanged(tmp_path: Path, content: str) -> None:
     db = tmp_path / "hub.db"

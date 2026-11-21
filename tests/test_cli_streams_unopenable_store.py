@@ -26,7 +26,13 @@ def test_a_directory_as_the_event_store_exits_2_without_a_traceback(
     assert cli.main([command[0], str(directory), *command[1:]]) == 2
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err == f"{command[0]}: cannot open event store: unable to open database file\n"
+    # ingest reads through the read-only open; compact opens the writer, and SQLite refuses.
+    reason = (
+        f"event store is not a regular file: {directory}; a read-only open creates nothing"
+        if command[0] == "ingest"
+        else "unable to open database file"
+    )
+    assert captured.err == f"{command[0]}: cannot open event store: {reason}\n"
     assert list(directory.iterdir()) == []
 
 

@@ -34,7 +34,8 @@ from synapse_channel.core.path_identity import (
     ClaimScopeIdentity,
     parse_optional_claim_scope_identity,
 )
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 
 SNAPSHOT_KINDS = frozenset(
     {EventKind.CLAIM, EventKind.TASK_UPDATE, EventKind.CHECKPOINT, EventKind.HANDOFF}
@@ -441,7 +442,7 @@ def _load_events(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         return tuple(store.read_all())
     finally:

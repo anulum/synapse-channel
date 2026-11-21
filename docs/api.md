@@ -374,8 +374,9 @@ with EventLogReader("hub.db", key_file=None) as log:
 
 It opens the existing file with SQLite's `mode=ro`, so it never creates, migrates
 or writes the log, and in WAL mode it never blocks the hub's writer. A missing
-file, or one without the event table, is refused with `ReadOnlyOpenRefused`, and
-nothing is created. A store with a newer format than this release reads is
+file, a path that is not a regular file (a directory or a FIFO, refused before SQLite
+opens it), or a file without the event table is refused with `ReadOnlyOpenRefused`,
+and nothing is created. A store with a newer format than this release reads is
 refused as it is for the writer. It offers the writer's read methods: `iter_events`,
 `stream_events`, `read_all`, `read_since`, `read_latest`, `read_window`,
 `corrupt_rows`, `count`, `event_metrics`, `max_seq` and `latest_at_or_before`.
@@ -385,7 +386,10 @@ key file.
 The store's bytes never change. Reading a WAL journal that no process has open
 leaves SQLite's empty `-wal` file and its `-shm` index, with the store's own
 permissions, because a read-only connection cannot checkpoint them away. The next
-writer uses and removes them. `synapse event-query` reads this way.
+writer uses and removes them. `synapse event-query`, `synapse ingest`, `synapse
+attention sync`, `synapse verdict status`, the SQLCipher check of `synapse doctor`
+and the offline reports (causality, Merkle, replay, postmortem, reliability and
+the other analysis readers) read this way.
 
 ## Read-only delivery receipts
 

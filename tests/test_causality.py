@@ -31,6 +31,7 @@ from synapse_channel.core.causality import (
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 
 
 def _claim(
@@ -474,15 +475,15 @@ def test_run_causality_streams_only_coordination_kinds(
     db = tmp_path / "hub.db"
     _seed(db, _chain_events())
 
-    def refuse_read_all(self: EventStore) -> list[StoredEvent]:
+    def refuse_read_all(self: EventLogReader) -> list[StoredEvent]:
         msg = "run_causality materialised the log"
         raise AssertionError(msg)
 
     seen_kinds: set[str] = set()
-    original = EventStore.iter_events
+    original = EventLogReader.iter_events
 
     def spying_iter(
-        self: EventStore,
+        self: EventLogReader,
         *,
         through_seq: int | None = None,
         kinds: Iterable[str] | None = None,
@@ -491,8 +492,9 @@ def test_run_causality_streams_only_coordination_kinds(
             seen_kinds.add(event.kind)
             yield event
 
-    monkeypatch.setattr(EventStore, "read_all", refuse_read_all)
-    monkeypatch.setattr(EventStore, "iter_events", spying_iter)
+    # run_causality reads through the read-only open, so the spy sits on its class.
+    monkeypatch.setattr(EventLogReader, "read_all", refuse_read_all)
+    monkeypatch.setattr(EventLogReader, "iter_events", spying_iter)
     query = run_causality(db, "effects", 4)
     assert query.present
     assert seen_kinds  # the stream ran

@@ -24,7 +24,8 @@ from typing import Any
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 
 OBSERVED_CAPABILITY_TRUST_BOUNDARY = (
     "Observed capability evidence is provenance-preserving routing context only; "
@@ -266,7 +267,7 @@ def read_observed_capability_index(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ObservedCapabilityInputError(msg)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         return build_observed_capability_index(store.read_all())
     finally:

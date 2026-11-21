@@ -26,7 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.participants.session_metric_note import (
     SESSION_METRIC_NOTE_KIND,
     parse_session_metric_note,
@@ -196,7 +197,7 @@ def run_session_metric_report(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         events = tuple(store.read_all())
     finally:

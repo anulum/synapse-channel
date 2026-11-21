@@ -36,7 +36,8 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.reliability import SNAPSHOT_KINDS
 from synapse_channel.core.repo_manifests import (
     RepoManifest,
@@ -425,7 +426,7 @@ def run_cross_repo_graph(
     if not store_path.exists():
         msg = f"missing event store: {store_path}"
         raise ValueError(msg)
-    store = EventStore(store_path, key_file=key_file)
+    store = EventLogReader(store_path, key_file=key_file)
     try:
         events = list(store.read_all())
     finally:

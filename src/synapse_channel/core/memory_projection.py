@@ -25,7 +25,8 @@ from typing import Any
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.journal import MEMORY_KINDS, EventKind
 from synapse_channel.core.numeric_coercion import safe_int
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.terminal_text import terminal_text
 
 MEMORY_RECALL_TRUST_BOUNDARY = (
@@ -276,7 +277,7 @@ def read_memory_recall(
     if not path.exists():
         raise MemoryRecallInputError(f"missing event store: {path}")
     start = safe_int(since_seq, default=0, min_value=0, allow_bool=False)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         events = store.read_since(start, kinds=MEMORY_KINDS)
     finally:

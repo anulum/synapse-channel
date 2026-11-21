@@ -37,7 +37,7 @@ from synapse_channel.core.attention_store import (
     sync_evidence,
 )
 from synapse_channel.core.entitlement_store import EntitlementStoreError, read_events
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.review_feedback import ReviewFeedbackError, review_subject
 from synapse_channel.core.review_feedback_store import get_binding, list_findings
 
@@ -103,7 +103,7 @@ def _sync(args: argparse.Namespace) -> int:
             at=datetime.fromtimestamp(now, tz=UTC),
             stale_after_seconds=stale_seconds,
         )
-    hub = EventStore(db_path, key_file=args.db_key_file)
+    hub = EventLogReader(db_path, key_file=args.db_key_file)
     try:
         hub_events = tuple(hub.iter_events(kinds=ATTENTION_EVENT_KINDS))
         hub_evidence = project_hub_attention(

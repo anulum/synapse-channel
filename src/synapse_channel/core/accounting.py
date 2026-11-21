@@ -31,7 +31,8 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.terminal_text import terminal_text
 
 USAGE_NOTE_KIND = "usage"
@@ -369,7 +370,7 @@ def run_accounting_report(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         events = tuple(store.read_all())
     finally:

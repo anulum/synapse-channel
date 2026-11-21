@@ -773,14 +773,14 @@ def check_sqlcipher_event_store(
                 "store is created, then re-run doctor"
             ),
         )
-    from synapse_channel.core.persistence import EventStore
+    from synapse_channel.core.persistence_reader import EventLogReader
     from synapse_channel.core.persistence_sqlcipher import (
         SqlCipherKeyError,
         SqlCipherUnavailableError,
     )
 
     try:
-        store = EventStore(store_path, key_file=key_path)
+        store = EventLogReader(store_path, key_file=key_path)
     except SqlCipherUnavailableError:
         return Diagnosis(
             check="sqlcipher-store",

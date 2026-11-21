@@ -47,7 +47,8 @@ from synapse_channel.core.operation_attempt_ledger import (
     AttemptSummary,
 )
 from synapse_channel.core.operation_attempts import APPROVED_FRESH
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 
 NOT_RECORDED: Final = "not recorded"
 VERIFIED: Final = "verified"
@@ -184,7 +185,7 @@ def _read_events(db_path: str | Path, key_file: str | Path | None) -> tuple[Stor
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         return tuple(store.read_all())
     finally:

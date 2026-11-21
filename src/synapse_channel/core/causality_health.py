@@ -49,7 +49,8 @@ from synapse_channel.core.causality import (
 )
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.lifecycle import TaskStatus
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 
 DEFAULT_STALE_AFTER = 3600.0
 """Seconds of log-relative silence after which an unreleased claim is stale."""
@@ -323,7 +324,7 @@ def run_causal_health(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         events: list[StoredEvent] = []
         for event in store.iter_events(kinds=GRAPH_KINDS):

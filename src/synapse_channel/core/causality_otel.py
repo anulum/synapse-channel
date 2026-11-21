@@ -59,7 +59,8 @@ from synapse_channel.core.causality import (
     build_causal_graph,
 )
 from synapse_channel.core.lifecycle import TaskStatus
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 
 TRACE_ID_HEX_LENGTH = 32
 """OTel trace ids are 16 bytes — 32 lowercase hex characters."""
@@ -370,7 +371,7 @@ def run_otel_projection(
         from synapse_channel.core.causality_otel_correlation import CORRELATION_KINDS
 
         kinds |= CORRELATION_KINDS
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         events: list[StoredEvent] = []
         for event in store.iter_events(kinds=frozenset(kinds)):

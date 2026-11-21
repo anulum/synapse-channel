@@ -66,15 +66,22 @@ class ReadOnlyOpenRefused(SynapseError, ValueError):
 def _read_only_uri(path: str | Path) -> str:
     """Return SQLite's ``mode=ro`` URI for an existing store file, or refuse.
 
+    A path that exists but is not a regular file, such as a directory or a FIFO, is
+    refused before SQLite opens it, so a read-only open never blocks on a FIFO.
+
     Raises
     ------
     ReadOnlyOpenRefused
-        When ``path`` is not an existing regular file.
+        When ``path`` does not exist, or is not a regular file.
     """
     target = Path(path)
-    if not target.is_file():
+    if not target.exists():
         raise ReadOnlyOpenRefused(
             f"missing event store: {target}; a read-only open creates nothing"
+        )
+    if not target.is_file():
+        raise ReadOnlyOpenRefused(
+            f"event store is not a regular file: {target}; a read-only open creates nothing"
         )
     return f"{target.absolute().as_uri()}?mode=ro"
 

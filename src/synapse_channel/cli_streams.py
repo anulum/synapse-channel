@@ -34,6 +34,7 @@ from synapse_channel.core.archive_report import (
 from synapse_channel.core.compaction import RetentionPolicy, compact
 from synapse_channel.core.journal import MEMORY_KINDS
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.protocol import MessageType, addresses_project, is_recipient
 from synapse_channel.core.relay import decode_lite, load_offset, read_jsonl_since, save_offset
 from synapse_channel.terminal_text import terminal_text
@@ -114,7 +115,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
     else:
         kinds = None
     try:
-        store = EventStore(args.db, key_file=getattr(args, "db_key_file", None))
+        store = EventLogReader(args.db, key_file=getattr(args, "db_key_file", None))
     except (ValueError, OSError, RuntimeError, sqlite3.Error) as exc:
         print(f"ingest: cannot open event store: {exc}", file=sys.stderr)
         return 2

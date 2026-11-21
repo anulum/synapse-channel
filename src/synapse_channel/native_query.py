@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.native_pairing import PairingReport, Record, pair_records, render
 from synapse_channel.terminal_text import terminal_text
 
@@ -120,7 +120,7 @@ def run_native_query(
     path = Path(db_path)
     if not path.exists():
         raise ValueError(f"missing event store: {path}")
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         events = store.read_window(kinds=(EventKind.NATIVE_MESSAGE,))
     finally:

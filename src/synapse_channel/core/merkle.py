@@ -42,7 +42,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 
 LEAF_PREFIX = b"\x00"
 """RFC 6962 domain-separation prefix for a leaf hash."""
@@ -322,7 +323,7 @@ def run_root(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         running = RunningRoot()
         for event in store.iter_events(through_seq=through_seq):
@@ -524,7 +525,7 @@ def _load_events(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         return tuple(store.read_all())
     finally:

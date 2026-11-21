@@ -258,6 +258,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     # Both conversion tests open an encrypted copy, which needs sqlcipher3.
     "tests/test_mailbox_pending_layout.py": (2, "optional-dep-guard"),
     "tests/test_multihub_mcp_sqlcipher.py": (1, "optional-dep-guard"),
+    # The SQLCipher diagnostic case reads an encrypted journal, which needs sqlcipher3.
+    "tests/test_offline_readers_read_only.py": (1, "optional-dep-guard"),
     "tests/test_opencode_compatibility_smoke.py": (2, "operator-smoke"),
     # Linux procfs and tmux; the foreign-group case needs a process group the
     # test user may not signal, which a single-user container may not have.

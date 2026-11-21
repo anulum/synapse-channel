@@ -42,7 +42,8 @@ from synapse_channel.core.causality import (
 )
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.path_identity import claim_scopes_conflict
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.replay import SNAPSHOT_KINDS
 from synapse_channel.core.terminal_text import terminal_text
 
@@ -169,7 +170,7 @@ def run_yield_advice(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         events: list[StoredEvent] = []
         for event in store.iter_events(kinds=GRAPH_KINDS):

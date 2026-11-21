@@ -20,10 +20,12 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+  `mode=ro`. It never creates, migrates or writes the log, refuses a missing file,
+  a path that is not a regular file and a file without the event table, refuses a
+  newer store format, and in WAL mode
+
 - **Offline readers can open the event log read-only.** `EventLogReader`, in
   `synapse_channel.core.persistence_reader`, opens an existing log with SQLite's
-  `mode=ro`. It never creates, migrates or writes the log, refuses a missing file
-  or one without the event table, refuses a newer store format, and in WAL mode
   never blocks the hub's writer. It offers the writer's read methods and decodes
   rows the same way; an SQLCipher log is read with its key file. `synapse
   event-query` now reads this way. Before, it opened the hub's writer, which wrote
@@ -41,6 +43,19 @@ execution evidence when carrying a release claim forward.
   steps now keep an offline copy of the stopped log as the way back.
 
 ### Fixed
+
+- **Offline reports no longer write the journal they read.** Twenty-seven readers
+  of a hub's event log opened the hub's writer and now open it read-only. They are
+  the accounting, adaptive TTL, approval, capability-observation, reliability,
+  trust-graph, yield, fleet-health and session-metric reports; causality and its
+  federated, health and OpenTelemetry views; the cross-repository graph; memory
+  recall; Merkle roots and proofs; operation reports; postmortems; replay and
+  reproduction; native-message queries; `synapse attention sync`, `synapse ingest`,
+  `synapse verdict status`; the SQLCipher check of `synapse doctor`; and the
+  effect suite's journal reading. On a log from before the store-format floor each
+  of them wrote the format record before reading. `synapse ingest` and the effect
+  suite's journal reading, given a path where no journal exists, created an empty
+  one there; they now refuse it.
 
 - **A Grok wake reads only what Grok is doing now.** A numbered line or the
   word "approve" in an earlier answer made the whole pane read as a chooser,

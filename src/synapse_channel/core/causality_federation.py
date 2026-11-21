@@ -51,7 +51,8 @@ from synapse_channel.core.causality import (
     effects,
 )
 from synapse_channel.core.multihub_merge import merge_event_logs, tag_events
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 
 FEDERATION = "federation"
 """Relation tag: a recorded relation whose endpoints two different hubs authored."""
@@ -374,7 +375,7 @@ def run_federated_causality(
         if not path.exists():
             msg = f"missing event store for hub '{hub_id}': {path}"
             raise ValueError(msg)
-        store = EventStore(path, key_file=keys.get(hub_id))
+        store = EventLogReader(path, key_file=keys.get(hub_id))
         try:
             events: list[StoredEvent] = []
             for event in store.iter_events(kinds=GRAPH_KINDS):

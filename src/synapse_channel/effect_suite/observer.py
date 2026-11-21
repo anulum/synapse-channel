@@ -24,7 +24,7 @@ from pathlib import Path
 
 from synapse_channel.core.approvals import APPROVAL_NOTE_KIND
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.result_verification_record import ResultVerification
 from synapse_channel.effect_suite.session import HubSession
@@ -178,7 +178,7 @@ class Observer:
 
 def journal_reading(journal: Path, task_id: str) -> JournalReading:
     """Read the stopped hub's journal for ``task_id``: attempts, answers and gate refusals."""
-    store = EventStore(journal)
+    store = EventLogReader(journal)
     try:
         kinds = (EventKind.OPERATION_ATTEMPT_ANSWERED, EventKind.VERDICT_RECORD_REFUSED)
         rows = [

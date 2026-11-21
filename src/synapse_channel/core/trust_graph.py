@@ -32,7 +32,8 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.capability_observations import build_observed_capability_index
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.reliability import ReliabilityFinding, build_reliability_report
 
 TRUST_GRAPH_BOUNDARY = (
@@ -246,7 +247,7 @@ def run_trust_graph(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         events = list(store.read_all())
     finally:
