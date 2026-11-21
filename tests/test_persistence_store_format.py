@@ -230,6 +230,48 @@ def test_the_hub_exits_without_a_restart_status_and_changes_nothing(tmp_path: Pa
     assert _snapshot(db) == before
 
 
+def _crashed_newer_writer(path: Path) -> None:
+    """Leave the newer format committed only in the WAL, as a writer that died leaves it."""
+    EventStore(path).close()
+    crash = (
+        "import os, sqlite3, sys\n"
+        "connection = sqlite3.connect(sys.argv[1])\n"
+        "connection.execute('PRAGMA wal_autocheckpoint = 0')\n"
+        f"connection.execute('UPDATE store_format SET floor = {STORE_FORMAT + 1}, "
+        "floor_release = \\'9.0.0\\' WHERE id = 1')\n"
+        f"connection.execute('PRAGMA user_version = {STORE_FORMAT + 1}')\n"
+        "connection.commit()\n"
+        "os._exit(0)\n"
+    )
+    subprocess.run([sys.executable, "-c", crash, str(path)], check=True, timeout=60)
+
+
+def test_the_hub_refuses_a_crashed_newer_journal_without_folding_its_wal(tmp_path: Path) -> None:
+    """The format check reads the WAL a dead writer left and keeps it where it is."""
+    home = tmp_path / "home"
+    home.mkdir()
+    db = home / "journal" / "hub.db"
+    db.parent.mkdir()
+    _crashed_newer_writer(db)
+    wal = db.parent / "hub.db-wal"
+    assert wal.stat().st_size > 0  # the newer format exists only in the WAL
+    before = (
+        hashlib.sha256(db.read_bytes()).hexdigest(),
+        hashlib.sha256(wal.read_bytes()).hexdigest(),
+    )
+
+    result = _run_hub(home, db)
+
+    assert result.returncode == NO_RESTART_EXIT_CODE, result.stderr
+    assert f"needs store format {STORE_FORMAT + 1}" in result.stderr
+    assert wal.exists(), "the check folded the crashed writer's WAL into the journal"
+    after = (
+        hashlib.sha256(db.read_bytes()).hexdigest(),
+        hashlib.sha256(wal.read_bytes()).hexdigest(),
+    )
+    assert after == before
+
+
 def test_the_hub_unit_does_not_restart_on_the_refusal_status() -> None:
     rendered = render_hub_unit(synapse_bin="/usr/bin/synapse")
     shipped = (_ROOT / "deploy" / "synapse-hub.service").read_text(encoding="utf-8")

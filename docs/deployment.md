@@ -749,7 +749,9 @@ any table, and leaves every byte as it was. `synapse hub` then exits with status
 plaintext-to-SQLCipher conversion, refuses it the same way. The message names the
 log, its format, the release that set it and the formats the running release
 reads. Run a release that reads that format, or restore the copy of the log taken
-before the upgrade.
+before the upgrade. A log that a crashed hub left with a `-wal` beside it is checked
+read-only, so the refusal does not fold that WAL into the log; it stays where the
+writer left it.
 
 Releases from before the first one that records a format do not read it, so a
 downgrade below that release is not guarded. Across a raised format the only way

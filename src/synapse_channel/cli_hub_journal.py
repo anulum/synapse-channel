@@ -111,13 +111,20 @@ def refuse_unreadable_journal(ctx: HubStartup) -> None:
     start leaves the journal's directory as it was. The check only reads the
     header. Every other failure to open the journal is left to
     :func:`open_event_journal`, which reports it.
+
+    A journal with a ``-wal`` beside it, left by a hub that crashed or by one still
+    running, is checked read-only: a read-write check would fold that WAL into the
+    journal when it closes, even when it then refuses. A journal without one is
+    checked read-write, which leaves no sidecar behind.
     """
     db = ctx.args.db
     if not db or not Path(db).is_file():
         return
     try:
         connection, _encrypted = connect_event_store(
-            db, key_file=getattr(ctx.args, "db_key_file", None)
+            db,
+            key_file=getattr(ctx.args, "db_key_file", None),
+            read_only=Path(f"{db}-wal").exists(),
         )
     except StoreFormatRefused as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)

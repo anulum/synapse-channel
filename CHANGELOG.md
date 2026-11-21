@@ -20,6 +20,10 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+  not restart on 78. A log that a crashed hub left with a `-wal` is checked
+  read-only, so the refusal does not fold that WAL into the log. Every other
+  command that opens the log, and the
+
   `mode=ro`. It never creates, migrates or writes the log, refuses a missing file,
   a path that is not a regular file and a file without the event table, refuses a
   newer store format, and in WAL mode
@@ -36,7 +40,6 @@ execution evidence when carrying a release claim forward.
   and the release that last raised it; this release writes format 1. A release that
   finds a higher format refuses the log before it reads or creates any table, and
   changes nothing: `synapse hub` exits 78, and the generated and shipped hub units do
-  not restart on 78. Every other command that opens the log, and the
   plaintext-to-SQLCipher conversion, refuses it the same way; the encrypted copy
   records this release's format. Releases from before this one do not read the
   format, so a downgrade below it is not guarded, and the deployment guide's upgrade
