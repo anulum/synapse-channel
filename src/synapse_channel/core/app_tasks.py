@@ -58,7 +58,8 @@ _LAYOUT_VERSION_2: Final = (
 )
 VERSION_1_TO_2_MIGRATION: Final = DeclaredMigration(
     identity="app-tasks-2",
-    # The version 1 layout exactly as releases up to 0.99.26 created it.
+    # Version 1 as the development build between releases 0.99.26 and 0.99.27
+    # created it; no published release wrote version 1.
     base_schema_sha256="a71927ab8182893aa28a625cc75e8aa849ace2929dc3c0df7d0cbc6074ec9388",
     statements=("ALTER TABLE tasks ADD COLUMN offered_by TEXT NOT NULL DEFAULT 'operator:legacy'",),
     # Version 2 as migrated, with the migration bookkeeping tables.

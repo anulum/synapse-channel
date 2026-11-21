@@ -38,7 +38,8 @@ from synapse_channel.core.app_tasks import (
 )
 from synapse_channel.core.entitlement_store import append_event
 
-# The version 1 layout exactly as releases up to 0.99.26 created it.
+# Version 1 exactly as the development build between releases 0.99.26 and 0.99.27
+# created it; that build reports itself as 0.99.26, and no published release wrote it.
 _VERSION_1_LAYOUT = (
     "CREATE TABLE tasks (task_id TEXT PRIMARY KEY, state TEXT NOT NULL, "
     "bundle TEXT NOT NULL, allowance TEXT NOT NULL, result TEXT, usage TEXT, "
@@ -439,7 +440,7 @@ def test_expiry_refuses_a_task_that_vanishes_inside_the_transition(tmp_path: Pat
 
 
 def _version_1_store(path: Path, at: datetime) -> None:
-    """Leave a store as a release up to 0.99.26 left it, holding one offered task."""
+    """Leave a store as that development build left it, holding one offered task."""
     path.parent.mkdir(mode=0o700)
     with closing(sqlite3.connect(path)) as db:
         db.executescript(_VERSION_1_LAYOUT)
@@ -473,7 +474,7 @@ def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_a_released_version_1_store_takes_the_declared_migration_and_verifies(
+def test_a_version_1_store_takes_the_declared_migration_and_verifies(
     tmp_path: Path,
 ) -> None:
     """The open migrates a real version 1 layout once; the verifier confirms the result."""

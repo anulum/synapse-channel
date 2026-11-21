@@ -21,17 +21,19 @@ debit the ledger. The owner-local queue is under
 `$XDG_STATE_HOME/synapse-channel/app-tasks/queue.sqlite3` by default. Its
 directory and SQLite file are owner-only.
 
-The queue's SQLite header (`user_version`) holds its layout version. This
-release writes version 2; releases up to 0.99.26 wrote version 1. The first
-command that opens a version 1 queue applies the declared migration
-`app-tasks-2`, which adds the offerer column and gives earlier tasks the offerer
-`operator:legacy`. It applies only when the queue's schema is exactly the version
-1 layout, and the change, its record in the `schema_migrations` table and the new
-version are one transaction, so a queue is either untouched or fully migrated. A
-second command opening the queue at the same moment waits for the first and then
-uses the migrated queue. A version 1 queue whose schema was changed, for example
-by an added index, is refused unchanged, as is a database of another layout or a
-newer version. Confirm a migrated queue against the declared schema digest:
+The queue's SQLite header (`user_version`) holds its layout version. Every
+release writes version 2. Version 1 was written only by a development build
+between the 0.99.26 and 0.99.27 releases, which reports itself as 0.99.26; no
+published release wrote it. The first command that opens a version 1 queue
+applies the declared migration `app-tasks-2`, which adds the offerer column and
+gives earlier tasks the offerer `operator:legacy`. It applies only when the
+queue's schema is exactly the version 1 layout, and the change, its record in
+the `schema_migrations` table and the new version are one transaction, so a
+queue is either untouched or fully migrated. A second command opening the queue
+at the same moment waits for the first and then uses the migrated queue. A
+version 1 queue whose schema was changed, for example by an added index, is
+refused unchanged, as is a database of another layout or a newer version.
+Confirm a migrated queue against the declared schema digest:
 
 ```bash
 synapse verify-result migration \

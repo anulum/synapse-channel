@@ -21,13 +21,15 @@ execution evidence when carrying a release claim forward.
 ### Changed
 
 - **An earlier app task queue takes a declared migration that can be verified.**
-  A queue written by a release up to 0.99.26 (layout version 1) takes the declared
-  migration `app-tasks-2` only when its schema is exactly that layout. The new
-  offerer column, its record in `schema_migrations` and the new layout version are
-  one transaction, and `synapse verify-result migration` confirms the result
-  against the schema digest the app task guide publishes. A version 1 queue
-  whose schema was changed is now refused unchanged; before, the column was added
-  regardless and the version was set outside the column's transaction.
+  A queue of layout version 1 takes the declared migration `app-tasks-2` only when
+  its schema is exactly that layout. No published release wrote version 1; only a
+  development build between 0.99.26 and 0.99.27 did, and it reports itself as
+  0.99.26. The new offerer column, its record in `schema_migrations` and the new
+  layout version are one transaction, and `synapse verify-result migration`
+  confirms the result against the schema digest the app task guide publishes. A
+  version 1 queue whose schema was changed is now refused unchanged; before, the
+  column was added regardless and the version was set outside the column's
+  transaction.
 
 ### Fixed
 
