@@ -34,6 +34,8 @@ Restart=always
 RestartSec=2
 RestartSteps=4
 RestartMaxDelaySec=30
+# A store that needs a newer format refuses with 78; a restart cannot change that.
+RestartPreventExitStatus=78
 NoNewPrivileges=yes
 UMask=0077
 PrivateTmp=yes

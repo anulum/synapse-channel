@@ -41,6 +41,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Literal, NamedTuple
 
+from synapse_channel import __version__
 from synapse_channel.core.atomic_operations import OperationRecord
 from synapse_channel.core.delivery_persistence import DeliveryPersistence
 from synapse_channel.core.event_row_mac import RowMacKey
@@ -75,6 +76,7 @@ from synapse_channel.core.persistence_schema import (
     create_operation_schema,
     create_receipt_schema,
 )
+from synapse_channel.core.persistence_store_format import record_store_format
 
 BUSY_TIMEOUT_MS = 5000
 logger = logging.getLogger(__name__)
@@ -233,6 +235,9 @@ class EventStore:
                 is not None
             )
             self._ensure_mac_column()
+            # connect_event_store already refused a newer format; record ours
+            # before the first event this release appends.
+            record_store_format(self._conn, release=__version__)
             self.delivery = DeliveryPersistence(
                 self._conn,
                 self._lock,

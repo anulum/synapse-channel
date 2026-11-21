@@ -18,7 +18,7 @@ everything, since they need the whole command table.
 | Command | What it does |
 | --- | --- |
 | `synapse compliance export\|retention\|report DB` | Read one existing snapshot, commit payload-free metadata and observe calendar retention; see [record observations](compliance.md). |
-| `synapse hub` | Run the coordination hub. |
+| `synapse hub` | Run the coordination hub. Exits 2 when startup is refused, and 78 when `--db` names an event log that needs a newer store format than this release reads; the log is left unchanged and the hub unit does not restart on 78 (see [Store format and the way back](deployment.md#store-format-and-the-way-back)). |
 | `synapse commands` | List every subcommand by stability tier, or inspect a measured profile with `--profile first-use|core|adapters|governance|labs|all` and optional `--json`. |
 | `synapse setup` | Emit the `local-single-user` setup specification; inspect, plan, authorize, and apply allow-listed Linux/systemd-user effects; then authorize and prove directed waiter consumption plus durable hub restart replay. |
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |

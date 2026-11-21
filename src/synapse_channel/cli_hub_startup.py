@@ -27,9 +27,26 @@ from synapse_channel.core.multihub_watch import MultiHubWatch
 from synapse_channel.core.peer_identity import PeerRegistrationSigner
 from synapse_channel.core.persistence import EventStore
 
+STARTUP_REFUSED_EXIT_CODE = 2
+"""Exit of a refused startup that a service manager may retry."""
+
+NO_RESTART_EXIT_CODE = 78
+"""Exit of a refused startup that a retry cannot fix; the hub unit does not restart on it."""
+
 
 class HubStartupRefused(Exception):
-    """Stop startup after a stage emitted its existing operator diagnostic."""
+    """Stop startup after a stage emitted its existing operator diagnostic.
+
+    Parameters
+    ----------
+    exit_code : int, optional
+        The command's exit status. :data:`NO_RESTART_EXIT_CODE` marks a refusal
+        that repeating the start cannot change.
+    """
+
+    def __init__(self, exit_code: int = STARTUP_REFUSED_EXIT_CODE) -> None:
+        super().__init__()
+        self.exit_code = exit_code
 
 
 @dataclass(frozen=True, kw_only=True)

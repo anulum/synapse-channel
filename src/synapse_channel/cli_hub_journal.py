@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import sys
 from dataclasses import replace
+from pathlib import Path
 
-from synapse_channel.cli_hub_startup import HubStartup, HubStartupRefused
+from synapse_channel.cli_hub_startup import NO_RESTART_EXIT_CODE, HubStartup, HubStartupRefused
 from synapse_channel.core.aef_legacy_mapping import AEF_MAPPED_EVENT_KINDS
 from synapse_channel.core.aef_runtime import AefRuntimeConfig
 from synapse_channel.core.event_row_mac import (
@@ -21,6 +22,8 @@ from synapse_channel.core.event_row_mac import (
     row_mac_key_path,
 )
 from synapse_channel.core.message_auth_durable import SequenceFloorMode
+from synapse_channel.core.persistence_sqlcipher import connect_event_store
+from synapse_channel.core.persistence_store_format import StoreFormatRefused
 from synapse_channel.core.receipt_signing import ReceiptSigningError, load_receipt_signing_key
 
 
@@ -98,6 +101,30 @@ def configure_aef_outbox(ctx: HubStartup) -> None:
         except (ReceiptSigningError, ValueError) as exc:
             print(f"synapse hub: {exc}", file=sys.stderr)
             raise HubStartupRefused() from None
+
+
+def refuse_unreadable_journal(ctx: HubStartup) -> None:
+    """Refuse an existing journal of a newer store format before any stage writes beside it.
+
+    Later stages create companions of the journal, such as its identity-pin file.
+    A journal this release cannot read must stop the hub before them, so a refused
+    start leaves the journal's directory as it was. The check only reads the
+    header. Every other failure to open the journal is left to
+    :func:`open_event_journal`, which reports it.
+    """
+    db = ctx.args.db
+    if not db or not Path(db).is_file():
+        return
+    try:
+        connection, _encrypted = connect_event_store(
+            db, key_file=getattr(ctx.args, "db_key_file", None)
+        )
+    except StoreFormatRefused as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        raise HubStartupRefused(NO_RESTART_EXIT_CODE) from None
+    except (ValueError, RuntimeError):
+        return
+    connection.close()
 
 
 def open_event_journal(ctx: HubStartup) -> None:

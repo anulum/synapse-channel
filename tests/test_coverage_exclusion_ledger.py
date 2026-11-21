@@ -275,6 +275,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_path_identity_fail_closed.py": (1, "filesystem-capability"),
     "tests/test_persistence.py": (2, "platform-guard"),
     "tests/test_persistence_sqlcipher.py": (1, "optional-dep-guard"),
+    # The encrypted-log cases open a SQLCipher store, which needs sqlcipher3.
+    "tests/test_persistence_store_format.py": (1, "optional-dep-guard"),
     "tests/test_private_dir.py": (1, "platform-guard"),
     "tests/test_protected_write_descriptors.py": (1, "platform-guard"),
     "tests/test_protected_write_driver.py": (1, "platform-guard"),

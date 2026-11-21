@@ -30,9 +30,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from synapse_channel import __version__
 from synapse_channel.core.at_rest import KEY_BYTES, load_key_file
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.mailbox_pending_layout import copy_mailbox_layout
+from synapse_channel.core.persistence_store_format import (
+    record_store_format,
+    refuse_newer_store_format,
+)
 
 SQLCIPHER_INSTALL_HINT = (
     "SQLCipher support requires the optional sqlcipher extra: "
@@ -207,6 +212,9 @@ def connect_event_store(
         When a key is supplied but SQLCipher is not installed.
     SqlCipherKeyError
         When the key cannot open an encrypted store.
+    StoreFormatRefused
+        When the store needs a newer store format than this release reads; the
+        connection is closed and the store is left unchanged.
     """
     material = key
     if material is None and key_file is not None:
@@ -224,8 +232,25 @@ def connect_event_store(
                 "if this is a SQLCipher event store, pass key_file= or "
                 "synapse hub --db-key-file"
             ) from exc
+        _refuse_unreadable_format(conn, path)
         return conn, False
-    return connect_sqlcipher(path, material, check_same_thread=check_same_thread), True
+    conn = connect_sqlcipher(path, material, check_same_thread=check_same_thread)
+    _refuse_unreadable_format(conn, path)
+    return conn, True
+
+
+def _refuse_unreadable_format(conn: Any, path: str | Path) -> None:
+    """Close and refuse a store whose format floor is above this release's.
+
+    Every opener of an event store passes here, readers and the writer alike,
+    so a store written by a newer format is refused before any table is read
+    or created. The check issues reads only.
+    """
+    try:
+        refuse_newer_store_format(conn, path=path, reader_release=__version__)
+    except BaseException:
+        conn.close()
+        raise
 
 
 def rekey_sqlcipher_store(
@@ -325,8 +350,10 @@ def migrate_plaintext_to_sqlcipher(
 
     The hub (and any other writer) must be stopped. ``destination`` must not
     already exist. Rows are copied with their original ``seq`` / ``ts`` / ``kind``
-    / ``payload`` so resume cursors stay valid. The destination is restricted to
-    owner-only mode when the platform supports it.
+    / ``payload`` so resume cursors stay valid. A source this release cannot read
+    is refused before anything is copied; the encrypted copy records this
+    release's store format, which is at least the source's.
+    The destination is restricted to owner-only mode when the platform supports it.
 
     Parameters
     ----------
@@ -354,6 +381,8 @@ def migrate_plaintext_to_sqlcipher(
         When neither ``key`` nor ``key_file`` is supplied.
     SqlCipherUnavailableError
         When SQLCipher is not installed.
+    StoreFormatRefused
+        When the source needs a newer store format than this release reads.
     """
     src = Path(source)
     dst = Path(destination)
@@ -369,6 +398,7 @@ def migrate_plaintext_to_sqlcipher(
 
     plain = sqlite3.connect(str(src))
     try:
+        refuse_newer_store_format(plain, path=src, reader_release=__version__)
         columns = {str(info[1]) for info in plain.execute("PRAGMA table_info(events)")}
         # Row MACs travel with their rows; a log from before them has none.
         query = (
@@ -392,6 +422,7 @@ def migrate_plaintext_to_sqlcipher(
                 rows,
             )
             copy_mailbox_layout(plain, enc)
+            record_store_format(enc, release=__version__)
             enc.commit()
             enc.execute("PRAGMA journal_mode=WAL")
             enc.commit()

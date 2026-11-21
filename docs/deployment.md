@@ -410,9 +410,12 @@ maintenance procedure:
 
 1. Install the exact tagged public artifact and verify its version and digest.
 2. Inspect the current hub PID and live claims/waiters.
-3. Render the disruptive checklist for that explicitly reviewed PID and run its
+3. Keep the way back: an offline copy of the event log, its `-wal`/`-shm`
+   siblings and its keys, taken while the hub is stopped (see
+   [Store format and the way back](#store-format-and-the-way-back)).
+4. Render the disruptive checklist for that explicitly reviewed PID and run its
    single host-locked hub/presence/waiter restart transaction.
-4. Verify the installed version, active service, fresh PID, zero unexpected
+5. Verify the installed version, active service, fresh PID, zero unexpected
    restart loop, roster/waiter reconnect, durable replay, and hook wiring.
 
 These steps describe verification of an operator-selected local upgrade.
@@ -731,6 +734,28 @@ receiving-hub ownership and rollback requirements.
 The `--relay-log` feed is derived state and bounded by `--relay-max-lines`; it is
 not a replacement for the journal and its keys.
 
+### Store format and the way back
+
+The event log records a store format in the SQLite header (`user_version`) and in
+a one-row `store_format` table that names the release which last raised it. A
+release writes its own format when it opens the log and reads every format up
+to it. A later release raises the format only when it writes something an older
+release would misread.
+
+A release that finds a newer format refuses the log before it reads or creates
+any table, and leaves every byte as it was. `synapse hub` then exits with status
+78, and the generated and shipped hub units do not restart on that status
+(`RestartPreventExitStatus=78`). Every other command that opens the log, and the
+plaintext-to-SQLCipher conversion, refuses it the same way. The message names the
+log, its format, the release that set it and the formats the running release
+reads. Run a release that reads that format, or restore the copy of the log taken
+before the upgrade.
+
+Releases from before the first one that records a format do not read it, so a
+downgrade below that release is not guarded. Across a raised format the only way
+back is a copy of the stopped log, with its siblings and keys as described above,
+taken before the upgrade.
+
 ## Mailboxes nobody collects
 
 A session name rarely comes back, so directed mail to an ended session waits for
@@ -809,7 +834,9 @@ without end.
 "Failed after" is the time a unit that fails at once keeps trying.
 
 - **The hub budget is short.** A hub that cannot start, for example because
-  its event store cannot be opened, is a fault to see at once.
+  its event store cannot be opened, is a fault to see at once. A store that
+  needs a newer store format stops the hub with status 78 and no restart at
+  all ([Store format and the way back](#store-format-and-the-way-back)).
 - **The listener budget is long.** A presence holder exits whenever the hub is
   unreachable, so it must outlast an ordinary hub restart or upgrade. The wake
   listener and the waker reconnect inside their process and use a start only

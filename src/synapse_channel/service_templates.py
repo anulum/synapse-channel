@@ -275,6 +275,8 @@ def render_hub_unit(*, synapse_bin: str) -> str:
         f"ExecStart={executable} hub --port=8876 --db=%h/synapse/hub.db "
         "--relay-log=%h/synapse/feed.ndjson --relay-max-lines=20000\n"
         + HUB_START_BUDGET.service_directives()
+        # A store that needs a newer format refuses with 78; a restart cannot change that.
+        + "RestartPreventExitStatus=78\n"
         + hardening_directives(write_paths=HUB_WRITE_PATHS, nofile=HUB_NOFILE)
         + "\n"
         "[Install]\n"

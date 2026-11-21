@@ -18,6 +18,19 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- **The event log records its store format, and a release refuses a newer one.** The
+  log's SQLite header (`user_version`) and a one-row `store_format` table hold the format
+  and the release that last raised it; this release writes format 1. A release that
+  finds a higher format refuses the log before it reads or creates any table, and
+  changes nothing: `synapse hub` exits 78, and the generated and shipped hub units do
+  not restart on 78. Every other command that opens the log, and the
+  plaintext-to-SQLCipher conversion, refuses it the same way; the encrypted copy
+  records this release's format. Releases from before this one do not read the
+  format, so a downgrade below it is not guarded, and the deployment guide's upgrade
+  steps now keep an offline copy of the stopped log as the way back.
+
 ### Fixed
 
 - **A Grok wake reads only what Grok is doing now.** A numbered line or the
