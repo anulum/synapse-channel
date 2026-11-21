@@ -26,6 +26,7 @@ from synapse_channel.cli_hub_startup import NO_RESTART_EXIT_CODE
 from synapse_channel.core.at_rest import generate_key_file
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import (
+    SqlCipherUnavailableError,
     connect_event_store,
     connect_sqlcipher,
     migrate_plaintext_to_sqlcipher,
@@ -37,10 +38,6 @@ from synapse_channel.core.persistence_store_format import (
     record_store_format,
 )
 from synapse_channel.service_templates import render_hub_unit
-
-requires_sqlcipher = pytest.mark.skipif(
-    not sqlcipher_available(), reason="sqlcipher3-binary not installed"
-)
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -280,13 +277,30 @@ def test_the_hub_unit_does_not_restart_on_the_refusal_status() -> None:
         assert f"RestartPreventExitStatus={NO_RESTART_EXIT_CODE}" in service.splitlines()
 
 
-@requires_sqlcipher
+def _keyed_open_is_refused_and_creates_nothing(db: Path, key: Path) -> None:
+    """Without a SQLCipher driver, a keyed open raises the documented error and creates nothing."""
+    with pytest.raises(SqlCipherUnavailableError, match="sqlcipher"):
+        EventStore(db, key_file=key)
+    with pytest.raises(SqlCipherUnavailableError, match="sqlcipher"):
+        connect_event_store(db, key_file=key)
+    assert not db.exists()
+
+
 def test_an_encrypted_log_without_its_key_keeps_the_ordinary_refusal(tmp_path: Path) -> None:
+    """The hub refuses an encrypted log it opens without the key, as before the format check.
+
+    Without a SQLCipher driver no encrypted log can be written: the keyed open is
+    refused with the documented error and creates nothing.
+    """
     home = tmp_path / "home"
     home.mkdir()
     db = home / "journal" / "hub.db"
     db.parent.mkdir()
-    EventStore(db, key_file=generate_key_file(tmp_path / "hub.key")).close()
+    key = generate_key_file(tmp_path / "hub.key")
+    if not sqlcipher_available():
+        _keyed_open_is_refused_and_creates_nothing(db, key)
+        return
+    EventStore(db, key_file=key).close()
     before = _snapshot(db)
 
     result = _run_hub(home, db)
@@ -297,10 +311,17 @@ def test_an_encrypted_log_without_its_key_keeps_the_ordinary_refusal(tmp_path: P
     assert _snapshot(db)[0] == before[0]
 
 
-@requires_sqlcipher
 def test_an_encrypted_log_records_and_refuses_the_same_way(tmp_path: Path) -> None:
+    """An encrypted log records its format and refuses a newer one, as a plaintext log does.
+
+    Without a SQLCipher driver no encrypted log can be written: the keyed open is
+    refused with the documented error and creates nothing.
+    """
     key = generate_key_file(tmp_path / "hub.key")
     db = tmp_path / "hub.db"
+    if not sqlcipher_available():
+        _keyed_open_is_refused_and_creates_nothing(db, key)
+        return
     EventStore(db, key_file=key).close()
     material = key.read_bytes()
     connection = connect_sqlcipher(db, material)
@@ -320,23 +341,32 @@ def test_an_encrypted_log_records_and_refuses_the_same_way(tmp_path: Path) -> No
     assert _snapshot(db) == before
 
 
-@requires_sqlcipher
 def test_the_conversion_carries_the_format_and_refuses_a_newer_source(tmp_path: Path) -> None:
+    """The encrypted copy records this release's format; a newer source is refused uncopied.
+
+    Without a SQLCipher driver the conversion is refused with the documented error
+    and writes no destination. The newer source is refused in both cases, because
+    its format is read before any encrypted copy is opened.
+    """
     key = generate_key_file(tmp_path / "hub.key")
     source = tmp_path / "plain.db"
     with EventStore(source) as store:
         store.append("chat", {"text": "carried"})
     destination = tmp_path / "encrypted.db"
 
-    assert migrate_plaintext_to_sqlcipher(source, destination, key_file=key) == {"rows": 1}
-
-    connection = connect_sqlcipher(destination, key.read_bytes())
-    try:
-        assert _record(connection) == (STORE_FORMAT, __version__, __version__)
-    finally:
-        connection.close()
-    with EventStore(destination, key_file=key) as store:
-        assert [event.payload["text"] for event in store.read_all()] == ["carried"]
+    if sqlcipher_available():
+        assert migrate_plaintext_to_sqlcipher(source, destination, key_file=key) == {"rows": 1}
+        connection = connect_sqlcipher(destination, key.read_bytes())
+        try:
+            assert _record(connection) == (STORE_FORMAT, __version__, __version__)
+        finally:
+            connection.close()
+        with EventStore(destination, key_file=key) as store:
+            assert [event.payload["text"] for event in store.read_all()] == ["carried"]
+    else:
+        with pytest.raises(SqlCipherUnavailableError, match="sqlcipher"):
+            migrate_plaintext_to_sqlcipher(source, destination, key_file=key)
+        assert not destination.exists()
 
     newer = tmp_path / "newer.db"
     _future_store(newer)

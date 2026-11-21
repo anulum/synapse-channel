@@ -258,8 +258,6 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     # Both conversion tests open an encrypted copy, which needs sqlcipher3.
     "tests/test_mailbox_pending_layout.py": (2, "optional-dep-guard"),
     "tests/test_multihub_mcp_sqlcipher.py": (1, "optional-dep-guard"),
-    # The SQLCipher diagnostic case reads an encrypted journal, which needs sqlcipher3.
-    "tests/test_offline_readers_read_only.py": (1, "optional-dep-guard"),
     "tests/test_opencode_compatibility_smoke.py": (2, "operator-smoke"),
     # Linux procfs and tmux; the foreign-group case needs a process group the
     # test user may not signal, which a single-user container may not have.
@@ -276,11 +274,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_path_identity.py": (8, "filesystem-capability"),
     "tests/test_path_identity_fail_closed.py": (1, "filesystem-capability"),
     "tests/test_persistence.py": (2, "platform-guard"),
-    # The encrypted-log case reads a SQLCipher store, which needs sqlcipher3.
-    "tests/test_persistence_reader.py": (1, "optional-dep-guard"),
     "tests/test_persistence_sqlcipher.py": (1, "optional-dep-guard"),
-    # The encrypted-log cases open a SQLCipher store, which needs sqlcipher3.
-    "tests/test_persistence_store_format.py": (1, "optional-dep-guard"),
     "tests/test_private_dir.py": (1, "platform-guard"),
     "tests/test_protected_write_descriptors.py": (1, "platform-guard"),
     "tests/test_protected_write_driver.py": (1, "platform-guard"),

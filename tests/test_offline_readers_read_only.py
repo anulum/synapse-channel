@@ -66,10 +66,6 @@ from synapse_channel.effect_suite.observer import journal_reading
 from synapse_channel.native_query import run_native_query
 from synapse_channel.participants.session_metric_report import run_session_metric_report
 
-requires_sqlcipher = pytest.mark.skipif(
-    not sqlcipher_available(), reason="sqlcipher3-binary not installed"
-)
-
 
 def _pre_floor_journal(path: Path) -> None:
     """Write a real journal through the hub's writer, then return it to the pre-floor state."""
@@ -206,11 +202,23 @@ def test_an_offline_reader_creates_no_journal_at_a_missing_path(
     assert sorted(entry.name for entry in db.parent.iterdir()) == []
 
 
-@requires_sqlcipher
 def test_the_sqlcipher_diagnostic_reads_the_encrypted_journal_unwritten(tmp_path: Path) -> None:
+    """With a SQLCipher driver the diagnostic reads an encrypted pre-floor journal unwritten.
+
+    Without the driver it reports the missing driver as a failure, and the journal
+    it was pointed at is left unchanged.
+    """
     key = generate_key_file(tmp_path / "hub.key")
     db = tmp_path / "journal" / "hub.db"
     db.parent.mkdir()
+    if not sqlcipher_available():
+        with EventStore(db) as store:
+            store.append("chat", {"sender": "PROJ/alice", "text": "kept"})
+        unchanged = (_digest(db), sorted(entry.name for entry in db.parent.iterdir()))
+        missing = check_sqlcipher_event_store(db, key)
+        assert (missing.status, missing.detail) == ("fail", "SQLCipher driver not installed")
+        assert (_digest(db), sorted(entry.name for entry in db.parent.iterdir())) == unchanged
+        return
     with EventStore(db, key_file=key) as store:
         store.append("chat", {"sender": "PROJ/alice", "text": "kept"})
     connection = connect_sqlcipher(db, key.read_bytes())

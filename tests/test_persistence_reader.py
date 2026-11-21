@@ -24,13 +24,10 @@ from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.persistence_sqlcipher import (
     ReadOnlyOpenRefused,
     SqlCipherKeyError,
+    SqlCipherUnavailableError,
     sqlcipher_available,
 )
 from synapse_channel.core.persistence_store_format import STORE_FORMAT, StoreFormatRefused
-
-requires_sqlcipher = pytest.mark.skipif(
-    not sqlcipher_available(), reason="sqlcipher3-binary not installed"
-)
 
 
 def _snapshot(path: Path) -> tuple[str, list[str]]:
@@ -245,11 +242,25 @@ def test_an_event_query_opens_the_journal_read_only(tmp_path: Path) -> None:
     _assert_read_left_only_wal_sidecars(db, before)
 
 
-@requires_sqlcipher
 def test_an_encrypted_log_is_read_with_its_key_and_refused_without_it(tmp_path: Path) -> None:
+    """With a SQLCipher driver an encrypted log reads with its key and is refused without it.
+
+    Without the driver no encrypted log can be written, and a keyed read of a
+    plaintext journal is refused with the documented error and changes nothing.
+    """
     key = generate_key_file(tmp_path / "hub.key")
     db = tmp_path / "journal" / "hub.db"
     db.parent.mkdir()
+    if not sqlcipher_available():
+        with pytest.raises(SqlCipherUnavailableError, match="sqlcipher"):
+            EventStore(db, key_file=key)
+        assert not db.exists()
+        _journal(db)
+        before = _snapshot(db)
+        with pytest.raises(SqlCipherUnavailableError, match="sqlcipher"):
+            EventLogReader(db, key_file=key)
+        assert _snapshot(db) == before
+        return
     _journal(db, key_file=key)
     with EventStore(db, key_file=key) as store:
         expected = _reads(store)
