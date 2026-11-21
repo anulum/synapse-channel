@@ -31,9 +31,13 @@ from synapse_channel.core.archive_report import (
     render_archive_report,
     write_archive_report,
 )
-from synapse_channel.core.compaction import RetentionPolicy, compact
+from synapse_channel.core.compaction import (
+    CompactionResult,
+    RetentionPolicy,
+    compact,
+)
 from synapse_channel.core.journal import MEMORY_KINDS
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.protocol import MessageType, addresses_project, is_recipient
 from synapse_channel.core.relay import decode_lite, load_offset, read_jsonl_since, save_offset
@@ -146,10 +150,12 @@ def _cmd_compact(args: argparse.Namespace) -> int:
     without bound. It keeps the latest ``--max-checkpoints-per-task`` checkpoints
     per task and ages out findings whose validity window closed more than
     ``--finding-grace-seconds`` ago, deleting only events at or below a floor
-    sequence. The caller must establish that every consumer has durably ingested
-    at least that floor; the command does not verify consumer progress. Pass it
-    with ``--floor-seq`` (e.g. the cursor REMANENTIA persists), or ``--all`` to
-    treat the whole log as settled when no read-side consumer lags. ``--vacuum``
+    sequence. A registered feed consumer's acknowledgement lowers that floor;
+    ``--past-feed-acks`` overrides it and journals the consumers passed. A consumer
+    that only keeps a sequence cursor is not registered, so the caller still
+    establishes that it has ingested the floor. Pass it with ``--floor-seq``, or
+    ``--all`` to treat the whole log as settled when no read-side consumer lags.
+    The floor applied is journalled for the feed to report. ``--vacuum``
     reclaims the freed disk pages afterwards. Quarantined rows are removed only
     with ``--drop-corrupt`` and a mandatory ``--archive-report``.
     """
@@ -200,30 +206,55 @@ def _cmd_compact(args: argparse.Namespace) -> int:
             )
             return 2
         archive_events = store.read_all() if args.archive_report else []
-        if args.drop_corrupt and args.archive_report:
-            preview = compact(store, policy, floor_seq=floor, dry_run=True)
-            preview_report = render_archive_report(
-                archive_events,
-                result=preview,
-                options=ArchiveReportOptions(
-                    source_path=str(args.db),
-                    generated_at=time.time(),
-                    max_items=int(args.archive_report_limit),
-                    compaction_completed=False,
-                ),
-            )
-            try:
-                write_archive_report(args.archive_report, preview_report)
-            except OSError as exc:
-                print(
-                    f"compact: cannot write archive report before deletion: {exc}", file=sys.stderr
-                )
-                return 2
-        result = compact(store, policy, floor_seq=floor)
+        feed = {"past_feed_acks": bool(args.past_feed_acks)}
+        result = _compact_with_archive(args, store, policy, floor, archive_events, feed)
+        if result is None:
+            return 2
         if args.vacuum:
             store.vacuum()
     finally:
         store.close()
+    _report_compaction(args, archive_events, result)
+    return 0
+
+
+def _compact_with_archive(
+    args: argparse.Namespace,
+    store: EventStore,
+    policy: RetentionPolicy,
+    floor: int,
+    archive_events: list[StoredEvent],
+    feed: dict[str, Any],
+) -> CompactionResult | None:
+    """Write the planned archive when corrupt rows go, then compact.
+
+    Returns ``None`` when the planned archive cannot be written; nothing is
+    deleted then.
+    """
+    if args.drop_corrupt and args.archive_report:
+        preview = compact(store, policy, floor_seq=floor, dry_run=True, **feed)
+        preview_report = render_archive_report(
+            archive_events,
+            result=preview,
+            options=ArchiveReportOptions(
+                source_path=str(args.db),
+                generated_at=time.time(),
+                max_items=int(args.archive_report_limit),
+                compaction_completed=False,
+            ),
+        )
+        try:
+            write_archive_report(args.archive_report, preview_report)
+        except OSError as exc:
+            print(f"compact: cannot write archive report before deletion: {exc}", file=sys.stderr)
+            return None
+    return compact(store, policy, floor_seq=floor, **feed)
+
+
+def _report_compaction(
+    args: argparse.Namespace, archive_events: list[StoredEvent], result: CompactionResult
+) -> None:
+    """Write the completed archive, when asked, and print what the run removed and why."""
     if args.archive_report:
         report = render_archive_report(
             archive_events,
@@ -242,9 +273,17 @@ def _cmd_compact(args: argparse.Namespace) -> int:
         f"{result.findings_removed} finding(s), "
         f"{result.corrupt_rows_removed} corrupt row(s){vacuum_note}"
     )
+    if result.held_by_feed_acks:
+        holders = ", ".join(f"{name} at {acked}" for name, acked in result.held_by_feed_acks)
+        print(
+            f"the floor was held at seq {result.floor_seq} (requested "
+            f"{result.requested_floor_seq}) by feed acknowledgements: {holders}"
+        )
+    if result.passed_feed_acks:
+        passed = ", ".join(f"{name} at {acked}" for name, acked in result.passed_feed_acks)
+        print(f"compacted past feed acknowledgements (journalled): {passed}")
     if args.archive_report:
         print(f"archive report: {args.archive_report}")
-    return 0
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -335,6 +374,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     ingest.set_defaults(func=_cmd_ingest)
 
+    _add_compact_parser(subparsers)
+
+
+def _add_compact_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register the ``compact`` subparser: the retention knobs, the floor and the feed override."""
     compact_parser = subparsers.add_parser(
         "compact",
         help="Bound the durable event log: keep the latest-N checkpoints per task and "
@@ -371,6 +415,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "requires --archive-report."
         ),
     )
+    _add_compact_floor_arguments(compact_parser)
+    compact_parser.set_defaults(func=_cmd_compact)
+
+
+def _add_compact_floor_arguments(compact_parser: argparse.ArgumentParser) -> None:
+    """Register the floor, the feed override and the archive options of ``compact``."""
     floor_group = compact_parser.add_mutually_exclusive_group()
     floor_group.add_argument(
         "--floor-seq",
@@ -381,7 +431,18 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     floor_group.add_argument(
         "--all",
         action="store_true",
-        help="Treat the whole log as settled (use only when no read-side consumer lags).",
+        help=(
+            "Treat the whole log as settled (use only when no read-side consumer lags; "
+            "a registered feed consumer still holds the floor at its acknowledgement)."
+        ),
+    )
+    compact_parser.add_argument(
+        "--past-feed-acks",
+        action="store_true",
+        help=(
+            "Apply the floor even above a registered feed consumer's acknowledgement; "
+            "the consumers passed are journalled and their next page reports the gap."
+        ),
     )
     compact_parser.add_argument(
         "--vacuum",
@@ -401,4 +462,3 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         metavar="N",
         help="Maximum rows shown in each bounded archive-report section.",
     )
-    compact_parser.set_defaults(func=_cmd_compact)

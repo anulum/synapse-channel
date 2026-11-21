@@ -1,0 +1,322 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — compaction held by feed acknowledgements, and the floor a page reports
+"""Compaction never deletes past a registered feed consumer's ack unless told to, and says so."""
+
+from __future__ import annotations
+
+import sqlite3
+import uuid
+from contextlib import closing
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
+from synapse_channel import cli
+from synapse_channel.core.compaction import RetentionPolicy, compact
+from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import (
+    EventKind,
+    record_compaction_floor,
+    record_feed_ack,
+    record_finding,
+)
+from synapse_channel.core.persistence import EventStore
+from synapse_channel.hub_inbox import INBOX_READY_HANG_GUARD_SECONDS
+
+_WAIT = INBOX_READY_HANG_GUARD_SECONDS
+_HUB = "retention-hub"
+_AGED = RetentionPolicy(finding_grace_seconds=0.0)
+
+
+def _expired(store: EventStore, text: str) -> int:
+    """Record a finding whose validity window closed long ago and return its sequence."""
+    record_finding(store, {"statement": text, "validity": {"valid_from": 0.0, "valid_to": 1.0}})
+    return store.max_seq()
+
+
+def _instance(store: EventStore) -> str:
+    instance = store.journal_instance()
+    assert instance is not None
+    return instance.instance
+
+
+def _registered(store: EventStore) -> list[int]:
+    """Journal four expired findings and the acks of two consumers, plus rows that never count."""
+    findings = [_expired(store, f"f{index}") for index in range(4)]
+    instance = _instance(store)
+    for consumer, acked in (
+        ("R/slow", findings[1]),
+        ("R/fast", findings[2]),
+        ("R/fast", findings[3]),
+    ):
+        record_feed_ack(
+            store, consumer=consumer, hub_id=_HUB, journal_instance=instance, acked_seq=acked
+        )
+    record_feed_ack(store, consumer="R/gone", hub_id=_HUB, journal_instance="0" * 32, acked_seq=0)
+    store.append(
+        EventKind.FEED_ACK, {"consumer": "R/odd", "journal_instance": instance, "acked_seq": "1"}
+    )
+    store.append(EventKind.FEED_ACK, {"consumer": 7, "journal_instance": instance, "acked_seq": 1})
+    return findings
+
+
+def _floors(store: EventStore) -> list[dict[str, Any]]:
+    return [event.payload for event in store.read_all() if event.kind == EventKind.COMPACTION_FLOOR]
+
+
+def _statements(store: EventStore) -> list[str]:
+    return [event.payload["statement"] for event in store.read_all() if event.kind == "finding"]
+
+
+def test_the_lowest_registered_ack_holds_the_floor_and_the_run_is_journalled(
+    tmp_path: Path,
+) -> None:
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        findings = _registered(store)
+        requested = store.max_seq()
+        result = compact(store, _AGED, floor_seq=requested, now=1000.0)
+        floors, statements, instance = _floors(store), _statements(store), _instance(store)
+    finally:
+        store.close()
+
+    held = (("R/fast", findings[3]), ("R/slow", findings[1]))
+    assert (result.floor_seq, result.requested_floor_seq) == (findings[1], requested)
+    assert (result.held_by_feed_acks, result.passed_feed_acks) == (held, ())
+    assert result.findings_removed == 2
+    assert statements == ["f2", "f3"]  # the rows above the slowest ack survive
+    assert floors == [
+        {
+            "journal_instance": instance,
+            "requested_floor": requested,
+            "applied_floor": findings[1],
+            "past_feed_acks": False,
+            "held_by": [["R/fast", findings[3]], ["R/slow", findings[1]]],
+            "passed_consumers": [],
+            "removed": 2,
+        }
+    ]
+
+
+def test_an_explicit_override_compacts_past_the_acks_and_journals_whom_it_passed(
+    tmp_path: Path,
+) -> None:
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        findings = _registered(store)
+        requested = store.max_seq()
+        result = compact(store, _AGED, floor_seq=requested, now=1000.0, past_feed_acks=True)
+        floors, statements = _floors(store), _statements(store)
+    finally:
+        store.close()
+
+    passed = (("R/fast", findings[3]), ("R/slow", findings[1]))
+    assert (result.floor_seq, result.requested_floor_seq) == (requested, None)
+    assert (result.held_by_feed_acks, result.passed_feed_acks) == ((), passed)
+    assert (result.findings_removed, statements) == (4, [])
+    assert [(f["applied_floor"], f["past_feed_acks"], f["removed"]) for f in floors] == [
+        (requested, True, 4)
+    ]
+    assert floors[0]["passed_consumers"] == [["R/fast", findings[3]], ["R/slow", findings[1]]]
+
+
+def test_a_floor_is_journalled_only_when_a_run_removes_a_row_or_passes_a_consumer(
+    tmp_path: Path,
+) -> None:
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        store.append(EventKind.CHAT, {"payload": "before every finding"})
+        first = _expired(store, "f0")
+        record_feed_ack(
+            store, consumer="R/slow", hub_id=_HUB, journal_instance=_instance(store), acked_seq=1
+        )
+        requested = store.max_seq()
+        dry = compact(store, _AGED, floor_seq=requested, now=1000.0, dry_run=True)
+        held = compact(store, _AGED, floor_seq=requested, now=1000.0)
+        after_held = _floors(store)
+        nothing = RetentionPolicy(max_checkpoints_per_task=1)
+        passing = compact(store, nothing, floor_seq=requested, past_feed_acks=True)
+        floors, statements = _floors(store), _statements(store)
+    finally:
+        store.close()
+
+    assert (dry.floor_seq, dry.total_removed, dry.held_by_feed_acks) == (1, 0, (("R/slow", 1),))
+    assert (held.floor_seq, held.total_removed) == (1, 0)  # nothing at or below the ack
+    assert after_held == []  # neither the dry run nor the empty held run journalled a floor
+    assert (passing.floor_seq, passing.total_removed) == (requested, 0)
+    assert [(f["applied_floor"], f["removed"], f["passed_consumers"]) for f in floors] == [
+        (requested, 0, [["R/slow", 1]])
+    ]
+    assert statements == ["f0"] and first == 2
+
+
+def test_without_a_registered_consumer_the_requested_floor_applies(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    try:
+        _expired(store, "f0")
+        record_feed_ack(
+            store, consumer="R/gone", hub_id=_HUB, journal_instance="0" * 32, acked_seq=0
+        )
+        free = compact(store, _AGED, floor_seq=store.max_seq(), now=1000.0)
+        _expired(store, "f1")
+        record_feed_ack(
+            store, consumer="R/kept", hub_id=_HUB, journal_instance=_instance(store), acked_seq=1
+        )
+        with closing(sqlite3.connect(db)) as connection:
+            connection.execute("UPDATE store_format SET journal_instance = NULL")
+            connection.commit()
+        lost = compact(store, _AGED, floor_seq=store.max_seq(), now=1000.0)
+        floors = _floors(store)
+    finally:
+        store.close()
+
+    assert (free.requested_floor_seq, free.held_by_feed_acks, free.findings_removed) == (
+        None,
+        (),
+        1,
+    )
+    # A record that lost its instance registers no consumer: its acks are void, as the feed's are.
+    assert (lost.requested_floor_seq, lost.held_by_feed_acks, lost.findings_removed) == (
+        None,
+        (),
+        1,
+    )
+    assert [f["held_by"] for f in floors] == [[], []]
+    assert floors[0]["journal_instance"] != "" and floors[1]["journal_instance"] == ""
+
+
+async def _page(handle: AgentHandle, after_seq: int, instance: str = "") -> dict[str, Any]:
+    """Send one feed query for findings from ``after_seq`` and return its page.
+
+    A query from a later cursor is bound to the hub and ``instance``; an unbound one starts at 0.
+    """
+    request_id = uuid.uuid4().hex
+    query = {
+        "version": 1,
+        "consumer": handle.agent.name,
+        "hub_id": _HUB if instance else "",
+        "journal_instance": instance,
+        "after_seq": after_seq,
+        "kinds": ["finding"],
+        "limit": 2,
+    }
+    await handle.agent.send_message(
+        "history_request", target="System", request_id=request_id, feed_query=query
+    )
+    frame = await handle.recorder.wait_for(
+        lambda m: m.get("type") == "history_snapshot" and m.get("request_id") == request_id,
+        timeout=_WAIT,
+    )
+    page: dict[str, Any] = frame["feed_page"]
+    return page
+
+
+async def _ack(handle: AgentHandle, page: dict[str, Any]) -> dict[str, Any]:
+    request_id = uuid.uuid4().hex
+    await handle.agent.send_message(
+        "feed_ack",
+        target="System",
+        request_id=request_id,
+        consumer=handle.agent.name,
+        hub_id=page["hub_id"],
+        journal_instance=page["journal_instance"],
+        acked_seq=page["next_after"],
+    )
+    frame = await handle.recorder.wait_for(
+        lambda m: m.get("type") == "feed_ack_result" and m.get("request_id") == request_id,
+        timeout=_WAIT,
+    )
+    result: dict[str, Any] = frame["feed_ack"]
+    return result
+
+
+async def test_a_page_reports_the_floor_and_the_gap_a_live_compaction_left(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    journal = EventStore(db)
+    findings = [_expired(journal, f"f{index}") for index in range(4)]
+    # floors of another instance, and a damaged one, never count
+    record_compaction_floor(
+        journal,
+        journal_instance="0" * 32,
+        requested_floor=99,
+        applied_floor=99,
+        past_feed_acks=True,
+        held_by=(),
+        passed_consumers=(),
+        removed=1,
+    )
+    journal.append(
+        EventKind.COMPACTION_FLOOR,
+        {"journal_instance": _instance(journal), "applied_floor": str(findings[3])},
+    )
+    try:
+        async with running_hub(SynapseHub(journal=journal, hub_id=_HUB)) as (_, uri):
+            reader = await connect_agent("R/reader", uri)
+            try:
+                before = await _page(reader, 0)
+                ack = await _ack(reader, before)
+                # the offline command opens the same file while the hub serves it
+                operator = EventStore(db)
+                try:
+                    result = compact(operator, _AGED, floor_seq=operator.max_seq(), now=1000.0)
+                finally:
+                    operator.close()
+                bound = before["journal_instance"]
+                at_ack = await _page(reader, before["next_after"], bound)
+                one_below = await _page(reader, findings[0], bound)
+                fresh = await _page(reader, 0)
+            finally:
+                await close_agents(reader)
+    finally:
+        journal.close()
+
+    assert (before["compaction_floor"], "retention_gap" in before) == (0, False)
+    assert (ack["recorded"], ack["acked_seq"]) == (True, findings[1])
+    assert (result.floor_seq, result.held_by_feed_acks) == (
+        findings[1],
+        (("R/reader", findings[1]),),
+    )
+    assert (at_ack["compaction_floor"], "retention_gap" in at_ack) == (findings[1], False)
+    assert [row["seq"] for row in at_ack["rows"]] == findings[2:]
+    assert one_below["retention_gap"] == [findings[1], findings[1]]
+    assert fresh["retention_gap"] == [1, findings[1]]
+    assert [row["seq"] for row in fresh["rows"]] == findings[2:]  # f0 and f1 are gone
+
+
+def test_the_command_names_the_consumers_that_held_or_were_passed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    findings = _registered(store)
+    requested = store.max_seq()
+    store.close()
+
+    held_rc = cli.main(["compact", str(db), "--all", "--finding-grace-seconds", "0"])
+    held = capsys.readouterr().out
+    passed_rc = cli.main(
+        ["compact", str(db), "--all", "--finding-grace-seconds", "0", "--past-feed-acks"]
+    )
+    passed = capsys.readouterr().out
+
+    assert (held_rc, passed_rc) == (0, 0)
+    assert "removed 0 checkpoint(s), 2 finding(s)" in held
+    assert (
+        f"the floor was held at seq {findings[1]} (requested {requested}) by feed "
+        f"acknowledgements: R/fast at {findings[3]}, R/slow at {findings[1]}"
+    ) in held
+    assert "compacted past" not in held
+    assert "removed 0 checkpoint(s), 2 finding(s)" in passed
+    assert (
+        f"compacted past feed acknowledgements (journalled): R/fast at {findings[3]}, "
+        f"R/slow at {findings[1]}"
+    ) in passed
+    assert "the floor was held" not in passed

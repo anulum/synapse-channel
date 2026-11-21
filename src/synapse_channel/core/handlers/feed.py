@@ -106,7 +106,11 @@ async def handle_feed_query(
     answered ``source_changed`` with the new instance and its floor, and no rows:
     the consumer rebinds deliberately, it never continues by itself. A cursor
     above the journal's highest sequence is refused, so a journal rolled back to
-    an older copy fails closed until its sequence passes the old cursor.
+    an older copy fails closed until its sequence passes the old cursor. The page
+    carries ``compaction_floor``, the highest floor a compaction applied in this
+    instance, and ``retention_gap`` when the cursor lies below it: rows in that
+    range may have been deleted, and the consumer is told rather than left with
+    a silent gap.
     """
     page: dict[str, Any] = {"version": 1, "available": False, "hub_id": hub.hub_id, "rows": []}
     try:
@@ -132,6 +136,10 @@ async def handle_feed_query(
             raise FeedRefused("feed source changed: the journal is a different instance")
         if query.after_seq > max_seq:
             raise FeedRefused("feed cursor exceeds the retained journal")
+        floor = hub.feed_ledger.compaction_floor(journal, instance.instance, max_seq)
+        page["compaction_floor"] = floor
+        if query.after_seq < floor:
+            page["retention_gap"] = [query.after_seq + 1, floor]
         result = read_page(journal, query, hub.feed_ledger.markers)
         hub.feed_ledger.served(query.consumer, instance.instance, result.next_after)
         page.update(

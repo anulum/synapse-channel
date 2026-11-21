@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from synapse_channel.core.event_row_recovery import CORRUPT_EVENT_KIND
+from synapse_channel.core.feed_retention import applied_compaction_floor, consumer_acks
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import StoredEvent
 from synapse_channel.core.persistence_store_format import JournalInstance
@@ -434,7 +435,8 @@ class FeedLedger:
     The served high-water lives in this process only: after a restart a consumer
     reads a page before its next ack. The acks live in the journal as
     ``feed_ack`` events; the ledger reads a consumer's highest ack for the current
-    instance on first use and keeps it current as acks are recorded.
+    instance on first use and keeps it current as acks are recorded. The
+    compaction floor is read the same way, from ``compaction_floor`` events.
 
     Parameters
     ----------
@@ -447,6 +449,7 @@ class FeedLedger:
         self._served: dict[tuple[str, str], int] = {}
         self._acked: dict[tuple[str, str], int] = {}
         self._bind_attempts: dict[tuple[str, str], float] = {}
+        self._floors: dict[str, tuple[int, int]] = {}
         self._lock = threading.Lock()
 
     def served(self, consumer: str, instance: str, next_after: int) -> None:
@@ -466,25 +469,28 @@ class FeedLedger:
         with self._lock:
             if key in self._acked:
                 return self._acked[key]
-        highest = 0
-        after = 0
-        while True:
-            events = journal.read_since(after, kinds=(EventKind.FEED_ACK,), limit=FEED_SCAN_LIMIT)
-            for event in events:
-                payload = event.payload
-                if (
-                    payload.get("consumer") == consumer
-                    and payload.get("journal_instance") == instance
-                ):
-                    value = payload.get("acked_seq")
-                    if type(value) is int:
-                        highest = max(highest, value)
-            if len(events) < FEED_SCAN_LIMIT:
-                break
-            after = events[-1].seq
+        highest = consumer_acks(journal, instance).get(consumer, 0)
         with self._lock:
             self._acked[key] = max(self._acked.get(key, 0), highest)
             return self._acked[key]
+
+    def compaction_floor(self, journal: FeedJournal, instance: str, through: int) -> int:
+        """Return the highest floor a compaction applied in ``instance``, or ``0``.
+
+        The ledger keeps the floor with the sequence it has read through, and each
+        call reads only the floor events above that sequence, so a page never
+        scans the whole journal. ``through`` is the journal's highest sequence
+        read before the scan; a floor journalled later lies above it and is read
+        by the next call.
+        """
+        with self._lock:
+            floor, read_through = self._floors.get(instance, (0, 0))
+        found = applied_compaction_floor(journal, instance, after_seq=read_through)
+        with self._lock:
+            kept, kept_through = self._floors.get(instance, (0, 0))
+            highest = max(floor, kept, found)
+            self._floors[instance] = (highest, max(kept_through, through))
+            return highest
 
     def admit_bind(self, consumer: str, instance: str, now: float) -> bool:
         """Return whether ``consumer`` may attempt a binding at monotonic time ``now``.

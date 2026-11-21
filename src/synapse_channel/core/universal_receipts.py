@@ -78,6 +78,7 @@ NON_RECEIPT_EVENT_KINDS = frozenset(
         EventKind.MAILBOX_HANDOVER,
         EventKind.FEED_ACK,
         EventKind.FEED_BIND,
+        EventKind.COMPACTION_FLOOR,
         EventKind.ROLE_BINDING,
         EventKind.OPERATION_DECLARED,
         EventKind.OPERATION_OUTCOME,
@@ -128,7 +129,8 @@ queue admission, boundary acknowledgement, and task execution. Connect-token and
 metrics-token audit rows, mailbox handovers and role bindings stay plain journal
 rows until a receipt mapping for them is defined. A feed acknowledgement is a
 consumer's own progress statement, like a mailbox watermark, and a feed binding
-is the audit of a migration act; neither is a receipt.
+is the audit of a migration act, as a compaction floor is of a retention run;
+none is a receipt.
 """
 
 

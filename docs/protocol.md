@@ -1685,7 +1685,10 @@ then as UTF-8. A finding the journal cannot decode is served as
 `{seq, kind: "finding", corrupt: true}`. `next_after` passes every scanned row,
 served or not, so a page without rows still moves the consumer forward. A page
 is a pure read: the same query returns the same rows, apart from rows deleted
-since.
+since. `compaction_floor` is the highest floor a compaction applied in this
+journal instance, or 0. When `after_seq` lies below it, the page also carries
+`retention_gap: [after_seq + 1, compaction_floor]`: rows in that range may have
+been deleted, and the consumer is told so instead of meeting a silent gap.
 
 **The cursor is bound** to the hub and to the journal instance. The instance is
 16 random bytes, written once into the store's format record when the journal
@@ -1726,9 +1729,20 @@ refused. That record is held in memory, so after a hub restart the consumer
 reads a page before its next ack. An ack is the consumer's statement, not its
 cursor. A hub that recovered around corrupt rows refuses mutations until the
 operator removes them, but it still serves the feed and keeps acks: removing
-them waits for every consumer to settle the corrupt prefix. **Compaction does not yet read acks:** until it does, an operator who
-runs `synapse compact --floor-seq` chooses a floor at or below every
-consumer's ack.
+them waits for every consumer to settle the corrupt prefix.
+
+**Compaction holds at the acks.** A consumer that holds an ack in the current
+journal instance is registered. `synapse compact` never deletes above the
+lowest of the registered consumers' highest acks: it applies the lower of the
+requested floor and that ack, and names every registered consumer below the
+requested floor. `--past-feed-acks` applies the requested floor anyway. A run
+that removes a row, or passes a registered consumer, journals a durable
+`compaction_floor` event with the requested and applied floors, the consumers
+that held it or were passed with their acks, and the rows removed; the page
+reports the highest. A consumer that keeps only a sequence cursor and never
+acks is not registered, so the operator still chooses a floor at or below its
+cursor. Acks of another instance never count, and a journal whose format record
+lost its instance registers no consumer, as the feed then binds no cursor.
 
 **`feed_bind`** moves a consumer that kept only a legacy, sequence-only
 position onto a bound cursor, once, by proof of the last row it ingested:

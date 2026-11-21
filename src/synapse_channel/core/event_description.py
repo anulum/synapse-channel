@@ -168,6 +168,12 @@ def _feed_bind(p: Mapping[str, Any]) -> EventWords:
     return EventWords(_text(p, "consumer"), line)
 
 
+def _compaction_floor(p: Mapping[str, Any]) -> EventWords:
+    applied = p.get("applied_floor")
+    line = f"compacted below {applied}" if isinstance(applied, int) else "compacted"
+    return EventWords("", line)
+
+
 def _mailbox_handover(p: Mapping[str, Any]) -> EventWords:
     line = f"mailbox {_text(p, 'action')}: {_text(p, 'from')} → {_text(p, 'to')}"
     return EventWords(_text(p, "actor"), line)
@@ -251,6 +257,7 @@ EVENT_WORDS: Mapping[str, Describer] = {
     EventKind.MAILBOX_HANDOVER: _mailbox_handover,
     EventKind.FEED_ACK: _feed_ack,
     EventKind.FEED_BIND: _feed_bind,
+    EventKind.COMPACTION_FLOOR: _compaction_floor,
     EventKind.ROLE_BINDING: _role_binding,
     EventKind.OPERATION_DECLARED: _operation("declared"),
     EventKind.OPERATION_OUTCOME: _operation("outcome"),

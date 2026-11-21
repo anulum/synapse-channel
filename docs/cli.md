@@ -2294,7 +2294,12 @@ claim that a worker process has failed.
 `synapse compact` is an offline maintenance command for the SQLite event store
 created by `synapse hub --db`. It needs either `--floor-seq <seq>` (the lowest
 sequence every read-side consumer has ingested) or `--all` (only when the whole
-log is settled). `--archive-report PATH` writes an owner-only static HTML report
+log is settled). A feed consumer that has acknowledged rows (`synapse feed ack`)
+holds the floor at its highest acknowledgement: the command applies the lower
+floor and prints the consumers that held it. `--past-feed-acks` compacts past
+them and prints them as passed. A run that removes a row, or passes a consumer,
+journals the floor it applied, and a feed page whose cursor lies below that floor
+reports the gap. `--archive-report PATH` writes an owner-only static HTML report
 from the pre-compaction event snapshot, then records the actual checkpoint and
 finding removal counts from the compaction run. A malformed stored row is read as
 a safe `corrupt_event` marker containing its sequence, validation reasons, and a

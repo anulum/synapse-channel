@@ -28,6 +28,7 @@ def _compact_ns(**overrides: Any) -> argparse.Namespace:
         "drop_corrupt": False,
         "floor_seq": None,
         "all": False,
+        "past_feed_acks": False,
         "vacuum": False,
         "archive_report": None,
         "archive_report_limit": 200,
@@ -191,9 +192,11 @@ def test_cmd_compact_removes_superseded_checkpoints_with_all(
     assert rc == 0
     assert "removed 3 checkpoint(s), 0 finding(s)" in capsys.readouterr().out
     store = EventStore(db)
-    survivors = [e.payload["checkpoint"] for e in store.read_all()]
+    survivors = [e.payload["checkpoint"] for e in store.read_all() if e.kind == "checkpoint"]
+    kinds = [e.kind for e in store.read_all()]
     store.close()
     assert survivors == ["c3"]  # only the newest checkpoint per task remains
+    assert kinds == ["checkpoint", "compaction_floor"]  # the floor applied is journalled
 
 
 def test_cmd_compact_honours_an_explicit_floor(
@@ -222,7 +225,7 @@ def test_cmd_compact_with_vacuum_reports_and_reclaims(
     assert rc == 0
     assert "(vacuumed)" in capsys.readouterr().out
     store = EventStore(db)
-    assert store.count() == 1
+    assert [e.kind for e in store.read_all()] == ["checkpoint", "compaction_floor"]
     store.close()
 
 
@@ -272,7 +275,11 @@ def test_cmd_compact_writes_archive_report_from_pre_compaction_snapshot(
     assert "removed 2 checkpoint(s), 0 finding(s)" in html
     assert "release receipt: evidence=pytest tests/test_cli_streams_compact.py -q" in html
     store = EventStore(db)
-    assert store.count() == 2
+    assert [e.kind for e in store.read_all()] == [
+        "checkpoint",
+        "ledger_progress",
+        "compaction_floor",
+    ]
     store.close()
 
 
@@ -309,6 +316,6 @@ def test_cmd_compact_archives_digest_before_removing_settled_corrupt_row(
     assert "reasons=invalid_json" in html
     assert secret not in html
     reopened = EventStore(db)
-    assert reopened.count() == 0
+    assert [e.kind for e in reopened.read_all()] == ["compaction_floor"]
     assert reopened.corrupt_rows() == ()
     reopened.close()

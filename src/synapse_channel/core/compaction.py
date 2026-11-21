@@ -23,11 +23,14 @@ readers of the log at once:
   replay entirely, so removing them never touches coordination state.
 * **The persistent-memory read-side** polls
   :meth:`~synapse_channel.core.persistence.EventStore.read_since` with a sequence
-  cursor. Compaction never deletes an event above a caller-supplied ``floor_seq``.
-  The caller must choose a floor no higher than every consumer's durably ingested
-  cursor; this function does not discover consumers or verify their ingestion.
-  Deleting a row never recycles its sequence (the primary key only ever increases),
-  so a cursor skips the gap; an incorrectly advanced floor can lose unread data.
+  cursor. Compaction never deletes an event above a caller-supplied ``floor_seq``,
+  and never above the acknowledgement of a registered feed consumer
+  (:mod:`~synapse_channel.core.feed_retention`): the floor it applies is the lower
+  of the two, unless ``past_feed_acks`` is set, and then the consumers it passes
+  are journalled. A consumer that reads only sequence cursors and never
+  acknowledges is not registered, so the caller still chooses a floor no higher
+  than its cursor. Deleting a row never recycles its sequence (the primary key only
+  ever increases), so a cursor skips the gap; the feed reports the floor applied.
 
 The policy is declarative (:class:`RetentionPolicy`) and the sweep
 (:func:`compact`) reports exactly what it removed (:class:`CompactionResult`).
@@ -39,7 +42,8 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 
-from synapse_channel.core.journal import EventKind
+from synapse_channel.core.feed_retention import feed_ack_floor
+from synapse_channel.core.journal import EventKind, record_compaction_floor
 from synapse_channel.core.persistence import EventStore
 
 
@@ -105,12 +109,22 @@ class CompactionResult:
         The floor the sweep honoured; no event above it was considered.
     corrupt_rows_removed : int
         Number of explicitly quarantined rows deleted.
+    requested_floor_seq : int or None
+        The floor the caller asked for; ``None`` when it equals ``floor_seq``.
+    held_by_feed_acks : tuple of (str, int)
+        Registered feed consumers whose acknowledgement lies below the requested
+        floor; the lowest of them is ``floor_seq``.
+    passed_feed_acks : tuple of (str, int)
+        Registered feed consumers an explicit override compacted past.
     """
 
     checkpoints_removed: int
     findings_removed: int
     floor_seq: int
     corrupt_rows_removed: int = 0
+    requested_floor_seq: int | None = None
+    held_by_feed_acks: tuple[tuple[str, int], ...] = ()
+    passed_feed_acks: tuple[tuple[str, int], ...] = ()
 
     @property
     def total_removed(self) -> int:
@@ -164,6 +178,19 @@ def _expired_findings(store: EventStore, *, floor: int, cutoff: float) -> list[i
     return doomed
 
 
+def _feed_floor(
+    store: EventStore, requested: int, *, past_feed_acks: bool
+) -> tuple[int, tuple[tuple[str, int], ...], tuple[tuple[str, int], ...]]:
+    """Return the floor to apply, the consumers that hold it and the consumers passed."""
+    acks = feed_ack_floor(store)
+    if acks is None:
+        return requested, (), ()
+    holding = acks.holding(requested)
+    if past_feed_acks:
+        return requested, (), holding
+    return min(requested, acks.floor), holding, ()
+
+
 def compact(
     store: EventStore,
     policy: RetentionPolicy,
@@ -171,6 +198,7 @@ def compact(
     floor_seq: int,
     now: float | None = None,
     dry_run: bool = False,
+    past_feed_acks: bool = False,
 ) -> CompactionResult:
     """Apply a retention policy to the durable log, deleting only below the floor.
 
@@ -192,15 +220,26 @@ def compact(
     dry_run : bool, optional
         Calculate and return the exact deletion counts without changing the
         store. Used to persist a recovery archive before destructive removal.
+    past_feed_acks : bool, optional
+        Apply ``floor_seq`` even above a registered feed consumer's
+        acknowledgement. The consumers passed are journalled with the floor.
 
     Returns
     -------
     CompactionResult
         Counts of what was removed and the floor that was honoured.
+
+    Notes
+    -----
+    A sweep that removes a row, or passes a registered feed consumer, journals
+    the floor it applied as a ``compaction_floor`` event, so the feed can tell a
+    consumer whose cursor lies below it that rows there may be gone. A dry run,
+    and a sweep that removes nothing and passes no one, journals nothing.
     """
-    floor = int(floor_seq)
+    requested = int(floor_seq)
     if policy.is_noop:
-        return CompactionResult(checkpoints_removed=0, findings_removed=0, floor_seq=floor)
+        return CompactionResult(checkpoints_removed=0, findings_removed=0, floor_seq=requested)
+    floor, held, passed = _feed_floor(store, requested, past_feed_acks=past_feed_acks)
     ts = time.time() if now is None else float(now)
 
     doomed_checkpoints: list[int] = []
@@ -220,11 +259,26 @@ def compact(
     )
 
     seqs = doomed_checkpoints + doomed_findings + doomed_corrupt
-    if seqs and not dry_run:
-        store.delete(seqs)
+    if not dry_run and (seqs or passed):
+        if seqs:
+            store.delete(seqs)
+        instance = store.journal_instance()
+        record_compaction_floor(
+            store,
+            journal_instance=instance.instance if instance is not None else "",
+            requested_floor=requested,
+            applied_floor=floor,
+            past_feed_acks=past_feed_acks,
+            held_by=held,
+            passed_consumers=passed,
+            removed=len(seqs),
+        )
     return CompactionResult(
         checkpoints_removed=len(doomed_checkpoints),
         findings_removed=len(doomed_findings),
         floor_seq=floor,
         corrupt_rows_removed=len(doomed_corrupt),
+        requested_floor_seq=None if floor == requested else requested,
+        held_by_feed_acks=held,
+        passed_feed_acks=passed,
     )

@@ -14,12 +14,17 @@ import pytest
 
 from synapse_channel.core.compaction import CompactionResult, RetentionPolicy, compact
 from synapse_channel.core.journal import EventKind, record_checkpoint, replay
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.state import TaskClaim
 
 
 def _store(tmp_path: Path) -> EventStore:
     return EventStore(tmp_path / "events.db")
+
+
+def _retained(store: EventStore) -> list[StoredEvent]:
+    """Return the retained events except the floor records compaction journals."""
+    return [event for event in store.read_all() if event.kind != EventKind.COMPACTION_FLOOR]
 
 
 def _checkpoint(store: EventStore, task_id: str, *, ts: float) -> None:
@@ -156,7 +161,10 @@ def test_explicit_corrupt_row_removal_restores_clean_reopen(tmp_path: Path) -> N
 
     assert result.corrupt_rows_removed == 1
     assert reopened.corrupt_rows() == ()
-    assert [event.seq for event in reopened.read_all()] == [keep]
+    assert [(event.seq, event.kind) for event in reopened.read_all()] == [
+        (keep, EventKind.CHAT),
+        (corrupt + 1, EventKind.COMPACTION_FLOOR),
+    ]
     reopened.close()
 
 
@@ -187,7 +195,7 @@ def test_keeps_only_the_latest_checkpoints_per_task(tmp_path: Path) -> None:
     for ts in (1.0, 2.0, 3.0, 4.0):
         _checkpoint(store, "T1", ts=ts)
     result = compact(store, RetentionPolicy(max_checkpoints_per_task=2), floor_seq=store.max_seq())
-    surviving = sorted(e.payload["checkpoint"] for e in store.read_all())
+    surviving = sorted(e.payload["checkpoint"] for e in _retained(store))
     store.close()
     assert result.checkpoints_removed == 2
     assert surviving == ["cursor@3.0", "cursor@4.0"]  # the two newest
@@ -200,7 +208,7 @@ def test_checkpoint_retention_is_independent_per_task(tmp_path: Path) -> None:
     for ts in (4.0, 5.0, 6.0):
         _checkpoint(store, "T2", ts=ts)
     result = compact(store, RetentionPolicy(max_checkpoints_per_task=1), floor_seq=store.max_seq())
-    survivors = {e.payload["task_id"]: e.payload["checkpoint"] for e in store.read_all()}
+    survivors = {e.payload["task_id"]: e.payload["checkpoint"] for e in _retained(store)}
     store.close()
     assert result.checkpoints_removed == 4  # two oldest per task
     assert survivors == {"T1": "cursor@3.0", "T2": "cursor@6.0"}
@@ -222,7 +230,7 @@ def test_checkpoints_above_the_floor_are_never_touched(tmp_path: Path) -> None:
     events = store.read_all()
     floor = events[1].seq  # only the first two checkpoints are at or below the floor
     result = compact(store, RetentionPolicy(max_checkpoints_per_task=1), floor_seq=floor)
-    remaining = sorted(e.seq for e in store.read_all())
+    remaining = sorted(e.seq for e in _retained(store))
     store.close()
     # The oldest below-floor checkpoint goes; the latest below-floor one and the
     # untouched above-floor one both survive.
@@ -307,7 +315,7 @@ def test_finding_age_out_respects_the_floor(tmp_path: Path) -> None:
     _finding(store, "expired-above", valid_to=10.0, ts=2.0)
     floor = store.read_all()[0].seq  # only the first finding is at or below the floor
     result = compact(store, RetentionPolicy(finding_grace_seconds=0.0), floor_seq=floor, now=1000.0)
-    survivors = [e.payload["statement"] for e in store.read_all()]
+    survivors = [e.payload["statement"] for e in _retained(store)]
     store.close()
     assert result.findings_removed == 1
     assert survivors == ["expired-above"]  # the unconsumed tail is protected

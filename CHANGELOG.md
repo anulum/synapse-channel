@@ -55,8 +55,11 @@ execution evidence when carrying a release claim forward.
   `feed-read` permission is granted per kind; the hub needs a journal and a
   configured `--hub-id`. `synapse feed read` and `synapse feed ack` drive it. A
   journal copied back from an older file outside the hub keeps its instance and is
-  refused only while it holds fewer rows than the cursor; compaction does not yet
-  read the acks. A consumer that kept only a legacy, sequence-only position binds
+  refused only while it holds fewer rows than the cursor. `synapse compact` never
+  deletes above the lowest acknowledgement of a consumer that holds one, unless
+  `--past-feed-acks` says so; a run that removes a row, or passes a consumer,
+  journals the floor it applied with the consumers it held at or passed, and a page
+  whose cursor lies below that floor carries `retention_gap`. A consumer that kept only a legacy, sequence-only position binds
   it once with `feed_bind` (`synapse feed bind`), by the payload digest of the
   last row it ingested and, when it kept it, that row's sequence; a row the feed
   would not serve it, or a digest that matches several rows, binds nothing.

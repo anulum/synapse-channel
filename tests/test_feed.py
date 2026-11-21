@@ -31,7 +31,8 @@ from hub_e2e_helpers import (
 )
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.acl import FEED_READ, WOULD_DENY, AclPolicy, AclRule
-from synapse_channel.core.feed import FEED_PAGE_BYTES, FEED_SCAN_LIMIT, payload_sha256
+from synapse_channel.core.feed import FEED_PAGE_BYTES, payload_sha256
+from synapse_channel.core.feed_retention import RETENTION_SCAN_PAGE
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind, record_finding
 from synapse_channel.core.persistence import EventStore
@@ -706,7 +707,7 @@ async def test_a_kept_ack_is_read_back_past_other_consumers_and_foreign_rows(
     journal.append_batch(
         [
             (EventKind.FEED_ACK, {"consumer": "R/consumer", **ack, "acked_seq": 1})
-            for _ in range(FEED_SCAN_LIMIT)
+            for _ in range(RETENTION_SCAN_PAGE)
         ]
         + [
             (EventKind.FEED_ACK, {"consumer": "R/other", **ack, "acked_seq": 3}),
