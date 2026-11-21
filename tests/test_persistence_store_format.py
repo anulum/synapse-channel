@@ -14,6 +14,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -55,7 +56,12 @@ def _record(connection: sqlite3.Connection) -> tuple[int, str, str]:
 
 
 def _plain_record(path: Path) -> tuple[int, str, str]:
-    with sqlite3.connect(path) as connection:
+    """Read the format record through a plain connection, closed afterwards.
+
+    A ``sqlite3`` connection used as a context manager only ends its
+    transaction; it stays open, and Python 3.13 reports it as unclosed.
+    """
+    with closing(sqlite3.connect(path)) as connection:
         return _record(connection)
 
 
