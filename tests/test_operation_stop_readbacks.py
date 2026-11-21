@@ -32,6 +32,7 @@ from synapse_channel.core.operation_stop_readbacks import (
     REFUSED_READBACK_MISMATCH,
     StopReadback,
     decode_stop_readback,
+    marker_reads_applied,
     marker_reads_sealed,
     readback_mismatch,
     recompute_readback_result,
@@ -362,3 +363,195 @@ def test_note_readback_never_marks_an_attempt_sealed_when_no_stop_row_exists() -
         marker_object=OBJECTS.sealed,
     )
     assert empty.attempt_state(OPERATION, ATTEMPT) == "open"
+
+
+def test_marker_reads_applied_never_trusts_an_unverified_claim() -> None:
+    """Only a marker matching the recomputed applied blob marks an attempt applied."""
+    assert not marker_reads_applied(
+        operation_id=OPERATION,
+        attempt_id=ATTEMPT,
+        intent_sha256=None,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.applied,
+    )
+    assert not marker_reads_applied(
+        operation_id=OPERATION,
+        attempt_id=ATTEMPT,
+        intent_sha256=DIGEST,
+        marker_ref=MARKER.ref,
+        object_format="md5",
+        marker_object=OBJECTS.applied,
+    )
+    assert not marker_reads_applied(
+        operation_id="",
+        attempt_id=ATTEMPT,
+        intent_sha256=DIGEST,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.applied,
+    )
+    assert not marker_reads_applied(
+        operation_id=OPERATION,
+        attempt_id=ATTEMPT,
+        intent_sha256=DIGEST,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.sealed,
+    )
+    assert not marker_reads_applied(
+        operation_id=OPERATION,
+        attempt_id=ATTEMPT,
+        intent_sha256=DIGEST,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object="0" * 40,
+    )
+    other_ref = AttemptMarker(OPERATION, "b" * 32, DIGEST).ref
+    assert not marker_reads_applied(
+        operation_id=OPERATION,
+        attempt_id=ATTEMPT,
+        intent_sha256=DIGEST,
+        marker_ref=other_ref,
+        object_format="sha1",
+        marker_object=OBJECTS.applied,
+    )
+    assert marker_reads_applied(
+        operation_id=OPERATION,
+        attempt_id=ATTEMPT,
+        intent_sha256=DIGEST,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.applied,
+    )
+
+
+def test_an_applied_read_back_ends_a_listed_attempt_and_contradicts_not_started() -> None:
+    """A recomputed applied read-back ends the attempt as applied without overwriting sealed."""
+    ledger = AttemptLedger(None)
+    fact = OperationFact("T1", "P/worker", DIGEST, 100, 1.0, "git_publication", "cooperative")
+    ledger.note_declaration(OPERATION, fact)
+    ledger.open_attempt(OPERATION, ATTEMPT, executor="P/worker", approval_seq=1)
+    ledger.note_stop("project:P", 7, epoch=1, listed=((OPERATION, ATTEMPT),))
+
+    # Unlisted stop or missing marker fields must leave the attempt open.
+    ledger.note_readback(
+        99,
+        ATTEMPT,
+        "applied",
+        seq=8,
+        operation_id=OPERATION,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.applied,
+    )
+    ledger.note_readback(7, ATTEMPT, "applied", seq=9, operation_id=OPERATION)
+    assert ledger.attempt_state(OPERATION, ATTEMPT) == "open"
+    assert ledger.due_triggers(now=200.0, stop_bound=1000.0) == []
+
+    # Recomputed applied marker on a listed stop ends the attempt as applied, not sealed.
+    ledger.note_readback(
+        7,
+        ATTEMPT,
+        "applied",
+        seq=10,
+        operation_id=OPERATION,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.applied,
+    )
+    assert ledger.attempt_state(OPERATION, ATTEMPT) == "applied"
+    assert not ledger.view(OPERATION, 2).attempt_open
+    assert ledger.view(OPERATION, 2).unreconciled
+    assert ledger.view(OPERATION, 2).applied
+    assert not ledger.view(OPERATION, 2).closed
+    assert [t.cause for t in ledger.due_triggers(now=200.0, stop_bound=1000.0)] == [
+        "deadline_unverified"
+    ]
+
+    # Mutual defence: a later sealed read-back on another stop cannot overwrite applied.
+    ledger.note_stop("project:P", 11, epoch=2, listed=((OPERATION, ATTEMPT),))
+    ledger.note_readback(
+        11,
+        ATTEMPT,
+        "sealed",
+        seq=12,
+        operation_id=OPERATION,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.sealed,
+    )
+    assert ledger.attempt_state(OPERATION, ATTEMPT) == "applied"
+
+    # Order 1: applied first, then stranger is ignored and executor claims not_started.
+    other = "c" * 32
+    ledger.open_attempt(OPERATION, other, executor="Q/other", approval_seq=99)
+    ledger.note_readback(
+        7,
+        ATTEMPT,
+        "applied",
+        seq=12,
+        operation_id=OPERATION,
+        marker_ref=MARKER.ref,
+        object_format="sha1",
+        marker_object=OBJECTS.applied,
+    )
+    assert ledger.attempt_state(OPERATION, other) == "open"
+    ledger.note_outcome(OPERATION, "Q/stranger", "not_started", seq=12)
+    assert ledger.contradicted_at(OPERATION) == 0
+    ledger.note_outcome(
+        OPERATION, "P/worker", "confirmed_failed", external_effect="not_started", seq=13
+    )
+    ledger.note_outcome(OPERATION, "P/worker", "not_started", seq=14)
+    assert ledger.contradicted_at(OPERATION) == 13
+
+    # Order 2: executor claims not_started first, then recomputed applied marker arrives.
+    op2 = "git-op-applied-order2"
+    m2 = AttemptMarker(op2, ATTEMPT, DIGEST)
+    ledger.note_declaration(op2, fact)
+    ledger.open_attempt(op2, ATTEMPT, executor="P/worker", approval_seq=2)
+    ledger.note_outcome(op2, "P/worker", "not_started", seq=20)
+    ledger.note_stop("project:P", 21, epoch=3, listed=((op2, ATTEMPT),))
+    ledger.note_readback(
+        21,
+        ATTEMPT,
+        "applied",
+        seq=22,
+        operation_id=op2,
+        marker_ref=m2.ref,
+        object_format="sha1",
+        marker_object=m2.objects("sha1").applied,
+    )
+    assert ledger.attempt_state(op2, ATTEMPT) == "applied"
+    assert ledger.contradicted_at(op2) == 22
+
+    # Mutual defence: an already sealed attempt is never overwritten by applied.
+    op3 = "git-op-sealed-stays-sealed"
+    m3 = AttemptMarker(op3, ATTEMPT, DIGEST)
+    ledger.note_declaration(op3, fact)
+    ledger.open_attempt(op3, ATTEMPT, executor="P/worker", approval_seq=3)
+    ledger.note_outcome(op3, "P/worker", "not_started", seq=30)
+    ledger.note_stop("project:P", 31, epoch=4, listed=((op3, ATTEMPT),))
+    ledger.note_readback(
+        31,
+        ATTEMPT,
+        "sealed",
+        seq=32,
+        operation_id=op3,
+        marker_ref=m3.ref,
+        object_format="sha1",
+        marker_object=m3.objects("sha1").sealed,
+    )
+    ledger.note_stop("project:P", 33, epoch=5, listed=((op3, ATTEMPT),))
+    ledger.note_readback(
+        33,
+        ATTEMPT,
+        "applied",
+        seq=34,
+        operation_id=op3,
+        marker_ref=m3.ref,
+        object_format="sha1",
+        marker_object=m3.objects("sha1").applied,
+    )
+    assert ledger.attempt_state(op3, ATTEMPT) == "sealed"
+    assert ledger.contradicted_at(op3) == 0

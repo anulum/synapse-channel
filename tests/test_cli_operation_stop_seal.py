@@ -33,7 +33,7 @@ from synapse_channel.core.acl import (
 )
 from synapse_channel.core.attempt_markers import BASE_GONE, OTHER_PARTY_FIRST, AttemptMarker
 from synapse_channel.core.attention import project_hub_attention
-from synapse_channel.core.execution_outcome import OutcomeState
+from synapse_channel.core.execution_outcome import ExecutionOutcome, OutcomeState
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempt_ledger import AttemptLedger
@@ -42,6 +42,8 @@ from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.result_verification_record import ResultVerification
 from synapse_channel.git.attempt_marker_changes import Target, apply_effect
 from synapse_channel.git.git_runtime import GitError, git_executable, run_git
+from synapse_channel.result_verification import verify_git_publication
+from synapse_channel.result_verification_attempt import AttemptCheck
 
 RECOVERY = "R/recovery"
 SCOPE = "project:P"
@@ -1534,3 +1536,379 @@ async def test_a_second_stopper_receiving_readback_closed_counts_the_attempt_as_
     assert f"attempt {attempt}: a closing read-back is already recorded" in printed
     assert f"stop at journal seq {seq}: 1 of 1 listed attempt(s) closed" in printed
     assert [row["result"] for row in readbacks] == ["applied"]
+
+
+async def _query_operation_state(
+    handle: AgentHandle, task_id: str, operation_id: str
+) -> dict[str, Any]:
+    return await scene.answer(
+        handle,
+        lambda: handle.agent.send_message(
+            MessageType.OPERATION_STATE, task_id=task_id, operation_id=operation_id
+        ),
+        lambda frame: frame.get("type") == MessageType.OPERATION_STATE_RESULT,
+    )
+
+
+async def _resume_scope(operator: AgentHandle, scope: str, key: str) -> dict[str, Any]:
+    resumed = await scene.answer(
+        operator,
+        lambda: operator.agent.send_message(
+            MessageType.OPERATION_RESUME,
+            scope=scope,
+            reason="observed and ready",
+            case="another_person",
+            idem_key=key,
+        ),
+        lambda frame: (
+            frame.get("type") == MessageType.OPERATION_STOP_RESULT
+            and frame.get("request_key") == key
+        ),
+    )
+    assert resumed["answer"] == "resumed", resumed
+    return resumed
+
+
+async def _raise_levels_to_a2(uri: str, operation_id: str) -> None:
+    operator = await connect_agent("H/operator", uri)
+    try:
+        for idx, scope in enumerate(
+            (f"operation:{operation_id}", "effect:git_publication", SCOPE, "installation")
+        ):
+
+            async def send_level(sc: str = scope, i: int = idx) -> None:
+                await operator.agent.send_message(
+                    MessageType.OPERATION_LEVEL,
+                    scope=sc,
+                    level="A2",
+                    reason="up",
+                    idem_key=f"lv-{operation_id}-{i}",
+                )
+
+            ans = await scene.answer(
+                operator,
+                send_level,
+                lambda frame: frame.get("type") == MessageType.OPERATION_LEVEL_RESULT,
+            )
+            assert ans["answer"] == "level_recorded"
+    finally:
+        await close_agents(operator)
+
+
+async def _attempt_raw(
+    worker: AgentHandle, epoch: int, task: str, operation_id: str, digest: str, key: str
+) -> dict[str, Any]:
+    return await scene.answer(
+        worker,
+        lambda: worker.agent.send_message(
+            MessageType.OPERATION_ATTEMPT,
+            task_id=task,
+            operation_id=operation_id,
+            epoch=epoch,
+            intent_sha256=digest,
+            idem_key=key,
+        ),
+        lambda frame: (
+            frame.get("type") == MessageType.OPERATION_ATTEMPT_RESULT
+            and frame.get("request_key") == key
+        ),
+    )
+
+
+async def test_an_applied_read_back_ends_the_attempt_reaches_at_rest_and_allows_only_a_successor(
+    tmp_path: Path,
+) -> None:
+    """Silent executor lands applied -> branch moves -> at rest -> op-1 blocked, op-2 succeeds."""
+    work, b, x = _repository(tmp_path)
+    git = git_executable()
+    tree = run_git(git, work, ["write-tree"]).stdout.strip()
+    y = run_git(git, work, ["commit-tree", tree, "-p", b, "-m", "y"]).stdout.strip()
+    z = run_git(git, work, ["commit-tree", tree, "-p", y, "-m", "z"]).stdout.strip()
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h, uri):
+            [(task1, op1, digest1, attempt1)] = await _opened(uri, b, x)
+            marker1 = AttemptMarker(op1, attempt1, digest1)
+            apply_effect(Target(work, "main", b), marker1, candidate=x, git=git)
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                stop_code = await _command(watcher, command.stop_and_seal(_args(uri, work)))
+            finally:
+                await close_agents(watcher)
+
+            recovery = await connect_agent(RECOVERY, uri)
+            try:
+                state_applied = await _query_operation_state(recovery, task1, op1)
+                late_seal = await scene.record(
+                    recovery,
+                    record="seal",
+                    task_id=task1,
+                    operation_id=op1,
+                    seal={
+                        "attempt_id": attempt1,
+                        "marker_ref": marker1.ref,
+                        "object_format": "sha1",
+                        "marker_object": marker1.objects("sha1").sealed,
+                        "observation": "landed",
+                    },
+                )
+            finally:
+                await close_agents(recovery)
+
+            # Branch moves away; independent verifier observes LANDED_THEN_MOVED.
+            assert run_git(git, work, ["update-ref", "refs/heads/main", y]).returncode == 0
+            moved = verify_git_publication(
+                work,
+                str(work),
+                "main",
+                x,
+                operation_id=op1,
+                attempt=AttemptCheck(attempt1, digest1, b),
+            )
+            checker = await connect_agent(scene.CHECKER, uri)
+            try:
+                ver = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id=task1,
+                    operation_id=op1,
+                    verification=moved.to_json(),
+                )
+            finally:
+                await close_agents(checker)
+
+            operator = await connect_agent("H/operator", uri)
+            try:
+                resumed = await _resume_scope(operator, SCOPE, "res-1")
+            finally:
+                await close_agents(operator)
+
+            worker = await connect_agent(scene.WORKER, uri)
+            reviewer = await connect_agent(scene.REVIEWER, uri)
+            approver = await connect_agent(scene.APPROVER, uri)
+            try:
+                ep1 = await scene.claim(worker, task1)
+                await scene.approve(approver, digest1, reason="post-resume retry op1")
+                retry_op1 = await _attempt_raw(worker, ep1, task1, op1, digest1, "retry-op1")
+
+                # Explicit successor operation op-2 on fresh successor task T2 against moved tip y.
+                ep2 = await scene.claim(worker, "T2")
+                digest2 = await _declared(worker, ep2, "T2", "op-2", y, z, git=True)
+                await scene.review(reviewer, digest2)
+                await scene.approve(approver, digest2, reason="successor op2")
+                opened2 = await _attempt_raw(worker, ep2, "T2", "op-2", digest2, "open-op2")
+                attempt2 = str(opened2["attempt_id"])
+                marker2 = AttemptMarker("op-2", attempt2, digest2)
+                apply_effect(Target(work, "main", y), marker2, candidate=z, git=git)
+
+                checker2 = await connect_agent(scene.CHECKER, uri)
+                try:
+                    ver2 = verify_git_publication(
+                        work,
+                        str(work),
+                        "main",
+                        z,
+                        operation_id="op-2",
+                        attempt=AttemptCheck(attempt2, digest2, y),
+                    )
+                    await scene.record(
+                        checker2,
+                        record="verification",
+                        task_id="T2",
+                        operation_id="op-2",
+                        verification=ver2.to_json(),
+                    )
+                finally:
+                    await close_agents(checker2)
+
+                await scene.approve(approver, digest2, reason="after op2 closed")
+                after_op2 = await _attempt_raw(worker, ep2, "T2", "op-2", digest2, "after-op2")
+                await scene.approve(approver, digest1, reason="still blocked op1")
+                retry_op1_again = await _attempt_raw(
+                    worker, ep1, task1, op1, digest1, "retry-op1-again"
+                )
+            finally:
+                await close_agents(worker, reviewer, approver)
+
+            operator2 = await connect_agent("H/operator", uri)
+            try:
+                next_stop = await scene.answer(
+                    operator2,
+                    lambda: operator2.agent.send_message(
+                        MessageType.OPERATION_STOP,
+                        scope=SCOPE,
+                        reason="verify clean rest",
+                        idem_key="stop-clean",
+                    ),
+                    lambda frame: (
+                        frame.get("type") == MessageType.OPERATION_STOP_RESULT
+                        and frame.get("request_key") == "stop-clean"
+                    ),
+                )
+            finally:
+                await close_agents(operator2)
+
+        states = [row["state"] for row in _states(store)]
+        alerts = [
+            item
+            for item in project_hub_attention(store.iter_events(), now=1_000_000.0)
+            if item.kind == "operation_contradiction"
+        ]
+    finally:
+        store.close()
+
+    assert stop_code == seal_command.EXIT_DONE
+    assert (state_applied["closed"], state_applied["attempts"][0]["state"]) == (False, "applied")
+    assert (late_seal["status"], late_seal["reason"]) == ("refused", "attempt_ended")
+    assert (moved.effect, moved.result) == ("absent", "not_verified")
+    assert ver["status"] == "accepted"
+    assert states[:2] == ["no new effect", "at rest"]
+    assert alerts == []
+    assert (resumed["answer"], resumed["resumed_from"]) == ("resumed", "at rest")
+    assert retry_op1["answer"] == "earlier_attempt_unreconciled"
+    assert "applied marker" in str(retry_op1["payload"])
+    assert opened2["answer"] == "approved_fresh"
+    assert after_op2["answer"] == "operation_closed"
+    assert retry_op1_again["answer"] == "earlier_attempt_unreconciled"
+    assert (next_stop["answer"], next_stop["listed"], next_stop["state"]) == (
+        "stop_recorded",
+        [],
+        "at rest",
+    )
+
+
+async def test_an_applied_attempt_closes_only_after_an_independent_verified_observation(
+    tmp_path: Path,
+) -> None:
+    """An applied read-back leaves closed=False until independent verification returns verified."""
+    work, b, x = _repository(tmp_path)
+    git = git_executable()
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h, uri):
+            [(task, op, digest, attempt)] = await _opened(uri, b, x)
+            marker = AttemptMarker(op, attempt, digest)
+            apply_effect(Target(work, "main", b), marker, candidate=x, git=git)
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                assert await _command(watcher, command.stop_and_seal(_args(uri, work))) == 0
+            finally:
+                await close_agents(watcher)
+
+            operator = await connect_agent("H/operator", uri)
+            try:
+                resumed = await _resume_scope(operator, SCOPE, "res-close")
+            finally:
+                await close_agents(operator)
+
+            worker = await connect_agent(scene.WORKER, uri)
+            approver = await connect_agent(scene.APPROVER, uri)
+            try:
+                ep = await scene.claim(worker, task)
+                await scene.approve(approver, digest, reason="before verification")
+                before_ver = await _attempt_raw(worker, ep, task, op, digest, "before-ver")
+                checker = await connect_agent(scene.CHECKER, uri)
+                try:
+                    verified = verify_git_publication(
+                        work,
+                        str(work),
+                        "main",
+                        x,
+                        operation_id=op,
+                        attempt=AttemptCheck(attempt, digest, b),
+                    )
+                    await scene.record(
+                        checker,
+                        record="verification",
+                        task_id=task,
+                        operation_id=op,
+                        verification=verified.to_json(),
+                    )
+                finally:
+                    await close_agents(checker)
+                await scene.approve(approver, digest, reason="after verification")
+                after_ver = await _attempt_raw(worker, ep, task, op, digest, "after-ver")
+            finally:
+                await close_agents(worker, approver)
+    finally:
+        store.close()
+    assert (resumed["answer"], resumed["resumed_from"]) == ("resumed", "no new effect")
+    assert before_ver["answer"] == "earlier_attempt_unreconciled"
+    assert (verified.effect, verified.result) == ("observed", "verified")
+    assert after_ver["answer"] == "operation_closed"
+
+
+@pytest.mark.parametrize("order", ["outcome_first", "readback_first"])
+async def test_a_not_started_outcome_against_an_applied_marker_surfaces_a_contradiction(
+    tmp_path: Path, order: str
+) -> None:
+    """Executor claiming not_started vs recomputed applied marker contradicts in both orders."""
+    work, b, x = _repository(tmp_path)
+    git = git_executable()
+    store = EventStore(tmp_path / "hub.db")
+    level_rule = AclRule(OPERATION_LEVEL, "level-scope", "*", "H", "operators set levels")
+    policy = AclPolicy([*_policy().rules, level_rule])
+    try:
+        hub = SynapseHub(journal=store, acl_policy=policy, ladder_enabled=True)
+        async with running_hub(hub) as (_h, uri):
+            await _raise_levels_to_a2(uri, "op-1")
+            [(task, op, digest, attempt)] = await _opened(uri, b, x)
+            marker = AttemptMarker(op, attempt, digest)
+            apply_effect(Target(work, "main", b), marker, candidate=x, git=git)
+
+            async def report_not_started() -> int:
+                worker = await connect_agent(scene.WORKER, uri)
+                try:
+                    if order == "outcome_first":
+                        payload = scene.outcome(OutcomeState.NOT_STARTED, op)
+                    else:
+                        report = ExecutionOutcome(
+                            op,
+                            "worker_process",
+                            OutcomeState.CONFIRMED_FAILED,
+                            "claimed untouched",
+                            external_effect=OutcomeState.NOT_STARTED,
+                        ).to_json()
+                        payload = {
+                            "record": "outcome",
+                            "task_id": task,
+                            "operation_id": op,
+                            "report": report,
+                        }
+                    res = await scene.record(worker, **payload)
+                    assert res["status"] == "accepted"
+                    return int(res["seq"])
+                finally:
+                    await close_agents(worker)
+
+            if order == "outcome_first":
+                outcome_seq = await report_not_started()
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                assert await _command(watcher, command.stop_and_seal(_args(uri, work))) == 0
+            finally:
+                await close_agents(watcher)
+            if order == "readback_first":
+                outcome_seq = await report_not_started()
+            state = hub.operation_records.attempts.attempt_state(op, attempt)
+        readbacks = store.read_since(0, kinds=(EventKind.OPERATION_STOP_READBACK,))
+        triggers = store.read_since(0, kinds=(EventKind.OPERATION_TRIGGER,))
+        alerts = [
+            item
+            for item in project_hub_attention(store.iter_events(), now=1_000_000.0)
+            if item.kind == "operation_contradiction"
+        ]
+    finally:
+        store.close()
+
+    expected_shown = readbacks[0].seq if order == "outcome_first" else outcome_seq
+    assert state == "applied"
+    assert len(triggers) == 1
+    assert {key: triggers[0].payload[key] for key in ("scope", "cause", "target", "shown_by")} == {
+        "scope": f"operation:{op}",
+        "cause": "incorrect_acceptance",
+        "target": "A1",
+        "shown_by": expected_shown,
+    }
+    assert len(alerts) == 1
+    assert (alerts[0].subject, alerts[0].severity, alerts[0].state) == (op, "critical", "open")

@@ -13,13 +13,17 @@ import copy
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.attempt_markers import AttemptMarker
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempt_ledger import (
+    ATTEMPT_STATES,
+    STATE_APPLIED,
     STATE_CLOSED,
     STATE_ENDED,
     STATE_NONE,
     STATE_OPEN,
     STATE_RECONCILED,
+    STATE_SEALED,
     AttemptLedger,
     AttemptView,
 )
@@ -175,3 +179,115 @@ def test_the_journal_restores_the_same_ledger_and_skips_rows_without_their_field
         "T1", WORKER, FACT.intent_sha256, None, FACT.declared_at
     )
     assert sorted(restored.operations) == ["op-1", "op-2", "op-5"]
+
+
+def test_attempt_states_pin_the_wire_set_and_applied_precedence_survives_restore(
+    tmp_path: Path,
+) -> None:
+    """ATTEMPT_STATES pins the wire set; applied stays listed until observed and blocks retries."""
+    assert ATTEMPT_STATES == (
+        STATE_NONE,
+        STATE_OPEN,
+        STATE_ENDED,
+        STATE_APPLIED,
+        STATE_SEALED,
+        STATE_RECONCILED,
+        STATE_CLOSED,
+    )
+    attempt = "a" * 32
+    digest = FACT.intent_sha256
+    assert digest is not None
+    marker = AttemptMarker("op-1", attempt, digest)
+    objects = marker.objects("sha1")
+
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        _append(
+            store,
+            EventKind.OPERATION_DECLARED,
+            {
+                "operation_id": "op-1",
+                "task_id": "T1",
+                "sender": WORKER,
+                "recorded_at": FACT.declared_at,
+                "effect": "git_publication",
+                "intent": {"deadline": FACT.deadline},
+                "intent_sha256": digest,
+            },
+        )
+        _append(
+            store,
+            EventKind.OPERATION_ATTEMPT_ANSWERED,
+            {
+                "operation_id": "op-1",
+                "sender": WORKER,
+                "answer": "approved_fresh",
+                "attempt_id": attempt,
+                "approval_seq": 7,
+            },
+        )
+        stop_seq = store.append(
+            EventKind.OPERATION_STOPPED,
+            {
+                "scope": "project:P",
+                "epoch": 1,
+                "listed": [{"operation_id": "op-1", "attempt_id": attempt}],
+            },
+            durable=True,
+        )
+        _append(
+            store,
+            EventKind.OPERATION_STOP_READBACK,
+            {
+                "operation_id": "op-1",
+                "sender": "R/recovery",
+                "stop_seq": stop_seq,
+                "attempt_id": attempt,
+                "result": "applied",
+                "marker_ref": marker.ref,
+                "object_format": "sha1",
+                "marker_object": objects.applied,
+            },
+        )
+        applied_ledger = AttemptLedger(store)
+        assert applied_ledger.attempt_state("op-1", attempt) == STATE_APPLIED
+        assert [item.attempt_id for item in applied_ledger.open_in("project:P")] == [attempt]
+        assert [item.attempt_id for item in applied_ledger.standing_listed(stop_seq)] == [attempt]
+        assert applied_ledger.actors("project:P") == frozenset({WORKER})
+        assert applied_ledger.view("op-1", 8) == AttemptView(False, False, False, True, True)
+
+        # Independent absent/not_verified reconciles the attempt and clears open_in,
+        # yet view() keeps unreconciled=True and applied=True so no second attempt opens.
+        _append(
+            store,
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": "op-1",
+                "sender": CHECKER,
+                "effect": "absent",
+                "result": "not_verified",
+            },
+        )
+        moved_ledger = AttemptLedger(store)
+        assert moved_ledger.attempt_state("op-1", attempt) == STATE_RECONCILED
+        assert moved_ledger.open_in("project:P") == ()
+        assert moved_ledger.standing_listed(stop_seq) == ()
+        assert moved_ledger.view("op-1", 8) == AttemptView(False, False, False, True, True)
+        assert not moved_ledger.view("op-1", 8).closed
+
+        # Independent verified closes the operation (precedence: closed > reconciled > applied).
+        _append(
+            store,
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": "op-1",
+                "sender": CHECKER,
+                "effect": "observed",
+                "result": "verified",
+            },
+        )
+        closed_ledger = AttemptLedger(store)
+        assert closed_ledger.attempt_state("op-1", attempt) == STATE_CLOSED
+        assert closed_ledger.view("op-1", 8).closed
+    finally:
+        store.close()

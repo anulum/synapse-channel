@@ -252,7 +252,17 @@ does not add agent grades to protocol envelopes.
   fields recompute to `sealed`, the attempt is marked `sealed` (and an executor
   outcome claiming `confirmed_done` on that attempt is surfaced as an
   `operation_contradiction` attention item and, under `--ladder`, an
-  `incorrect_acceptance` trigger); `applied`, `unsealable` and `unread` end no
+  `incorrect_acceptance` trigger); when its marker fields recompute to
+  `applied`, the attempt ends as `applied` (not `sealed`, keeping it listed
+  until independently observed and refusing any new attempt on that operation
+  as `earlier_attempt_unreconciled` without closing the operation until an
+  independent `verified` verification arrives, while an executor outcome
+  claiming `not_started` on that attempt is surfaced as an
+  `operation_contradiction` attention item and, under `--ladder`, an
+  `incorrect_acceptance` trigger; if an independent observer later records the
+  effect absent after the branch moved, the stop reaches `at rest` and the
+  operator moves forward by declaring an explicit successor operation against
+  the moved branch head); `unsealable` and `unread` end no
   attempt here, only `sealed` and `applied` close an attempt for its stop, and
   an executor's own outcome never does.
   Records are observations and grant no authority.
@@ -276,7 +286,8 @@ does not add agent grades to protocol envelopes.
   another project), `operation_closed` (another identity has verified the
   operation), `attempt_exists` (an attempt is open, or this approval has
   already admitted one), `earlier_attempt_unreconciled` (an ended attempt has no
-  observation by another identity since), `approved_fresh`. Only
+  observation by another identity since, or an earlier attempt's recomputed
+  `applied` marker shows its effect already landed), `approved_fresh`. Only
   `approved_fresh` opens an attempt; it consumes the approval, whose journal
   sequence the attempt keeps. Every answer is journalled as
   `operation_attempt_answered` together with the stored answer in one
@@ -284,8 +295,9 @@ does not add agent grades to protocol envelopes.
   unchanged. Requests to open attempts, operation records, claims and progress
   notes are serialised by the hub's single mutation lock. An attempt ends by
   its executor's own outcome of `not_started`, `confirmed_done` or
-  `confirmed_failed`, when another identity's verification is `verified`, or
-  by a kept seal; nothing else ends it. A malformed request is answered
+  `confirmed_failed`, when another identity's verification is `verified`, by a
+  kept seal, or by a kept `applied` stop read-back whose marker recomputes to
+  `applied`; nothing else ends it. A malformed request is answered
   `invalid_request` and a hub without a journal `no_journal`; neither is
   journalled.
 - **Operation stops:** `operation_stop` names a `scope` (`installation`,
@@ -765,9 +777,9 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   sentence in `payload`, the journal `seq`, `attempt_id` (32 lower-case
   hexadecimal characters, or empty), `approval_seq`, `intent_sha256`,
   `hub_time`, `task_id`, `operation_id` and `request_key`; these are the stored
-  answer. Beside them `live` holds `attempt_state` (`none`, `open`, `sealed`,
-  `ended`, `reconciled` or `closed`) and `replayed`, computed when the frame
-  is sent.
+  answer. Beside them `live` holds `attempt_state` (`none`, `open`, `applied`,
+  `sealed`, `ended`, `reconciled` or `closed`) and `replayed`, computed when the
+  frame is sent.
   `operation_state_result` answers an `operation_state` with `status`
   (`accepted` or `refused`), `reason` (`invalid_request`, `not_authorised` or
   `unknown_operation`), the sentence in `payload`, and the request's `task_id`,
@@ -775,7 +787,7 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   `effect`, its `effect_target` and the `intent_sha256` the hub holds (empty
   without an intent), `attempts`, one
   object per attempt with `attempt_id`, `executor` and `state` (`open`,
-  `sealed`, `ended`, `reconciled` or `closed`), and `stopped_by`: the
+  `applied`, `sealed`, `ended`, `reconciled` or `closed`), and `stopped_by`: the
   narrowest stopped scope that contains the operation as `scope` and `seq`,
   with that stop's computed `state`, `profile`, `profile_says`, `blocking` and
   `counts`, or `null`; and `level`: the operation's `level` with the

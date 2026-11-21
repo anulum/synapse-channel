@@ -321,3 +321,91 @@ def test_an_outcome_ended_attempt_sealed_by_stop_read_back_reports_sealed(tmp_pa
         "result": "sealed",
     }
     assert [item.state for item in run_operation_reports(path)] == ["sealed"]
+
+
+def test_an_applied_stop_read_back_reports_ended_unreconciled_and_matches_hub_after_resume(
+    tmp_path: Path,
+) -> None:
+    """After stop -> resume -> read-back, hub ledger and report agree for applied and sealed."""
+    from synapse_channel.core.attempt_markers import AttemptMarker
+    from synapse_channel.core.operation_attempt_ledger import (
+        STATE_APPLIED,
+        STATE_SEALED,
+        AttemptLedger,
+    )
+
+    digest = "d" * 64
+    path = tmp_path / "hub.db"
+    store = EventStore(path)
+    try:
+        for op, attempt, result in (
+            ("op-applied-after-resume", "a" * 32, "applied"),
+            ("op-sealed-after-resume", "b" * 32, "sealed"),
+        ):
+            marker = AttemptMarker(op, attempt, digest)
+            objects = marker.objects("sha1")
+            store.append(
+                EventKind.OPERATION_DECLARED,
+                {
+                    "operation_id": op,
+                    "task_id": "T1",
+                    "sender": scene.WORKER,
+                    "recorded_at": 10.0,
+                    "effect": "git_publication",
+                    "intent_sha256": digest,
+                },
+            )
+            store.append(
+                EventKind.OPERATION_ATTEMPT_ANSWERED,
+                {
+                    "operation_id": op,
+                    "sender": scene.WORKER,
+                    "answer": "approved_fresh",
+                    "attempt_id": attempt,
+                    "approval_seq": 1,
+                    "request_key": f"k-{op}",
+                },
+            )
+            stop_seq = store.append(
+                EventKind.OPERATION_STOPPED,
+                {
+                    "scope": f"operation:{op}",
+                    "epoch": 1,
+                    "listed": [{"operation_id": op, "attempt_id": attempt}],
+                },
+            )
+            store.append(
+                EventKind.OPERATION_RESUMED,
+                {"scope": f"operation:{op}", "lifts_seq": stop_seq},
+            )
+            store.append(
+                EventKind.OPERATION_STOP_READBACK,
+                {
+                    "operation_id": op,
+                    "sender": "R/recovery",
+                    "stop_seq": stop_seq,
+                    "attempt_id": attempt,
+                    "result": result,
+                    "marker_ref": marker.ref,
+                    "object_format": "sha1",
+                    "marker_object": objects.applied if result == "applied" else objects.sealed,
+                },
+            )
+        restored = AttemptLedger(store)
+    finally:
+        store.close()
+
+    assert restored.attempt_state("op-applied-after-resume", "a" * 32) == STATE_APPLIED
+    assert restored.attempt_state("op-sealed-after-resume", "b" * 32) == STATE_SEALED
+    applied_report = run_operation_report(path, "op-applied-after-resume")
+    sealed_report = run_operation_report(path, "op-sealed-after-resume")
+    assert applied_report.state == "ended, unreconciled"
+    assert [item.state for item in applied_report.attempts] == ["ended, unreconciled"]
+    assert applied_report.chain[-1].kind == "stop_readback"
+    assert applied_report.chain[-1].detail["result"] == "applied"
+    assert sealed_report.state == "sealed"
+    assert [item.state for item in sealed_report.attempts] == ["sealed"]
+    assert [(r.operation_id, r.state) for r in run_operation_reports(path)] == [
+        ("op-applied-after-resume", "ended, unreconciled"),
+        ("op-sealed-after-resume", "sealed"),
+    ]

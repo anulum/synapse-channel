@@ -37,6 +37,7 @@ from synapse_channel.core.aef_canonical import canonical_json
 from synapse_channel.core.approvals import AWAITING, ApprovalStatus, build_approval_report
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempt_ledger import (
+    STATE_APPLIED,
     STATE_CLOSED,
     STATE_ENDED,
     STATE_OPEN,
@@ -339,7 +340,7 @@ def _attempt_state(
         return RECONCILED
     if ledger_state == STATE_SEALED:
         return SEALED
-    if ledger_state == STATE_ENDED:
+    if ledger_state in (STATE_ENDED, STATE_APPLIED):
         return ENDED_UNRECONCILED
     if ledger_state == STATE_OPEN and _reported_unfinished(item, rows):
         return OUTCOME_UNKNOWN

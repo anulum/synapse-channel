@@ -21,6 +21,10 @@ under the hub's mutation actor, in journal order:
 * a seal (``operation_sealed``) ends an open attempt without its executor: the
   sealer created the attempt's ``sealed`` marker at the system of record, so its
   effect can never land; the seal does not reconcile it;
+* a kept ``applied`` stop read-back whose marker recomputes to ``applied`` ends
+  its listed attempt as effect-present (``applied``, not ``sealed``) without
+  reconciling or closing the operation, and keeps the operation from opening a
+  second attempt;
 * after the end, a verification by a sender other than the declarer with the
   effect ``observed`` or ``absent`` reconciles it;
 * a verification by a sender other than the declarer with the result
@@ -39,7 +43,9 @@ The ledger also keeps each scope's stops (:mod:`~synapse_channel.core.operation_
   attempt it listed. Only a ``sealed`` or ``applied`` read-back closes the
   attempt for that stop; an executor's report never does. When a read-back's
   marker fields recompute to ``sealed``, the attempt is marked sealed, and any
-  ``confirmed_done`` claim on it is recorded as a contradiction;
+  ``confirmed_done`` claim on it is recorded as a contradiction; when they
+  recompute to ``applied``, the attempt ends as ``applied`` (not sealed), and
+  any ``not_started`` claim on it is recorded as a contradiction;
 * an ``operation_level`` row sets its scope's autonomy level at its epoch; the
   journal sequence of a scope's latest level row is its level line;
 * a ``level_criteria`` row states what a raise of a scope must show, and a
@@ -67,7 +73,10 @@ from synapse_channel.core.operation_level_criteria import (
 from synapse_channel.core.operation_levels import DEFAULT_LEVEL, LEVELS, lowest
 from synapse_channel.core.operation_stop_readbacks import (
     CLOSING_RESULTS,
+    RESULT_APPLIED,
+    RESULT_SEALED,
     RESULT_UNSEALABLE,
+    marker_reads_applied,
     marker_reads_sealed,
 )
 from synapse_channel.core.operation_stop_states import (
@@ -100,9 +109,20 @@ OBSERVED_EFFECTS = frozenset({"observed", "absent"})
 STATE_NONE = "none"
 STATE_OPEN = "open"
 STATE_ENDED = "ended"
+STATE_APPLIED = "applied"
 STATE_SEALED = "sealed"
 STATE_RECONCILED = "reconciled"
 STATE_CLOSED = "closed"
+ATTEMPT_STATES = (
+    STATE_NONE,
+    STATE_OPEN,
+    STATE_ENDED,
+    STATE_APPLIED,
+    STATE_SEALED,
+    STATE_RECONCILED,
+    STATE_CLOSED,
+)
+"""Every attempt state reported over the wire."""
 
 _RESTORED_KINDS = (
     EventKind.OPERATION_DECLARED,
@@ -214,9 +234,11 @@ class _Attempt:
     executor: str
     approval_seq: int
     ended: bool = False
+    applied: bool = False
     sealed: bool = False
     reconciled: bool = False
     claimed_done: bool = False
+    claimed_none: bool = False
 
 
 @dataclass
@@ -256,13 +278,17 @@ class AttemptView:
     approval_consumed : bool
         The given approval has already admitted an attempt.
     unreconciled : bool
-        An ended attempt has no independent observation since its end.
+        An ended attempt has no independent observation since its end, or an
+        earlier attempt's recomputed ``applied`` marker shows its effect landed.
+    applied : bool, optional
+        An earlier attempt's kept read-back recomputed to ``applied``.
     """
 
     closed: bool
     attempt_open: bool
     approval_consumed: bool
     unreconciled: bool
+    applied: bool = False
 
 
 def _deadline_of(intent: object) -> int | None:
@@ -294,6 +320,20 @@ def _bound(entry: Mapping[str, Any]) -> int:
     """Return a criteria item's bound as a row states it; a malformed one reads 0."""
     bound = entry.get("max", entry.get("min", 0))
     return bound if type(bound) is int else 0
+
+
+def _note_outcome_claims(
+    entry: _Operation, last: _Attempt, state: str, external_effect: str, seq: int
+) -> None:
+    """Record executor claims and surface marker contradictions."""
+    if "confirmed_done" in (state, external_effect):
+        last.claimed_done = True
+        if last.sealed and not entry.contradicted_seq:
+            entry.contradicted_seq = seq
+    if "not_started" in (state, external_effect):
+        last.claimed_none = True
+        if last.applied and not entry.contradicted_seq:
+            entry.contradicted_seq = seq
 
 
 class AttemptLedger:
@@ -499,7 +539,9 @@ class AttemptLedger:
         An ``unread`` read-back may be superseded only by a closing result.
         When the marker fields recompute to ``sealed``, the attempt is marked
         sealed, and an earlier ``confirmed_done`` claim on it records a
-        contradiction.
+        contradiction. When they recompute to ``applied``, the attempt ends as
+        ``applied`` (not sealed), and an earlier ``not_started`` claim on it
+        records a contradiction.
         """
         row = self._stop_rows.get(stop_seq)
         if row is not None:
@@ -512,7 +554,7 @@ class AttemptLedger:
         entry = self._operations.get(operation_id)
         if entry is None or not self.stop_lists(stop_seq, operation_id, attempt_id):
             return
-        if not marker_reads_sealed(
+        if marker_reads_sealed(
             operation_id=operation_id,
             attempt_id=attempt_id,
             intent_sha256=entry.fact.intent_sha256,
@@ -520,11 +562,30 @@ class AttemptLedger:
             object_format=object_format,
             marker_object=marker_object,
         ):
-            return
+            self._mark_attempt_from_readback(entry, attempt_id, kind=RESULT_SEALED, seq=seq)
+        elif marker_reads_applied(
+            operation_id=operation_id,
+            attempt_id=attempt_id,
+            intent_sha256=entry.fact.intent_sha256,
+            marker_ref=marker_ref,
+            object_format=object_format,
+            marker_object=marker_object,
+        ):
+            self._mark_attempt_from_readback(entry, attempt_id, kind=RESULT_APPLIED, seq=seq)
+
+    def _mark_attempt_from_readback(
+        self, entry: _Operation, attempt_id: str, *, kind: str, seq: int
+    ) -> None:
         for attempt in entry.attempts:
-            if attempt.attempt_id == attempt_id:
+            if attempt.attempt_id != attempt_id:
+                continue
+            if kind == RESULT_SEALED and not attempt.applied:
                 attempt.ended = attempt.sealed = True
                 if attempt.claimed_done and not entry.contradicted_seq:
+                    entry.contradicted_seq = seq
+            elif kind == RESULT_APPLIED and not attempt.sealed:
+                attempt.ended = attempt.applied = True
+                if attempt.claimed_none and not entry.contradicted_seq:
                     entry.contradicted_seq = seq
 
     def readback_of(self, stop_seq: int, attempt_id: str) -> str | None:
@@ -956,8 +1017,8 @@ class AttemptLedger:
 
         An executor's report of an ``unknown`` outcome ends nothing; its
         sequence is kept, as the level criteria count unknown outcomes. An
-        executor claiming ``confirmed_done`` on a sealed attempt records a
-        contradiction.
+        executor claiming ``confirmed_done`` on a sealed attempt, or
+        ``not_started`` on an applied attempt, records a contradiction.
         """
         entry = self._operations.get(operation_id)
         if entry is None:
@@ -969,10 +1030,8 @@ class AttemptLedger:
             (attempt for attempt in reversed(entry.attempts) if attempt.executor == sender),
             None,
         )
-        if "confirmed_done" in (state, external_effect) and last is not None:
-            last.claimed_done = True
-            if last.sealed and not entry.contradicted_seq:
-                entry.contradicted_seq = seq
+        if last is not None:
+            _note_outcome_claims(entry, last, state, external_effect, seq)
         if state not in TERMINAL_OUTCOME_STATES:
             return
         for attempt in entry.attempts:
@@ -1027,15 +1086,16 @@ class AttemptLedger:
         entry = self._operations.get(operation_id)
         if entry is None:
             return AttemptView(False, False, False, False)
+        applied = any(attempt.applied for attempt in entry.attempts)
         return AttemptView(
             closed=entry.closed,
             attempt_open=any(not attempt.ended for attempt in entry.attempts),
             approval_consumed=any(
                 attempt.approval_seq == approval_seq for attempt in entry.attempts
             ),
-            unreconciled=any(
-                attempt.ended and not attempt.reconciled for attempt in entry.attempts
-            ),
+            unreconciled=applied
+            or any(attempt.ended and not attempt.reconciled for attempt in entry.attempts),
+            applied=applied,
         )
 
     def summary(self, operation_id: str) -> tuple[bool, tuple[AttemptSummary, ...]] | None:
@@ -1052,7 +1112,7 @@ class AttemptLedger:
         return entry.closed, attempts
 
     def attempt_state(self, operation_id: str, attempt_id: str) -> str:
-        """Return ``open``, ``sealed``, ``ended``, ``reconciled``, ``closed`` or ``none``."""
+        """Return one of :data:`ATTEMPT_STATES` for ``attempt_id``."""
         entry = self._operations.get(operation_id)
         found = (
             None
@@ -1067,4 +1127,6 @@ class AttemptLedger:
             return STATE_RECONCILED
         if found.sealed:
             return STATE_SEALED
+        if found.applied:
+            return STATE_APPLIED
         return STATE_ENDED if found.ended else STATE_OPEN

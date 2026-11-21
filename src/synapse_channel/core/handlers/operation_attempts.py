@@ -44,6 +44,7 @@ from synapse_channel.core.operation_attempt_facts import current_approval
 from synapse_channel.core.operation_attempt_ledger import STATE_NONE, AttemptLedger
 from synapse_channel.core.operation_attempts import (
     APPROVED_FRESH,
+    EARLIER_ATTEMPT_UNRECONCILED,
     INVALID_REQUEST,
     AttemptFacts,
     AttemptRequest,
@@ -108,13 +109,13 @@ def _facts(
     sender: str,
     attempts: AttemptLedger,
     now: float,
-) -> AttemptFacts:
+) -> tuple[AttemptFacts, bool]:
     """Read everything the decision needs, under the mutation lock."""
     approval = current_approval(store, hub.verdict_policy, request.intent_sha256)
     view = attempts.view(request.operation_id, None if approval is None else approval.seq)
     stopped_by, stop_line = attempts.stop_facts(request.operation_id)
     _level, level_line = attempts.level_facts(request.operation_id)
-    return AttemptFacts(
+    facts = AttemptFacts(
         claim_refusal=declaration_refusal(
             hub.state.claims.get(request.task_id), sender, request.epoch, now
         ),
@@ -130,6 +131,7 @@ def _facts(
         stop_line=stop_line,
         level_line=level_line,
     )
+    return facts, view.applied
 
 
 def _row(request: AttemptRequest, sender: str, outcome: _Outcome) -> dict[str, Any]:
@@ -167,8 +169,13 @@ async def handle_operation_attempt(
 
     def mutate(candidate: AttemptLedger) -> _Outcome:
         now = wall_clock()
-        facts = _facts(hub, store, request, sender, candidate, now)
+        facts, applied = _facts(hub, store, request, sender, candidate, now)
         decision = decide(request, facts, requester=sender)
+        if decision.answer == EARLIER_ATTEMPT_UNRECONCILED and applied:
+            decision = Decision(
+                EARLIER_ATTEMPT_UNRECONCILED,
+                "an earlier attempt's applied marker shows its effect already landed",
+            )
         if decision.answer != APPROVED_FRESH or facts.approval is None:
             return _Outcome(decision, None, "", now)
         opened = attempt_id(request.operation_id, facts.approval.seq)

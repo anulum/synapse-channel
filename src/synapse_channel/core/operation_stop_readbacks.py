@@ -25,9 +25,10 @@ and records what it read in one ``stop_readback`` record:
 
 Only ``sealed`` and ``applied`` close an attempt for the stop. An executor's
 own report closes nothing for it: a stop trusts markers, not reports. A kept
-``sealed`` read-back whose marker the hub recomputes marks the attempt sealed;
-``applied``, ``unsealable`` and ``unread`` end no attempt here, and no
-``stop_readback`` grants authority.
+``sealed`` read-back whose marker the hub recomputes marks the attempt sealed,
+and a kept ``applied`` read-back whose marker the hub recomputes ends the
+attempt as ``applied`` (not sealed); ``unsealable`` and ``unread`` end no
+attempt here, and no ``stop_readback`` grants authority.
 
 This module is pure; the hub's handler applies the ledger's checks.
 """
@@ -206,6 +207,32 @@ def recompute_readback_result(
     return None
 
 
+def _recomputed_marker_kind(
+    *,
+    operation_id: str,
+    attempt_id: str,
+    intent_sha256: str | None,
+    marker_ref: str,
+    object_format: str,
+    marker_object: str,
+) -> str | None:
+    """Return ``sealed`` or ``applied`` when the marker fields recompute to it, else ``None``."""
+    if intent_sha256 is None or object_format not in OBJECT_ID_LENGTHS:
+        return None
+    try:
+        marker = AttemptMarker(operation_id, attempt_id, intent_sha256)
+    except ValueError:
+        return None
+    if marker_ref != marker.ref:
+        return None
+    objects = marker.objects(object_format)
+    if marker_object == objects.sealed:
+        return RESULT_SEALED
+    if marker_object == objects.applied:
+        return RESULT_APPLIED
+    return None
+
+
 def marker_reads_sealed(
     *,
     operation_id: str,
@@ -216,13 +243,40 @@ def marker_reads_sealed(
     marker_object: str,
 ) -> bool:
     """Return whether the marker fields match the hub's recomputed ``sealed`` marker."""
-    if intent_sha256 is None or object_format not in OBJECT_ID_LENGTHS:
-        return False
-    try:
-        marker = AttemptMarker(operation_id, attempt_id, intent_sha256)
-    except ValueError:
-        return False
-    return marker_ref == marker.ref and marker_object == marker.objects(object_format).sealed
+    return (
+        _recomputed_marker_kind(
+            operation_id=operation_id,
+            attempt_id=attempt_id,
+            intent_sha256=intent_sha256,
+            marker_ref=marker_ref,
+            object_format=object_format,
+            marker_object=marker_object,
+        )
+        == RESULT_SEALED
+    )
+
+
+def marker_reads_applied(
+    *,
+    operation_id: str,
+    attempt_id: str,
+    intent_sha256: str | None,
+    marker_ref: str,
+    object_format: str,
+    marker_object: str,
+) -> bool:
+    """Return whether the marker fields match the hub's recomputed ``applied`` marker."""
+    return (
+        _recomputed_marker_kind(
+            operation_id=operation_id,
+            attempt_id=attempt_id,
+            intent_sha256=intent_sha256,
+            marker_ref=marker_ref,
+            object_format=object_format,
+            marker_object=marker_object,
+        )
+        == RESULT_APPLIED
+    )
 
 
 def readback_mismatch(

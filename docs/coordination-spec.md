@@ -1443,23 +1443,35 @@ hub's clock is detected; the host keeps its clock synchronised (INV-CK-3).
 **Pinned by.** `tests/test_operation_attempt_facts.py`,
 `tests/test_hub_operation_attempts.py`.
 
-### INV-OA-5 — an attempt ends only by its executor, by its verified effect or by a seal
+### INV-OA-5 — an attempt ends only by its executor, by its verified effect, by a seal, or by a recomputed applied read-back
 
 **Normative.** An open attempt MUST end only when its own executor publishes an
 outcome of `not_started`, `confirmed_done` or `confirmed_failed`, when an
 identity other than the declarer publishes a `verified` verification, which
-also closes the operation, or when the hub keeps a seal of it (INV-OA-6). An
-outcome from any other identity MUST end nothing. After an attempt ends, no
-attempt MUST open until an identity other than the declarer publishes a
-verification whose effect is `observed` or `absent`. The declarer's own
+also closes the operation, when the hub keeps a seal of it (INV-OA-6), or when
+the hub keeps an `applied` stop read-back whose marker recomputes to `applied`
+for an attempt the named stop listed (INV-OS-6). An outcome from any other
+identity MUST end nothing. After an attempt ends, no attempt MUST open until an
+identity other than the declarer publishes a verification whose effect is
+`observed` or `absent`; when an attempt's marker recomputed to `applied`, the
+operation MUST NOT open a new attempt (`earlier_attempt_unreconciled`, never
+`approved_fresh`) even after an `absent` observation reconciles the stop, and
+MUST NOT close until an independent `verified` verification arrives (an operator
+moves forward from an applied-then-moved branch by declaring an explicit
+successor operation against the moved branch head). The declarer's own
 verifications MUST count for neither. The ledger MUST be rebuilt from the
 journal at start without consulting any clock.
 
 **Implementation.** `core/operation_attempt_ledger.py`, fed by
-`core/handlers/operation_records.py`.
+`core/handlers/operation_records.py`, and
+`core/handlers/operation_attempts.py`.
 
 **Pinned by.** `tests/test_operation_attempt_ledger.py`,
-`tests/test_hub_operation_attempts.py`, `tests/test_operation_seals.py`.
+`tests/test_hub_operation_attempts.py`, `tests/test_operation_seals.py`,
+`tests/test_operation_stop_readbacks.py`,
+`tests/test_cli_operation_stop_seal.py`
+(`test_an_applied_read_back_ends_the_attempt_reaches_at_rest_and_allows_only_a_successor`,
+`test_an_applied_attempt_closes_only_after_an_independent_verified_observation`).
 
 ### INV-OA-6 — a seal names exactly one open attempt's sealed marker and reconciles nothing
 
@@ -1494,13 +1506,18 @@ identity that holds `operation-evidence` or `operation-seal` on the named task,
 which the handler enforces also on a hub without an ACL policy. Any other
 identity MUST receive `not_authorised` and no attempt, state or closure. An
 operation not declared on the named task MUST be answered `unknown_operation`.
-The answer MUST list each attempt's id, executor and state and whether the
+The answer MUST list each attempt's id, executor and state (from the closed set
+`open`, `applied`, `sealed`, `ended`, `reconciled` or `closed`, with `none`
+when no attempt exists in `live.attempt_state`) and whether the
 operation is closed, and MUST journal nothing.
 
 **Implementation.** `core/handlers/operation_state.py`,
-`core/operation_attempt_ledger.py:AttemptLedger.summary`.
+`core/operation_attempt_ledger.py:AttemptLedger.summary`,
+`core/operation_attempt_ledger.py:ATTEMPT_STATES`.
 
-**Pinned by.** `tests/test_hub_operation_seals.py`.
+**Pinned by.** `tests/test_hub_operation_seals.py`,
+`tests/test_operation_attempt_ledger.py`
+(`test_attempt_states_pin_the_wire_set_and_applied_precedence_survives_restore`).
 
 ### INV-OA-8 — the seal comes before its record, and only an operator removes it
 
@@ -1643,8 +1660,19 @@ read-back is kept. When a kept `stop_readback`'s marker fields recompute to
 `sealed`, the hub MUST mark the attempt `sealed` and, if the executor's outcome
 claimed `confirmed_done` on that attempt, MUST surface the contradiction in hub
 attention (`operation_contradiction`) and as an `incorrect_acceptance` trigger
-when `--ladder` is enabled. `applied`, `unsealable` and `unread` read-backs end
-no attempt here, and no read-back grants authority.
+when `--ladder` is enabled. When a kept `stop_readback`'s marker fields
+recompute to `applied` for an attempt the named stop listed, the hub MUST end
+the attempt as `applied` (not `sealed`, keeping it listed until independently
+observed and never overwriting an already `sealed` attempt or vice versa), MUST
+refuse any new attempt on that operation (`earlier_attempt_unreconciled`, never
+`approved_fresh`) without closing it until an independent `verified`
+verification arrives, and if the executor's outcome claimed `not_started` in
+either `state` or `external_effect` on that attempt (in either arrival order),
+MUST surface the contradiction in hub attention (`operation_contradiction`) and
+as an `incorrect_acceptance` trigger when `--ladder` is enabled (whereas an
+independent `absent` / `not_verified` observation after the branch moved MUST
+reconcile the attempt without raising a contradiction). `unsealable` and
+`unread` read-backs end no attempt here, and no read-back grants authority.
 
 **Implementation.** `core/operation_attempt_ledger.py:AttemptLedger.open_in`,
 `core/operation_attempt_ledger.py:AttemptLedger.stop_closed`,
@@ -1652,16 +1680,21 @@ no attempt here, and no read-back grants authority.
 `core/operation_records.py:stop_readback_refusal`,
 `core/operation_records.py:kept_stop_readback`,
 `core/operation_stop_readbacks.py:recompute_readback_result`,
+`core/operation_stop_readbacks.py:marker_reads_applied`,
 `core/attention.py:project_hub_attention`.
 
 **Pinned by.** `tests/test_operation_stops.py`,
 `tests/test_operation_stop_readbacks.py`,
+`tests/test_operation_report.py`,
 `tests/test_attention.py`,
 `tests/test_cli_operation_stop_seal.py`
 (`test_an_attempt_reported_before_the_stop_is_listed_sealed_and_its_late_effect_refused`,
 `test_a_reported_attempt_is_sealed_anyway_and_the_late_effect_is_refused`,
 `test_two_concurrent_stop_and_seal_runs_keep_one_seal_one_read_back_and_both_exit_zero`,
-`test_a_confirmed_done_outcome_against_a_sealed_marker_surfaces_a_contradiction`).
+`test_a_confirmed_done_outcome_against_a_sealed_marker_surfaces_a_contradiction`,
+`test_an_applied_read_back_ends_the_attempt_reaches_at_rest_and_allows_only_a_successor`,
+`test_an_applied_attempt_closes_only_after_an_independent_verified_observation`,
+`test_a_not_started_outcome_against_an_applied_marker_surfaces_a_contradiction`).
 
 ### INV-OS-7 — the seal first, then its record
 

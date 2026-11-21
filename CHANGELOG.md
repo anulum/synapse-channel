@@ -41,6 +41,20 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A kept `applied` stop read-back ends its attempt as effect-present instead of stranding the stop.**
+  When an executor landed a Git `applied` marker and went silent before reporting an outcome,
+  `AttemptLedger.note_readback` left the attempt open, so a later independent `absent` /
+  `not_verified` observation after the branch moved could not reconcile the attempt and stranded
+  the stop at `no new effect`. A kept `applied` read-back whose marker recomputes to `applied` for
+  a listed attempt now ends the attempt in the new wire state `applied` (not `sealed`, keeping it
+  listed until independently observed, refusing late seals as `attempt_ended`, and reporting it as
+  `ended, unreconciled` in operation reports). Independent observation reconciles the stop to
+  `at rest`, while the operation refuses any second attempt as `earlier_attempt_unreconciled`
+  without closing until an independent `verified` verification arrives (an operator moves forward
+  after a moved branch by declaring an explicit successor operation). An executor outcome claiming
+  `not_started` against a recomputed `applied` marker surfaces an `operation_contradiction`
+  attention item and, under `--ladder`, an `incorrect_acceptance` trigger in either arrival order.
+
 - **Two commands opening an app task queue at the same moment no longer fail.**
   Two first offers into a new queue failed on its directory or on its tables, and
   two openers of a version 1 queue failed on a duplicate column. The directory,

@@ -40,8 +40,9 @@ Rules (recovery console design, rev 2):
   declared effect, answers a repeat of an already-kept result with that kept
   row without writing a second row, and refuses a different result once a
   closing read-back is kept. A newly journalled read-back counts toward the
-  record limit; a recomputed ``sealed`` read-back marks the attempt sealed,
-  while ``applied``, ``unsealable`` and ``unread`` end no attempt.
+  record limit; a recomputed ``sealed`` read-back marks the attempt sealed and
+  a recomputed ``applied`` read-back ends it as ``applied`` (not sealed), while
+  ``unsealable`` and ``unread`` end no attempt.
 * A declaration may carry an authorisation intent
   (:mod:`synapse_channel.core.authorisation_intent`). Its row then keeps the
   composed intent and its digest; a declaration without one is unchanged.
