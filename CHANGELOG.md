@@ -18,6 +18,22 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.60] - 2026-11-21
+
+Core 0.99.60 makes the event log safe to read beside a running hub and adds a
+forward event feed for memory consumers. The log records its store format, and a
+release refuses a log written by a newer format before it reads or creates any
+table: `synapse hub` exits 78, which the hub units do not restart on, and a log a
+crashed hub left is checked read-only. Offline readers, `synapse event-query`, the
+dashboard's feeds and twenty-seven analysis reports open the log read-only, so
+they never write the live journal or block the hub's writer. The forward feed
+(experimental) serves findings and marked undirected chat to a consumer that
+holds the `feed-read` grant, after a cursor bound to the hub and its journal
+instance, and the consumers' acknowledgements hold compaction until the operator
+releases them. A new mailbox waiter starts at the hub's current sequence instead
+of replaying old personal traffic, and says how many earlier messages are
+addressed to it. A Grok wake reads only what Grok is doing now.
+
 ### Added
 
 - **The event log records its store format, and a release refuses a newer one.** The

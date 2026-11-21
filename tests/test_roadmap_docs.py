@@ -203,7 +203,15 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     ):
         assert released_in_0_99_59 in shipped, released_in_0_99_59
         assert released_in_0_99_59 not in unreleased, released_in_0_99_59
-    assert "At 0.99.59 nothing on `main` is outside a release." in unreleased
+    for released_in_0_99_60 in (
+        "a release refuses a log written by a newer format",
+        "`EventLogReader`, so they never write the live journal",
+        "starts at the hub's current sequence instead of replaying old personal traffic",
+        "A forward event feed for memory consumers",
+    ):
+        assert released_in_0_99_60 in shipped, released_in_0_99_60
+        assert released_in_0_99_60 not in unreleased, released_in_0_99_60
+    assert "At 0.99.60 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:

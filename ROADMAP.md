@@ -126,6 +126,16 @@ interfaces, maturity, and release commitments.
   host's headroom. A restored seat's token file ends with its holder, and the
   next restore sweeps the file a killed holder left. See the
   [CLI reference](docs/cli.md).
+- The event log records its store format: a release refuses a log written by a
+  newer format before it reads or creates any table, and `synapse hub` exits 78,
+  which the hub units do not restart on. Offline readers, `synapse event-query`,
+  the dashboard's feeds and the analysis reports open the log read-only through
+  `EventLogReader`, so they never write the live journal or block the hub's
+  writer. See [deployment](docs/deployment.md).
+- A new mailbox waiter starts at the hub's current sequence instead of
+  replaying old personal traffic; its first arm says how many earlier messages
+  are addressed to it, and `--since 0` replays them. See the
+  [CLI reference](docs/cli.md).
 - Mail that no session will collect can be found, handed to a successor or
   closed (`synapse mailbox orphans`, `handover`, `close` and `drain`, and
   `synapse doctor --mailbox-orphans`), and mail addressed to a role waits in
@@ -345,6 +355,11 @@ contracts and external evidence mature:
   resource bidding, and other lab-tier analysis/governance helpers.
 - Advanced federation, trust, encryption, and hardware-backed key adapters
   whose stable operator profiles are still being consolidated.
+- A forward event feed for memory consumers (`synapse feed read`, `ack` and
+  `bind`, behind the `feed-read` grant): findings and marked undirected chat
+  after a cursor bound to the hub and its journal instance, with the consumers'
+  acknowledgements holding compaction until the operator releases them. See
+  [the forward event feed](docs/protocol.md#the-forward-event-feed).
 - Linux protected-execution primitives: one trusted writer API over live
   kernel checks and signed authority status, root-owned installation bytes
   retained in sealed memory files, cgroup ancestry and process-subtree
@@ -357,7 +372,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.59 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.60 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities
