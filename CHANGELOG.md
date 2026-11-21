@@ -80,6 +80,15 @@ execution evidence when carrying a release claim forward.
 
 ### Security
 
+- **No operation can be declared with a physical or equipment effect, and the
+  security policy says so.** An operation record declares one of five software
+  effects, each with a verifier that reads its own system of record, and any
+  other effect is refused. A test now pins the five, refuses equipment-like
+  effect names, and checks that the security policy and the wire protocol name
+  the same five. The policy names the remaining trust: SYNAPSE cannot tell from
+  the record that work declared under a software effect moves equipment, so an
+  application that drives equipment must refuse such a declaration itself.
+
 - **A chat is never an approval, a verdict or a declaration, and a test now pins
   it.** On a real hub, a seat sends canonical approval, evidence and verdict
   bodies as room chats, as direct chats and as raw chat frames that also claim a

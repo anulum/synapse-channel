@@ -277,6 +277,12 @@ does not add agent grades to protocol envelopes.
   attempt here, only `sealed` and `applied` close an attempt for its stop, and
   an executor's own outcome never does.
   Records are observations and grant no authority.
+  The five effects are the only ones: a `declare` naming any other `effect` is
+  refused, and none of the five is a physical or equipment effect. An operation
+  that acts on physical equipment therefore cannot be declared until an effect
+  with a verifier that reads the equipment's own system of record exists.
+  Declaring physical work under one of the five software effects is a misuse the
+  record cannot show; the application's own clamps must refuse it.
 - **Operation attempts:** `operation_attempt` asks to open an attempt of a
   declared operation for the exact intent the requester is about to carry out.
   It names `task_id`, `operation_id`, the claim `epoch` and `intent_sha256`, and

@@ -337,6 +337,21 @@ covers what SYNAPSE records. It does not cover what a person or an agent does
 after reading a message: content from outside the group stays untrusted input for
 whoever acts on it.
 
+### No physical-effect operations
+
+An operation record declares one of five software effects: `file`,
+`git_publication`, `deployment`, `migration` or `component_state`. Each has a
+verifier that reads its own system of record. A declaration naming any other
+effect is refused, so an operation that acts on physical equipment cannot be
+declared, verified or sealed through SYNAPSE today. That stays so until an
+equipment effect is designed with a verifier that reads the equipment's own
+record.
+
+The remaining trust is the application. SYNAPSE cannot tell from the record that
+work declared as one of the five software effects moves physical equipment, so an
+application that drives equipment must refuse such a declaration with its own
+clamps.
+
 ### The forward event feed
 
 The [forward event feed](docs/protocol.md#the-forward-event-feed) adds one
