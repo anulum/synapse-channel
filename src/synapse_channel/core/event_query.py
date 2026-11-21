@@ -27,7 +27,8 @@ from synapse_channel.core.delivery_receipts import (
     receipt_event_to_json,
 )
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.terminal_text import terminal_text
 from synapse_channel.core.universal_receipts import (
     UNIVERSAL_RECEIPT_EVENT_KINDS,
@@ -292,13 +293,18 @@ def run_query(
     ------
     ValueError
         If the event store does not exist or the query is unsupported.
+
+    Notes
+    -----
+    The store is opened read-only (:class:`EventLogReader`): the query never
+    creates, migrates or writes the journal, and never blocks the hub's writer.
     """
     path = Path(db_path)
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
     parsed = parse_query(query)
-    store = EventStore(path, key_file=key_file)
+    store = EventLogReader(path, key_file=key_file)
     try:
         events = tuple(store.read_window(**_selective_read_args(parsed)))
     finally:

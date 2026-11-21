@@ -57,6 +57,28 @@ class SqlCipherKeyError(SynapseError, ValueError):
     code = "sqlcipher_key"
 
 
+class ReadOnlyOpenRefused(SynapseError, ValueError):
+    """Raised when a read-only open finds no event store to read; nothing is created."""
+
+    code = "event_store_read_only"
+
+
+def _read_only_uri(path: str | Path) -> str:
+    """Return SQLite's ``mode=ro`` URI for an existing store file, or refuse.
+
+    Raises
+    ------
+    ReadOnlyOpenRefused
+        When ``path`` is not an existing regular file.
+    """
+    target = Path(path)
+    if not target.is_file():
+        raise ReadOnlyOpenRefused(
+            f"missing event store: {target}; a read-only open creates nothing"
+        )
+    return f"{target.absolute().as_uri()}?mode=ro"
+
+
 def sqlcipher_available() -> bool:
     """Return whether a SQLCipher DB-API driver can be imported."""
     try:
@@ -145,6 +167,7 @@ def connect_sqlcipher(
     key: bytes,
     *,
     check_same_thread: bool = True,
+    read_only: bool = False,
 ) -> Any:
     """Open a SQLCipher database at ``path`` with the given raw key.
 
@@ -154,6 +177,10 @@ def connect_sqlcipher(
         Database file path (``:memory:`` accepted for tests).
     key : bytes
         Raw 32-byte key material.
+    check_same_thread : bool, optional
+        Forwarded to the SQLCipher driver.
+    read_only : bool, optional
+        Open an existing file through SQLite's ``mode=ro`` URI form.
 
     Returns
     -------
@@ -166,9 +193,12 @@ def connect_sqlcipher(
         When the SQLCipher driver is not installed.
     SqlCipherKeyError
         When the key cannot open the database.
+    ReadOnlyOpenRefused
+        When ``read_only`` is set and ``path`` is not an existing file.
     """
     sqlcipher = import_sqlcipher_module()
-    conn = sqlcipher.connect(str(path), check_same_thread=check_same_thread)
+    target = _read_only_uri(path) if read_only else str(path)
+    conn = sqlcipher.connect(target, check_same_thread=check_same_thread, uri=read_only)
     try:
         apply_sqlcipher_key(conn, key)
     except Exception:
@@ -183,6 +213,7 @@ def connect_event_store(
     key: bytes | None = None,
     key_file: str | Path | None = None,
     check_same_thread: bool = True,
+    read_only: bool = False,
 ) -> tuple[Any, bool]:
     """Open a stock or SQLCipher connection for the event store.
 
@@ -197,6 +228,9 @@ def connect_event_store(
         Owner-only 32-byte key file (checked via :func:`load_key_file`).
     check_same_thread : bool, optional
         Forwarded to the selected SQLite driver.
+    read_only : bool, optional
+        Open an existing store through SQLite's ``mode=ro`` URI form, so nothing
+        is created and every write fails. The format check below still applies.
 
     Returns
     -------
@@ -215,12 +249,15 @@ def connect_event_store(
     StoreFormatRefused
         When the store needs a newer store format than this release reads; the
         connection is closed and the store is left unchanged.
+    ReadOnlyOpenRefused
+        When ``read_only`` is set and ``path`` is not an existing file.
     """
     material = key
     if material is None and key_file is not None:
         material = load_key_file(key_file)
     if material is None:
-        conn = sqlite3.connect(str(path), check_same_thread=check_same_thread)
+        target = _read_only_uri(path) if read_only else str(path)
+        conn = sqlite3.connect(target, check_same_thread=check_same_thread, uri=read_only)
         try:
             # SQLCipher files open under stock sqlite3 but fail on the first real
             # page read — surface a key-file hint instead of "file is not a database".
@@ -234,7 +271,9 @@ def connect_event_store(
             ) from exc
         _refuse_unreadable_format(conn, path)
         return conn, False
-    conn = connect_sqlcipher(path, material, check_same_thread=check_same_thread)
+    conn = connect_sqlcipher(
+        path, material, check_same_thread=check_same_thread, read_only=read_only
+    )
     _refuse_unreadable_format(conn, path)
     return conn, True
 

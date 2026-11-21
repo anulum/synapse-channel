@@ -358,6 +358,35 @@ that a vendor processed them.
       members: [commit_delivery_receipt_request, commit_delivery_receipt_transition, delivery_receipt_aggregate, pending_delivery_notifications, mark_delivery_notification_attempt]
       show_source: false
 
+## Read-only event log reads
+
+`EventStore` is the log's writer: opening it creates a missing file, adds missing
+tables and columns, sets the journal mode and records the store format. An
+offline reader of a live journal opens `EventLogReader` instead:
+
+```python
+from synapse_channel.core.persistence_reader import EventLogReader
+
+with EventLogReader("hub.db", key_file=None) as log:
+    for event in log.read_since(0, kinds=["finding"], limit=100):
+        print(event.seq, event.kind)
+```
+
+It opens the existing file with SQLite's `mode=ro`, so it never creates, migrates
+or writes the log, and in WAL mode it never blocks the hub's writer. A missing
+file, or one without the event table, is refused with `ReadOnlyOpenRefused`, and
+nothing is created. A store with a newer format than this release reads is
+refused as it is for the writer. It offers the writer's read methods: `iter_events`,
+`stream_events`, `read_all`, `read_since`, `read_latest`, `read_window`,
+`corrupt_rows`, `count`, `event_metrics`, `max_seq` and `latest_at_or_before`.
+They decode rows exactly as the writer does. An SQLCipher store is read with its
+key file.
+
+The store's bytes never change. Reading a WAL journal that no process has open
+leaves SQLite's empty `-wal` file and its `-shm` index, with the store's own
+permissions, because a read-only connection cannot checkpoint them away. The next
+writer uses and removes them. `synapse event-query` reads this way.
+
 ## Read-only delivery receipts
 
 Use the explicit storage module for one directed chat's durable receipt:

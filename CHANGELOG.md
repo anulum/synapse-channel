@@ -20,6 +20,15 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **Offline readers can open the event log read-only.** `EventLogReader`, in
+  `synapse_channel.core.persistence_reader`, opens an existing log with SQLite's
+  `mode=ro`. It never creates, migrates or writes the log, refuses a missing file
+  or one without the event table, refuses a newer store format, and in WAL mode
+  never blocks the hub's writer. It offers the writer's read methods and decodes
+  rows the same way; an SQLCipher log is read with its key file. `synapse
+  event-query` now reads this way. Before, it opened the hub's writer, which wrote
+  the format record into a log from before the store-format floor.
+
 - **The event log records its store format, and a release refuses a newer one.** The
   log's SQLite header (`user_version`) and a one-row `store_format` table hold the format
   and the release that last raised it; this release writes format 1. A release that
