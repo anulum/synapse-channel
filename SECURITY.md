@@ -322,6 +322,31 @@ checkpoint, which detects cut or rewritten history but not appended rows. The ke
 file is the trust boundary; keep it on the same owner-only footing as the
 checkpoint store, or on separate custody.
 
+### The forward event feed
+
+The [forward event feed](docs/protocol.md#the-forward-event-feed) adds one
+permission, `feed-read`, and lets the consumers' acknowledgements hold the
+durable log's compaction:
+
+- **What it exposes.** Findings, and undirected, untagged chat that begins with
+  one of the hub's markers. It never serves directed or channel chat. Under
+  `--require-acl` a consumer needs `feed-read` on every kind it reads, for its
+  own connection or one of its roles.
+- **On the open loopback default**, with no ACL policy, `feed-read` is not
+  checked, so any local process that connects under a seat name can read the
+  feed as that seat, as it can read other coordination state. Use a guarded
+  profile when that is not acceptable.
+- **An ack is the consumer's own bookkeeping**, journalled as a `feed_ack` row
+  and never a delivery receipt. A hub that recovered around corrupt rows, and
+  refuses other mutations, still keeps acks, so a consumer can move past a
+  corrupt prefix.
+- **Acks hold compaction.** `synapse compact` does not remove rows above the
+  lowest ack of a registered consumer of the current journal instance, so a
+  stopped consumer holds the journal's growth until the operator releases it
+  by name with `--release-feed-consumer`, or passes every ack with
+  `--past-feed-acks`. A run that removes rows or passes a consumer is
+  journalled as a `compaction_floor` event.
+
 ### Deployment profiles
 
 Security here is proportionate to exposure, not one-size-fits-all. Pick the
