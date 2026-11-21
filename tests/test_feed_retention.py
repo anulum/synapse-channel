@@ -432,6 +432,34 @@ async def test_a_page_reports_the_floor_and_the_gap_a_live_compaction_left(tmp_p
     assert [row["seq"] for row in fresh["rows"]] == findings[2:]  # f0 and f1 are gone
 
 
+async def test_a_later_compaction_raises_the_floor_a_live_page_reports(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    journal = EventStore(db)
+    for index in range(2):
+        _expired(journal, f"first {index}")
+    try:
+        async with running_hub(SynapseHub(journal=journal, hub_id=_HUB)) as (_, uri):
+            reader = await connect_agent("R/reader", uri)
+            try:
+                floors: list[int] = []
+                for run in range(2):
+                    operator = EventStore(db)  # the offline command, while the hub serves
+                    try:
+                        if run:
+                            for index in range(2):
+                                _expired(operator, f"second {index}")
+                        compact(operator, _AGED, floor_seq=operator.max_seq(), now=1000.0)
+                    finally:
+                        operator.close()
+                    floors.append((await _page(reader, 0))["compaction_floor"])
+            finally:
+                await close_agents(reader)
+    finally:
+        journal.close()
+
+    assert 0 < floors[0] < floors[1]  # the second, higher floor replaces the first
+
+
 def test_the_command_names_the_consumers_that_held_or_were_passed(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

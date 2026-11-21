@@ -31,7 +31,7 @@ from hub_e2e_helpers import (
 )
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.acl import FEED_READ, WOULD_DENY, AclPolicy, AclRule
-from synapse_channel.core.feed import FEED_PAGE_BYTES, payload_sha256
+from synapse_channel.core.feed import FEED_PAGE_BYTES, FEED_SCAN_LIMIT, payload_sha256
 from synapse_channel.core.feed_retention import RETENTION_SCAN_PAGE
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind, record_finding
@@ -649,6 +649,16 @@ async def test_damaged_rows_are_served_as_markers_or_passed(tmp_path: Path) -> N
         {"type": "chat", "sender": "R/pub", "target": "all", "payload": "Finding: x"},
     )
     finding = record_finding_seq(journal, {"text": "a finding"})
+    non_finite_marker = journal.append(
+        EventKind.CHAT,
+        {
+            "type": "chat",
+            "sender": "R/pub",
+            "target": "all",
+            "payload": "Finding: y",
+            "x": float("nan"),
+        },
+    )
     journal.close()
     with closing(sqlite3.connect(db)) as connection:
         connection.execute("UPDATE events SET payload = '{' WHERE seq = ?", (marked,))
@@ -667,9 +677,40 @@ async def test_damaged_rows_are_served_as_markers_or_passed(tmp_path: Path) -> N
         journal.close()
 
     # an undecodable chat cannot show whether it was marked; a non-finite payload has no digest
-    assert page["rows"] == [{"seq": finding, "kind": "finding", "corrupt": True}]
-    assert page["next_after"] == finding
+    assert page["rows"] == [
+        {"seq": finding, "kind": "finding", "corrupt": True},
+        {"seq": non_finite_marker, "kind": "chat_marker", "corrupt": True},
+    ]
+    assert page["next_after"] == non_finite_marker
     assert version_two["error"] == "invalid feed query"
+
+
+async def test_a_full_scan_of_unserved_rows_moves_the_cursor_and_says_there_is_more(
+    tmp_path: Path,
+) -> None:
+    journal = EventStore(tmp_path / "hub.db")
+    directed = {"type": "chat", "sender": "R/pub", "target": "R/one", "payload": "Finding: p"}
+    unserved = journal.append_batch([(EventKind.CHAT, directed)] * (FEED_SCAN_LIMIT + 1))
+    marked = journal.append(
+        EventKind.CHAT,
+        {"type": "chat", "sender": "R/pub", "target": "all", "payload": "Finding: o"},
+    )
+    try:
+        async with running_hub(SynapseHub(journal=journal, hub_id=_HUB)) as (_, uri):
+            consumer = await connect_agent("R/consumer", uri)
+            try:
+                first = await _page(consumer)
+                cursor = {"hub_id": first["hub_id"], "journal_instance": first["journal_instance"]}
+                second = await _page(consumer, after_seq=first["next_after"], **cursor)
+            finally:
+                await close_agents(consumer)
+    finally:
+        journal.close()
+
+    # a page that scanned its limit without serving anything still moves on and says so
+    assert (first["rows"], first["has_more"]) == ([], True)
+    assert first["next_after"] == unserved[FEED_SCAN_LIMIT - 1]
+    assert ([row["seq"] for row in second["rows"]], second["has_more"]) == ([marked], False)
 
 
 async def test_the_page_byte_budget_stops_a_page_and_refuses_one_oversized_row(
