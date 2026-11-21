@@ -41,6 +41,15 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **A task postmortem attributes a chat only to its sender.** The hub journals a
+  chat frame's fields as they arrived, and the postmortem read a chat's `from`,
+  `author` or `owner` before its `sender`. So a seat could send a chat that named
+  the task owner in those fields. It then counted as the owner's reply, hid a
+  message the owner never answered, and entered the task timeline under the
+  owner's name. A chat's actor is now the `sender` the hub binds to the
+  connection. The hub never wrote `from` on a chat; only synthetic test events
+  did, and those now use `sender`.
+
 - **A kept `applied` stop read-back ends its attempt as effect-present instead of stranding the stop.**
   When an executor landed a Git `applied` marker and went silent before reporting an outcome,
   `AttemptLedger.note_readback` left the attempt open, so a later independent `absent` /

@@ -280,7 +280,15 @@ def _timeline_entry(event: StoredEvent) -> TimelineEntry:
 
 
 def _event_actor(event: StoredEvent) -> str:
-    """Return the best actor field carried by an event."""
+    """Return the best actor field carried by an event.
+
+    A chat's actor is its hub-bound sender: the hub journals a chat frame's other
+    fields as they arrived, so an ``owner``, ``author`` or ``from`` on a chat is
+    the sender's claim, not attribution. Snapshots and progress notes are typed
+    records whose ``owner`` and ``author`` the hub sets.
+    """
+    if event.kind == EventKind.CHAT:
+        return _chat_sender(event)
     payload = event.payload
     for key in ("owner", "author", "from", "sender"):
         value = str(payload.get(key, ""))
@@ -442,8 +450,13 @@ def _mentions_task(event: StoredEvent, task_id: str) -> bool:
 
 
 def _chat_sender(event: StoredEvent) -> str:
-    """Return the sender field from a chat event payload."""
-    return str(event.payload.get("from", event.payload.get("sender", "")))
+    """Return the sender the hub bound to a chat event's connection.
+
+    The hub refuses a frame whose ``sender`` is not the connection's bound name,
+    and keeps any ``from`` field the frame adds as it arrived, so only ``sender``
+    attributes a chat.
+    """
+    return str(event.payload.get("sender", ""))
 
 
 def _chat_target(event: StoredEvent) -> str:

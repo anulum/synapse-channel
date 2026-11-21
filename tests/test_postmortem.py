@@ -70,7 +70,7 @@ def _seed_postmortem_store(path: Path) -> None:
     store.append(
         EventKind.CHAT,
         {
-            "from": "lead",
+            "sender": "lead",
             "target": "alpha",
             "payload": "T1 status?",
             "msg_id": 1,
@@ -207,15 +207,15 @@ def test_postmortem_distinguishes_non_conflicts_and_answered_messages(
         ts=4.0,
         durable=True,
     )
-    store.append(EventKind.CHAT, {"from": "lead", "target": "all", "payload": "T1 FYI"}, ts=5.0)
+    store.append(EventKind.CHAT, {"sender": "lead", "target": "all", "payload": "T1 FYI"}, ts=5.0)
     store.append(
         EventKind.CHAT,
-        {"from": "lead", "target": "alpha", "payload": "T1 status?"},
+        {"sender": "lead", "target": "alpha", "payload": "T1 status?"},
         ts=6.0,
     )
     store.append(
         EventKind.CHAT,
-        {"from": "alpha", "target": "lead", "payload": "T1 done"},
+        {"sender": "alpha", "target": "lead", "payload": "T1 done"},
         ts=7.0,
     )
     store.close()

@@ -329,7 +329,10 @@ evidence and corrections come only from `ledger_progress` notes of their declare
 kind, attributed to the sender the hub bound to the connection and admitted
 through their gates. A chat whose text is a canonical approval or verdict body,
 or whose frame claims a note `kind`, `text` or `author`, records none of them and
-yields no receipt; the [wire protocol](docs/protocol.md) states the rule. This
+yields no receipt; the [wire protocol](docs/protocol.md) states the rule. The
+hub journals a chat frame's other fields as they arrived, so a report that names
+a chat's author, such as the task postmortem, reads its bound `sender` and never
+a `from`, `author` or `owner` the frame supplied. This
 covers what SYNAPSE records. It does not cover what a person or an agent does
 after reading a message: content from outside the group stays untrusted input for
 whoever acts on it.
