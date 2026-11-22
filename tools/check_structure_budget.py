@@ -35,6 +35,7 @@ import datetime
 import json
 import subprocess
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -46,7 +47,8 @@ __all__ = ["Ledger", "LedgerError", "Violation", "check_baseline", "check_tree",
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LEDGER = "tools/structure_budget.toml"
-SCHEMA = 2
+SCHEMA = 3
+_INITIALISATION_SCHEMA = 2
 _INITIALISATION_MEASURE = "initialisation_attributes"
 _INITIALISATION_THRESHOLD = 20
 CONFIGURATION = "configuration"
@@ -103,7 +105,7 @@ class Ledger:
     thresholds : dict[str, int]
         Figure above which a unit must be listed, per measure.
     allowed_private : frozenset[str]
-        ``name._attr`` spellings not counted as private access.
+        Global ``name._attr`` spellings not counted as private access.
     ceilings : dict[str, dict[str, int]]
         Per measure, the listed units with their recorded figure.
     moves : tuple[dict[str, str], ...]
@@ -111,6 +113,8 @@ class Ledger:
     exceptions : tuple[dict[str, Any], ...]
         Units accepted above their threshold outside the ceilings, each with
         ``allowed``, ``reason``, ``owner`` and ``review_by``.
+    allowed_private_by_module : dict[str, frozenset[str]]
+        Module-scoped ``name._attr`` spellings allowed only in the named module path.
     """
 
     roots: tuple[str, ...]
@@ -120,6 +124,7 @@ class Ledger:
     moves: tuple[dict[str, str], ...] = ()
     exceptions: tuple[dict[str, Any], ...] = field(default=())
     schema: int = SCHEMA
+    allowed_private_by_module: dict[str, frozenset[str]] = field(default_factory=dict)
 
     def excepted(self, measure: str, unit: str) -> dict[str, Any] | None:
         """Return the exception recorded for a unit under a measure, if any."""
@@ -127,6 +132,15 @@ class Ledger:
             if entry["measure"] == measure and entry["unit"] == unit:
                 return entry
         return None
+
+    def allows_private_unit(self, unit: str) -> bool:
+        """Return whether ``unit`` names a global or module-scoped private allowance."""
+        if unit in self.allowed_private:
+            return True
+        if "::" not in unit:
+            return False
+        module_path, name = unit.split("::", 1)
+        return name in self.allowed_private_by_module.get(module_path, frozenset())
 
 
 def _integer_table(table: object, name: str) -> dict[str, int]:
@@ -163,11 +177,65 @@ def _exception_entries(raw: object) -> tuple[dict[str, Any], ...]:
 
 
 def _schema(data: dict[str, Any]) -> int:
-    """Accept only the retained legacy schema and the current schema."""
+    """Accept only the retained legacy schemas and the current schema."""
     schema = data.get("schema")
-    if not isinstance(schema, int) or isinstance(schema, bool) or schema not in (1, SCHEMA):
-        raise LedgerError(f"ledger_malformed: schema must be 1 or {SCHEMA}")
+    if (
+        not isinstance(schema, int)
+        or isinstance(schema, bool)
+        or schema not in (1, _INITIALISATION_SCHEMA, SCHEMA)
+    ):
+        raise LedgerError(
+            f"ledger_malformed: schema must be 1, {_INITIALISATION_SCHEMA} or {SCHEMA}"
+        )
     return schema
+
+
+def _allowed_private_modules(raw: object, schema: int) -> dict[str, frozenset[str]]:
+    """Parse and validate module-scoped private-access allowances."""
+    if raw is None:
+        return {}
+    if schema < SCHEMA:
+        raise LedgerError(
+            f"ledger_malformed: module-scoped private allowances require schema {SCHEMA}"
+        )
+    if not isinstance(raw, dict):
+        raise LedgerError("ledger_malformed: allowed_private_access.modules must be a table")
+    parsed: dict[str, frozenset[str]] = {}
+    for module_path, entries in raw.items():
+        if not isinstance(module_path, str) or not module_path.strip():
+            raise LedgerError(
+                "ledger_malformed: allowed_private_access.modules keys must be non-empty paths"
+            )
+        if (
+            not isinstance(entries, list)
+            or not entries
+            or not all(isinstance(name, str) and name.strip() for name in entries)
+        ):
+            raise LedgerError(
+                f"ledger_malformed: allowed_private_access.modules.{module_path} "
+                "must be a non-empty array of names"
+            )
+        parsed[module_path] = frozenset(entries)
+    return parsed
+
+
+def _allowed_private(
+    data: dict[str, Any], schema: int
+) -> tuple[frozenset[str], dict[str, frozenset[str]]]:
+    """Parse global and module-scoped private-access allowances."""
+    raw = data.get("allowed_private_access", {})
+    if not isinstance(raw, dict):
+        raise LedgerError("ledger_malformed: allowed_private_access must be a table")
+    unknown = set(raw) - {"names", "modules"}
+    if unknown:
+        raise LedgerError(f"ledger_malformed: unknown allowed_private_access key {sorted(unknown)}")
+    names = raw.get("names", [])
+    if not isinstance(names, list) or not all(isinstance(n, str) and n.strip() for n in names):
+        raise LedgerError(
+            "ledger_malformed: allowed_private_access.names must be an array of names"
+        )
+    modules = _allowed_private_modules(raw.get("modules"), schema)
+    return frozenset(names), modules
 
 
 def _thresholds(data: dict[str, Any], schema: int) -> dict[str, int]:
@@ -219,14 +287,16 @@ def parse_ledger(text: str) -> Ledger:
         isinstance(move, dict) and {"from", "to", "measure"} <= set(move) for move in moves
     ):
         raise LedgerError("ledger_malformed: every move needs from, to and measure")
+    allowed_private, allowed_private_by_module = _allowed_private(data, schema)
     return Ledger(
         roots=tuple(roots),
         thresholds=thresholds,
-        allowed_private=frozenset(data.get("allowed_private_access", {}).get("names", [])),
+        allowed_private=allowed_private,
         ceilings={m: _integer_table(ceilings_raw.get(m, {}), f"ceilings.{m}") for m in MEASURES},
         moves=tuple(dict(move) for move in moves),
         exceptions=_exception_entries(data.get("exceptions", [])),
         schema=schema,
+        allowed_private_by_module=allowed_private_by_module,
     )
 
 
@@ -245,6 +315,12 @@ def render_ledger(ledger: Ledger) -> str:
         "[allowed_private_access]",
         f"names = {json.dumps(sorted(ledger.allowed_private))}",
     ]
+    if ledger.allowed_private_by_module:
+        lines += ["", "[allowed_private_access.modules]"]
+        lines += [
+            f"{json.dumps(module_path)} = {json.dumps(sorted(names))}"
+            for module_path, names in sorted(ledger.allowed_private_by_module.items())
+        ]
     for measure in MEASURES:
         lines += ["", f"[ceilings.{measure}]"]
         lines += [
@@ -284,7 +360,36 @@ def _check_unit(
     return None
 
 
-def check_tree(ledger: Ledger, figures: Figures, today: datetime.date) -> list[Violation]:
+def _check_allowed_private_modules(
+    ledger: Ledger,
+    figures: Figures,
+    observed_private: Mapping[str, frozenset[str]] | None,
+) -> list[Violation]:
+    """Refuse module-scoped private allowances whose path is missing or name is unused."""
+    found: list[Violation] = []
+    measured_modules = figures["private_access"]
+    for module_path, names in sorted(ledger.allowed_private_by_module.items()):
+        if module_path not in measured_modules:
+            detail = "module path does not exist in measured roots"
+            found.append(Violation("allowed_module_missing", CONFIGURATION, module_path, detail))
+            continue
+        if observed_private is None:
+            continue
+        used = observed_private.get(module_path, frozenset())
+        for name in sorted(names - used):
+            unit = f"{module_path}::{name}"
+            detail = "allowed private name is not used in this module; remove it"
+            found.append(Violation("stale_allowed_private", CONFIGURATION, unit, detail))
+    return found
+
+
+def check_tree(
+    ledger: Ledger,
+    figures: Figures,
+    today: datetime.date,
+    *,
+    observed_private: Mapping[str, frozenset[str]] | None = None,
+) -> list[Violation]:
     """Compare the measured tree with the ledger.
 
     Parameters
@@ -295,13 +400,17 @@ def check_tree(ledger: Ledger, figures: Figures, today: datetime.date) -> list[V
         Output of :func:`tools.structure_measures.measure_roots`.
     today : datetime.date
         Date against which exception review dates are judged.
+    observed_private : Mapping[str, frozenset[str]] or None, optional
+        Private accesses observed per measured module before allowlist filtering,
+        used to catch unused module-scoped allowances.
 
     Returns
     -------
     list[Violation]
         Units above their threshold that are unlisted, above or below their
-        ceiling; ledger entries and exceptions that no longer apply; expired
-        exceptions. Empty when the ledger describes the tree exactly.
+        ceiling; ledger entries and exceptions that no longer apply; missing or
+        stale module-scoped private allowances; expired exceptions. Empty when
+        the ledger describes the tree exactly.
     """
     found: list[Violation] = []
     for measure in MEASURES:
@@ -321,7 +430,11 @@ def check_tree(ledger: Ledger, figures: Figures, today: datetime.date) -> list[V
         if figures[measure].get(unit, 0) <= ledger.thresholds[measure]:
             detail = "the unit is gone or no longer above its threshold; remove the exception"
             found.append(Violation("exception_unused", measure, unit, detail))
-    return found + _check_configuration_exceptions(ledger, today)
+    return (
+        found
+        + _check_allowed_private_modules(ledger, figures, observed_private)
+        + _check_configuration_exceptions(ledger, today)
+    )
 
 
 def _check_configuration_exceptions(ledger: Ledger, today: datetime.date) -> list[Violation]:
@@ -339,9 +452,26 @@ def _check_configuration_exceptions(ledger: Ledger, today: datetime.date) -> lis
             if figure > entry["allowed"]:
                 detail = f"{figure} is above the excepted {entry['allowed']}"
                 found.append(Violation("above_ceiling", CONFIGURATION, unit, detail))
-        elif unit not in ledger.allowed_private:
+        elif not ledger.allows_private_unit(unit):
             detail = "the configuration allowance is unused; remove the exception"
             found.append(Violation("exception_unused", CONFIGURATION, unit, detail))
+    return found
+
+
+def _check_allowed_private_growth(ledger: Ledger, baseline: Ledger) -> list[Violation]:
+    """Refuse growth of global or module-scoped private allowances without an exception."""
+    found: list[Violation] = []
+    for name in sorted(ledger.allowed_private - baseline.allowed_private):
+        if ledger.excepted(CONFIGURATION, name) is None:
+            detail = "allowed private name added without an exception"
+            found.append(Violation("allowed_list_grown", CONFIGURATION, name, detail))
+    for module_path, names in sorted(ledger.allowed_private_by_module.items()):
+        before = baseline.allowed_private_by_module.get(module_path, frozenset())
+        for name in sorted(names - before):
+            unit = f"{module_path}::{name}"
+            if ledger.excepted(CONFIGURATION, unit) is None:
+                detail = "allowed private name added without an exception"
+                found.append(Violation("allowed_list_grown", CONFIGURATION, unit, detail))
     return found
 
 
@@ -359,10 +489,7 @@ def _check_configuration(ledger: Ledger, baseline: Ledger) -> list[Violation]:
         if after > before and ledger.excepted(CONFIGURATION, measure) is None:
             detail = f"{before} -> {after} without an exception"
             found.append(Violation("threshold_raised", CONFIGURATION, measure, detail))
-    for name in sorted(ledger.allowed_private - baseline.allowed_private):
-        if ledger.excepted(CONFIGURATION, name) is None:
-            detail = "allowed private name added without an exception"
-            found.append(Violation("allowed_list_grown", CONFIGURATION, name, detail))
+    found.extend(_check_allowed_private_growth(ledger, baseline))
     return found
 
 
@@ -474,7 +601,7 @@ def load_baseline(root: Path, revision: str, ledger_path: str) -> Ledger | None:
         ceilings[_INITIALISATION_MEASURE] = {
             unit: figure for unit, figure in units.items() if figure > _INITIALISATION_THRESHOLD
         }
-        baseline = replace(baseline, ceilings=ceilings, schema=SCHEMA)
+        baseline = replace(baseline, ceilings=ceilings, schema=_INITIALISATION_SCHEMA)
     return baseline
 
 
@@ -552,8 +679,14 @@ def _run(arguments: argparse.Namespace) -> int:
     except OSError as error:
         raise LedgerError(f"ledger_missing: {error}") from error
     unresolved: dict[str, tuple[str, ...]] = {}
+    observed_private: dict[str, frozenset[str]] = {}
     figures = measure_roots(
-        root, ledger.roots, allowed_private=ledger.allowed_private, unresolved=unresolved
+        root,
+        ledger.roots,
+        allowed_private=ledger.allowed_private,
+        allowed_private_by_module=ledger.allowed_private_by_module,
+        unresolved=unresolved,
+        observed_private=observed_private,
     )
     for unit, calls in sorted(unresolved.items()):
         print(f"initialisation unresolved: {unit}: {'; '.join(calls)}")
@@ -567,7 +700,7 @@ def _run(arguments: argparse.Namespace) -> int:
     if arguments.report:
         print("\n".join(_report(ledger, baseline)))
         return 0
-    found = check_tree(ledger, figures, datetime.date.today())
+    found = check_tree(ledger, figures, datetime.date.today(), observed_private=observed_private)
     if baseline is not None:
         found += check_baseline(ledger, baseline)
     for violation in found:

@@ -181,13 +181,19 @@ def check_commit(
             raise LedgerError(f"ledger_removed: {commit} drops the {ledger_path} its parent holds")
         return [], True
     ledger = parse_ledger(text + "\n")
+    observed_private: dict[str, frozenset[str]] = {}
     try:
         figures = measure_revision(
-            root, commit, ledger.roots, allowed_private=ledger.allowed_private
+            root,
+            commit,
+            ledger.roots,
+            allowed_private=ledger.allowed_private,
+            allowed_private_by_module=ledger.allowed_private_by_module,
+            observed_private=observed_private,
         )
     except ValueError as error:
         raise LedgerError(f"baseline_unavailable: {error}") from error
-    found = check_tree(ledger, figures, today)
+    found = check_tree(ledger, figures, today, observed_private=observed_private)
     if baseline is not None:
         found += check_baseline(ledger, baseline)
     return found, False

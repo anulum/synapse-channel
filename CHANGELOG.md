@@ -67,6 +67,16 @@ execution evidence when carrying a release claim forward.
   private wrapper aliases are removed, bringing both wrapper modules to zero private accesses.
   Behaviour is unchanged.
 
+- **Structure budget schema 3 adds module-scoped `[allowed_private_access.modules]` allowances.**
+  `tools/structure_measures.py`, `tools/structure_revision.py`, `tools/check_structure_budget.py`,
+  and `tools/structure_budget_walk.py` now support per-module private-access allowances while
+  refusing missing module paths (`allowed_module_missing`), unused entries
+  (`stale_allowed_private`), cross-module reuse, baseline growth without a
+  `configuration` `[[exceptions]]` entry keyed as `"<module path>::<name>"`, unused
+  configuration exceptions, and schema downgrades. `tools/structure_budget.toml` advances to
+  `schema = 3` with no added allowances or changed ceilings; runtime package behaviour is
+  unchanged.
+
 ### Fixed
 
 - **Opposing `applied` and `sealed` marker records on the same attempt now surface as a contradiction.**

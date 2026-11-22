@@ -7,7 +7,7 @@
 # SYNAPSE CHANNEL — structure budget ledger
 # Structure budget: recorded figures of units above their threshold.
 # Written by `python -m tools.check_structure_budget --update`. A figure may only fall.
-schema = 2
+schema = 3
 roots = ["src/synapse_channel", "tools"]
 
 [thresholds]

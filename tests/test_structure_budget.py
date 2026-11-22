@@ -452,15 +452,34 @@ def test_additional_measured_root_keeps_existing_growth_guards(repo: Repo) -> No
 @pytest.mark.parametrize(
     ("damage", "reason"),
     [
-        ("schema = 2", "schema = 3"),
+        ("schema = 3", "schema = 4"),
         ("private_access = 0", "private_access = -1"),
         ("private_access = 0", "private_access = 0\nunknown_measure = 3"),
         ('roots = ["pkg"]', "roots = []"),
         ("[thresholds]", "[thresholds"),
         ("[thresholds]\n", "thresholds = 3\n[other]\n"),
-        ("schema = 2", "schema = 2\nexceptions = 3"),
-        ("schema = 2", "schema = 2\nmoves = [{from = 'a'}]"),
-        ("schema = 2", "schema = 2\nmoves = 3"),
+        ("schema = 3", "schema = 3\nexceptions = 3"),
+        ("schema = 3", "schema = 3\nmoves = [{from = 'a'}]"),
+        ("schema = 3", "schema = 3\nmoves = 3"),
+        (
+            'names = ["argparse._SubParsersAction"]',
+            'names = ["argparse._SubParsersAction"]\nextra = 1',
+        ),
+        ('names = ["argparse._SubParsersAction"]', 'names = [""]'),
+        (
+            'names = ["argparse._SubParsersAction"]',
+            'names = ["argparse._SubParsersAction"]\nmodules = 3',
+        ),
+        (
+            'names = ["argparse._SubParsersAction"]',
+            'names = ["argparse._SubParsersAction"]\n'
+            '[allowed_private_access.modules]\n"" = ["a._b"]',
+        ),
+        (
+            'names = ["argparse._SubParsersAction"]',
+            'names = ["argparse._SubParsersAction"]\n'
+            '[allowed_private_access.modules]\n"pkg/a.py" = []',
+        ),
     ],
 )
 def test_malformed_ledger_cannot_be_judged(repo: Repo, damage: str, reason: str) -> None:
@@ -613,7 +632,7 @@ def test_initialisation_migration_uses_parent_blobs_and_cannot_bless_child_growt
     repo.write("pkg/wide.py", parent_source)
     code, out = repo.run("--update")
     assert code == 0, out
-    assert "schema = 2" in repo.ledger()
+    assert "schema = 3" in repo.ledger()
     assert '"pkg/wide.py::Wide" = 25' in repo.ledger()
     assert '"pkg/long.py::listed" = 70' in repo.ledger()
     assert repo.run("--check")[0] == 0
@@ -697,3 +716,244 @@ def test_missing_parent_blob_refuses_migration_without_rewriting_ledger(repo: Re
     assert code == 2
     assert "baseline_unavailable" in out
     assert repo.ledger() == before
+
+
+def _with_module_allowance(ledger_text: str, module_path: str, names: list[str]) -> str:
+    """Insert ``[allowed_private_access.modules]`` with one module entry into a ledger."""
+    import json as _json
+
+    block = (
+        f"\n[allowed_private_access.modules]\n{_json.dumps(module_path)} = {_json.dumps(names)}\n"
+    )
+    anchor = 'names = ["argparse._SubParsersAction"]\n'
+    assert anchor in ledger_text
+    return ledger_text.replace(anchor, anchor + block, 1)
+
+
+def test_module_scoped_private_allowance_permits_only_named_module_and_refuses_others(
+    repo: Repo,
+) -> None:
+    """A module-scoped allowance admits private access only in its declared module."""
+    future = (datetime.date.today() + datetime.timedelta(days=30)).isoformat()
+    repo.write("pkg/adapter.py", "def read(parser):\n    return parser._actions\n")
+    candidate = _with_module_allowance(repo.ledger(), "pkg/adapter.py", ["parser._actions"])
+    candidate += _exception("pkg/adapter.py::parser._actions", 0, future, measure="configuration")
+    repo.write("budget.toml", candidate)
+    code, out = repo.run("--check")
+    assert code == 0, out
+    assert repo.run("--update")[0] == 0
+    assert "[allowed_private_access.modules]" in repo.ledger()
+    assert '"pkg/adapter.py" = ["parser._actions"]' in repo.ledger()
+    base = repo.git("rev-parse", "HEAD").strip()
+    repo.commit()
+    walk = repo.run("--check", "--walk-from", base, "--to", "HEAD")
+    assert walk[0] == 0, walk[1]
+
+    # Another module using the same allowed name is refused.
+    repo.write("pkg/other.py", "def leak(parser):\n    return parser._actions\n")
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "over_threshold_unlisted: private_access pkg/other.py: 1 is above the threshold 0" in out
+    (repo.root / "pkg/other.py").unlink()
+
+    # The allowed module using a different unlisted private name is still refused.
+    repo.write("pkg/adapter.py", "def read(parser):\n    return parser._actions, parser._other\n")
+    code, out = repo.run("--check")
+    assert code == 1
+    assert (
+        "over_threshold_unlisted: private_access pkg/adapter.py: 1 is above the threshold 0" in out
+    )
+
+
+def test_module_scoped_private_allowance_refuses_missing_path_and_stale_name(repo: Repo) -> None:
+    """A missing module path or an unused name in the module is refused by check and walk."""
+    from tools.check_structure_budget import check_tree, parse_ledger
+    from tools.structure_measures import measure_roots
+
+    future = (datetime.date.today() + datetime.timedelta(days=30)).isoformat()
+    base = repo.git("rev-parse", "HEAD").strip()
+
+    # Missing module path is refused.
+    missing = _with_module_allowance(repo.ledger(), "pkg/absent.py", ["parser._actions"])
+    missing += _exception("pkg/absent.py::parser._actions", 0, future, measure="configuration")
+    repo.write("budget.toml", missing)
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "allowed_module_missing: configuration pkg/absent.py" in out
+    # Direct check_tree call without observed_private still refuses the missing module path.
+    parsed_missing = parse_ledger(missing)
+    figures = measure_roots(
+        repo.root,
+        parsed_missing.roots,
+        allowed_private=parsed_missing.allowed_private,
+        allowed_private_by_module=parsed_missing.allowed_private_by_module,
+    )
+    direct = check_tree(parsed_missing, figures, datetime.date.today())
+    assert any(v.code == "allowed_module_missing" and v.unit == "pkg/absent.py" for v in direct)
+
+    # Stale name (module exists but does not use the allowed private name) is refused.
+    repo.write("pkg/adapter.py", "def read(parser):\n    return parser\n")
+    stale = _with_module_allowance(
+        repo.git("show", f"{base}:budget.toml"), "pkg/adapter.py", ["parser._actions"]
+    )
+    stale += _exception("pkg/adapter.py::parser._actions", 0, future, measure="configuration")
+    repo.write("budget.toml", stale)
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "stale_allowed_private: configuration pkg/adapter.py::parser._actions" in out
+    # Direct check_tree with observed_private omitted skips only the stale-usage scan.
+    parsed_stale = parse_ledger(stale)
+    figures_stale = measure_roots(
+        repo.root,
+        parsed_stale.roots,
+        allowed_private=parsed_stale.allowed_private,
+        allowed_private_by_module=parsed_stale.allowed_private_by_module,
+    )
+    assert not any(
+        v.code == "stale_allowed_private"
+        for v in check_tree(parsed_stale, figures_stale, datetime.date.today())
+    )
+
+    # The commit walk enforces the stale refusal on committed blobs too.
+    repo.commit()
+    walk_code, walk_out = repo.run("--check", "--walk-from", base, "--to", "HEAD")
+    assert walk_code == 1
+    assert "stale_allowed_private: configuration pkg/adapter.py::parser._actions" in walk_out
+
+
+def test_module_scoped_private_allowance_growth_requires_exception_and_tracks_unused_and_expiry(
+    repo: Repo,
+) -> None:
+    """Adding a module-scoped name needs a configuration exception that stays tracked."""
+    today = datetime.date.today().isoformat()
+    past = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    repo.write("pkg/adapter.py", "def read(parser):\n    return parser._actions\n")
+    base_ledger = repo.ledger()
+
+    # Adding a module-scoped name without a configuration exception is refused.
+    without_exception = _with_module_allowance(base_ledger, "pkg/adapter.py", ["parser._actions"])
+    repo.write("budget.toml", without_exception)
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "allowed_list_grown: configuration pkg/adapter.py::parser._actions" in out
+
+    # Admitting with a matching configuration exception succeeds.
+    admitted = without_exception + _exception(
+        "pkg/adapter.py::parser._actions", 0, today, measure="configuration"
+    )
+    repo.write("budget.toml", admitted)
+    assert repo.run("--check")[0] == 0
+    repo.commit()
+
+    # Adding a second name to the same module without a second exception is refused.
+    repo.write(
+        "pkg/adapter.py",
+        "def read(parser, action):\n    return parser._actions, action._choices_actions\n",
+    )
+    grown = repo.ledger().replace(
+        '["parser._actions"]', '["action._choices_actions", "parser._actions"]'
+    )
+    repo.write("budget.toml", grown)
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "allowed_list_grown: configuration pkg/adapter.py::action._choices_actions" in out
+
+    # Removing the module entry while leaving its configuration exception is refused as unused.
+    repo.write("pkg/adapter.py", "def read(parser):\n    return parser\n")
+    leftover = base_ledger + _exception(
+        "pkg/adapter.py::parser._actions", 0, today, measure="configuration"
+    )
+    repo.write("budget.toml", leftover)
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "exception_unused: configuration pkg/adapter.py::parser._actions" in out
+
+    # Expiring the review date after committed admission is refused.
+    repo.write("pkg/adapter.py", "def read(parser):\n    return parser._actions\n")
+    repo.write("budget.toml", admitted.replace(today, past))
+    code, out = repo.run("--check")
+    assert code == 1
+    assert (
+        f"exception_expired: configuration pkg/adapter.py::parser._actions: review_by {past}" in out
+    )
+
+
+def test_schema_three_loads_schema_two_baseline_and_refuses_legacy_modules_or_downgrade(
+    repo: Repo,
+) -> None:
+    """A schema-2 baseline checks clean against schema 3; legacy modules and downgrades fail."""
+    schema_two_ledger = repo.ledger().replace("schema = 3", "schema = 2")
+    repo.write("budget.toml", schema_two_ledger)
+    repo.commit()
+    base_v2 = repo.git("rev-parse", "HEAD").strip()
+
+    # Upgrading a schema-2 baseline (with no module table, like 48ad181c) to schema 3 checks clean.
+    repo.write("budget.toml", schema_two_ledger.replace("schema = 2", "schema = 3"))
+    assert repo.run("--check")[0] == 0
+    assert repo.run("--update")[0] == 0
+    assert "schema = 3" in repo.ledger()
+    repo.commit()
+    walk = repo.run("--check", "--walk-from", base_v2, "--to", "HEAD")
+    assert walk[0] == 0, walk[1]
+
+    # Downgrading from schema 3 to schema 2 or schema 1 is refused.
+    downgrade_candidates = (
+        repo.ledger().replace("schema = 3", "schema = 2"),
+        LEDGER_HEAD + '\n[ceilings.function_body_lines]\n"pkg/long.py::listed" = 70\n',
+    )
+    for downgraded in downgrade_candidates:
+        repo.write("budget.toml", downgraded)
+        code, out = repo.run("--check")
+        assert code == 1, out
+        assert "schema_downgrade: configuration schema: schema may not fall" in out
+
+    # Legacy schema-1 and schema-2 ledgers cannot declare [allowed_private_access.modules].
+    repo.write("pkg/adapter.py", "def read(parser):\n    return parser._actions\n")
+    legacy_candidates = (
+        schema_two_ledger,
+        LEDGER_HEAD + '\n[ceilings.function_body_lines]\n"pkg/long.py::listed" = 70\n',
+    )
+    for base_old in legacy_candidates:
+        with_modules = _with_module_allowance(base_old, "pkg/adapter.py", ["parser._actions"])
+        repo.write("budget.toml", with_modules)
+        code, out = repo.run("--check")
+        assert code == 2, out
+        assert "module-scoped private allowances require schema 3" in out
+
+    # A non-table top-level allowed_private_access value is also rejected as malformed.
+    committed = repo.git("show", "HEAD:budget.toml")
+    non_table = committed.replace(
+        '[allowed_private_access]\nnames = ["argparse._SubParsersAction"]\n', ""
+    )
+    repo.write(
+        "budget.toml", non_table.replace("schema = 3", "schema = 3\nallowed_private_access = 3")
+    )
+    code, out = repo.run("--check")
+    assert code == 2, out
+    assert "allowed_private_access must be a table" in out
+
+
+def test_schema_two_baseline_without_module_table_checks_clean_against_schema_three(
+    tmp_path: Path,
+) -> None:
+    """A committed schema-2 baseline with no module table checks clean against schema 3."""
+    made = Repo(tmp_path / "work")
+    made.commit()
+    schema_two = (
+        LEDGER_HEAD.replace("schema = 1", "schema = 2").replace(
+            "init_attributes = 20", "init_attributes = 20\ninitialisation_attributes = 20"
+        )
+        + '\n[ceilings.function_body_lines]\n"pkg/long.py::listed" = 70\n'
+    )
+    made.write("budget.toml", schema_two)
+    assert made.run("--check", "--no-baseline")[0] == 0
+    made.commit()
+    base = made.git("rev-parse", "HEAD").strip()
+
+    made.write("budget.toml", schema_two.replace("schema = 2", "schema = 3"))
+    code, out = made.run("--check", "--baseline", base)
+    assert code == 0, out
+    assert "structure budget holds" in out
+    made.commit()
+    walk_code, walk_out = made.run("--check", "--walk-from", base, "--to", "HEAD")
+    assert walk_code == 0, walk_out

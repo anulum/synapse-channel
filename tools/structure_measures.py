@@ -25,7 +25,7 @@ module gets the suffix ``#2``.
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 
 from tools.structure_initialisation import analyse_initialisation
@@ -173,9 +173,9 @@ def _internal_imports(tree: ast.Module, package: str) -> int:
     return len(modules)
 
 
-def _private_access(tree: ast.Module, allowed: frozenset[str]) -> int:
-    """Count accesses to a private member of an object other than ``self`` or ``cls``."""
-    count = 0
+def _private_access_names(tree: ast.Module) -> list[str]:
+    """Return every ``owner._attr`` access to a private member other than ``self`` or ``cls``."""
+    found: list[str] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute) or not isinstance(node.value, ast.Name):
             continue
@@ -184,9 +184,9 @@ def _private_access(tree: ast.Module, allowed: frozenset[str]) -> int:
             attribute.startswith("__") and attribute.endswith("__")
         )
         owner = node.value.id
-        if private and owner not in _OWN_NAMES and f"{owner}.{attribute}" not in allowed:
-            count += 1
-    return count
+        if private and owner not in _OWN_NAMES:
+            found.append(f"{owner}.{attribute}")
+    return found
 
 
 def measure_source(
@@ -195,7 +195,9 @@ def measure_source(
     module_key: str,
     package: str,
     allowed_private: frozenset[str] = frozenset(),
+    allowed_private_by_module: Mapping[str, frozenset[str]] | None = None,
     unresolved: dict[str, tuple[str, ...]] | None = None,
+    observed_private: dict[str, frozenset[str]] | None = None,
 ) -> Figures:
     """Measure one module's source text.
 
@@ -208,11 +210,16 @@ def measure_source(
     package : str
         Top-level package name whose modules count as internal imports.
     allowed_private : frozenset[str], optional
-        ``name._attr`` spellings that are not counted as private access, such
-        as a private type of the standard library used in an annotation.
+        Global ``name._attr`` spellings that are not counted as private access,
+        such as a private type of the standard library used in an annotation.
+    allowed_private_by_module : Mapping[str, frozenset[str]] or None, optional
+        Module-scoped ``name._attr`` spellings allowed only for ``module_key``.
     unresolved : dict[str, tuple[str, ...]] or None, optional
         Receive source-local initialisation effects that require review, keyed
         by class unit. A figure with unresolved effects is a known lower bound.
+    observed_private : dict[str, frozenset[str]] or None, optional
+        Receive the distinct ``owner._attr`` private accesses observed in
+        ``module_key`` before allowlist filtering.
 
     Returns
     -------
@@ -229,7 +236,15 @@ def measure_source(
     tree = ast.parse(text)
     figures: Figures = {measure: {} for measure in MEASURES}
     figures["module_internal_imports"][module_key] = _internal_imports(tree, package)
-    figures["private_access"][module_key] = _private_access(tree, allowed_private)
+    spellings = _private_access_names(tree)
+    if observed_private is not None:
+        observed_private[module_key] = frozenset(spellings)
+    module_allowed = allowed_private
+    if allowed_private_by_module is not None:
+        module_allowed = module_allowed | allowed_private_by_module.get(module_key, frozenset())
+    figures["private_access"][module_key] = sum(
+        1 for name in spellings if name not in module_allowed
+    )
     seen: dict[str, int] = {}
     for name, node in _definitions(tree.body, ""):
         seen[name] = seen.get(name, 0) + 1
@@ -256,7 +271,9 @@ def measure_roots(
     roots: Iterable[str],
     *,
     allowed_private: frozenset[str] = frozenset(),
+    allowed_private_by_module: Mapping[str, frozenset[str]] | None = None,
     unresolved: dict[str, tuple[str, ...]] | None = None,
+    observed_private: dict[str, frozenset[str]] | None = None,
 ) -> Figures:
     """Measure every Python module below the given roots of a repository.
 
@@ -269,8 +286,12 @@ def measure_roots(
         of a root is the package name used for its internal imports.
     allowed_private : frozenset[str], optional
         See :func:`measure_source`.
+    allowed_private_by_module : Mapping[str, frozenset[str]] or None, optional
+        See :func:`measure_source`.
     unresolved : dict[str, tuple[str, ...]] or None, optional
         Receive class-qualified initialisation effects requiring source review.
+    observed_private : dict[str, frozenset[str]] or None, optional
+        Receive observed private accesses per measured module path.
 
     Returns
     -------
@@ -299,7 +320,9 @@ def measure_roots(
                     module_key=key,
                     package=package,
                     allowed_private=allowed_private,
+                    allowed_private_by_module=allowed_private_by_module,
                     unresolved=unresolved,
+                    observed_private=observed_private,
                 )
             except SyntaxError as error:
                 raise SyntaxError(f"{key}: {error.msg} (line {error.lineno})") from error

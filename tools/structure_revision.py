@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 
 from tools.structure_measures import MEASURES, Figures, measure_source
@@ -77,6 +78,8 @@ def measure_revision(
     roots: tuple[str, ...],
     *,
     allowed_private: frozenset[str] = frozenset(),
+    allowed_private_by_module: Mapping[str, frozenset[str]] | None = None,
+    observed_private: dict[str, frozenset[str]] | None = None,
 ) -> Figures:
     """Measure the Python sources actually stored in a Git commit.
 
@@ -90,6 +93,10 @@ def measure_revision(
         The baseline's measured roots, not a candidate-supplied reduced scope.
     allowed_private:
         Baseline spellings exempted from private-member access.
+    allowed_private_by_module:
+        Module-scoped spellings exempted only for their declared module path.
+    observed_private:
+        Receive observed private accesses per measured module path.
 
     Returns
     -------
@@ -128,6 +135,8 @@ def measure_revision(
             module_key=path,
             package=package,
             allowed_private=allowed_private,
+            allowed_private_by_module=allowed_private_by_module,
+            observed_private=observed_private,
         )
         for measure in MEASURES:
             figures[measure].update(measured[measure])

@@ -643,6 +643,20 @@ the exact parent commit's Python blobs, measured with the current algorithm.
 They never come from the candidate working tree. A listed figure cannot grow
 during the migration, and the schema cannot subsequently be downgraded.
 
+Schema 3 adds `[allowed_private_access.modules]`, mapping a repository-relative
+module path to the `owner._attr` private accesses permitted in that module
+alone. A module-scoped allowance is refused when its module path does not exist
+within the measured roots (`allowed_module_missing`) or when a listed name is
+not used in that module (`stale_allowed_private`), and using that name in any
+other module still counts as unlisted private access. Adding a module or a new
+name for a module against the baseline is refused (`allowed_list_grown`) unless
+a `measure = "configuration"` `[[exceptions]]` entry names it with unit key
+`"<module path>::<name>"`; removing the module-scoped entry while keeping that
+exception is refused as `exception_unused`. A schema-1 or schema-2 ledger
+cannot declare `[allowed_private_access.modules]`, a schema-2 baseline loads
+cleanly against schema 3, and downgrading from schema 3 is refused as
+`schema_downgrade`.
+
 The syntactic gate does not establish that a module has one responsibility.
 Review growth at the change boundary: name the component that owns the behaviour
 and check whether the module, function or class still does one thing. The
