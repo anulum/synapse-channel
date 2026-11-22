@@ -28,6 +28,14 @@ def test_depth_four_exhausts_every_real_state_action_trace() -> None:
     assert report["checked_invariants"] == list(model.CHECKED_INVARIANTS)
 
 
+def test_distinct_states_include_the_issued_epoch() -> None:
+    report = model.explore(depth=2)
+
+    # Two of the 39 states differ from another only in the issued epoch; a
+    # fingerprint without the epoch high-water mark would count 37.
+    assert report["unique_states"] == 39
+
+
 def test_trace_covers_scope_refusal_cross_worktree_fencing_and_expiry() -> None:
     run = model.replay_trace(
         (
@@ -41,7 +49,7 @@ def test_trace_covers_scope_refusal_cross_worktree_fencing_and_expiry() -> None:
     )
 
     assert run.state.claims == {}
-    assert run.state._epoch_seq == 2
+    assert run.state.epoch_seq == 2
 
 
 def test_checker_detects_an_overlapping_two_owner_state() -> None:
@@ -56,7 +64,7 @@ def test_checker_detects_an_overlapping_two_owner_state() -> None:
         lease_expires_at=model.START_TIME + 100.0,
         worktree="main",
         paths=("src/a.py",),
-        epoch=state._epoch_seq,
+        epoch=state.epoch_seq,
     )
 
     with pytest.raises(model.ModelViolation, match="INV-ME-2/3/4"):

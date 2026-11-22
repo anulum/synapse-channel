@@ -34,6 +34,11 @@ execution evidence when carrying a release claim forward.
   as before. The transaction snapshot reads `epoch_seq` and restores through it, and `core/state_transaction.py`
   leaves the private-access ledger.
 
+- **The bounded exhaustive coordination model reads the issued lease epoch through the state's public
+  `epoch_seq`; behaviour is unchanged.** Its seven reads of the private counter go, and
+  `tools/exhaustive_coordination_model.py` leaves the private-access ledger. A test now pins the depth-2 count of
+  distinct states, which drops if the state fingerprint stops including the issued epoch.
+
 ### Fixed
 
 - **Version-one Fleet mirror exports written by the sync daemon (`writer_generation`) are now accepted by `parse_mirror` and the dashboard mirror feed (dated v1 erratum, 2026-11-22).**

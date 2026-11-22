@@ -107,7 +107,7 @@ def _assert_invariants(state: SynapseState, now: float) -> None:
     for task_id, claim in state.claims.items():
         _require(claim.task_id == task_id, "INV-ME-1", "claim key differs from task id")
         _require(claim.lease_expires_at > now, "INV-LL-1", "live lease is not future")
-        _require(1 <= claim.epoch <= state._epoch_seq, "INV-EF-1", "epoch is unissued")
+        _require(1 <= claim.epoch <= state.epoch_seq, "INV-EF-1", "epoch is unissued")
         _require(claim.version >= 0, "INV-EF-3", "version is negative")
     for index, first in enumerate(claims):
         for second in claims[index + 1 :]:
@@ -137,14 +137,14 @@ def _authority_fingerprint(state: SynapseState, now: float) -> tuple[object, ...
         )
         for task_id, claim in sorted(state.claims.items())
     )
-    return (now, state._epoch_seq, claims)
+    return (now, state.epoch_seq, claims)
 
 
 def _assert_epoch_advanced(state: SynapseState, before: int, ok: bool) -> None:
     if ok:
-        _require(state._epoch_seq > before, "INV-EF-1", "successful lease mutation reused epoch")
+        _require(state.epoch_seq > before, "INV-EF-1", "successful lease mutation reused epoch")
     else:
-        _require(state._epoch_seq == before, "INV-EF-1", "refused mutation consumed epoch")
+        _require(state.epoch_seq == before, "INV-EF-1", "refused mutation consumed epoch")
 
 
 def _claim(
@@ -157,7 +157,7 @@ def _claim(
     paths: tuple[str, ...],
     required_invariant: str | None = None,
 ) -> None:
-    before = state._epoch_seq
+    before = state.epoch_seq
     ok, _ = state.claim(agent, task, now=now, worktree=worktree, paths=paths)
     _assert_epoch_advanced(state, before, ok)
     if required_invariant is not None:
@@ -188,7 +188,7 @@ def _apply_action(state: SynapseState, now: float, action: ActionName) -> float:
     elif action == "renew-t1":
         claim = state.claims.get("T1")
         if claim is not None:
-            before = state._epoch_seq
+            before = state.epoch_seq
             ok, _ = state.claim(
                 claim.owner,
                 "T1",
@@ -201,7 +201,7 @@ def _apply_action(state: SynapseState, now: float, action: ActionName) -> float:
     elif action == "handoff-t1":
         claim = state.claims.get("T1")
         if claim is not None:
-            before = state._epoch_seq
+            before = state.epoch_seq
             target = "B" if claim.owner == "A" else "A"
             ok, _ = state.handoff(claim.owner, "T1", target, now=now, epoch=claim.epoch)
             _assert_epoch_advanced(state, before, ok)
