@@ -1502,8 +1502,9 @@ object format, the id of the `sealed` marker blob of that operation, attempt
 and declared intent digest, and MUST refuse as `seal_not_observed` a record
 whose object or ref differs, whose observation is not `landed` or
 `landed_earlier`, or whose operation was declared without an intent. A kept
-seal MUST end the attempt in the same `operation_sealed` journal row and
-counts towards the operation's record limit. It MUST NOT reconcile the
+seal MUST end the attempt in the same `operation_sealed` journal row and draws
+from the per-attempt seal reserve (`1` per opened attempt, isolated from the
+operation's 32-row general cap). It MUST NOT reconcile the
 attempt: INV-OA-5's verification by another identity still decides when a new
 attempt may open. An outcome the executor publishes after the seal MUST end
 nothing, and a repeat of the sealed attempt's request MUST return its stored
@@ -1691,10 +1692,28 @@ as an `incorrect_acceptance` trigger when `--ladder` is enabled (whereas an
 independent `absent` / `not_verified` observation after the branch moved MUST
 reconcile the attempt without raising a contradiction). `unsealable` and
 `unread` read-backs end no attempt here, and no read-back grants authority.
+Stop-completion records MUST NOT be starved by an executor's 32-row general
+limit: `seal` MUST draw from a per-attempt seal reserve (`1` per opened
+attempt), terminal read-backs (`sealed`, `applied`, `unsealable`) MUST draw
+from a per-listed-pair closing read-back reserve (`1` per
+`(stop_seq, attempt_id)` listed across `operation_stopped` rows, while `unread`
+remains in the 32-row general cap), and independent reconciling, closing or
+post-close contradicting verifications (`sender != declarer`) MUST draw from a
+reconciliation reserve of `2 + 2 * k` rows (`k` = opened attempts), restored in
+journal sequence order; any exhausted bucket MUST refuse with `record_limit`
+naming the bucket. Residual: another identity holding `operation-evidence` on
+the task may spend reconciliation reserve slots up to `2 + 2 * k` with real
+reconciling observations, bounded by the task's ACL grant.
 
 **Implementation.** `core/operation_attempt_ledger.py:AttemptLedger.open_in`,
 `core/operation_attempt_ledger.py:AttemptLedger.stop_closed`,
 `core/operation_attempt_ledger.py:AttemptLedger.note_readback`,
+`core/operation_attempt_ledger.py:AttemptLedger.attempt_count`,
+`core/operation_attempt_ledger.py:AttemptLedger.listed_pair_count`,
+`core/operation_records.py:OperationLedger`,
+`core/operation_records.py:is_reconciliation_verification`,
+`core/operation_records.py:evidence_refusal`,
+`core/operation_records.py:seal_refusal`,
 `core/operation_records.py:stop_readback_refusal`,
 `core/operation_records.py:kept_stop_readback`,
 `core/operation_stop_readbacks.py:recompute_readback_result`,
@@ -1702,6 +1721,8 @@ reconcile the attempt without raising a contradiction). `unsealable` and
 `core/attention.py:project_hub_attention`.
 
 **Pinned by.** `tests/test_operation_stops.py`,
+`tests/test_operation_records.py`,
+`tests/test_operation_seals.py`,
 `tests/test_operation_stop_readbacks.py`,
 `tests/test_operation_report.py`,
 `tests/test_attention.py`,
@@ -1712,7 +1733,10 @@ reconcile the attempt without raising a contradiction). `unsealable` and
 `test_a_confirmed_done_outcome_against_a_sealed_marker_surfaces_a_contradiction`,
 `test_an_applied_read_back_ends_the_attempt_reaches_at_rest_and_allows_only_a_successor`,
 `test_an_applied_attempt_closes_only_after_an_independent_verified_observation`,
-`test_a_not_started_outcome_against_an_applied_marker_surfaces_a_contradiction`).
+`test_a_not_started_outcome_against_an_applied_marker_surfaces_a_contradiction`,
+`test_a_saturated_executor_cannot_block_seal_read_back_or_reconciliation`,
+`test_an_unsealable_stop_read_back_and_closure_succeed_after_32_executor_outcomes`,
+`test_honest_ten_attempt_sequence_never_exhausts_reserves_after_executor_flood`).
 
 ### INV-OS-7 — the seal first, then its record
 

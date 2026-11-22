@@ -19,12 +19,17 @@ The hub:
    permission for the task (enforced here even when ``--require-acl`` is off,
    so an open hub never accepts third-party evidence), a declared operation on
    the same task, a body naming the same operation, the verifier matching the
-   declared effect, and fewer than 32 earlier rows for the operation;
-4. for ``seal``, requires the ``operation-seal`` permission for the task (also
-   enforced here on an open hub; no identity holds it by default), a declared
-   operation on the same task whose named attempt is open, fewer than 32
-   earlier rows, and a record naming exactly that attempt's ``sealed`` marker,
-   which the hub recomputes; a kept seal ends the attempt without reconciling it;
+   declared effect, and capacity in its bucket: fewer than 32 general rows for
+   outcomes and self- or non-reconciling verifications, or capacity in the
+   per-operation reconciliation reserve for independent reconciling, closing or
+   post-close contradicting verifications;
+4. for ``seal`` and ``stop_readback``, requires the ``operation-seal``
+   permission for the task (also enforced here on an open hub; no identity
+   holds it by default) and capacity in its bucket: the per-attempt seal
+   reserve for ``seal``, the per-listed-pair closing read-back reserve for
+   newly journalled ``sealed``, ``applied`` and ``unsealable`` read-backs, and
+   the 32-row general cap for ``unread`` read-backs; a kept seal ends an open
+   attempt without reconciling it;
 5. journals one event and answers the sender privately with an
    ``operation_record_result`` naming the status, the reason, the sequence and,
    for a declaration that kept an intent, its ``intent_sha256``.
@@ -74,6 +79,8 @@ from synapse_channel.core.handlers.operation_triggers import record_trigger
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import OperationFact
 from synapse_channel.core.operation_records import (
+    BUCKET_RECONCILIATION,
+    BUCKET_SEAL,
     MARKED_EFFECTS,
     RECORD_DECLARE,
     RECORD_SEAL,
@@ -83,6 +90,8 @@ from synapse_channel.core.operation_records import (
     REFUSED_NO_JOURNAL,
     REFUSED_NOT_AUTHORISED,
     REFUSED_NOT_HOLDER,
+    REFUSED_RECORD_LIMIT,
+    RESERVED_READBACK_RESULTS,
     STATUS_ACCEPTED,
     STATUS_REFUSED,
     OperationRecordError,
@@ -90,8 +99,10 @@ from synapse_channel.core.operation_records import (
     declaration_refusal,
     declared_target,
     decode_operation_record,
+    evidence_bucket,
     evidence_refusal,
     kept_stop_readback,
+    readback_bucket,
     record_operation,
     seal_refusal,
     stop_readback_refusal,
@@ -266,6 +277,13 @@ def _record_contradiction_trigger(
         record_trigger(store, ledger.attempts, trigger, time.time())
 
 
+def _limit_detail(prefix: str, refusal: str, bucket: str) -> str:
+    """Format a refusal detail, naming the exhausted bucket on ``record_limit``."""
+    if refusal == REFUSED_RECORD_LIMIT:
+        return f"{prefix}: {refusal} ({bucket})"
+    return f"{prefix}: {refusal}"
+
+
 def _evidence(
     hub: OperationRecordContext,
     store: EventStore,
@@ -278,11 +296,17 @@ def _evidence(
         return _refused(
             REFUSED_NOT_AUTHORISED, f"{sender} lacks operation-evidence for {request.task_id}"
         )
-    refusal = evidence_refusal(ledger, request)
+    bucket = evidence_bucket(ledger, request, sender=sender)
+    refusal = evidence_refusal(ledger, request, sender=sender)
     if refusal is not None:
-        return _refused(refusal, f"the {request.record} record cannot be kept: {refusal}")
+        return _refused(
+            refusal, _limit_detail(f"the {request.record} record cannot be kept", refusal, bucket)
+        )
     seq = record_operation(store, request, sender=sender)
-    ledger.add_record(request.operation_id)
+    if bucket == BUCKET_RECONCILIATION:
+        ledger.add_reconciliation_record(request.operation_id)
+    else:
+        ledger.add_record(request.operation_id)
     if request.outcome is not None:
         ledger.attempts.note_outcome(
             request.operation_id,
@@ -320,9 +344,11 @@ def _seal(
         )
     refusal = seal_refusal(ledger, request)
     if refusal is not None:
-        return _refused(refusal, f"the seal record cannot be kept: {refusal}")
+        return _refused(
+            refusal, _limit_detail("the seal record cannot be kept", refusal, BUCKET_SEAL)
+        )
     seq = record_operation(store, request, sender=sender)
-    ledger.add_record(request.operation_id)
+    ledger.add_seal_record(request.operation_id)
     seal = request.seal
     assert seal is not None, "seal_refusal kept a seal record with its body"
     ledger.attempts.note_seal(request.operation_id, seal.attempt_id)
@@ -341,11 +367,14 @@ def _stop_readback(
         return _refused(
             REFUSED_NOT_AUTHORISED, f"{sender} lacks operation-seal for {request.task_id}"
         )
+    readback = request.readback
+    assert readback is not None, "decode_operation_record gives every read-back record its body"
     refusal = stop_readback_refusal(ledger, request)
     if refusal is not None:
-        return _refused(refusal, f"the stop read-back cannot be kept: {refusal}")
-    readback = request.readback
-    assert readback is not None, "stop_readback_refusal kept a read-back with its body"
+        bucket = readback_bucket(readback.result)
+        return _refused(
+            refusal, _limit_detail("the stop read-back cannot be kept", refusal, bucket)
+        )
     kept = kept_stop_readback(ledger, request)
     if kept is not None:
         kept_result, kept_seq = kept
@@ -359,7 +388,10 @@ def _stop_readback(
     )
     assert recomputed is not None, "stop_readback_refusal recomputed the read-back"
     seq = record_operation(store, request, sender=sender)
-    ledger.add_record(request.operation_id)
+    if recomputed in RESERVED_READBACK_RESULTS:
+        ledger.add_closing_readback_record(request.operation_id)
+    else:
+        ledger.add_record(request.operation_id)
     ledger.attempts.note_readback(
         readback.stop_seq,
         readback.attempt_id,
@@ -411,7 +443,9 @@ def _declare(
     seq = record_operation(
         store, request, sender=sender, snapshot_epoch=claim.epoch, now=now, intent=intent
     )
-    ledger.declare(request.operation_id, request.task_id, effect, declared_target(request))
+    ledger.declare(
+        request.operation_id, request.task_id, effect, declared_target(request), declarer=sender
+    )
     ledger.attempts.note_declaration(
         request.operation_id,
         OperationFact(

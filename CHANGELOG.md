@@ -41,6 +41,18 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **Stop completion and independent reconciliation keep reserved capacity beyond an operation's 32-row executor limit.**
+  Previously `OperationLedger` shared one 32-row counter across outcomes, verifications, seals and
+  stop read-backs, so an executor publishing 32 outcomes could block `seal`, closing read-backs and
+  independent verification with `record_limit` and strand the stop. General rows (outcomes,
+  declarer self-verifications, non-reconciling verifications and `unread` read-backs) remain capped
+  at 32, while stop-completion and reconciliation paths now draw from bounded reserves sized to the
+  operation's approved attempts and recorded stop listings: `1` seal per opened attempt, `1`
+  terminal read-back (`sealed`, `applied` or `unsealable`) per listed `(stop_seq, attempt_id)`
+  pair, and `2 + 2 * k` independent reconciling, closing or post-close contradicting verifications
+  (`sender != declarer`, where `k` is the opened attempt count), all restored in journal sequence
+  order. Refusals keep reason code `record_limit` and name the exhausted bucket in `payload`.
+
 - **Reconciliation of a marker-bearing attempt no longer depends on reconnect order or leaks across attempts.**
   Previously `AttemptLedger.note_verification` ignored `evidence` and reconciled only attempts
   already ended at arrival, so an independent marker-bearing verification arriving before a

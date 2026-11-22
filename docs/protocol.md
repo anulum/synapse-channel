@@ -226,8 +226,19 @@ does not add agent grades to protocol envelopes.
   `report`; a `verification` carries one `synapse.result-verification.v1`
   `verification` whose verifier matches the declared effect (`file_change`,
   `git_publication`, `deployment`, `database_migration` or `component_read`). Both need the
-  `operation-evidence` grant, a declared operation on the same task and fewer
-  than 32 earlier rows for it. The hub journals `operation_declared`,
+  `operation-evidence` grant and a declared operation on the same task. General
+  rows (outcomes, declarer self-verifications, non-reconciling verifications
+  and `unread` stop read-backs) are capped at 32 per operation; independent
+  reconciling verifications (from a sender other than the declarer recording
+  `observed` or `absent`, a closing `verified`, or a post-close `not_verified`
+  contradiction) draw from a separate reconciliation reserve of `2 + 2 * k`
+  rows where `k` is the number of opened attempts, so a saturated executor
+  cannot block reconciliation or closure. Residual: another identity holding
+  `operation-evidence` on the task can still spend reconciliation reserve slots
+  up to `2 + 2 * k` with real reconciling observations (which themselves
+  reconcile or close the operation); this is bounded by who holds the
+  `operation-evidence` ACL grant on the task. Any exhausted bucket refuses with
+  reason `record_limit` and names the bucket in `payload`. The hub journals `operation_declared`,
   `operation_outcome` or `operation_verified`; verification evidence keeps only
   digest-shaped values: 40 or 64 lower-case hex, and a 32-hex `attempt_id`.
   A 32-hex value under any other key is dropped, as is free text. An
@@ -262,7 +273,8 @@ does not add agent grades to protocol envelopes.
   digest and refuses any other object or ref, an observation other than
   `landed` or `landed_earlier`, or an operation without an intent
   (`seal_not_observed`). A kept seal is journalled as `operation_sealed`,
-  counts towards the 32 rows and ends the attempt without reconciling it.
+  draws from a per-attempt seal reserve (`1` per opened attempt, never
+  consumed by executor outcomes) and ends the attempt without reconciling it.
   A `stop_readback` carries one `readback` object: `stop_seq`, `attempt_id`,
   `result` (`sealed`, `applied`, `unsealable` or `unread`), `reason` for
   `unread` (`not_reached`, `base_gone` or `unknown`), and `marker_ref`,
@@ -277,9 +289,11 @@ does not add agent grades to protocol envelopes.
   result returns the kept row without writing a second row, while a different
   result once a `sealed` or `applied` read-back is kept is refused
   (`readback_closed`). A newly journalled read-back is recorded as
-  `operation_stop_readback` and counts towards the 32 rows (an `unread`
-  read-back superseded by a closing one therefore uses two rows from that
-  shared 32-row limit). When its marker
+  `operation_stop_readback`: terminal read-backs (`sealed`, `applied` and
+  `unsealable`) draw from the closing read-back reserve (`1` per listed
+  `(stop_seq, attempt_id)` pair recorded across `operation_stopped` rows),
+  while `unread` draws from the 32-row general limit, so neither an executor
+  outcome flood nor an `unread` flood can block closing read-backs. When its marker
   fields recompute to `sealed`, the attempt is marked `sealed` (and an executor
   outcome claiming `confirmed_done` on that attempt is surfaced as an
   `operation_contradiction` attention item and, under `--ladder`, an

@@ -555,3 +555,83 @@ def test_an_applied_read_back_ends_a_listed_attempt_and_contradicts_not_started(
     )
     assert ledger.attempt_state(op3, ATTEMPT) == "sealed"
     assert ledger.contradicted_at(op3) == 0
+
+
+def test_closing_and_unsealable_read_backs_use_their_per_listed_pair_reserve() -> None:
+    """After 32 general rows, unread is refused while closing/unsealable use per-listed reserve."""
+    ledger = OperationLedger(None)
+    ledger.declare(OPERATION, "T1", "git_publication", {"branch": "main"}, declarer="P/worker")
+    fact = OperationFact("T1", "P/worker", DIGEST, None, 1.0, "git_publication", "cooperative")
+    ledger.attempts.note_declaration(OPERATION, fact)
+    ledger.attempts.open_attempt(OPERATION, ATTEMPT, executor="P/worker", approval_seq=1)
+    ledger.attempts.note_seal(OPERATION, ATTEMPT)
+    ledger.attempts.note_stop(
+        "project:P", 7, epoch=1, listed=((OPERATION, ATTEMPT), ("other-op", "b" * 32))
+    )
+    for _ in range(MAX_RECORDS_PER_OPERATION):
+        ledger.add_record(OPERATION)
+
+    unread = decode_operation_record(
+        {
+            "record": "stop_readback",
+            "task_id": "T1",
+            "operation_id": OPERATION,
+            "readback": _body("unread", reason="unknown"),
+        }
+    )
+    sealed = decode_operation_record(
+        {
+            "record": "stop_readback",
+            "task_id": "T1",
+            "operation_id": OPERATION,
+            "readback": _body("sealed"),
+        }
+    )
+    applied = decode_operation_record(
+        {
+            "record": "stop_readback",
+            "task_id": "T1",
+            "operation_id": OPERATION,
+            "readback": _body("applied"),
+        }
+    )
+    assert stop_readback_refusal(ledger, unread) == "record_limit"
+    assert ledger.closing_readback_limit_of(OPERATION) == 1
+    assert stop_readback_refusal(ledger, sealed) is None
+    assert stop_readback_refusal(ledger, applied) is None
+
+    # At the per-listed-pair bound (1 for 1 listed pair), a new closing read-back hits record_limit,
+    # while a second stop listing that attempt expands the reserve to 2.
+    ledger.add_closing_readback_record(OPERATION)
+    assert stop_readback_refusal(ledger, sealed) == "record_limit"
+    ledger.attempts.note_stop("project:P", 12, epoch=2, listed=((OPERATION, ATTEMPT),))
+    assert ledger.closing_readback_limit_of(OPERATION) == 2
+    sealed_stop2 = decode_operation_record(
+        {
+            "record": "stop_readback",
+            "task_id": "T1",
+            "operation_id": OPERATION,
+            "readback": _body("sealed", stop_seq=12),
+        }
+    )
+    assert stop_readback_refusal(ledger, sealed_stop2) is None
+
+    # Unsealable operations also draw from the closing read-back reserve.
+    file_op = "file-op"
+    ledger.declare(
+        file_op, "T1", "file", {"path": "a.txt", "sha256": "0" * 64}, declarer="P/worker"
+    )
+    ledger.attempts.note_stop("project:P", 15, epoch=3, listed=((file_op, ATTEMPT),))
+    for _ in range(MAX_RECORDS_PER_OPERATION):
+        ledger.add_record(file_op)
+    unsealable = decode_operation_record(
+        {
+            "record": "stop_readback",
+            "task_id": "T1",
+            "operation_id": file_op,
+            "readback": _body("unsealable", stop_seq=15),
+        }
+    )
+    assert stop_readback_refusal(ledger, unsealable) is None
+    ledger.add_closing_readback_record(file_op)
+    assert stop_readback_refusal(ledger, unsealable) == "record_limit"

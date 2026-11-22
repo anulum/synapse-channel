@@ -37,6 +37,7 @@ from synapse_channel.core.execution_outcome import ExecutionOutcome, OutcomeStat
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempt_ledger import STATE_RECONCILED, AttemptLedger
+from synapse_channel.core.operation_records import MAX_RECORDS_PER_OPERATION, OperationLedger
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.result_verification_record import ResultVerification
@@ -2310,3 +2311,275 @@ async def test_a_marker_verification_before_applied_read_back_reconciles_on_read
     assert reloaded.attempt_state(op, attempt) == STATE_RECONCILED
     assert reloaded.view(op, None).applied is True
     assert reloaded_stop is not None and reloaded_stop.state == "at rest"
+
+
+async def _flood_unknown_outcomes(uri: str, operation_id: str, count: int) -> dict[str, Any]:
+    """Flood ``count`` unknown outcomes as the worker and return one extra refusal."""
+    worker = await connect_agent(scene.WORKER, uri)
+    try:
+        for _ in range(count):
+            res = await scene.record(worker, **scene.outcome(OutcomeState.UNKNOWN, operation_id))
+            assert res["status"] == "accepted", res
+        return await scene.record(worker, **scene.outcome(OutcomeState.UNKNOWN, operation_id))
+    finally:
+        await close_agents(worker)
+
+
+async def test_a_saturated_executor_cannot_block_seal_read_back_or_reconciliation(
+    tmp_path: Path,
+) -> None:
+    """After 32 executor outcomes, seal, read-back, reconciliation, close and contradiction work."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h, uri):
+            [(task, op, _digest, _attempt)] = await _opened(uri, b, x)
+            extra_outcome = await _flood_unknown_outcomes(uri, op, MAX_RECORDS_PER_OPERATION)
+
+            # Declarer self-verification draws from the general cap and cannot burn reserves.
+            worker = await connect_agent(scene.WORKER, uri)
+            try:
+                self_ver = await scene.record(
+                    worker,
+                    record="verification",
+                    task_id=task,
+                    operation_id=op,
+                    verification=ResultVerification(
+                        op, "git_publication", "unknown", "observed", "verified", "self"
+                    ).to_json(),
+                )
+            finally:
+                await close_agents(worker)
+
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                stop_code = await _command(watcher, command.stop_and_seal(_args(uri, work)))
+            finally:
+                await close_agents(watcher)
+
+            checker = await connect_agent(scene.CHECKER, uri)
+            try:
+                reconcile = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id=task,
+                    operation_id=op,
+                    verification=ResultVerification(
+                        op, "git_publication", "unknown", "absent", "not_verified", "sealed"
+                    ).to_json(),
+                )
+                close_ver = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id=task,
+                    operation_id=op,
+                    verification=ResultVerification(
+                        op, "git_publication", "unknown", "observed", "verified", "verified"
+                    ).to_json(),
+                )
+                contradict = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id=task,
+                    operation_id=op,
+                    verification=ResultVerification(
+                        op, "git_publication", "unknown", "unknown", "not_verified", "later gone"
+                    ).to_json(),
+                )
+                fourth = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id=task,
+                    operation_id=op,
+                    verification=ResultVerification(
+                        op, "git_publication", "unknown", "absent", "not_verified", "fourth"
+                    ).to_json(),
+                )
+                fifth_over = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id=task,
+                    operation_id=op,
+                    verification=ResultVerification(
+                        op, "git_publication", "unknown", "absent", "not_verified", "fifth"
+                    ).to_json(),
+                )
+            finally:
+                await close_agents(checker)
+
+        states = [row["state"] for row in _states(store)]
+        restored = OperationLedger(store)
+    finally:
+        store.close()
+
+    assert (extra_outcome["status"], extra_outcome["reason"]) == ("refused", "record_limit")
+    assert "general operation record limit" in str(extra_outcome["payload"])
+    assert (self_ver["status"], self_ver["reason"]) == ("refused", "record_limit")
+    assert "general operation record limit" in str(self_ver["payload"])
+    assert stop_code == seal_command.EXIT_DONE
+    assert (reconcile["status"], close_ver["status"], contradict["status"], fourth["status"]) == (
+        "accepted",
+        "accepted",
+        "accepted",
+        "accepted",
+    )
+    assert (fifth_over["status"], fifth_over["reason"]) == ("refused", "record_limit")
+    assert "reconciliation reserve" in str(fifth_over["payload"])
+    assert states == ["no new effect", "at rest"]
+    assert restored.attempts.contradicted_at(op) == contradict["seq"]
+    assert (
+        restored.records_of(op),
+        restored.seal_records_of(op),
+        restored.closing_readback_records_of(op),
+        restored.reconciliation_records_of(op),
+    ) == (MAX_RECORDS_PER_OPERATION, 1, 1, 4)
+
+
+async def test_an_unsealable_stop_read_back_and_closure_succeed_after_32_executor_outcomes(
+    tmp_path: Path,
+) -> None:
+    """After 32 outcomes on a file operation, unsealable read-back and verification succeed."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h, uri):
+            [(task, op, _digest, _attempt)] = await _opened(
+                uri, b, x, plan=(("T1", "op-f", False),)
+            )
+            extra = await _flood_unknown_outcomes(uri, op, MAX_RECORDS_PER_OPERATION)
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                # stop --seal exits 1 on unsealable (not closed), yet records unsealable cleanly.
+                code = await _command(watcher, command.stop_and_seal(_args(uri, work)))
+            finally:
+                await close_agents(watcher)
+            checker = await connect_agent(scene.CHECKER, uri)
+            try:
+                ver = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id=task,
+                    operation_id=op,
+                    verification=ResultVerification(
+                        op, "file_change", "unknown", "observed", "verified", "checked"
+                    ).to_json(),
+                )
+            finally:
+                await close_agents(checker)
+        readbacks = _rows(store, EventKind.OPERATION_STOP_READBACK)
+        states = [row["state"] for row in _states(store)]
+        restored = OperationLedger(store)
+    finally:
+        store.close()
+    assert (extra["status"], extra["reason"]) == ("refused", "record_limit")
+    assert code == seal_command.EXIT_REFUSED
+    assert [row["result"] for row in readbacks] == ["unsealable"]
+    assert ver["status"] == "accepted"
+    # An unsealable read-back does not close a stop, yet both rows are kept and the op closes.
+    assert states == []
+    assert restored.attempts.view(op, None).closed is True
+    assert (
+        restored.records_of(op),
+        restored.closing_readback_records_of(op),
+        restored.reconciliation_records_of(op),
+    ) == (MAX_RECORDS_PER_OPERATION, 1, 1)
+
+
+async def test_honest_ten_attempt_sequence_never_exhausts_reserves_after_executor_flood(
+    tmp_path: Path,
+) -> None:
+    """Ten approved attempts after 32 outcomes each seal, read back and reconcile cleanly."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    op = "op-ten"
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h, uri):
+            worker = await connect_agent(scene.WORKER, uri)
+            reviewer = await connect_agent(scene.REVIEWER, uri)
+            approver = await connect_agent(scene.APPROVER, uri)
+            checker = await connect_agent(scene.CHECKER, uri)
+            operator = await connect_agent("H/operator", uri)
+            watcher = await connect_agent("X/watcher", uri)
+            try:
+                epoch = await scene.claim(worker, "T1")
+                digest = await _declared(worker, epoch, "T1", op, b, x, git=True)
+                await scene.review(reviewer, digest)
+
+                async def _open_attempt(key: str) -> dict[str, Any]:
+                    return await scene.answer(
+                        worker,
+                        lambda: worker.agent.send_message(
+                            MessageType.OPERATION_ATTEMPT,
+                            task_id="T1",
+                            operation_id=op,
+                            epoch=epoch,
+                            intent_sha256=digest,
+                            idem_key=key,
+                        ),
+                        lambda frame: (
+                            frame.get("type") == MessageType.OPERATION_ATTEMPT_RESULT
+                            and frame.get("request_key") == key
+                        ),
+                    )
+
+                async def _resume_stop(key: str, reason: str) -> dict[str, Any]:
+                    return await scene.answer(
+                        operator,
+                        lambda: operator.agent.send_message(
+                            MessageType.OPERATION_RESUME,
+                            scope=SCOPE,
+                            reason=reason,
+                            case="another_person",
+                            idem_key=key,
+                        ),
+                        lambda frame: (
+                            frame.get("type") == MessageType.OPERATION_STOP_RESULT
+                            and frame.get("request_key") == key
+                        ),
+                    )
+
+                for idx in range(10):
+                    await scene.approve(approver, digest, reason=f"attempt-{idx}")
+                    opened = await _open_attempt(f"open-{idx}")
+                    assert opened["answer"] == "approved_fresh", (idx, opened)
+                    if idx == 0:
+                        for _ in range(MAX_RECORDS_PER_OPERATION):
+                            r = await scene.record(
+                                worker, **scene.outcome(OutcomeState.UNKNOWN, op)
+                            )
+                            assert r["status"] == "accepted"
+                    args = _args(uri, work)
+                    args.idem_key = f"stop-{idx}"
+                    assert await _command(watcher, command.stop_and_seal(args)) == 0
+                    rec = await scene.record(
+                        checker,
+                        record="verification",
+                        task_id="T1",
+                        operation_id=op,
+                        verification=ResultVerification(
+                            op, "git_publication", "unknown", "absent", "not_verified", f"r-{idx}"
+                        ).to_json(),
+                    )
+                    assert rec["status"] == "accepted", (idx, rec)
+                    resumed = await _resume_stop(f"res-{idx}", f"reconciled-{idx}")
+                    assert (resumed["answer"], resumed["resumed_from"]) == ("resumed", "at rest")
+                closed = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id="T1",
+                    operation_id=op,
+                    verification=ResultVerification(
+                        op, "git_publication", "unknown", "observed", "verified", "done"
+                    ).to_json(),
+                )
+                assert closed["status"] == "accepted"
+            finally:
+                await close_agents(worker, reviewer, approver, checker, operator, watcher)
+        seals = _rows(store, EventKind.OPERATION_SEALED)
+        readbacks = _rows(store, EventKind.OPERATION_STOP_READBACK)
+        verifications = _rows(store, EventKind.OPERATION_VERIFIED)
+    finally:
+        store.close()
+    assert len(seals) == 10
+    assert len(readbacks) == 10
+    assert len(verifications) == 11

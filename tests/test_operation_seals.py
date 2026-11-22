@@ -164,6 +164,10 @@ def test_every_refusal_of_a_seal_record_against_the_ledger() -> None:
     full = _ledger()
     for _ in range(MAX_RECORDS_PER_OPERATION):
         full.add_record(OPERATION)
+    # General executor records never starve a seal; only the per-attempt seal reserve bounds seals.
+    assert seal_refusal(full, _request()) is None
+    assert full.seal_limit_of(OPERATION) == 1
+    full.add_seal_record(OPERATION)
     assert seal_refusal(full, _request()) == REFUSED_RECORD_LIMIT
 
 
@@ -237,7 +241,7 @@ def test_the_journal_keeps_the_seal_and_both_ledgers_rebuild_it(tmp_path: Path) 
         "recorded_at": 2.0,
         **_body(),
     }
-    assert restored.records_of(OPERATION) == 1
+    assert (restored.records_of(OPERATION), restored.seal_records_of(OPERATION)) == (0, 1)
     assert restored.attempts.attempt_state(OPERATION, ATTEMPT) == STATE_SEALED
     assert alone.attempt_state(OPERATION, ATTEMPT) == STATE_SEALED
     assert MARKER.blob(APPLIED) != MARKER.blob("sealed")

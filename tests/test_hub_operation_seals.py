@@ -111,7 +111,10 @@ async def test_a_seal_ends_the_open_attempt_until_another_identity_observes_it(
                 epoch, digest, attempt = await _opened(seats)
                 before = await _state(seats.recovery)
                 kept = await scene.record(seats.recovery, **_seal(attempt, digest))
-                counted = hub.operation_records.records_of(scene.OPERATION)
+                counted = (
+                    hub.operation_records.records_of(scene.OPERATION),
+                    hub.operation_records.seal_records_of(scene.OPERATION),
+                )
                 after = await _state(seats.checker)
                 replay = await scene.attempt(seats.worker, epoch, digest, "k1")
                 await scene.approve(seats.approver, digest, reason="after the seal")
@@ -138,7 +141,7 @@ async def test_a_seal_ends_the_open_attempt_until_another_identity_observes_it(
     assert fresh["answer"] == "approved_fresh" and fresh["attempt_id"] != attempt
     assert [row.payload["sender"] for row in rows] == [RECOVERY]
     assert kept["seq"] == rows[0].seq
-    assert counted == 1
+    assert counted == (0, 1)
 
 
 async def test_every_refusal_of_a_seal_record(tmp_path: Path) -> None:

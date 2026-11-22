@@ -950,6 +950,20 @@ class AttemptLedger:
             if any(listed_op == operation_id for listed_op, _attempt in row.listed)
         )
 
+    def attempt_count(self, operation_id: str) -> int:
+        """Return the number of attempts opened for ``operation_id``."""
+        entry = self._operations.get(operation_id)
+        return 0 if entry is None else len(entry.attempts)
+
+    def listed_pair_count(self, operation_id: str) -> int:
+        """Return how many recorded stop listings name an attempt of ``operation_id``."""
+        return sum(
+            1
+            for row in self._stop_rows.values()
+            for listed_op, _attempt in row.listed
+            if listed_op == operation_id
+        )
+
     def _reconciled(self, operation_id: str, attempt_id: str) -> bool:
         entry = self._operations.get(operation_id)
         if entry is None:

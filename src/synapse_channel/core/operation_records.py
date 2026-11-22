@@ -24,14 +24,19 @@ Rules (recovery console design, rev 2):
 * Outcome and verification records need a declared operation on the same task.
   Their sender is checked by the handler against the ``operation-evidence``
   permission. The verifier must match the declared effect.
-* At most :data:`MAX_RECORDS_PER_OPERATION` outcome and verification rows per
-  operation; the declaration does not count. Rows are append-only: a later row
-  never replaces an earlier one.
+* At most :data:`MAX_RECORDS_PER_OPERATION` general rows per operation
+  (executor outcomes, declarer self-verifications, non-reconciling
+  verifications and ``unread`` stop read-backs); the declaration does not
+  count. Stop-completion and independent reconciliation rows use separate
+  bounded reserves sized to the operation's opened attempts and listed stop
+  entries so a saturated executor cannot block a stop from reaching
+  ``at rest``. Rows are append-only: a later row never replaces an earlier one.
 * A seal record reports that its sender created an open attempt's ``sealed``
   marker at the system of record (:mod:`synapse_channel.core.operation_seals`).
   The handler checks it against ``operation-seal``; the hub keeps it only for an
   open attempt of a declared operation on the same task, and only when it names
-  exactly that attempt's seal. It counts toward the record limit.
+  exactly that attempt's seal. It uses the per-attempt seal reserve
+  (:data:`MAX_SEALS_PER_ATTEMPT` per opened attempt).
 * A stop read-back record reports what a stop read back from the system of
   record for one attempt it listed
   (:mod:`synapse_channel.core.operation_stop_readbacks`). The handler checks
@@ -39,9 +44,12 @@ Rules (recovery console design, rev 2):
   stop listed, recomputes any marker it names, decides ``unsealable`` from the
   declared effect, answers a repeat of an already-kept result with that kept
   row without writing a second row, and refuses a different result once a
-  closing read-back is kept. A newly journalled read-back counts toward the
-  record limit; a recomputed ``sealed`` read-back marks the attempt sealed and
-  a recomputed ``applied`` read-back ends it as ``applied`` (not sealed), while
+  closing read-back is kept. Newly journalled ``sealed``, ``applied`` and
+  ``unsealable`` read-backs use the closing read-back reserve
+  (:data:`MAX_CLOSING_READBACKS_PER_LISTED_ATTEMPT` per listed
+  ``(stop_seq, attempt_id)`` pair), while ``unread`` counts toward the general
+  limit; a recomputed ``sealed`` read-back marks the attempt sealed and a
+  recomputed ``applied`` read-back ends it as ``applied`` (not sealed), while
   ``unsealable`` and ``unread`` end no attempt.
 * A declaration may carry an authorisation intent
   (:mod:`synapse_channel.core.authorisation_intent`). Its row then keeps the
@@ -69,7 +77,12 @@ from synapse_channel.core.authorisation_intent import (
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.execution_outcome import ExecutionOutcome, outcome_from_json
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.operation_attempt_ledger import STATE_NONE, STATE_OPEN, AttemptLedger
+from synapse_channel.core.operation_attempt_ledger import (
+    OBSERVED_EFFECTS,
+    STATE_NONE,
+    STATE_OPEN,
+    AttemptLedger,
+)
 from synapse_channel.core.operation_seals import (
     REFUSED_ATTEMPT_ENDED,
     REFUSED_ATTEMPT_UNKNOWN,
@@ -81,11 +94,12 @@ from synapse_channel.core.operation_stop_readbacks import (
     CLOSING_RESULTS,
     REFUSED_READBACK_CLOSED,
     REFUSED_STOP_UNKNOWN,
+    RESULT_UNSEALABLE,
     StopReadback,
     decode_stop_readback,
     readback_mismatch,
 )
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.result_verification_record import (
     ResultVerification,
     verification_from_json,
@@ -117,7 +131,30 @@ VERIFIER_FOR_EFFECT: Mapping[str, str] = {
 """The verifier whose records may speak for each declared effect."""
 
 MAX_RECORDS_PER_OPERATION = 32
-"""Outcome, verification and seal rows kept per operation; the 33rd is refused."""
+"""General rows kept per operation (outcomes, self- or non-reconciling verifications, unread);
+the 33rd is refused."""
+
+MAX_SEALS_PER_ATTEMPT = 1
+"""Reserved seal rows per opened attempt; an attempt can be sealed at most once."""
+
+MAX_CLOSING_READBACKS_PER_LISTED_ATTEMPT = 1
+"""Reserved terminal read-back rows per listed ``(stop_seq, attempt_id)`` pair."""
+
+MAX_RECONCILIATION_BASE = 2
+"""Base independent reconciliation reserve (covers closing ``verified`` and post-close
+``not_verified`` even at zero attempts)."""
+
+MAX_RECONCILIATION_PER_ATTEMPT = 2
+"""Additional independent reconciliation reserve per opened attempt."""
+
+RESERVED_READBACK_RESULTS = frozenset({*CLOSING_RESULTS, RESULT_UNSEALABLE})
+"""Stop read-back results that use the closing read-back reserve instead of the general cap."""
+
+BUCKET_GENERAL = "general operation record limit"
+BUCKET_SEAL = "seal reserve"
+BUCKET_CLOSING_READBACK = "closing read-back reserve"
+BUCKET_RECONCILIATION = "reconciliation reserve"
+"""Readable names of the four per-operation capacity buckets for ``record_limit`` details."""
 
 STATUS_ACCEPTED = "accepted"
 STATUS_REFUSED = "refused"
@@ -427,7 +464,53 @@ class _Entry:
     task_id: str
     effect: str
     target: Mapping[str, str] = field(default_factory=dict)
+    declarer: str | None = None
     records: int = 0
+    seal_records: int = 0
+    closing_readback_records: int = 0
+    reconciliation_records: int = 0
+
+
+def is_reconciliation_verification(
+    *,
+    sender: str,
+    declarer: str | None,
+    effect: str,
+    result: str,
+    closed: bool,
+) -> bool:
+    """Return whether a verification draws from the independent reconciliation reserve.
+
+    Parameters
+    ----------
+    sender : str
+        The authenticated sender of the verification record.
+    declarer : str or None
+        The identity that declared the operation, or ``None`` when unknown.
+    effect : str
+        The verification's ``effect`` field.
+    result : str
+        The verification's ``result`` field.
+    closed : bool
+        Whether the operation was already closed before this row.
+
+    Returns
+    -------
+    bool
+        ``True`` only when a sender other than the declarer records an observed
+        effect (``observed`` or ``absent``), a closing ``verified`` result, or
+        a ``not_verified`` contradiction after the operation is already closed.
+    """
+    if not sender or declarer is None or sender == declarer:
+        return False
+    return (
+        effect in OBSERVED_EFFECTS or result == "verified" or (result == "not_verified" and closed)
+    )
+
+
+def readback_bucket(result: str) -> str:
+    """Return the capacity bucket name for a stop read-back ``result``."""
+    return BUCKET_CLOSING_READBACK if result in RESERVED_READBACK_RESULTS else BUCKET_GENERAL
 
 
 _TARGET_KEYS = {
@@ -458,7 +541,7 @@ def _target_of(effect: str, payload: Mapping[str, Any]) -> dict[str, str]:
 
 
 class OperationLedger:
-    """Declared operations, their record counts and their attempts, restored from the journal."""
+    """Declared operations, their per-bucket record counts and their attempts, restored in order."""
 
     def __init__(self, store: EventStore | None) -> None:
         self._entries: dict[str, _Entry] = {}
@@ -472,17 +555,64 @@ class OperationLedger:
             EventKind.OPERATION_SEALED,
             EventKind.OPERATION_STOP_READBACK,
         )
+        closed_ops: set[str] = set()
         for event in store.iter_events(kinds=kinds):
-            operation_id = event.payload.get("operation_id")
-            if not isinstance(operation_id, str):
-                continue
-            if event.kind == EventKind.OPERATION_DECLARED:
-                task_id, effect = event.payload.get("task_id"), event.payload.get("effect")
-                if isinstance(task_id, str) and isinstance(effect, str):
-                    target = _target_of(effect, event.payload)
-                    self._entries.setdefault(operation_id, _Entry(task_id, effect, target))
-            elif operation_id in self._entries:
-                self._entries[operation_id].records += 1
+            self._restore_event(event, closed_ops)
+
+    def _restore_event(self, event: StoredEvent, closed_ops: set[str]) -> None:
+        """Replay one journal row in sequence order, classifying its bucket at its position."""
+        operation_id = event.payload.get("operation_id")
+        if not isinstance(operation_id, str):
+            return
+        if event.kind == EventKind.OPERATION_DECLARED:
+            task_id, effect = event.payload.get("task_id"), event.payload.get("effect")
+            if isinstance(task_id, str) and isinstance(effect, str):
+                target = _target_of(effect, event.payload)
+                raw_sender = event.payload.get("sender")
+                declarer = raw_sender if isinstance(raw_sender, str) else None
+                self._entries.setdefault(
+                    operation_id, _Entry(task_id, effect, target, declarer=declarer)
+                )
+            return
+        entry = self._entries.get(operation_id)
+        if entry is None:
+            return
+        self._count_restored_row(operation_id, entry, event, closed_ops)
+
+    def _count_restored_row(
+        self, operation_id: str, entry: _Entry, event: StoredEvent, closed_ops: set[str]
+    ) -> None:
+        """Increment the capacity bucket of one non-declaration row at its replay position."""
+        if event.kind == EventKind.OPERATION_SEALED:
+            entry.seal_records += 1
+        elif event.kind == EventKind.OPERATION_STOP_READBACK:
+            if event.payload.get("result") in RESERVED_READBACK_RESULTS:
+                entry.closing_readback_records += 1
+            else:
+                entry.records += 1
+        elif event.kind == EventKind.OPERATION_VERIFIED:
+            sender = str(event.payload.get("sender") or "")
+            effect = str(event.payload.get("effect") or "")
+            result = str(event.payload.get("result") or "")
+            if is_reconciliation_verification(
+                sender=sender,
+                declarer=entry.declarer,
+                effect=effect,
+                result=result,
+                closed=operation_id in closed_ops,
+            ):
+                entry.reconciliation_records += 1
+            else:
+                entry.records += 1
+            if (
+                sender
+                and entry.declarer is not None
+                and sender != entry.declarer
+                and result == "verified"
+            ):
+                closed_ops.add(operation_id)
+        else:
+            entry.records += 1
 
     @property
     def attempts(self) -> AttemptLedger:
@@ -499,15 +629,54 @@ class OperationLedger:
         entry = self._entries.get(operation_id)
         return None if entry is None else entry.effect
 
+    def declarer_of(self, operation_id: str) -> str | None:
+        """Return the declarer of an operation, or ``None`` when not recorded."""
+        entry = self._entries.get(operation_id)
+        if entry is not None and entry.declarer is not None:
+            return entry.declarer
+        fact = self._attempts.operation(operation_id)
+        return None if fact is None else fact.declarer
+
     def target_of(self, operation_id: str) -> Mapping[str, str]:
         """Return the declared target of an operation; empty when it is not declared."""
         entry = self._entries.get(operation_id)
         return {} if entry is None else dict(entry.target)
 
     def records_of(self, operation_id: str) -> int:
-        """Return the number of outcome, verification, seal and read-back rows kept for it."""
+        """Return the number of general rows kept for ``operation_id``."""
         entry = self._entries.get(operation_id)
         return 0 if entry is None else entry.records
+
+    def seal_records_of(self, operation_id: str) -> int:
+        """Return the number of seal rows kept for ``operation_id``."""
+        entry = self._entries.get(operation_id)
+        return 0 if entry is None else entry.seal_records
+
+    def closing_readback_records_of(self, operation_id: str) -> int:
+        """Return the number of closing or unsealable read-back rows kept for ``operation_id``."""
+        entry = self._entries.get(operation_id)
+        return 0 if entry is None else entry.closing_readback_records
+
+    def reconciliation_records_of(self, operation_id: str) -> int:
+        """Return the number of independent reconciliation rows kept for ``operation_id``."""
+        entry = self._entries.get(operation_id)
+        return 0 if entry is None else entry.reconciliation_records
+
+    def seal_limit_of(self, operation_id: str) -> int:
+        """Return the reserved seal row cap for ``operation_id``."""
+        return MAX_SEALS_PER_ATTEMPT * self._attempts.attempt_count(operation_id)
+
+    def closing_readback_limit_of(self, operation_id: str) -> int:
+        """Return the reserved closing/unsealable read-back cap for ``operation_id``."""
+        return MAX_CLOSING_READBACKS_PER_LISTED_ATTEMPT * self._attempts.listed_pair_count(
+            operation_id
+        )
+
+    def reconciliation_limit_of(self, operation_id: str) -> int:
+        """Return the reserved independent reconciliation cap for ``operation_id``."""
+        return MAX_RECONCILIATION_BASE + (
+            MAX_RECONCILIATION_PER_ATTEMPT * self._attempts.attempt_count(operation_id)
+        )
 
     def declare(
         self,
@@ -515,23 +684,61 @@ class OperationLedger:
         task_id: str,
         effect: str,
         target: Mapping[str, str] | None = None,
+        *,
+        declarer: str | None = None,
     ) -> None:
-        """Remember one journalled declaration and its target."""
-        self._entries[operation_id] = _Entry(task_id, effect, dict(target or {}))
+        """Remember one journalled declaration, its target and optionally its declarer."""
+        self._entries[operation_id] = _Entry(task_id, effect, dict(target or {}), declarer=declarer)
 
     def add_record(self, operation_id: str) -> None:
-        """Count one journalled outcome, verification, seal or read-back row."""
+        """Count one general outcome, verification or unread read-back row."""
         self._entries[operation_id].records += 1
 
+    def add_seal_record(self, operation_id: str) -> None:
+        """Count one journalled seal row in the seal reserve."""
+        self._entries[operation_id].seal_records += 1
 
-def evidence_refusal(ledger: OperationLedger, request: OperationRecordRequest) -> str | None:
+    def add_closing_readback_record(self, operation_id: str) -> None:
+        """Count one journalled closing or unsealable read-back row in its reserve."""
+        self._entries[operation_id].closing_readback_records += 1
+
+    def add_reconciliation_record(self, operation_id: str) -> None:
+        """Count one journalled independent reconciliation verification in its reserve."""
+        self._entries[operation_id].reconciliation_records += 1
+
+
+def evidence_bucket(
+    ledger: OperationLedger, request: OperationRecordRequest, *, sender: str = ""
+) -> str:
+    """Return the capacity bucket name an outcome or verification draws from."""
+    verification = request.verification
+    if verification is not None and is_reconciliation_verification(
+        sender=sender,
+        declarer=ledger.declarer_of(request.operation_id),
+        effect=verification.effect,
+        result=verification.result,
+        closed=ledger.attempts.view(request.operation_id, None).closed,
+    ):
+        return BUCKET_RECONCILIATION
+    return BUCKET_GENERAL
+
+
+def evidence_refusal(
+    ledger: OperationLedger, request: OperationRecordRequest, *, sender: str = ""
+) -> str | None:
     """Return why an outcome or verification record cannot be kept, or ``None``."""
     task = ledger.task_of(request.operation_id)
     if task is None:
         return REFUSED_UNKNOWN
     if task != request.task_id:
         return REFUSED_TASK_MISMATCH
-    if ledger.records_of(request.operation_id) >= MAX_RECORDS_PER_OPERATION:
+    bucket = evidence_bucket(ledger, request, sender=sender)
+    if bucket == BUCKET_RECONCILIATION:
+        if ledger.reconciliation_records_of(request.operation_id) >= (
+            ledger.reconciliation_limit_of(request.operation_id)
+        ):
+            return REFUSED_RECORD_LIMIT
+    elif ledger.records_of(request.operation_id) >= MAX_RECORDS_PER_OPERATION:
         return REFUSED_RECORD_LIMIT
     body: ExecutionOutcome | ResultVerification | None = request.outcome or request.verification
     if body is None or body.operation_id != request.operation_id:
@@ -547,8 +754,8 @@ def evidence_refusal(ledger: OperationLedger, request: OperationRecordRequest) -
 def seal_refusal(ledger: OperationLedger, request: OperationRecordRequest) -> str | None:
     """Return why a seal record cannot be kept, or ``None``.
 
-    The operation must be declared on the same task, below the record limit,
-    with the named attempt open, and the record must name exactly that
+    The operation must be declared on the same task, with the named attempt open,
+    below the per-attempt seal reserve, and the record must name exactly that
     attempt's seal (:func:`synapse_channel.core.operation_seals.seal_mismatch`).
     """
     task = ledger.task_of(request.operation_id)
@@ -556,8 +763,6 @@ def seal_refusal(ledger: OperationLedger, request: OperationRecordRequest) -> st
         return REFUSED_UNKNOWN
     if task != request.task_id:
         return REFUSED_TASK_MISMATCH
-    if ledger.records_of(request.operation_id) >= MAX_RECORDS_PER_OPERATION:
-        return REFUSED_RECORD_LIMIT
     seal = request.seal
     assert seal is not None, "decode_operation_record gives every seal record its body"
     state = ledger.attempts.attempt_state(request.operation_id, seal.attempt_id)
@@ -565,6 +770,8 @@ def seal_refusal(ledger: OperationLedger, request: OperationRecordRequest) -> st
         return REFUSED_ATTEMPT_UNKNOWN
     if state != STATE_OPEN:
         return REFUSED_ATTEMPT_ENDED
+    if ledger.seal_records_of(request.operation_id) >= ledger.seal_limit_of(request.operation_id):
+        return REFUSED_RECORD_LIMIT
     if seal.stop_seq is not None and not ledger.attempts.stop_lists(
         seal.stop_seq, request.operation_id, seal.attempt_id
     ):
@@ -607,7 +814,9 @@ def stop_readback_refusal(ledger: OperationLedger, request: OperationRecordReque
     refused ``readback_closed`` while the same result returns the kept row; the
     record must agree with what the hub recomputes
     (:func:`synapse_channel.core.operation_stop_readbacks.readback_mismatch`);
-    and a newly journalled row must stay below the record limit.
+    and a newly journalled row must stay below its capacity bucket (the closing
+    read-back reserve for ``sealed``, ``applied`` and ``unsealable``, or the
+    general record limit for ``unread``).
     """
     task = ledger.task_of(request.operation_id)
     if task is None:
@@ -633,10 +842,14 @@ def stop_readback_refusal(ledger: OperationLedger, request: OperationRecordReque
     )
     if mismatch is not None:
         return mismatch
-    if kept_stop_readback(ledger, request) is None and (
-        ledger.records_of(request.operation_id) >= MAX_RECORDS_PER_OPERATION
-    ):
-        return REFUSED_RECORD_LIMIT
+    if kept_stop_readback(ledger, request) is None:
+        if readback.result in RESERVED_READBACK_RESULTS:
+            if ledger.closing_readback_records_of(request.operation_id) >= (
+                ledger.closing_readback_limit_of(request.operation_id)
+            ):
+                return REFUSED_RECORD_LIMIT
+        elif ledger.records_of(request.operation_id) >= MAX_RECORDS_PER_OPERATION:
+            return REFUSED_RECORD_LIMIT
     return None
 
 

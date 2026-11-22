@@ -26,6 +26,11 @@ from synapse_channel.core.execution_outcome import ExecutionOutcome, OutcomeStat
 from synapse_channel.core.handlers import operation_records as handler
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_records import (
+    BUCKET_CLOSING_READBACK,
+    BUCKET_GENERAL,
+    BUCKET_RECONCILIATION,
+    MAX_RECONCILIATION_BASE,
+    MAX_RECONCILIATION_PER_ATTEMPT,
     MAX_RECORDS_PER_OPERATION,
     RECORD_DECLARE,
     REFUSED_INVALID,
@@ -41,7 +46,10 @@ from synapse_channel.core.operation_records import (
     OperationRecordRequest,
     declaration_refusal,
     decode_operation_record,
+    evidence_bucket,
     evidence_refusal,
+    is_reconciliation_verification,
+    readback_bucket,
     record_operation,
 )
 from synapse_channel.core.persistence import EventStore
@@ -377,7 +385,7 @@ def test_rows_carry_only_checked_fields_and_the_ledger_restores(tmp_path: Path) 
     try:
         restored = OperationLedger(reopened)
         assert (restored.task_of("op-1"), restored.effect_of("op-1")) == ("T", "file")
-        assert restored.records_of("op-1") == 2
+        assert (restored.records_of("op-1"), restored.reconciliation_records_of("op-1")) == (1, 1)
         assert (
             restored.task_of("op-x"),
             restored.effect_of("op-x"),
@@ -739,3 +747,182 @@ def test_base_generation_refuses_non_canonical_or_non_string_forms(bad_generatio
     }
     with pytest.raises(OperationRecordError, match="base_generation has the wrong form"):
         decode_operation_record(_declare(effect="deployment", effect_target=target))
+
+
+def test_reconciliation_reserve_isolates_declarer_enforces_bound_and_replays_in_order(
+    tmp_path: Path,
+) -> None:
+    """Independent reconciling verifications use a per-attempt reserve restored in order."""
+    from synapse_channel.core.operation_attempts import OperationFact
+
+    # Pure classifier covers every guard and pre-/post-close not_verified.
+    assert not is_reconciliation_verification(
+        sender="", declarer="P/w", effect="observed", result="verified", closed=False
+    )
+    assert not is_reconciliation_verification(
+        sender="Q/c", declarer=None, effect="observed", result="verified", closed=False
+    )
+    assert not is_reconciliation_verification(
+        sender="P/w", declarer="P/w", effect="observed", result="verified", closed=False
+    )
+    assert not is_reconciliation_verification(
+        sender="Q/c", declarer="P/w", effect="unknown", result="not_checked", closed=False
+    )
+    assert not is_reconciliation_verification(
+        sender="Q/c", declarer="P/w", effect="unknown", result="not_verified", closed=False
+    )
+    assert is_reconciliation_verification(
+        sender="Q/c", declarer="P/w", effect="unknown", result="not_verified", closed=True
+    )
+    assert is_reconciliation_verification(
+        sender="Q/c", declarer="P/w", effect="absent", result="not_verified", closed=False
+    )
+    assert is_reconciliation_verification(
+        sender="Q/c", declarer="P/w", effect="observed", result="verified", closed=False
+    )
+    assert (
+        readback_bucket("sealed"),
+        readback_bucket("unsealable"),
+        readback_bucket("unread"),
+    ) == (
+        BUCKET_CLOSING_READBACK,
+        BUCKET_CLOSING_READBACK,
+        BUCKET_GENERAL,
+    )
+
+    ledger = OperationLedger(None)
+    assert (
+        ledger.declarer_of("missing"),
+        ledger.records_of("missing"),
+        ledger.seal_records_of("missing"),
+        ledger.closing_readback_records_of("missing"),
+        ledger.reconciliation_records_of("missing"),
+        ledger.seal_limit_of("missing"),
+        ledger.closing_readback_limit_of("missing"),
+        ledger.reconciliation_limit_of("missing"),
+    ) == (None, 0, 0, 0, 0, 0, 0, MAX_RECONCILIATION_BASE)
+
+    # declarer_of falls back to AttemptLedger when declare() omitted declarer.
+    ledger.declare("op-1", "T1", "file")
+    ledger.attempts.note_declaration("op-1", OperationFact("T1", "P/worker", None, None, 1.0))
+    assert ledger.declarer_of("op-1") == "P/worker"
+    for _ in range(MAX_RECORDS_PER_OPERATION):
+        ledger.add_record("op-1")
+
+    def ver_req(effect: str, result: str) -> OperationRecordRequest:
+        return decode_operation_record(
+            {
+                "record": "verification",
+                "task_id": "T1",
+                "operation_id": "op-1",
+                "verification": ResultVerification(
+                    "op-1", "file_change", "unknown", effect, result, "check"
+                ).to_json(),
+            }
+        )
+
+    observed = ver_req("observed", "verified")
+    not_checked = ver_req("unknown", "not_checked")
+    assert evidence_bucket(ledger, observed, sender="P/worker") == BUCKET_GENERAL
+    assert evidence_bucket(ledger, not_checked, sender="Q/checker") == BUCKET_GENERAL
+    assert evidence_bucket(ledger, observed, sender="Q/checker") == BUCKET_RECONCILIATION
+    assert evidence_refusal(ledger, observed, sender="P/worker") == REFUSED_RECORD_LIMIT
+    assert evidence_refusal(ledger, not_checked, sender="Q/checker") == REFUSED_RECORD_LIMIT
+    assert evidence_refusal(ledger, observed, sender="Q/checker") is None
+
+    # Exact reconciliation bound: 2 at k=0, 4 at k=1; past the bound refuses record_limit.
+    for _ in range(MAX_RECONCILIATION_BASE):
+        assert evidence_refusal(ledger, observed, sender="Q/checker") is None
+        ledger.add_reconciliation_record("op-1")
+    assert evidence_refusal(ledger, observed, sender="Q/checker") == REFUSED_RECORD_LIMIT
+    ledger.attempts.open_attempt("op-1", "a" * 32, executor="P/worker", approval_seq=1)
+    assert ledger.reconciliation_limit_of("op-1") == (
+        MAX_RECONCILIATION_BASE + MAX_RECONCILIATION_PER_ATTEMPT
+    )
+    for _ in range(MAX_RECONCILIATION_PER_ATTEMPT):
+        assert evidence_refusal(ledger, observed, sender="Q/checker") is None
+        ledger.add_reconciliation_record("op-1")
+    assert evidence_refusal(ledger, observed, sender="Q/checker") == REFUSED_RECORD_LIMIT
+
+    # In-order replay restore: unknown/not_verified before close counts in general;
+    # the same row after close counts in reconciliation; declarer verified never closes.
+    store = EventStore(tmp_path / "restore.db")
+    try:
+        store.append(
+            EventKind.OPERATION_DECLARED,
+            {
+                "operation_id": "op-1",
+                "task_id": "T1",
+                "effect": "file",
+                "sender": "P/worker",
+                "recorded_at": 10.0,
+            },
+        )
+        store.append(
+            EventKind.OPERATION_OUTCOME,
+            {"operation_id": "op-1", "sender": "P/worker", "state": "unknown"},
+        )
+        # Before close: unknown + not_verified -> general bucket.
+        store.append(
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": "op-1",
+                "sender": "Q/checker",
+                "effect": "unknown",
+                "result": "not_verified",
+            },
+        )
+        # Declarer self-verification -> general bucket, does not close.
+        store.append(
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": "op-1",
+                "sender": "P/worker",
+                "effect": "observed",
+                "result": "verified",
+            },
+        )
+        # Independent closing verification -> reconciliation bucket and closes op-1 at this seq.
+        store.append(
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": "op-1",
+                "sender": "Q/checker",
+                "effect": "observed",
+                "result": "verified",
+            },
+        )
+        # After close: unknown + not_verified -> reconciliation bucket (post-close contradiction).
+        store.append(
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": "op-1",
+                "sender": "Q/checker",
+                "effect": "unknown",
+                "result": "not_verified",
+            },
+        )
+        store.append(
+            EventKind.OPERATION_SEALED,
+            {"operation_id": "op-1", "sender": "R/recovery", "attempt_id": "a" * 32},
+        )
+        store.append(
+            EventKind.OPERATION_STOP_READBACK,
+            {"operation_id": "op-1", "sender": "R/recovery", "result": "unread"},
+        )
+        store.append(
+            EventKind.OPERATION_STOP_READBACK,
+            {"operation_id": "op-1", "sender": "R/recovery", "result": "sealed"},
+        )
+        store.append(
+            EventKind.OPERATION_STOP_READBACK,
+            {"operation_id": "op-1", "sender": "R/recovery", "result": "unsealable"},
+        )
+        restored = OperationLedger(store)
+    finally:
+        store.close()
+    assert restored.declarer_of("op-1") == "P/worker"
+    assert restored.records_of("op-1") == 4
+    assert restored.seal_records_of("op-1") == 1
+    assert restored.closing_readback_records_of("op-1") == 2
+    assert restored.reconciliation_records_of("op-1") == 2
