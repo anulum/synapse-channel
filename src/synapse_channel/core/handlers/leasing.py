@@ -68,6 +68,11 @@ from synapse_channel.core.receipts import (
     release_receipt_has_evidence,
 )
 from synapse_channel.core.release_confirmation import log_release_refusal, release_reply_binding
+from synapse_channel.core.release_sidecar import (
+    acting_release,
+    claim_release_mode,
+    sidecar_trigger_refusal,
+)
 from synapse_channel.core.scoping import normalize_paths
 from synapse_channel.core.state import GitContext, SynapseState
 from synapse_channel.core.state_transaction import durable_state_transaction
@@ -111,6 +116,10 @@ if TYPE_CHECKING:
         state: SynapseState
 
         waits: dict[str, set[str]]
+
+        def release_sidecar_is_narrowed(self, websocket: Any) -> bool:
+            """Return whether a sidecar on this socket may release only its trigger."""
+            ...
 
 
 class _ClaimMutationHub(Protocol):
@@ -705,22 +714,86 @@ async def handle_task_update(
     )
 
 
+def _write_release(
+    store: EventStore,
+    result: tuple[bool, str],
+    *,
+    task_id: str,
+    actor: str,
+    via: str | None,
+) -> None:
+    """Persist an owner release unchanged, or a sidecar release with ``via``."""
+    if not result[0]:
+        return
+    if via is None:
+        record_release(store, task_id)
+        return
+    record_release(store, task_id, owner=actor, via=via)
+
+
+def _release_checked(
+    state: SynapseState,
+    *,
+    sender: str,
+    task_id: str,
+    data: dict[str, Any],
+    via: str | None,
+    narrowed: bool,
+) -> tuple[bool, str]:
+    """Release under the state lock after the sidecar trigger check.
+
+    The claim's ``auto_release_on`` is read here, inside the mutation the
+    state actor holds its lock around, and the release sees that same claim.
+    A missing or foreign claim is left to the ordinary release.
+    """
+    if via is not None and narrowed:
+        claim = state.claims.get(task_id)
+        if claim is not None and claim.owner == sender:
+            reason = sidecar_trigger_refusal(
+                task_id, claim_release_mode(claim.git), str(data.get("trigger") or "")
+            )
+            if reason is not None:
+                return False, reason
+    return release_task(state, sender=sender, task_id=task_id, data=data)
+
+
+async def _deny_release(
+    hub: LeasingContext, websocket: Any, sender: str, task_id: str, message: str
+) -> None:
+    """Tell the sender its release was refused."""
+    await hub.send_json(
+        websocket,
+        hub.system(
+            message,
+            msg_type=MessageType.RELEASE_DENIED,
+            target=sender,
+            task_id=task_id,
+        ),
+    )
+
+
 async def handle_release(
     hub: LeasingContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Release a task and broadcast it, or deny the sender."""
     task_id = str(data.get("task_id") or data.get("payload") or "").strip()
+    subject = acting_release(sender)
+    if subject is None:
+        await _deny_release(hub, websocket, sender, task_id, "release sidecar name is not a seat")
+        return
+    actor, via = subject
     if await _refuse_unfenced(
         hub, sender, data, websocket, task_id=task_id, msg_type=MessageType.RELEASE_DENIED
     ):
         return
     journal = hub.journal
-
-    mutate = partial(release_task, sender=sender, task_id=task_id, data=data)
+    narrowed = via is not None and hub.release_sidecar_is_narrowed(websocket)
+    mutate = partial(
+        _release_checked, sender=actor, task_id=task_id, data=data, via=via, narrowed=narrowed
+    )
 
     def persist(store: EventStore, result: tuple[bool, str]) -> None:
-        if result[0]:
-            record_release(store, task_id)
+        _write_release(store, result, task_id=task_id, actor=actor, via=via)
 
     prepared_progress: list[ProgressNote] = []
 
@@ -729,10 +802,11 @@ async def handle_release(
     prepare = partial(
         prepare_release,
         hub=hub,
-        sender=sender,
+        sender=actor,
         task_id=task_id,
         data=data,
         prepared_progress=prepared_progress,
+        via=via,
     )
 
     execution = await hub.run_atomic_operation(data, mutate, prepare, publish=publish)

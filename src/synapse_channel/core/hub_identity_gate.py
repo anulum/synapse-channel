@@ -41,6 +41,7 @@ import binascii
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import Any
 
 from synapse_channel.core.frame_signing import KeySource
@@ -58,6 +59,7 @@ from synapse_channel.core.message_auth import (
     verify_event_signature,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.release_sidecar import is_release_sidecar, release_owner
 from synapse_channel.core.terminal_text import shell_command_arg, shell_long_option
 
 logger = logging.getLogger("synapse.hub")
@@ -69,6 +71,29 @@ IDENTITY_PROOF_REQUIRED = "identity_proof_required"
 """Refusal for an unpinned registration without a proof when the hub requires one."""
 
 _ED25519_RAW_PUBLIC_KEY_BYTES = 32
+
+
+def _bundle_for_connection(
+    bundle: EventSignatureTrustBundle, sender: str
+) -> EventSignatureTrustBundle:
+    """Return the bundle that judges ``sender`` while the signature stays its own.
+
+    A seat uses the operator bundle unchanged. A release sidecar keeps the
+    signed connection name. Keys enrolled for its owner also admit that
+    connection. Keys that do not name the owner lose the sidecar name, so a
+    key enrolled only for the sidecar does not admit it.
+    """
+    owner = release_owner(sender) if is_release_sidecar(sender) else None
+    if owner is None:
+        return bundle
+    keys = {
+        key_id: replace(
+            key,
+            senders=(key.senders | {sender}) if owner in key.senders else (key.senders - {sender}),
+        )
+        for key_id, key in bundle.keys.items()
+    }
+    return EventSignatureTrustBundle(keys=keys, replay_cache=bundle.replay_cache)
 
 
 class HubIdentityGate:
@@ -164,6 +189,15 @@ class HubIdentityGate:
         reason and closes the socket (:data:`IDENTITY_BINDING_CLOSE_CODE`), and
         returns ``False`` so the hub stops routing before the name is bound.
         """
+        if is_release_sidecar(sender) and release_owner(sender) is None:
+            await self._refuse(
+                websocket,
+                sender,
+                message="release sidecar name is not a seat",
+                reason="reserved suffix",
+                verification_result="reserved suffix",
+            )
+            return False
         if self._require_identity_binding:
             return await self._verify_against_bundle(sender, data, websocket)
         if self._pin_store is None:
@@ -194,7 +228,10 @@ class HubIdentityGate:
             return None
         if self._require_identity_binding:
             return key_id, "bundle"
-        pin = None if self._pin_store is None else self._pin_store.pinned(sender)
+        subject = release_owner(sender) if is_release_sidecar(sender) else sender
+        pin = (
+            None if self._pin_store is None or subject is None else self._pin_store.pinned(subject)
+        )
         if pin is not None and pin.key_id == key_id:
             return key_id, "pin"
         return None
@@ -202,13 +239,21 @@ class HubIdentityGate:
     async def _verify_against_bundle(
         self, sender: str, data: dict[str, Any], websocket: Any
     ) -> bool:
-        """Run the operator-bundle posture: prove ``sender`` or be refused."""
+        """Run the operator-bundle posture: prove ``sender`` or be refused.
+
+        A release sidecar is still signed as its connection name. The bundle is
+        judged for that connection's owner: a key enrolled for the owner also
+        admits the sidecar, and a key enrolled only for the sidecar name does not.
+        """
         bundle = self._identity_trust_bundle
         if bundle is None:
             result = SignedEventVerificationResult.UNKNOWN_KEY
         else:
             result = verify_registration(
-                data, trust_bundle=bundle, now=self._clock(), required_sender=sender
+                data,
+                trust_bundle=_bundle_for_connection(bundle, sender),
+                now=self._clock(),
+                required_sender=sender,
             )
         if result is SignedEventVerificationResult.VALID:
             return True
@@ -249,23 +294,27 @@ class HubIdentityGate:
         so admitting it unverified would let any client take the name. The
         refusal names the missing package as the remedy.
         """
-        pin = pin_store.pinned(sender)
+        # A sidecar is judged against its owner's pin. A pin stored under the
+        # sidecar's own name is ignored, and this path never creates one.
+        subject = release_owner(sender) if is_release_sidecar(sender) else sender
+        assert subject is not None
+        pin = pin_store.pinned(subject)
         presented_key = str(data.get("identity_public_key") or "")
         has_signature = isinstance(data.get("signature"), dict)
         if pin is not None:
             if not has_signature:
                 await self._refuse_pin_mismatch(
-                    pin_store, sender, websocket, detail="signature missing"
+                    pin_store, subject, websocket, detail="signature missing"
                 )
                 return False
             try:
                 result = self._verify_self_contained(sender, data, pin.key_id, pin.public_key)
             except ImportError:
-                await self._refuse_pin_unverifiable(sender, pin.key_id, websocket)
+                await self._refuse_pin_unverifiable(subject, pin.key_id, websocket)
                 return False
             if result is SignedEventVerificationResult.VALID:
                 return True
-            await self._refuse_pin_mismatch(pin_store, sender, websocket, detail=result.value)
+            await self._refuse_pin_mismatch(pin_store, subject, websocket, detail=result.value)
             return False
         if not has_signature or not presented_key:
             return await self._admit_unproven(sender, websocket)
@@ -285,6 +334,8 @@ class HubIdentityGate:
                 verification_result=result.value,
             )
             return False
+        if is_release_sidecar(sender):
+            return True
         pin_store.pin(sender, key_id=key_id, public_key=presented_key, now=self._clock())
         return True
 

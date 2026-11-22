@@ -98,8 +98,13 @@ def _operator_relay(p: Mapping[str, Any]) -> EventWords:
 
 
 def _release(p: Mapping[str, Any]) -> EventWords:
-    # The release record holds only the task id: it names no actor.
-    return EventWords("", f"released {_text(p, 'task_id')}")
+    # An owner release still holds only the task id. A sidecar release names
+    # the owner and the connection in ``via``; older rows have neither field.
+    task = _text(p, "task_id")
+    via = _text(p, "via")
+    if not via:
+        return EventWords("", f"released {task}")
+    return EventWords(_text(p, "owner"), f"released {task} via {via}")
 
 
 def _ledger_progress(p: Mapping[str, Any]) -> EventWords:

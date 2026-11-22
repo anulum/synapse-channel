@@ -318,9 +318,23 @@ def record_guard_denial(store: EventStore, evidence: Mapping[str, Any]) -> int:
     return store.append(EventKind.GUARD_DENIAL, dict(evidence), durable=True)
 
 
-def record_release(store: EventStore, task_id: str) -> None:
-    """Append a durable event marking a task released."""
-    store.append(EventKind.RELEASE, {"task_id": task_id}, durable=True)
+def record_release(
+    store: EventStore,
+    task_id: str,
+    *,
+    owner: str | None = None,
+    via: str | None = None,
+) -> None:
+    """Append a durable event marking a task released.
+
+    An owner release writes exactly ``{"task_id": ...}``. A sidecar release
+    also names ``owner`` and ``via``. Callers pass both extra fields or neither.
+    """
+    payload: dict[str, str] = {"task_id": task_id}
+    if owner is not None and via is not None:
+        payload["owner"] = owner
+        payload["via"] = via
+    store.append(EventKind.RELEASE, payload, durable=True)
 
 
 def record_task_update(store: EventStore, claim: TaskClaim) -> None:

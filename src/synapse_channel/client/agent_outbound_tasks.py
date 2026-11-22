@@ -95,6 +95,7 @@ class AgentTaskMutationMixin:
         approvals: tuple[str, ...] | list[str] = (),
         confidence: str = "",
         freshness_seconds: float | None = None,
+        trigger: str | None = None,
     ) -> dict[str, Any]:
         """Prepare an exact release envelope without sending or mutating a lease.
 
@@ -102,6 +103,8 @@ class AgentTaskMutationMixin:
         read-only recovery may be needed. The prepared epoch remains fixed.
         """
         extra: dict[str, Any] = {"task_id": task_id.strip()}
+        if trigger:
+            extra["trigger"] = trigger
         fence = _fence_epoch(self, task_id, epoch)
         if fence is not None:
             extra["epoch"] = int(fence)
@@ -151,6 +154,7 @@ class AgentTaskMutationMixin:
         approvals: tuple[str, ...] | list[str] = (),
         confidence: str = "",
         freshness_seconds: float | None = None,
+        trigger: str | None = None,
     ) -> None:
         """Release a task lease, optionally attaching closeout evidence."""
         request = AgentTaskMutationMixin.prepare_release(
@@ -166,6 +170,7 @@ class AgentTaskMutationMixin:
             approvals=approvals,
             confidence=confidence,
             freshness_seconds=freshness_seconds,
+            trigger=trigger,
         )
         extra = {
             key: value

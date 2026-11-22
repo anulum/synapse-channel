@@ -25,10 +25,12 @@ AUTO_RELEASE_MODES = frozenset({"manual", "commit", "merge"})
 class GitContext:
     """The git branch context a claim is scoped to.
 
-    Opaque to the hub: it is stored on the claim, journalled, replayed, and shown
-    in snapshots, but the hub never reads the filesystem or runs git. All git
-    resolution happens client-side; this record only carries the result, so the
-    hub can group and display claims by branch without ever touching a repository.
+    Opaque to the hub except for one comparison: it is stored on the claim,
+    journalled, replayed, and shown in snapshots, and the hub never reads the
+    filesystem or runs git. All git resolution happens client-side. On a
+    shared-token hub, or a hub with no token, a release sidecar may release a
+    claim only when ``auto_release_on`` equals the commit or merge trigger that
+    release presents.
 
     Attributes
     ----------
@@ -130,8 +132,9 @@ class TaskClaim:
         change start a new anchor; ordinary same-owner renewal retains it.
     git : GitContext or None
         The branch context the claim is scoped to, set by a git-aware client;
-        ``None`` for a plain claim. Opaque to the hub: stored and displayed but
-        never acted on because the hub runs no git.
+        ``None`` for a plain claim, which a narrowed sidecar treats as manual.
+        The hub runs no git. It reads ``auto_release_on`` only to refuse a
+        sidecar release on a shared-token or no-token hub.
     """
 
     task_id: str

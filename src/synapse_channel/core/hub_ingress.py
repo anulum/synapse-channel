@@ -34,11 +34,30 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_exposure import exposure_problems, guard_exposure
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.release_sidecar import (
+    ReleaseSidecarRoster,
+    is_release_sidecar,
+    release_owner,
+    sidecar_frame_allowed,
+)
 from synapse_channel.core.token_audit import TokenAudit
 from synapse_channel.core.token_sessions import TokenSessions, watch_token_set
 from synapse_channel.core.token_set import TokenSetAuthenticator
 
 logger = logging.getLogger("synapse.hub")
+
+
+def _release_actor(sender: str) -> str:
+    """Return the seat a frame is judged as.
+
+    A valid release sidecar is judged as its owner. Any other name, including
+    a refused sidecar, is judged as itself; the frame gate refuses the latter.
+    """
+    owner = release_owner(sender)
+    if is_release_sidecar(sender) and owner is not None:
+        return owner
+    return sender
+
 
 _TEXT_ENVELOPE_FIELDS: tuple[str, ...] = ("sender", "target", "type", "channel")
 """Envelope fields that name or route a frame and must be text when present.
@@ -139,6 +158,31 @@ class HubIngress:
         self._insecure_off_loopback = insecure_off_loopback
         self._send_json = send_json
         self._system = system
+        self._sidecar_roster = ReleaseSidecarRoster()
+
+    def release_actor(self, sender: str) -> str:
+        """Return the seat an ACL check should judge ``sender`` as."""
+        return _release_actor(sender)
+
+    def sidecar_frame_refused(self, sender: str, msg_type: str) -> bool:
+        """Return whether a release sidecar may not send ``msg_type``."""
+        if not is_release_sidecar(sender):
+            return False
+        return release_owner(sender) is None or not sidecar_frame_allowed(msg_type)
+
+    def release_sidecar_is_narrowed(self, websocket: Any) -> bool:
+        """Return whether a sidecar on ``websocket`` may release only its trigger.
+
+        An open hub, and a socket admitted by a shared token, are narrowed. A
+        socket whose token names the seat keeps that seat's full release.
+        """
+        if self._authenticator is None:
+            return True
+        return not self._sidecar_roster.bound(websocket)
+
+    def forget_owner_bound(self, websocket: Any) -> None:
+        """Drop a closed socket from the sidecar roster."""
+        self._sidecar_roster.forget(websocket)
 
     async def authorise(self, sender: str, data: dict[str, Any], websocket: Any) -> bool:
         """Gate the first message from a socket on the shared-secret token.
@@ -164,6 +208,18 @@ class HubIngress:
         """
         if self._clients.socket_agent.get(websocket) is not None:
             return True
+        if is_release_sidecar(sender) and release_owner(sender) is None:
+            await self._send_json(
+                websocket,
+                self._system(
+                    "release sidecar name is not a seat",
+                    msg_type=MessageType.AUTH_DENIED,
+                    target=sender,
+                ),
+            )
+            await websocket.close(code=4010, reason="reserved suffix")
+            return False
+        judged = _release_actor(sender)
         if self._authenticator is None:
             # An open hub has no credential identity. Charge every connection from
             # one network principal to the same conservative bucket, so cycling
@@ -172,13 +228,19 @@ class HubIngress:
             host = self.remote_host(websocket)
             self._clients.set_quota_principal(websocket, f"open-host:{host}")
             return True
-        ok, reason, principal = self._authenticate(
-            self._authenticator, str(data.get("token") or ""), sender, websocket
+        ok, reason, principal, named = self._authenticate(
+            self._authenticator,
+            str(data.get("token") or ""),
+            judged,
+            websocket,
+            connection=sender,
         )
         if ok:
             if principal is None:  # defensive: a successful credential must identify a bucket
                 raise RuntimeError("authenticated connection has no quota principal")
             self._clients.set_quota_principal(websocket, principal)
+            if named:
+                self._sidecar_roster.note(websocket)
             return True
         await self._send_json(
             websocket,
@@ -188,28 +250,42 @@ class HubIngress:
         return False
 
     def _authenticate(
-        self, authenticator: TokenAuthenticator, token: str, sender: str, websocket: Any
-    ) -> tuple[bool, str, str | None]:
-        """Check the token; for a token set, record the outcome and follow the session."""
+        self,
+        authenticator: TokenAuthenticator,
+        token: str,
+        sender: str,
+        websocket: Any,
+        *,
+        connection: str,
+    ) -> tuple[bool, str, str | None, bool]:
+        """Check the token; for a token set, record the outcome and follow the session.
+
+        ``sender`` is the seat the token is judged for. ``connection`` is the
+        name on the socket, which is the sidecar when this is not the seat.
+        The fourth value is whether the matched token names that seat. A shared
+        token, which admits any name, is not name-bound.
+        """
         if not isinstance(authenticator, TokenSetAuthenticator):
-            return authenticator.authenticate_with_principal(token, sender)
+            ok, reason, principal = authenticator.authenticate_with_principal(token, sender)
+            return ok, reason, principal, ok and authenticator.binds_agent(token, sender)
         outcome = authenticator.authenticate_outcome(token, sender)
         audit = self._token_audit
         if audit is not None and outcome.ok:
             try:
-                audit.admitted(outcome.token_id, sender)
+                audit.admitted(outcome.token_id, sender, connection=connection)
             except Exception:
                 # No admission goes unrecorded: a failed write refuses it.
                 logger.exception("cannot record a connect-token admission; refusing it")
-                return False, "Authentication could not be recorded.", None
+                return False, "Authentication could not be recorded.", None, False
         elif audit is not None:
             try:
-                audit.refused(outcome.token_id, outcome.code, sender)
+                audit.refused(outcome.token_id, outcome.code, sender, connection=connection)
             except Exception:
                 logger.exception("cannot record a connect-token refusal")
         if outcome.entry is not None and self._token_sessions is not None:
-            self._token_sessions.admitted(websocket, outcome.entry, sender)
-        return outcome.ok, outcome.reason, outcome.principal
+            self._token_sessions.admitted(websocket, outcome.entry, connection)
+        named = bool(outcome.ok and outcome.entry is not None and outcome.entry.agents)
+        return outcome.ok, outcome.reason, outcome.principal, named
 
     def token_set_watcher(self) -> Coroutine[Any, Any, None] | None:
         """Return the check loop of the rotating secret files this hub serves, if any.

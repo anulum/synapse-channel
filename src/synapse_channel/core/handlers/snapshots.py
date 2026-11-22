@@ -22,6 +22,7 @@ from synapse_channel.core.acl import RECALL
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.release_confirmation import read_release_confirmation
+from synapse_channel.core.release_sidecar import claims_visible_to
 from synapse_channel.core.verb_access import fixed_access, history_access
 from synapse_channel.core.verb_registry import VerbSpec
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN
@@ -145,7 +146,17 @@ async def handle_state_request(
             ),
         )
         return
-    snapshot = hub.state.snapshot()
+    snapshot = claims_visible_to(sender, hub.state.snapshot())
+    if snapshot is None:
+        await hub.send_json(
+            websocket,
+            hub.system(
+                "release sidecar name is not a seat",
+                msg_type=MessageType.ERROR,
+                target=sender,
+            ),
+        )
+        return
     now = hub.claim_holders.clock()
     online = hub.clients.agent_sockets
     for claim in snapshot["active_claims"]:

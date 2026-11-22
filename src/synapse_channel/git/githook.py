@@ -19,11 +19,13 @@ the flow is unit-testable without a real repository.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shlex
 import shutil
 import stat
 import sys
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +39,7 @@ from synapse_channel.core.path_identity import (
     parse_optional_claim_scope_identity,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.release_sidecar import release_connection_name
 from synapse_channel.git.gitclaim import AgentFactory, GitError, GitRunner, _default_git_runner
 from synapse_channel.git.path_identity import resolve_claim_scope_identity
 from synapse_channel.git.semantic_enforcement import (
@@ -50,6 +53,8 @@ from synapse_channel.git.semantic_release import (
     resolve_release_semantics,
 )
 from synapse_channel.terminal_text import shell_command_arg, shell_long_option
+
+WelcomeProbe = Callable[[str], Awaitable[bool | None]]
 
 HOOK_MARKER = "# synapse-git-hook"
 """Marker line that identifies a hook this tool wrote, so it is never clobbered."""
@@ -182,9 +187,12 @@ def hook_installed(
 ) -> bool:
     """Return whether this tool's auto-release hook for ``trigger`` is installed.
 
-    The hub never enacts ``auto_release_on`` — only the client-side git hook does —
-    so this is what tells a caller whether a ``--auto-release-on commit/merge`` claim
-    will actually be released automatically, or is waiting on a ``synapse git-hook``.
+    Only the client-side git hook selects claims for auto-release. On a
+    shared-token hub, or a hub with no token, the hub also refuses a sidecar
+    release unless the claim's ``auto_release_on`` is the commit or merge
+    trigger that release presents. This report tells a caller whether a
+    ``--auto-release-on commit/merge`` claim will be released automatically,
+    or is waiting on a ``synapse git-hook``.
 
     Parameters
     ----------
@@ -246,9 +254,12 @@ def check_hooks(
 ) -> list[dict[str, Any]]:
     """Report the install state of each auto-release hook and its executable.
 
-    The hub never enacts ``auto_release_on``; only the client-side hook does, and a
-    hook that is missing — or that bakes in a ``synapse`` path which has since moved
-    — fails silently at commit time. This surfaces that state so an operator can
+    Only the client-side hook selects claims for auto-release, and a hook that
+    is missing — or that bakes in a ``synapse`` path which has since moved —
+    fails silently at commit time. On a shared-token hub, or a hub with no
+    token, the hub also refuses a sidecar release unless the claim's
+    ``auto_release_on`` is the trigger that release presents. This surfaces
+    the hook state so an operator can
     confirm a working setup with ``synapse git-hook test`` instead of discovering a
     no-op the next time a claim should have auto-released.
 
@@ -368,6 +379,107 @@ def _report_unreached_release(*, name: str, uri: str, changed: list[str]) -> int
     return RELEASE_UNREACHABLE_EXIT_CODE
 
 
+async def welcome_advertises_release_sidecar(uri: str, *, timeout: float = 1.0) -> bool | None:
+    """Read one welcome without binding a name.
+
+    ``True`` when the welcome advertises ``release_sidecar``. ``False`` when a
+    welcome arrives without it, so the caller must not open ``<name>-release``.
+    ``None`` when no welcome arrives in ``timeout`` (a secured hub withholds it
+    until authentication). The probe sends no frame.
+    """
+    from websockets.asyncio.client import connect
+    from websockets.exceptions import InvalidHandshake
+
+    try:
+        async with connect(uri, open_timeout=timeout) as websocket:
+            raw = await asyncio.wait_for(websocket.recv(), timeout=timeout)
+    except (TimeoutError, OSError, InvalidHandshake, EOFError):
+        return None
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or data.get("type") != MessageType.WELCOME:
+        return None
+    return data.get("release_sidecar") is True
+
+
+def _release_connection_names(owner: str, advertised: bool | None) -> list[str]:
+    """Choose the connection names.
+
+    A welcome without the sidecar uses the seat alone. Otherwise the sidecar is
+    tried first and the seat is the single fallback, including when the welcome
+    advertises the sidecar and that attempt does not register.
+    """
+    if advertised is False:
+        return [owner]
+    return [release_connection_name(owner), owner]
+
+
+async def _open_release_connection(
+    owner: str,
+    collect: Callable[[dict[str, Any]], Awaitable[None]],
+    *,
+    uri: str,
+    token: str | None,
+    advertised: bool | None,
+    agent_factory: AgentFactory,
+    registrar: Callable[..., Awaitable[asyncio.Task[None] | None]],
+    ready_timeout: float,
+) -> tuple[Any, asyncio.Task[None] | None]:
+    """Bind the first connection name the hub accepts."""
+    agent: Any = None
+    conn_task: asyncio.Task[None] | None = None
+    for connection_name in _release_connection_names(owner, advertised):
+        agent = agent_factory(connection_name, collect, uri=uri, verbose=False, token=token)
+        conn_task = await registrar(agent, ready_timeout)
+        if conn_task is not None:
+            return agent, conn_task
+        await close_owner(agent, conn_task)
+        agent, conn_task = None, None
+    return agent, conn_task
+
+
+async def _bind_release_agent(
+    owner: str,
+    *,
+    uri: str,
+    token: str | None,
+    welcome_probe: WelcomeProbe,
+    agent_factory: AgentFactory,
+    registrar: Callable[..., Awaitable[asyncio.Task[None] | None]],
+    ready_timeout: float,
+) -> tuple[Any, asyncio.Task[None] | None, list[dict[str, Any]]]:
+    """Open the release connection and collect state snapshots."""
+    snapshots: list[dict[str, Any]] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if data.get("type") == MessageType.STATE_SNAPSHOT:
+            snapshot = data.get("snapshot", {})
+            if isinstance(snapshot, dict):
+                snapshots.append(snapshot)
+
+    agent, conn_task = await _open_release_connection(
+        owner,
+        collect,
+        uri=uri,
+        token=token,
+        advertised=await welcome_probe(uri),
+        agent_factory=agent_factory,
+        registrar=registrar,
+        ready_timeout=ready_timeout,
+    )
+    return agent, conn_task, snapshots
+
+
+async def _close_release_connection(agent: Any, conn_task: asyncio.Task[None] | None) -> None:
+    """Join a release connection when one was opened."""
+    if agent is not None:
+        await close_owner(agent, conn_task)
+
+
 async def run_git_release(
     *,
     uri: str,
@@ -378,6 +490,8 @@ async def run_git_release(
     runner: GitRunner = _default_git_runner,
     semantic_resolver: SemanticReleaseResolver = resolve_release_semantics,
     ready_timeout: float = 5.0,
+    welcome_probe: WelcomeProbe = welcome_advertises_release_sidecar,
+    registrar: Callable[..., Awaitable[asyncio.Task[None] | None]] = register_owner,
 ) -> int:
     """Release this agent's branch-scoped claims whose paths were committed/merged.
 
@@ -432,17 +546,17 @@ async def run_git_release(
         # Returning zero preserves the post-hook contract without a fail-open
         # literal-path downgrade that could free another worktree's claim.
         return 0
-
-    snapshots: list[dict[str, Any]] = []
-
-    async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") == MessageType.STATE_SNAPSHOT:
-            snapshots.append(data.get("snapshot", {}))
-
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = await register_owner(agent, ready_timeout)
+    agent, conn_task, snapshots = await _bind_release_agent(
+        name,
+        uri=uri,
+        token=token,
+        welcome_probe=welcome_probe,
+        agent_factory=agent_factory,
+        registrar=registrar,
+        ready_timeout=ready_timeout,
+    )
     try:
-        if conn_task is None:
+        if agent is None:
             return _report_unreached_release(name=name, uri=uri, changed=changed)
         await agent.request_state()
         for _ in range(40):
@@ -512,10 +626,10 @@ async def run_git_release(
             )
             if physical_hit or semantic_hit:
                 task_id = str(claim.get("task_id"))
-                await agent.release(task_id)
+                await agent.release(task_id, trigger=trigger)
                 released.append(task_id)
         if released:
             print(f"release requested on {trigger}: {', '.join(released)}")
         return 0
     finally:
-        await close_owner(agent, conn_task)
+        await _close_release_connection(agent, conn_task)

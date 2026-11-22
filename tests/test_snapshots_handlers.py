@@ -140,9 +140,12 @@ def _as_hub(hub: _FakeHub) -> SynapseHub:
 
 
 async def _drive(
-    handler: Callable[..., Any], hub: _FakeHub, data: dict[str, Any]
+    handler: Callable[..., Any],
+    hub: _FakeHub,
+    data: dict[str, Any],
+    sender: str = "alice",
 ) -> dict[str, Any]:
-    await handler(_as_hub(hub), "alice", data, object())
+    await handler(_as_hub(hub), sender, data, object())
     return hub.sent[0]
 
 
@@ -155,6 +158,20 @@ class TestStateAndBoardAndManifest:
         assert payload["snapshot"]["leases"] == []
         assert payload["snapshot"]["dead_letters"] == ["dl"]
         assert payload["snapshot"]["pending_relay_approvals"] == ["approval"]
+
+    async def test_a_nested_sidecar_name_sends_no_state_snapshot(self) -> None:
+        """The identity gate and the frame gate already refuse this name.
+
+        ``hub_identity_gate`` refuses a nested sidecar name at registration and
+        ``_gate_frame`` refuses it again, so a direct handler test is the honest
+        way to reach this defence in depth.
+        """
+        hub = _FakeHub()
+        payload = await _drive(snapshots.handle_state_request, hub, {}, sender="a-rx-release")
+        assert payload["msg_type"] == MessageType.ERROR
+        assert payload["text"] == "release sidecar name is not a seat"
+        assert payload["target"] == "a-rx-release"
+        assert [item.get("msg_type") for item in hub.sent] == [MessageType.ERROR]
 
     async def test_board_snapshot_uses_task_cap(self) -> None:
         hub = _FakeHub(board_task_cap=5)

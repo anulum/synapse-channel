@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from synapse_channel.core.agent_liveness import RecipientLiveness
 from synapse_channel.core.dead_letters import DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS, DeadLetterLedger
@@ -153,6 +154,32 @@ def build_identity_gate(
     )
 
 
+def build_ingress(
+    config: HubConfig,
+    clients: HubClientComponents,
+    callbacks: HubComponentCallbacks,
+    *,
+    audit: Any,
+    sessions: Any,
+    secret_watches: tuple[Any, ...],
+) -> HubIngress:
+    """Build the admission ingress. The roster lives on it, not on the registry."""
+    return HubIngress(
+        clients.clients,
+        authenticator=config.auth.authenticator,
+        enable_metrics=config.metrics.enable_metrics,
+        metrics_token=config.metrics.metrics_token,
+        metrics_query_token_ok=config.metrics.metrics_query_token_ok,
+        insecure_off_loopback=config.auth.insecure_off_loopback,
+        send_json=callbacks.send_json,
+        system=callbacks.system,
+        token_audit=audit,
+        token_sessions=sessions,
+        metrics_token_set=config.metrics.metrics_token_set,
+        secret_watches=secret_watches,
+    )
+
+
 def build_gates(
     config: HubConfig,
     clients: HubClientComponents,
@@ -191,21 +218,17 @@ def build_gates(
         count_refusal=count_refusal,
     )
     connection.set_welcome_fields(frame_signature_gate.welcome_fields)
+    ingress = build_ingress(
+        config,
+        clients,
+        callbacks,
+        audit=audit,
+        sessions=sessions,
+        secret_watches=secret_watches,
+    )
+    connection.add_close_listener(ingress.forget_owner_bound)
     return HubGateComponents(
-        ingress=HubIngress(
-            clients.clients,
-            authenticator=config.auth.authenticator,
-            enable_metrics=config.metrics.enable_metrics,
-            metrics_token=config.metrics.metrics_token,
-            metrics_query_token_ok=config.metrics.metrics_query_token_ok,
-            insecure_off_loopback=config.auth.insecure_off_loopback,
-            send_json=callbacks.send_json,
-            system=callbacks.system,
-            token_audit=audit,
-            token_sessions=sessions,
-            metrics_token_set=config.metrics.metrics_token_set,
-            secret_watches=secret_watches,
-        ),
+        ingress=ingress,
         identity=identity,
         connection=connection,
         frames=build_frame_gates(config, clients, security, routing, hub_id, callbacks),

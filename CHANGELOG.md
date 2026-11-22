@@ -84,6 +84,30 @@ execution evidence when carrying a release claim forward.
   release and prints the manual `synapse release` command. It does not use
   the name recorded when the hook was installed.
 
+- A connected seat can release its own claims through a `<seat>-release`
+  connection. The hub advertises `release_sidecar`. The connection is judged
+  as the seat: it does not take over the seat's socket, and it does not create
+  an identity pin. An existing identity ending in `-release` is a release-only
+  sidecar of the name with that suffix removed, and a pin stored under that
+  name is ignored. When the welcome advertises the sidecar and that
+  registration fails, the hook tries the seat once. On a shared-token hub, or
+  a hub with no token, the sidecar may release only a claim whose
+  `auto_release_on` equals the commit or merge trigger it presents. A manual
+  claim, and a claim of the other trigger, is refused by name. On a per-agent
+  token hub the sidecar keeps the seat's full release. A bundle hub judges the
+  owner's key while the signature still names the sidecar connection. The
+  token audit names both the seat and that connection. A sidecar `RELEASE` row
+  names the owner and sets `via`. A release from the seat's own socket stays
+  `{"task_id": ...}` only.
+
+- A release sidecar sent its lease epoch from a store named for the sidecar
+  connection, so a hub that requires a fencing epoch refused the hook release
+  and left the claim held. The sidecar now reads, writes and forgets that
+  epoch through the seat's store. It does not keep an epoch under its own name.
+  The hook signs with the machine key it shares with the seat. It does not
+  create a key, a mailbox cursor, an ownership lease, a token file, a replay
+  ledger, or a pid under the sidecar name.
+
 ## [0.99.61] - 2026-11-22
 
 Core 0.99.61 lets a stop finish and an attempt reconcile whichever order the

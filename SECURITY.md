@@ -1084,6 +1084,35 @@ the in-container `0.0.0.0` default, and each closed with the same disposition â€
 the fail-closed startup refusal is the control, and a container image binding
 loopback would only break port publishing without adding security.
 
+### Release beside a live seat
+
+A live seat holds its name, and the hub does not take that socket over. A
+second connection named `<seat>-release` may release only that seat's claims
+and read only those claims. It is not a seat. It does not make the seat look
+online. It never creates or moves an identity pin: a pinned seat's sidecar
+must prove that seat's key, and an unpinned seat's sidecar pins nothing. An
+existing identity ending in `-release` is a release-only sidecar of the name
+with that suffix removed. A pin stored under that name is ignored, and none
+is migrated. `release_owner` refuses a remainder that ends in `-release`,
+`-rx` or `-pane-rx`, and the hub refuses a primary name that is only the suffix.
+When the sidecar registration fails, the client tries the seat name once.
+
+On a shared-token hub, or a hub with no token, anyone who can connect can
+open `<seat>-release`. That sidecar may release only a claim whose
+`auto_release_on` equals the commit or merge trigger it presents. A manual
+claim, and a claim of the other trigger, is refused by name. That confines
+the new power to the claims the hook would release. A per-agent token is
+judged for the seat, and that sidecar keeps the seat's full release. The
+durable `RELEASE` row of a sidecar release names the owner and sets `via` to
+the sidecar. A release from the seat's own socket writes the previous row,
+`{"task_id": ...}` only, and is not narrowed.
+
+An older open hub does not advertise `release_sidecar`, so the client does
+not bind the sidecar name. An older secured hub withholds the welcome until
+authentication. A per-agent token is then refused. A shared token can admit
+`<seat>-release` as an ordinary name and leave a presence row. A current hub
+ignores a pin on that name.
+
 ## Out of scope / known limitations
 
 The optional `mcp-http` [HTTP MCP profile](docs/mcp-http.md) adds an authenticated resource

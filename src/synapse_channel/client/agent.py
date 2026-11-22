@@ -44,6 +44,7 @@ from synapse_channel.core.capability_card_signing import (
 from synapse_channel.core.delivery_modes import MODES, QUALITIES
 from synapse_channel.core.identity_keys import load_signing_key
 from synapse_channel.core.message_auth import MessageAuthKey
+from synapse_channel.core.release_sidecar import is_release_sidecar, release_owner
 from synapse_channel.core.wake_capability import WAKE_DIRECT, normalize_wake_capability
 from synapse_channel.machine_identity import machine_identity_agent_kwargs
 
@@ -56,6 +57,21 @@ __all__ = [
     "_is_connection_refused",
     "default_hub_uri",
 ]
+
+
+def _epoch_store_for(name: str, persist: bool, root: Path | None) -> LeaseEpochStore | None:
+    """Return the epoch store for ``name``, keyed by the seat a sidecar releases.
+
+    A sidecar reads and forgets the epoch its owner stored, and a write from
+    the sidecar uses that same directory. A sidecar name that is not a seat
+    gets no store, so nothing is written under the connection name.
+    """
+    if not persist:
+        return None
+    identity = release_owner(name) if is_release_sidecar(name) else name
+    if identity is None:
+        return None
+    return LeaseEpochStore(identity, root=root)
 
 
 class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, AgentQueryMixin):
@@ -181,7 +197,9 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         of the same identity — ``synapse release`` after ``synapse lock``, or
         the commit hook after ``git-claim`` — still names the epoch its
         mutation acts under. On by default, so no call site can forget it;
-        ``False`` keeps the memory in this process only.
+        ``False`` keeps the memory in this process only. A release sidecar
+        reads, writes and forgets that store under its owner's name, and
+        never under the sidecar connection name.
     lease_epoch_root : pathlib.Path or None, optional
         Root of the epoch store; ``None`` uses
         ``$XDG_DATA_HOME/synapse/lease-epoch``.
@@ -286,9 +304,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
             )
         self._message_auth_sequence = 0
         self.lease_epochs: dict[str, int] = {}
-        self._lease_epoch_store = (
-            LeaseEpochStore(name, root=lease_epoch_root) if persist_lease_epochs else None
-        )
+        self._lease_epoch_store = _epoch_store_for(name, persist_lease_epochs, lease_epoch_root)
         self._identity_key = load_signing_key(identity_key_path) if identity_key_path else None
         self._identity_key_id = str(identity_key_id)
         self._identity_sequence = 0

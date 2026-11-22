@@ -19,6 +19,8 @@ written by the set's check in a worker thread
     A file that was not applied and why; the previous set stays in force.
 ``connect_token_admitted``
     One row per admitted session: the token identifier and the agent name.
+    When the socket name differs from that seat, the row also names the
+    connection.
 ``connect_token_session_ended``
     A session that outlived its token, with ``reason`` ``expired`` or
     ``retired``: ``closed`` is true when the hub ended it, false when it
@@ -27,7 +29,9 @@ written by the set's check in a worker thread
     Refusals, aggregated per reason and token identifier. The first refusal
     of a window is written at once; the others in the next
     :data:`REFUSAL_WINDOW_SECONDS` are counted and written as one row when the
-    window closes, so a flood of bad tokens cannot flood the journal.
+    window closes, so a flood of bad tokens cannot flood the journal. When the
+    socket name differs from the seat the token was judged for, the row also
+    names that connection.
 ``connect_token_audit_overflow``
     How many queued rows were not kept because the queue was full while the
     journal could not take them; written when the journal takes rows again.
@@ -102,6 +106,7 @@ class _Window:
     start: float
     agent: str
     suppressed: int = 0
+    connection: str | None = None
 
 
 class TokenAudit:
@@ -136,10 +141,17 @@ class TokenAudit:
         """Record that ``dropped`` queued rows were not kept because the queue was full."""
         self._journal.append(AUDIT_OVERFLOW_KIND, {"dropped": dropped}, durable=True)
 
-    def admitted(self, token_id: str | None, agent: str) -> None:
-        """Record the token that admitted one session."""
+    def admitted(self, token_id: str | None, agent: str, *, connection: str | None = None) -> None:
+        """Record the token that admitted one session.
+
+        ``agent`` is the seat the token was judged for. ``connection`` is the
+        socket name when that is a release sidecar rather than the seat.
+        """
         self._close_expired(self._clock())
-        self._journal.append(ADMITTED_KIND, {"token_id": token_id, "agent": _agent_field(agent)})
+        payload: dict[str, Any] = {"token_id": token_id, "agent": _agent_field(agent)}
+        if connection is not None and connection != agent:
+            payload["connection"] = _agent_field(connection)
+        self._journal.append(ADMITTED_KIND, payload)
 
     def session_ended(self, token_id: str | None, agent: str, *, closed: bool, reason: str) -> None:
         """Record a session that was still open when its token stopped admitting it."""
@@ -154,7 +166,9 @@ class TokenAudit:
             durable=True,
         )
 
-    def refused(self, token_id: str | None, code: str, agent: str) -> None:
+    def refused(
+        self, token_id: str | None, code: str, agent: str, *, connection: str | None = None
+    ) -> None:
         """Count one refusal, writing a row only when a window opens or closes.
 
         Parameters
@@ -164,7 +178,9 @@ class TokenAudit:
         code : str
             The stable reason code of the refusal.
         agent : str
-            The agent name the connection claimed.
+            The seat the token was judged for.
+        connection : str or None, optional
+            The socket name when that is a release sidecar rather than the seat.
         """
         now = self._clock()
         self._close_expired(now)
@@ -173,8 +189,11 @@ class TokenAudit:
         if window is not None:
             window.suppressed += 1
             return
-        self._windows[key] = _Window(now, _agent_field(agent))
-        self._write_refusal(key, count=1, start=now, end=now, agent=_agent_field(agent))
+        shown = _connection_field(agent, connection)
+        self._windows[key] = _Window(now, _agent_field(agent), connection=shown)
+        self._write_refusal(
+            key, count=1, start=now, end=now, agent=_agent_field(agent), connection=shown
+        )
 
     def flush(self) -> None:
         """Write every open window that counted refusals after its first row."""
@@ -193,11 +212,23 @@ class TokenAudit:
         if window.suppressed:
             end = min(now, window.start + REFUSAL_WINDOW_SECONDS)
             self._write_refusal(
-                key, count=window.suppressed, start=window.start, end=end, agent=window.agent
+                key,
+                count=window.suppressed,
+                start=window.start,
+                end=end,
+                agent=window.agent,
+                connection=window.connection,
             )
 
     def _write_refusal(
-        self, key: tuple[str, str | None], *, count: int, start: float, end: float, agent: str
+        self,
+        key: tuple[str, str | None],
+        *,
+        count: int,
+        start: float,
+        end: float,
+        agent: str,
+        connection: str | None = None,
     ) -> None:
         """Append one aggregated refusal row."""
         code, token_id = key
@@ -209,7 +240,16 @@ class TokenAudit:
             "window_start": start,
             "window_end": end,
         }
+        if connection is not None:
+            payload["connection"] = connection
         self._journal.append(REFUSED_KIND, payload, durable=True)
+
+
+def _connection_field(agent: str, connection: str | None) -> str | None:
+    """Return the stored socket name when it is not the judged seat."""
+    if connection is None or connection == agent:
+        return None
+    return _agent_field(connection)
 
 
 def token_audit_for(

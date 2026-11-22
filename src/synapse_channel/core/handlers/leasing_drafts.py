@@ -119,6 +119,7 @@ def prepare_release(
     task_id: str,
     data: dict[str, Any],
     prepared_progress: list[ProgressNote],
+    via: str | None = None,
 ) -> OperationDraft | None:
     """Prepare the release grant and any assessment in one operation.
 
@@ -157,15 +158,21 @@ def prepare_release(
         confidence=data.get("confidence", ""),
         freshness_seconds=data.get("freshness_seconds"),
     )
+    via_fields = {"via": via} if via is not None else {}
     granted = hub.system(
         message,
         msg_type=MessageType.RELEASE_GRANTED,
         task_id=task_id,
         owner=sender,
         receipt=receipt,
+        **via_fields,
         **release_reply_binding(data),
     )
-    events: list[tuple[str, Mapping[str, Any]]] = [(EventKind.RELEASE, {"task_id": task_id})]
+    release_row: dict[str, Any] = {"task_id": task_id}
+    if via is not None:
+        release_row["owner"] = sender
+        release_row["via"] = via
+    events: list[tuple[str, Mapping[str, Any]]] = [(EventKind.RELEASE, release_row)]
     if release_receipt_has_evidence(receipt):
         note = ProgressNote(
             task_id=task_id,

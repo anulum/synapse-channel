@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import websockets.asyncio.client as websocket_client
 from websockets.asyncio.server import ServerConnection, serve
 
 from claim_outcome_helpers import ClaimProxy, claim_proxy
@@ -198,6 +199,90 @@ async def test_run_git_release_releases_matching_claim(
         assert rc == 0
         await _wait_until(lambda: "T1" not in hub.state.claims)
     assert "release requested on commit: T1" in capsys.readouterr().out
+
+
+async def test_the_welcome_probe_reads_only_a_welcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads: list[bytes | str] = [
+        b'{"type":"welcome","release_sidecar":true}',
+        "{",
+        '{"type":"heartbeat"}',
+        '{"type":"welcome"}',
+    ]
+
+    class _ProbeSocket:
+        def __init__(self, raw: bytes | str) -> None:
+            self.raw = raw
+
+        async def __aenter__(self) -> _ProbeSocket:
+            return self
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+        async def recv(self) -> bytes | str:
+            return self.raw
+
+    def connect(_uri: str, **_kwargs: object) -> _ProbeSocket:
+        return _ProbeSocket(payloads.pop(0))
+
+    monkeypatch.setattr(websocket_client, "connect", connect)
+    assert await githook.welcome_advertises_release_sidecar("ws://127.0.0.1:9") is True
+    assert await githook.welcome_advertises_release_sidecar("ws://127.0.0.1:9") is None
+    assert await githook.welcome_advertises_release_sidecar("ws://127.0.0.1:9") is None
+    assert await githook.welcome_advertises_release_sidecar("ws://127.0.0.1:9") is False
+
+
+async def test_a_live_seat_stays_up_while_its_sidecar_releases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(githook, "resolve_claim_scope_identity", _release_scope)
+    git = {"branch": "x", "base": "main", "auto_release_on": "commit"}
+    async with running_hub() as (hub, uri):
+        await _claim_many(uri, "me", [("T1", ["src/a.py"], git)])
+        holder = await connect_agent("me", uri)
+        seat = holder.agent.connection
+        try:
+            rc = await run_git_release(
+                uri=uri,
+                name="me",
+                trigger="commit",
+                runner=_release_runner("src/a.py\n"),
+            )
+            assert rc == 0
+            await _wait_until(lambda: "T1" not in hub.state.claims)
+            await _wait_until(lambda: "me-release" not in hub.agent_sockets)
+            assert "me" in hub.agent_sockets
+            assert seat is not None and seat.close_code is None
+        finally:
+            await close_agents(holder)
+
+
+async def test_an_advertising_hub_releases_an_offline_seat_after_the_sidecar_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(githook, "resolve_claim_scope_identity", _release_scope)
+    git = {"branch": "x", "base": "main", "auto_release_on": "commit"}
+    async with running_hub() as (hub, uri):
+        await _claim_many(uri, "me", [("T1", ["src/a.py"], git)])
+        blocker = await connect_agent("me-release", uri)
+        held = blocker.agent.connection
+        try:
+            rc = await run_git_release(
+                uri=uri,
+                name="me",
+                trigger="commit",
+                runner=_release_runner("src/a.py\n"),
+                ready_timeout=0.4,
+            )
+            assert rc == 0
+            await _wait_until(lambda: "T1" not in hub.state.claims)
+            await _wait_until(lambda: "me" not in hub.agent_sockets)
+            assert "me-release" in hub.agent_sockets
+            assert held is not None and held.close_code is None
+        finally:
+            await close_agents(blocker)
 
 
 async def test_run_git_release_skips_non_matching_claims(

@@ -92,12 +92,22 @@ def deaf_mark(info: Mapping[str, Any]) -> str:
 
 
 def waiter_owner(name: str) -> str:
-    """Return the logical owner of either receiver sidecar, else ``name`` unchanged."""
+    """Return the logical owner of either receiver sidecar, else ``name`` unchanged.
+
+    A release sidecar, and a waiter hanging off one, is not evidence that the
+    seat is online. ``<seat>-release-rx`` therefore stays itself.
+    """
+    if name.endswith("-release"):
+        return name
     if name.endswith(PANE_WAITER_SUFFIX) and len(name) > len(PANE_WAITER_SUFFIX):
-        return name[: -len(PANE_WAITER_SUFFIX)]
-    if name.endswith(WAITER_SUFFIX) and len(name) > len(WAITER_SUFFIX):
-        return name[: -len(WAITER_SUFFIX)]
-    return name
+        owner = name[: -len(PANE_WAITER_SUFFIX)]
+    elif name.endswith(WAITER_SUFFIX) and len(name) > len(WAITER_SUFFIX):
+        owner = name[: -len(WAITER_SUFFIX)]
+    else:
+        return name
+    if owner.endswith("-release"):
+        return name
+    return owner
 
 
 def waiter_sidecar_names(owner: str) -> tuple[str, str]:

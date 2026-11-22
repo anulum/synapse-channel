@@ -315,6 +315,39 @@ from a mere physical-file match. Add `--name` (and `--token-file` for a secured
 hub) to match the identity your agent claims under; a pre-existing hook from
 anything else is left untouched.
 
+When the worktree records `synapse.identity`, the hook reads the welcome
+first. It connects as `<identity>-release` when that welcome advertises
+`release_sidecar`, and also when no welcome arrives. The seat's own socket
+stays up. If that sidecar registration fails, including on a hub that
+advertises the sidecar, the hook tries `<identity>` once. A welcome that does
+not advertise the sidecar is an older open hub: the hook connects once as
+`<identity>` and does not bind `<identity>-release`. On an older per-agent
+token hub the sidecar attempt is refused at authentication. On an older
+shared-token hub it can be admitted as an ordinary name and leave a presence
+row under `<identity>-release`. A current hub treats an existing identity
+ending in `-release` as a release-only sidecar of the name with that suffix
+removed, ignores a pin stored under that name, and never creates one.
+
+Wire version 7 and the store format are unchanged. A release from the seat's
+own socket still writes a `RELEASE` row of exactly `{"task_id": ...}`. A
+sidecar release adds `owner` and `via`. `event_description` shows `via` only
+when it is present. Universal receipts do not read `RELEASE`. Attention does
+not read it. Replay uses `task_id` and ignores `owner` and `via`. Fleet's
+mirror counts the kind and does not display `via`; that parity is a separate
+Fleet row.
+
+On a shared-token hub, or a hub with no token, anyone who can connect can
+open `<identity>-release` while that seat is online. That sidecar may release
+only a claim whose `auto_release_on` equals the commit or merge trigger the
+release presents. A manual claim, and a claim of the other trigger, is refused
+by name. A per-agent token is judged for the seat, so that sidecar keeps the
+seat's full release. The hook sends the firing trigger on the release. The fencing epoch it
+sends is the one stored for the seat. The sidecar reads and forgets that
+epoch through the seat's store, and it does not write one under its own name.
+The signing key is the machine key, shared with the seat, not a key created
+for the sidecar connection. The hook does not write a mailbox cursor, an
+ownership-lease file, a token file, a replay ledger, or a pid under that name.
+
 The hub never parses Git or source: it receives only an ordinary release. The
 hook never blocks a commit. When the hub cannot be reached, including a name
 conflict that lasts for the whole registration budget, `git-release` exits 69

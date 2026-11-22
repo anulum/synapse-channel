@@ -20,7 +20,10 @@ the epoch store.
 
 from __future__ import annotations
 
+import os
 import shutil
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -148,6 +151,92 @@ def test_the_commit_hook_release_names_the_stored_epoch(tmp_path: Path) -> None:
         )
         assert released.ok(), released.output
         assert "edit-z" not in _state(hub.uri, data_home)
+
+
+def _wait_until_the_hub_shows_the_name(hub_uri: str, data_home: Path, name: str) -> None:
+    """Poll the hub roster until ``name`` holds a live socket."""
+    deadline = time.monotonic() + 8.0
+    last = ""
+    attempt = 0
+    while time.monotonic() < deadline:
+        attempt += 1
+        seen = run_cli(
+            "who",
+            "--name",
+            f"roster-up-{attempt}",
+            uri=hub_uri,
+            env={"XDG_DATA_HOME": str(data_home)},
+        )
+        assert seen.ok(), seen.output
+        last = seen.stdout
+        if name in _online_names(seen.stdout):
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"{name} was not online\n{last}")
+
+
+def test_a_connected_owner_sidecar_releases_the_stored_epoch(tmp_path: Path) -> None:
+    data_home = tmp_path / "data"
+    with isolated_hub(tmp_path, extra_args=STRICT) as hub:
+        repo = _claim(tmp_path, hub.uri, data_home, "--auto-release-on", "commit")
+        _wait_until_the_hub_drops_the_name(hub.uri, data_home, "USER")
+        (repo / "src").mkdir(exist_ok=True)
+        (repo / "src" / "z.py").write_text("VALUE = 1\n", encoding="utf-8")
+        git_run(repo, "add", "src/z.py")
+        no_hooks = tmp_path / "no-hooks"
+        no_hooks.mkdir()
+        git_run(repo, "-c", f"core.hooksPath={no_hooks}", "commit", "-q", "-m", "edit z")
+        holder = subprocess.Popen(
+            [
+                sys.executable,
+                "-u",
+                "-m",
+                "synapse_channel.cli",
+                "listen",
+                "--name",
+                "USER",
+                "--uri",
+                hub.uri,
+            ],
+            env={**os.environ, "XDG_DATA_HOME": str(data_home)},
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            _wait_until_the_hub_shows_the_name(hub.uri, data_home, "USER")
+            released = run_cli(
+                "git-release",
+                "--trigger",
+                "commit",
+                uri=hub.uri,
+                cwd=repo,
+                env={"XDG_DATA_HOME": str(data_home)},
+            )
+            assert released.ok(), released.output
+            state = run_cli(
+                "state",
+                "--name",
+                "roster-state",
+                uri=hub.uri,
+                env={"XDG_DATA_HOME": str(data_home)},
+            )
+            assert state.ok(), state.output
+            assert "edit-z" not in state.stdout
+            still = run_cli(
+                "who",
+                "--name",
+                "roster-still",
+                uri=hub.uri,
+                env={"XDG_DATA_HOME": str(data_home)},
+            )
+            assert still.ok(), still.output
+            assert "USER" in _online_names(still.stdout)
+            named = [str(path.relative_to(data_home)) for path in data_home.rglob("*")]
+            assert not any("-release" in name for name in named)
+            assert (data_home / "synapse" / "identity" / "machine.pem").is_file()
+        finally:
+            holder.terminate()
+            holder.wait(timeout=8)
 
 
 def _forget_stored_epochs(data_home: Path) -> dict[str, str]:

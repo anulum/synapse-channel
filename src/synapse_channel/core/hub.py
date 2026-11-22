@@ -1289,6 +1289,16 @@ class SynapseHub(HubConfigView):
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
     ) -> None:
         """Run the ordered gates with late lookup of their existing hub hooks."""
+        if self._ingress.sidecar_frame_refused(sender, msg_type):
+            await self.send_json(
+                websocket,
+                self.system(
+                    "release sidecar may only release and read its own claims",
+                    msg_type=MessageType.ERROR,
+                    target=sender,
+                ),
+            )
+            return
         gates = (
             lambda: self._allow_frame_rate(sender, msg_type, websocket),
             lambda: self._allow_frame_signature(sender, msg_type, data, websocket),
@@ -1376,7 +1386,9 @@ class SynapseHub(HubConfigView):
         :meth:`~synapse_channel.core.hub_frame_gates.HubFrameGates.authorise_acl`, kept
         because :meth:`handle_message` calls ``self._authorise_acl`` directly.
         """
-        return await self._frame_gates.authorise_acl(sender, msg_type, data, websocket)
+        return await self._frame_gates.authorise_acl(
+            self._ingress.release_actor(sender), msg_type, data, websocket
+        )
 
     async def _authorise_claim_ownership(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
@@ -1800,6 +1812,10 @@ class SynapseHub(HubConfigView):
             host,
             self._bind_port,
         )
+
+    def release_sidecar_is_narrowed(self, websocket: Any) -> bool:
+        """Return whether a sidecar on ``websocket`` may release only its trigger."""
+        return self._ingress.release_sidecar_is_narrowed(websocket)
 
     def _trigger_watcher(self) -> Coroutine[Any, Any, None] | None:
         """Return the operations' trigger watcher of a hub with a journal and ``--ladder on``."""

@@ -210,6 +210,7 @@ class HubConnection:
                 connected_clients=len(self._clients.connected_clients),
                 online_agents=self._online_agents(),
                 protocol_version=WIRE_PROTOCOL_VERSION,
+                release_sidecar=True,
                 lock_renewal_session=self._lock_renewal_session,
                 **(self._welcome_fields(websocket) if self._welcome_fields is not None else {}),
             ),

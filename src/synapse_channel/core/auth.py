@@ -84,6 +84,21 @@ class TokenAuthenticator:
         ok, reason, _principal = self.authenticate_with_principal(token, agent)
         return ok, reason
 
+    def binds_agent(self, token: str, agent: str) -> bool:
+        """Return whether the matched token names ``agent`` rather than any agent.
+
+        A shared token has an empty name set and returns ``False`` even when it
+        admits the connection. An unknown or empty token returns ``False``.
+        """
+        candidate = str(token)
+        if not candidate:
+            return False
+        probe = candidate.encode("utf-8")
+        for known, allowed in self._tokens.items():
+            if hmac.compare_digest(known.encode("utf-8"), probe):
+                return bool(allowed) and agent in allowed
+        return False
+
     def authenticate_with_principal(self, token: str, agent: str) -> tuple[bool, str, str | None]:
         """Authenticate and return the stable quota bucket for the credential.
 
