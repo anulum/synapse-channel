@@ -54,6 +54,11 @@ execution evidence when carrying a release claim forward.
   read `expected` and `owner_uid` on `ProtectedPathDescriptors` instead of private attributes,
   bringing that module to zero private accesses. Behaviour is unchanged.
 
+- **MCP onboarding now calls the public `ergonomics.cwd_basename()` helper.**
+  `synapse_channel.ergonomics` exposes `cwd_basename()` publicly in place of `_cwd_basename`, and
+  `src/synapse_channel/mcp/onboarding.py` calls `ergonomics.cwd_basename()` directly, bringing its
+  private-access count to zero. Behaviour is unchanged.
+
 ### Fixed
 
 - **Opposing `applied` and `sealed` marker records on the same attempt now surface as a contradiction.**

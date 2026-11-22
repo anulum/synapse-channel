@@ -431,7 +431,7 @@ def _cwd_project_context(
     return (Path(top).name, True) if top else (Path.cwd().name, False)
 
 
-def _cwd_basename(*, runner: Callable[[Sequence[str]], str] | None = None) -> str:
+def cwd_basename(*, runner: Callable[[Sequence[str]], str] | None = None) -> str:
     """Return the git-toplevel basename, falling back to the working directory."""
     return _cwd_project_context(runner=runner)[0]
 

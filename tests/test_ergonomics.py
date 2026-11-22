@@ -399,14 +399,14 @@ def test_name_lines_reports_plausible_and_implausible() -> None:
 
 
 def test_cwd_basename_uses_git_toplevel() -> None:
-    assert ergonomics._cwd_basename(runner=lambda cmd: "/work/MyRepo") == "MyRepo"
+    assert ergonomics.cwd_basename(runner=lambda cmd: "/work/MyRepo") == "MyRepo"
 
 
 def test_cwd_basename_falls_back_to_cwd_when_git_blank(tmp_path: Path) -> None:
     old_cwd = Path.cwd()
     try:
         os.chdir(tmp_path)
-        assert ergonomics._cwd_basename(runner=lambda cmd: "") == tmp_path.name
+        assert ergonomics.cwd_basename(runner=lambda cmd: "") == tmp_path.name
     finally:
         os.chdir(old_cwd)
 
@@ -418,14 +418,14 @@ def test_cwd_basename_falls_back_when_git_errors(tmp_path: Path) -> None:
     old_cwd = Path.cwd()
     try:
         os.chdir(tmp_path)
-        assert ergonomics._cwd_basename(runner=boom) == tmp_path.name
+        assert ergonomics.cwd_basename(runner=boom) == tmp_path.name
     finally:
         os.chdir(old_cwd)
 
 
 def test_cwd_basename_default_runner_returns_a_string() -> None:
     # The real subprocess path (no injected runner) returns the repo or CWD basename.
-    assert isinstance(ergonomics._cwd_basename(), str)
+    assert isinstance(ergonomics.cwd_basename(), str)
 
 
 def test_syn_home_prefers_override() -> None:

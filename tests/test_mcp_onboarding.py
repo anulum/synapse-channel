@@ -93,7 +93,7 @@ def test_blank_or_implausible_identity_is_refused() -> None:
 def test_lazy_cwd_resolution_uses_the_shared_git_aware_resolver(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(ergonomics, "_cwd_basename", lambda: "GITROOT")
+    monkeypatch.setattr(ergonomics, "cwd_basename", lambda: "GITROOT")
 
     resolved = resolve_mcp_identity(
         None,
@@ -137,7 +137,7 @@ def test_cmd_refuses_an_unsafe_derived_identity(
 ) -> None:
     monkeypatch.delenv("SYN_PROJECT", raising=False)
     monkeypatch.delenv("SYN_IDENTITY", raising=False)
-    monkeypatch.setattr(ergonomics, "_cwd_basename", lambda: "home")
+    monkeypatch.setattr(ergonomics, "cwd_basename", lambda: "home")
 
     namespace = type("Args", (), {"name": None})()
 

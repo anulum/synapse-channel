@@ -95,7 +95,7 @@ def resolve_mcp_identity(
 
     resolved = ergonomics.resolve_identity(
         env=values,
-        cwd_basename=(ergonomics._cwd_basename() if cwd_basename is None else cwd_basename),
+        cwd_basename=(ergonomics.cwd_basename() if cwd_basename is None else cwd_basename),
         home_basename=(
             Path(values.get("HOME", str(Path.home()))).name
             if home_basename is None
