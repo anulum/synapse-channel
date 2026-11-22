@@ -171,7 +171,7 @@ def test_the_open_attempts_of_a_scope_and_its_actors() -> None:
     ledger.note_verification("file-op", WORKER, effect="absent", result="not_verified")
     assert ledger.open_in("effect:file") == (OpenAttempt("file-op", "b2", "T2", "Q/worker"),)
     ledger.note_stop("installation", 50, epoch=1, listed=(("git-op", "a1"), ("file-op", "b2")))
-    ledger.note_seal("git-op", "a1")
+    ledger.note_seal("git-op", "a1", seq=51)
     assert ledger.open_in("project:P") == ()
     ledger.note_outcome("file-op", "Q/worker", "confirmed_done")
     assert ledger.actors("installation") == frozenset({WORKER, "Q/worker"})

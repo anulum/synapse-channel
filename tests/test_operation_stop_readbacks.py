@@ -326,7 +326,7 @@ def test_duplicate_read_backs_do_not_overwrite_and_contradiction_works_in_both_o
     op2 = "git-op-2"
     attempts.note_declaration(op2, fact)
     attempts.open_attempt(op2, ATTEMPT, executor="P/worker", approval_seq=3)
-    attempts.note_seal(op2, ATTEMPT)
+    attempts.note_seal(op2, ATTEMPT, seq=19)
     attempts.note_outcome(op2, "P/worker", "confirmed_done", seq=20)
     attempts.note_outcome(op2, "P/worker", "confirmed_done", seq=21)
     assert attempts.contradicted_at(op2) == 20
@@ -564,7 +564,7 @@ def test_closing_and_unsealable_read_backs_use_their_per_listed_pair_reserve() -
     fact = OperationFact("T1", "P/worker", DIGEST, None, 1.0, "git_publication", "cooperative")
     ledger.attempts.note_declaration(OPERATION, fact)
     ledger.attempts.open_attempt(OPERATION, ATTEMPT, executor="P/worker", approval_seq=1)
-    ledger.attempts.note_seal(OPERATION, ATTEMPT)
+    ledger.attempts.note_seal(OPERATION, ATTEMPT, seq=2)
     ledger.attempts.note_stop(
         "project:P", 7, epoch=1, listed=((OPERATION, ATTEMPT), ("other-op", "b" * 32))
     )

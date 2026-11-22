@@ -2583,3 +2583,278 @@ async def test_honest_ten_attempt_sequence_never_exhausts_reserves_after_executo
     assert len(seals) == 10
     assert len(readbacks) == 10
     assert len(verifications) == 11
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "observed_not_verified_then_seal",
+        "observed_verified_then_readback",
+        "absent_moved_then_seal",
+        "sealed_then_observed_applied",
+        "sealed_then_absent_applied",
+    ],
+)
+async def test_applied_marker_verification_and_sealed_marker_contradict_in_both_orders(
+    tmp_path: Path, case: str
+) -> None:
+    """Applied-blob verification vs sealed marker contradicts in both orders and across restart."""
+    work, b, x = _repository(tmp_path)
+    store = EventStore(tmp_path / "hub.db")
+    level_rule = AclRule(OPERATION_LEVEL, "level-scope", "*", "H", "operators set levels")
+    policy = AclPolicy([*_policy().rules, level_rule])
+    try:
+        hub = SynapseHub(journal=store, acl_policy=policy, ladder_enabled=True)
+        async with running_hub(hub) as (_h, uri):
+            await _raise_levels_to_a2(uri, "op-1")
+            [(task, op, digest, attempt)] = await _opened(uri, b, x)
+            marker = AttemptMarker(op, attempt, digest)
+            applied_oid = marker.objects("sha1").applied
+
+            async def send_applied_ver(effect: str, result: str) -> int:
+                checker = await connect_agent(scene.CHECKER, uri)
+                try:
+                    ver = ResultVerification(
+                        op,
+                        "git_publication",
+                        "unknown",
+                        effect,
+                        result,
+                        "applied marker read",
+                        evidence={"attempt_id": attempt, "marker_object": applied_oid},
+                    ).to_json()
+                    res = await scene.record(
+                        checker,
+                        record="verification",
+                        task_id=task,
+                        operation_id=op,
+                        verification=ver,
+                    )
+                    assert res["status"] == "accepted", res
+                    return int(res["seq"])
+                finally:
+                    await close_agents(checker)
+
+            async def run_stop_seal() -> None:
+                watcher = await connect_agent("X/watcher", uri)
+                try:
+                    assert await _command(watcher, command.stop_and_seal(_args(uri, work))) == 0
+                finally:
+                    await close_agents(watcher)
+
+            if case == "observed_not_verified_then_seal":
+                await send_applied_ver("observed", "not_verified")
+                await run_stop_seal()
+                seals = store.read_since(0, kinds=(EventKind.OPERATION_SEALED,))
+                assert len(seals) == 1
+                expected_shown = seals[0].seq
+            elif case == "observed_verified_then_readback":
+                # Stop lists the open attempt first; then observed(applied, verified) closes the
+                # operation while a reconnecting stopper sends seal (refused attempt_ended) and
+                # its recomputed sealed stop_readback (accepted -> contradicts at readback).
+                operator = await connect_agent("H/operator", uri)
+                try:
+                    stopped = await scene.answer(
+                        operator,
+                        lambda: operator.agent.send_message(
+                            MessageType.OPERATION_STOP,
+                            scope=SCOPE,
+                            reason="stop before verified",
+                            idem_key="st-c143",
+                        ),
+                        lambda frame: (
+                            frame.get("type") == MessageType.OPERATION_STOP_RESULT
+                            and frame.get("request_key") == "st-c143"
+                        ),
+                    )
+                    assert stopped["answer"] == "stop_recorded", stopped
+                    stop_seq = int(stopped["seq"])
+                finally:
+                    await close_agents(operator)
+                git_seal(Target(work, "main", b), marker, git=git_executable())
+                sealed_oid = marker.objects("sha1").sealed
+                await send_applied_ver("observed", "verified")
+                recovery = await connect_agent(RECOVERY, uri)
+                try:
+                    refused_seal = await scene.record(
+                        recovery,
+                        record="seal",
+                        task_id=task,
+                        operation_id=op,
+                        seal={
+                            "attempt_id": attempt,
+                            "marker_ref": marker.ref,
+                            "object_format": "sha1",
+                            "marker_object": sealed_oid,
+                            "observation": "landed",
+                            "stop_seq": stop_seq,
+                        },
+                    )
+                    assert refused_seal["status"] == "refused", refused_seal
+                    assert refused_seal["reason"] == "attempt_ended", refused_seal
+                    rb_reply = await scene.record(
+                        recovery,
+                        record="stop_readback",
+                        task_id=task,
+                        operation_id=op,
+                        readback={
+                            "stop_seq": stop_seq,
+                            "attempt_id": attempt,
+                            "result": "sealed",
+                            "marker_ref": marker.ref,
+                            "object_format": "sha1",
+                            "marker_object": sealed_oid,
+                        },
+                    )
+                    assert rb_reply["status"] == "accepted", rb_reply
+                finally:
+                    await close_agents(recovery)
+                seals = store.read_since(0, kinds=(EventKind.OPERATION_SEALED,))
+                readbacks = store.read_since(0, kinds=(EventKind.OPERATION_STOP_READBACK,))
+                assert len(seals) == 0
+                assert len(readbacks) == 1
+                expected_shown = readbacks[0].seq
+            elif case == "absent_moved_then_seal":
+                await send_applied_ver("absent", "not_verified")
+                await run_stop_seal()
+                seals = store.read_since(0, kinds=(EventKind.OPERATION_SEALED,))
+                assert len(seals) == 1
+                expected_shown = seals[0].seq
+            elif case == "sealed_then_observed_applied":
+                await run_stop_seal()
+                expected_shown = await send_applied_ver("observed", "verified")
+            else:
+                await run_stop_seal()
+                expected_shown = await send_applied_ver("absent", "not_verified")
+
+            live_contra = hub.operation_records.attempts.contradicted_at(op)
+
+        # Restart a second real SynapseHub over the same durable EventStore.
+        restarted = SynapseHub(journal=store, acl_policy=policy, ladder_enabled=True)
+        async with running_hub(restarted) as (_h2, _uri2):
+            restarted_contra = restarted.operation_records.attempts.contradicted_at(op)
+
+        triggers = store.read_since(0, kinds=(EventKind.OPERATION_TRIGGER,))
+        alerts = [
+            item
+            for item in project_hub_attention(store.iter_events(), now=1_000_000.0)
+            if item.kind == "operation_contradiction"
+        ]
+    finally:
+        store.close()
+
+    assert live_contra == expected_shown
+    assert restarted_contra == expected_shown
+    assert len(triggers) == 1
+    assert {key: triggers[0].payload[key] for key in ("scope", "cause", "target", "shown_by")} == {
+        "scope": f"operation:{op}",
+        "cause": "incorrect_acceptance",
+        "target": "A1",
+        "shown_by": expected_shown,
+    }
+    assert triggers[0].payload["lowered"] == [
+        f"operation:{op}",
+        "effect:git_publication",
+        SCOPE,
+        "installation",
+    ]
+    assert len(alerts) == 1
+    assert (alerts[0].subject, alerts[0].severity, alerts[0].state, alerts[0].source_revision) == (
+        op,
+        "critical",
+        "open",
+        str(expected_shown),
+    )
+
+
+@pytest.mark.parametrize("order", ["sealed_ver_first", "applied_readback_first"])
+async def test_sealed_marker_verification_and_applied_read_back_contradict_in_both_orders(
+    tmp_path: Path, order: str
+) -> None:
+    """Sealed-blob verification vs applied stop read-back contradicts in both orders + restart."""
+    work, b, x = _repository(tmp_path)
+    git = git_executable()
+    store = EventStore(tmp_path / "hub.db")
+    level_rule = AclRule(OPERATION_LEVEL, "level-scope", "*", "H", "operators set levels")
+    policy = AclPolicy([*_policy().rules, level_rule])
+    try:
+        hub = SynapseHub(journal=store, acl_policy=policy, ladder_enabled=True)
+        async with running_hub(hub) as (_h, uri):
+            await _raise_levels_to_a2(uri, "op-1")
+            [(task, op, digest, attempt)] = await _opened(uri, b, x)
+            marker = AttemptMarker(op, attempt, digest)
+            apply_effect(Target(work, "main", b), marker, candidate=x, git=git)
+            sealed_oid = marker.objects("sha1").sealed
+
+            async def send_sealed_ver() -> int:
+                checker = await connect_agent(scene.CHECKER, uri)
+                try:
+                    ver = ResultVerification(
+                        op,
+                        "git_publication",
+                        "unknown",
+                        "absent",
+                        "not_verified",
+                        "sealed marker read",
+                        evidence={"attempt_id": attempt, "marker_object": sealed_oid},
+                    ).to_json()
+                    res = await scene.record(
+                        checker,
+                        record="verification",
+                        task_id=task,
+                        operation_id=op,
+                        verification=ver,
+                    )
+                    assert res["status"] == "accepted", res
+                    return int(res["seq"])
+                finally:
+                    await close_agents(checker)
+
+            async def run_stop_seal() -> None:
+                watcher = await connect_agent("X/watcher", uri)
+                try:
+                    assert await _command(watcher, command.stop_and_seal(_args(uri, work))) == 0
+                finally:
+                    await close_agents(watcher)
+
+            if order == "sealed_ver_first":
+                await send_sealed_ver()
+                await run_stop_seal()
+                readbacks = store.read_since(0, kinds=(EventKind.OPERATION_STOP_READBACK,))
+                assert len(readbacks) == 1
+                expected_shown = readbacks[0].seq
+            else:
+                await run_stop_seal()
+                expected_shown = await send_sealed_ver()
+
+            live_contra = hub.operation_records.attempts.contradicted_at(op)
+
+        restarted = SynapseHub(journal=store, acl_policy=policy, ladder_enabled=True)
+        async with running_hub(restarted) as (_h2, _uri2):
+            restarted_contra = restarted.operation_records.attempts.contradicted_at(op)
+
+        triggers = store.read_since(0, kinds=(EventKind.OPERATION_TRIGGER,))
+        alerts = [
+            item
+            for item in project_hub_attention(store.iter_events(), now=1_000_000.0)
+            if item.kind == "operation_contradiction"
+        ]
+    finally:
+        store.close()
+
+    assert live_contra == expected_shown
+    assert restarted_contra == expected_shown
+    assert len(triggers) == 1
+    assert {key: triggers[0].payload[key] for key in ("scope", "cause", "target", "shown_by")} == {
+        "scope": f"operation:{op}",
+        "cause": "incorrect_acceptance",
+        "target": "A1",
+        "shown_by": expected_shown,
+    }
+    assert len(alerts) == 1
+    assert (alerts[0].subject, alerts[0].severity, alerts[0].state, alerts[0].source_revision) == (
+        op,
+        "critical",
+        "open",
+        str(expected_shown),
+    )

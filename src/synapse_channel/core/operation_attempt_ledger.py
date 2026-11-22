@@ -255,6 +255,8 @@ class _Attempt:
     sealed: bool = False
     reconciled: bool = False
     marker_observed: bool = False
+    verified_applied: bool = False
+    verified_sealed: bool = False
     claimed_done: bool = False
     claimed_none: bool = False
 
@@ -267,7 +269,7 @@ class _Operation:
     closed_seq: int = 0
     """The journal sequence of the independent verification that closed it; 0 while open."""
     contradicted_seq: int = 0
-    """The sequence of the first independent ``not_verified`` after it closed; 0 when none."""
+    """The sequence of the first contradiction recorded on the operation; 0 when none."""
     unknown_seqs: list[int] = field(default_factory=list)
     """The sequences of its executors' reports of an ``unknown`` outcome."""
     triggered: set[str] = field(default_factory=set)
@@ -354,7 +356,15 @@ def _marker_object_format(marker_object: str) -> str | None:
         return None
 
 
-def _attempt_matches_marker(
+def _record_contradiction(entry: _Operation, seq: int) -> None:
+    """Record the first contradiction on ``entry``; refuse a non-positive sequence."""
+    if seq < 1:
+        raise ValueError("a contradiction requires a positive journal sequence")
+    if not entry.contradicted_seq:
+        entry.contradicted_seq = seq
+
+
+def _attempt_matched_marker(
     operation_id: str,
     attempt_id: str,
     intent_sha256: str,
@@ -362,8 +372,8 @@ def _attempt_matches_marker(
     object_format: str,
     marker_object: str,
     effect: str,
-) -> bool:
-    """Return whether ``marker_object`` recomputes to ``attempt_id``'s marker for ``effect``.
+) -> str | None:
+    """Return ``applied`` or ``sealed`` when ``marker_object`` matches ``attempt_id``.
 
     An ``applied`` blob matches either ``observed`` or ``absent`` (branch moved);
     a ``sealed`` blob matches only ``absent``, never ``observed``.
@@ -371,10 +381,12 @@ def _attempt_matches_marker(
     try:
         objects = AttemptMarker(operation_id, attempt_id, intent_sha256).objects(object_format)
     except ValueError:
-        return False
+        return None
     if marker_object == objects.applied:
-        return True
-    return marker_object == objects.sealed and effect == "absent"
+        return RESULT_APPLIED
+    if marker_object == objects.sealed and effect == "absent":
+        return RESULT_SEALED
+    return None
 
 
 def _match_marker_attempt(
@@ -382,8 +394,8 @@ def _match_marker_attempt(
     operation_id: str,
     effect: str,
     evidence: Mapping[str, Any] | None,
-) -> tuple[str, _Attempt | None]:
-    """Classify ``evidence`` as ``unscoped``, ``matched`` (one attempt) or ``mismatched``.
+) -> tuple[str, _Attempt | None, str | None]:
+    """Classify ``evidence`` as ``unscoped``, ``matched`` (one attempt + blob) or ``mismatched``.
 
     When ``evidence`` carries ``attempt_id``, only that attempt is checked so a
     blob belonging to another attempt is ``mismatched``. When ``attempt_id`` is
@@ -392,30 +404,31 @@ def _match_marker_attempt(
     blob hashes the attempt id.
     """
     if evidence is None:
-        return _MARKER_UNSCOPED, None
+        return _MARKER_UNSCOPED, None, None
     raw_marker = evidence.get("marker_object")
     if not isinstance(raw_marker, str) or not raw_marker:
-        return _MARKER_UNSCOPED, None
+        return _MARKER_UNSCOPED, None, None
     intent_sha256 = entry.fact.intent_sha256
     object_format = _marker_object_format(raw_marker)
     if intent_sha256 is None or object_format is None:
-        return _MARKER_MISMATCHED, None
+        return _MARKER_MISMATCHED, None, None
     raw_attempt = evidence.get("attempt_id")
     if raw_attempt is not None:
         candidates = [attempt for attempt in entry.attempts if attempt.attempt_id == raw_attempt]
     else:
         candidates = list(entry.attempts)
     for attempt in candidates:
-        if _attempt_matches_marker(
+        blob_kind = _attempt_matched_marker(
             operation_id,
             attempt.attempt_id,
             intent_sha256,
             object_format=object_format,
             marker_object=raw_marker,
             effect=effect,
-        ):
-            return _MARKER_MATCHED, attempt
-    return _MARKER_MISMATCHED, None
+        )
+        if blob_kind is not None:
+            return _MARKER_MATCHED, attempt, blob_kind
+    return _MARKER_MISMATCHED, None, None
 
 
 def _bound(entry: Mapping[str, Any]) -> int:
@@ -430,12 +443,12 @@ def _note_outcome_claims(
     """Record executor claims and surface marker contradictions."""
     if "confirmed_done" in (state, external_effect):
         last.claimed_done = True
-        if last.sealed and not entry.contradicted_seq:
-            entry.contradicted_seq = seq
+        if last.sealed:
+            _record_contradiction(entry, seq)
     if "not_started" in (state, external_effect):
         last.claimed_none = True
-        if last.applied and not entry.contradicted_seq:
-            entry.contradicted_seq = seq
+        if last.applied:
+            _record_contradiction(entry, seq)
 
 
 class AttemptLedger:
@@ -535,7 +548,7 @@ class AttemptLedger:
             if isinstance(attempt, str) and isinstance(approval, int):
                 self.open_attempt(operation_id, attempt, executor=sender, approval_seq=approval)
         elif kind == EventKind.OPERATION_SEALED:
-            self.note_seal(operation_id, str(payload.get("attempt_id") or ""))
+            self.note_seal(operation_id, str(payload.get("attempt_id") or ""), seq=seq)
 
     def _restore_declaration(
         self, operation_id: str, sender: str, payload: Mapping[str, Any]
@@ -644,10 +657,11 @@ class AttemptLedger:
 
         An ``unread`` read-back may be superseded only by a closing result.
         When the marker fields recompute to ``sealed``, the attempt is marked
-        sealed, and an earlier ``confirmed_done`` claim on it records a
-        contradiction. When they recompute to ``applied``, the attempt ends as
-        ``applied`` (not sealed), and an earlier ``not_started`` claim on it
-        records a contradiction.
+        sealed, and an earlier ``confirmed_done`` claim or matched ``applied``
+        marker verification on it records a contradiction. When they recompute
+        to ``applied``, the attempt ends as ``applied`` (not sealed), and an
+        earlier ``not_started`` claim or matched ``sealed`` marker verification
+        on it records a contradiction.
         """
         row = self._stop_rows.get(stop_seq)
         if row is not None:
@@ -688,13 +702,13 @@ class AttemptLedger:
             if kind == RESULT_SEALED and not attempt.applied:
                 attempt.sealed = True
                 _mark_ended(attempt)
-                if attempt.claimed_done and not entry.contradicted_seq:
-                    entry.contradicted_seq = seq
+                if attempt.claimed_done or attempt.verified_applied:
+                    _record_contradiction(entry, seq)
             elif kind == RESULT_APPLIED and not attempt.sealed:
                 attempt.applied = True
                 _mark_ended(attempt)
-                if attempt.claimed_none and not entry.contradicted_seq:
-                    entry.contradicted_seq = seq
+                if attempt.claimed_none or attempt.verified_sealed:
+                    _record_contradiction(entry, seq)
 
     def readback_of(self, stop_seq: int, attempt_id: str) -> str | None:
         """Return the kept read-back result of an attempt for a stop, or ``None``."""
@@ -1180,20 +1194,31 @@ class AttemptLedger:
         affecting other attempts), or ``mismatched`` (reconciles nothing).
 
         The sequence of the closing verification is kept, and so is the first
-        later ``not_verified`` by an identity other than the declarer, which
-        contradicts the acceptance.
+        later ``not_verified`` by an identity other than the declarer or any
+        matched marker-blob disagreement with a ``sealed`` or ``applied``
+        record on the same attempt (each requiring ``seq >= 1``).
         """
         entry = self._operations.get(operation_id)
         if entry is None or sender == entry.fact.declarer:
             return
         if result == "verified" and not entry.closed:
             entry.closed, entry.closed_seq = True, seq
-        elif result == "not_verified" and entry.closed and not entry.contradicted_seq:
-            entry.contradicted_seq = seq
+        elif result == "not_verified" and entry.closed:
+            _record_contradiction(entry, seq)
         if effect in OBSERVED_EFFECTS:
-            match_kind, matched = _match_marker_attempt(entry, operation_id, effect, evidence)
+            match_kind, matched, blob_kind = _match_marker_attempt(
+                entry, operation_id, effect, evidence
+            )
             if matched is not None:
                 matched.marker_observed = True
+                if blob_kind == RESULT_APPLIED:
+                    matched.verified_applied = True
+                    if matched.sealed:
+                        _record_contradiction(entry, seq)
+                else:
+                    matched.verified_sealed = True
+                    if matched.applied:
+                        _record_contradiction(entry, seq)
                 if matched.ended:
                     matched.reconciled = True
             elif match_kind == _MARKER_UNSCOPED:
@@ -1201,8 +1226,14 @@ class AttemptLedger:
                     if attempt.ended:
                         attempt.reconciled = True
 
-    def note_seal(self, operation_id: str, attempt_id: str) -> None:
-        """End the open attempt ``attempt_id`` as sealed; an ended one is left as it is."""
+    def note_seal(self, operation_id: str, attempt_id: str, *, seq: int) -> None:
+        """End the open attempt ``attempt_id`` as sealed; an ended one is left as it is.
+
+        Raises :class:`ValueError` when ``seq < 1`` so a contradiction can never
+        be lost silently to a falsy sequence.
+        """
+        if seq < 1:
+            raise ValueError("note_seal requires a positive journal sequence")
         entry = self._operations.get(operation_id)
         if entry is None:
             return
@@ -1210,6 +1241,8 @@ class AttemptLedger:
             if attempt.attempt_id == attempt_id and not attempt.ended:
                 attempt.sealed = True
                 _mark_ended(attempt)
+                if attempt.claimed_done or attempt.verified_applied:
+                    _record_contradiction(entry, seq)
 
     def open_attempt(
         self, operation_id: str, attempt_id: str, *, executor: str, approval_seq: int

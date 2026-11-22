@@ -1469,19 +1469,37 @@ operation MUST NOT open a new attempt (`earlier_attempt_unreconciled`, never
 `approved_fresh`) even after an `absent` observation reconciles the stop, and
 MUST NOT close until an independent `verified` verification arrives (an operator
 moves forward from an applied-then-moved branch by declaring an explicit
-successor operation against the moved branch head). The declarer's own
-verifications MUST count for neither. The ledger MUST be rebuilt from the
+successor operation against the moved branch head). The declarer's own verifications MUST count for neither. Because an attempt's
+marker ref is create-only, any independent verification whose `marker_object`
+recomputes to an attempt's `applied` blob (`observed` or `absent`) paired with
+a kept `operation_sealed` or recomputed `sealed` `stop_readback` on that same
+attempt — and symmetrically any independent `absent` verification whose
+`marker_object` recomputes to an attempt's `sealed` blob paired with a
+recomputed `applied` `stop_readback` on that same attempt — MUST record a
+contradiction in either arrival order and across restarts, surfacing an
+`operation_contradiction` attention item and, under `--ladder`, an
+`incorrect_acceptance` trigger on the first contradicting row (while normal
+matching marker pairs, unscoped verifications, cross-attempt verifications,
+declarer self-verifications and mismatched markers MUST NOT contradict). Every
+contradiction-recording ledger path (`AttemptLedger.note_seal` with required
+keyword-only `seq: int`, and every other contradiction site) MUST refuse
+`seq < 1`. The ledger MUST be rebuilt from the
 journal at start without consulting any clock, and MUST yield the same ledger
 and stop state across every legal arrival order of an attempt's end and
 marker-bearing verification records.
 
 **Implementation.** `core/operation_attempt_ledger.py`, fed by
-`core/handlers/operation_records.py`, and
+`core/handlers/operation_records.py`, `core/attention.py`, and
 `core/handlers/operation_attempts.py`.
 
 **Pinned by.** `tests/test_operation_attempt_ledger.py`
 (`test_marker_verification_and_end_permutations_give_identical_ledger_and_stop_state`,
-`test_marker_matching_isolates_attempts_and_rejects_mismatched_markers`),
+`test_marker_matching_isolates_attempts_and_rejects_mismatched_markers`,
+`test_marker_blob_disagreement_contradicts_in_both_directions_and_orders`,
+`test_note_seal_and_contradictions_require_positive_seq`),
+`tests/test_attention.py`
+(`test_operation_contradiction_projects_critical_open_attention`,
+`test_marker_verification_and_seal_contradiction_projects_critical_open_attention`),
 `tests/test_hub_operation_attempts.py`, `tests/test_operation_seals.py`,
 `tests/test_operation_stop_readbacks.py`,
 `tests/test_cli_operation_stop_seal.py`
@@ -1489,7 +1507,9 @@ marker-bearing verification records.
 `test_an_applied_attempt_closes_only_after_an_independent_verified_observation`,
 `test_a_marker_verification_before_seal_still_reconciles_and_reaches_at_rest`,
 `test_a_marker_verification_before_applied_read_back_reconciles_on_read_back`,
-`test_a_delayed_marker_verification_never_reconciles_a_later_attempt`).
+`test_a_delayed_marker_verification_never_reconciles_a_later_attempt`,
+`test_applied_marker_verification_and_sealed_marker_contradict_in_both_orders`,
+`test_sealed_marker_verification_and_applied_read_back_contradict_in_both_orders`).
 
 ### INV-OA-6 — a seal names exactly one open attempt's sealed marker and reconciles nothing
 

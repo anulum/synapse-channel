@@ -257,7 +257,23 @@ does not add agent grades to protocol envelopes.
   attempt), or **mismatched** (`marker_object` is present yet fails
   recomputation, names a different attempt than `attempt_id`, or pairs a
   `sealed` blob with `observed`: reconciles nothing, with no fallback to the
-  blanket rule). Upgrading onto this rule changes restored state for any older
+  blanket rule). Because an attempt's marker ref is create-only, one attempt
+  cannot honestly hold both `applied` and `sealed` markers: any matched
+  `applied`-blob verification (`observed` or `absent`) paired with a kept
+  `seal` (`operation_sealed`) or recomputed `sealed` `stop_readback` on the
+  same attempt — and symmetrically any matched `sealed`-blob verification
+  (`absent`) paired with a recomputed `applied` `stop_readback` on the same
+  attempt — records a contradiction in either arrival order and across hub
+  restarts, surfacing an `operation_contradiction` attention item and, under
+  `--ladder`, an `incorrect_acceptance` trigger on the first contradicting row
+  (while normal matching marker pairs, unscoped verifications, cross-attempt
+  verifications, declarer self-verifications and mismatched markers raise no
+  contradiction). Upgrading onto this rule changes restored state for any older
+  journal containing both opposing marker records on the same attempt: on first
+  start the operation restores as contradicted (visible in attention and
+  `incorrect_acceptances` criteria counts; no retroactive `operation_trigger`
+  row is written on replay). Upgrading onto the order-independent reconciliation
+  rule also changes restored state for any older
   journal where a marker-bearing verification of an earlier attempt reconciled a
   later ended attempt under the previous blanket loop: on first start the later
   attempt restores as unreconciled and refuses a new attempt as

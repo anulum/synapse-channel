@@ -251,8 +251,7 @@ def _operation_contradiction_evidence(
         severity="critical",
         state="open",
         action=(
-            "Inspect the operation chain: the executor's outcome and the marker or "
-            "verification disagree"
+            "Inspect the operation chain: recorded outcomes, markers or verifications disagree"
         ),
         source_revision=str(event.seq),
         observed_at=event.ts,

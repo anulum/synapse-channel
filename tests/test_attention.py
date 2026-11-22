@@ -477,4 +477,118 @@ def test_operation_contradiction_projects_critical_open_attention(tmp_path: Path
         "open",
         str(readback_seq),
     )
+    assert evidence[0].action == (
+        "Inspect the operation chain: recorded outcomes, markers or verifications disagree"
+    )
+    assert view["alerts"][0]["key"] == f"operation-contradiction:{op}"
+
+
+@pytest.mark.parametrize("case", ["applied_ver_then_seal", "applied_rb_then_sealed_ver"])
+def test_marker_verification_and_seal_contradiction_projects_critical_open_attention(
+    tmp_path: Path, case: str
+) -> None:
+    """Marker-blob disagreement between verification and seal/read-back surfaces in attention."""
+    from synapse_channel.core.attempt_markers import AttemptMarker
+    from synapse_channel.core.attention import ATTENTION_EVENT_KINDS
+
+    op = f"op-marker-contradiction-{case}"
+    attempt = "b" * 32
+    digest = "e" * 64
+    marker = AttemptMarker(op, attempt, digest)
+    objs = marker.objects("sha1")
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        store.append(
+            EventKind.OPERATION_DECLARED,
+            {
+                "operation_id": op,
+                "sender": "P/worker",
+                "task_id": "T1",
+                "recorded_at": 10.0,
+                "effect": "git_publication",
+                "intent_sha256": digest,
+            },
+        )
+        store.append(
+            EventKind.OPERATION_ATTEMPT_ANSWERED,
+            {
+                "operation_id": op,
+                "sender": "P/worker",
+                "answer": "approved_fresh",
+                "attempt_id": attempt,
+                "approval_seq": 1,
+            },
+        )
+        if case == "applied_ver_then_seal":
+            store.append(
+                EventKind.OPERATION_VERIFIED,
+                {
+                    "operation_id": op,
+                    "sender": "Q/checker",
+                    "effect": "observed",
+                    "result": "not_verified",
+                    "evidence": {"attempt_id": attempt, "marker_object": objs.applied},
+                },
+            )
+            expected_seq = store.append(
+                EventKind.OPERATION_SEALED,
+                {
+                    "operation_id": op,
+                    "sender": "R/recovery",
+                    "attempt_id": attempt,
+                },
+            )
+        else:
+            stop_seq = store.append(
+                EventKind.OPERATION_STOPPED,
+                {
+                    "scope": "project:P",
+                    "epoch": 1,
+                    "listed": [{"operation_id": op, "attempt_id": attempt}],
+                },
+            )
+            store.append(
+                EventKind.OPERATION_STOP_READBACK,
+                {
+                    "operation_id": op,
+                    "sender": "R/recovery",
+                    "stop_seq": stop_seq,
+                    "attempt_id": attempt,
+                    "result": "applied",
+                    "marker_ref": marker.ref,
+                    "object_format": "sha1",
+                    "marker_object": objs.applied,
+                },
+            )
+            expected_seq = store.append(
+                EventKind.OPERATION_VERIFIED,
+                {
+                    "operation_id": op,
+                    "sender": "Q/checker",
+                    "effect": "absent",
+                    "result": "not_verified",
+                    "evidence": {"attempt_id": attempt, "marker_object": objs.sealed},
+                },
+            )
+        events = tuple(store.iter_events(kinds=ATTENTION_EVENT_KINDS))
+        evidence = project_hub_attention(events, now=100.0)
+        queue = tmp_path / "private" / "queue.db"
+        assert sync_evidence(queue, source="hub", evidence=evidence, now=100.0)["created"] == 1
+        view = queue_view(queue, now=100.0)
+    finally:
+        store.close()
+    assert len(evidence) == 1
+    assert (evidence[0].key, evidence[0].kind, evidence[0].subject) == (
+        f"operation-contradiction:{op}",
+        "operation_contradiction",
+        op,
+    )
+    assert (evidence[0].severity, evidence[0].state, evidence[0].source_revision) == (
+        "critical",
+        "open",
+        str(expected_seq),
+    )
+    assert evidence[0].action == (
+        "Inspect the operation chain: recorded outcomes, markers or verifications disagree"
+    )
     assert view["alerts"][0]["key"] == f"operation-contradiction:{op}"

@@ -42,6 +42,25 @@ execution evidence when carrying a release claim forward.
   - **Reports.** `synapse approvals` and the universal receipts show the addressee, the batch and the summary digest.
   - **With no policy declared,** nothing changes.
 
+### Fixed
+
+- **Opposing `applied` and `sealed` marker records on the same attempt now surface as a contradiction.**
+  Previously a matched independent verification naming an attempt's `applied` marker blob paired
+  with a kept `seal` or recomputed `sealed` stop read-back (or symmetrically a matched `sealed`-blob
+  verification paired with an `applied` stop read-back) reconciled silently without setting
+  `contradicted_seq`. Because an attempt's marker ref is create-only, any opposing marker-blob pair
+  on the same attempt now records a contradiction on the first contradicting row (`operation_sealed`,
+  `operation_stop_readback` or `operation_verified`) in either arrival order and across restarts,
+  surfacing an open critical `operation_contradiction` attention item (whose action wording now
+  covers recorded outcomes, markers or verifications) and, under `--ladder`, an
+  `incorrect_acceptance` trigger stepping containing scopes down to `A1`. Normal matching marker
+  pairs, unscoped verifications, cross-attempt verifications, declarer self-verifications and
+  mismatched markers remain uncontradicted. `AttemptLedger.note_seal` now requires keyword-only
+  `seq: int` (`>= 1`) and every contradiction site refuses `seq < 1`. Compatibility: on first start
+  of this release over an older journal that already holds both opposing marker records for one
+  attempt, the operation restores as contradicted (visible in attention and `incorrect_acceptances`
+  counts; no retroactive `operation_trigger` row is written on replay).
+
 ## [0.99.61] - 2026-11-22
 
 Core 0.99.61 lets a stop finish and an attempt reconcile whichever order the

@@ -746,7 +746,7 @@ def test_standing_listed_reads_only_the_stop_s_own_list_while_still_open() -> No
         OpenAttempt("op-1", "a1", "T1", "P/worker"),
         OpenAttempt("op-3", "c1", "T1", "P/worker"),
     )
-    ledger.note_seal("op-3", "c1")
+    ledger.note_seal("op-3", "c1", seq=11)
     assert ledger.standing_listed(10) == (OpenAttempt("op-1", "a1", "T1", "P/worker"),)
     ledger.note_verification("op-1", "Q/checker", effect="absent", result="not_verified", seq=12)
     assert ledger.standing_listed(10) == ()

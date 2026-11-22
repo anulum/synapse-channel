@@ -174,11 +174,11 @@ def test_every_refusal_of_a_seal_record_against_the_ledger() -> None:
 def test_a_seal_ends_the_open_attempt_and_only_another_identity_reconciles_it() -> None:
     attempts = _ledger().attempts
     assert attempts.attempt_state(OPERATION, ATTEMPT) == STATE_OPEN
-    attempts.note_seal(OPERATION, ATTEMPT)
+    attempts.note_seal(OPERATION, ATTEMPT, seq=1)
     view = attempts.view(OPERATION, 7)
     assert (view.attempt_open, view.unreconciled) == (False, True)
     assert attempts.attempt_state(OPERATION, ATTEMPT) == STATE_SEALED
-    attempts.note_outcome(OPERATION, "P/worker", "confirmed_done")
+    attempts.note_outcome(OPERATION, "P/worker", "confirmed_done", seq=2)
     assert attempts.attempt_state(OPERATION, ATTEMPT) == STATE_SEALED
     attempts.note_verification(OPERATION, "Q/checker", effect="absent", result="not_verified")
     assert attempts.attempt_state(OPERATION, ATTEMPT) == STATE_RECONCILED
@@ -192,9 +192,9 @@ def test_a_seal_ends_the_open_attempt_and_only_another_identity_reconciles_it() 
 def test_a_seal_of_an_ended_or_unknown_attempt_changes_nothing() -> None:
     attempts = _ledger().attempts
     attempts.note_outcome(OPERATION, "P/worker", "confirmed_failed")
-    attempts.note_seal(OPERATION, ATTEMPT)
+    attempts.note_seal(OPERATION, ATTEMPT, seq=1)
     assert attempts.attempt_state(OPERATION, ATTEMPT) == STATE_ENDED
-    attempts.note_seal("op:unknown", ATTEMPT)
+    attempts.note_seal("op:unknown", ATTEMPT, seq=2)
     assert attempts.summary("op:unknown") is None
     assert attempts.summary(OPERATION) == (
         False,

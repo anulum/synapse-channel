@@ -720,7 +720,7 @@ def test_marker_matching_isolates_attempts_and_rejects_mismatched_markers(tmp_pa
     edge_ledger = AttemptLedger(None)
     edge_ledger.note_declaration("op-no-intent", OperationFact("T1", WORKER, None, None, 1.0))
     edge_ledger.open_attempt("op-no-intent", _ATTEMPT_1, executor=WORKER, approval_seq=1)
-    edge_ledger.note_seal("op-no-intent", _ATTEMPT_1)
+    edge_ledger.note_seal("op-no-intent", _ATTEMPT_1, seq=1)
     edge_ledger.note_verification(
         "op-no-intent",
         CHECKER,
@@ -732,7 +732,7 @@ def test_marker_matching_isolates_attempts_and_rejects_mismatched_markers(tmp_pa
 
     edge_ledger.note_declaration(op, FACT)
     edge_ledger.open_attempt(op, "short-id", executor=WORKER, approval_seq=2)
-    edge_ledger.note_seal(op, "short-id")
+    edge_ledger.note_seal(op, "short-id", seq=2)
     edge_ledger.note_verification(
         op,
         CHECKER,
@@ -767,3 +767,254 @@ def test_marker_matching_isolates_attempts_and_rejects_mismatched_markers(tmp_pa
     assert edge_ledger.attempt_state(op, _ATTEMPT_1) == STATE_OPEN
     edge_ledger.note_outcome(op, WORKER, "confirmed_done")
     assert edge_ledger.attempt_state(op, _ATTEMPT_1) == STATE_RECONCILED
+
+
+@pytest.mark.parametrize("object_format", ["sha1", "sha256"])
+def test_marker_blob_disagreement_contradicts_in_both_directions_and_orders(
+    tmp_path: Path, object_format: str
+) -> None:
+    """Applied/sealed marker-blob disagreement contradicts in both orders and replays cleanly."""
+    op = "op-blob-contra"
+    assert FACT.intent_sha256 is not None
+    marker_1 = AttemptMarker(op, _ATTEMPT_1, FACT.intent_sha256)
+    marker_2 = AttemptMarker(op, _ATTEMPT_2, FACT.intent_sha256)
+    applied_1 = marker_1.objects(object_format).applied
+    sealed_1 = marker_1.objects(object_format).sealed
+    applied_2 = marker_2.objects(object_format).applied
+
+    def _run(name: str, steps: tuple[tuple[str, dict[str, Any]], ...]) -> tuple[int, list[int]]:
+        store = EventStore(tmp_path / f"{object_format}-{name}.db")
+        try:
+            _seed_git_operation(store, operation_id=op, attempts=((_ATTEMPT_1, 7),))
+            stop_seq = store.append(
+                EventKind.OPERATION_STOPPED,
+                {
+                    "scope": "project:P",
+                    "epoch": 1,
+                    "listed": [{"operation_id": op, "attempt_id": _ATTEMPT_1}],
+                    "hub_time": 1_800_000_010.0,
+                },
+                durable=True,
+            )
+            seqs: list[int] = []
+            for kind, payload in steps:
+                row = {k: (stop_seq if v == "__STOP__" else v) for k, v in payload.items()}
+                seqs.append(store.append(kind, row, durable=True))
+            reloaded = AttemptLedger(store)
+            return reloaded.contradicted_at(op), seqs
+        finally:
+            store.close()
+
+    def _ver(
+        effect: str, result: str, blob: str | None, attempt: str = _ATTEMPT_1
+    ) -> tuple[str, dict[str, Any]]:
+        ev = {} if blob is None else {"attempt_id": attempt, "marker_object": blob}
+        return (
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": op,
+                "sender": CHECKER,
+                "effect": effect,
+                "result": result,
+                "evidence": ev,
+            },
+        )
+
+    seal_row = (
+        EventKind.OPERATION_SEALED,
+        {"operation_id": op, "sender": "R/recovery", "attempt_id": _ATTEMPT_1},
+    )
+
+    def _rb(result: str, blob: str) -> tuple[str, dict[str, Any]]:
+        return (
+            EventKind.OPERATION_STOP_READBACK,
+            {
+                "operation_id": op,
+                "sender": "R/recovery",
+                "stop_seq": "__STOP__",
+                "attempt_id": _ATTEMPT_1,
+                "result": result,
+                "marker_ref": marker_1.ref,
+                "object_format": object_format,
+                "marker_object": blob,
+            },
+        )
+
+    # Direction 1: applied-blob verification (observed OR absent/moved) vs sealed (both orders).
+    for effect in ("observed", "absent"):
+        # 1a: verification(not_verified) -> seal -> readback(sealed): contradicts at seal, once.
+        contra, seqs = _run(
+            f"d1-{effect}-ver-seal-rb",
+            (_ver(effect, "not_verified", applied_1), seal_row, _rb("sealed", sealed_1)),
+        )
+        assert contra == seqs[1]
+
+        # 1b: verification(verified) -> readback(sealed) (seal refused attempt_ended): at readback.
+        contra, seqs = _run(
+            f"d1-{effect}-ver-rb",
+            (_ver(effect, "verified", applied_1), _rb("sealed", sealed_1)),
+        )
+        assert contra == seqs[1]
+
+        # 1c: seal -> readback(sealed) -> verification(applied): contradicts at verification.
+        contra, seqs = _run(
+            f"d1-{effect}-seal-rb-ver",
+            (seal_row, _rb("sealed", sealed_1), _ver(effect, "not_verified", applied_1)),
+        )
+        assert contra == seqs[2]
+
+        # 1d: seal -> verification(applied) without read-back: contradicts at verification.
+        contra, seqs = _run(
+            f"d1-{effect}-seal-ver",
+            (seal_row, _ver(effect, "verified", applied_1)),
+        )
+        assert contra == seqs[1]
+
+    # Direction 2: sealed-blob verification (absent) vs applied stop read-back (both orders).
+    contra, seqs = _run(
+        "d2-ver-rb",
+        (_ver("absent", "not_verified", sealed_1), _rb("applied", applied_1)),
+    )
+    assert contra == seqs[1]
+
+    contra, seqs = _run(
+        "d2-rb-ver",
+        (_rb("applied", applied_1), _ver("absent", "not_verified", sealed_1)),
+    )
+    assert contra == seqs[1]
+
+    # Clean non-cases: must keep contradicted_at == 0.
+    # N1: sealed-blob absent vs sealed (both orders).
+    assert (
+        _run(
+            "ok-sealed-ver-first",
+            (_ver("absent", "not_verified", sealed_1), seal_row, _rb("sealed", sealed_1)),
+        )[0]
+        == 0
+    )
+    assert (
+        _run(
+            "ok-sealed-rb-first",
+            (seal_row, _rb("sealed", sealed_1), _ver("absent", "not_verified", sealed_1)),
+        )[0]
+        == 0
+    )
+    # N2: applied-blob observed/absent vs applied read-back (both orders).
+    assert (
+        _run(
+            "ok-applied-obs-first",
+            (_ver("observed", "not_verified", applied_1), _rb("applied", applied_1)),
+        )[0]
+        == 0
+    )
+    assert (
+        _run(
+            "ok-applied-rb-first",
+            (_rb("applied", applied_1), _ver("absent", "not_verified", applied_1)),
+        )[0]
+        == 0
+    )
+    # N3: unscoped observed after sealed attempt (e.g. later attempt without marker_object).
+    assert (
+        _run(
+            "ok-unscoped-after-seal",
+            (seal_row, _rb("sealed", sealed_1), _ver("observed", "verified", None)),
+        )[0]
+        == 0
+    )
+    # N4: declarer self-verification with applied blob after sealed.
+    self_ver = (
+        EventKind.OPERATION_VERIFIED,
+        {
+            "operation_id": op,
+            "sender": WORKER,
+            "effect": "observed",
+            "result": "verified",
+            "evidence": {"attempt_id": _ATTEMPT_1, "marker_object": applied_1},
+        },
+    )
+    assert _run("ok-self-ver", (seal_row, self_ver))[0] == 0
+    # N5: mismatched marker (sealed blob with effect=observed) after applied read-back.
+    assert (
+        _run("ok-mismatched", (_rb("applied", applied_1), _ver("observed", "verified", sealed_1)))[
+            0
+        ]
+        == 0
+    )
+    # N6: cross-attempt isolation (A1 sealed, A2 observed with A2's applied blob).
+    store_cross = EventStore(tmp_path / f"{object_format}-cross.db")
+    try:
+        _seed_git_operation(
+            store_cross, operation_id=op, attempts=((_ATTEMPT_1, 7), (_ATTEMPT_2, 8))
+        )
+        _append(store_cross, *seal_row)
+        _append(store_cross, *_ver("observed", "verified", applied_2, attempt=_ATTEMPT_2))
+        assert AttemptLedger(store_cross).contradicted_at(op) == 0
+    finally:
+        store_cross.close()
+
+
+def test_note_seal_and_contradictions_require_positive_seq() -> None:
+    """note_seal and every contradiction site refuse seq < 1 so contradictions are never lost."""
+    op = "op-pos-seq"
+    assert FACT.intent_sha256 is not None
+    marker = AttemptMarker(op, _ATTEMPT_1, FACT.intent_sha256)
+    applied_oid = marker.objects("sha1").applied
+    sealed_oid = marker.objects("sha1").sealed
+
+    ledger = AttemptLedger(None)
+    ledger.note_declaration(op, FACT)
+    ledger.open_attempt(op, _ATTEMPT_1, executor=WORKER, approval_seq=1)
+    for bad_seq in (0, -1):
+        with pytest.raises(ValueError, match="positive journal sequence"):
+            ledger.note_seal(op, _ATTEMPT_1, seq=bad_seq)
+    assert ledger.attempt_state(op, _ATTEMPT_1) == STATE_OPEN
+
+    # Open attempt with unknown outcome + external_effect=confirmed_done -> note_seal catches.
+    ledger.note_outcome(op, WORKER, "unknown", external_effect="confirmed_done", seq=2)
+    ledger.note_seal(op, _ATTEMPT_1, seq=3)
+    assert ledger.contradicted_at(op) == 3
+
+    # Contradicting note_verification with seq=0 raises ValueError instead of storing falsy 0.
+    op2 = "op-pos-seq-2"
+    m2 = AttemptMarker(op2, _ATTEMPT_1, FACT.intent_sha256)
+    ledger.note_declaration(op2, FACT)
+    ledger.open_attempt(op2, _ATTEMPT_1, executor=WORKER, approval_seq=4)
+    ledger.note_seal(op2, _ATTEMPT_1, seq=5)
+    with pytest.raises(ValueError, match="positive journal sequence"):
+        ledger.note_verification(
+            op2,
+            CHECKER,
+            effect="observed",
+            result="not_verified",
+            seq=0,
+            evidence={"attempt_id": _ATTEMPT_1, "marker_object": m2.objects("sha1").applied},
+        )
+
+    # Contradicting note_readback with seq=0 also raises ValueError.
+    op3 = "op-pos-seq-3"
+    m3 = AttemptMarker(op3, _ATTEMPT_1, FACT.intent_sha256)
+    ledger.note_declaration(op3, FACT)
+    ledger.open_attempt(op3, _ATTEMPT_1, executor=WORKER, approval_seq=6)
+    ledger.note_stop("project:P", 7, epoch=1, listed=((op3, _ATTEMPT_1),))
+    ledger.note_verification(
+        op3,
+        CHECKER,
+        effect="absent",
+        result="not_verified",
+        seq=8,
+        evidence={"attempt_id": _ATTEMPT_1, "marker_object": m3.objects("sha1").sealed},
+    )
+    with pytest.raises(ValueError, match="positive journal sequence"):
+        ledger.note_readback(
+            7,
+            _ATTEMPT_1,
+            "applied",
+            seq=0,
+            operation_id=op3,
+            marker_ref=m3.ref,
+            object_format="sha1",
+            marker_object=m3.objects("sha1").applied,
+        )
+    # Keep unused helper variables checked cleanly.
+    assert applied_oid != sealed_oid

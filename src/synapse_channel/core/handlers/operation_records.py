@@ -351,7 +351,8 @@ def _seal(
     ledger.add_seal_record(request.operation_id)
     seal = request.seal
     assert seal is not None, "seal_refusal kept a seal record with its body"
-    ledger.attempts.note_seal(request.operation_id, seal.attempt_id)
+    ledger.attempts.note_seal(request.operation_id, seal.attempt_id, seq=seq)
+    _record_contradiction_trigger(hub, store, ledger, request.operation_id, seq)
     return _Verdict(STATUS_ACCEPTED, "seal recorded", seq=seq)
 
 
