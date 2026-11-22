@@ -42,6 +42,13 @@ execution evidence when carrying a release claim forward.
   - **Reports.** `synapse approvals` and the universal receipts show the addressee, the batch and the summary digest.
   - **With no policy declared,** nothing changes.
 
+### Changed
+
+- **Federation bundle peer iteration now uses a public read accessor (`FederationBundle.peers()`).**
+  `resolve_domain`, `signing_key_is_peered`, and `diagnose_unresolved_domain` iterate
+  `bundle.peers()` instead of reading `bundle._peers` directly, bringing
+  `src/synapse_channel/core/federation.py` to zero private accesses. Behaviour is unchanged.
+
 ### Fixed
 
 - **Opposing `applied` and `sealed` marker records on the same attempt now surface as a contradiction.**

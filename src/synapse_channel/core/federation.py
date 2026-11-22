@@ -150,6 +150,10 @@ class FederationBundle:
         """Return the peered domain ids, sorted."""
         return tuple(sorted(self._peers))
 
+    def peers(self) -> tuple[FederationPeer, ...]:
+        """Return the peered domains as an immutable tuple, sorted by domain id."""
+        return tuple(self._peers[domain_id] for domain_id in sorted(self._peers))
+
     def authorise(
         self,
         domain_id: str,
@@ -268,7 +272,7 @@ def resolve_domain(
     """
     matches = [
         peer.domain_id
-        for peer in bundle._peers.values()
+        for peer in bundle.peers()
         if key_id in peer.signing_key_ids and certificate_pin in peer.certificate_pins
     ]
     if len(matches) == 1:
@@ -284,7 +288,7 @@ def signing_key_is_peered(bundle: FederationBundle, key_id: str) -> bool:
     frame outright rather than letting it degrade to the local path the way a
     frame signed with a purely local key does.
     """
-    return any(key_id in peer.signing_key_ids for peer in bundle._peers.values())
+    return any(key_id in peer.signing_key_ids for peer in bundle.peers())
 
 
 class DomainResolutionDiagnosis:
@@ -355,15 +359,15 @@ def diagnose_unresolved_domain(
     """
     both = [
         peer.domain_id
-        for peer in bundle._peers.values()
+        for peer in bundle.peers()
         if key_id in peer.signing_key_ids and certificate_pin in peer.certificate_pins
     ]
     if len(both) >= 2:
         return DomainResolutionDiagnosis.AMBIGUOUS
     if len(both) == 1:
         return DomainResolutionDiagnosis.RESOLVED
-    key_known = any(key_id in peer.signing_key_ids for peer in bundle._peers.values())
-    pin_known = any(certificate_pin in peer.certificate_pins for peer in bundle._peers.values())
+    key_known = any(key_id in peer.signing_key_ids for peer in bundle.peers())
+    pin_known = any(certificate_pin in peer.certificate_pins for peer in bundle.peers())
     if key_known and pin_known:
         return DomainResolutionDiagnosis.SPLIT_ACROSS_PEERINGS
     if key_known:

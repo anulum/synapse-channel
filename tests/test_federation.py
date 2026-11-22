@@ -87,6 +87,17 @@ def test_bundle_lookup_and_domains() -> None:
     assert FederationBundle().domains() == ()  # empty default
 
 
+def test_bundle_peers_returns_sorted_immutable_snapshot() -> None:
+    globex = _peer(domain_id="globex")
+    acme = _peer(domain_id="acme")
+    bundle = FederationBundle([globex, acme])
+    peers = bundle.peers()
+    assert isinstance(peers, tuple)
+    assert peers == (acme, globex)
+    assert [peer.domain_id for peer in peers] == list(bundle.domains())
+    assert FederationBundle().peers() == ()
+
+
 def test_authorise_allows_a_fully_satisfied_frame_with_bounded_scope() -> None:
     decision = _ok_bundle().authorise("acme", now=100.0, **_OK)
     assert decision.allowed is True
