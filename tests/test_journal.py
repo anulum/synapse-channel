@@ -40,7 +40,13 @@ from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
 from synapse_channel.core.multihub_equivocation import FederationQuarantine
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.persistence import EventStore
-from synapse_channel.core.state import GitContext, ResourceOffer, SynapseState, TaskClaim
+from synapse_channel.core.state import (
+    DEFAULT_RESOURCE_TTL_SECONDS,
+    GitContext,
+    ResourceOffer,
+    SynapseState,
+    TaskClaim,
+)
 from synapse_channel.core.task_causality import TASK_CAUSAL_PARENT_FIELD, TaskCausalParent
 
 
@@ -535,6 +541,20 @@ def test_replay_expires_stale_claim(tmp_path: Path) -> None:
     result = replay(store, now=2000.0)  # lease already lapsed
     store.close()
     assert "T1" not in result.state.claims
+
+
+def test_replay_expires_an_offer_past_the_default_resource_ttl(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    for name, offered_at in (("stale", 1000.0), ("fresh", 1950.0)):
+        record_resource(
+            store,
+            ResourceOffer(
+                agent="A", kind="llm", name=name, capacity=1, meta={}, offered_at=offered_at
+            ),
+        )
+    result = replay(store, now=1000.0 + DEFAULT_RESOURCE_TTL_SECONDS + 1.0)
+    store.close()
+    assert set(result.state.resources) == {"A:llm:fresh"}
 
 
 @pytest.mark.parametrize(

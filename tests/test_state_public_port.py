@@ -9,15 +9,21 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import FrozenInstanceError, fields
+from pathlib import Path
 
 import pytest
 
+from synapse_channel.core.journal import record_claim, replay
+from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protected_write_custody import ProtectedClaimCustody
 from synapse_channel.core.state import (
     DEFAULT_RESOURCE_TTL_SECONDS,
     StatePublicationParts,
     SynapseState,
+    TaskClaim,
 )
 from synapse_channel.core.state_leases import LeaseIndex
 from synapse_channel.core.state_transaction import durable_state_transaction
@@ -168,6 +174,141 @@ def test_expire_stale_drops_lapsed_claims_and_offers_past_the_default_ttl() -> N
 
     state.expire_stale(DEFAULT_RESOURCE_TTL_SECONDS + 1.0)
     assert key not in state.resources
+
+
+def _state_with_custody_of_src() -> SynapseState:
+    state = SynapseState(default_ttl_seconds=100.0)
+    assert state.claim("A", "T1", now=0.0, worktree="wtA", paths=("src",))[0] is True
+    state.protected_claim_custody["R1"] = (ProtectedClaimCustody.capture(state.claims["T1"]),)
+    return state
+
+
+def test_protected_task_held_names_only_the_witnessed_task() -> None:
+    state = _state_with_custody_of_src()
+
+    assert state.protected_task_held("T1") is True
+    assert state.protected_task_held("T2") is False
+    assert SynapseState().protected_task_held("T1") is False
+
+
+def test_protected_scope_held_matches_an_overlapping_scope_or_the_same_task() -> None:
+    state = _state_with_custody_of_src()
+
+    assert state.protected_scope_held("T2", "wtA", ("src/a.py",), None) is True
+    assert state.protected_scope_held("T1", "wtB", ("docs",), None) is True
+    assert state.protected_scope_held("T2", "wtA", ("docs",), None) is False
+    assert state.protected_scope_held("T2", "wtB", ("src",), None) is False
+
+
+def test_the_protected_queries_mutate_nothing() -> None:
+    state = _state_with_custody_of_src()
+    custody = dict(state.protected_claim_custody)
+    claims = dict(state.claims)
+
+    state.protected_task_held("T1")
+    state.protected_scope_held("T2", "wtA", ("src",), None)
+
+    assert state.protected_claim_custody == custody
+    assert state.claims == claims
+    assert state.epoch_seq == 1
+
+
+_HELD_TASK_MUTATIONS: dict[str, Callable[[SynapseState], tuple[bool, str]]] = {
+    "renew": lambda state: state.renew_claim("A", "T1", now=1.0, epoch=1, paths=("src",)),
+    "update": lambda state: state.update_task("A", "T1", note="x", epoch=1, now=1.0),
+    "checkpoint": lambda state: state.save_checkpoint("A", "T1", "token", epoch=1, now=1.0),
+    "release": lambda state: state.release("A", "T1", now=1.0),
+    "force release": lambda state: state.force_release("T1", by="operator"),
+    "handoff": lambda state: state.handoff("A", "T1", "B", epoch=1, now=1.0),
+}
+
+
+@pytest.mark.parametrize("mutation", sorted(_HELD_TASK_MUTATIONS))
+def test_every_mutation_of_a_held_task_is_refused_through_the_public_query(mutation: str) -> None:
+    state = _state_with_custody_of_src()
+    before = deepcopy(state.claims["T1"])
+
+    ok, message = _HELD_TASK_MUTATIONS[mutation](state)
+
+    assert ok is False
+    assert message == "Task 'T1' has outstanding protected custody."
+    assert state.claims["T1"] == before
+    assert state.epoch_seq == 1
+
+
+@pytest.mark.parametrize("mutation", sorted(_HELD_TASK_MUTATIONS))
+def test_every_mutation_of_a_task_without_custody_proceeds(mutation: str) -> None:
+    state = SynapseState(default_ttl_seconds=100.0)
+    assert state.claim("A", "T1", now=0.0, worktree="wtA", paths=("src",))[0] is True
+
+    ok, message = _HELD_TASK_MUTATIONS[mutation](state)
+
+    assert ok is True, message
+
+
+def test_a_handoff_into_a_scope_another_task_holds_in_custody_is_refused() -> None:
+    state = SynapseState(default_ttl_seconds=100.0)
+    assert state.claim("A", "T1", now=0.0, worktree="wtA", paths=("src",))[0] is True
+    state.protected_claim_custody["R9"] = (
+        ProtectedClaimCustody(
+            task_id="T9",
+            owner="C",
+            epoch=9,
+            version=0,
+            lease_expires_at=100.0,
+            worktree="wtA",
+            paths=("src/a.py",),
+            path_identity=None,
+        ),
+    )
+
+    ok, message = state.handoff("A", "T1", "B", epoch=1, now=1.0)
+
+    assert ok is False
+    assert message == "Task 'T1' conflicts with outstanding protected custody."
+    assert state.claims["T1"].owner == "A"
+
+
+def test_replay_restores_the_epoch_and_runs_the_one_expiry_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = EventStore(tmp_path / "events.db")
+    for epoch, expires in ((1, 1500.0), (2, 5000.0)):
+        record_claim(
+            store,
+            TaskClaim(
+                task_id=f"T{epoch}",
+                owner="A",
+                note="",
+                claimed_at=1000.0,
+                lease_expires_at=expires,
+                worktree=f"wt{epoch}",
+                epoch=epoch,
+            ),
+        )
+    restored: list[int] = []
+    passes: list[float] = []
+    restore = SynapseState.restore_epoch_seq
+    expire = SynapseState.expire_stale
+
+    def recording_restore(self: SynapseState, value: int) -> None:
+        restored.append(value)
+        restore(self, value)
+
+    def recording_expire(self: SynapseState, now: float) -> None:
+        passes.append(now)
+        expire(self, now)
+
+    monkeypatch.setattr(SynapseState, "restore_epoch_seq", recording_restore)
+    monkeypatch.setattr(SynapseState, "expire_stale", recording_expire)
+
+    result = replay(store, now=2000.0)
+    store.close()
+
+    assert restored == [2]
+    assert passes == [2000.0]
+    assert result.state.epoch_seq == 2
+    assert set(result.state.claims) == {"T2"}
 
 
 def test_heartbeat_and_snapshot_run_the_one_expiry_pass(monkeypatch: pytest.MonkeyPatch) -> None:

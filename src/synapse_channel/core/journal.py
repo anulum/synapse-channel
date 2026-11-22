@@ -1262,8 +1262,8 @@ def replay(
         claim=lambda payload: _claim_from_payload(payload),
         ledger_task=lambda payload: _ledger_task_from_payload(payload),
         progress=lambda payload: _progress_from_payload(payload),
-        protected_task_held=lambda task: state._protected_task_held(task),
-        protected_scope_held=lambda claim: state._protected_scope_held(
+        protected_task_held=lambda task: state.protected_task_held(task),
+        protected_scope_held=lambda claim: state.protected_scope_held(
             claim.task_id, claim.worktree, claim.paths, claim.path_identity
         ),
         scope_checked_kinds=frozenset({EventKind.CLAIM, EventKind.HANDOFF}),
@@ -1276,13 +1276,12 @@ def replay(
     for event in store.iter_events(through_seq=up_to_seq, kinds=event_kinds):
         apply_event(context, ports, appliers, event)
 
-    state._epoch_seq = context.epoch_seq
+    state.restore_epoch_seq(context.epoch_seq)
     # Replay assigns claims straight into the registry, so build the lease-expiry
     # heap from the reconstructed claims before any expiry pass runs against it.
     state.reindex_leases()
     ts = time.time() if now is None else float(now)
-    state._expire_claims(ts)
-    state._expire_resources(ts)
+    state.expire_stale(ts)
     return ReplayResult(
         state=state,
         chat_history=context.chat_history,

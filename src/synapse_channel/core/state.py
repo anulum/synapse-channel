@@ -452,7 +452,7 @@ class SynapseState:
         self.heartbeat(agent, ts)
 
         existing = self.claims.get(task)
-        if self._protected_scope_held(task, worktree, norm_paths, path_identity):
+        if self.protected_scope_held(task, worktree, norm_paths, path_identity):
             return False, f"Task '{task}' conflicts with outstanding protected custody."
         if (
             existing
@@ -559,7 +559,7 @@ class SynapseState:
             )
         ):
             return False, f"Task '{task}' renewal lost its original ownership."
-        if self._protected_task_held(task):
+        if self.protected_task_held(task):
             return False, f"Task '{task}' has outstanding protected custody."
         if claim.paths != paths:
             return False, "Renewal must repeat the original paths for ACL checks."
@@ -615,7 +615,7 @@ class SynapseState:
             claim = self.claims.get(witness.task_id)
             if claim is None or ProtectedClaimCustody.capture(claim) != witness:
                 raise ValueError("protected admission witness changed before installation")
-            if self._protected_scope_held(
+            if self.protected_scope_held(
                 witness.task_id, witness.worktree, witness.paths, witness.path_identity
             ):
                 raise ValueError("protected admission overlaps outstanding custody")
@@ -733,22 +733,58 @@ class SynapseState:
         if not updated.holds_custody:
             self.protected_claim_custody.pop(reservation_id, None)
 
-    def _protected_task_held(self, task: str) -> bool:
-        """Return whether a reservation retains the exact claim witness."""
+    def protected_task_held(self, task: str) -> bool:
+        """Return whether a reservation retains the exact claim witness.
+
+        A read-only query of :attr:`protected_claim_custody`, which the task's
+        renewal, update, checkpoint, release, forced release and handoff
+        consult, and journal replay with them.
+
+        Parameters
+        ----------
+        task : str
+            Task identifier of the claim.
+
+        Returns
+        -------
+        bool
+            ``True`` when any retained witness names ``task``.
+        """
         return any(
             witness.task_id == task
             for witnesses in self.protected_claim_custody.values()
             for witness in witnesses
         )
 
-    def _protected_scope_held(
+    def protected_scope_held(
         self,
         task: str,
         worktree: str,
         paths: tuple[str, ...],
         path_identity: ClaimScopeIdentity | None,
     ) -> bool:
-        """Compare retained scopes without author or lease-expiry exemptions."""
+        """Compare retained scopes without author or lease-expiry exemptions.
+
+        A read-only query of :attr:`protected_claim_custody`, which claim,
+        handoff and protected-write admission consult, and journal replay with
+        them.
+
+        Parameters
+        ----------
+        task : str
+            Task identifier of the claim being judged.
+        worktree : str
+            Worktree of that claim.
+        paths : tuple[str, ...]
+            Normalised paths of that claim.
+        path_identity : ClaimScopeIdentity or None
+            Filesystem identity of the scope, when the claimant declared one.
+
+        Returns
+        -------
+        bool
+            ``True`` when any retained witness conflicts with the scope.
+        """
         return any(
             witness.conflicts(task, worktree, paths, path_identity)
             for witnesses in self.protected_claim_custody.values()
@@ -864,7 +900,7 @@ class SynapseState:
         self.heartbeat(agent, ts)
 
         claim = self.claims.get(task_id)
-        if self._protected_task_held(task_id):
+        if self.protected_task_held(task_id):
             return False, f"Task '{task_id}' has outstanding protected custody."
         if claim is None:
             return False, f"Task '{task_id}' not found."
@@ -926,7 +962,7 @@ class SynapseState:
         ts = time.time() if now is None else float(now)
         self.heartbeat(agent, ts)
         claim = self.claims.get(task)
-        if self._protected_task_held(task):
+        if self.protected_task_held(task):
             return False, f"Task '{task}' has outstanding protected custody."
         if claim is None:
             return False, f"Task '{task}' not found."
@@ -977,7 +1013,7 @@ class SynapseState:
         existing = self.claims.get(task)
         if existing is None:
             return False, f"Task '{task}' is not currently claimed."
-        if self._protected_task_held(task):
+        if self.protected_task_held(task):
             return False, f"Task '{task}' has outstanding protected custody."
         if existing.owner != agent:
             return False, f"Task '{task}' is owned by {existing.owner}, not {agent}."
@@ -1026,7 +1062,7 @@ class SynapseState:
         existing = self.claims.get(task)
         if existing is None:
             return False, f"Task '{task}' is not currently claimed."
-        if self._protected_task_held(task):
+        if self.protected_task_held(task):
             return False, f"Task '{task}' has outstanding protected custody."
         previous_owner = existing.owner
         del self.claims[task]
@@ -1092,7 +1128,7 @@ class SynapseState:
         claim = self.claims.get(task)
         if claim is None:
             return False, f"Task '{task}' is not currently claimed."
-        if self._protected_task_held(task):
+        if self.protected_task_held(task):
             return False, f"Task '{task}' has outstanding protected custody."
         if claim.owner != agent:
             return False, f"Task '{task}' is owned by {claim.owner}, not {agent}."
@@ -1100,7 +1136,7 @@ class SynapseState:
             return False, f"Task '{task}' is already owned by {agent}."
         if epoch is not None and epoch != claim.epoch:
             return False, f"Task '{task}' epoch is stale (current {claim.epoch})."
-        if self._protected_scope_held(task, claim.worktree, claim.paths, claim.path_identity):
+        if self.protected_scope_held(task, claim.worktree, claim.paths, claim.path_identity):
             return False, f"Task '{task}' conflicts with outstanding protected custody."
         # Same live-claim cap as direct acquisition: a handoff must not grow the
         # recipient past max_claims_per_agent. Refuse before mutation so
@@ -1254,7 +1290,8 @@ class SynapseState:
     def expire_stale(self, now: float) -> None:
         """Expire every lapsed claim, then every resource offer past its time to live.
 
-        The one expiry pass that :meth:`heartbeat` and :meth:`snapshot` run.
+        The one expiry pass that :meth:`heartbeat`, :meth:`snapshot` and journal
+        replay run.
         Claims expire first, then offers, with the default resource time to live
         :data:`DEFAULT_RESOURCE_TTL_SECONDS`.
 

@@ -39,6 +39,12 @@ execution evidence when carrying a release claim forward.
   `tools/exhaustive_coordination_model.py` leaves the private-access ledger. A test now pins the depth-2 count of
   distinct states, which drops if the state fingerprint stops including the issued epoch.
 
+- **Journal replay restores the coordination state through its public port; behaviour is unchanged.**
+  `SynapseState.protected_task_held(task)` and `protected_scope_held(task, worktree, paths, path_identity)`, the
+  read-only custody queries, are now public under those names, with no private alias. Replay asks them for its
+  protected-custody checks, sets the recovered epoch with `restore_epoch_seq` and ends with `expire_stale`.
+  `core/journal.py` leaves the private-access ledger.
+
 ### Fixed
 
 - **Version-one Fleet mirror exports written by the sync daemon (`writer_generation`) are now accepted by `parse_mirror` and the dashboard mirror feed (dated v1 erratum, 2026-11-22).**
