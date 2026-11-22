@@ -18,6 +18,22 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.62] - 2026-11-22
+
+Core 0.99.62 lets a connected seat release its own claims through a
+`<seat>-release` sidecar connection. The hub judges the sidecar as the seat: it
+never takes over the seat's socket or creates an identity pin, and on a
+shared-token or open hub it may release only a claim whose trigger it presents.
+An opt-in approval-load policy limits how fast approval requests reach an
+approver and flags rubber-stamping for audit. Opposing `applied` and `sealed`
+marker records on one attempt surface as a contradiction, a git hook with no
+worktree identity skips its release instead of releasing as the seat it was
+installed for, and CI judges the structure budget on every pushed commit.
+Several modules stop reading other objects' private state; their behaviour is
+unchanged. The structure budget's ledger moves to schema 3, which can allow a
+private access in one named module only and refuses unused, missing or
+cross-module allowances.
+
 ### Added
 
 - **An opt-in approval-load policy limits how fast approval requests reach an approver and flags rubber-stamping for audit.**

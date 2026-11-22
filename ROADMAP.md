@@ -148,6 +148,16 @@ interfaces, maturity, and release commitments.
   [app tasks](docs/app-tasks.md).
 - A chat is never an approval, a verdict or a declaration, and no operation can
   declare a physical or equipment effect. See the [security policy](SECURITY.md).
+- A connected seat releases its own claims through a `<seat>-release` sidecar
+  connection. The hub judges it as the seat; it never takes over the seat's
+  socket or creates an identity pin, and on a shared-token or open hub it may
+  release only a claim of the commit or merge trigger it presents. See the
+  [security policy](SECURITY.md).
+- An opt-in approval-load policy (`synapse hub --approval-load-policy`) limits
+  how fast approval requests reach an approver and flags rubber-stamping for
+  audit. See the [security policy](SECURITY.md).
+- Opposing `applied` and `sealed` marker records on one attempt surface as a
+  contradiction in either arrival order. See the [protocol](docs/protocol.md).
 - Mail that no session will collect can be found, handed to a successor or
   closed (`synapse mailbox orphans`, `handover`, `close` and `drain`, and
   `synapse doctor --mailbox-orphans`), and mail addressed to a role waits in
@@ -384,7 +394,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.61 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.62 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities

@@ -219,7 +219,14 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     ):
         assert released_in_0_99_61 in shipped, released_in_0_99_61
         assert released_in_0_99_61 not in unreleased, released_in_0_99_61
-    assert "At 0.99.61 nothing on `main` is outside a release." in unreleased
+    for released_in_0_99_62 in (
+        "through a `<seat>-release` sidecar",
+        "`synapse hub --approval-load-policy`",
+        "contradiction in either arrival order",
+    ):
+        assert released_in_0_99_62 in shipped, released_in_0_99_62
+        assert released_in_0_99_62 not in unreleased, released_in_0_99_62
+    assert "At 0.99.62 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:
