@@ -34,8 +34,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # The structure budget compares its ledger with the parent commit.
-          fetch-depth: 2
+          # The structure budget walks every pushed commit against its own parent, so the
+          # job needs the history of the push.
+          fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
@@ -52,8 +53,17 @@ jobs:
         run: python tools/report_test_taxonomy.py --tests-root tests
       - name: Cockpit CI and npm-lock integrity
         run: python tools/check_cockpit_ci.py --check
-      - name: Structure budget (no ceiling rises, no new unit over a threshold)
-        run: python -m tools.check_structure_budget --check --baseline HEAD^
+      - name: Structure budget (every pushed commit against its own first parent)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_TIP: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            python -m tools.check_structure_budget --check --walk-from "$PUSH_BEFORE" --to "$PUSH_TIP" --default-branch origin/main
+          else
+            python -m tools.check_structure_budget --check --baseline HEAD^
+          fi
 
   typecheck:
     runs-on: ubuntu-latest

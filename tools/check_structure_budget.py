@@ -24,7 +24,8 @@ unknown revision or a failing ``git`` end with a non-zero status and the reason.
 Run ``python -m tools.check_structure_budget --check --baseline HEAD`` from the
 repository root before a commit, ``--update --baseline HEAD`` after shortening
 a listed unit, and ``--report --baseline HEAD`` for the before and after
-figures of a change.
+figures of a change. CI judges a pushed range commit by commit with
+``--check --walk-from BEFORE --to SHA`` (:mod:`tools.structure_budget_walk`).
 """
 
 from __future__ import annotations
@@ -514,6 +515,17 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     base = parser.add_mutually_exclusive_group(required=True)
     base.add_argument("--baseline", metavar="REV", help="Git revision holding the trusted ledger.")
     base.add_argument("--no-baseline", action="store_true", help="Outside a git checkout only.")
+    base.add_argument(
+        "--walk-from",
+        metavar="REV",
+        help="With --check: judge every first-parent commit after REV, up to --to, "
+        "against its own parent (all zeros walks from the merge base with --default-branch).",
+    )
+    parser.add_argument("--to", metavar="REV", default="HEAD", help="Tip of the --walk-from range.")
+    parser.add_argument(
+        "--default-branch", metavar="REF", help="Anchor of an all-zero --walk-from."
+    )
+    parser.add_argument("--max-commits", type=int, default=100, help="Largest range to walk.")
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument("--ledger", default=DEFAULT_LEDGER)
     return parser.parse_args(argv)
@@ -521,6 +533,19 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
 
 def _run(arguments: argparse.Namespace) -> int:
     root = arguments.root.resolve()
+    if arguments.walk_from is not None:
+        if not arguments.check:
+            raise LedgerError("walk_refused: --walk-from judges only, so it runs only with --check")
+        from tools.structure_budget_walk import run_walk
+
+        return run_walk(
+            root,
+            before=arguments.walk_from,
+            to=arguments.to,
+            ledger_path=arguments.ledger,
+            default_branch=arguments.default_branch,
+            max_commits=arguments.max_commits,
+        )
     path = root / arguments.ledger
     try:
         ledger = parse_ledger(path.read_text(encoding="utf-8"))

@@ -653,10 +653,18 @@ owner. Splitting a file or adding forwarding methods alone does not demonstrate
 that responsibility has been separated.
 
 ```bash
-python -m tools.check_structure_budget --check --baseline HEAD    # pre-commit and CI run this
+python -m tools.check_structure_budget --check --baseline HEAD    # pre-commit runs this
 python -m tools.check_structure_budget --update --baseline HEAD   # after shortening a listed unit
 python -m tools.check_structure_budget --report --baseline HEAD   # before and after figures
+python -m tools.check_structure_budget --check --walk-from BEFORE --to SHA   # CI on push
 ```
+
+On a push, CI judges every first-parent commit after the ref's previous tip
+against its own parent, so a ceiling raised by an earlier commit of a
+fast-forward push is caught even when the tip keeps it. A rewritten history (a
+previous tip that is not an ancestor), a range Git cannot list and a push of
+more than 100 commits are refused, the last naming the command to run by hand;
+a pull request is judged against its base.
 
 A listed figure may only fall, and the ledger is lowered in the same commit. A
 new unit above a threshold is refused: split it by responsibility. Moving a

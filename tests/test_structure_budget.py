@@ -544,7 +544,7 @@ def test_a_mode_and_a_baseline_choice_are_both_required(repo: Repo) -> None:
         check=False,
     )
     assert done.returncode == 2
-    assert "one of the arguments --baseline --no-baseline is required" in done.stderr
+    assert "one of the arguments --baseline --no-baseline --walk-from is required" in done.stderr
 
 
 def test_this_repository_meets_its_own_structure_budget() -> None:
@@ -559,7 +559,7 @@ def test_this_repository_meets_its_own_structure_budget() -> None:
     assert "structure budget holds" in done.stdout
 
 
-def test_hook_and_ci_run_the_check_against_the_parent_commit() -> None:
+def test_hook_checks_the_parent_and_ci_walks_every_pushed_commit() -> None:
     hooks = (REPO / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     hook = hooks.split("- id: structure-budget")[1].split("- id:")[0]
     assert "entry: python -m tools.check_structure_budget --check --baseline HEAD\n" in hook
@@ -567,8 +567,15 @@ def test_hook_and_ci_run_the_check_against_the_parent_commit() -> None:
     assert "pass_filenames: false" in hook
     workflow = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     lint = workflow.split("  lint:\n")[1].split("\n  typecheck:\n")[0]
-    assert "fetch-depth: 2" in lint
-    assert "run: python -m tools.check_structure_budget --check --baseline HEAD^\n" in lint
+    assert "fetch-depth: 0" in lint
+    # A push is judged commit by commit; a pull request or a manual run against its parent.
+    assert 'if [ "$EVENT_NAME" = "push" ]; then\n' in lint
+    assert (
+        'python -m tools.check_structure_budget --check --walk-from "$PUSH_BEFORE" '
+        '--to "$PUSH_TIP" --default-branch origin/main\n'
+    ) in lint
+    assert "python -m tools.check_structure_budget --check --baseline HEAD^\n" in lint
+    assert "PUSH_BEFORE: ${{ github.event.before }}\n" in lint
     assert "continue-on-error" not in lint
 
 

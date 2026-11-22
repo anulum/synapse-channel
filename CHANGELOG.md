@@ -61,6 +61,22 @@ execution evidence when carrying a release claim forward.
   attempt, the operation restores as contradicted (visible in attention and `incorrect_acceptances`
   counts; no retroactive `operation_trigger` row is written on replay).
 
+- **CI judges the structure budget on every pushed commit, not only on the tip.**
+  - **The gap.** A fast-forward push carrying several commits was checked only by comparing its tip with the tip's
+    parent. A ceiling raised by an earlier commit of the push and kept by the tip went unseen in CI, leaving only that
+    commit's local hook to catch it.
+  - **The fix.** `python -m tools.check_structure_budget --check --walk-from BEFORE --to SHA` walks the pushed range
+    first-parent and judges each commit against its own sources, read from Git objects, and against its own parent's
+    ledger. CI runs it on every push to `main`, with the full history fetched.
+  - **The anchors.** A previous tip that is not an ancestor is refused, an all-zero previous tip walks from the merge
+    base with `--default-branch` and is refused when there is none, a range Git cannot list is refused rather than
+    judged as its tip alone, an empty range judges its tip against its parent, and a push of more than 100 commits
+    is refused with the command to run by hand.
+  - **The four cases.** A commit before the budget is skipped by name, the commit that adopts the ledger is judged on
+    its own ledger, and a commit that removes or empties the ledger its parent holds is refused at that commit.
+  - **Unchanged.** Pull requests and manual runs keep the check against the parent, and the pre-commit hook is
+    unchanged.
+
 ## [0.99.61] - 2026-11-22
 
 Core 0.99.61 lets a stop finish and an attempt reconcile whichever order the
