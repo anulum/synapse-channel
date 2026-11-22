@@ -339,6 +339,14 @@ def _git_hook_test(
     return 0 if healthy else 1
 
 
+_MANUAL_RELEASE = "synapse release --name <seat> --uri <hub> -- <task>"
+_NO_WORKTREE_IDENTITY = (
+    "git-release skipped: this worktree has no synapse.identity. "
+    "The installed hook name is not used, so no claim is released.\n"
+    f"Release the claim by hand: {_MANUAL_RELEASE}"
+)
+
+
 def _cmd_git_release(
     args: argparse.Namespace,
     *,
@@ -355,9 +363,9 @@ def _cmd_git_release(
     a bare argparse error (the trap that sent agents to the wrong verb).
 
     With ``--resolve-identity`` (the form the installed hooks use) the releasing
-    seat, hub, and token come from the current worktree's git config, so one shared
-    hook releases each worktree's own claims. When that worktree has no recorded
-    identity the baked ``--name`` / ``--uri`` / ``--token`` are used unchanged.
+    seat is the current worktree's git config. When that worktree records no
+    identity, the release is skipped and the manual ``synapse release`` command
+    is printed. The name baked into the hook at install time is not used.
     """
     if args.task_id is not None:
         release_command = (
@@ -381,8 +389,10 @@ def _cmd_git_release(
     uri, name, token = args.uri, args.name, args.token
     if getattr(args, "resolve_identity", False):
         resolved = identity_resolver()
-        if resolved is not None:
-            uri, name, token = resolved.uri, resolved.name, resolved.token
+        if resolved is None:
+            print(_NO_WORKTREE_IDENTITY, file=sys.stderr)
+            return 0
+        uri, name, token = resolved.uri, resolved.name, resolved.token
     return async_runner(release_runner(uri=uri, name=name, trigger=args.trigger, token=token))
 
 
@@ -446,9 +456,10 @@ def _add_git_release_parser(
     git_release.add_argument(
         "--resolve-identity",
         action="store_true",
-        help="Release as the seat recorded for the current worktree by `synapse git-init` "
-        "(its synapse.identity/uri/tokenFile), falling back to --name/--uri. The installed "
-        "hooks pass this so one shared hook releases each worktree's own claims.",
+        help="Release as the seat recorded for the current worktree by `synapse git-init`. "
+        "When that worktree has no identity, skip the release and print the manual "
+        "command. The installed hooks pass this so one shared hook releases each "
+        "worktree's own claims.",
     )
     git_release.add_argument("--uri", default=default_hub_uri())
     git_release.add_argument("--name", default="USER")

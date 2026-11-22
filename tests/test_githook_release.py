@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import sys
@@ -22,6 +23,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from claim_outcome_helpers import ClaimProxy, claim_proxy
 from cli_e2e_helpers import git_repo, git_run
 from hub_e2e_helpers import close_agents, connect_agent, free_port, running_hub
+from synapse_channel import cli_git
 from synapse_channel.cli_locking import _lock
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.protocol import MessageType
@@ -125,6 +127,54 @@ async def _claim_many(uri: str, owner: str, claims: list[ClaimSpec]) -> None:
             await handle.recorder.wait_for(saw_claim_granted)
     finally:
         await close_agents(handle)
+
+
+async def test_connected_committer_is_not_released_without_worktree_identity(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A live seat keeps its name, and a hook with no worktree identity releases nothing."""
+    monkeypatch.setattr(githook, "resolve_claim_scope_identity", _release_scope)
+    monkeypatch.setenv("SYN_IDENTITY", "committer/seat")
+    git = {"branch": "x", "base": "main", "auto_release_on": "commit"}
+
+    async def release_claims(**kwargs: Any) -> int:
+        raise AssertionError(f"release must not run: {kwargs}")
+
+    async with running_hub() as (hub, uri):
+        await _claim_many(uri, "committer/seat", [("T-env", ["src/a.py"], git)])
+        holder = await connect_agent("committer/seat", uri)
+        try:
+            ns = argparse.Namespace(
+                task_id=None,
+                uri="ws://baked",
+                name="INSTALLER",
+                trigger="commit",
+                token="baked-tok",
+                resolve_identity=True,
+            )
+            assert (
+                cli_git._cmd_git_release(
+                    ns, release_runner=release_claims, identity_resolver=lambda: None
+                )
+                == 0
+            )
+            assert "T-env" in hub.state.claims
+            error = capsys.readouterr().err
+            assert "synapse release --name <seat> --uri <hub> -- <task>" in error
+            assert "Could not reach hub" not in error
+            assert "INSTALLER" not in error
+            assert "committer/seat" not in error
+            await holder.agent.release("T-env")
+
+            def saw_release(message: dict[str, Any]) -> bool:
+                return (
+                    message.get("type") == "release_granted" and message.get("task_id") == "T-env"
+                )
+
+            await holder.recorder.wait_for(saw_release)
+        finally:
+            await close_agents(holder)
+        await _wait_until(lambda: not hub.state.claims)
 
 
 async def test_run_git_release_releases_matching_claim(

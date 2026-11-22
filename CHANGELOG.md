@@ -77,6 +77,13 @@ execution evidence when carrying a release claim forward.
   - **Unchanged.** Pull requests and manual runs keep the check against the parent, and the pre-commit hook is
     unchanged.
 
+- `synapse git-release --resolve-identity` used the name baked into the git
+  hook when the worktree had no `synapse.identity`. A hook installed for a
+  seat that has since ended kept releasing as that seat and reported that the
+  hub could not be reached. With no worktree identity the hook now skips the
+  release and prints the manual `synapse release` command. It does not use
+  the name recorded when the hook was installed.
+
 ## [0.99.61] - 2026-11-22
 
 Core 0.99.61 lets a stop finish and an attempt reconcile whichever order the

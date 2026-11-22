@@ -765,12 +765,14 @@ def test_cmd_git_release_prefers_resolved_worktree_identity() -> None:
     assert captured["token"] == "wt-tok"
 
 
-def test_cmd_git_release_falls_back_when_no_worktree_identity() -> None:
-    captured: dict[str, Any] = {}
+def test_cmd_git_release_skips_without_worktree_identity(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SYN_IDENTITY", "committer/seat")
+    monkeypatch.setenv("SYNAPSE_URI", "ws://127.0.0.1:9")
 
     async def release_claims(**kwargs: Any) -> int:
-        captured.update(kwargs)
-        return 0
+        raise AssertionError(f"release must not run: {kwargs}")
 
     ns = argparse.Namespace(
         task_id=None,
@@ -784,9 +786,12 @@ def test_cmd_git_release_falls_back_when_no_worktree_identity() -> None:
         cli_git._cmd_git_release(ns, release_runner=release_claims, identity_resolver=lambda: None)
         == 0
     )
-    assert captured["uri"] == "ws://baked"
-    assert captured["name"] == "INSTALLER"
-    assert captured["token"] == "baked-tok"
+    error = capsys.readouterr().err
+    assert "synapse release --name <seat> --uri <hub> -- <task>" in error
+    assert "installed hook name is not used" in error
+    assert "Could not reach hub" not in error
+    assert "INSTALLER" not in error
+    assert "committer/seat" not in error
 
 
 def test_cmd_git_release_without_resolve_flag_never_resolves() -> None:

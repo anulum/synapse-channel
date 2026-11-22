@@ -79,9 +79,8 @@ def test_hook_script_exits_zero_when_release_cannot_reach_the_hub(tmp_path: Path
 
 
 def test_install_hooks_pass_resolve_identity(tmp_path: Path) -> None:
-    # The hook prefers the current worktree's recorded identity at run time, so a
-    # single shared hook releases each worktree's own claims. The baked --name stays
-    # as the fallback for a worktree with no recorded identity.
+    # The hook resolves the worktree. The baked --name remains in the script and
+    # is not used when the worktree records no identity.
     install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
     for filename in ("post-commit", "post-merge"):
         body = (tmp_path / filename).read_text(encoding="utf-8")

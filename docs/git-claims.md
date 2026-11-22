@@ -394,8 +394,10 @@ repository-wide — git worktrees share one hooks directory — but they now pas
 `git-release --resolve-identity`, so at commit time each reads the
 `synapse.identity` / `synapse.uri` / `synapse.tokenFile` recorded for the worktree
 that produced the commit and releases that seat's claims. Mixed-identity linked
-worktrees therefore auto-release correctly; the identity baked at install time is
-only the fallback for a worktree with no recorded identity, and
+worktrees therefore auto-release correctly. When that worktree records no
+identity, the hook skips the release, prints
+`synapse release --name <seat> --uri <hub> -- <task>`, and does not contact
+the hub. The name baked when the hook was installed is not used, and
 `--auto-release-on manual` remains available whenever explicit release is preferred.
 The non-blocking `git-release` hook prints `release requested on ...` after its
 send attempt; exit `0` is not a confirmed hub release. For an operator-confirmed

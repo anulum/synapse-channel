@@ -18,10 +18,10 @@ This module owns the small, distinct responsibility of reading the per-worktree
 ``synapse git-init`` records (via :mod:`synapse_channel.git.claim_check_config`)
 for exactly the current worktree, so one shared hook can act as the seat that
 owns the commit. It fails closed: with no configured identity — or only a
-placeholder — it returns ``None`` so the hook releases nothing rather than
-dropping another seat's claims under a stale name. A hook must never block a
-commit, so every failure mode here resolves to ``None`` or a tokenless identity;
-nothing is raised.
+placeholder — it returns ``None``, and the hook skips the release rather than
+using the seat recorded when the hook was installed. A hook must never block
+a commit, so every failure mode here resolves to ``None`` or a tokenless
+identity; nothing is raised.
 """
 
 from __future__ import annotations
@@ -37,6 +37,23 @@ from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runne
 #: claim check's guard so a default ``git-init --name USER`` cannot make a shared
 #: hook release claims as the literal placeholder.
 _PLACEHOLDER_IDENTITIES = frozenset({"ME", "USER", "YOUR_IDENTITY"})
+
+
+def _identity_is_usable(name: str) -> bool:
+    """Return whether ``name`` is a real seat rather than a placeholder.
+
+    Parameters
+    ----------
+    name : str
+        A candidate seat, already stripped.
+
+    Returns
+    -------
+    bool
+        ``False`` for a blank name or any ``ME``, ``USER``, or
+        ``YOUR_IDENTITY`` path segment.
+    """
+    return bool(name) and all(segment not in _PLACEHOLDER_IDENTITIES for segment in name.split("/"))
 
 
 @dataclass(frozen=True)
@@ -104,7 +121,7 @@ def resolve_release_identity(*, runner: GitRunner = _default_git_runner) -> Rele
         name = read_claim_check_config("synapse.identity", runner=runner).strip()
     except GitError:
         return None
-    if not name or any(segment in _PLACEHOLDER_IDENTITIES for segment in name.split("/")):
+    if not _identity_is_usable(name):
         return None
     try:
         uri = read_claim_check_config("synapse.uri", runner=runner).strip() or DEFAULT_HUB_URI
