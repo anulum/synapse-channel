@@ -158,6 +158,9 @@ interfaces, maturity, and release commitments.
   audit. See the [security policy](SECURITY.md).
 - Opposing `applied` and `sealed` marker records on one attempt surface as a
   contradiction in either arrival order. See the [protocol](docs/protocol.md).
+- The dashboard's Fleet mirror reads the advisory export the Fleet sync daemon
+  writes, including its matching `writer_generation` record; any other extra
+  field is still refused. See the [studio guide](docs/studio.md).
 - Mail that no session will collect can be found, handed to a successor or
   closed (`synapse mailbox orphans`, `handover`, `close` and `drain`, and
   `synapse doctor --mailbox-orphans`), and mail addressed to a role waits in
@@ -394,7 +397,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.62 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.63 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities

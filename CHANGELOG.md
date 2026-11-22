@@ -18,6 +18,17 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.63] - 2026-11-22
+
+Core 0.99.63 lets the dashboard's Fleet mirror read the advisory export that
+the Fleet sync daemon writes: a version-one export may carry a matching
+`writer_generation` record in both its envelope and its snapshot, every other
+extra field is still refused, and version one is now closed. The coordination
+state, journal replay and the hub's client registry stop reading each other's
+private state: the state gains a public publication, epoch and expiry port,
+and connection capacity, takeover policy and session attributes get their own
+owners. Their behaviour is unchanged.
+
 ### Changed
 
 - **The coordination state publishes a committed candidate through a public port; behaviour is unchanged.**
