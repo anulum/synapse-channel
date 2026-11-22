@@ -22,7 +22,7 @@ from synapse_channel import dashboard_fleet_mirror
 from synapse_channel.dashboard import DashboardServer, start_dashboard_server
 from synapse_channel.dashboard_fleet_mirror import load_mirror_grants
 from synapse_channel.fleet_mirror_contract import parse_mirror
-from test_fleet_mirror_contract import document
+from test_fleet_mirror_contract import document, document_with_writer_generation
 
 TOKEN = "disposable-fleet-mirror-test"
 
@@ -92,6 +92,15 @@ def test_live_http_access_and_revocation(tmp_path: Path) -> None:
         assert code == 200
         assert json.loads(raw) == document()
         assert request(server, path="/fleet-observed-access.json")[0] == 200
+        daemon_doc = document_with_writer_generation()
+        write(export, daemon_doc)
+        code, raw = request(server)
+        assert code == 200
+        assert json.loads(raw) == daemon_doc
+        mismatched = document_with_writer_generation()
+        del mismatched["snapshot"]["writer_generation"]
+        write(export, mismatched)
+        assert request(server)[0] == 503
         doc = document()
         doc["version"] = 2
         write(export, doc)

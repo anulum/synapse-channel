@@ -330,7 +330,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/state_transaction.py::SerializedStateMutationActor.run_atomic" = 16
 "src/synapse_channel/ergonomics.py::main" = 31
 "src/synapse_channel/ergonomics.py::resolve_identity" = 18
-"src/synapse_channel/fleet_mirror_contract.py::parse_mirror" = 24
 "src/synapse_channel/git/claim_coverage.py::_claim_covers_path" = 38
 "src/synapse_channel/git/claim_coverage.py::decide_claim_coverage" = 23
 "src/synapse_channel/git/gitconflict.py::_overlap" = 17

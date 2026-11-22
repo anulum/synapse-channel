@@ -168,6 +168,14 @@ introduce a separate login flow.
 The envelope contains version 1, an explicit source label, export time,
 `advisory: true` and the Fleet snapshot. Inputs are bounded to 4 MiB,
 4096 peers and 10000 tasks; oversized or malformed envelopes are refused.
+
+*Version-one erratum (2026-11-22):* Daemon-written version-one exports may also
+carry an optional `writer_generation` object (`version: 1`, non-negative
+64-bit integer `device` and `inode`, and a 32-character lower-case hexadecimal
+`marker`) when it appears in both the outer envelope and the inner `snapshot`
+with identical values. Every other extra key remains refused at both levels,
+and version one is now closed — any subsequent mirror field requires a version
+bump.
 The panel pages through 50 rows at a time and exposes task evidence through
 keyboard-operable disclosure controls. It retains source labels, peer status
 times, unknown counts, partial drains and unresolved conflict evidence.

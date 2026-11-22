@@ -18,6 +18,17 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Version-one Fleet mirror exports written by the sync daemon (`writer_generation`) are now accepted by `parse_mirror` and the dashboard mirror feed (dated v1 erratum, 2026-11-22).**
+  Previously `synapse_channel.fleet_mirror_contract.parse_mirror` accepted only the five base keys in
+  both the envelope and `snapshot`, causing `/fleet-observed.json` to refuse every daemon-written
+  export carrying `writer_generation`. Under this version-one erratum, `writer_generation` is
+  accepted as the sole optional extra key when present in both the envelope and `snapshot` with equal
+  values and exact shape `{"version": 1, "device": uint64, "inode": uint64, "marker": 32 lowercase hex}`.
+  Documents without `writer_generation` behave identically, every other extra key remains refused at
+  both levels, and version one is now closed (any further mirror field requires a version bump).
+
 ## [0.99.62] - 2026-11-22
 
 Core 0.99.62 lets a connected seat release its own claims through a
