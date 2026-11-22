@@ -59,6 +59,14 @@ execution evidence when carrying a release claim forward.
   `src/synapse_channel/mcp/onboarding.py` calls `ergonomics.cwd_basename()` directly, bringing its
   private-access count to zero. Behaviour is unchanged.
 
+- **Git checkout wrappers now expose public helpers instead of reaching into private implementation names.**
+  `normalise_requested_path` in `synapse_channel.git.generated_dependency_claims` and
+  `fallback_source_for_test`, `select_records`, and `required_unowned` in
+  `synapse_channel.git.test_ownership_map` are now public and re-exported by
+  `tools/generated_dependency_claims.py` and `tools/test_ownership_map.py`, while eleven unused
+  private wrapper aliases are removed, bringing both wrapper modules to zero private accesses.
+  Behaviour is unchanged.
+
 ### Fixed
 
 - **Opposing `applied` and `sealed` marker records on the same attempt now surface as a contradiction.**

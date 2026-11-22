@@ -28,6 +28,7 @@ from synapse_channel.git.generated_dependency_claims import (
     GeneratedRule,
     build_dependency_map,
     check_records,
+    normalise_requested_path,
     records_to_json,
     render_claim_args,
     render_human,
@@ -47,17 +48,13 @@ __all__ = (
     "build_dependency_map",
     "check_records",
     "main",
+    "normalise_requested_path",
     "parse_args",
     "records_to_json",
     "render_claim_args",
     "render_human",
     "select_records",
 )
-
-_normalise_requested_path = _impl._normalise_requested_path
-_path_exists = _impl._path_exists
-_pattern_has_match = _impl._pattern_has_match
-_pattern_matches_path = _impl._pattern_matches_path
 
 
 def parse_args(argv: Sequence[str] | None = None) -> CliArgs:

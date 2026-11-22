@@ -199,7 +199,7 @@ def test_direct_unknown_source_and_outside_absolute_path_branches(
     outside = tmp_path.parent / "outside.py"
     _write(outside)
 
-    assert claims_tool._normalise_requested_path(outside, tmp_path) == outside.as_posix()
+    assert claims_tool.normalise_requested_path(outside, tmp_path) == outside.as_posix()
     assert claims_tool.main(["--repo-root", str(tmp_path), "--source", "untracked/source.txt"]) == 2
     assert "source path matches no generated dependency rule: untracked/source.txt" in (
         capsys.readouterr().err

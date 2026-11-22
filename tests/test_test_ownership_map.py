@@ -259,9 +259,9 @@ def test_fallback_ignores_non_test_names_and_ambiguous_sources() -> None:
         symbols=(),
     )
 
-    assert ownership._fallback_source_for_test(Path("helper.py"), {"a2a.py": (source,)}) is None
+    assert ownership.fallback_source_for_test(Path("helper.py"), {"a2a.py": (source,)}) is None
     assert (
-        ownership._fallback_source_for_test(Path("test_a2a.py"), {"a2a.py": (source, source)})
+        ownership.fallback_source_for_test(Path("test_a2a.py"), {"a2a.py": (source, source)})
         is None
     )
 
@@ -287,16 +287,16 @@ def test_record_helpers_cover_filters_json_and_empty_render(tmp_path: Path) -> N
     )
     absolute = tmp_path / "src" / "synapse_channel" / "a.py"
 
-    assert ownership._select_records((record,), (), tmp_path) == ((record,), ())
-    assert ownership._select_records((record,), (absolute,), tmp_path) == ((record,), ())
-    assert ownership._select_records((record,), (Path("missing.py"),), tmp_path) == (
+    assert ownership.select_records((record,), (), tmp_path) == ((record,), ())
+    assert ownership.select_records((record,), (absolute,), tmp_path) == ((record,), ())
+    assert ownership.select_records((record,), (Path("missing.py"),), tmp_path) == (
         (),
         ("missing.py",),
     )
-    assert ownership._required_unowned((record, unowned), (Path(unowned.source),), tmp_path) == (
+    assert ownership.required_unowned((record, unowned), (Path(unowned.source),), tmp_path) == (
         unowned.source,
     )
-    assert ownership._required_unowned((record,), (Path(record.source),), tmp_path) == ()
+    assert ownership.required_unowned((record,), (Path(record.source),), tmp_path) == ()
     assert ownership.records_to_json((record,)) == [
         {
             "source": "src/synapse_channel/a.py",

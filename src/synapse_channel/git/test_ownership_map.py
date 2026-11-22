@@ -200,7 +200,7 @@ def _merge_owner(
     )
 
 
-def _fallback_source_for_test(
+def fallback_source_for_test(
     test_path: Path,
     filename_index: dict[str, tuple[SourceModule, ...]],
 ) -> tuple[SourceModule, str] | None:
@@ -275,7 +275,7 @@ def build_ownership_map(repo_root: Path = REPO_ROOT) -> tuple[OwnershipRecord, .
                         f"imports {nested_source.module}",
                     )
 
-        fallback = _fallback_source_for_test(test_path, filename_index)
+        fallback = fallback_source_for_test(test_path, filename_index)
         if fallback is not None:
             source, reason = fallback
             _merge_owner(owners, source, test_relpath, reason)
@@ -290,7 +290,7 @@ def _normalise_requested_source(path: Path, repo_root: Path) -> str:
     return path.as_posix()
 
 
-def _select_records(
+def select_records(
     records: Sequence[OwnershipRecord],
     requested_sources: Sequence[Path],
     repo_root: Path,
@@ -312,7 +312,7 @@ def _select_records(
     return tuple(selected), tuple(unknown)
 
 
-def _required_unowned(
+def required_unowned(
     records: Sequence[OwnershipRecord],
     requested_sources: Sequence[Path],
     repo_root: Path,
@@ -425,13 +425,13 @@ def main(
     args = parse_args(argv, default_root=default_root)
     repo_root = args.repo_root.resolve()
     records = (build_ownership_map if builder is None else builder)(repo_root)
-    selected_records, unknown_sources = _select_records(records, args.source, repo_root)
+    selected_records, unknown_sources = select_records(records, args.source, repo_root)
     if unknown_sources:
         for source in unknown_sources:
             print(f"unknown source path: {source}", file=sys.stderr)
         return 2
 
-    unowned_required = _required_unowned(records, args.require_owned, repo_root)
+    unowned_required = required_unowned(records, args.require_owned, repo_root)
     if unowned_required:
         for source in unowned_required:
             print(f"unowned required source: {source}", file=sys.stderr)

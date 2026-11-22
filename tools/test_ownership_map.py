@@ -30,25 +30,17 @@ from synapse_channel.git.test_ownership_map import (
     defined_symbols,
     discover_sources,
     discover_tests,
+    fallback_source_for_test,
     imported_modules,
     records_to_json,
     render_human,
+    required_unowned,
+    select_records,
 )
 
 PACKAGE_NAME = _impl.PACKAGE_NAME
 DEFAULT_SOURCE_ROOT = _impl.DEFAULT_SOURCE_ROOT
 DEFAULT_TESTS_ROOT = _impl.DEFAULT_TESTS_ROOT
-_fallback_source_for_test = _impl._fallback_source_for_test
-_merge_owner = _impl._merge_owner
-_module_name = _impl._module_name
-_normalise_requested_source = _impl._normalise_requested_source
-_owner_records = _impl._owner_records
-_parse_python = _impl._parse_python
-_relative = _impl._relative
-_required_unowned = _impl._required_unowned
-_select_records = _impl._select_records
-_source_by_filename = _impl._source_by_filename
-_source_by_module = _impl._source_by_module
 
 __all__ = [
     "CliArgs",
@@ -61,11 +53,14 @@ __all__ = [
     "defined_symbols",
     "discover_sources",
     "discover_tests",
+    "fallback_source_for_test",
     "imported_modules",
     "main",
     "parse_args",
     "records_to_json",
     "render_human",
+    "required_unowned",
+    "select_records",
 ]
 
 

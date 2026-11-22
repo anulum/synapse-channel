@@ -100,7 +100,7 @@ DEFAULT_RULES = (
 """Generated-output dependency rules known to this repository."""
 
 
-def _normalise_requested_path(path: Path, repo_root: Path) -> str:
+def normalise_requested_path(path: Path, repo_root: Path) -> str:
     """Return a user-supplied path as a repository-relative POSIX path."""
     if path.is_absolute():
         try:
@@ -158,7 +158,7 @@ def _select_by_sources(
     selected: dict[str, DependencyRecord] = {}
     unknown: list[str] = []
     for requested in requested_sources:
-        source = _normalise_requested_path(requested, repo_root)
+        source = normalise_requested_path(requested, repo_root)
         matches = [
             record
             for record in records
@@ -181,7 +181,7 @@ def _select_by_generated(
     selected: dict[str, DependencyRecord] = {}
     unknown: list[str] = []
     for requested in requested_generated:
-        generated = _normalise_requested_path(requested, repo_root)
+        generated = normalise_requested_path(requested, repo_root)
         record = by_generated.get(generated)
         if record is None:
             unknown.append(generated)

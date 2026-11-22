@@ -398,8 +398,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/state.py" = 3
 "src/synapse_channel/core/state_transaction.py" = 2
 "tools/exhaustive_coordination_model.py" = 7
-"tools/generated_dependency_claims.py" = 4
-"tools/test_ownership_map.py" = 11
 
 [[exceptions]]
 unit = "src/synapse_channel/client/llm_worker.py::SynapseLLMWorker"
