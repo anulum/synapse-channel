@@ -29,6 +29,11 @@ execution evidence when carrying a release claim forward.
     `core/state.py` leaves the structure budget's private-access ledger.
   - **Unchanged.** Every result, the wire and the journal format.
 
+- **A refused durable claim mutation puts the lease epoch back through the state's public port; behaviour is
+  unchanged.** `SynapseState.restore_epoch_seq(value)` is the replay and rollback entry point, a plain assignment
+  as before. The transaction snapshot reads `epoch_seq` and restores through it, and `core/state_transaction.py`
+  leaves the private-access ledger.
+
 ### Fixed
 
 - **Version-one Fleet mirror exports written by the sync daemon (`writer_generation`) are now accepted by `parse_mirror` and the dashboard mirror feed (dated v1 erratum, 2026-11-22).**

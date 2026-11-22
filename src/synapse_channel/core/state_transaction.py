@@ -102,7 +102,7 @@ class _TaskStateSnapshot:
                 (agent, agent in state.last_seen, state.last_seen.get(agent, 0.0))
                 for agent in dict.fromkeys(presence_agents)
             ),
-            epoch_seq=state._epoch_seq,
+            epoch_seq=state.epoch_seq,
             pending_assignment=state.pending_handoffs.entries.get(task_id),
             owned_entry=state.owned_claims.entries.get(task_id),
         )
@@ -135,7 +135,7 @@ class _TaskStateSnapshot:
             else:
                 state.last_seen.pop(agent, None)
 
-        state._epoch_seq = self.epoch_seq
+        state.restore_epoch_seq(self.epoch_seq)
         state.owned_claims.restore(self.task_id, self.owned_entry if not expired else None)
         state.pending_handoffs.remove(self.task_id)
         if not expired and self.claim is not None and self.pending_assignment is not None:

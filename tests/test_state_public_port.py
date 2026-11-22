@@ -20,6 +20,7 @@ from synapse_channel.core.state import (
     SynapseState,
 )
 from synapse_channel.core.state_leases import LeaseIndex
+from synapse_channel.core.state_transaction import durable_state_transaction
 
 
 def test_epoch_seq_is_the_last_issued_lease_epoch() -> None:
@@ -41,6 +42,50 @@ def test_epoch_seq_is_a_property_without_a_setter() -> None:
 
     assert isinstance(member, property)
     assert member.fset is None
+
+
+def test_restore_epoch_seq_sets_the_mark_the_next_lease_continues_from() -> None:
+    state = SynapseState()
+
+    state.restore_epoch_seq(41)
+    assert state.epoch_seq == 41
+
+    assert state.claim("A", "T1", worktree="wtA")[0] is True
+    assert state.claims["T1"].epoch == state.epoch_seq == 42
+
+
+def test_restore_epoch_seq_is_a_plain_assignment_that_checks_nothing() -> None:
+    state = SynapseState()
+    state.restore_epoch_seq(41)
+
+    state.restore_epoch_seq(3)
+
+    assert state.epoch_seq == 3
+
+
+def test_a_refused_durable_mutation_restores_the_epoch_through_the_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = SynapseState(default_ttl_seconds=100.0)
+    assert state.claim("A", "T0", worktree="wt0")[0] is True
+    restored: list[int] = []
+    restore = state.restore_epoch_seq
+
+    def recording_restore(value: int) -> None:
+        restored.append(value)
+        restore(value)
+
+    monkeypatch.setattr(state, "restore_epoch_seq", recording_restore)
+
+    with pytest.raises(OSError, match="journal unavailable"):
+        with durable_state_transaction(state, "T1", enabled=True):
+            assert state.claim("A", "T1", worktree="wt1")[0] is True
+            assert state.epoch_seq == 2
+            raise OSError("journal unavailable")
+
+    assert restored == [1]
+    assert state.epoch_seq == 1
+    assert "T1" not in state.claims
 
 
 def test_publication_parts_are_the_states_own_registries_in_a_frozen_record() -> None:

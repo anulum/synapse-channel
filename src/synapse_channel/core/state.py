@@ -200,8 +200,25 @@ class SynapseState:
 
         Every accepted lease mutation stamps a strictly greater epoch, so this is
         the high-water mark of the epochs issued so far; ``0`` before the first.
+        Replay and rollback set it through :meth:`restore_epoch_seq`.
         """
         return self._epoch_seq
+
+    def restore_epoch_seq(self, value: int) -> None:
+        """Set the lease generation counter to a recovered or captured value.
+
+        The replay and rollback entry point: a journal replay sets the epoch it
+        recovered, and a refused durable mutation puts back the epoch captured
+        before it. A plain assignment that checks nothing, as both callers did
+        before; ordinary mutations advance the counter only through
+        :meth:`_next_epoch`.
+
+        Parameters
+        ----------
+        value : int
+            The epoch high-water mark to restore.
+        """
+        self._epoch_seq = value
 
     def publication_parts(self) -> StatePublicationParts:
         """Return the internal registries :meth:`publish_from` adopts from a candidate.
