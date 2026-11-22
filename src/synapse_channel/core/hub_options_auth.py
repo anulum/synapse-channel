@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from synapse_channel.core.acl import AclPolicy
+from synapse_channel.core.approval_load import ApprovalLoad
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
 from synapse_channel.core.message_auth import EventSignatureTrustBundle, MessageAuthKey
@@ -42,6 +43,7 @@ class HubAuthOptions(TypedDict, total=False):
     acl_policy: AclPolicy | None
     require_acl: bool
     role_grants: RoleGrants | None
+    approval_load: ApprovalLoad | None
     mailbox_custodians: Mapping[str, str] | None
     require_role_claim: bool
     require_fencing_epoch: bool

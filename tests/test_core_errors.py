@@ -320,6 +320,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         ValueError,
     ),
     "AclError": ("synapse_channel.core.acl", "acl", ValueError),
+    "ApprovalLoadPolicyError": (
+        "synapse_channel.core.approval_load_policy",
+        "approval_load_policy",
+        ValueError,
+    ),
     "AntiRollbackError": ("synapse_channel.core.merkle_checkpoint", "anti_rollback", Exception),
     "ChildSetupError": ("synapse_channel.seat_hold", "seat_child_setup", RuntimeError),
     "CollectError": ("synapse_channel.session_ledger_collect", "ledger_collect", Exception),

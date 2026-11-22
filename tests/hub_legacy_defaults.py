@@ -110,6 +110,7 @@ LEGACY_DEFAULTS: dict[str, object] = {
     "acl_policy": None,
     "require_acl": False,
     "role_grants": None,
+    "approval_load": None,
     "mailbox_custodians": None,
     "require_role_claim": False,
     "require_fencing_epoch": False,

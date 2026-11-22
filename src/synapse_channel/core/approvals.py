@@ -22,10 +22,22 @@ mutation. An approved subject can be cited in a release receipt through the
 existing ``synapse release --approval`` field. The canonical note format is
 exposed (:func:`format_approval_note` / :func:`parse_approval_note`) so non-Python
 clients can participate.
+
+A request may also name whom it is addressed to and which batch it belongs to,
+through four optional tokens before the reason: ``approver=<project>/<name>``,
+``approver_role=<project>/<role>``, ``batch=<64 hex>`` and ``summary=<64 hex>``.
+The summary token is the digest of the evidence summary the approver is shown;
+the hub never stores or parses summary text. Readers that predate the tokens
+ignore them. :func:`parse_approval_addressing` reads them leniently and
+:func:`approval_addressing_problem` says what is malformed; the hub's
+approval-load policy (:mod:`synapse_channel.core.approval_load`) refuses a
+malformed or unaddressed request only where such a policy is declared.
 """
 
 from __future__ import annotations
 
+import hashlib
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,6 +70,49 @@ AWAITING = "awaiting_approval"
 _REASON_DELIMITER = " :: "
 """Separator between the structured head and the free-text reason in a note body."""
 
+ADDRESSING_TOKENS = ("approver", "approver_role", "batch", "summary")
+"""Optional request tokens naming the addressee, the batch and the evidence-summary digest."""
+
+_DIGEST = re.compile(r"[0-9a-f]{64}")
+"""A lower-case SHA-256 hex digest, the only accepted form of ``batch`` and ``summary``."""
+
+
+@dataclass(frozen=True)
+class ApprovalAddressing:
+    """The optional addressing tokens of an approval note, read leniently.
+
+    Attributes
+    ----------
+    approver : str
+        The ``<project>/<name>`` identity the request is addressed to, or ``""``.
+    approver_role : str
+        The ``<project>/<role>`` role the request is addressed to, or ``""``.
+    batch : str
+        The 64-hex batch identifier the application built, or ``""``.
+    summary : str
+        The 64-hex digest of the evidence summary shown to the approver, or ``""``.
+    """
+
+    approver: str = ""
+    approver_role: str = ""
+    batch: str = ""
+    summary: str = ""
+
+    @property
+    def is_addressed(self) -> bool:
+        """Return whether the note names an approver identity or an approver role."""
+        return bool(self.approver or self.approver_role)
+
+    def present(self) -> dict[str, str]:
+        """Return only the tokens the note carries, keyed by token name."""
+        values = {
+            "approver": self.approver,
+            "approver_role": self.approver_role,
+            "batch": self.batch,
+            "summary": self.summary,
+        }
+        return {key: value for key, value in values.items() if value}
+
 
 @dataclass(frozen=True)
 class ApprovalEvent:
@@ -77,6 +132,8 @@ class ApprovalEvent:
         Durable event-log sequence the event was observed at.
     ts : float
         Event timestamp.
+    addressing : ApprovalAddressing
+        The request's optional addressing tokens; empty when it names none.
     """
 
     subject: str
@@ -85,6 +142,7 @@ class ApprovalEvent:
     reason: str
     seq: int
     ts: float
+    addressing: ApprovalAddressing = ApprovalAddressing()
 
 
 @dataclass(frozen=True)
@@ -146,7 +204,16 @@ class ApprovalReport:
         return {status.subject: status for status in self.statuses}
 
 
-def format_approval_note(*, subject: str, state: str, reason: str = "") -> str:
+def format_approval_note(
+    *,
+    subject: str,
+    state: str,
+    reason: str = "",
+    approver: str = "",
+    approver_role: str = "",
+    batch: str = "",
+    summary: str = "",
+) -> str:
     """Return the canonical text body for an approval progress note.
 
     Emit the result as a ``LEDGER_PROGRESS`` note with ``kind="approval"`` (see
@@ -160,6 +227,14 @@ def format_approval_note(*, subject: str, state: str, reason: str = "") -> str:
         One of :data:`APPROVAL_STATES`.
     reason : str, optional
         Free-text reason; collapsed to a single line and omitted when empty.
+    approver : str, optional
+        ``<project>/<name>`` identity a request is addressed to.
+    approver_role : str, optional
+        ``<project>/<role>`` role a request is addressed to.
+    batch : str, optional
+        64-hex batch identifier built by the requesting application.
+    summary : str, optional
+        64-hex digest of the evidence summary shown to the approver; never its text.
 
     Returns
     -------
@@ -169,7 +244,8 @@ def format_approval_note(*, subject: str, state: str, reason: str = "") -> str:
     Raises
     ------
     ValueError
-        If ``subject`` is empty or has whitespace, or ``state`` is unknown.
+        If ``subject`` is empty or has whitespace, ``state`` is unknown, an
+        addressing token is malformed, or a decision carries addressing tokens.
     """
     cleaned = subject.strip()
     if not cleaned or any(character.isspace() for character in cleaned):
@@ -178,7 +254,18 @@ def format_approval_note(*, subject: str, state: str, reason: str = "") -> str:
     if state not in APPROVAL_STATES:
         msg = f"approval-note state must be one of {sorted(APPROVAL_STATES)}"
         raise ValueError(msg)
+    addressing = ApprovalAddressing(
+        approver=approver, approver_role=approver_role, batch=batch, summary=summary
+    )
+    tokens = addressing.present()
+    if tokens and state != STATE_REQUESTED:
+        msg = "approval-note addressing tokens belong only to a request"
+        raise ValueError(msg)
+    problem = approval_addressing_problem(addressing)
+    if problem is not None:
+        raise ValueError(problem)
     head = f"{APPROVAL_NOTE_PREFIX} subject={cleaned} state={state}"
+    head += "".join(f" {key}={tokens[key]}" for key in ADDRESSING_TOKENS if key in tokens)
     reason_line = " ".join(reason.split())
     if reason_line:
         return f"{head}{_REASON_DELIMITER}{reason_line}"
@@ -213,6 +300,74 @@ def parse_approval_note(text: str) -> dict[str, str] | None:
     if not subject or state not in APPROVAL_STATES:
         return None
     return {"subject": subject, "state": state, "reason": reason.strip()}
+
+
+def parse_approval_addressing(text: str) -> ApprovalAddressing:
+    """Return the addressing tokens an approval-note body carries, read leniently.
+
+    Values are returned as written, malformed or not; an absent token reads as
+    ``""``. A body that is not an approval note carries no addressing. When a
+    token repeats, the last occurrence wins, as it does for every other token.
+
+    Parameters
+    ----------
+    text : str
+        Progress-note text body.
+
+    Returns
+    -------
+    ApprovalAddressing
+        The tokens found before the reason delimiter.
+    """
+    head, _, _ = text.partition(_REASON_DELIMITER)
+    tokens = head.split()
+    if not tokens or tokens[0] != APPROVAL_NOTE_PREFIX:
+        return ApprovalAddressing()
+    pairs: dict[str, str] = {}
+    for token in tokens[1:]:
+        key, separator, value = token.partition("=")
+        if separator and key in ADDRESSING_TOKENS:
+            pairs[key] = value
+    return ApprovalAddressing(**pairs)
+
+
+def approval_text_sha256(text: str) -> str:
+    """Return the SHA-256 that ties an approval-load admission row to its request note.
+
+    The note text is hashed as UTF-8 with lone surrogates passed through, so a
+    hostile body that cannot be encoded strictly still gets one stable digest.
+    """
+    return hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+
+
+def approval_addressing_problem(addressing: ApprovalAddressing) -> str | None:
+    """Return why the addressing tokens are malformed, or ``None`` when they are well formed.
+
+    ``approver`` and ``approver_role`` must each be ``<project>/<name>`` with a
+    non-empty part on both sides of the first ``/``; ``batch`` and ``summary``
+    must each be 64 lower-case hex characters. An absent token is well formed.
+
+    Parameters
+    ----------
+    addressing : ApprovalAddressing
+        Tokens as read by :func:`parse_approval_addressing`.
+
+    Returns
+    -------
+    str or None
+        A one-line reason naming the first malformed token, or ``None``.
+    """
+    for key, value in (
+        ("approver", addressing.approver),
+        ("approver_role", addressing.approver_role),
+    ):
+        project, separator, name = value.partition("/")
+        if value and not (separator and project and name):
+            return f"{key} must be '<project>/<name>', got {value!r}"
+    for key, value in (("batch", addressing.batch), ("summary", addressing.summary)):
+        if value and _DIGEST.fullmatch(value) is None:
+            return f"{key} must be 64 lower-case hex characters"
+    return None
 
 
 def run_approval_report(
@@ -310,7 +465,8 @@ def _approval_events(events: Sequence[StoredEvent]) -> tuple[ApprovalEvent, ...]
             continue
         if str(event.payload.get("kind", "")) != APPROVAL_NOTE_KIND:
             continue
-        fields = parse_approval_note(str(event.payload.get("text", "")))
+        text = str(event.payload.get("text", ""))
+        fields = parse_approval_note(text)
         if fields is None:
             continue
         parsed.append(
@@ -321,6 +477,7 @@ def _approval_events(events: Sequence[StoredEvent]) -> tuple[ApprovalEvent, ...]
                 reason=fields["reason"],
                 seq=event.seq,
                 ts=event.ts,
+                addressing=parse_approval_addressing(text),
             )
         )
     return tuple(parsed)
@@ -375,7 +532,11 @@ def _status_to_json(status: ApprovalStatus) -> dict[str, object]:
 
 
 def _event_to_json(event: ApprovalEvent) -> dict[str, object]:
-    """Convert an approval event into JSON-compatible fields."""
+    """Convert an approval event into JSON-compatible fields.
+
+    Addressing tokens appear only when the note carries them, so the output for
+    a note without them is unchanged.
+    """
     return {
         "subject": event.subject,
         "state": event.state,
@@ -383,13 +544,16 @@ def _event_to_json(event: ApprovalEvent) -> dict[str, object]:
         "reason": event.reason,
         "seq": event.seq,
         "ts": event.ts,
+        **event.addressing.present(),
     }
 
 
 def _render_status(status: ApprovalStatus) -> str:
-    """Render one approval status row."""
+    """Render one approval status row, naming a pending request's addressee and batch."""
     if status.current_state == AWAITING:
         tail = f"requested by {status.requested_by or '-'}"
+        request = status.history[-1].addressing.present()
+        tail += "".join(f" {key}={request[key]}" for key in ADDRESSING_TOKENS if key in request)
     else:
         tail = f"{status.current_state} by {status.decided_by or '-'}"
         if status.decision_reason:

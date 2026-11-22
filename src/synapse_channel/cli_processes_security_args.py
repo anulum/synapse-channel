@@ -31,9 +31,24 @@ from synapse_channel.core.message_auth import DEFAULT_MESSAGE_AUTH_WINDOW_SECOND
 from synapse_channel.token_set_admin import positive_days
 
 
+def add_hub_approval_load_argument(hub: argparse.ArgumentParser) -> None:
+    """Add the opt-in approval-load policy file to the hub parser."""
+    hub.add_argument(
+        "--approval-load-policy",
+        default="",
+        metavar="FILE",
+        help="Owner-only JSON approval-load policy (schema synapse-approval-load-policy.v1): "
+        "per-role and per-approver request rates, a minimum review time and a maximum batch "
+        "size. Under it an approval request must name approver= or approver_role= when its "
+        "project has a rule, and is refused over its rate; fast decisions and oversized "
+        "batches are flagged for audit, never refused. Requires --db. Off by default.",
+    )
+
+
 def add_hub_admission_arguments(hub: argparse.ArgumentParser) -> None:
     """Add the security options and the verdict-gate options to the hub parser."""
     add_hub_security_arguments(hub)
+    add_hub_approval_load_argument(hub)
     add_hub_mailbox_custodians_argument(hub)
     add_hub_token_set_argument(hub)
     add_hub_metrics_token_set_argument(hub)

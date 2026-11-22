@@ -289,6 +289,12 @@ EVENT_WORDS: Mapping[str, Describer] = {
     EventKind.APPROVAL_KIND: lambda p: EventWords(
         _text(p, "author"), f"approval by a {_text(p, 'kind')} approver"
     ),
+    EventKind.APPROVAL_LOAD_POLICY: lambda p: EventWords(
+        "", f"approval-load policy {_text(p, 'policy_sha256')[:12]} in force"
+    ),
+    EventKind.APPROVAL_LOAD_ADMITTED: lambda p: EventWords(
+        _text(p, "author"), f"approval request {_text(p, 'subject')} counted under its limits"
+    ),
     EventKind.LEVEL_CRITERIA: lambda p: EventWords(
         _text(p, "declared_by"), f"criteria for {_text(p, 'scope')} at {_text(p, 'target')}"
     ),

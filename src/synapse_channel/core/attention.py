@@ -14,6 +14,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
+from synapse_channel.core.approval_load_flags import ApprovalLoadFlag, ApprovalLoadFlags
 from synapse_channel.core.approvals import (
     APPROVAL_NOTE_KIND,
     STATE_REQUESTED,
@@ -84,6 +85,7 @@ ATTENTION_EVENT_KINDS = frozenset(
         EventKind.OPERATION_SEALED,
         EventKind.OPERATION_STOPPED,
         EventKind.OPERATION_STOP_READBACK,
+        EventKind.APPROVAL_LOAD_ADMITTED,
     }
 )
 """Hub event kinds needed for an attention projection."""
@@ -263,6 +265,9 @@ def project_hub_attention(
 ) -> tuple[AttentionEvidence, ...]:
     """Fold durable approval, delivery and operation events into attention evidence.
 
+    Approval requests admitted under an approval-load policy also yield the
+    read-side audit flags of :mod:`synapse_channel.core.approval_load_flags`.
+
     Parameters
     ----------
     events : Iterable[StoredEvent]
@@ -286,8 +291,12 @@ def project_hub_attention(
         raise ValueError("approval review deadline must be positive")
     latest: dict[str, AttentionEvidence] = {}
     ledger = AttemptLedger(None)
+    load_flags = ApprovalLoadFlags()
     for event in events:
+        load_flags.observe(event)
         candidate: AttentionEvidence | None = None
+        if event.kind == EventKind.APPROVAL_LOAD_ADMITTED:
+            continue
         if event.kind == EventKind.LEDGER_PROGRESS:
             candidate = _approval_evidence(event, now, approval_ttl_seconds)
         elif event.kind in {
@@ -314,7 +323,26 @@ def project_hub_attention(
             candidate = _operation_contradiction_evidence(ledger, event)
         if candidate is not None:
             latest[candidate.key] = candidate
+    for flag in load_flags.flags():
+        if _valid_utf8_subject(flag.subject):
+            evidence = _approval_load_evidence(flag)
+            latest[evidence.key] = evidence
     return tuple(latest[key] for key in sorted(latest))
+
+
+def _approval_load_evidence(flag: ApprovalLoadFlag) -> AttentionEvidence:
+    """Turn one approval-load audit flag into an open warning that decides nothing."""
+    return AttentionEvidence(
+        key=_bounded_subject_key(flag.kind.replace("_", "-"), flag.subject),
+        kind=flag.kind,
+        subject=flag.subject,
+        severity="warning",
+        state="open",
+        action=f"Select for audit; this flag decides nothing ({flag.detail})",
+        source_revision=str(flag.seq),
+        observed_at=flag.ts,
+        expires_at=None,
+    )
 
 
 def project_quota_attention(

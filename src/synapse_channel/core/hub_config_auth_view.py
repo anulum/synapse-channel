@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 
 from synapse_channel.core.acl import AclPolicy
+from synapse_channel.core.approval_load import ApprovalLoad
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
 from synapse_channel.core.hub_config_attribute import ConfigAttribute, HubConfigOwner
@@ -20,6 +21,11 @@ from synapse_channel.core.message_auth import EventSignatureTrustBundle
 from synapse_channel.core.message_auth_durable import DurableMessageAuthReplayStore
 from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.verdict_hub import VerdictHubPolicy
+
+
+def _approval_load(value: object) -> ApprovalLoad | None:
+    """Narrow the record's ``object`` field; normalisation already refused any other type."""
+    return value if isinstance(value, ApprovalLoad) else None
 
 
 class HubAuthConfigView(HubConfigOwner):
@@ -136,6 +142,10 @@ class HubAuthConfigView(HubConfigOwner):
     role_grants: ConfigAttribute[RoleGrants | None] = ConfigAttribute(
         lambda config: config.auth.role_grants,
         lambda config, value: replace(config, auth=replace(config.auth, role_grants=value)),
+    )
+    approval_load: ConfigAttribute[ApprovalLoad | None] = ConfigAttribute(
+        lambda config: _approval_load(config.auth.approval_load),
+        lambda config, value: replace(config, auth=replace(config.auth, approval_load=value)),
     )
     mailbox_custodians: ConfigAttribute[Mapping[str, str] | None] = ConfigAttribute(
         lambda config: config.auth.mailbox_custodians,

@@ -14,6 +14,11 @@ from dataclasses import replace
 
 from synapse_channel.cli_hub_startup import HubStartup, HubStartupRefused
 from synapse_channel.core.acl import AclError, load_acl_policy
+from synapse_channel.core.approval_load import ApprovalLoad
+from synapse_channel.core.approval_load_policy import (
+    ApprovalLoadPolicyError,
+    load_approval_load_policy,
+)
 from synapse_channel.core.capability_card_history import PersistentCapabilityCardHistory
 from synapse_channel.core.capability_card_trust import (
     DEFAULT_CAPABILITY_CARD_CLOCK_SKEW_SECONDS,
@@ -123,6 +128,33 @@ def load_acl_policy_for_hub(ctx: HubStartup) -> None:
             ),
             file=sys.stderr,
         )
+
+
+def load_approval_load_policy_for_hub(ctx: HubStartup) -> None:
+    """Load the approval-load policy; a malformed file, or no journal, refuses startup.
+
+    The policy's refusals and the admitted requests' thresholds are journalled,
+    and its rate window is recounted from the journal after a restart, so a hub
+    without ``--db`` cannot honour it and does not start.
+    """
+    path = str(getattr(ctx.args, "approval_load_policy", "") or "")
+    if not path:
+        return
+    if not ctx.args.db:
+        print(
+            "synapse hub: --approval-load-policy requires --db; its refusals and "
+            "counted requests are journalled.",
+            file=sys.stderr,
+        )
+        raise HubStartupRefused() from None
+    try:
+        policy = load_approval_load_policy(path)
+    except ApprovalLoadPolicyError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        raise HubStartupRefused() from None
+    ctx.config = replace(
+        ctx.config, auth=replace(ctx.config.auth, approval_load=ApprovalLoad(policy))
+    )
 
 
 def load_mailbox_custodians_for_hub(ctx: HubStartup) -> None:
@@ -263,6 +295,7 @@ def prepare_hub_trust(ctx: HubStartup) -> None:
     load_message_auth_keys(ctx)
     load_acl_policy_for_hub(ctx)
     load_role_grants_for_hub(ctx)
+    load_approval_load_policy_for_hub(ctx)
     load_mailbox_custodians_for_hub(ctx)
     load_identity_trust_for_hub(ctx)
     load_capability_trust_for_hub(ctx)

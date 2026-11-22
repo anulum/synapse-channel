@@ -352,6 +352,50 @@ work declared as one of the five software effects moves physical equipment, so a
 application that drives equipment must refuse such a declaration with its own
 clamps.
 
+### Approval load: a rate limit on approval requests, and audit flags
+
+An operator may declare an approval-load policy with `--approval-load-policy`, an
+owner-only file read fail-closed, which requires `--db`. With no policy declared
+the posture is unchanged.
+
+**What the policy changes:**
+- **Who can be asked how often.** An approval request that names its addressee
+  (`approver=` or `approver_role=`) is counted against the per-approver and
+  per-role rates the policy declares. A request addressed to a person also counts
+  against every role the role grants let that person claim. A request over a
+  rate, an unaddressed request from a project that has a rule, and a request
+  with a malformed token are refused before the note is appended, and each
+  refusal is journalled as `verdict_record_refused`.
+- **What is never refused.** Decisions (`approved` and `rejected`), and requests
+  already admitted.
+- **The durable log.** It gains two kinds: `approval_load_policy`, once per hub
+  lifetime, and `approval_load_admitted`. Each `approval_load_admitted` row is
+  written in the same transaction as its request note, on the keyed and the
+  unkeyed paths. So a restart, which recounts the rate window from those rows,
+  never finds a request without its row, nor a row without its request.
+
+**What the policy is not:**
+- **Not an authentication control.** It counts the identity the hub bound to the
+  connection, and is only as strong as that binding: pair it with `--token` and
+  `--require-message-auth` on an exposed hub.
+- **Not a presence check.** A person approval still proves a key and a role, not
+  a present human.
+- **The flags decide nothing.** `approval_fast_decision` and
+  `approval_batch_oversized` are read-side attention items that select approvals
+  for an auditor; they never refuse and never change a verdict or a level.
+- **The hub never receives evidence summary text.** A request carries only its
+  digest (`summary=`), and the application keeps the bytes.
+
+**What stays a residual:**
+- **A large backward clock step.** The recount after a restart finds the window by
+  a binary search over sequence numbers that assumes the clock moved forward,
+  with a 300 s slack. A backward step larger than the slack can leave admissions
+  before it uncounted, which can only admit more requests than declared, never
+  refuse one wrongly.
+- **A duplicate in flight.** A duplicate of a keyed request that is still in
+  flight, arriving while the window is full, is refused. Its retry gets the
+  cached reply.
+
 ### The forward event feed
 
 The [forward event feed](docs/protocol.md#the-forward-event-feed) adds one

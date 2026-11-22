@@ -420,6 +420,51 @@ does not add agent grades to protocol envelopes.
   without such a row counts as `automated`. An automated approval older than
   the latest level change of a scope that contains the operation opens no
   attempt; a person's does.
+- **Approval load (opt-in, `--approval-load-policy FILE`, requires `--db`):**
+  - **The request tokens.** A `state=requested` approval note may carry four
+    optional tokens before ` :: `:
+    - `approver=<project>/<name>` and `approver_role=<project>/<role>`, its
+      addressee;
+    - `batch=<64 hex>`, the batch it belongs to;
+    - `summary=<64 hex>`, the digest of the evidence summary shown to the
+      approver. The hub never receives, stores or parses summary text.
+
+    Readers that predate the tokens ignore them, and a decision note carries
+    none.
+  - **The policy** is an owner-only JSON file (`synapse-approval-load-policy.v1`)
+    with `roles` and `approvers` sections. Each rule declares `request_rate`,
+    `window_seconds`, `min_review_seconds` and `max_batch`. A malformed file,
+    or the flag without `--db`, refuses hub start.
+  - **The refusals.** Under a policy, a `requested` note is refused, before it
+    is appended, when:
+    - a token is malformed (`approval_request_malformed`);
+    - it names no addressee while its sender's project has a rule
+      (`approval_request_unaddressed`);
+    - a limit it counts against is full (`approval_rate_exceeded`, naming that
+      limit).
+
+    Each refusal is journalled as `verdict_record_refused` with kind
+    `approval`.
+  - **The limits a request counts against.** A request addressed to an identity
+    counts against that identity's own rule and against every role the role
+    grants let it claim. A request addressed to a role counts against that
+    role's rule.
+  - **Decisions are never refused,** and an admitted request is never
+    revisited.
+  - **The journal rows.** An admitted request is journalled together with an
+    `approval_load_admitted` row, in the same transaction, on the keyed and the
+    unkeyed paths. The row names the request's subject, its text's SHA-256, the
+    limits it counted against and the thresholds in force. A request whose note
+    is not appended gives its place back. The policy itself is journalled as
+    `approval_load_policy` once per hub lifetime, at first use; if that row
+    cannot be written, the request gets the journal-failure reply and nothing
+    is counted. After a restart the window is recounted from the admitted rows,
+    by a binary search over sequence numbers, so the log is never scanned.
+  - **The audit flags.** Two read-side flags come from those rows alone,
+    `approval_fast_decision` (decided sooner than `min_review_seconds`) and
+    `approval_batch_oversized` (every request of a batch over `max_batch`).
+    They are open warnings in the attention projection. They select items for
+    audit and refuse nothing.
 - **Raising a level by judgement:** three requests, each with `idem_key`.
   `operation_level_criteria` names a `scope`, a `target` (the scope's current
   level plus one) and `items`, each a countable item with its bound:

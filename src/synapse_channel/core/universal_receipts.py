@@ -19,7 +19,11 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-from synapse_channel.core.approvals import APPROVAL_NOTE_KIND, parse_approval_note
+from synapse_channel.core.approvals import (
+    APPROVAL_NOTE_KIND,
+    parse_approval_addressing,
+    parse_approval_note,
+)
 from synapse_channel.core.delivery_receipts import (
     DELIVERY_RECEIPT_EVENT_KINDS,
     receipt_event_to_json,
@@ -93,6 +97,8 @@ NON_RECEIPT_EVENT_KINDS = frozenset(
         EventKind.OPERATION_LEVEL,
         EventKind.OPERATION_LEVEL_ANSWERED,
         EventKind.APPROVAL_KIND,
+        EventKind.APPROVAL_LOAD_POLICY,
+        EventKind.APPROVAL_LOAD_ADMITTED,
         EventKind.LEVEL_CRITERIA,
         EventKind.LEVEL_JUDGEMENT,
         EventKind.OPERATION_TRIGGER,
@@ -524,7 +530,7 @@ def _approval_receipt(
         actor=_text(payload, "author"),
         status=status,
         summary=summary,
-        payload={"text": text, **fields},
+        payload={"text": text, **fields, **parse_approval_addressing(text).present()},
     )
 
 

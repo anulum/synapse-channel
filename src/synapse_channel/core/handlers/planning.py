@@ -18,19 +18,28 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import partial
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from synapse_channel.core.acl import BOARD
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
+from synapse_channel.core.handlers.approval_load_admission import (
+    ApprovalLoadAdmission,
+    approval_load_admission,
+)
 from synapse_channel.core.handlers.planning_events import TaskEventRecorder
 from synapse_channel.core.handlers.verdict_admission import (
     announce_stale_verdicts,
     ladder_recheck,
     progress_refusal,
 )
-from synapse_channel.core.journal import EventKind, record_ledger_progress
+from synapse_channel.core.journal import (
+    EventKind,
+    ledger_progress_events,
+    record_ledger_progress,
+    record_ledger_progress_admitted,
+)
 from synapse_channel.core.ledger import (
     Blackboard,
     LedgerTask,
@@ -49,6 +58,7 @@ from synapse_channel.core.verb_registry import VerbSpec
 if TYPE_CHECKING:
     from typing import Protocol
 
+    from synapse_channel.core.approval_load import ApprovalLoad
     from synapse_channel.core.handler_context import HandlerContext
     from synapse_channel.core.operation_records import OperationLedger
     from synapse_channel.core.role_grants import RoleGrants
@@ -80,6 +90,11 @@ if TYPE_CHECKING:
         @property
         def ladder_enabled(self) -> bool:
             """Return whether ``--ladder`` refuses an automated approval at A1."""
+            ...
+
+        @property
+        def approval_load(self) -> ApprovalLoad | None:
+            """Return the hub's approval-load state, or ``None`` with no policy declared."""
             ...
 
 
@@ -356,18 +371,79 @@ async def handle_ledger_progress(
         )
         return
     refusal, recorded = progress_refusal(hub, sender=sender, task_id=task_id, kind=kind, text=text)
+    admission: ApprovalLoadAdmission | None = None
+    if refusal is None:
+        try:
+            refusal, admission = approval_load_admission(
+                hub, sender=sender, task_id=task_id, kind=kind, text=text
+            )
+        except _JOURNAL_FAILURES as exc:
+            # The policy row or a refusal row could not be written: nothing was
+            # counted and no note was appended, so answer like any journal failure.
+            await _send_journal_failure(
+                hub, websocket, sender=sender, subject="Approval request", exc=exc
+            )
+            return
     if refusal is not None:
         await hub.send_json(
             websocket, hub.system(refusal, msg_type=MessageType.ERROR, target=sender)
         )
         return
+    appended: tuple[AtomicExecution, dict[str, Any]] | None = None
+    try:
+        appended = await _append_progress(
+            hub,
+            data,
+            websocket,
+            sender=sender,
+            task_id=task_id,
+            kind=kind,
+            text=text,
+            admitted=None if admission is None else admission.row(),
+        )
+    finally:
+        # The admitted row was written with the note, in one transaction; a note
+        # that was not appended gives its reserved place back.
+        if admission is not None and appended is None:
+            admission.not_appended()
+    if appended is None:
+        return
+    execution, posted = appended
+    await _publish_progress(hub, data, execution, posted)
+    # Only an appended note reaches this point (replays and conflicts were not appended).
+    await announce_stale_verdicts(hub, recorded, sender=sender, kind=kind, text=text)
+
+
+async def _append_progress(
+    hub: PlanningContext,
+    data: dict[str, Any],
+    websocket: Any,
+    *,
+    sender: str,
+    task_id: str,
+    kind: str,
+    text: str,
+    admitted: Mapping[str, Any] | None = None,
+) -> tuple[AtomicExecution, dict[str, Any]] | None:
+    """Append one admitted progress note, with its approval-load row in the same transaction.
+
+    Returns
+    -------
+    tuple[AtomicExecution, dict[str, Any]] or None
+        The execution and the reply to publish when the note was appended, or
+        ``None`` when it was not (refused, replayed, conflicting, or lost to a
+        journal failure); the sender has then been answered.
+    """
 
     def mutate(board: Blackboard) -> tuple[bool, ProgressNote | str]:
         return _post_or_refuse(hub, board, sender=sender, task_id=task_id, kind=kind, text=text)
 
     def persist(result: tuple[bool, ProgressNote | str]) -> None:
         if result[0] and isinstance(result[1], ProgressNote) and hub.journal is not None:
-            record_ledger_progress(hub.journal, result[1])
+            if admitted is None:
+                record_ledger_progress(hub.journal, result[1])
+            else:
+                record_ledger_progress_admitted(hub.journal, result[1], admitted)
 
     def prepare(result: tuple[bool, ProgressNote | str]) -> OperationDraft | None:
         ok, note = result
@@ -380,7 +456,7 @@ async def handle_ledger_progress(
         )
         return OperationDraft(
             response=posted,
-            events=((EventKind.LEDGER_PROGRESS, note.as_dict()),),
+            events=ledger_progress_events(note, admitted),
             intent={
                 "family": "ledger_progress",
                 "response_type": MessageType.LEDGER_PROGRESS_POSTED,
@@ -391,20 +467,18 @@ async def handle_ledger_progress(
         execution = await _run_board_operation(hub, data, mutate, prepare, persist)
     except _JOURNAL_FAILURES as exc:
         await _send_journal_failure(hub, websocket, sender=sender, subject="Progress note", exc=exc)
-        return
+        return None
     if execution.outcome in {"replayed", "conflict"}:
         await hub.send_json(websocket, _required_atomic_response(execution))
-        return
+        return None
     ok, result = execution.mutation
     draft = prepare((ok, result))
     if draft is None:
         await hub.send_json(
             websocket, hub.system(str(result), msg_type=MessageType.ERROR, target=sender)
         )
-        return
-    await _publish_progress(hub, data, execution, execution.response or draft.response)
-    # Only an appended note reaches this point (replays and conflicts returned above).
-    await announce_stale_verdicts(hub, recorded, sender=sender, kind=kind, text=text)
+        return None
+    return execution, execution.response or draft.response
 
 
 def _post_or_refuse(

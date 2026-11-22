@@ -18,6 +18,30 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- **An opt-in approval-load policy limits how fast approval requests reach an approver and flags rubber-stamping for audit.**
+  - **The flag.** `synapse hub --approval-load-policy FILE` reads an owner-only JSON policy
+    (`synapse-approval-load-policy.v1`). It refuses to start on a malformed file, or without `--db`. Its rules are per
+    role or per approver: `request_rate` per `window_seconds`, `min_review_seconds` and `max_batch`.
+  - **The request tokens.** An approval request may now name `approver=`, `approver_role=`, `batch=` and `summary=`
+    (the digest of the evidence summary shown; never its text). Older readers ignore the tokens.
+  - **The refusals.** Under a policy, a request is refused before it is appended when a token is malformed, when it
+    names no addressee while its sender's project has a rule, or when a limit it counts against is full. Each refusal
+    names its reason and is journalled as `verdict_record_refused`.
+  - **How requests are counted.** A request addressed to a person also counts against every role that person may
+    claim, so spreading requests across a role's members does not evade the role's rate.
+  - **What is never refused.** Decisions, and requests already admitted.
+  - **The journal.** An admitted request is journalled together with its `approval_load_admitted` row, which holds
+    the thresholds in force, in one transaction. The policy is journalled as `approval_load_policy`. A restart
+    recounts the window from those rows, by a bounded binary search, without scanning the log.
+  - **Security.** This is a rate limit on approval requests and adds two durable-log kinds; `SECURITY.md` states the
+    posture change and its residuals.
+  - **The flags.** Two read-side attention flags, `approval_fast_decision` and `approval_batch_oversized`, select
+    items for audit and decide nothing.
+  - **Reports.** `synapse approvals` and the universal receipts show the addressee, the batch and the summary digest.
+  - **With no policy declared,** nothing changes.
+
 ## [0.99.61] - 2026-11-22
 
 Core 0.99.61 lets a stop finish and an attempt reconcile whichever order the

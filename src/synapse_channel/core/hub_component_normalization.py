@@ -15,6 +15,7 @@ from synapse_channel.core.agent_liveness import (
     DEFAULT_RECIPIENT_LIVENESS_WINDOW,
     DEFAULT_WAITER_LIVENESS_WINDOW,
 )
+from synapse_channel.core.approval_load import ApprovalLoad
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.feed import feed_chat_markers
 from synapse_channel.core.hub_clients import HubClientRegistry
@@ -35,8 +36,19 @@ from synapse_channel.core.numeric_coercion import safe_float, safe_int
 
 
 def normalize_transport(config: HubConfig) -> HubConfig:
-    """Normalize connection authentication and HTTP exposure settings."""
+    """Normalize connection authentication and HTTP exposure settings.
+
+    Raises
+    ------
+    TypeError
+        When ``auth.approval_load`` is set to anything but an
+        :class:`~synapse_channel.core.approval_load.ApprovalLoad`. The field is
+        typed ``object`` in the configuration record, so this is where its type
+        is enforced, once and fail-closed.
+    """
     auth = config.auth
+    if auth.approval_load is not None and not isinstance(auth.approval_load, ApprovalLoad):
+        raise TypeError("approval_load must be an ApprovalLoad or None")
     metrics = config.metrics
     return replace(
         config,

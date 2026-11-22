@@ -170,6 +170,8 @@ class EventKind:
     VERDICT_STALE = "verdict_stale"
     VERDICT_RECORD_REFUSED = "verdict_record_refused"
     VERDICT_GATE_BYPASS = "verdict_gate_bypass"
+    APPROVAL_LOAD_POLICY = "approval_load_policy"
+    APPROVAL_LOAD_ADMITTED = "approval_load_admitted"
     MULTIHUB_PARTITION = "multihub_partition"
     MULTIHUB_HEAL = "multihub_heal"
     MULTIHUB_EQUIVOCATION = "multihub_equivocation"
@@ -428,6 +430,20 @@ def record_verdict_stale(store: EventStore, record: Mapping[str, Any]) -> int:
         Monotonic journal sequence of the row.
     """
     return store.append(EventKind.VERDICT_STALE, dict(record), durable=True)
+
+
+def record_approval_load_policy(store: EventStore, record: Mapping[str, Any]) -> int:
+    """Append the approval-load policy in force, once per hub lifetime at its first use.
+
+    The row holds the canonical policy and its SHA-256, so an offline reader
+    knows which thresholds every later ``approval_load_admitted`` row names.
+
+    Returns
+    -------
+    int
+        Monotonic journal sequence of the row.
+    """
+    return store.append(EventKind.APPROVAL_LOAD_POLICY, dict(record), durable=True)
 
 
 def record_verdict_record_refused(store: EventStore, record: Mapping[str, Any]) -> int:
@@ -962,6 +978,29 @@ def record_ledger_task(
 def record_ledger_progress(store: EventStore, note: ProgressNote) -> None:
     """Append a (non-durable) event capturing one progress note."""
     store.append(EventKind.LEDGER_PROGRESS, note.as_dict())
+
+
+def ledger_progress_events(
+    note: ProgressNote, admitted: Mapping[str, Any] | None
+) -> tuple[tuple[str, dict[str, Any]], ...]:
+    """Return the rows one progress note writes: the note, then its approval-load row if any.
+
+    An approval request admitted under an approval-load policy is journalled
+    together with the ``approval_load_admitted`` row naming the limits it
+    counted against and the thresholds in force, so both are one transaction:
+    a restart never finds the note without its row, nor the row without its note.
+    """
+    rows: list[tuple[str, dict[str, Any]]] = [(EventKind.LEDGER_PROGRESS, note.as_dict())]
+    if admitted is not None:
+        rows.append((EventKind.APPROVAL_LOAD_ADMITTED, dict(admitted)))
+    return tuple(rows)
+
+
+def record_ledger_progress_admitted(
+    store: EventStore, note: ProgressNote, admitted: Mapping[str, Any]
+) -> None:
+    """Append an admitted approval request and its approval-load row in one durable transaction."""
+    store.append_batch(ledger_progress_events(note, admitted), durable=True)
 
 
 def record_recall(store: EventStore, record: dict[str, Any]) -> None:
