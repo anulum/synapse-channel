@@ -51,7 +51,7 @@ def overwrite_retained_protected_file(
     all new bytes are written, including the explicit empty-content case.
     """
     _validate_content(content, max_bytes)
-    if target.object_descriptor is None or target._expected.is_directory:
+    if target.object_descriptor is None or target.expected.is_directory:
         raise ValueError("physical write requires an existing regular target")
     target.revalidate()
     descriptor = target.object_descriptor
@@ -117,7 +117,7 @@ def create_retained_protected_entry(
         raise ValueError("invalid protected entry kind or directory content")
     if type(mode) is not int or not 0 <= mode <= 0o777 or mode & 0o022:
         raise ValueError("unsupported protected creation mode")
-    if target.object_descriptor is not None or os.geteuid() != target._owner_uid:
+    if target.object_descriptor is not None or os.geteuid() != target.owner_uid:
         raise ValueError("creation requires an absent target and enrolled writer owner")
     target.revalidate()
     if kind == "directory":
@@ -136,7 +136,7 @@ def create_retained_protected_entry(
         )
     try:
         actual = os.fstat(descriptor)
-        if stat.S_IMODE(actual.st_mode) != mode or actual.st_uid != target._owner_uid:
+        if stat.S_IMODE(actual.st_mode) != mode or actual.st_uid != target.owner_uid:
             raise ValueError("created entry mode or owner differs from declaration")
         if kind == "file":
             _write_content(descriptor, content)
@@ -171,11 +171,11 @@ def rename_retained_protected_file(
     """
     if (
         source.object_descriptor is None
-        or source._expected.is_directory
-        or destination._expected.is_directory
+        or source.expected.is_directory
+        or destination.expected.is_directory
     ):
         raise ValueError("rename requires file source and absent/file destination")
-    if source._expected.file_identity == destination._expected.file_identity:
+    if source.expected.file_identity == destination.expected.file_identity:
         raise ValueError("rename source and destination alias the same object")
     source.revalidate()
     destination.revalidate()
@@ -207,7 +207,7 @@ def unlink_retained_protected_file(target: ProtectedPathDescriptors) -> None:
     Requires prior inserted step and writer isolation. Parent fsync remains an
     independent declared operation; this helper never deletes other entries.
     """
-    if target.object_descriptor is None or target._expected.is_directory:
+    if target.object_descriptor is None or target.expected.is_directory:
         raise ValueError("unlink requires an existing regular file")
     target.revalidate()
     os.unlink(target.leaf_name, dir_fd=target.parent_descriptor)
@@ -307,7 +307,7 @@ class ProtectedDescriptorLocks:
         if self._closed or not self._stack or target.object_descriptor is None:
             raise ValueError("unlock requires an existing last locked object")
         target.revalidate()
-        if self._stack[-1][0] != target._expected.file_identity:
+        if self._stack[-1][0] != target.expected.file_identity:
             raise ValueError("protected unlock violates reverse acquisition order")
         descriptor = self._stack[-1][1]
         fcntl.flock(descriptor, fcntl.LOCK_UN)

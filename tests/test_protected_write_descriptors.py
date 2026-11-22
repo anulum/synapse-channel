@@ -11,9 +11,9 @@ import os
 import sys
 from collections.abc import Iterator
 from contextlib import ExitStack
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -315,3 +315,16 @@ def test_retained_read_uses_pinned_root_after_actual_external_path_substitution(
             assert (enrolled / "record").read_bytes() == b"substituted content"
     finally:
         os.close(root)
+
+
+def test_retained_descriptor_exposes_frozen_public_identity_fields(root: int) -> None:
+    """Retained descriptors publish immutable before-state inspection and enrolled owner UID."""
+    expected = _observe(root)
+    uid = os.getuid()
+    with hold_protected_path(root, expected, owner_uid=uid, max_bytes=64) as held:
+        assert held.expected == expected
+        assert held.owner_uid == uid
+        with pytest.raises(FrozenInstanceError):
+            cast(Any, held).owner_uid = uid + 1
+        with pytest.raises(FrozenInstanceError):
+            cast(Any, held).expected = replace(expected, size_bytes=expected.size_bytes + 1)

@@ -103,6 +103,19 @@ class ProtectedPathDescriptors:
     No descriptor is an authority token. The isolated writer must separately hold
     current begin, custody and an inserted execution-step record. This object
     neither performs mutations nor proves exclusion of concurrent writers.
+
+    Attributes
+    ----------
+    parent_descriptor:
+        Retained directory descriptor for the target's parent directory.
+    object_descriptor:
+        Retained descriptor for the existing target, or ``None`` when absent.
+    leaf_name:
+        Single validated path component below ``parent_descriptor``.
+    expected:
+        Frozen before-state inspection the retained descriptors are pinned to.
+    owner_uid:
+        Enrolled filesystem owner UID required for every ancestor and target.
     """
 
     parent_descriptor: int
@@ -110,8 +123,8 @@ class ProtectedPathDescriptors:
     leaf_name: str
     _chain: tuple[int, ...]
     _parts: tuple[str, ...]
-    _expected: ProtectedFileInspection
-    _owner_uid: int
+    expected: ProtectedFileInspection
+    owner_uid: int
     _max_bytes: int
     _require_openat2: bool = field(default=False, kw_only=True)
     _closed: bool = False
@@ -160,7 +173,7 @@ class ProtectedPathDescriptors:
         enforced exclusion of concurrent writers remain service prerequisites.
         This method creates no read permission or active-memory receipt.
         """
-        if self.object_descriptor is None or self._expected.is_directory:
+        if self.object_descriptor is None or self.expected.is_directory:
             raise ValueError("protected byte capture requires an existing regular file")
         content = self._revalidate(capture=True)
         self.revalidate()
@@ -170,11 +183,11 @@ class ProtectedPathDescriptors:
         """Check retained topology and optionally return the verified content read."""
         if self._closed:
             raise ValueError("protected descriptor context is closed")
-        _check_chain(self._chain, self._parts, self._expected, self._owner_uid)
+        _check_chain(self._chain, self._parts, self.expected, self.owner_uid)
         if self._require_openat2:
             verify_protected_openat2_path(
                 self._chain[0],
-                self._expected.relative_path,
+                self.expected.relative_path,
                 self.parent_descriptor,
                 self.object_descriptor,
             )
@@ -187,18 +200,18 @@ class ProtectedPathDescriptors:
         if self.object_descriptor is None:
             raise ValueError("protected absent leaf appeared")
         before = os.fstat(self.object_descriptor)
-        _check_owner(before, self._owner_uid)
+        _check_owner(before, self.owner_uid)
         if (
             _identity(linked) != _identity(before)
-            or _identity(before) != self._expected.file_identity
+            or _identity(before) != self.expected.file_identity
         ):
             raise ValueError("protected object attachment changed")
-        if stat.S_IMODE(before.st_mode) != self._expected.mode:
+        if stat.S_IMODE(before.st_mode) != self.expected.mode:
             raise ValueError("protected object mode changed")
-        if self._expected.is_directory:
+        if self.expected.is_directory:
             return b""
         return _check_file_content(
-            self.object_descriptor, before, self._expected, self._max_bytes, capture=capture
+            self.object_descriptor, before, self.expected, self._max_bytes, capture=capture
         )
 
 

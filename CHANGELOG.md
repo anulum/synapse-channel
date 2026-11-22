@@ -49,6 +49,11 @@ execution evidence when carrying a release claim forward.
   `bundle.peers()` instead of reading `bundle._peers` directly, bringing
   `src/synapse_channel/core/federation.py` to zero private accesses. Behaviour is unchanged.
 
+- **Retained protected-path descriptors now expose public frozen `expected` and `owner_uid` fields.**
+  Physical protected-write operations in `src/synapse_channel/core/protected_write_file_execution.py`
+  read `expected` and `owner_uid` on `ProtectedPathDescriptors` instead of private attributes,
+  bringing that module to zero private accesses. Behaviour is unchanged.
+
 ### Fixed
 
 - **Opposing `applied` and `sealed` marker records on the same attempt now surface as a contradiction.**
