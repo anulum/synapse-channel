@@ -25,8 +25,20 @@ under the hub's mutation actor, in journal order:
   its listed attempt as effect-present (``applied``, not ``sealed``) without
   reconciling or closing the operation, and keeps the operation from opening a
   second attempt;
-* after the end, a verification by a sender other than the declarer with the
-  effect ``observed`` or ``absent`` reconciles it;
+* an independent verification (sender other than the declarer) with effect
+  ``observed`` or ``absent`` reconciles attempts in one of three cases:
+
+  - **unscoped** (no non-empty ``marker_object`` in ``evidence``): reconciles
+    every attempt that has already ended, and never pre-reconciles an open one;
+  - **matched** (``marker_object`` recomputes from ``(operation_id, attempt_id,
+    intent_sha256)`` to one attempt's ``applied`` blob, or to its ``sealed``
+    blob with ``effect == "absent"``): binds exclusively to that attempt,
+    marking it reconciled immediately if ended or recording it as
+    marker-observed without ending or sealing it so it reconciles the instant
+    any end record arrives, and never reconciling another attempt;
+  - **mismatched** (``marker_object`` is present yet fails recomputation, or
+    pairs a ``sealed`` blob with ``observed``): reconciles nothing, with no
+    fallback to the blanket rule;
 * a verification by a sender other than the declarer with the result
   ``verified`` closes the operation.
 
@@ -61,6 +73,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.attempt_markers import (
+    AttemptMarker,
+    commit_id_length,
+    commit_object_format,
+)
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import APPROVED_FRESH, OperationFact
 from synapse_channel.core.operation_level_criteria import (
@@ -237,6 +254,7 @@ class _Attempt:
     applied: bool = False
     sealed: bool = False
     reconciled: bool = False
+    marker_observed: bool = False
     claimed_done: bool = False
     claimed_none: bool = False
 
@@ -314,6 +332,90 @@ def _past_deadline_unverified(entry: _Operation, now: float, since: float) -> bo
         and any(attempt.ended for attempt in entry.attempts)
         and CAUSE_DEADLINE_UNVERIFIED not in entry.triggered
     )
+
+
+_MARKER_UNSCOPED = "unscoped"
+_MARKER_MATCHED = "matched"
+_MARKER_MISMATCHED = "mismatched"
+
+
+def _mark_ended(attempt: _Attempt) -> None:
+    """Mark ``attempt`` ended and reconcile it if its marker was already observed."""
+    attempt.ended = True
+    if attempt.marker_observed:
+        attempt.reconciled = True
+
+
+def _marker_object_format(marker_object: str) -> str | None:
+    """Return ``sha1`` or ``sha256`` for a valid marker object id, else ``None``."""
+    try:
+        return commit_object_format(commit_id_length(marker_object, marker_object))
+    except ValueError:
+        return None
+
+
+def _attempt_matches_marker(
+    operation_id: str,
+    attempt_id: str,
+    intent_sha256: str,
+    *,
+    object_format: str,
+    marker_object: str,
+    effect: str,
+) -> bool:
+    """Return whether ``marker_object`` recomputes to ``attempt_id``'s marker for ``effect``.
+
+    An ``applied`` blob matches either ``observed`` or ``absent`` (branch moved);
+    a ``sealed`` blob matches only ``absent``, never ``observed``.
+    """
+    try:
+        objects = AttemptMarker(operation_id, attempt_id, intent_sha256).objects(object_format)
+    except ValueError:
+        return False
+    if marker_object == objects.applied:
+        return True
+    return marker_object == objects.sealed and effect == "absent"
+
+
+def _match_marker_attempt(
+    entry: _Operation,
+    operation_id: str,
+    effect: str,
+    evidence: Mapping[str, Any] | None,
+) -> tuple[str, _Attempt | None]:
+    """Classify ``evidence`` as ``unscoped``, ``matched`` (one attempt) or ``mismatched``.
+
+    When ``evidence`` carries ``attempt_id``, only that attempt is checked so a
+    blob belonging to another attempt is ``mismatched``. When ``attempt_id`` is
+    absent (rows written before ``0.99.59`` dropped 32-hex attempt ids), every
+    attempt of ``entry`` is checked; at most one can match because the marker
+    blob hashes the attempt id.
+    """
+    if evidence is None:
+        return _MARKER_UNSCOPED, None
+    raw_marker = evidence.get("marker_object")
+    if not isinstance(raw_marker, str) or not raw_marker:
+        return _MARKER_UNSCOPED, None
+    intent_sha256 = entry.fact.intent_sha256
+    object_format = _marker_object_format(raw_marker)
+    if intent_sha256 is None or object_format is None:
+        return _MARKER_MISMATCHED, None
+    raw_attempt = evidence.get("attempt_id")
+    if raw_attempt is not None:
+        candidates = [attempt for attempt in entry.attempts if attempt.attempt_id == raw_attempt]
+    else:
+        candidates = list(entry.attempts)
+    for attempt in candidates:
+        if _attempt_matches_marker(
+            operation_id,
+            attempt.attempt_id,
+            intent_sha256,
+            object_format=object_format,
+            marker_object=raw_marker,
+            effect=effect,
+        ):
+            return _MARKER_MATCHED, attempt
+    return _MARKER_MISMATCHED, None
 
 
 def _bound(entry: Mapping[str, Any]) -> int:
@@ -421,7 +523,11 @@ class AttemptLedger:
             )
         elif kind == EventKind.OPERATION_VERIFIED:
             effect, result = str(payload.get("effect") or ""), str(payload.get("result") or "")
-            self.note_verification(operation_id, sender, effect=effect, result=result, seq=seq)
+            raw_evidence = payload.get("evidence")
+            evidence = raw_evidence if isinstance(raw_evidence, Mapping) else None
+            self.note_verification(
+                operation_id, sender, effect=effect, result=result, seq=seq, evidence=evidence
+            )
         elif (
             kind == EventKind.OPERATION_ATTEMPT_ANSWERED and payload.get("answer") == APPROVED_FRESH
         ):
@@ -580,11 +686,13 @@ class AttemptLedger:
             if attempt.attempt_id != attempt_id:
                 continue
             if kind == RESULT_SEALED and not attempt.applied:
-                attempt.ended = attempt.sealed = True
+                attempt.sealed = True
+                _mark_ended(attempt)
                 if attempt.claimed_done and not entry.contradicted_seq:
                     entry.contradicted_seq = seq
             elif kind == RESULT_APPLIED and not attempt.sealed:
-                attempt.ended = attempt.applied = True
+                attempt.applied = True
+                _mark_ended(attempt)
                 if attempt.claimed_none and not entry.contradicted_seq:
                     entry.contradicted_seq = seq
 
@@ -1036,12 +1144,26 @@ class AttemptLedger:
             return
         for attempt in entry.attempts:
             if not attempt.ended and attempt.executor == sender:
-                attempt.ended = True
+                _mark_ended(attempt)
 
     def note_verification(
-        self, operation_id: str, sender: str, *, effect: str, result: str, seq: int = 0
+        self,
+        operation_id: str,
+        sender: str,
+        *,
+        effect: str,
+        result: str,
+        seq: int = 0,
+        evidence: Mapping[str, Any] | None = None,
     ) -> None:
-        """Reconcile ended attempts, and close the operation when it is verified.
+        """Reconcile ended or marker-matched attempts, and close on verified.
+
+        When ``effect`` is ``observed`` or ``absent`` and ``sender`` is not the
+        declarer, ``evidence`` is classified as ``unscoped`` (no non-empty
+        ``marker_object``: reconciles currently ended attempts only),
+        ``matched`` (recomputed ``marker_object`` for one attempt: marks that
+        attempt marker-observed and reconciles it on or after its end without
+        affecting other attempts), or ``mismatched`` (reconciles nothing).
 
         The sequence of the closing verification is kept, and so is the first
         later ``not_verified`` by an identity other than the declarer, which
@@ -1055,9 +1177,15 @@ class AttemptLedger:
         elif result == "not_verified" and entry.closed and not entry.contradicted_seq:
             entry.contradicted_seq = seq
         if effect in OBSERVED_EFFECTS:
-            for attempt in entry.attempts:
-                if attempt.ended:
-                    attempt.reconciled = True
+            match_kind, matched = _match_marker_attempt(entry, operation_id, effect, evidence)
+            if matched is not None:
+                matched.marker_observed = True
+                if matched.ended:
+                    matched.reconciled = True
+            elif match_kind == _MARKER_UNSCOPED:
+                for attempt in entry.attempts:
+                    if attempt.ended:
+                        attempt.reconciled = True
 
     def note_seal(self, operation_id: str, attempt_id: str) -> None:
         """End the open attempt ``attempt_id`` as sealed; an ended one is left as it is."""
@@ -1066,7 +1194,8 @@ class AttemptLedger:
             return
         for attempt in entry.attempts:
             if attempt.attempt_id == attempt_id and not attempt.ended:
-                attempt.ended = attempt.sealed = True
+                attempt.sealed = True
+                _mark_ended(attempt)
 
     def open_attempt(
         self, operation_id: str, attempt_id: str, *, executor: str, approval_seq: int

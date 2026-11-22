@@ -230,7 +230,27 @@ does not add agent grades to protocol envelopes.
   than 32 earlier rows for it. The hub journals `operation_declared`,
   `operation_outcome` or `operation_verified`; verification evidence keeps only
   digest-shaped values: 40 or 64 lower-case hex, and a 32-hex `attempt_id`.
-  A 32-hex value under any other key is dropped, as is free text. A `seal`
+  A 32-hex value under any other key is dropped, as is free text. An
+  independent verification (`sender != declarer`, effect `observed` or `absent`)
+  reconciles attempts in one of three cases: **unscoped** (no non-empty
+  `marker_object` in `evidence`: reconciles currently ended attempts and never
+  pre-reconciles an open one), **matched** (`marker_object` recomputes from
+  `(operation_id, attempt_id, intent_sha256)` to the named attempt's `applied`
+  blob for `observed`/`absent` or its `sealed` blob for `absent`; when
+  `attempt_id` is present only that attempt is checked, and when absent in
+  pre-0.99.59 rows every attempt is checked with at most one match because the
+  blob hashes the attempt id — this binds exclusively to that attempt, marking
+  it reconciled if ended or recording it as marker-observed without ending or
+  sealing it so it reconciles the instant any `seal`, terminal `outcome` or
+  recomputed closing `stop_readback` ends it, and never reconciling another
+  attempt), or **mismatched** (`marker_object` is present yet fails
+  recomputation, names a different attempt than `attempt_id`, or pairs a
+  `sealed` blob with `observed`: reconciles nothing, with no fallback to the
+  blanket rule). Upgrading onto this rule changes restored state for any older
+  journal where a marker-bearing verification of an earlier attempt reconciled a
+  later ended attempt under the previous blanket loop: on first start the later
+  attempt restores as unreconciled and refuses a new attempt as
+  `earlier_attempt_unreconciled` until that later attempt is observed. A `seal`
   carries one `seal` object naming exactly
   `attempt_id`, `marker_ref`, `object_format` (`sha1` or `sha256`),
   `marker_object` and `observation`, the answer read back after the sealed

@@ -640,7 +640,7 @@ def stop_readback_refusal(ledger: OperationLedger, request: OperationRecordReque
     return None
 
 
-def _digests(evidence: Mapping[str, str]) -> dict[str, str]:
+def verification_digests(evidence: Mapping[str, str]) -> dict[str, str]:
     """Keep 40- and 64-hex evidence, and a 32-hex ``attempt_id``.
 
     Free text is not journalled. A 32-hex value is kept only when its key is
@@ -739,6 +739,6 @@ def record_operation(
         "effect": verification.effect,
         "result": verification.result,
         "observation": verification.observation,
-        "evidence": _digests(verification.evidence),
+        "evidence": verification_digests(verification.evidence),
     }
     return store.append(EventKind.OPERATION_VERIFIED, payload, durable=True)

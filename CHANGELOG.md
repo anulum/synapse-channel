@@ -41,6 +41,22 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- **Reconciliation of a marker-bearing attempt no longer depends on reconnect order or leaks across attempts.**
+  Previously `AttemptLedger.note_verification` ignored `evidence` and reconciled only attempts
+  already ended at arrival, so an independent marker-bearing verification arriving before a
+  reconnecting stopper's `seal` or closing `stop_readback` (or executor's terminal `outcome`) was
+  forgotten and left the stop stuck in `no new effect`, while a delayed verification carrying an
+  earlier attempt's marker could reconcile a later ended attempt under the blanket loop.
+  Independent `observed`/`absent` verifications now classify `evidence` into `unscoped` (no
+  non-empty `marker_object`: preserves existing ended-only reconciliation), `matched`
+  (`marker_object` recomputes to one attempt's `applied` blob, or `sealed` blob for `absent`: binds
+  exclusively to that attempt, recording it as marker-observed if still open and reconciling it the
+  instant any end record arrives without ending or sealing open attempts or touching other
+  attempts), or `mismatched` (reconciles nothing, with no blanket fallback). Both live handling and
+  journal replay pass the same digest-filtered evidence map. Upgrading restores any older journal
+  where an earlier attempt's marker-bearing verification previously reconciled a later ended
+  attempt with that later attempt unreconciled (`earlier_attempt_unreconciled` until observed).
+
 - **A task postmortem attributes a chat only to its sender.** The hub journals a
   chat frame's fields as they arrived, and the postmortem read a chat's `from`,
   `author` or `owner` before its `sender`. So a seat could send a chat that named

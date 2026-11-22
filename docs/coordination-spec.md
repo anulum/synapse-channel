@@ -1453,25 +1453,43 @@ the hub keeps an `applied` stop read-back whose marker recomputes to `applied`
 for an attempt the named stop listed (INV-OS-6). An outcome from any other
 identity MUST end nothing. After an attempt ends, no attempt MUST open until an
 identity other than the declarer publishes a verification whose effect is
-`observed` or `absent`; when an attempt's marker recomputed to `applied`, the
+`observed` or `absent`; when a verification carries a non-empty `marker_object`,
+the hub MUST recompute the marker blob from `(operation_id, attempt_id,
+intent_sha256)` (checking only the named attempt when `attempt_id` is present,
+accepting `applied` for `observed`/`absent` and `sealed` only for `absent`),
+bind a matching observation exclusively to that attempt regardless of whether
+the verification arrives before or after the attempt's `seal`, terminal
+`outcome` or recomputed closing `stop_readback` (without ending or sealing an
+open attempt from the verification alone, and without reconciling any other
+attempt), and reconcile nothing when `marker_object` fails recomputation. An
+unscoped verification (no non-empty `marker_object`) MUST reconcile only
+currently ended attempts and never pre-reconcile an open one. When an attempt's
+marker recomputed to `applied`, the
 operation MUST NOT open a new attempt (`earlier_attempt_unreconciled`, never
 `approved_fresh`) even after an `absent` observation reconciles the stop, and
 MUST NOT close until an independent `verified` verification arrives (an operator
 moves forward from an applied-then-moved branch by declaring an explicit
 successor operation against the moved branch head). The declarer's own
 verifications MUST count for neither. The ledger MUST be rebuilt from the
-journal at start without consulting any clock.
+journal at start without consulting any clock, and MUST yield the same ledger
+and stop state across every legal arrival order of an attempt's end and
+marker-bearing verification records.
 
 **Implementation.** `core/operation_attempt_ledger.py`, fed by
 `core/handlers/operation_records.py`, and
 `core/handlers/operation_attempts.py`.
 
-**Pinned by.** `tests/test_operation_attempt_ledger.py`,
+**Pinned by.** `tests/test_operation_attempt_ledger.py`
+(`test_marker_verification_and_end_permutations_give_identical_ledger_and_stop_state`,
+`test_marker_matching_isolates_attempts_and_rejects_mismatched_markers`),
 `tests/test_hub_operation_attempts.py`, `tests/test_operation_seals.py`,
 `tests/test_operation_stop_readbacks.py`,
 `tests/test_cli_operation_stop_seal.py`
 (`test_an_applied_read_back_ends_the_attempt_reaches_at_rest_and_allows_only_a_successor`,
-`test_an_applied_attempt_closes_only_after_an_independent_verified_observation`).
+`test_an_applied_attempt_closes_only_after_an_independent_verified_observation`,
+`test_a_marker_verification_before_seal_still_reconciles_and_reaches_at_rest`,
+`test_a_marker_verification_before_applied_read_back_reconciles_on_read_back`,
+`test_a_delayed_marker_verification_never_reconciles_a_later_attempt`).
 
 ### INV-OA-6 — a seal names exactly one open attempt's sealed marker and reconciles nothing
 

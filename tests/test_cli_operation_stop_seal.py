@@ -36,11 +36,12 @@ from synapse_channel.core.attention import project_hub_attention
 from synapse_channel.core.execution_outcome import ExecutionOutcome, OutcomeState
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.operation_attempt_ledger import AttemptLedger
+from synapse_channel.core.operation_attempt_ledger import STATE_RECONCILED, AttemptLedger
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.result_verification_record import ResultVerification
 from synapse_channel.git.attempt_marker_changes import Target, apply_effect
+from synapse_channel.git.attempt_marker_changes import seal as git_seal
 from synapse_channel.git.git_runtime import GitError, git_executable, run_git
 from synapse_channel.result_verification import verify_git_publication
 from synapse_channel.result_verification_attempt import AttemptCheck
@@ -1615,6 +1616,32 @@ async def _attempt_raw(
     )
 
 
+async def _op_state(
+    handle: AgentHandle, task: str, operation_id: str, request_id: str
+) -> dict[str, Any]:
+    """Read the live operation state for ``operation_id`` from the hub."""
+    return await scene.answer(
+        handle,
+        lambda: handle.agent.send_message(
+            MessageType.OPERATION_STATE,
+            request_id=request_id,
+            task_id=task,
+            operation_id=operation_id,
+        ),
+        lambda frame: (
+            frame.get("type") == MessageType.OPERATION_STATE_RESULT
+            and frame.get("request_id") == request_id
+        ),
+    )
+
+
+async def _request_attempt(
+    worker: AgentHandle, epoch: int, task: str, operation_id: str, digest: str, key: str
+) -> dict[str, Any]:
+    """Request an attempt on ``operation_id`` with an explicit idempotency key."""
+    return await _attempt_raw(worker, epoch, task, operation_id, digest, key)
+
+
 async def test_an_applied_read_back_ends_the_attempt_reaches_at_rest_and_allows_only_a_successor(
     tmp_path: Path,
 ) -> None:
@@ -1912,3 +1939,374 @@ async def test_a_not_started_outcome_against_an_applied_marker_surfaces_a_contra
     }
     assert len(alerts) == 1
     assert (alerts[0].subject, alerts[0].severity, alerts[0].state) == (op, "critical", "open")
+
+
+async def _resume_stop(operator: AgentHandle, key: str, reason: str) -> dict[str, Any]:
+    """Lift a standing stop on ``SCOPE`` as an independent operator."""
+    return await scene.answer(
+        operator,
+        lambda: operator.agent.send_message(
+            MessageType.OPERATION_RESUME,
+            scope=SCOPE,
+            reason=reason,
+            case="another_person",
+            idem_key=key,
+        ),
+        lambda frame: (
+            frame.get("type") == MessageType.OPERATION_STOP_RESULT
+            and frame.get("request_key") == key
+        ),
+    )
+
+
+async def test_a_marker_verification_before_seal_still_reconciles_and_reaches_at_rest(
+    tmp_path: Path,
+) -> None:
+    """An independent sealed-marker verification arriving before seal reconciles on seal."""
+    work, b, x = _repository(tmp_path)
+    git = git_executable()
+    store = EventStore(tmp_path / "hub.db")
+    op = "op-reorder"
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h, uri):
+            worker = await connect_agent(scene.WORKER, uri)
+            reviewer = await connect_agent(scene.REVIEWER, uri)
+            approver = await connect_agent(scene.APPROVER, uri)
+            checker = await connect_agent(scene.CHECKER, uri)
+            recovery = await connect_agent(RECOVERY, uri)
+            operator = await connect_agent("H/operator", uri)
+            try:
+                epoch = await scene.claim(worker, "T1")
+                digest = await _declared(worker, epoch, "T1", op, b, x, git=True)
+                await scene.review(reviewer, digest)
+                await scene.approve(approver, digest)
+                first = await _request_attempt(worker, epoch, "T1", op, digest, "open-1")
+                assert first["answer"] == "approved_fresh", first
+                attempt = str(first["attempt_id"])
+
+                stop = await scene.answer(
+                    recovery,
+                    lambda: recovery.agent.send_message(
+                        MessageType.OPERATION_STOP,
+                        scope=SCOPE,
+                        reason="outage reorder",
+                        idem_key="stop-1",
+                    ),
+                    lambda frame: (
+                        frame.get("type") == MessageType.OPERATION_STOP_RESULT
+                        and frame.get("request_key") == "stop-1"
+                    ),
+                )
+                stop_seq = int(stop["seq"])
+
+                # Stopper writes the sealed marker in Git, but the verifier reconnects first.
+                marker = AttemptMarker(op, attempt, digest)
+                sealed = git_seal(Target(work, "main", b), marker, git=git)
+                assert sealed.marker is not None
+                reading = verify_git_publication(
+                    work,
+                    str(work),
+                    "main",
+                    x,
+                    operation_id=op,
+                    attempt=AttemptCheck(attempt, digest, b),
+                )
+                assert (reading.effect, reading.result, reading.observation) == (
+                    "absent",
+                    "not_verified",
+                    "attempt_sealed_never_lands",
+                )
+                ver_reply = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id="T1",
+                    operation_id=op,
+                    verification=reading.to_json(),
+                )
+                assert ver_reply["status"] == "accepted", ver_reply
+
+                # Verification alone must neither end nor seal the open attempt.
+                before_seal = await _op_state(recovery, "T1", op, "st-before-seal")
+                assert [
+                    (item["attempt_id"], item["state"]) for item in before_seal["attempts"]
+                ] == [(attempt, "open")]
+
+                # Stopper reconnects and posts seal + closing stop_readback.
+                seal_reply = await scene.record(
+                    recovery,
+                    record="seal",
+                    task_id="T1",
+                    operation_id=op,
+                    seal={
+                        "attempt_id": attempt,
+                        "marker_ref": marker.ref,
+                        "object_format": "sha1",
+                        "marker_object": sealed.marker,
+                        "observation": sealed.answer,
+                        "stop_seq": stop_seq,
+                    },
+                )
+                assert seal_reply["status"] == "accepted", seal_reply
+                readback_reply = await scene.record(
+                    recovery,
+                    record="stop_readback",
+                    task_id="T1",
+                    operation_id=op,
+                    readback={
+                        "stop_seq": stop_seq,
+                        "attempt_id": attempt,
+                        "result": "sealed",
+                        "marker_ref": marker.ref,
+                        "object_format": "sha1",
+                        "marker_object": sealed.marker,
+                    },
+                )
+                assert readback_reply["status"] == "accepted", readback_reply
+
+                after_seal = await _op_state(recovery, "T1", op, "st-after-seal")
+                resumed = await _resume_stop(operator, "res-1", "reconciled")
+                await scene.approve(approver, digest, reason="retry after reorder")
+                second = await _request_attempt(worker, epoch, "T1", op, digest, "open-2")
+            finally:
+                await close_agents(worker, reviewer, approver, checker, recovery, operator)
+
+        stop_states = [row["state"] for row in _states(store)]
+        reloaded = AttemptLedger(store)
+        reloaded_stop = reloaded.stop_state(stop_seq)
+    finally:
+        store.close()
+
+    assert [(item["attempt_id"], item["state"]) for item in after_seal["attempts"]] == [
+        (attempt, "reconciled")
+    ]
+    assert stop_states == ["at rest"]
+    assert (resumed["answer"], resumed["resumed_from"]) == ("resumed", "at rest")
+    assert second["answer"] == "approved_fresh" and second["attempt_id"] != attempt
+    assert reloaded.attempt_state(op, attempt) == STATE_RECONCILED
+    assert reloaded_stop is not None and reloaded_stop.state == "at rest"
+
+
+async def test_a_delayed_marker_verification_never_reconciles_a_later_attempt(
+    tmp_path: Path,
+) -> None:
+    """A delayed verification carrying A1's marker must leave A2 unreconciled live and on reload."""
+    work, b, x = _repository(tmp_path)
+    git = git_executable()
+    store = EventStore(tmp_path / "hub.db")
+    op = "op-isolation"
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h, uri):
+            worker = await connect_agent(scene.WORKER, uri)
+            reviewer = await connect_agent(scene.REVIEWER, uri)
+            approver = await connect_agent(scene.APPROVER, uri)
+            checker = await connect_agent(scene.CHECKER, uri)
+            recovery = await connect_agent(RECOVERY, uri)
+            try:
+                epoch = await scene.claim(worker, "T1")
+                digest = await _declared(worker, epoch, "T1", op, b, x, git=True)
+                await scene.review(reviewer, digest)
+                await scene.approve(approver, digest, reason="attempt 1")
+                first = await _request_attempt(worker, epoch, "T1", op, digest, "open-a1")
+                assert first["answer"] == "approved_fresh", first
+                attempt_1 = str(first["attempt_id"])
+
+                marker_1 = AttemptMarker(op, attempt_1, digest)
+                sealed_1 = git_seal(Target(work, "main", b), marker_1, git=git)
+                assert sealed_1.marker is not None
+                seal_reply = await scene.record(
+                    recovery,
+                    record="seal",
+                    task_id="T1",
+                    operation_id=op,
+                    seal={
+                        "attempt_id": attempt_1,
+                        "marker_ref": marker_1.ref,
+                        "object_format": "sha1",
+                        "marker_object": sealed_1.marker,
+                        "observation": sealed_1.answer,
+                    },
+                )
+                assert seal_reply["status"] == "accepted", seal_reply
+                reading_1 = verify_git_publication(
+                    work,
+                    str(work),
+                    "main",
+                    x,
+                    operation_id=op,
+                    attempt=AttemptCheck(attempt_1, digest, b),
+                )
+                ver_1 = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id="T1",
+                    operation_id=op,
+                    verification=reading_1.to_json(),
+                )
+                assert ver_1["status"] == "accepted", ver_1
+
+                # Open A2 and end it without an independent verification of A2.
+                await scene.approve(approver, digest, reason="attempt 2")
+                second = await _request_attempt(worker, epoch, "T1", op, digest, "open-a2")
+                assert second["answer"] == "approved_fresh", second
+                attempt_2 = str(second["attempt_id"])
+                ended_2 = await scene.record(
+                    worker, **scene.outcome(OutcomeState.CONFIRMED_FAILED, op)
+                )
+                assert ended_2["status"] == "accepted", ended_2
+
+                # A delayed duplicate verification for A1 arrives after A2 has ended.
+                delayed_a1 = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id="T1",
+                    operation_id=op,
+                    verification=reading_1.to_json(),
+                )
+                assert delayed_a1["status"] == "accepted", delayed_a1
+
+                live_state = await _op_state(recovery, "T1", op, "st-live")
+                await scene.approve(approver, digest, reason="attempt 3 blocked live")
+                live_retry = await _request_attempt(worker, epoch, "T1", op, digest, "open-a3-live")
+            finally:
+                await close_agents(worker, reviewer, approver, checker, recovery)
+
+        # Restart a fresh hub over the same journal and confirm A2 stays unreconciled.
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h2, uri2):
+            worker2 = await connect_agent(scene.WORKER, uri2)
+            recovery2 = await connect_agent(RECOVERY, uri2)
+            try:
+                epoch2 = await scene.claim(worker2, "T1")
+                restarted_state = await _op_state(recovery2, "T1", op, "st-restarted")
+                restarted_retry = await _request_attempt(
+                    worker2, epoch2, "T1", op, digest, "open-a3-restarted"
+                )
+            finally:
+                await close_agents(worker2, recovery2)
+    finally:
+        store.close()
+
+    expected = [(attempt_1, "reconciled"), (attempt_2, "ended")]
+    assert [(item["attempt_id"], item["state"]) for item in live_state["attempts"]] == expected
+    assert live_retry["answer"] == "earlier_attempt_unreconciled"
+    assert [(item["attempt_id"], item["state"]) for item in restarted_state["attempts"]] == expected
+    assert restarted_retry["answer"] == "earlier_attempt_unreconciled"
+
+
+async def test_a_marker_verification_before_applied_read_back_reconciles_on_read_back(
+    tmp_path: Path,
+) -> None:
+    """An absent applied-marker verification before stop_readback=applied still reaches at rest."""
+    work, b, x = _repository(tmp_path)
+    git = git_executable()
+    tree = run_git(git, work, ["write-tree"]).stdout.strip()
+    moved = run_git(git, work, ["commit-tree", tree, "-p", b, "-m", "moved"]).stdout.strip()
+    store = EventStore(tmp_path / "hub.db")
+    op = "op-applied-reorder"
+    try:
+        async with running_hub(SynapseHub(journal=store, acl_policy=_policy())) as (_h, uri):
+            worker = await connect_agent(scene.WORKER, uri)
+            reviewer = await connect_agent(scene.REVIEWER, uri)
+            approver = await connect_agent(scene.APPROVER, uri)
+            checker = await connect_agent(scene.CHECKER, uri)
+            recovery = await connect_agent(RECOVERY, uri)
+            operator = await connect_agent("H/operator", uri)
+            try:
+                epoch = await scene.claim(worker, "T1")
+                digest = await _declared(worker, epoch, "T1", op, b, x, git=True)
+                await scene.review(reviewer, digest)
+                await scene.approve(approver, digest)
+                first = await _request_attempt(worker, epoch, "T1", op, digest, "open-app-1")
+                assert first["answer"] == "approved_fresh", first
+                attempt = str(first["attempt_id"])
+
+                stop = await scene.answer(
+                    recovery,
+                    lambda: recovery.agent.send_message(
+                        MessageType.OPERATION_STOP,
+                        scope=SCOPE,
+                        reason="applied reorder",
+                        idem_key="stop-app-1",
+                    ),
+                    lambda frame: (
+                        frame.get("type") == MessageType.OPERATION_STOP_RESULT
+                        and frame.get("request_key") == "stop-app-1"
+                    ),
+                )
+                stop_seq = int(stop["seq"])
+
+                # Executor lands applied marker, falls silent, and another change moves main.
+                marker = AttemptMarker(op, attempt, digest)
+                applied = apply_effect(Target(work, "main", b), marker, candidate=x, git=git)
+                assert applied.marker == marker.objects("sha1").applied
+                assert run_git(git, work, ["update-ref", "refs/heads/main", moved]).returncode == 0
+
+                # Verifier observes LANDED_THEN_MOVED and posts BEFORE stop_readback=applied.
+                reading = verify_git_publication(
+                    work,
+                    str(work),
+                    "main",
+                    x,
+                    operation_id=op,
+                    attempt=AttemptCheck(attempt, digest, b),
+                )
+                assert (reading.effect, reading.result, reading.observation) == (
+                    "absent",
+                    "not_verified",
+                    "attempt_landed_then_the_branch_moved",
+                )
+                ver_reply = await scene.record(
+                    checker,
+                    record="verification",
+                    task_id="T1",
+                    operation_id=op,
+                    verification=reading.to_json(),
+                )
+                assert ver_reply["status"] == "accepted", ver_reply
+
+                before_rb = await _op_state(recovery, "T1", op, "st-before-rb")
+                assert [(item["attempt_id"], item["state"]) for item in before_rb["attempts"]] == [
+                    (attempt, "open")
+                ]
+
+                # Stopper then reads back applied -> ends AND reconciles to at rest, yet stays
+                # non-retryable on op-1 (no duplicate effect after an applied marker).
+                rb_reply = await scene.record(
+                    recovery,
+                    record="stop_readback",
+                    task_id="T1",
+                    operation_id=op,
+                    readback={
+                        "stop_seq": stop_seq,
+                        "attempt_id": attempt,
+                        "result": "applied",
+                        "marker_ref": marker.ref,
+                        "object_format": "sha1",
+                        "marker_object": applied.marker,
+                    },
+                )
+                assert rb_reply["status"] == "accepted", rb_reply
+
+                after_rb = await _op_state(recovery, "T1", op, "st-after-rb")
+                resumed = await _resume_stop(operator, "res-app-1", "reconciled applied")
+                await scene.approve(approver, digest, reason="must stay blocked on op-1")
+                blocked_retry = await _request_attempt(
+                    worker, epoch, "T1", op, digest, "open-app-2"
+                )
+            finally:
+                await close_agents(worker, reviewer, approver, checker, recovery, operator)
+
+        stop_states = [row["state"] for row in _states(store)]
+        reloaded = AttemptLedger(store)
+        reloaded_stop = reloaded.stop_state(stop_seq)
+    finally:
+        store.close()
+
+    assert [(item["attempt_id"], item["state"]) for item in after_rb["attempts"]] == [
+        (attempt, "reconciled")
+    ]
+    assert stop_states == ["at rest"]
+    assert (resumed["answer"], resumed["resumed_from"]) == ("resumed", "at rest")
+    assert blocked_retry["answer"] == "earlier_attempt_unreconciled"
+    assert reloaded.attempt_state(op, attempt) == STATE_RECONCILED
+    assert reloaded.view(op, None).applied is True
+    assert reloaded_stop is not None and reloaded_stop.state == "at rest"

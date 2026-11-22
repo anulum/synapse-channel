@@ -95,6 +95,7 @@ from synapse_channel.core.operation_records import (
     record_operation,
     seal_refusal,
     stop_readback_refusal,
+    verification_digests,
 )
 from synapse_channel.core.operation_stop_readbacks import recompute_readback_result
 from synapse_channel.core.operation_triggers import CAUSE_INCORRECT_ACCEPTANCE
@@ -299,6 +300,7 @@ def _evidence(
             effect=verification.effect,
             result=verification.result,
             seq=seq,
+            evidence=verification_digests(verification.evidence),
         )
     _record_contradiction_trigger(hub, store, ledger, request.operation_id, seq)
     return _Verdict(STATUS_ACCEPTED, f"{request.record} recorded", seq=seq)

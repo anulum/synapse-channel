@@ -13,6 +13,8 @@ import copy
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from synapse_channel.core.attempt_markers import AttemptMarker
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempt_ledger import (
@@ -28,6 +30,7 @@ from synapse_channel.core.operation_attempt_ledger import (
     AttemptView,
 )
 from synapse_channel.core.operation_attempts import OperationFact
+from synapse_channel.core.operation_stop_states import STATE_AT_REST
 from synapse_channel.core.persistence import EventStore
 
 WORKER = "P/worker"
@@ -291,3 +294,476 @@ def test_attempt_states_pin_the_wire_set_and_applied_precedence_survives_restore
         assert closed_ledger.view("op-1", 8).closed
     finally:
         store.close()
+
+
+_ATTEMPT_1 = "1" * 32
+_ATTEMPT_2 = "2" * 32
+
+
+def _seed_git_operation(
+    store: EventStore, *, operation_id: str = "op-perm", attempts: tuple[tuple[str, int], ...]
+) -> None:
+    """Append a Git declaration and one ``approved_fresh`` row per attempt."""
+    _append(
+        store,
+        EventKind.OPERATION_DECLARED,
+        {
+            "operation_id": operation_id,
+            "task_id": "T1",
+            "sender": WORKER,
+            "recorded_at": FACT.declared_at,
+            "effect": "git_publication",
+            "intent": {"deadline": FACT.deadline},
+            "intent_sha256": FACT.intent_sha256,
+        },
+    )
+    for attempt_id, approval_seq in attempts:
+        _append(
+            store,
+            EventKind.OPERATION_ATTEMPT_ANSWERED,
+            {
+                "operation_id": operation_id,
+                "task_id": "T1",
+                "sender": WORKER,
+                "answer": "approved_fresh",
+                "attempt_id": attempt_id,
+                "approval_seq": approval_seq,
+            },
+        )
+
+
+@pytest.mark.parametrize("object_format", ["sha1", "sha256"])
+def test_marker_verification_and_end_permutations_give_identical_ledger_and_stop_state(
+    tmp_path: Path, object_format: str
+) -> None:
+    """Every legal arrival order of end and marker verification restores the same state."""
+    op = "op-perm"
+    assert FACT.intent_sha256 is not None
+    marker = AttemptMarker(op, _ATTEMPT_1, FACT.intent_sha256)
+    sealed_oid = marker.objects(object_format).sealed
+    applied_oid = marker.objects(object_format).applied
+
+    stop_orders: tuple[tuple[str, ...], ...] = (
+        ("seal", "readback", "ver"),
+        ("seal", "ver", "readback"),
+        ("ver", "seal", "readback"),
+        ("outcome", "readback", "ver"),
+        ("ver", "outcome", "readback"),
+        ("ver", "readback"),
+    )
+    stop_results: list[tuple[str, AttemptView, str | None]] = []
+    for idx, order in enumerate(stop_orders):
+        store = EventStore(tmp_path / f"stop-{object_format}-{idx}.db")
+        try:
+            _seed_git_operation(store, operation_id=op, attempts=((_ATTEMPT_1, 7),))
+            stop_seq = store.append(
+                EventKind.OPERATION_STOPPED,
+                {
+                    "scope": "project:P",
+                    "epoch": 1,
+                    "listed": [{"operation_id": op, "attempt_id": _ATTEMPT_1}],
+                    "hub_time": 1_800_000_010.0,
+                },
+                durable=True,
+            )
+            for step in order:
+                if step == "seal":
+                    _append(
+                        store,
+                        EventKind.OPERATION_SEALED,
+                        {"operation_id": op, "sender": "R/recovery", "attempt_id": _ATTEMPT_1},
+                    )
+                elif step == "outcome":
+                    _append(
+                        store,
+                        EventKind.OPERATION_OUTCOME,
+                        {"operation_id": op, "sender": WORKER, "state": "confirmed_failed"},
+                    )
+                elif step == "readback":
+                    _append(
+                        store,
+                        EventKind.OPERATION_STOP_READBACK,
+                        {
+                            "operation_id": op,
+                            "stop_seq": stop_seq,
+                            "attempt_id": _ATTEMPT_1,
+                            "result": "sealed",
+                            "marker_ref": marker.ref,
+                            "object_format": object_format,
+                            "marker_object": sealed_oid,
+                        },
+                    )
+                else:
+                    _append(
+                        store,
+                        EventKind.OPERATION_VERIFIED,
+                        {
+                            "operation_id": op,
+                            "sender": CHECKER,
+                            "effect": "absent",
+                            "result": "not_verified",
+                            "evidence": {
+                                "attempt_id": _ATTEMPT_1,
+                                "marker_object": sealed_oid,
+                            },
+                        },
+                    )
+            reloaded = AttemptLedger(store)
+            stop_state = reloaded.stop_state(stop_seq)
+            stop_results.append(
+                (
+                    reloaded.attempt_state(op, _ATTEMPT_1),
+                    reloaded.view(op, 7),
+                    None if stop_state is None else stop_state.state,
+                )
+            )
+        finally:
+            store.close()
+
+    expected_stop = (STATE_RECONCILED, AttemptView(False, False, True, False), STATE_AT_REST)
+    assert stop_results == [expected_stop] * len(stop_orders)
+
+    # Outcome + applied-marker absent verification (branch moved) is also order-independent.
+    outcome_orders = (("outcome", "ver"), ("ver", "outcome"))
+    outcome_results: list[tuple[str, AttemptView]] = []
+    for idx, outcome_order in enumerate(outcome_orders):
+        store = EventStore(tmp_path / f"outcome-{object_format}-{idx}.db")
+        try:
+            _seed_git_operation(store, operation_id=op, attempts=((_ATTEMPT_1, 7),))
+            for step in outcome_order:
+                if step == "outcome":
+                    _append(
+                        store,
+                        EventKind.OPERATION_OUTCOME,
+                        {"operation_id": op, "sender": WORKER, "state": "confirmed_done"},
+                    )
+                else:
+                    _append(
+                        store,
+                        EventKind.OPERATION_VERIFIED,
+                        {
+                            "operation_id": op,
+                            "sender": CHECKER,
+                            "effect": "absent",
+                            "result": "not_verified",
+                            "evidence": {
+                                "attempt_id": _ATTEMPT_1,
+                                "marker_object": applied_oid,
+                            },
+                        },
+                    )
+            reloaded = AttemptLedger(store)
+            outcome_results.append((reloaded.attempt_state(op, _ATTEMPT_1), reloaded.view(op, 7)))
+        finally:
+            store.close()
+
+    expected_outcome = (STATE_RECONCILED, AttemptView(False, False, True, False))
+    assert outcome_results == [expected_outcome] * len(outcome_orders)
+
+    # Applied stop read-back + applied-marker absent verification is also order-independent.
+    applied_orders = (("readback_applied", "ver"), ("ver", "readback_applied"))
+    applied_results: list[tuple[str, AttemptView, str | None]] = []
+    for idx, applied_order in enumerate(applied_orders):
+        store = EventStore(tmp_path / f"applied-{object_format}-{idx}.db")
+        try:
+            _seed_git_operation(store, operation_id=op, attempts=((_ATTEMPT_1, 7),))
+            stop_seq = store.append(
+                EventKind.OPERATION_STOPPED,
+                {
+                    "scope": "project:P",
+                    "epoch": 1,
+                    "listed": [{"operation_id": op, "attempt_id": _ATTEMPT_1}],
+                    "hub_time": 1_800_000_010.0,
+                },
+                durable=True,
+            )
+            for step in applied_order:
+                if step == "readback_applied":
+                    _append(
+                        store,
+                        EventKind.OPERATION_STOP_READBACK,
+                        {
+                            "operation_id": op,
+                            "stop_seq": stop_seq,
+                            "attempt_id": _ATTEMPT_1,
+                            "result": "applied",
+                            "marker_ref": marker.ref,
+                            "object_format": object_format,
+                            "marker_object": applied_oid,
+                        },
+                    )
+                else:
+                    _append(
+                        store,
+                        EventKind.OPERATION_VERIFIED,
+                        {
+                            "operation_id": op,
+                            "sender": CHECKER,
+                            "effect": "absent",
+                            "result": "not_verified",
+                            "evidence": {
+                                "attempt_id": _ATTEMPT_1,
+                                "marker_object": applied_oid,
+                            },
+                        },
+                    )
+            reloaded = AttemptLedger(store)
+            stop_state = reloaded.stop_state(stop_seq)
+            applied_results.append(
+                (
+                    reloaded.attempt_state(op, _ATTEMPT_1),
+                    reloaded.view(op, 7),
+                    None if stop_state is None else stop_state.state,
+                )
+            )
+        finally:
+            store.close()
+
+    expected_applied = (
+        STATE_RECONCILED,
+        AttemptView(False, False, True, True, applied=True),
+        STATE_AT_REST,
+    )
+    assert applied_results == [expected_applied] * len(applied_orders)
+
+
+def test_marker_matching_isolates_attempts_and_rejects_mismatched_markers(tmp_path: Path) -> None:
+    """Marker matching never leaks across attempts, rejects forged pairs, and keeps legacy rows."""
+    op = "op-match"
+    assert FACT.intent_sha256 is not None
+    marker_1 = AttemptMarker(op, _ATTEMPT_1, FACT.intent_sha256)
+    marker_2 = AttemptMarker(op, _ATTEMPT_2, FACT.intent_sha256)
+    sealed_1 = marker_1.objects("sha1").sealed
+    sealed_2 = marker_2.objects("sha1").sealed
+
+    # 1. Present attempt_id naming A1 paired with A2's sealed blob must reconcile neither A1 nor A2.
+    store_cross = EventStore(tmp_path / "cross-id-blob.db")
+    try:
+        _seed_git_operation(
+            store_cross, operation_id=op, attempts=((_ATTEMPT_1, 7), (_ATTEMPT_2, 8))
+        )
+        _append(
+            store_cross,
+            EventKind.OPERATION_SEALED,
+            {"operation_id": op, "sender": "R/recovery", "attempt_id": _ATTEMPT_1},
+        )
+        _append(
+            store_cross,
+            EventKind.OPERATION_SEALED,
+            {"operation_id": op, "sender": "R/recovery", "attempt_id": _ATTEMPT_2},
+        )
+        _append(
+            store_cross,
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": op,
+                "sender": CHECKER,
+                "effect": "absent",
+                "result": "not_verified",
+                "evidence": {"attempt_id": _ATTEMPT_1, "marker_object": sealed_2},
+            },
+        )
+        cross_ledger = AttemptLedger(store_cross)
+    finally:
+        store_cross.close()
+    assert (
+        cross_ledger.attempt_state(op, _ATTEMPT_1),
+        cross_ledger.attempt_state(op, _ATTEMPT_2),
+    ) == (STATE_SEALED, STATE_SEALED)
+
+    # 2. A forged marker_object reconciles nothing (no blanket fallback) and never pre-marks open.
+    store_forged = EventStore(tmp_path / "forged-blob.db")
+    try:
+        _seed_git_operation(store_forged, operation_id=op, attempts=((_ATTEMPT_1, 7),))
+        _append(
+            store_forged,
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": op,
+                "sender": CHECKER,
+                "effect": "absent",
+                "result": "not_verified",
+                "evidence": {"attempt_id": _ATTEMPT_1, "marker_object": "0" * 40},
+            },
+        )
+        _append(
+            store_forged,
+            EventKind.OPERATION_SEALED,
+            {"operation_id": op, "sender": "R/recovery", "attempt_id": _ATTEMPT_1},
+        )
+        _append(
+            store_forged,
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": op,
+                "sender": CHECKER,
+                "effect": "absent",
+                "result": "not_verified",
+                "evidence": {"attempt_id": _ATTEMPT_1, "marker_object": "0" * 40},
+            },
+        )
+        forged_ledger = AttemptLedger(store_forged)
+    finally:
+        store_forged.close()
+    assert forged_ledger.attempt_state(op, _ATTEMPT_1) == STATE_SEALED
+
+    # 3. Pairing a sealed blob with effect="observed" is mismatched and reconciles nothing.
+    store_obs_sealed = EventStore(tmp_path / "observed-sealed.db")
+    try:
+        _seed_git_operation(store_obs_sealed, operation_id=op, attempts=((_ATTEMPT_1, 7),))
+        _append(
+            store_obs_sealed,
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": op,
+                "sender": CHECKER,
+                "effect": "observed",
+                "result": "not_checked",
+                "evidence": {"attempt_id": _ATTEMPT_1, "marker_object": sealed_1},
+            },
+        )
+        _append(
+            store_obs_sealed,
+            EventKind.OPERATION_SEALED,
+            {"operation_id": op, "sender": "R/recovery", "attempt_id": _ATTEMPT_1},
+        )
+        _append(
+            store_obs_sealed,
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": op,
+                "sender": CHECKER,
+                "effect": "observed",
+                "result": "not_checked",
+                "evidence": {"attempt_id": _ATTEMPT_1, "marker_object": sealed_1},
+            },
+        )
+        obs_sealed_ledger = AttemptLedger(store_obs_sealed)
+    finally:
+        store_obs_sealed.close()
+    assert obs_sealed_ledger.attempt_state(op, _ATTEMPT_1) == STATE_SEALED
+
+    # 4. Pre-0.99.59 journal row without attempt_id still matches A1 uniquely and never A2.
+    store_legacy = EventStore(tmp_path / "legacy-no-attempt-id.db")
+    try:
+        _seed_git_operation(
+            store_legacy, operation_id=op, attempts=((_ATTEMPT_1, 7), (_ATTEMPT_2, 8))
+        )
+        _append(
+            store_legacy,
+            EventKind.OPERATION_SEALED,
+            {"operation_id": op, "sender": "R/recovery", "attempt_id": _ATTEMPT_2},
+        )
+        _append(
+            store_legacy,
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": op,
+                "sender": CHECKER,
+                "effect": "absent",
+                "result": "not_verified",
+                "evidence": {"marker_object": sealed_1},
+            },
+        )
+        _append(
+            store_legacy,
+            EventKind.OPERATION_SEALED,
+            {"operation_id": op, "sender": "R/recovery", "attempt_id": _ATTEMPT_1},
+        )
+        legacy_ledger = AttemptLedger(store_legacy)
+    finally:
+        store_legacy.close()
+    assert (
+        legacy_ledger.attempt_state(op, _ATTEMPT_1),
+        legacy_ledger.attempt_state(op, _ATTEMPT_2),
+    ) == (STATE_RECONCILED, STATE_SEALED)
+
+    # 5. Declarer self-verification and unscoped pre-end absent verification never pre-reconcile.
+    store_neg = EventStore(tmp_path / "declarer-and-unscoped.db")
+    try:
+        _seed_git_operation(store_neg, operation_id=op, attempts=((_ATTEMPT_1, 7),))
+        _append(
+            store_neg,
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": op,
+                "sender": WORKER,
+                "effect": "absent",
+                "result": "not_verified",
+                "evidence": {"attempt_id": _ATTEMPT_1, "marker_object": sealed_1},
+            },
+        )
+        _append(
+            store_neg,
+            EventKind.OPERATION_VERIFIED,
+            {
+                "operation_id": op,
+                "sender": CHECKER,
+                "effect": "absent",
+                "result": "not_verified",
+                "evidence": {},
+            },
+        )
+        _append(
+            store_neg,
+            EventKind.OPERATION_SEALED,
+            {"operation_id": op, "sender": "R/recovery", "attempt_id": _ATTEMPT_1},
+        )
+        neg_ledger = AttemptLedger(store_neg)
+    finally:
+        store_neg.close()
+    assert neg_ledger.attempt_state(op, _ATTEMPT_1) == STATE_SEALED
+
+    # 6. Malformed marker_object, absent intent digest, non-32-hex attempt_id, unknown attempt_id,
+    #    and observed+applied marker matching cover all remaining matcher edges.
+    applied_1 = marker_1.objects("sha1").applied
+    edge_ledger = AttemptLedger(None)
+    edge_ledger.note_declaration("op-no-intent", OperationFact("T1", WORKER, None, None, 1.0))
+    edge_ledger.open_attempt("op-no-intent", _ATTEMPT_1, executor=WORKER, approval_seq=1)
+    edge_ledger.note_seal("op-no-intent", _ATTEMPT_1)
+    edge_ledger.note_verification(
+        "op-no-intent",
+        CHECKER,
+        effect="absent",
+        result="not_verified",
+        evidence={"attempt_id": _ATTEMPT_1, "marker_object": sealed_1},
+    )
+    assert edge_ledger.attempt_state("op-no-intent", _ATTEMPT_1) == STATE_SEALED
+
+    edge_ledger.note_declaration(op, FACT)
+    edge_ledger.open_attempt(op, "short-id", executor=WORKER, approval_seq=2)
+    edge_ledger.note_seal(op, "short-id")
+    edge_ledger.note_verification(
+        op,
+        CHECKER,
+        effect="absent",
+        result="not_verified",
+        evidence={"attempt_id": "short-id", "marker_object": "not-a-hex-digest"},
+    )
+    edge_ledger.note_verification(
+        op,
+        CHECKER,
+        effect="absent",
+        result="not_verified",
+        evidence={"attempt_id": "short-id", "marker_object": sealed_1},
+    )
+    edge_ledger.note_verification(
+        op,
+        CHECKER,
+        effect="absent",
+        result="not_verified",
+        evidence={"attempt_id": "9" * 32, "marker_object": sealed_1},
+    )
+    assert edge_ledger.attempt_state(op, "short-id") == STATE_SEALED
+
+    edge_ledger.open_attempt(op, _ATTEMPT_1, executor=WORKER, approval_seq=3)
+    edge_ledger.note_verification(
+        op,
+        CHECKER,
+        effect="observed",
+        result="not_checked",
+        evidence={"attempt_id": _ATTEMPT_1, "marker_object": applied_1},
+    )
+    assert edge_ledger.attempt_state(op, _ATTEMPT_1) == STATE_OPEN
+    edge_ledger.note_outcome(op, WORKER, "confirmed_done")
+    assert edge_ledger.attempt_state(op, _ATTEMPT_1) == STATE_RECONCILED
