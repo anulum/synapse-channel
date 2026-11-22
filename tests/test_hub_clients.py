@@ -561,6 +561,173 @@ async def test_resolve_sender_pins_owner_when_takeover_oscillates(
     assert owner4.close_calls == []
 
 
+async def test_a_cooldown_refusal_appends_no_stamp_and_no_counter() -> None:
+    """A refused retry must not itself feed the oscillation count."""
+    clock = _Clock()
+    registry = _osc_registry(clock)
+    name = "w/rx"
+    await _drive_takeover(registry, name, 100.0, clock)
+    stamps = registry._takeover.stamp_count(name)
+    takeovers = registry.counters.takeovers
+    _owner, challenger, result = await _drive_takeover(registry, name, 100.5, clock)
+    assert result is None
+    assert challenger.close_calls == [(4014, "takeover cooldown")]
+    assert registry._takeover.stamp_count(name) == stamps
+    assert registry.counters.takeovers == takeovers
+
+
+class _SeeingSocket(_Socket):
+    """Record the name maps at the moment this socket is closed."""
+
+    def __init__(self, registry: HubClientRegistry, name: str) -> None:
+        super().__init__()
+        self._registry = registry
+        self._name = name
+        self.seen_socket: object = None
+        self.seen_unbound: object = None
+
+    async def close(self, *, code: int, reason: str) -> None:
+        self.seen_socket = self._registry.agent_sockets.get(self._name)
+        self.seen_unbound = self._registry.socket_agent.get(self)
+        await super().close(code=code, reason=reason)
+
+
+async def test_close_sees_the_name_already_bound_to_the_challenger() -> None:
+    """The maps have moved before the evicted socket's close runs."""
+    clock = _Clock()
+    registry = _osc_registry(clock)
+    name = "w/rx"
+    owner = _SeeingSocket(registry, name)
+    challenger = _Socket()
+    registry.agent_sockets[name] = owner
+    registry.socket_agent[owner] = name
+    clock.now = 100.0
+    result = await registry.resolve_sender(
+        name, challenger, takeover=True, send_json=_noop_send, system=_system
+    )
+    assert result == name
+    assert owner.seen_socket is challenger
+    assert owner.seen_unbound is None
+
+
+async def test_an_evicted_drop_leaves_the_challenger_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The old socket's teardown must not wipe the name the challenger now holds."""
+    clock = _Clock()
+    registry = _osc_registry(clock)
+    name = "w/rx"
+    owner = _Socket(remote_address=("10.0.0.1", 1))
+    challenger = _Socket(remote_address=("10.0.0.2", 1))
+    registry.add_client(owner)
+    registry.add_client(challenger)
+    registry.agent_sockets[name] = owner
+    registry.socket_agent[owner] = name
+    registry.set_roles(name, ("lead",))
+    registry.set_wake_capability(name, WAKE_DIRECT)
+    registry.bind_protocol_version(name, owner, 7)
+    marked: list[str] = []
+    real_offline = registry.ownership.mark_offline
+
+    def spy(agent: str) -> None:
+        marked.append(agent)
+        real_offline(agent)
+
+    monkeypatch.setattr(registry.ownership, "mark_offline", spy)
+    clock.now = 100.0
+    result = await registry.resolve_sender(
+        name, challenger, takeover=True, send_json=_noop_send, system=_system
+    )
+    assert result == name
+    assert registry.drop_client(owner) is None
+    assert registry.roles_of(name) == ("lead",)
+    assert registry.wake_capability_of(name) == WAKE_DIRECT
+    assert registry.protocol_version_of(name) == 7
+    assert marked == []
+    assert registry._capacity.host_count("10.0.0.1") == 0
+    assert registry._capacity.host_count("10.0.0.2") == 1
+
+
+def test_a_second_drop_does_not_decrement_the_host_again() -> None:
+    registry = _registry()
+    first = _Socket(remote_address=("10.0.0.9", 1))
+    second = _Socket(remote_address=("10.0.0.9", 2))
+    registry.add_client(first)
+    registry.add_client(second)
+    registry.drop_client(first)
+    registry.drop_client(first)
+    assert registry._capacity.host_count("10.0.0.9") == 1
+
+
+def test_the_hub_holds_the_registry_role_dict() -> None:
+    from synapse_channel.core.hub import SynapseHub
+
+    hub = SynapseHub(hub_id="c147-03")
+    assert hub.agent_roles is hub.clients.agent_roles
+    hub.clients.set_roles("seat", ("lead",))
+    assert hub.agent_roles["seat"] == ("lead",)
+
+
+def test_agent_roles_is_the_dict_a_hub_holds_by_reference() -> None:
+    registry = _registry()
+    held = registry.agent_roles
+    registry.set_roles("seat", ("lead",))
+    assert held is registry.agent_roles
+    assert held["seat"] == ("lead",)
+    with pytest.raises(AttributeError):
+        field = "takeover_cooldown"
+        setattr(registry, field, 0.0)
+
+
+def test_bind_protocol_version_refuses_a_socket_that_does_not_own_the_name() -> None:
+    """A stranger cannot replace the version bound to the live owner."""
+    registry = _registry()
+    owner = _Socket()
+    stranger = _Socket()
+    registry.agent_sockets["seat"] = owner
+    registry.socket_agent[owner] = "seat"
+    assert registry.bind_protocol_version("seat", owner, 4) == 4
+    with pytest.raises(DeliveryRefusal) as caught:
+        registry.bind_protocol_version("seat", stranger, 9)
+    assert caught.value.code == "unauthorised_requester"
+    assert str(caught.value) == "socket is not bound to the identity"
+    assert registry.protocol_version_of("seat") == 4
+
+
+async def test_drop_client_keeps_the_session_when_the_socket_no_longer_owns_the_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rebinding the name through set_agent_socket leaves the old socket's drop harmless."""
+    registry = _registry()
+    name = "seat"
+    old = _Socket()
+    new = _Socket()
+    bound = await registry.resolve_sender(
+        name, old, takeover=False, send_json=_noop_send, system=_system
+    )
+    assert bound == name
+    registry.set_agent_socket(name, new)
+    registry.set_roles(name, ("lead",))
+    registry.set_wake_capability(name, WAKE_DIRECT)
+    marked: list[str] = []
+
+    def spy(agent: str) -> None:
+        marked.append(agent)
+
+    monkeypatch.setattr(registry.ownership, "mark_offline", spy)
+    assert registry.drop_client(old) is None
+    assert registry.roles_of(name) == ("lead",)
+    assert registry.wake_capability_of(name) == WAKE_DIRECT
+    assert marked == []
+
+
+def test_the_policy_shares_the_registry_counters_and_clock() -> None:
+    clock = _Clock()
+    registry = _osc_registry(clock)
+    assert registry._takeover.counters is registry.counters
+    assert registry._takeover.clock is registry._clock
+
+
 async def test_resolve_sender_still_enforces_the_short_cooldown() -> None:
     clock = _Clock()
     registry = _osc_registry(clock)

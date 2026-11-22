@@ -9,33 +9,29 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from typing import Any
 
-from synapse_channel.core.delivery_modes import MODES, QUALITIES, DeliveryRefusal
+from synapse_channel.core.agent_session_attributes import (
+    AgentSessionAttributes,
+)
+from synapse_channel.core.agent_session_attributes import (
+    DeliverySession as DeliverySession,
+)
+from synapse_channel.core.connection_capacity import ConnectionCapacity
+from synapse_channel.core.delivery_modes import DeliveryRefusal
 from synapse_channel.core.hub_address import is_hub_qualified_name
 from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL, NameOwnership
-from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.protocol import SENDER_HUB, MessageType
 from synapse_channel.core.role_mailbox import is_role_mailbox_key
-from synapse_channel.core.wake_capability import WAKE_UNKNOWN, normalize_wake_capability
+from synapse_channel.core.takeover_policy import TakeoverPolicy
 
 logger = logging.getLogger("synapse.hub")
 
 _RESERVED_AGENT_NAMES = frozenset({SENDER_HUB.casefold(), "synapse", "system"})
 """Global names reserved for hub and protocol provenance."""
-
-
-@dataclass(frozen=True)
-class DeliverySession:
-    """Capabilities bound to one live, named socket and opaque incarnation."""
-
-    incarnation: str
-    capabilities: dict[str, str]
 
 
 class HubClientRegistry:
@@ -55,43 +51,70 @@ class HubClientRegistry:
         takeover_quarantine: float = 60.0,
         lease_offline_ttl: float = DEFAULT_LEASE_OFFLINE_TTL,
     ) -> None:
-        self.max_clients = safe_int(max_clients, default=1, min_value=1)
-        self.max_unauth_clients = (
-            self.max_clients
-            if max_unauth_clients is None
-            else safe_int(max_unauth_clients, default=self.max_clients, min_value=1)
-        )
-        self.max_connections_per_host = (
-            None
-            if max_connections_per_host is None
-            else safe_int(max_connections_per_host, default=1, min_value=1)
-        )
-        self.takeover_cooldown = max(safe_float(takeover_cooldown, default=0.0), 0.0)
-        self.takeover_oscillation_window = max(
-            safe_float(takeover_oscillation_window, default=30.0), 0.0
-        )
-        self.takeover_oscillation_threshold = safe_int(
-            takeover_oscillation_threshold, default=5, min_value=2
-        )
-        self.takeover_quarantine = max(safe_float(takeover_quarantine, default=60.0), 0.0)
         self.counters = counters if counters is not None else HubCounters()
         self._clock = clock
+        self._capacity = ConnectionCapacity(
+            max_clients=max_clients,
+            max_unauth_clients=max_unauth_clients,
+            max_connections_per_host=max_connections_per_host,
+            remote_host=HubClientRegistry.remote_host,
+        )
+        self._takeover = TakeoverPolicy(
+            cooldown=takeover_cooldown,
+            window=takeover_oscillation_window,
+            threshold=takeover_oscillation_threshold,
+            quarantine=takeover_quarantine,
+            counters=self.counters,
+            clock=clock,
+        )
+        self._sessions = AgentSessionAttributes()
         self.ownership = NameOwnership(clock=clock, offline_ttl=lease_offline_ttl)
-        self._last_takeover: dict[str, float] = {}
-        self._takeover_times: dict[str, list[float]] = {}
-        self._quarantine_until: dict[str, float] = {}
         self.connected_clients: set[Any] = set()
         self.unauth_clients: set[Any] = set()
         self.agent_sockets: dict[str, Any] = {}
         self.socket_agent: dict[Any, str] = {}
-        self.agent_roles: dict[str, tuple[str, ...]] = {}
-        self.agent_wake_capabilities: dict[str, str] = {}
-        self.agent_delivery_sessions: dict[str, DeliverySession] = {}
-        self.agent_protocol_versions: dict[str, int] = {}
         self.socket_quota_principals: dict[Any, str] = {}
         self._socket_identity_proofs: dict[Any, tuple[str, str]] = {}
-        self._socket_hosts: dict[Any, str] = {}
-        self._host_counts: dict[str, int] = {}
+
+    @property
+    def max_clients(self) -> int:
+        """Total live sockets the hub will hold."""
+        return self._capacity.max_clients
+
+    @property
+    def max_unauth_clients(self) -> int:
+        """Sockets allowed to sit in the pre-authentication window."""
+        return self._capacity.max_unauth_clients
+
+    @property
+    def max_connections_per_host(self) -> int | None:
+        """Sockets allowed from one remote host, or ``None`` when uncapped."""
+        return self._capacity.max_connections_per_host
+
+    @property
+    def takeover_cooldown(self) -> float:
+        """Minimum gap between accepted takeovers of one name."""
+        return self._takeover.cooldown
+
+    @property
+    def takeover_oscillation_window(self) -> float:
+        """How far back oscillation stamps still count."""
+        return self._takeover.window
+
+    @property
+    def takeover_oscillation_threshold(self) -> int:
+        """Accepted takeovers inside the window that open a quarantine."""
+        return self._takeover.threshold
+
+    @property
+    def takeover_quarantine(self) -> float:
+        """How long a quarantine pins the current owner."""
+        return self._takeover.quarantine
+
+    @property
+    def agent_roles(self) -> dict[str, tuple[str, ...]]:
+        """The role map, the same object the hub holds."""
+        return self._sessions.roles
 
     def at_capacity(self) -> bool:
         """Return whether the total connection table is full."""
@@ -103,38 +126,23 @@ class HubClientRegistry:
 
     def host_at_capacity(self, websocket: Any) -> bool:
         """Return whether ``websocket``'s remote host already holds its socket cap."""
-        if self.max_connections_per_host is None:
-            return False
-        return (
-            self._host_counts.get(self.remote_host(websocket), 0) >= self.max_connections_per_host
-        )
+        return self._capacity.host_at_capacity(websocket)
 
     def add_client(self, websocket: Any) -> None:
         """Record a newly admitted socket."""
         self.connected_clients.add(websocket)
-        host = self.remote_host(websocket)
-        self._socket_hosts[websocket] = host
-        self._host_counts[host] = self._host_counts.get(host, 0) + 1
+        self._capacity.note_connected(websocket)
 
     def drop_client(self, websocket: Any) -> str | None:
         """Drop a socket and return the active agent name that disappeared, if any."""
         self.connected_clients.discard(websocket)
         self.socket_quota_principals.pop(websocket, None)
         self._socket_identity_proofs.pop(websocket, None)
-        host = self._socket_hosts.pop(websocket, None)
-        if host is not None:
-            remaining = self._host_counts.get(host, 0) - 1
-            if remaining > 0:
-                self._host_counts[host] = remaining
-            else:
-                self._host_counts.pop(host, None)
+        self._capacity.note_disconnected(websocket)
         name = self.socket_agent.pop(websocket, None)
         if name is not None and self.agent_sockets.get(name) == websocket:
             self.agent_sockets.pop(name, None)
-            self.agent_roles.pop(name, None)
-            self.agent_wake_capabilities.pop(name, None)
-            self.agent_delivery_sessions.pop(name, None)
-            self.agent_protocol_versions.pop(name, None)
+            self._sessions.clear(name)
             self.ownership.mark_offline(name)
             return name
         return None
@@ -164,10 +172,7 @@ class HubClientRegistry:
         websocket = self.agent_sockets.pop(name, None)
         if websocket is not None:
             self.socket_agent.pop(websocket, None)
-        self.agent_roles.pop(name, None)
-        self.agent_wake_capabilities.pop(name, None)
-        self.agent_delivery_sessions.pop(name, None)
-        self.agent_protocol_versions.pop(name, None)
+        self._sessions.clear(name)
         self.ownership.release(name)
         return websocket
 
@@ -249,20 +254,21 @@ class HubClientRegistry:
         self.agent_sockets[sender] = websocket
         return is_new_agent
 
+    def _owns(self, name: str, websocket: Any) -> bool:
+        """Return whether ``websocket`` is the live owner of ``name``."""
+        return (
+            self.agent_sockets.get(name) is websocket and self.socket_agent.get(websocket) == name
+        )
+
     def bind_protocol_version(self, name: str, websocket: Any, version: int | None) -> int:
         """Bind a peer's advertised wire version to its currently owned socket."""
-        if (
-            self.agent_sockets.get(name) is not websocket
-            or self.socket_agent.get(websocket) != name
-        ):
+        if not self._owns(name, websocket):
             raise DeliveryRefusal("unauthorised_requester", "socket is not bound to the identity")
-        effective = version if version is not None and version >= 1 else 1
-        self.agent_protocol_versions[name] = effective
-        return effective
+        return self._sessions.bind_protocol_version(name, version)
 
     def protocol_version_of(self, name: str) -> int:
         """Return the bound peer version, or legacy version one when absent."""
-        return self.agent_protocol_versions.get(name, 1)
+        return self._sessions.protocol_version_of(name)
 
     def bind_delivery_session(
         self,
@@ -280,38 +286,15 @@ class HubClientRegistry:
         is public. Reconnect with the same in-memory token retains the
         incarnation; a fresh process receives a different one.
         """
-        if (
-            self.agent_sockets.get(name) is not websocket
-            or self.socket_agent.get(websocket) != name
-        ):
+        if not self._owns(name, websocket):
             raise DeliveryRefusal("unauthorised_requester", "socket is not bound to the identity")
-        if (
-            not isinstance(token, str)
-            or len(token) != 64
-            or any(char not in "0123456789abcdef" for char in token)
-        ):
-            raise DeliveryRefusal("invalid_shape", "delivery session token is malformed")
-        if not isinstance(capabilities, dict) or len(capabilities) > len(MODES):
-            raise DeliveryRefusal("invalid_shape", "delivery capabilities are malformed")
-        if any(
-            not isinstance(mode, str)
-            or not isinstance(quality, str)
-            or mode not in MODES
-            or quality not in QUALITIES
-            for mode, quality in capabilities.items()
-        ):
-            raise DeliveryRefusal("invalid_shape", "delivery capability is unsupported")
-        digest = hashlib.sha256(f"{hub_id}\0{name}\0{token}".encode()).hexdigest()
-        session = DeliverySession(digest, dict(capabilities))
-        self.agent_delivery_sessions[name] = session
-        return session
+        return self._sessions.bind_delivery_session(
+            name, token=token, capabilities=capabilities, hub_id=hub_id
+        )
 
     def delivery_session(self, name: str) -> DeliverySession | None:
         """Return a copy of the current socket's advertised delivery contract."""
-        session = self.agent_delivery_sessions.get(name)
-        if session is None:
-            return None
-        return DeliverySession(session.incarnation, dict(session.capabilities))
+        return self._sessions.delivery_session(name)
 
     def set_roles(self, name: str, roles: tuple[str, ...]) -> None:
         """Bind the roles ``name`` answers to, replacing any previous set.
@@ -320,63 +303,23 @@ class HubClientRegistry:
         it. Roles are additional ``<project>/<role>`` addresses, not exclusive — a role
         may be held by more than one agent, and a message to it reaches every holder.
         """
-        if roles:
-            self.agent_roles[name] = roles
-        else:
-            self.agent_roles.pop(name, None)
+        self._sessions.set_roles(name, roles)
 
     def roles_of(self, name: str) -> tuple[str, ...]:
         """Return the roles ``name`` currently answers to (empty tuple if none)."""
-        return self.agent_roles.get(name, ())
+        return self._sessions.roles_of(name)
 
     def set_wake_capability(self, name: str, capability: str) -> None:
         """Bind ``name`` to a declared receiver wake capability."""
-        normalized = normalize_wake_capability(capability)
-        if normalized == WAKE_UNKNOWN:
-            self.agent_wake_capabilities.pop(name, None)
-        else:
-            self.agent_wake_capabilities[name] = normalized
+        self._sessions.set_wake_capability(name, capability)
 
     def wake_capability_of(self, name: str) -> str:
         """Return ``name``'s declared wake capability, or ``unknown`` if absent."""
-        return self.agent_wake_capabilities.get(name, WAKE_UNKNOWN)
+        return self._sessions.wake_capability_of(name)
 
     def _classify_takeover(self, sender: str, now: float) -> str:
-        """Decide a takeover request: ``accept``, ``cooldown``, or quarantine.
-
-        Beyond the short per-name cooldown that merely spaces evictions apart, this
-        detects an *oscillation* — two waiters that both claim the same name with
-        takeover and so evict each other indefinitely, one per cooldown. Once a name
-        is taken over more than ``takeover_oscillation_threshold`` times within
-        ``takeover_oscillation_window`` seconds, the name is quarantined for
-        ``takeover_quarantine`` seconds: its current owner is pinned and every further
-        takeover is refused, which ends the eviction war instead of merely rate-limiting
-        it. Returns ``"quarantine_enter"`` the moment quarantine begins (logged once),
-        ``"quarantine_active"`` for subsequent refusals while it holds, ``"cooldown"``
-        for a too-soon retry, and ``"accept"`` otherwise. Bookkeeping happens here so
-        the caller only acts on the verdict.
-        """
-        until = self._quarantine_until.get(sender)
-        if until is not None:
-            if now < until:
-                return "quarantine_active"
-            # quarantine lapsed: forget the history so the name starts fresh
-            self._quarantine_until.pop(sender, None)
-            self._takeover_times.pop(sender, None)
-        last = self._last_takeover.get(sender)
-        if last is not None and now - last < self.takeover_cooldown:
-            return "cooldown"
-        cutoff = now - self.takeover_oscillation_window
-        recent = [stamp for stamp in self._takeover_times.get(sender, []) if stamp >= cutoff]
-        recent.append(now)
-        if len(recent) >= self.takeover_oscillation_threshold:
-            self._quarantine_until[sender] = now + self.takeover_quarantine
-            self._takeover_times.pop(sender, None)
-            self.counters.takeover_quarantines += 1
-            return "quarantine_enter"
-        self._takeover_times[sender] = recent
-        self.counters.takeovers += 1
-        return "accept"
+        """Decide a takeover and leave every takeover map on the policy."""
+        return self._takeover.classify(sender, now)
 
     async def _admit_owner(
         self,
@@ -556,7 +499,6 @@ class HubClientRegistry:
                         )
                         await self.close_socket(websocket, code=4014, reason="takeover cooldown")
                         return None
-                    self._last_takeover[sender] = now
                     # Swap-then-close: rebind BOTH maps to the new owner before the
                     # close handshake awaits. The eviction used to leave
                     # ``agent_sockets[sender]`` pointing at the dying socket across

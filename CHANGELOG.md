@@ -45,6 +45,10 @@ execution evidence when carrying a release claim forward.
   protected-custody checks, sets the recovered epoch with `restore_epoch_seq` and ends with `expire_stale`.
   `core/journal.py` leaves the private-access ledger.
 
+- **Client connection accounting keeps the socket map and gives capacity, takeover and session attributes their own owners.**
+  A name is still taken over only after the cooldown, an oscillation still quarantines the current owner, and the name
+  moves to the new socket before the old one closes.
+
 ### Fixed
 
 - **Version-one Fleet mirror exports written by the sync daemon (`writer_generation`) are now accepted by `parse_mirror` and the dashboard mirror feed (dated v1 erratum, 2026-11-22).**
