@@ -30,6 +30,8 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 
+from synapse_channel.cli_argparse_introspection import parser_long_options, parser_subparsers
+
 
 @dataclass(frozen=True)
 class CommandSpec:
@@ -56,21 +58,14 @@ class CommandSpec:
 
 def _spec_from_parser(name: str, summary: str, parser: argparse.ArgumentParser) -> CommandSpec:
     """Build a :class:`CommandSpec` from one parser, recursing into subparsers."""
-    options: list[str] = []
-    nested: list[CommandSpec] = []
-    # argparse keeps its action registry private; cli.py walks the same fields.
-    for action in parser._actions:
-        if isinstance(action, argparse._SubParsersAction):
-            helps = {choice.dest: str(choice.help or "") for choice in action._choices_actions}
-            for sub_name, sub_parser in action.choices.items():
-                nested.append(_spec_from_parser(sub_name, helps.get(sub_name, ""), sub_parser))
-        else:
-            options.extend(opt for opt in action.option_strings if opt.startswith("--"))
     return CommandSpec(
         name=name,
         summary=summary,
-        options=tuple(dict.fromkeys(options)),
-        subcommands=tuple(nested),
+        options=parser_long_options(parser),
+        subcommands=tuple(
+            _spec_from_parser(entry.name, entry.summary, entry.parser)
+            for entry in parser_subparsers(parser)
+        ),
     )
 
 

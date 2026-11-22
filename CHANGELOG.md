@@ -67,6 +67,13 @@ execution evidence when carrying a release claim forward.
   private wrapper aliases are removed, bringing both wrapper modules to zero private accesses.
   Behaviour is unchanged.
 
+- **CLI parser assembly and shell completions now read `argparse` internals through one introspection adapter (`synapse_channel.cli_argparse_introspection`).**
+  `src/synapse_channel/cli.py` and `src/synapse_channel/cli_completions.py` call
+  `parser_option_strings`, `parser_long_options`, and `parser_subparsers` instead of reading
+  `_actions` and `_choices_actions` directly, bringing both modules to zero private accesses and
+  confining those standard-library private lookups to the single adapter module in
+  `tools/structure_budget.toml`. Behaviour is unchanged.
+
 - **Structure budget schema 3 adds module-scoped `[allowed_private_access.modules]` allowances.**
   `tools/structure_measures.py`, `tools/structure_revision.py`, `tools/check_structure_budget.py`,
   and `tools/structure_budget_walk.py` now support per-module private-access allowances while

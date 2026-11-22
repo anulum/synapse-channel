@@ -23,6 +23,9 @@ private_access = 0
 [allowed_private_access]
 names = ["argparse._SubParsersAction"]
 
+[allowed_private_access.modules]
+"src/synapse_channel/cli_argparse_introspection.py" = ["action._choices_actions", "parser._actions"]
+
 [ceilings.constructor_parameters]
 "src/synapse_channel/a2a_server.py::A2ABridge" = 14
 "src/synapse_channel/client/agent.py::SynapseAgent" = 30
@@ -389,8 +392,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/participants/__init__.py" = 45
 
 [ceilings.private_access]
-"src/synapse_channel/cli.py" = 1
-"src/synapse_channel/cli_completions.py" = 2
 "src/synapse_channel/client/agent_outbound_tasks.py" = 2
 "src/synapse_channel/client/claim_confirmation.py" = 3
 "src/synapse_channel/core/journal.py" = 5
@@ -404,5 +405,21 @@ unit = "src/synapse_channel/client/llm_worker.py::SynapseLLMWorker"
 measure = "constructor_parameters"
 allowed = 21
 reason = "The local endpoint list (local_endpoints) gates every ollama and tiered HTTP tier at construction; grouping the worker's provider settings into one settings object is a separate public API change."
+owner = "f636"
+review_by = "2026-12-31"
+
+[[exceptions]]
+unit = "src/synapse_channel/cli_argparse_introspection.py::parser._actions"
+measure = "configuration"
+allowed = 0
+reason = "argparse has no public API for listing a parser's actions or a subparser group's choice actions; this adapter is the one module allowed to read them, and cli.py and cli_completions.py go through it."
+owner = "f636"
+review_by = "2026-12-31"
+
+[[exceptions]]
+unit = "src/synapse_channel/cli_argparse_introspection.py::action._choices_actions"
+measure = "configuration"
+allowed = 0
+reason = "argparse has no public API for listing a parser's actions or a subparser group's choice actions; this adapter is the one module allowed to read them, and cli.py and cli_completions.py go through it."
 owner = "f636"
 review_by = "2026-12-31"

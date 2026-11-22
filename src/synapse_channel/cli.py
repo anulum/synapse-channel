@@ -106,6 +106,7 @@ from collections.abc import Callable
 from typing import Any
 
 from synapse_channel.build_identity import identity_text
+from synapse_channel.cli_argparse_introspection import parser_option_strings
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 
 
@@ -333,7 +334,7 @@ def build_parser(*, command: str | None = None) -> argparse.ArgumentParser:
     # A subparser that already declares its own --token-file keeps it, so the loop
     # stays idempotent and never conflicts with a command-specific declaration.
     for subparser in sub.choices.values():
-        option_strings = {opt for action in subparser._actions for opt in action.option_strings}
+        option_strings = parser_option_strings(subparser)
         if "--token" in option_strings and "--token-file" not in option_strings:
             subparser.add_argument(
                 "--token-file",
