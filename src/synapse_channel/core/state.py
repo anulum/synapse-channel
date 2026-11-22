@@ -20,7 +20,7 @@ injected timestamps via the ``now`` parameters.
 from __future__ import annotations
 
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from synapse_channel.core.lifecycle import can_transition
@@ -80,9 +80,30 @@ __all__ = [
     "MAXIMUM_TTL_SECONDS",
     "MINIMUM_TTL_SECONDS",
     "ResourceOffer",
+    "StatePublicationParts",
     "SynapseState",
     "TaskClaim",
 ]
+
+
+@dataclass(frozen=True)
+class StatePublicationParts:
+    """The internal registries a committed candidate state hands to the live state.
+
+    Returned by :meth:`SynapseState.publication_parts` for
+    :meth:`SynapseState.publish_from` only. The live state adopts both objects
+    wholesale, so a reader sees either the old registries or the committed ones.
+
+    Attributes
+    ----------
+    resource_registry : ResourceRegistry
+        The candidate's registry of resource offers.
+    lease_index : LeaseIndex
+        The candidate's index of lease expiries.
+    """
+
+    resource_registry: ResourceRegistry
+    lease_index: LeaseIndex
 
 
 def _clamp_ttl(seconds: float) -> float:
@@ -173,6 +194,31 @@ class SynapseState:
         self._epoch_seq += 1
         return self._epoch_seq
 
+    @property
+    def epoch_seq(self) -> int:
+        """Return the last issued lease generation number.
+
+        Every accepted lease mutation stamps a strictly greater epoch, so this is
+        the high-water mark of the epochs issued so far; ``0`` before the first.
+        """
+        return self._epoch_seq
+
+    def publication_parts(self) -> StatePublicationParts:
+        """Return the internal registries :meth:`publish_from` adopts from a candidate.
+
+        This is the commit port of the candidate-state pattern and is meant for
+        :meth:`publish_from` only; every other reader uses the public views,
+        such as :attr:`resources` and :meth:`query_resources`.
+
+        Returns
+        -------
+        StatePublicationParts
+            This state's resource registry and lease index, not copies.
+        """
+        return StatePublicationParts(
+            resource_registry=self._resource_registry, lease_index=self._lease_index
+        )
+
     def publish_from(self, candidate: SynapseState) -> None:
         """Atomically publish a privately mutated candidate state.
 
@@ -196,6 +242,7 @@ class SynapseState:
         ):
             raise ValueError("candidate state configuration does not match the live hub")
 
+        parts = candidate.publication_parts()
         self.last_seen.clear()
         self.last_seen.update(candidate.last_seen)
         self.claims = candidate.claims
@@ -208,11 +255,11 @@ class SynapseState:
         self.protected_enrollments = candidate.protected_enrollments
         self.protected_enrollment_key_ids = candidate.protected_enrollment_key_ids
         self.protected_enrollment_fingerprints = candidate.protected_enrollment_fingerprints
-        self._resource_registry = candidate._resource_registry
+        self._resource_registry = parts.resource_registry
         self.resources = self._resource_registry.resources
         self.expired_checkpoints = candidate.expired_checkpoints
-        self._epoch_seq = candidate._epoch_seq
-        self._lease_index = candidate._lease_index
+        self._epoch_seq = candidate.epoch_seq
+        self._lease_index = parts.lease_index
 
     def _index_owned_claim(self, claim: TaskClaim) -> None:
         """Maintain current-owner lookup after every accepted claim body mutation."""
@@ -301,8 +348,7 @@ class SynapseState:
         """
         ts = time.time() if now is None else float(now)
         self.last_seen[agent] = ts
-        self._expire_claims(ts)
-        self._expire_resources(ts)
+        self.expire_stale(ts)
 
     def claim(
         self,
@@ -1172,8 +1218,7 @@ class SynapseState:
             ``generated_at`` timestamp.
         """
         ts = time.time() if now is None else float(now)
-        self._expire_claims(ts)
-        self._expire_resources(ts)
+        self.expire_stale(ts)
 
         ordered = sorted(self.claims.values(), key=lambda c: c.task_id)
         claims = [claim.as_dict() for claim in ordered]
@@ -1188,6 +1233,21 @@ class SynapseState:
             "resources": resources,
             "generated_at": ts,
         }
+
+    def expire_stale(self, now: float) -> None:
+        """Expire every lapsed claim, then every resource offer past its time to live.
+
+        The one expiry pass that :meth:`heartbeat` and :meth:`snapshot` run.
+        Claims expire first, then offers, with the default resource time to live
+        :data:`DEFAULT_RESOURCE_TTL_SECONDS`.
+
+        Parameters
+        ----------
+        now : float
+            Wall-clock time of the pass, in seconds.
+        """
+        self._expire_claims(now)
+        self._expire_resources(now)
 
     def _expire_claims(self, now: float) -> None:
         """Drop every claim whose lease has reached or passed ``now``.

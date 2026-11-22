@@ -18,6 +18,17 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- **The coordination state publishes a committed candidate through a public port; behaviour is unchanged.**
+  - **The port.** The read-only `SynapseState.epoch_seq` returns the last issued lease epoch. `publication_parts()`
+    returns the resource registry and the lease index as a frozen `StatePublicationParts`, which `publish_from`
+    adopts from its candidate. `expire_stale(now)` is the one expiry pass, claims first and then offers past the
+    default time to live; `heartbeat` and `snapshot` run it.
+  - **Why.** `publish_from` read three private attributes of its candidate. It now reads the port, and
+    `core/state.py` leaves the structure budget's private-access ledger.
+  - **Unchanged.** Every result, the wire and the journal format.
+
 ### Fixed
 
 - **Version-one Fleet mirror exports written by the sync daemon (`writer_generation`) are now accepted by `parse_mirror` and the dashboard mirror feed (dated v1 erratum, 2026-11-22).**
