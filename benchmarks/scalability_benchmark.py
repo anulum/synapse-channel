@@ -130,7 +130,7 @@ def state_with_claims(count: int, *, lease: float = NEVER_EXPIRES) -> SynapseSta
             lease_expires_at=lease,
             epoch=index + 1,
         )
-    state._epoch_seq = count
+    state.restore_epoch_seq(count)
     state.reindex_leases()
     return state
 
@@ -190,7 +190,7 @@ def state_with_scoped_claims(count: int) -> SynapseState:
             paths=(f"d{index}/file",),
             epoch=index + 1,
         )
-    state._epoch_seq = count
+    state.restore_epoch_seq(count)
     state.reindex_leases()
     return state
 
