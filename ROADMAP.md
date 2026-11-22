@@ -136,6 +136,18 @@ interfaces, maturity, and release commitments.
   replaying old personal traffic; its first arm says how many earlier messages
   are addressed to it, and `--since 0` replays them. See the
   [CLI reference](docs/cli.md).
+- A stop finishes, and an attempt reconciles, whichever order the attempt's end
+  and its marker-bearing verification arrive in: a kept `applied` stop read-back
+  ends its attempt, a verification that names an attempt's marker binds to that
+  attempt alone, and seals, closing read-backs and independent reconciliation
+  draw on reserved capacity an executor's 32-row limit cannot exhaust. See the
+  [protocol](docs/protocol.md).
+- The app task queue and the spend ledger migrate an earlier layout only by a
+  declared migration that `synapse verify-result migration` confirms against a
+  published schema digest, and a changed layout is refused unchanged. See
+  [app tasks](docs/app-tasks.md).
+- A chat is never an approval, a verdict or a declaration, and no operation can
+  declare a physical or equipment effect. See the [security policy](SECURITY.md).
 - Mail that no session will collect can be found, handed to a successor or
   closed (`synapse mailbox orphans`, `handover`, `close` and `drain`, and
   `synapse doctor --mailbox-orphans`), and mail addressed to a role waits in
@@ -372,7 +384,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.60 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.61 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities

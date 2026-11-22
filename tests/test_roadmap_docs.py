@@ -211,7 +211,15 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     ):
         assert released_in_0_99_60 in shipped, released_in_0_99_60
         assert released_in_0_99_60 not in unreleased, released_in_0_99_60
-    assert "At 0.99.60 nothing on `main` is outside a release." in unreleased
+    for released_in_0_99_61 in (
+        "whichever order the attempt's end",
+        "binds to that attempt alone",
+        "declared migration that `synapse verify-result migration` confirms",
+        "A chat is never an approval, a verdict or a declaration",
+    ):
+        assert released_in_0_99_61 in shipped, released_in_0_99_61
+        assert released_in_0_99_61 not in unreleased, released_in_0_99_61
+    assert "At 0.99.61 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:

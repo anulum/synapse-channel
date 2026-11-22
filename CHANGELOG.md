@@ -18,6 +18,20 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.61] - 2026-11-22
+
+Core 0.99.61 lets a stop finish and an attempt reconcile whichever order the
+attempt's end and its marker-bearing verification arrive in. A kept `applied`
+stop read-back ends its attempt, a verification that names an attempt's marker
+binds to that attempt alone and reconciles it as soon as it ends (one without a
+marker still reconciles only an ended attempt), and seals, closing read-backs
+and independent reconciliation draw on reserves that an executor's 32-row limit
+cannot exhaust. The app task queue and the spend ledger migrate earlier layouts
+by declared, verifiable migrations, and two first opens at the same moment no
+longer fail. A chat is never an approval or a verdict, a task postmortem
+attributes a chat only to its bound sender, and no operation can declare a
+physical effect.
+
 ### Changed
 
 - **An earlier app task queue takes a declared migration that can be verified.**
