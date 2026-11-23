@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import base64
+import itertools
 import json
 import os
 import re
@@ -18,27 +19,18 @@ import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from cryptography.exceptions import InvalidTag
 
-from synapse_channel.core import at_rest
+from synapse_channel.core import at_rest, secure_path
 from synapse_channel.core.at_rest import (
     AtRestCipher,
-    AtRestKeyExhausted,
     AtRestSurface,
     backup_profile,
-    check_key_file,
     decrypt_file,
-    derive_key,
-    generate_key_file,
-    generate_key_file_from_passphrase,
-    generate_wrapped_key_file,
-    load_key_file,
     restore_profile_backup,
-    rewrap_wrapped_key_file,
-    unwrap_data_key,
-    wrap_data_key,
 )
 from synapse_channel.core.at_rest_format import (
     BACKUP_MANIFEST_SCHEMA,
@@ -54,7 +46,25 @@ from synapse_channel.core.at_rest_format import (
     SCRYPT_SALT_BYTES,
     WRAPPED_KEY_SCHEMA,
 )
-from synapse_channel.core.secure_path import assert_owner_only_file_path
+from synapse_channel.core.at_rest_keys import (
+    AtRestKeyExhausted,
+    _validate_key_stat,
+    check_key_file,
+    derive_key,
+    generate_key_file,
+    generate_key_file_from_passphrase,
+    generate_wrapped_key_file,
+    load_key_file,
+    rewrap_wrapped_key_file,
+    unwrap_data_key,
+    wrap_data_key,
+    write_owner_only,
+)
+from synapse_channel.core.secure_path import (
+    SecurePathError,
+    apply_owner_only_file,
+    assert_owner_only_file_path,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -338,6 +348,63 @@ def test_refusals_preserve_exact_exception_types_and_messages(
         unwrap_data_key(bytes(bad_wrap), FIXED_RAW_KEY)
 
 
+def test_write_owner_only_enforces_owner_only_mode_and_atomicity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    applied: list[Path] = []
+
+    def _spy_apply(path: Path) -> None:
+        applied.append(path)
+        apply_owner_only_file(path)
+
+    monkeypatch.setattr("synapse_channel.core.secure_path.apply_owner_only_file", _spy_apply)
+    target = tmp_path / "nested" / "owner-only.bin"
+    write_owner_only(target, b"protected-bytes")
+    assert target.read_bytes() == b"protected-bytes"
+    assert applied == [target]
+    assert_owner_only_file_path(target, purpose="at-rest owner-only output")
+    if os.name == "posix":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert not list(target.parent.glob("*.tmp"))
+
+
+def test_validate_key_stat_and_windows_check_key_file_branches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _validate_key_stat(os.lstat(tmp_path), tmp_path) == (
+        False,
+        f"key file is not a regular file: {tmp_path}",
+    )
+
+    good = tmp_path / "win_good.key"
+    good.write_bytes(FIXED_RAW_KEY)
+    short = tmp_path / "win_short.key"
+    short.write_bytes(b"short")
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(
+        "synapse_channel.core.secure_path.assert_owner_only_file_path",
+        lambda _path, *, purpose: True,
+    )
+    assert check_key_file(good) == (True, "ok")
+    assert check_key_file(short) == (
+        False,
+        f"key file must hold exactly 32 bytes: {short}",
+    )
+
+    def _reject_dacl(_path: Path, *, purpose: str) -> bool:
+        raise SecurePathError(f"{purpose} grants Everyone")
+
+    monkeypatch.setattr(
+        "synapse_channel.core.secure_path.assert_owner_only_file_path",
+        _reject_dacl,
+    )
+    assert check_key_file(good) == (
+        False,
+        f"key file must be owner-only (chmod 600): {good} (key file grants Everyone)",
+    )
+
+
 def test_importing_at_rest_does_not_eagerly_import_cryptography() -> None:
     code = (
         "import builtins, sys\n"
@@ -348,6 +415,7 @@ def test_importing_at_rest_does_not_eagerly_import_cryptography() -> None:
         "    return real_import(name, *args, **kwargs)\n"
         "builtins.__import__ = blocked\n"
         "import synapse_channel.core.at_rest_format\n"
+        "import synapse_channel.core.at_rest_keys\n"
         "import synapse_channel.core.at_rest\n"
         "assert 'cryptography' not in sys.modules\n"
     )
@@ -361,21 +429,147 @@ def test_importing_at_rest_does_not_eagerly_import_cryptography() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_at_rest_format_module_ownership_and_import_order() -> None:
-    from synapse_channel.core import at_rest_format
+def test_at_rest_layering_ownership_and_all_import_orders() -> None:
+    from synapse_channel.core import at_rest_format, at_rest_keys
 
     assert at_rest_format.require_aes_gcm.__module__ == "synapse_channel.core.at_rest_format"
     assert "_AESGCMFactory" not in vars(at_rest)
+    assert "_AESGCMFactory" not in vars(at_rest_keys)
     assert "require_aes_gcm" in vars(at_rest_format)
-    for order in (
-        "import synapse_channel.core.at_rest_format, synapse_channel.core.at_rest",
-        "import synapse_channel.core.at_rest, synapse_channel.core.at_rest_format",
+    assert "require_aes_gcm" not in vars(at_rest_keys)
+
+    keys_owned = (
+        "AtRestKeyExhausted",
+        "KeyEncryptionKey",
+        "PassphraseKeyEncryptionKey",
+        "check_key_file",
+        "derive_key",
+        "generate_key_file",
+        "generate_key_file_from_passphrase",
+        "generate_wrapped_key_file",
+        "load_key_file",
+        "rewrap_wrapped_key_file",
+        "unwrap_data_key",
+        "wrap_data_key",
+        "write_owner_only",
+    )
+    for name in keys_owned:
+        obj = vars(at_rest_keys)[name]
+        assert obj.__module__ == "synapse_channel.core.at_rest_keys"
+    for not_in_at_rest in (
+        "KeyEncryptionKey",
+        "PassphraseKeyEncryptionKey",
+        "check_key_file",
+        "generate_key_file",
+        "generate_key_file_from_passphrase",
+        "generate_wrapped_key_file",
+        "rewrap_wrapped_key_file",
+        "unwrap_data_key",
+        "wrap_data_key",
+        "_write_owner_only",
     ):
+        assert not_in_at_rest not in vars(at_rest)
+    assert "AtRestCipher" not in vars(at_rest_keys)
+    assert "AtRestCipher" not in vars(at_rest_format)
+
+    modules = (
+        "synapse_channel.core.at_rest_format",
+        "synapse_channel.core.at_rest_keys",
+        "synapse_channel.core.at_rest",
+    )
+    for perm in itertools.permutations(modules):
+        stmt = "; ".join(f"import {mod}" for mod in perm)
         result = subprocess.run(
-            [sys.executable, "-c", order],
+            [sys.executable, "-c", stmt],
             check=False,
             capture_output=True,
             text=True,
             env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")},
         )
-        assert result.returncode == 0, f"{order}: {result.stderr}"
+        assert result.returncode == 0, f"{stmt}: {result.stderr}"
+
+
+def test_write_new_key_file_creates_0600_and_applies_owner_only_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """New key files open at mode 0o600 and invoke apply_owner_only_file(target)."""
+    target = tmp_path / "fresh.key"
+    real_open = os.open
+    real_apply = secure_path.apply_owner_only_file
+    observed_modes: list[int] = []
+    observed_fstat_modes: list[int] = []
+    applied_targets: list[Path] = []
+
+    def spy_open(path: Any, flags: int, mode: int = 0o777, *args: Any, **kwargs: Any) -> int:
+        fd = real_open(path, flags, mode, *args, **kwargs)
+        if Path(path) == target:
+            observed_modes.append(mode)
+            observed_fstat_modes.append(stat.S_IMODE(os.fstat(fd).st_mode))
+        return fd
+
+    def spy_apply(path: Path) -> None:
+        applied_targets.append(Path(path))
+        real_apply(path)
+
+    monkeypatch.setattr(os, "open", spy_open)
+    monkeypatch.setattr(secure_path, "apply_owner_only_file", spy_apply)
+    previous_umask = os.umask(0o022)
+    try:
+        written = generate_key_file(target)
+    finally:
+        os.umask(previous_umask)
+
+    assert written == target
+    assert observed_modes == [0o600]
+    assert observed_fstat_modes == [0o600]
+    assert applied_targets == [target]
+
+
+def test_write_new_key_file_o_excl_guards_against_toctou_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """O_EXCL refuses overwriting a key file that appears after exists() returns False."""
+    target = tmp_path / "raced.key"
+    original = b"existing-key-material-32-bytes!!"
+    target.write_bytes(original)
+    target.chmod(0o600)
+
+    real_exists = Path.exists
+
+    def fake_exists(self: Path) -> bool:
+        if self == target:
+            return False
+        return real_exists(self)
+
+    monkeypatch.setattr(Path, "exists", fake_exists)
+    with pytest.raises(FileExistsError):
+        generate_key_file(target)
+
+    assert target.read_bytes() == original
+
+
+def test_wrapped_key_document_rejects_non_base64_alphabet_characters(tmp_path: Path) -> None:
+    """Strict base64 decoding rejects non-alphabet characters in wrapped_key and salt fields."""
+    wrapped_path = tmp_path / "wrapped.json"
+    generate_wrapped_key_file(wrapped_path, "pass-one", n=2**10, r=8, p=1)
+    original_doc = json.loads(wrapped_path.read_text(encoding="utf-8"))
+
+    bad_wrapped_path = tmp_path / "bad_wrapped_key.json"
+    bad_wrapped_doc = dict(original_doc)
+    raw_wrapped: str = bad_wrapped_doc["wrapped_key"]
+    bad_wrapped_doc["wrapped_key"] = raw_wrapped[:4] + "!" + raw_wrapped[4:]
+    bad_wrapped_path.write_text(json.dumps(bad_wrapped_doc), encoding="utf-8")
+    bad_wrapped_path.chmod(0o600)
+    with pytest.raises(ValueError, match="malformed wrapped at-rest key file"):
+        rewrap_wrapped_key_file(bad_wrapped_path, "pass-one", "pass-two", n=2**10, r=8, p=1)
+
+    bad_salt_path = tmp_path / "bad_salt.json"
+    bad_salt_doc = dict(original_doc)
+    bad_params = dict(original_doc["params"])
+    raw_salt: str = bad_params["salt"]
+    bad_params["salt"] = raw_salt[:4] + "!" + raw_salt[4:]
+    bad_salt_doc["params"] = bad_params
+    bad_salt_path.write_text(json.dumps(bad_salt_doc), encoding="utf-8")
+    bad_salt_path.chmod(0o600)
+    with pytest.raises(ValueError, match="malformed wrapped at-rest key file"):
+        rewrap_wrapped_key_file(bad_salt_path, "pass-one", "pass-two", n=2**10, r=8, p=1)

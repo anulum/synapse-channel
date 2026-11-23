@@ -23,7 +23,7 @@ from cli_e2e_helpers import free_port
 from home_redirect import redirect_home
 from synapse_channel import __version__
 from synapse_channel.cli_hub_startup import NO_RESTART_EXIT_CODE
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import (
     SqlCipherUnavailableError,

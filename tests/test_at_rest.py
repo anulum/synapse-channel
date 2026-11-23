@@ -18,30 +18,20 @@ from pathlib import Path
 import pytest
 from cryptography.exceptions import InvalidTag
 
-from synapse_channel.core import at_rest, at_rest_format
+from synapse_channel.core import at_rest, at_rest_format, at_rest_keys
 from synapse_channel.core.at_rest import (
     AtRestCipher,
-    AtRestKeyExhausted,
     AtRestSurface,
-    PassphraseKeyEncryptionKey,
     backup_profile,
-    check_key_file,
     decrypt_file,
-    derive_key,
     encrypt_file,
     full_profile_surfaces,
-    generate_key_file,
-    generate_key_file_from_passphrase,
-    generate_wrapped_key_file,
     inspect_profile,
     is_envelope,
     migrate_profile,
     rekey_profile,
     require_encrypted_profile,
     restore_profile_backup,
-    rewrap_wrapped_key_file,
-    unwrap_data_key,
-    wrap_data_key,
 )
 from synapse_channel.core.at_rest_counter import (
     InMemoryMessageCounter,
@@ -54,6 +44,18 @@ from synapse_channel.core.at_rest_format import (
     KEY_BYTES,
     PASSPHRASE_SCRYPT_BACKEND,
     WRAPPED_KEY_SCHEMA,
+)
+from synapse_channel.core.at_rest_keys import (
+    AtRestKeyExhausted,
+    PassphraseKeyEncryptionKey,
+    check_key_file,
+    derive_key,
+    generate_key_file,
+    generate_key_file_from_passphrase,
+    generate_wrapped_key_file,
+    rewrap_wrapped_key_file,
+    unwrap_data_key,
+    wrap_data_key,
 )
 
 
@@ -785,7 +787,7 @@ def test_load_key_file_maps_size_kind_and_other_refusals(
     short.write_bytes(b"k" * 8)
     apply_owner_only_file(short)
     with pytest.raises(ValueError, match="^key file must hold exactly 32 bytes:"):
-        at_rest.load_key_file(short)
+        at_rest_keys.load_key_file(short)
 
     directory = tmp_path / "dir.key"
     directory.mkdir()
@@ -794,7 +796,7 @@ def test_load_key_file_maps_size_kind_and_other_refusals(
         ValueError,
         match="^key file is not a regular file:|^key file must not be a symlink:",
     ):
-        at_rest.load_key_file(directory)
+        at_rest_keys.load_key_file(directory)
 
     def odd(_path: Path, **_kwargs: object) -> bytes:
         raise SecurePathError("key file: something else went wrong")
@@ -804,7 +806,7 @@ def test_load_key_file_maps_size_kind_and_other_refusals(
         odd,
     )
     with pytest.raises(ValueError, match="something else went wrong"):
-        at_rest.load_key_file(tmp_path / "odd.key")
+        at_rest_keys.load_key_file(tmp_path / "odd.key")
 
 
 @pytest.mark.skipif(

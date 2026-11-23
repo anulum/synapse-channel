@@ -18,7 +18,7 @@ import pytest
 
 from hub_e2e_helpers import running_hub
 from synapse_channel import SynapseHub
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 from synapse_channel.core.merkle import proof_from_json, verify_inclusion
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available

@@ -608,7 +608,7 @@ def test_cmd_hub_anti_rollback_inspect_command_carries_the_store_key(
     """An encrypted store's inspect command includes the key the verifier needs."""
     pytest.importorskip("sqlcipher3")
     from synapse_channel import cli
-    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.at_rest_keys import generate_key_file
 
     key = generate_key_file(tmp_path / "hub key")
     db = tmp_path / "enc.db"

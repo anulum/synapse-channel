@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from synapse_channel import cli
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
 

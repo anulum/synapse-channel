@@ -12,8 +12,11 @@ also protects persisted database pages while the hub is running.
 
 ## Implemented runtime profile
 
-The encryption primitive, key-file management, and operator runtime profile are implemented in
-:mod:`synapse_channel.core.at_rest`:
+The key lifecycle (generation, derivation, wrapping, rewrap and file checks) is
+owned by :mod:`synapse_channel.core.at_rest_keys`; the byte-format contract by
+:mod:`synapse_channel.core.at_rest_format`; artefact encryption under the
+profile guards by :mod:`synapse_channel.core.at_rest`. There is no change in
+algorithm, parameter, format or refusal, and the format tests pin it:
 
 - `AtRestCipher` is an AES-256-GCM envelope over a 32-byte key, with a versioned
   header bound as additional authenticated data, fresh per-message nonces, and

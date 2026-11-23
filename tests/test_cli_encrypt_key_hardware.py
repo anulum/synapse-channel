@@ -126,8 +126,8 @@ def test_generate_wrapped_tpm2_reports_a_device_error(
 
 
 def test_cloud_hsm_local_cli_round_trip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from synapse_channel.core.at_rest import generate_key_file
     from synapse_channel.core.at_rest_cloud_hsm import cipher_from_wrapped_key_file_cloud_hsm
+    from synapse_channel.core.at_rest_keys import generate_key_file
 
     master = generate_key_file(tmp_path / "master.key")
     dest = tmp_path / "cloud.wrapped.key"

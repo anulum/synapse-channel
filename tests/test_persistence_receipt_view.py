@@ -319,7 +319,7 @@ def test_requested_encryption_has_a_named_safe_failure(tmp_path: Path, key_input
 
 def test_real_sqlcipher_receipt_lookup_is_read_only(tmp_path: Path) -> None:
     """Use actual page encryption, including the live encrypted WAL and key file."""
-    from synapse_channel.core.at_rest import generate_key_file, load_key_file
+    from synapse_channel.core.at_rest_keys import generate_key_file, load_key_file
     from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
 
     path = tmp_path / "encrypted.db"

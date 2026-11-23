@@ -16,7 +16,7 @@ import pytest
 
 from hub_e2e_helpers import running_hub
 from synapse_channel import cli, cli_channels
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
 

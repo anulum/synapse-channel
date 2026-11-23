@@ -11,7 +11,7 @@ Cloud providers expose hardware-backed master keys through a network API (AWS KM
 CloudHSM, Azure Key Vault, Google Cloud KMS, or a self-hosted HSM front-end). This
 backend plugs into the same wrapped-key file format as the passphrase, PKCS#11, and
 TPM 2.0 backends (``backend`` = :data:`CLOUD_HSM_BACKEND`) and implements the same
-:class:`~synapse_channel.core.at_rest.KeyEncryptionKey` shape.
+:class:`~synapse_channel.core.at_rest_keys.KeyEncryptionKey` shape.
 
 Providers are pluggable:
 
@@ -34,8 +34,9 @@ import secrets
 from pathlib import Path
 from typing import Any, Protocol
 
-from synapse_channel.core.at_rest import (
-    AtRestCipher,
+from synapse_channel.core.at_rest import AtRestCipher
+from synapse_channel.core.at_rest_format import KEY_BYTES
+from synapse_channel.core.at_rest_keys import (
     _read_wrapped_key_document,
     _write_new_key_file,
     _write_wrapped_key_document,
@@ -44,7 +45,6 @@ from synapse_channel.core.at_rest import (
     unwrap_data_key,
     wrap_data_key,
 )
-from synapse_channel.core.at_rest_format import KEY_BYTES
 
 CLOUD_HSM_BACKEND = "cloud-hsm"
 """Wrapped-key ``backend`` tag for a cloud HSM / cloud KMS key-encryption key."""
@@ -84,7 +84,7 @@ class LocalAesKwCloudHsmProvider:
 
     Suitable for tests, offline drills, and operators who want the cloud-HSM file
     format without a network call. The master key file must pass
-    :func:`~synapse_channel.core.at_rest.check_key_file`.
+    :func:`~synapse_channel.core.at_rest_keys.check_key_file`.
     """
 
     def __init__(self, master_key: bytes, *, key_id: str) -> None:

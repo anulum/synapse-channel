@@ -20,7 +20,7 @@ import pytest
 from websockets.asyncio.client import ClientConnection, connect
 
 from hub_e2e_helpers import read_until_type, running_hub, send_json
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available

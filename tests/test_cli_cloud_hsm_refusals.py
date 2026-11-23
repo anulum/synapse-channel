@@ -18,7 +18,7 @@ import pytest
 
 from synapse_channel import cli
 from synapse_channel.cli_encrypt_key_hardware import _cmd_generate_wrapped_cloud_hsm
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 
 _PREFIX = "synapse encrypt-key generate-wrapped-cloud-hsm: "
 

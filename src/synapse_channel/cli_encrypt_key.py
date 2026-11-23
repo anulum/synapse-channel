@@ -34,14 +34,14 @@ from synapse_channel.cli_encrypt_key_attest import add_attestation_parsers
 from synapse_channel.cli_encrypt_key_escrow import add_escrow_parsers
 from synapse_channel.cli_encrypt_key_hardware import add_hardware_parsers
 from synapse_channel.cli_encrypt_key_profile import add_profile_parsers
-from synapse_channel.core.at_rest import (
+from synapse_channel.core.at_rest_format import DEFAULT_SCRYPT_N, DEFAULT_SCRYPT_P, DEFAULT_SCRYPT_R
+from synapse_channel.core.at_rest_keys import (
     check_key_file,
     generate_key_file,
     generate_key_file_from_passphrase,
     generate_wrapped_key_file,
     rewrap_wrapped_key_file,
 )
-from synapse_channel.core.at_rest_format import DEFAULT_SCRYPT_N, DEFAULT_SCRYPT_P, DEFAULT_SCRYPT_R
 
 
 def _cmd_generate(

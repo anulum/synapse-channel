@@ -16,7 +16,7 @@ generated inside the TPM and never leaves it; only the public operation could be
 
 This is the TPM counterpart to the PKCS#11 and passphrase backends, sharing the same wrapped-key
 file format (recorded with ``backend`` = :data:`TPM2_BACKEND`) and the same
-:class:`~synapse_channel.core.at_rest.KeyEncryptionKey` shape. Only the optional ``tpm2-pytss``
+:class:`~synapse_channel.core.at_rest_keys.KeyEncryptionKey` shape. Only the optional ``tpm2-pytss``
 dependency and a TPM transmission interface (TCTI) are needed; importing this module never
 requires them — :func:`require_tpm2` raises a clear error only when a TPM operation is attempted.
 
@@ -36,13 +36,13 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.core.at_rest import (
-    AtRestCipher,
+from synapse_channel.core.at_rest import AtRestCipher
+from synapse_channel.core.at_rest_format import KEY_BYTES
+from synapse_channel.core.at_rest_keys import (
     _read_wrapped_key_document,
     _write_new_key_file,
     _write_wrapped_key_document,
 )
-from synapse_channel.core.at_rest_format import KEY_BYTES
 
 TPM2_BACKEND = "tpm2"
 """Wrapped-key ``backend`` tag for a key-encryption key rooted in a TPM 2.0 device."""
@@ -152,9 +152,9 @@ def _oaep_scheme(tpm2: Any) -> Any:
 class Tpm2KeyEncryptionKey:
     """A key-encryption key rooted in a TPM 2.0 device, wrapping via RSA-OAEP.
 
-    Implements the :class:`~synapse_channel.core.at_rest.KeyEncryptionKey` protocol. The RSA private
-    key was generated inside the TPM and is used only through its ``rsa_encrypt`` / ``rsa_decrypt``
-    operations on the live primary handle, so it never leaves the device.
+    Implements the :class:`~synapse_channel.core.at_rest_keys.KeyEncryptionKey` protocol. The
+    RSA private key was generated inside the TPM and is used only through its ``rsa_encrypt`` /
+    ``rsa_decrypt`` operations on the live primary handle, so it never leaves the device.
     """
 
     def __init__(self, ectx: Any, primary_handle: Any) -> None:

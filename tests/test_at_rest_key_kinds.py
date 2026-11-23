@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from _platform_caps import requires_posix_mode_bits
-from synapse_channel.core.at_rest import load_key_file
+from synapse_channel.core.at_rest_keys import load_key_file
 
 
 @requires_posix_mode_bits

@@ -102,6 +102,19 @@ execution evidence when carrying a release claim forward.
 
 - **A hub keeps its protected-write tables in one component.** Installing an admission, transferring custody, applying a transition and replaying an enrollment behave as before. `save_checkpoint` stays a lease verb. The new module `core/protected_write_state.py` adds `ProtectedWriteState`. Every existing `SynapseState` name keeps its signature. `protected_claim_custody`, `protected_write_admissions`, `protected_write_reservations`, `protected_write_recoveries`, `protected_enrollments`, `protected_enrollment_key_ids` and `protected_enrollment_fingerprints` are now read-only and none of them keeps a setter: each returns the same dictionary the component holds, which a caller may still mutate in place.
 
+- **The at-rest encryption byte-format contract and key lifecycle now live in layered modules; there is no change in
+  algorithm, parameter, format or refusal.** The byte-format constants and lazy AES-GCM accessor (`ENVELOPE_MAGIC`,
+  `KEY_BYTES`, `NONCE_BYTES`, scrypt defaults, schema markers, AES-GCM limits, `_AESGCMFactory`, `require_aes_gcm`)
+  move from `core/at_rest.py` into `core/at_rest_format.py`; the key lifecycle (`AtRestKeyExhausted`, `derive_key`,
+  key-file generation, RFC 3394 AES-KW wrapping/unwrapping, wrapped-key document I/O and rewrap, key-file checks, and
+  public `write_owner_only`) moves into `core/at_rest_keys.py`; `core/at_rest.py` keeps artefact encryption under the
+  profile guards (`AtRestCipher`, file helpers, and profile inspection, migration, rekey, backup and restore) with a
+  one-way dependency chain (`core.at_rest_format` ← `core.at_rest_keys` ← `core.at_rest`). Compatibility: the owning
+  deep paths are now `core.at_rest_format` and `core.at_rest_keys` with no re-export alias or `__all__`; because
+  `core.at_rest` imports `KEY_BYTES` from `core.at_rest_format` for its own runtime use, downstream runtime imports of
+  `KEY_BYTES` from `core.at_rest` continue to work until they migrate to `core.at_rest_format`. Optional `cryptography`
+  remains strictly lazy on every module, and pinned byte-identical format and refusal tests verify unchanged outputs.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

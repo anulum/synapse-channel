@@ -643,7 +643,7 @@ def test_sqlcipher_check_requires_a_store_path_after_key_file(tmp_path: Path) ->
 
 def test_sqlcipher_check_opens_real_encrypted_store(tmp_path: Path) -> None:
     pytest.importorskip("sqlcipher3")
-    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.at_rest_keys import generate_key_file
     from synapse_channel.core.persistence import EventStore
 
     key = generate_key_file(tmp_path / "hub.key")

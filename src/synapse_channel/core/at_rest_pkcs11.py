@@ -18,9 +18,10 @@ Exact hardware token, firmware and module qualification remains separate.
 
 This is the hardware counterpart to the software passphrase backend, sharing the same wrapped-key
 file format (recorded with ``backend`` = :data:`PKCS11_BACKEND`) and the same
-:class:`~synapse_channel.core.at_rest.KeyEncryptionKey` shape. Only the ``python-pkcs11`` optional
-dependency and a PKCS#11 module path are needed; importing this module never requires them —
-:func:`require_pkcs11` raises a clear error only when a token operation is actually attempted.
+:class:`~synapse_channel.core.at_rest_keys.KeyEncryptionKey` shape. Only the ``python-pkcs11``
+optional dependency and a PKCS#11 module path are needed; importing this module never requires
+them — :func:`require_pkcs11` raises a clear error only when a token operation is actually
+attempted.
 
 The unwrapped data key is returned to the process because ``AtRestCipher`` runs
 AES-GCM in software. A suitably provisioned hardware token may keep its KEK
@@ -36,13 +37,13 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.core.at_rest import (
-    AtRestCipher,
+from synapse_channel.core.at_rest import AtRestCipher
+from synapse_channel.core.at_rest_format import KEY_BYTES
+from synapse_channel.core.at_rest_keys import (
     _read_wrapped_key_document,
     _write_new_key_file,
     _write_wrapped_key_document,
 )
-from synapse_channel.core.at_rest_format import KEY_BYTES
 
 PKCS11_BACKEND = "pkcs11"
 """Wrapped-key ``backend`` tag for a key-encryption key held on a PKCS#11 token."""
@@ -72,9 +73,9 @@ def require_pkcs11() -> Any:
 class Pkcs11KeyEncryptionKey:
     """A key-encryption key held on a PKCS#11 token, wrapping via RFC 3394 AES key wrap.
 
-    Implements the :class:`~synapse_channel.core.at_rest.KeyEncryptionKey` protocol. The token's AES
-    key is used only via its ``C_WrapKey`` / ``C_UnwrapKey`` operations, so it can stay sensitive,
-    non-extractable, and never leave the device.
+    Implements the :class:`~synapse_channel.core.at_rest_keys.KeyEncryptionKey` protocol. The
+    token's AES key is used only via its ``C_WrapKey`` / ``C_UnwrapKey`` operations, so it can
+    stay sensitive, non-extractable, and never leave the device.
     """
 
     def __init__(self, session: Any, kek: Any) -> None:

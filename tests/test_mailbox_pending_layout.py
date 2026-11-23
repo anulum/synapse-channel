@@ -24,7 +24,7 @@ import pytest
 from websockets.asyncio.client import connect
 
 from hub_e2e_helpers import read_until_type, running_hub
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 from synapse_channel.core.dead_letters import is_directed_target
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.hub_config import HubConfig

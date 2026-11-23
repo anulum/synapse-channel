@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel import __version__
-from synapse_channel.core.at_rest import load_key_file
 from synapse_channel.core.at_rest_format import KEY_BYTES
+from synapse_channel.core.at_rest_keys import load_key_file
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.mailbox_pending_layout import copy_mailbox_layout
 from synapse_channel.core.persistence_store_format import (

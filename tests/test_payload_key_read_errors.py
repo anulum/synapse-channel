@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from synapse_channel.core import secure_path
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 from synapse_channel.core.payload_crypto import PayloadCryptoError, load_payload_key
 
 

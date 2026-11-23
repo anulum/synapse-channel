@@ -16,7 +16,7 @@ import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.payload_crypto import (
     PAYLOAD_PLACEHOLDER,

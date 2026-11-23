@@ -275,7 +275,7 @@ def test_migrate_sqlcipher_cli_copies_real_store(
 ) -> None:
     """Production encrypt-key migrate-sqlcipher path on a real EventStore."""
     pytest.importorskip("sqlcipher3")
-    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.at_rest_keys import generate_key_file
     from synapse_channel.core.persistence import EventStore
 
     key = generate_key_file(tmp_path / "hub.key")
@@ -315,7 +315,7 @@ def test_migrate_sqlcipher_cli_refuses_missing_source(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     pytest.importorskip("sqlcipher3")
-    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.at_rest_keys import generate_key_file
 
     key = generate_key_file(tmp_path / "hub.key")
     args = cli.build_parser().parse_args(
@@ -356,7 +356,7 @@ def test_rekey_sqlcipher_cli_rotates_real_store(
 ) -> None:
     """Production encrypt-key rekey-sqlcipher path on a real EventStore."""
     pytest.importorskip("sqlcipher3")
-    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.at_rest_keys import generate_key_file
     from synapse_channel.core.persistence import EventStore
     from synapse_channel.core.persistence_sqlcipher import SqlCipherKeyError
 
@@ -398,7 +398,7 @@ def test_rekey_sqlcipher_cli_refuses_missing_store_and_unchanged_key(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A missing store and a rekey to the same key both exit 1 before any page changes."""
-    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.at_rest_keys import generate_key_file
 
     key = generate_key_file(tmp_path / "hub.key")
     parser = cli.build_parser()

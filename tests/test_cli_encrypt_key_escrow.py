@@ -19,7 +19,7 @@ from synapse_channel import (
 
 
 def test_escrow_split_and_recover_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from synapse_channel.core.at_rest import generate_key_file, load_key_file
+    from synapse_channel.core.at_rest_keys import generate_key_file, load_key_file
 
     key = generate_key_file(tmp_path / "store.key")
     original = load_key_file(key)
@@ -61,7 +61,7 @@ def test_escrow_cli_refusals_exit_nonzero_without_writing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A bad threshold, an existing output and too few shares each fail closed."""
-    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.at_rest_keys import generate_key_file
 
     key = generate_key_file(tmp_path / "store.key")
     parser = cli.build_parser()

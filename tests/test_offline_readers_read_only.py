@@ -29,7 +29,7 @@ from synapse_channel.client.diagnostics import check_sqlcipher_event_store
 from synapse_channel.core.accounting import run_accounting_report
 from synapse_channel.core.adaptive_ttl import run_ttl_advice
 from synapse_channel.core.approvals import run_approval_report
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 from synapse_channel.core.capability_observations import read_observed_capability_index
 from synapse_channel.core.causality import run_causality
 from synapse_channel.core.causality_federation import HubEventRef, run_federated_causality

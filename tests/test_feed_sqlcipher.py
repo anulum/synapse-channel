@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 from synapse_channel.core.feed import payload_sha256
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import record_finding

@@ -424,7 +424,7 @@ def test_cmd_hub_db_key_file_requires_db(capsys: pytest.CaptureFixture[str]) -> 
 def test_cmd_hub_with_db_key_file_opens_sqlcipher_store(tmp_path: Path) -> None:
     """Hub CLI opens a real SQLCipher EventStore when --db-key-file is set."""
     pytest.importorskip("sqlcipher3")
-    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.at_rest_keys import generate_key_file
     from synapse_channel.core.persistence import EventStore
 
     key = generate_key_file(tmp_path / "hub.key")

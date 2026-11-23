@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from synapse_channel.client.diagnostics import check_mcp_posture, check_sqlcipher_event_store
-from synapse_channel.core.at_rest import generate_key_file
+from synapse_channel.core.at_rest_keys import generate_key_file
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
 from synapse_channel.mcp.registration import (

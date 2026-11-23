@@ -35,8 +35,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.core.at_rest import _write_new_key_file
 from synapse_channel.core.at_rest_format import KEY_BYTES
+from synapse_channel.core.at_rest_keys import _write_new_key_file
 
 ATTESTATION_POLICY_SCHEMA = "synapse-at-rest-attestation-policy.v1"
 """Schema marker for an at-rest attestation policy document."""

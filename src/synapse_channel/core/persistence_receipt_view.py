@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.core.at_rest import load_key_file
+from synapse_channel.core.at_rest_keys import load_key_file
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.event_row_mac import RowMacKey, row_mac_key_path
 from synapse_channel.core.persistence_sqlcipher import (

@@ -28,8 +28,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.core.at_rest import _write_new_key_file, check_key_file, load_key_file
 from synapse_channel.core.at_rest_format import KEY_BYTES
+from synapse_channel.core.at_rest_keys import _write_new_key_file, check_key_file, load_key_file
 
 ESCROW_SHARE_SCHEMA = "synapse-at-rest-escrow-share.v1"
 """Schema marker for one threshold share of an at-rest data key."""
