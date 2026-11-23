@@ -33,6 +33,7 @@ from synapse_channel.core.protected_write_custody import ProtectedClaimCustody
 from synapse_channel.core.protected_write_enrollment_journal import ProtectedEnrollmentRecord
 from synapse_channel.core.protected_write_lifecycle import ProtectedWriteReservation
 from synapse_channel.core.protected_write_recovery import ProtectedRecoveryAdmission
+from synapse_channel.core.protected_write_state import ProtectedWriteState
 from synapse_channel.core.scoping import (
     DEFAULT_WORKTREE,
     MAX_DECLARED_PATHS,
@@ -166,19 +167,48 @@ class SynapseState:
         self.claims: dict[str, TaskClaim] = {}
         self.pending_handoffs = PendingRecipientIndex()
         self.owned_claims = OwnedWorkIndex("claims")
-        self.protected_claim_custody: dict[str, tuple[ProtectedClaimCustody, ...]] = {}
-        self.protected_write_admissions: dict[str, ProtectedWriteAdmission] = {}
-        self.protected_write_reservations: dict[str, ProtectedWriteReservation] = {}
-        self.protected_write_recoveries: dict[str, str] = {}
-        self.protected_enrollments: dict[str, ProtectedEnrollmentRecord] = {}
-        self.protected_enrollment_key_ids: set[str] = set()
-        self.protected_enrollment_fingerprints: set[str] = set()
+        self.protected = ProtectedWriteState()
         self._resource_registry = ResourceRegistry(max_offers_per_agent=self.max_offers_per_agent)
         self.resources: dict[str, ResourceOffer] = self._resource_registry.resources
         self.max_offers_per_agent = self._resource_registry.max_offers_per_agent
         self.expired_checkpoints: dict[str, str] = {}
         self._epoch_seq = 0
         self._lease_index = LeaseIndex()
+
+    @property
+    def protected_claim_custody(self) -> dict[str, tuple[ProtectedClaimCustody, ...]]:
+        """The custody witnesses, the component's own dictionary."""
+        return self.protected.protected_claim_custody
+
+    @property
+    def protected_write_admissions(self) -> dict[str, ProtectedWriteAdmission]:
+        """The admission records, the component's own dictionary."""
+        return self.protected.protected_write_admissions
+
+    @property
+    def protected_write_reservations(self) -> dict[str, ProtectedWriteReservation]:
+        """The reservations, the component's own dictionary."""
+        return self.protected.protected_write_reservations
+
+    @property
+    def protected_write_recoveries(self) -> dict[str, str]:
+        """The parent-to-child recovery map, the component's own dictionary."""
+        return self.protected.protected_write_recoveries
+
+    @property
+    def protected_enrollments(self) -> dict[str, ProtectedEnrollmentRecord]:
+        """The enrollment records, the component's own dictionary."""
+        return self.protected.protected_enrollments
+
+    @property
+    def protected_enrollment_key_ids(self) -> set[str]:
+        """The enrollment key ids, the component's own set."""
+        return self.protected.protected_enrollment_key_ids
+
+    @property
+    def protected_enrollment_fingerprints(self) -> set[str]:
+        """The enrollment fingerprints, the component's own set."""
+        return self.protected.protected_enrollment_fingerprints
 
     @property
     def _lease_heap(self) -> list[tuple[float, str, int]]:
@@ -265,13 +295,7 @@ class SynapseState:
         self.claims = candidate.claims
         self.pending_handoffs = candidate.pending_handoffs
         self.owned_claims = candidate.owned_claims
-        self.protected_claim_custody = candidate.protected_claim_custody
-        self.protected_write_admissions = candidate.protected_write_admissions
-        self.protected_write_reservations = candidate.protected_write_reservations
-        self.protected_write_recoveries = candidate.protected_write_recoveries
-        self.protected_enrollments = candidate.protected_enrollments
-        self.protected_enrollment_key_ids = candidate.protected_enrollment_key_ids
-        self.protected_enrollment_fingerprints = candidate.protected_enrollment_fingerprints
+        self.protected.publish_from(candidate.protected)
         self._resource_registry = parts.resource_registry
         self.resources = self._resource_registry.resources
         self.expired_checkpoints = candidate.expired_checkpoints
@@ -593,36 +617,8 @@ class SynapseState:
         only after commit. Historical replay must reconstruct claims and validate
         the same record before installation; this is not an authentication API.
         """
-        if type(max_reservations) is not int or max_reservations <= 0:
-            raise ValueError("invalid protected reservation budget")
-        reservation_id = admission.reservation_id
-        if (
-            reservation_id in self.protected_write_admissions
-            or reservation_id in self.protected_claim_custody
-            or reservation_id in self.protected_write_reservations
-        ):
-            raise ValueError("protected reservation identity already exists")
-        retained_ids = (
-            self.protected_write_admissions.keys()
-            | self.protected_claim_custody.keys()
-            | self.protected_write_reservations.keys()
-        )
-        if len(retained_ids) >= max_reservations:
-            raise ValueError("protected reservation budget exhausted")
-        if not admission.claim_custody:
-            raise ValueError("protected admission requires claim custody")
-        for witness in admission.claim_custody:
-            claim = self.claims.get(witness.task_id)
-            if claim is None or ProtectedClaimCustody.capture(claim) != witness:
-                raise ValueError("protected admission witness changed before installation")
-            if self.protected_scope_held(
-                witness.task_id, witness.worktree, witness.paths, witness.path_identity
-            ):
-                raise ValueError("protected admission overlaps outstanding custody")
-        self.protected_write_admissions[reservation_id] = admission
-        self.protected_claim_custody[reservation_id] = admission.claim_custody
-        self.protected_write_reservations[reservation_id] = ProtectedWriteReservation.admitted(
-            admission
+        self.protected.install_admission(
+            admission, max_reservations=max_reservations, claim_of=self.claims.get
         )
 
     def transfer_protected_write_custody(
@@ -650,46 +646,9 @@ class SynapseState:
         performed here. Ancestor custody remains held by the child until verified
         settlement; the parent remains immutable historical evidence.
         """
-        parent, admission = recovery.parent, recovery.admission
-        parent_id, child_id = parent.admission.reservation_id, admission.reservation_id
-        if (
-            self.protected_write_reservations.get(parent_id) != parent
-            or self.protected_write_admissions.get(parent_id) != parent.admission
-            or parent_id in self.protected_write_recoveries
-            or not parent.holds_custody
-            or self.protected_claim_custody.get(parent_id) != parent.custody
-        ):
-            raise ValueError("recovery parent or custody changed before transfer")
-        if type(max_reservations) is not int or max_reservations <= 0:
-            raise ValueError("invalid protected reservation budget")
-        retained = (
-            self.protected_write_admissions.keys()
-            | self.protected_write_reservations.keys()
-            | self.protected_claim_custody.keys()
+        self.protected.transfer_custody(
+            recovery, max_reservations=max_reservations, claim_of=self.claims.get
         )
-        if child_id in retained or len(retained) >= max_reservations:
-            raise ValueError("recovery child identity or reservation budget unavailable")
-        if not admission.claim_custody:
-            raise ValueError("recovery requires fresh service custody")
-        for witness in admission.claim_custody:
-            claim = self.claims.get(witness.task_id)
-            if claim is None or ProtectedClaimCustody.capture(claim) != witness:
-                raise ValueError("recovery witness changed before transfer")
-        child = replace(
-            ProtectedWriteReservation.admitted(admission), inherited_custody=parent.custody
-        )
-        for other_id, witnesses in self.protected_claim_custody.items():
-            if other_id != parent_id and any(
-                held.conflicts(item.task_id, item.worktree, item.paths, item.path_identity)
-                for held in witnesses
-                for item in child.custody
-            ):
-                raise ValueError("recovery overlaps another reservation domain")
-        self.protected_write_admissions[child_id] = admission
-        self.protected_write_reservations[child_id] = child
-        self.protected_claim_custody[child_id] = child.custody
-        self.protected_write_recoveries[parent_id] = child_id
-        del self.protected_claim_custody[parent_id]
 
     def apply_protected_write_transition(
         self, previous: ProtectedWriteReservation, updated: ProtectedWriteReservation
@@ -714,24 +673,7 @@ class SynapseState:
         Caller must commit the same transition before publishing this candidate.
         Immutable admission history remains retained after custody is released.
         """
-        reservation_id = previous.admission.reservation_id
-        if (
-            self.protected_write_reservations.get(reservation_id) != previous
-            or reservation_id in self.protected_write_recoveries
-            or self.protected_write_admissions.get(reservation_id) != previous.admission
-            or updated.admission != previous.admission
-            or updated.inherited_custody != previous.inherited_custody
-            or updated.transition_sequence <= previous.transition_sequence
-        ):
-            raise ValueError("protected transition has a stale or changed predecessor")
-        expected = previous.custody if previous.holds_custody else None
-        if self.protected_claim_custody.get(reservation_id) != expected:
-            raise ValueError("protected transition custody does not match its predecessor")
-        if updated.holds_custody and not previous.holds_custody:
-            raise ValueError("settled custody cannot be resurrected")
-        self.protected_write_reservations[reservation_id] = updated
-        if not updated.holds_custody:
-            self.protected_claim_custody.pop(reservation_id, None)
+        self.protected.apply_transition(previous, updated)
 
     def protected_task_held(self, task: str) -> bool:
         """Return whether a reservation retains the exact claim witness.
@@ -750,11 +692,7 @@ class SynapseState:
         bool
             ``True`` when any retained witness names ``task``.
         """
-        return any(
-            witness.task_id == task
-            for witnesses in self.protected_claim_custody.values()
-            for witness in witnesses
-        )
+        return self.protected.task_held(task)
 
     def protected_scope_held(
         self,
@@ -785,11 +723,7 @@ class SynapseState:
         bool
             ``True`` when any retained witness conflicts with the scope.
         """
-        return any(
-            witness.conflicts(task, worktree, paths, path_identity)
-            for witnesses in self.protected_claim_custody.values()
-            for witness in witnesses
-        )
+        return self.protected.scope_held(task, worktree, paths, path_identity)
 
     def _claims_owned_by(self, quota_principal: str) -> int:
         """Return how many live claims are charged to ``quota_principal``."""

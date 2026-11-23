@@ -100,6 +100,8 @@ execution evidence when carrying a release claim forward.
   clear. `connection` is attached by connecting. `running`, `last_close_code` and
   `last_close_reason` keep a setter.
 
+- **A hub keeps its protected-write tables in one component.** Installing an admission, transferring custody, applying a transition and replaying an enrollment behave as before. `save_checkpoint` stays a lease verb. The new module `core/protected_write_state.py` adds `ProtectedWriteState`. Every existing `SynapseState` name keeps its signature. `protected_claim_custody`, `protected_write_admissions`, `protected_write_reservations`, `protected_write_recoveries`, `protected_enrollments`, `protected_enrollment_key_ids` and `protected_enrollment_fingerprints` are now read-only and none of them keeps a setter: each returns the same dictionary the component holds, which a caller may still mutate in place.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

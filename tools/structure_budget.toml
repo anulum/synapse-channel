@@ -318,7 +318,7 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/secret_files.py::_read_owner_only_text_windows" = 24
 "src/synapse_channel/core/secure.py::_apply_durable_ingress_ceiling" = 16
 "src/synapse_channel/core/secure_path.py::read_owner_only_file_bytes" = 20
-"src/synapse_channel/core/state.py::SynapseState.transfer_protected_write_custody" = 18
+"src/synapse_channel/core/protected_write_state.py::ProtectedWriteState.transfer_custody" = 18
 "src/synapse_channel/core/state_transaction.py::SerializedStateMutationActor.run_atomic" = 16
 "src/synapse_channel/ergonomics.py::main" = 31
 "src/synapse_channel/ergonomics.py::resolve_identity" = 18
@@ -406,3 +406,8 @@ allowed = 0
 reason = "argparse has no public API for listing a parser's actions or a subparser group's choice actions; this adapter is the one module allowed to read them, and cli.py and cli_completions.py go through it."
 owner = "f636"
 review_by = "2026-12-31"
+
+[[moves]]
+from = "src/synapse_channel/core/state.py::SynapseState.transfer_protected_write_custody"
+measure = "function_branches"
+to = "src/synapse_channel/core/protected_write_state.py::ProtectedWriteState.transfer_custody"

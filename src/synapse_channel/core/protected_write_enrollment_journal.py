@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.message_auth import MessageAuthKey
@@ -227,9 +227,7 @@ def _apply_issue_record(record: ProtectedEnrollmentRecord, state: SynapseState) 
         for old in state.protected_enrollments.values()
     ):
         raise ValueError("writer principal already has an active incarnation")
-    state.protected_enrollments[record.session_id] = record
-    state.protected_enrollment_key_ids.add(record.key_id)
-    state.protected_enrollment_fingerprints.add(record.key_fingerprint)
+    state.protected.record_enrollment(record)
 
 
 def apply_enrollment_event(event: StoredEvent, state: SynapseState) -> None:
@@ -264,6 +262,6 @@ def apply_enrollment_event(event: StoredEvent, state: SynapseState) -> None:
         previous = state.protected_enrollments[session_id]
         if previous.revoked:
             raise ValueError("protected enrollment already revoked")
-        state.protected_enrollments[session_id] = replace(previous, revoked=True)
+        state.protected.revoke_enrollment(session_id)
         return
     raise ValueError("unsupported protected enrollment event")
