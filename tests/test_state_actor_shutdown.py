@@ -28,7 +28,8 @@ from synapse_channel.core.atomic_operations import (
     idempotency_conflict_response,
 )
 from synapse_channel.core.idempotency import IdempotencyCache
-from synapse_channel.core.journal import record_checkpoint, record_claim, replay
+from synapse_channel.core.journal import record_checkpoint, record_claim
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.persistence import EventStore, OperationCommitResult
 from synapse_channel.core.state import MINIMUM_TTL_SECONDS, SynapseState
 from synapse_channel.core.state_models import TaskClaim

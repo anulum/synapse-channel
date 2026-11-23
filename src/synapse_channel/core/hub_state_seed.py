@@ -35,7 +35,7 @@ from synapse_channel.core.delivery_receipts import (
     restore_pending_receipts,
 )
 from synapse_channel.core.event_row_recovery import CorruptEventRow
-from synapse_channel.core.journal import replay
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.ledger import Blackboard
 from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.pending_receipts import ReceiptEntry

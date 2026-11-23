@@ -15,7 +15,8 @@ import pytest
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.core.handlers import leasing
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind, replay
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.persistence import EventStore
 
 

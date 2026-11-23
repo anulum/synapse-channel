@@ -16,7 +16,7 @@ from typing import Any, NoReturn
 import pytest
 
 from synapse_channel.core.atomic_operations import canonical_request_digest
-from synapse_channel.core.journal import replay
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.message_auth import MessageAuthKey, sign_frame
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protected_write_request import protected_write_operation_key

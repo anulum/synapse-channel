@@ -27,7 +27,7 @@ from websockets.sync.client import connect
 from protected_write_socket_examples import private_unix_directory as private_unix_directory
 from protected_write_socket_examples import requires_linux_peer_credentials
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import replay
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.message_auth import (
     EventSignatureKey,
     MessageAuthKey,

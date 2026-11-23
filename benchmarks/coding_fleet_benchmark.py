@@ -29,7 +29,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.core.journal import EventKind, replay
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import SynapseState
 from synapse_channel.core.state_models import GitContext

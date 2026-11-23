@@ -23,8 +23,8 @@ from synapse_channel.core.journal import (
     record_handoff,
     record_ledger_task,
     record_release,
-    replay,
 )
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.ledger import Blackboard
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import SynapseState

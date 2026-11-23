@@ -14,7 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.core.journal import EventKind, restore_active_multihub_partitions
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal_replay import restore_active_multihub_partitions
 from synapse_channel.core.multihub_follower import EventFetcher
 from synapse_channel.core.multihub_transport import MultiHubFetchError
 from synapse_channel.core.multihub_watch import (

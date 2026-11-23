@@ -37,8 +37,8 @@ from synapse_channel.core.clock_skew import ClockSkew
 from synapse_channel.core.journal import (
     record_multihub_equivocation,
     record_multihub_equivocation_recovery,
-    restore_active_multihub_quarantines,
 )
+from synapse_channel.core.journal_replay import restore_active_multihub_quarantines
 from synapse_channel.core.multihub_equivocation import (
     FederationQuarantine,
     MultiHubEquivocationError,

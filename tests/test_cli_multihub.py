@@ -22,11 +22,8 @@ from synapse_channel.cli_multihub import (
     _render,
     add_parsers,
 )
-from synapse_channel.core.journal import (
-    EventKind,
-    record_multihub_equivocation,
-    restore_active_multihub_quarantines,
-)
+from synapse_channel.core.journal import EventKind, record_multihub_equivocation
+from synapse_channel.core.journal_replay import restore_active_multihub_quarantines
 from synapse_channel.core.multihub_equivocation import FederationQuarantine
 from synapse_channel.core.multihub_fold import fold_observed_state
 from synapse_channel.core.multihub_follower import EventFetcher

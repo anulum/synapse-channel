@@ -26,7 +26,8 @@ from synapse_channel.core.atomic_operations import (
     idempotency_conflict_response,
 )
 from synapse_channel.core.idempotency import IdempotencyCache
-from synapse_channel.core.journal import record_claim, replay
+from synapse_channel.core.journal import record_claim
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.persistence import EventStore, OperationCommitResult
 from synapse_channel.core.state import SynapseState, TaskClaim
 from synapse_channel.core.state_transaction import SerializedStateMutationActor

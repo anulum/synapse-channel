@@ -48,7 +48,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.core.journal import EventKind, replay
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import SynapseState, TaskClaim
 
@@ -215,7 +216,7 @@ def measure_replay_seconds(count: int) -> float:
     """Return the seconds to replay a durable log of ``count`` claim events.
 
     The events are written non-durably (set-up is not the measured cost); only the
-    :func:`~synapse_channel.core.journal.replay` rebuild is timed.
+    :func:`~synapse_channel.core.journal_replay.replay` rebuild is timed.
     """
     with tempfile.TemporaryDirectory() as directory:
         store = EventStore(Path(directory) / "events.db")

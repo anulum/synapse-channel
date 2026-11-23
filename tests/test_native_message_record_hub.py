@@ -24,7 +24,8 @@ from synapse_channel.core.acl import EVIDENCE, AclPolicy, AclRule
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.handlers.native_message import native_message_quota
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind, record_claim, replay
+from synapse_channel.core.journal import EventKind, record_claim
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.message_auth import (
     EventSignatureKey,
     EventSignatureTrustBundle,

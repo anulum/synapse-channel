@@ -906,7 +906,7 @@ lifecycle, checkpoints, blackboard, and idempotency guard by replaying the
 event log, and MUST expire any lease already past its expiry at restart time.
 
 **Implementation.** `core/hub.py` (`seed_hub_state`) over
-`core/journal.py:replay`.
+`core/journal_replay.py:replay`.
 
 **Pinned by.** `tests/test_hub_persistence.py`, `tests/test_journal.py`.
 
@@ -916,7 +916,7 @@ event log, and MUST expire any lease already past its expiry at restart time.
 bounded chat history, and the mailbox identity cap — so a restart cannot
 reconstruct an unbounded in-memory view from an append-only log.
 
-**Implementation.** `core/journal.py:replay` → `core/ledger.py:restore_progress`
+**Implementation.** `core/journal_replay.py:replay` → `core/ledger.py:restore_progress`
 (three drop passes), bounded history seed, `mailbox_pending` LRU restore (the
 journal's mailbox mentions, watermarks and role bindings replayed in order, from
 the stored mentions rather than the chat bodies).
@@ -933,7 +933,7 @@ audits likewise MUST NOT create or alter a lease. A validated pending inbound
 operator-relay audit MAY restore only the separate two-person approval ledger as
 specified by INV-RR-4.
 
-**Implementation.** `core/journal.py:replay` (no registry branch for the denial
+**Implementation.** `core/journal_replay.py:replay` (no registry branch for the denial
 kinds; they fall through untouched).
 
 **Pinned by.** `tests/test_claim_denial_evidence.py`, `tests/test_journal.py`.
@@ -947,7 +947,7 @@ contradictory evidence MUST NOT create or retain a quorum, and replay MUST NOT
 restore an approved verdict. A second principal still MUST pass current peer,
 scope, and namespace-ownership authorization before the action applies.
 
-**Implementation.** `core/journal.py:replay` folds operator-relay audit rows
+**Implementation.** `core/journal_replay.py:replay` folds operator-relay audit rows
 through `core/operator_relay_approval.py:RelayApprovalLedger.restore_audit`;
 `core/hub_state_seed.py` publishes the bounded reconstructed ledger.
 

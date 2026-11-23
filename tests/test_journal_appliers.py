@@ -22,8 +22,8 @@ from synapse_channel.core.journal import (
     record_handoff,
     record_idempotency,
     record_task_update,
-    replay,
 )
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import TaskClaim
 

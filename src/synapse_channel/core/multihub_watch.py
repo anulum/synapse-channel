@@ -40,8 +40,8 @@ from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.journal import (
     EventKind,
     record_multihub_ownership_transitions,
-    restore_active_multihub_partitions,
 )
+from synapse_channel.core.journal_replay import restore_active_multihub_partitions
 from synapse_channel.core.multihub_equivocation import MultiHubIntegrityError
 from synapse_channel.core.multihub_follower import EventFetcher, MultiHubFollower
 from synapse_channel.core.multihub_transport import (

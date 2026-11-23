@@ -21,7 +21,8 @@ from websockets.asyncio.client import connect
 from hub_e2e_helpers import read_until_type, running_hub, send_json
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind, replay
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.record_keeping import (
     OPERATION_RECORD,

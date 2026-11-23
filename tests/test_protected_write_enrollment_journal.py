@@ -24,9 +24,8 @@ from synapse_channel.core.journal import (
     record_guard_denial,
     record_mailbox_watermark,
     record_multihub_equivocation,
-    replay,
-    restore_active_multihub_quarantines,
 )
+from synapse_channel.core.journal_replay import replay, restore_active_multihub_quarantines
 from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.multihub_equivocation import FederationQuarantine
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity

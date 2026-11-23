@@ -22,7 +22,8 @@ from synapse_channel.core.atomic_operations import (
     OperationRecord,
     canonical_request_digest,
 )
-from synapse_channel.core.journal import record_claim, replay
+from synapse_channel.core.journal import record_claim
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.message_auth import MessageAuthKey, sign_frame
 from synapse_channel.core.persistence import EventStore, OperationCommitResult
 from synapse_channel.core.protected_write_admission import ProtectedAdmissionContext

@@ -64,7 +64,8 @@ from synapse_channel.core.federation_lifecycle import classify_federation_lifecy
 from synapse_channel.core.federation_store import load_store
 from synapse_channel.core.federation_wire import bundle_fingerprint
 from synapse_channel.core.fleet_health import local_fleet_health_to_json, run_local_fleet_health
-from synapse_channel.core.journal import EventKind, replay
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES, Blackboard
 from synapse_channel.core.merkle import proof_to_json, run_proof
 from synapse_channel.core.multihub_wire import LogSnapshot, encode_log_snapshot

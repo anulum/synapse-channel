@@ -15,7 +15,7 @@ hub commits at full durability grow without bound: every resume
 module is the opt-in knob that bounds them, and it is written to respect the two
 readers of the log at once:
 
-* **Coordination replay** (:func:`~synapse_channel.core.journal.replay`)
+* **Coordination replay** (:func:`~synapse_channel.core.journal_replay.replay`)
   reconstructs each claim from the *latest* claim-snapshot event for its task, so
   a checkpoint may be dropped only when a newer checkpoint for the same task
   survives. Keeping the latest *N* checkpoints per task (``N >= 1``) leaves the

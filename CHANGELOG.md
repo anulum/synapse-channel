@@ -115,6 +115,16 @@ execution evidence when carrying a release claim forward.
   `KEY_BYTES` from `core.at_rest` continue to work until they migrate to `core.at_rest_format`. Optional `cryptography`
   remains strictly lazy on every module, and pinned byte-identical format and refusal tests verify unchanged outputs.
 
+- **Journal restart replay and multi-hub restores now live on the reader side in `core/journal_replay.py`; behaviour is unchanged.**
+  `replay`, `ReplayResult`, `restore_active_multihub_partitions`, `restore_active_multihub_quarantines`, and
+  their private payload/protected-replay helpers move statement-for-statement from `core/journal.py` to
+  `core/journal_replay.py` (separate from `core/replay.py`, which reconstructs one task's history for forks).
+  `core/journal.py` retains `EventKind`, `MEMORY_KINDS`, `UnsupportedProtectedWriteHistoryError`, and all
+  39 writers with no alias or re-export of moved reader-side names. Compatibility: no top-level package
+  export changes (`synapse_channel.MEMORY_KINDS` stays in `core.journal`); the deep import path for
+  `replay`, `ReplayResult`, `restore_active_multihub_partitions`, and `restore_active_multihub_quarantines`
+  moves from `synapse_channel.core.journal` to `synapse_channel.core.journal_replay`.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

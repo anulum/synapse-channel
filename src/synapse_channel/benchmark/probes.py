@@ -35,7 +35,8 @@ from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind, replay
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType, build_envelope
 from synapse_channel.core.relay_codec import decode_lite, encode_lite
@@ -130,7 +131,7 @@ def probe_event_store_replay(iterations: int) -> ProbeResult:
     """Measure journal replay throughput over a seeded durable log.
 
     Seeds ``iterations`` claim events, then measures one full
-    :func:`~synapse_channel.core.journal.replay` — the restart-recovery path
+    :func:`~synapse_channel.core.journal_replay.replay` — the restart-recovery path
     that rebuilds hub state from the log.
     """
     with TemporaryDirectory(prefix="synapse-bench-") as scratch:

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from synapse_channel.core.journal import record_ledger_task, replay
+from synapse_channel.core.journal import record_ledger_task
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.ledger import LedgerTask
 from synapse_channel.core.persistence import EventStore
 

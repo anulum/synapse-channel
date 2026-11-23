@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.core.journal import replay
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protected_write_enrollment_journal import (
     ISSUE_EVENT_KIND,

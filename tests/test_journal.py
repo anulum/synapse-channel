@@ -16,7 +16,6 @@ import pytest
 from synapse_channel.core.journal import (
     MEMORY_KINDS,
     EventKind,
-    ReplayResult,
     UnsupportedProtectedWriteHistoryError,
     record_chat,
     record_checkpoint,
@@ -33,6 +32,9 @@ from synapse_channel.core.journal import (
     record_release,
     record_resource,
     record_task_update,
+)
+from synapse_channel.core.journal_replay import (
+    ReplayResult,
     replay,
     restore_active_multihub_quarantines,
 )

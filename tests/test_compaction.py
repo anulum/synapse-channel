@@ -13,7 +13,8 @@ from pathlib import Path
 import pytest
 
 from synapse_channel.core.compaction import CompactionResult, RetentionPolicy, compact
-from synapse_channel.core.journal import EventKind, record_checkpoint, replay
+from synapse_channel.core.journal import EventKind, record_checkpoint
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.state import TaskClaim
 

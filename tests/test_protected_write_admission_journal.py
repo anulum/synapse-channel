@@ -17,11 +17,8 @@ from typing import cast
 import pytest
 
 from synapse_channel.core.atomic_operations import canonical_request_digest
-from synapse_channel.core.journal import (
-    UnsupportedProtectedWriteHistoryError,
-    record_claim,
-    replay,
-)
+from synapse_channel.core.journal import UnsupportedProtectedWriteHistoryError, record_claim
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.message_auth import MessageAuthKey, sign_frame
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protected_write_admission import finalize_protected_write_admission

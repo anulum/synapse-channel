@@ -44,7 +44,8 @@ from synapse_channel.core.entitlements import (
     parse_time,
     validate_event,
 )
-from synapse_channel.core.journal import EventKind, replay
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal_replay import replay
 from synapse_channel.core.persistence_reader import EventLogReader
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.secure_path import SecurePathError, read_owner_only_file_bytes
