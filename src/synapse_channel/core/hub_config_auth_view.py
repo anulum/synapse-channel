@@ -23,11 +23,6 @@ from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.verdict_hub import VerdictHubPolicy
 
 
-def _approval_load(value: object) -> ApprovalLoad | None:
-    """Narrow the record's ``object`` field; normalisation already refused any other type."""
-    return value if isinstance(value, ApprovalLoad) else None
-
-
 class HubAuthConfigView(HubConfigOwner):
     """Read and replace record-owned settings through their existing hub names."""
 
@@ -144,7 +139,7 @@ class HubAuthConfigView(HubConfigOwner):
         lambda config, value: replace(config, auth=replace(config.auth, role_grants=value)),
     )
     approval_load: ConfigAttribute[ApprovalLoad | None] = ConfigAttribute(
-        lambda config: _approval_load(config.auth.approval_load),
+        lambda config: config.auth.approval_load,
         lambda config, value: replace(config, auth=replace(config.auth, approval_load=value)),
     )
     mailbox_custodians: ConfigAttribute[Mapping[str, str] | None] = ConfigAttribute(

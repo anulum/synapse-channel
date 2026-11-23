@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, cast, get_type_hints
 
 import pytest
 from websockets.asyncio.client import connect
@@ -44,7 +44,7 @@ from synapse_channel.core.approvals import (
 from synapse_channel.core.attention import project_hub_attention
 from synapse_channel.core.handlers.approval_load_admission import NO_JOURNAL_REFUSAL
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.hub_config import HubConfig
+from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 from synapse_channel.core.hub_config_auth import HubAuthConfig
 from synapse_channel.core.journal import (
     EventKind,
@@ -291,13 +291,19 @@ async def test_a_request_lost_to_a_journal_failure_gives_its_place_back(
 
 
 def test_a_hub_refuses_an_approval_load_value_that_is_not_one() -> None:
-    """The record holds the field as ``object``; normalisation enforces its type, fail-closed."""
-    not_a_load = "a policy path is not an approval load"
+    """HubAuthConfig types approval_load and normalisation still enforces it fail-closed."""
+    assert get_type_hints(HubAuthConfig)["approval_load"] == ApprovalLoad | None
+    not_a_load: Any = cast(Any, "a policy path is not an approval load")
     with pytest.raises(TypeError, match="approval_load must be an ApprovalLoad or None"):
         SynapseHub(HubConfig(auth=HubAuthConfig(approval_load=not_a_load)))
     assert SynapseHub(HubConfig()).approval_load is None
+    assert SynapseHub(HubConfig(auth=HubAuthConfig(approval_load=None))).approval_load is None
     load = ApprovalLoad(_policy())
+    other_load = ApprovalLoad(_policy())
     assert SynapseHub(HubConfig(auth=HubAuthConfig(approval_load=load))).approval_load is load
+    armed_fp = config_fingerprint(HubConfig(auth=HubAuthConfig(approval_load=load)))
+    assert armed_fp == config_fingerprint(HubConfig(auth=HubAuthConfig(approval_load=other_load)))
+    assert armed_fp != config_fingerprint(HubConfig())
 
 
 def _note_and_row_pairs(store: EventStore) -> list[tuple[str, int, int]]:

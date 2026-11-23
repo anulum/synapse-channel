@@ -56,6 +56,12 @@ execution evidence when carrying a release claim forward.
   unexported); and each moved family record's `__module__` is now its owning area module.
   `core/hub_config.py` drops from 31 to 12 internal imports and leaves the structure-budget ledger.
 
+- **`HubAuthConfig.approval_load` is now typed `ApprovalLoad | None`; behaviour is unchanged.**
+  With `HubAuthConfig` in `core/hub_config_auth.py`, the field drops its `object` workaround and its
+  private narrowing helper in `core/hub_config_auth_view.py`. Normalisation in
+  `core/hub_component_normalization.py` retains the runtime `TypeError` refusal for legacy and untyped
+  callers, and `config_fingerprint` is unchanged.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from synapse_channel.core.acl import AclPolicy
+from synapse_channel.core.approval_load import ApprovalLoad
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
 from synapse_channel.core.hub_defaults import (
@@ -62,11 +63,8 @@ class HubAuthConfig:
     acl_policy: AclPolicy | None = None
     require_acl: bool = False
     role_grants: RoleGrants | None = None
-    # Live approval-load state (core.approval_load.ApprovalLoad) for a declared policy.
-    # Held as ``object`` because this module is at its structure-budget ceiling of 31
-    # internal imports; normalisation refuses any non-None value that is not an
-    # ApprovalLoad (TypeError), and the hub's view narrows it to ``ApprovalLoad | None``.
-    approval_load: object = None
+    # Live approval-load state for a declared policy.
+    approval_load: ApprovalLoad | None = None
     # Validated name/project/'*' -> custodian entries (see core.mailbox_custodians).
     mailbox_custodians: Mapping[str, str] | None = None
     require_role_claim: bool = False

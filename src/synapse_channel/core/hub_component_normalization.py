@@ -42,9 +42,9 @@ def normalize_transport(config: HubConfig) -> HubConfig:
     ------
     TypeError
         When ``auth.approval_load`` is set to anything but an
-        :class:`~synapse_channel.core.approval_load.ApprovalLoad`. The field is
-        typed ``object`` in the configuration record, so this is where its type
-        is enforced, once and fail-closed.
+        :class:`~synapse_channel.core.approval_load.ApprovalLoad` or ``None``.
+        Enforced once at normalisation, fail-closed, for legacy and untyped
+        callers.
     """
     auth = config.auth
     if auth.approval_load is not None and not isinstance(auth.approval_load, ApprovalLoad):
