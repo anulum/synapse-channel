@@ -36,6 +36,16 @@ _TEST_OWNED_HUBS: list[SynapseHub] = []
 """Hubs the running test constructed itself, in creation order."""
 _TEST_OWNED_STORES: list[EventStore] = []
 """Event stores the running test constructed itself, in creation order."""
+_SEAT_ENVIRONMENT_VARIABLES: tuple[str, ...] = (
+    "SYN_INBOX_SOURCE",
+    "SYN_HOME",
+    "SYN_IDENTITY",
+    "SYN_PROJECT",
+    "SYN_TMUX_PROVIDER",
+    "SYNAPSE_WAITER_PIDFILE",
+    "SYNAPSE_AUTO_CONNECT",
+)
+"""Ambient seat-shell variables cleared for the duration of a test session."""
 
 
 def _reserve_closed_hub() -> tuple[socket.socket, str]:
@@ -176,6 +186,47 @@ def _isolated_state_home(tmp_path_factory: pytest.TempPathFactory) -> Iterator[N
             os.environ.pop("XDG_STATE_HOME", None)
         else:
             os.environ["XDG_STATE_HOME"] = previous
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolated_seat_environment() -> Iterator[None]:
+    """Remove ambient seat-shell variables for the duration of the session.
+
+    An active operator or agent seat shell exports coordination variables that
+    product code reads directly when explicit arguments are omitted:
+
+    * ``SYN_INBOX_SOURCE`` — :meth:`~synapse_channel.mcp.inbox_queries._McpInboxQueries.__init__`
+      and :mod:`synapse_channel.ergonomics_inbox`;
+    * ``SYN_HOME`` — :meth:`~synapse_channel.mcp.inbox_queries._McpInboxQueries.__init__`,
+      :mod:`synapse_channel.mcp.inbox`, :mod:`synapse_channel.mcp.native_session`,
+      and :mod:`synapse_channel.ergonomics`;
+    * ``SYN_IDENTITY`` and ``SYN_PROJECT`` — :mod:`synapse_channel.ergonomics`,
+      :mod:`synapse_channel.cli_status`, :mod:`synapse_channel.cli_arm`,
+      :mod:`synapse_channel.cli_label`, :mod:`synapse_channel.mcp.onboarding`,
+      :mod:`synapse_channel.git.claim_check_context`, :mod:`synapse_channel.agent_tmux`,
+      :mod:`synapse_channel.opencode_composer`, :mod:`synapse_channel.seat_restore`,
+      :mod:`synapse_channel.session_ledger_collect`, and
+      :mod:`synapse_channel.shell_integration`;
+    * ``SYN_TMUX_PROVIDER``, ``SYNAPSE_WAITER_PIDFILE``, and
+      ``SYNAPSE_AUTO_CONNECT`` — :mod:`synapse_channel.shell_integration`,
+      :mod:`synapse_channel.worker_session`, :mod:`synapse_channel.agent_tmux`,
+      and :mod:`synapse_channel.seat_restore`.
+
+    Clearing only these named seat variables leaves CI test options such as
+    ``SYNAPSE_TEST_*`` and ``SYNAPSE_FUZZ_*`` intact. Subprocess tests inherit
+    the cleaned environment, and tests of environment resolution keep setting
+    variables per test with ``monkeypatch.setenv``. Prior values are restored
+    at session end.
+    """
+    previous = {name: os.environ.pop(name, None) for name in _SEAT_ENVIRONMENT_VARIABLES}
+    try:
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 @pytest.fixture(autouse=True)
