@@ -14,8 +14,8 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, cast
 
+from synapse_channel.client.agent_lease_memory import AgentLeaseMemory
 from synapse_channel.client.frame_signing_client import ClientFrameSession, session_from_welcome
-from synapse_channel.client.lease_epoch_store import LeaseEpochStore
 from synapse_channel.core.protocol import MessageType, read_protocol_version
 
 MessageCallback = Callable[[dict[str, Any]], Awaitable[None]]
@@ -42,12 +42,15 @@ class _DispatchAgent(Protocol):
     mailbox: bool
     mailbox_advance: Callable[[dict[str, Any]], bool] | None
     mailbox_for: str
+    lease_memory: AgentLeaseMemory
     name: str
-    on_lease_granted: Callable[[str], None] | None
-    owner_lease: str
-    lease_epochs: dict[str, int]
-    _lease_epoch_store: LeaseEpochStore | None
     ready_event: Any
+
+    @property
+    def on_lease_granted(self) -> Callable[[str], None] | None:
+        """Hook invoked when an owner lease is granted."""
+        raise NotImplementedError
+
     verbose: bool
     _mailbox_since_seq: int
 
@@ -130,7 +133,7 @@ class AgentDispatchMixin:
             # any later frame arrives.
             token = str(data.get("owner_lease") or "")
             if token:
-                self.owner_lease = token
+                self.lease_memory.record_owner_lease(token)
                 if self.on_lease_granted is not None:
                     self.on_lease_granted(token)
 
@@ -170,13 +173,9 @@ class AgentDispatchMixin:
             and isinstance(epoch, int)
             and not isinstance(epoch, bool)
         ):
-            self.lease_epochs[task_id] = epoch
-            if self._lease_epoch_store is not None:
-                self._lease_epoch_store.save(self.hub_id, task_id, epoch)
+            self.lease_memory.remember(self.hub_id, task_id, epoch)
         elif data.get("type") != MessageType.CLAIM_GRANTED:
-            self.lease_epochs.pop(task_id, None)
-            if self._lease_epoch_store is not None:
-                self._lease_epoch_store.forget(self.hub_id, task_id)
+            self.lease_memory.forget(self.hub_id, task_id)
 
     async def _track_mailbox_frame(self: _DispatchAgent, data: dict[str, Any]) -> None:
         """Advance the mailbox cursor and ack an accepted chat frame.

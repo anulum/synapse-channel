@@ -26,13 +26,7 @@ def _fence_epoch(agent: _OutboundAgent, task_id: str, epoch: int | None) -> int 
     process of the same identity wrote for this hub. ``None`` when neither
     knows the task, so the frame carries no epoch.
     """
-    if epoch is not None:
-        return epoch
-    task = task_id.strip()
-    remembered = agent.lease_epochs.get(task)
-    if remembered is None and agent._lease_epoch_store is not None:
-        remembered = agent._lease_epoch_store.load(agent.hub_id, task)
-    return remembered
+    return agent.lease_memory.recall(agent.hub_id, task_id, epoch)
 
 
 class AgentTaskMutationMixin:

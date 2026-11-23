@@ -13,9 +13,9 @@ from typing import Any, Protocol
 
 from websockets.asyncio.client import ClientConnection
 
+from synapse_channel.client.agent_lease_memory import AgentLeaseMemory
 from synapse_channel.client.agent_signing_identity import AgentSigningIdentity
 from synapse_channel.client.frame_signing_client import ClientFrameSession
-from synapse_channel.client.lease_epoch_store import LeaseEpochStore
 
 __all__ = ["_OutboundAgent"]
 
@@ -26,8 +26,7 @@ class _OutboundAgent(Protocol):
     connection: ClientConnection | None
     name: str
     hub_protocol_version: int | None
-    lease_epochs: dict[str, int]
-    _lease_epoch_store: LeaseEpochStore | None
+    lease_memory: AgentLeaseMemory
     hub_id: str
     frame_session: ClientFrameSession | None
     signing: AgentSigningIdentity

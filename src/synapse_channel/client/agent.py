@@ -26,6 +26,7 @@ from typing import Any
 from websockets.asyncio.client import ClientConnection
 
 from synapse_channel.client.agent_dispatch import AgentDispatchMixin, MessageCallback
+from synapse_channel.client.agent_lease_memory import AgentLeaseMemory, seat_store_name
 from synapse_channel.client.agent_lifecycle import (
     DEFAULT_HUB_URI,
     HUB_URI_ENV_VAR,
@@ -38,12 +39,10 @@ from synapse_channel.client.agent_outbound import AgentOutboundMixin
 from synapse_channel.client.agent_queries import AgentQueryMixin
 from synapse_channel.client.agent_signing_identity import AgentSigningIdentity
 from synapse_channel.client.frame_signing_client import ClientFrameSession
-from synapse_channel.client.lease_epoch_store import LeaseEpochStore
 from synapse_channel.core.capability_card_signing import (
     DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
 )
 from synapse_channel.core.delivery_modes import MODES, QUALITIES
-from synapse_channel.core.release_sidecar import is_release_sidecar, release_owner
 from synapse_channel.core.wake_capability import WAKE_DIRECT, normalize_wake_capability
 
 __all__ = [
@@ -55,21 +54,6 @@ __all__ = [
     "_is_connection_refused",
     "default_hub_uri",
 ]
-
-
-def _epoch_store_for(name: str, persist: bool, root: Path | None) -> LeaseEpochStore | None:
-    """Return the epoch store for ``name``, keyed by the seat a sidecar releases.
-
-    A sidecar reads and forgets the epoch its owner stored, and a write from
-    the sidecar uses that same directory. A sidecar name that is not a seat
-    gets no store, so nothing is written under the connection name.
-    """
-    if not persist:
-        return None
-    identity = release_owner(name) if is_release_sidecar(name) else name
-    if identity is None:
-        return None
-    return LeaseEpochStore(identity, root=root)
 
 
 class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, AgentQueryMixin):
@@ -268,18 +252,21 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         )
         self.verbose = bool(verbose)
         self.token = token
-        self.takeover = bool(takeover)
         self.roles = tuple(roles)
         self.mailbox = bool(mailbox)
         self._mailbox_since_seq = max(int(mailbox_since_seq), -1)
         self.mailbox_for = str(mailbox_for)
         self.mailbox_advance = mailbox_advance
         self.wake_capability = normalize_wake_capability(wake_capability, default=WAKE_DIRECT)
-        self.request_lease = bool(request_lease)
-        self.owner_lease = str(owner_lease)
-        self.on_lease_granted = on_lease_granted
-        self.lease_epochs: dict[str, int] = {}
-        self._lease_epoch_store = _epoch_store_for(name, persist_lease_epochs, lease_epoch_root)
+        self.lease_memory = AgentLeaseMemory(
+            store_name=seat_store_name(name),
+            persist=persist_lease_epochs,
+            root=lease_epoch_root,
+            request_lease=request_lease,
+            owner_lease=owner_lease,
+            on_lease_granted=on_lease_granted,
+            takeover=takeover,
+        )
         self.signing = AgentSigningIdentity(
             name=name,
             identity_key_path=identity_key_path,
@@ -294,6 +281,31 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         )
         self.ping_interval = float(ping_interval)
         self.ping_timeout = float(ping_timeout)
+
+    @property
+    def lease_epochs(self) -> dict[str, int]:
+        """The epoch map, the same object the lease memory holds."""
+        return self.lease_memory.epochs
+
+    @property
+    def request_lease(self) -> bool:
+        """Whether registration asks the hub for an ownership lease."""
+        return self.lease_memory.request_lease
+
+    @property
+    def takeover(self) -> bool:
+        """Whether registration asks the hub to evict a stale holder."""
+        return self.lease_memory.takeover
+
+    @property
+    def owner_lease(self) -> str:
+        """The owner-lease token last granted for this seat."""
+        return self.lease_memory.owner_lease
+
+    @property
+    def on_lease_granted(self) -> Callable[[str], None] | None:
+        """Hook invoked with the token as soon as a lease is granted."""
+        return self.lease_memory.on_lease_granted
 
     @property
     def mailbox_cursor(self) -> int:

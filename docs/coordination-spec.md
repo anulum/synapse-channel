@@ -185,8 +185,9 @@ current grant (`claim_granted` or `handoff_granted`) when the caller names none.
 check can fence a process that writes repository files directly.
 
 **Implementation.** `core/handlers/leasing.py:_refuse_unfenced`;
-`client/agent_dispatch.py` (the `lease_epochs` memory) and
-`client/agent_outbound_tasks.py`.
+`client/agent_lease_memory.py` (`AgentLeaseMemory`) holds the lease-epoch
+memory, `client/agent_dispatch.py` records a grant, and
+`client/agent_outbound_tasks.py` sends the epoch.
 
 **Pinned by.** `tests/test_fencing_epoch.py`: on real hubs, an epoch-less
 release from a superseded writer succeeds by default and is refused under the

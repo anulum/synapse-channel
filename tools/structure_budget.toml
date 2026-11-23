@@ -35,10 +35,10 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/multihub_watch.py::MultiHubWatch" = 13
 
 [ceilings.init_attributes]
-"src/synapse_channel/client/agent.py::SynapseAgent" = 34
+"src/synapse_channel/client/agent.py::SynapseAgent" = 29
 
 [ceilings.initialisation_attributes]
-"src/synapse_channel/client/agent.py::SynapseAgent" = 34
+"src/synapse_channel/client/agent.py::SynapseAgent" = 29
 "src/synapse_channel/core/hub.py::SynapseHub" = 74
 
 [ceilings.init_constructions]
@@ -384,8 +384,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/participants/__init__.py" = 45
 
 [ceilings.private_access]
-"src/synapse_channel/client/agent_outbound_tasks.py" = 2
-"src/synapse_channel/client/claim_confirmation.py" = 3
 
 [[exceptions]]
 unit = "src/synapse_channel/client/llm_worker.py::SynapseLLMWorker"

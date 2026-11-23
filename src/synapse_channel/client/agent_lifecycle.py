@@ -87,14 +87,11 @@ class _LifecycleAgent(Protocol):
     mailbox: bool
     mailbox_for: str
     name: str
-    owner_lease: str
     ping_interval: float
     ping_timeout: float
     ready_event: Any
-    request_lease: bool
     roles: tuple[str, ...]
     running: bool
-    takeover: bool
     token: str | None
     uri: str
     verbose: bool
@@ -107,6 +104,22 @@ class _LifecycleAgent(Protocol):
     _heartbeat_task: asyncio.Task[None] | None
     signing: AgentSigningIdentity
     _mailbox_since_seq: int
+
+    @property
+    def owner_lease(self) -> str:
+        """The owner-lease token last granted for this seat."""
+        raise NotImplementedError
+
+    @property
+    def request_lease(self) -> bool:
+        """Whether registration asks for an ownership lease."""
+        raise NotImplementedError
+
+    @property
+    def takeover(self) -> bool:
+        """Whether registration asks the hub to evict a stale holder."""
+        raise NotImplementedError
+
     frame_session: ClientFrameSession | None
 
     async def _dispatch(self, raw: str | bytes) -> None:

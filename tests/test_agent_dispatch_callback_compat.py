@@ -22,6 +22,7 @@ from synapse_channel.client.agent_dispatch import (
     MessageCallback,
     invoke_message_callback,
 )
+from synapse_channel.client.agent_lease_memory import AgentLeaseMemory
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType
 
@@ -37,8 +38,15 @@ class _DispatchHost(AgentDispatchMixin):
         self.mailbox_advance = None
         self.mailbox_for = ""
         self.name = name
-        self.on_lease_granted = None
-        self.owner_lease = ""
+        self.lease_memory = AgentLeaseMemory(
+            store_name=None,
+            persist=False,
+            root=None,
+            request_lease=False,
+            owner_lease="",
+            on_lease_granted=None,
+            takeover=False,
+        )
         self.ready_event = asyncio.Event()
         self.verbose = False
         self._mailbox_since_seq = 0

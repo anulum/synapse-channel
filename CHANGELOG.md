@@ -72,6 +72,14 @@ execution evidence when carrying a release claim forward.
   Identity, message authentication and capability-card counters advance only inside that
   object, and nothing on the agent returns a private key.
 
+- **An agent remembers lease epochs in one lease memory that owns the seat's existing store.**
+  A release sidecar reads and writes that store. A nested sidecar creates none. Grants, releases
+  and fencing epochs behave as before. `takeover`, `request_lease`, `lease_epochs`,
+  `on_lease_granted` and `owner_lease` are now read-only and none of them keeps a setter:
+  `request_lease`, `owner_lease`, `on_lease_granted` and `takeover` are set through the
+  constructor's unchanged keyword arguments, and `lease_epochs` remains the same dict the
+  memory holds, which a caller may still mutate in place.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

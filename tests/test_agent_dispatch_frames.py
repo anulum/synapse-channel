@@ -68,7 +68,7 @@ async def test_a_delivery_session_with_a_malformed_incarnation_is_ignored(
 async def test_a_lease_grant_without_a_token_records_nothing(owner_lease: object) -> None:
     """An empty grant neither replaces the held lease nor reaches the persistence hook."""
     agent, seen, leases = _agent(verbose=False)
-    agent.owner_lease = "held-token"
+    agent.lease_memory.record_owner_lease("held-token")
     frame = {"type": MessageType.LEASE_GRANTED, "owner_lease": owner_lease}
     await agent._dispatch(json.dumps(frame))
     assert agent.owner_lease == "held-token"

@@ -54,8 +54,9 @@ def test_a_sidecar_agent_writes_no_cursor_lease_token_or_replay_file(
     agent = SynapseAgent("seat-release", machine_identity=False, verbose=False)
     assert agent.mailbox is False
     assert agent.request_lease is False
-    assert agent._lease_epoch_store is not None
-    assert agent._lease_epoch_store.directory == LeaseEpochStore("seat").directory
+    agent.lease_memory.remember("hub", "task", 1)
+    assert LeaseEpochStore("seat").load("hub", "task") == 1
+    assert LeaseEpochStore("seat-release").load("hub", "task") is None
     assert not cursor_path("seat-release").exists()
     assert not lease_path("seat-release").exists()
     assert not default_payload_replay_ledger("seat-release").exists()

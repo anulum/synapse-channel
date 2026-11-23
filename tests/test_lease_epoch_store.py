@@ -28,18 +28,17 @@ def test_a_sidecar_uses_its_owners_epoch_store(tmp_path: Path) -> None:
     refused = SynapseAgent(
         "a-rx-release", machine_identity=False, verbose=False, lease_epoch_root=tmp_path
     )
-    assert seat._lease_epoch_store is not None
-    assert sidecar._lease_epoch_store is not None
-    assert seat._lease_epoch_store.directory == sidecar._lease_epoch_store.directory
-    seat._lease_epoch_store.save("hub", "edit-z", 7)
-    assert sidecar._lease_epoch_store.load("hub", "edit-z") == 7
+    seat.lease_memory.remember("hub", "edit-z", 7)
+    assert sidecar.lease_memory.recall("hub", "edit-z") == 7
     assert LeaseEpochStore("seat-release", root=tmp_path).load("hub", "edit-z") is None
-    sidecar._lease_epoch_store.save("hub", "other", 4)
+    sidecar.lease_memory.remember("hub", "other", 4)
     assert LeaseEpochStore("seat", root=tmp_path).load("hub", "other") == 4
     assert LeaseEpochStore("seat-release", root=tmp_path).load("hub", "other") is None
-    sidecar._lease_epoch_store.forget("hub", "edit-z")
-    assert seat._lease_epoch_store.load("hub", "edit-z") is None
-    assert refused._lease_epoch_store is None
+    sidecar.lease_memory.forget("hub", "edit-z")
+    fresh = SynapseAgent("seat", machine_identity=False, verbose=False, lease_epoch_root=tmp_path)
+    assert fresh.lease_memory.recall("hub", "edit-z") is None
+    refused.lease_memory.remember("hub", "edit-z", 1)
+    assert LeaseEpochStore("a-rx-release", root=tmp_path).load("hub", "edit-z") is None
 
 
 def test_an_epoch_round_trips_and_is_forgotten(tmp_path: Path) -> None:

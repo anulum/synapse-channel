@@ -171,9 +171,4 @@ async def confirm_claim(
     if len(matching) != 1 or not intent.matches(matching[0], now=max(time.time(), generated_at)):
         return False
     epoch = int(matching[0]["epoch"])
-    if agent._lease_epoch_store is not None:
-        agent._lease_epoch_store.save(agent.hub_id, intent.task_id, epoch)
-        if agent._lease_epoch_store.load(agent.hub_id, intent.task_id) != epoch:
-            return False
-    agent.lease_epochs[intent.task_id] = epoch
-    return True
+    return agent.lease_memory.remember_verified(agent.hub_id, intent.task_id, epoch)
