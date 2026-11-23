@@ -131,7 +131,7 @@ async def test_an_old_client_is_told_to_upgrade(tmp_path: Path) -> None:
             assert await agent.wait_until_ready(timeout=5)
             await _until(lambda: "P/old" in hub.clients.agent_sockets)
             # An older client keeps registering with its key but sends plain frames.
-            agent.frame_session = None
+            agent.session.frame_session = None
             replies: list[dict[str, Any]] = []
 
             async def collect(data: dict[str, Any]) -> None:
@@ -155,6 +155,6 @@ async def test_a_new_connection_attempt_drops_the_old_signing_session(tmp_path: 
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
     agent = SynapseAgent("P/agent", None, uri=f"ws://127.0.0.1:{port}", verbose=False)
-    agent.frame_session = ClientFrameSession("old-hub", "old-nonce", seq=7)
+    agent.session.frame_session = ClientFrameSession("old-hub", "old-nonce", seq=7)
     await agent.connect()
     assert agent.frame_session is None

@@ -80,6 +80,17 @@ execution evidence when carrying a release claim forward.
   constructor's unchanged keyword arguments, and `lease_epochs` remains the same dict the
   memory holds, which a caller may still mutate in place.
 
+- **An agent keeps its welcome, mailbox cursor and delivery incarnation in one delivery session.**
+  Binding a welcome, advancing the cursor and clearing an attempt behave as before.
+  `hub_id`, `hub_protocol_version`, `frame_session`, `delivery_capabilities`,
+  `delivery_incarnation`, `delivery_ready_event`, `mailbox`, `mailbox_for`, `mailbox_advance`
+  and `mailbox_cursor` are now read-only and none of them keeps a setter: `mailbox`,
+  `mailbox_for`, `mailbox_advance` and `delivery_capabilities` are set through the constructor's
+  unchanged keyword arguments, `mailbox_since_seq` still seeds `mailbox_cursor`, and
+  `delivery_ready_event` remains the same event the session holds, which a caller may still set
+  or clear. `hub_id`, `hub_protocol_version`, `frame_session` and `delivery_incarnation` are
+  bound from the welcome and the delivery-session frame.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

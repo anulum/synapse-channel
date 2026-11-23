@@ -14,9 +14,9 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, cast
 
+from synapse_channel.client.agent_delivery_session import AgentDeliverySession
 from synapse_channel.client.agent_lease_memory import AgentLeaseMemory
-from synapse_channel.client.frame_signing_client import ClientFrameSession, session_from_welcome
-from synapse_channel.core.protocol import MessageType, read_protocol_version
+from synapse_channel.core.protocol import MessageType
 
 MessageCallback = Callable[[dict[str, Any]], Awaitable[None]]
 """Preferred inbound callback: ``async def callback(data) -> None``.
@@ -34,25 +34,37 @@ class _DispatchAgent(Protocol):
     """Attributes required by the inbound dispatch mixin."""
 
     callback: MessageCallback | None
-    frame_session: ClientFrameSession | None
-    hub_id: str
-    hub_protocol_version: int | None
-    delivery_incarnation: str
-    delivery_ready_event: Any
-    mailbox: bool
-    mailbox_advance: Callable[[dict[str, Any]], bool] | None
-    mailbox_for: str
     lease_memory: AgentLeaseMemory
     name: str
     ready_event: Any
+    session: AgentDeliverySession
 
     @property
     def on_lease_granted(self) -> Callable[[str], None] | None:
         """Hook invoked when an owner lease is granted."""
         raise NotImplementedError
 
+    @property
+    def hub_id(self) -> str:
+        """Hub identity from the latest welcome."""
+        raise NotImplementedError
+
+    @property
+    def mailbox(self) -> bool:
+        """Whether this connection replays a mailbox."""
+        raise NotImplementedError
+
+    @property
+    def mailbox_advance(self) -> Callable[[dict[str, Any]], bool] | None:
+        """Gate that refuses a chat frame before the cursor advances."""
+        raise NotImplementedError
+
+    @property
+    def mailbox_for(self) -> str:
+        """Identity whose backlog to replay."""
+        raise NotImplementedError
+
     verbose: bool
-    _mailbox_since_seq: int
 
     async def ack(self, seq: int, *, mailbox_for: str = "") -> bool:
         """Acknowledge a delivered directed message by its durable seq."""
@@ -111,20 +123,11 @@ class AgentDispatchMixin:
             return
 
         if data.get("type") == MessageType.WELCOME:
-            self.frame_session = session_from_welcome(data)
-            self.hub_id = str(data.get("hub_id", "unknown"))
-            self.hub_protocol_version = read_protocol_version(data.get("protocol_version"))
+            self.session.bind_welcome(data)
             self.ready_event.set()
 
         if data.get("type") == MessageType.DELIVERY_SESSION:
-            incarnation = data.get("incarnation")
-            if (
-                isinstance(incarnation, str)
-                and len(incarnation) == 64
-                and all(character in "0123456789abcdef" for character in incarnation)
-            ):
-                self.delivery_incarnation = incarnation
-                self.delivery_ready_event.set()
+            self.session.bind_incarnation(data.get("incarnation"))
 
         if data.get("type") == MessageType.LEASE_GRANTED:
             # The hub granted an ownership lease on the bound name. Record the
@@ -197,6 +200,5 @@ class AgentDispatchMixin:
             return
         if self.mailbox_advance is not None and not self.mailbox_advance(data):
             return
-        if seq > self._mailbox_since_seq:
-            self._mailbox_since_seq = seq
+        self.session.advance_cursor(seq)
         await self.ack(seq, mailbox_for=self.mailbox_for or self.name)

@@ -25,11 +25,23 @@ class _OutboundAgent(Protocol):
 
     connection: ClientConnection | None
     name: str
-    hub_protocol_version: int | None
     lease_memory: AgentLeaseMemory
-    hub_id: str
-    frame_session: ClientFrameSession | None
     signing: AgentSigningIdentity
+
+    @property
+    def hub_protocol_version(self) -> int | None:
+        """Protocol version from the latest welcome, or ``None`` before one arrives."""
+        raise NotImplementedError
+
+    @property
+    def hub_id(self) -> str:
+        """Hub identity from the latest welcome."""
+        raise NotImplementedError
+
+    @property
+    def frame_session(self) -> ClientFrameSession | None:
+        """Signing session of the current connection."""
+        raise NotImplementedError
 
     async def send_message(
         self,

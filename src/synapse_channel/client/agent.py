@@ -18,13 +18,13 @@ the CLI, and any embedding application use to appear on the channel.
 from __future__ import annotations
 
 import asyncio
-import secrets
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from websockets.asyncio.client import ClientConnection
 
+from synapse_channel.client.agent_delivery_session import AgentDeliverySession
 from synapse_channel.client.agent_dispatch import AgentDispatchMixin, MessageCallback
 from synapse_channel.client.agent_lease_memory import AgentLeaseMemory, seat_store_name
 from synapse_channel.client.agent_lifecycle import (
@@ -42,7 +42,6 @@ from synapse_channel.client.frame_signing_client import ClientFrameSession
 from synapse_channel.core.capability_card_signing import (
     DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
 )
-from synapse_channel.core.delivery_modes import MODES, QUALITIES
 from synapse_channel.core.wake_capability import WAKE_DIRECT, normalize_wake_capability
 
 __all__ = [
@@ -187,9 +186,6 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         ``$XDG_DATA_HOME/synapse/lease-epoch``.
     """
 
-    frame_session: ClientFrameSession | None = None
-    """Signing session of the current connection, set from each welcome."""
-
     def __init__(
         self,
         name: str,
@@ -235,29 +231,17 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.ready_event = asyncio.Event()
         self.last_close_code: int | None = None
         self.last_close_reason: str = ""
-        self.hub_id = "unknown"
-        self.hub_protocol_version: int | None = None
-        self.delivery_incarnation = ""
-        self.delivery_ready_event = asyncio.Event()
-        if delivery_capabilities is not None and any(
-            mode not in MODES or quality not in QUALITIES
-            for mode, quality in delivery_capabilities.items()
-        ):
-            raise ValueError("delivery capabilities must name supported modes and qualities")
-        self.delivery_capabilities = (
-            None if delivery_capabilities is None else dict(delivery_capabilities)
-        )
-        self._delivery_session_token = (
-            None if delivery_capabilities is None else secrets.token_hex(32)
-        )
         self.verbose = bool(verbose)
         self.token = token
         self.roles = tuple(roles)
-        self.mailbox = bool(mailbox)
-        self._mailbox_since_seq = max(int(mailbox_since_seq), -1)
-        self.mailbox_for = str(mailbox_for)
-        self.mailbox_advance = mailbox_advance
         self.wake_capability = normalize_wake_capability(wake_capability, default=WAKE_DIRECT)
+        self.session = AgentDeliverySession(
+            mailbox=mailbox,
+            mailbox_since_seq=mailbox_since_seq,
+            mailbox_for=mailbox_for,
+            mailbox_advance=mailbox_advance,
+            delivery_capabilities=delivery_capabilities,
+        )
         self.lease_memory = AgentLeaseMemory(
             store_name=seat_store_name(name),
             persist=persist_lease_epochs,
@@ -308,6 +292,51 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         return self.lease_memory.on_lease_granted
 
     @property
+    def hub_id(self) -> str:
+        """Hub identity from the latest welcome, or ``unknown`` before one arrives."""
+        return self.session.hub_id
+
+    @property
+    def hub_protocol_version(self) -> int | None:
+        """Protocol version from the latest welcome, or ``None`` before one arrives."""
+        return self.session.hub_protocol_version
+
+    @property
+    def frame_session(self) -> ClientFrameSession | None:
+        """Signing session of the current connection, set from each welcome."""
+        return self.session.frame_session
+
+    @property
+    def delivery_capabilities(self) -> dict[str, str] | None:
+        """Version-three modes this process can execute, or ``None`` when sender-only."""
+        return self.session.delivery_capabilities
+
+    @property
+    def delivery_incarnation(self) -> str:
+        """Incarnation bound from a delivery-session frame, or empty before one arrives."""
+        return self.session.delivery_incarnation
+
+    @property
+    def delivery_ready_event(self) -> asyncio.Event:
+        """The event set when an incarnation binds, the same object the session holds."""
+        return self.session.delivery_ready_event
+
+    @property
+    def mailbox(self) -> bool:
+        """Whether this connection replays a mailbox."""
+        return self.session.mailbox
+
+    @property
+    def mailbox_for(self) -> str:
+        """Identity whose backlog to replay, when it differs from the connection."""
+        return self.session.mailbox_for
+
+    @property
+    def mailbox_advance(self) -> Callable[[dict[str, Any]], bool] | None:
+        """Gate that refuses a chat frame before the cursor advances."""
+        return self.session.mailbox_advance
+
+    @property
     def mailbox_cursor(self) -> int:
         """Return the highest durable journal ``seq`` this agent has processed.
 
@@ -316,4 +345,4 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         re-armed as a fresh process — can seed the next agent's ``mailbox_since_seq``
         and resume the backlog from where this one stopped rather than from zero.
         """
-        return self._mailbox_since_seq
+        return self.session.mailbox_cursor

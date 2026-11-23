@@ -17,8 +17,8 @@ from typing import Any, Protocol
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
+from synapse_channel.client.agent_delivery_session import AgentDeliverySession
 from synapse_channel.client.agent_signing_identity import AgentSigningIdentity
-from synapse_channel.client.frame_signing_client import ClientFrameSession
 from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType
 
 DEFAULT_HUB_URI = "ws://localhost:8876"
@@ -84,8 +84,6 @@ class _LifecycleAgent(Protocol):
     heartbeat_interval: float
     last_close_code: int | None
     last_close_reason: str
-    mailbox: bool
-    mailbox_for: str
     name: str
     ping_interval: float
     ping_timeout: float
@@ -96,14 +94,10 @@ class _LifecycleAgent(Protocol):
     uri: str
     verbose: bool
     wake_capability: str
-    delivery_capabilities: dict[str, str] | None
-    delivery_incarnation: str
-    delivery_ready_event: asyncio.Event
-    _delivery_session_token: str | None
     _connect_active: bool
     _heartbeat_task: asyncio.Task[None] | None
     signing: AgentSigningIdentity
-    _mailbox_since_seq: int
+    session: AgentDeliverySession
 
     @property
     def owner_lease(self) -> str:
@@ -119,8 +113,6 @@ class _LifecycleAgent(Protocol):
     def takeover(self) -> bool:
         """Whether registration asks the hub to evict a stale holder."""
         raise NotImplementedError
-
-    frame_session: ClientFrameSession | None
 
     async def _dispatch(self, raw: str | bytes) -> None:
         """Dispatch a raw frame received from the hub."""
@@ -148,38 +140,6 @@ class _LifecycleAgent(Protocol):
         """Send one message envelope to the hub."""
 
 
-def _mailbox_heartbeat_fields(enabled: bool, since_seq: int, mailbox_for: str) -> dict[str, Any]:
-    """Return the registration fields that ask for a mailbox replay.
-
-    A negative cursor means the file is missing. The hub then anchors at its
-    tip instead of replaying personal history from sequence 0.
-
-    Parameters
-    ----------
-    enabled : bool
-        Whether this connection replays a mailbox.
-    since_seq : int
-        Resume sequence. Negative means the cursor file is missing.
-    mailbox_for : str
-        Identity whose backlog to replay, when it differs from the connection.
-
-    Returns
-    -------
-    dict
-        Empty when mailbox replay is off.
-    """
-    if not enabled:
-        return {}
-    fields: dict[str, Any] = {"mailbox": True}
-    if since_seq < 0:
-        fields["mailbox_cursor"] = "absent"
-    else:
-        fields["since_seq"] = since_seq
-    if mailbox_for:
-        fields["mailbox_for"] = mailbox_for
-    return fields
-
-
 class AgentLifecycleMixin:
     """Manage WebSocket connection setup, readiness, heartbeat, and shutdown."""
 
@@ -188,7 +148,6 @@ class AgentLifecycleMixin:
     last_close_reason: str
     _connect_active: bool
     _heartbeat_task: asyncio.Task[None] | None
-    frame_session: ClientFrameSession | None
 
     def _reset_attempt(self: _LifecycleAgent) -> None:
         """Clear the state a previous connection attempt left behind.
@@ -200,10 +159,8 @@ class AgentLifecycleMixin:
         """
         self.running = True
         self.ready_event.clear()
-        self.delivery_incarnation = ""
-        self.delivery_ready_event.clear()
+        self.session.reset_attempt()
         self.last_close_code, self.last_close_reason = None, ""
-        self.frame_session = None
 
     async def connect(self: _LifecycleAgent) -> None:
         """Open the connection and run the inbound listener until it closes.
@@ -254,9 +211,7 @@ class AgentLifecycleMixin:
                     extra["takeover"] = True
                 extra["wake_capability"] = self.wake_capability
                 extra["protocol_version"] = WIRE_PROTOCOL_VERSION
-                if self._delivery_session_token is not None:
-                    extra["delivery_session_token"] = self._delivery_session_token
-                    extra["delivery_capabilities"] = self.delivery_capabilities
+                extra.update(self.session.registration_fields())
                 if (identity_public_key := self.signing.identity_public_key()) is not None:
                     # Carry the public half of the signing key so a first-use
                     # hub can verify the registration self-contained and pin
@@ -276,11 +231,7 @@ class AgentLifecycleMixin:
                     # to this socket: /who shows them and a directed message to a role
                     # is delivered to its holder instead of counted a dead letter.
                     extra["roles"] = list(self.roles)
-                extra.update(
-                    _mailbox_heartbeat_fields(
-                        self.mailbox, self._mailbox_since_seq, self.mailbox_for
-                    )
-                )
+                extra.update(self.session.heartbeat_fields())
                 await self.send_message(
                     MessageType.HEARTBEAT,
                     target="System",
@@ -317,8 +268,7 @@ class AgentLifecycleMixin:
         finally:
             self.running = False
             self.ready_event.clear()
-            self.delivery_ready_event.clear()
-            self.delivery_incarnation = ""
+            self.session.end_attempt()
             self.connection = None
             if heartbeat is not None:
                 heartbeat.cancel()

@@ -17,6 +17,7 @@ import pytest
 
 from hub_e2e_helpers import read_until_type, running_hub, send_json
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.client.agent_delivery_session import AgentDeliverySession
 from synapse_channel.client.agent_dispatch import (
     AgentDispatchMixin,
     MessageCallback,
@@ -32,12 +33,14 @@ class _DispatchHost(AgentDispatchMixin):
 
     def __init__(self, callback: Any = None, *, name: str = "A") -> None:
         self.callback = callback
-        self.hub_id = "unknown"
-        self.hub_protocol_version: int | None = None
-        self.mailbox = False
-        self.mailbox_advance = None
-        self.mailbox_for = ""
         self.name = name
+        self.session = AgentDeliverySession(
+            mailbox=False,
+            mailbox_since_seq=0,
+            mailbox_for="",
+            mailbox_advance=None,
+            delivery_capabilities=None,
+        )
         self.lease_memory = AgentLeaseMemory(
             store_name=None,
             persist=False,
@@ -49,7 +52,26 @@ class _DispatchHost(AgentDispatchMixin):
         )
         self.ready_event = asyncio.Event()
         self.verbose = False
-        self._mailbox_since_seq = 0
+
+    @property
+    def hub_id(self) -> str:
+        return self.session.hub_id
+
+    @property
+    def mailbox(self) -> bool:
+        return self.session.mailbox
+
+    @property
+    def mailbox_advance(self) -> Any:
+        return self.session.mailbox_advance
+
+    @property
+    def mailbox_for(self) -> str:
+        return self.session.mailbox_for
+
+    @property
+    def on_lease_granted(self) -> Any:
+        return self.lease_memory.on_lease_granted
 
     async def ack(self, seq: int, *, mailbox_for: str = "") -> bool:
         return True

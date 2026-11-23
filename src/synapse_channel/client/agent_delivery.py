@@ -20,8 +20,6 @@ from synapse_channel.core.protocol import MIN_DELIVERY_PROTOCOL_VERSION, Message
 class _DeliveryAgent(_OutboundAgent, Protocol):
     """Connected agent fields needed to validate a version-three request."""
 
-    hub_id: str
-
     def _require_delivery_hub(self) -> None:
         """Refuse a disconnected or older hub before emitting a v3 verb."""
 

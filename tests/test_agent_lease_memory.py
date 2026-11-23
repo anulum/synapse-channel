@@ -27,7 +27,7 @@ def _agent(name: str, root: Path, *, persist: bool = True) -> SynapseAgent:
         persist_lease_epochs=persist,
         lease_epoch_root=root,
     )
-    agent.hub_id = "hub-a"
+    agent.session.hub_id = "hub-a"
     return agent
 
 

@@ -175,7 +175,7 @@ async def test_record_finding_omits_unset_optionals_but_always_sends_envelopes()
 
 async def test_ack_emits_the_seq_when_the_hub_advertises_the_ack_version() -> None:
     async with connected_recording_agent("A") as (agent, messages):
-        agent.hub_protocol_version = 2
+        agent.session.hub_protocol_version = 2
         sent = await agent.ack(7)
         await wait_for_recorded_count(messages, 2)
         ack = messages[-1]
@@ -190,7 +190,7 @@ async def test_ack_is_withheld_when_the_hub_predates_the_ack_version() -> None:
     # A hub that advertises wire version 1 does not know the ack verb, so the client must
     # not send it — the ack is withheld and nothing but the registration heartbeat is sent.
     async with connected_recording_agent("A") as (agent, messages):
-        agent.hub_protocol_version = 1
+        agent.session.hub_protocol_version = 1
         sent = await agent.ack(7)
 
     assert sent is False

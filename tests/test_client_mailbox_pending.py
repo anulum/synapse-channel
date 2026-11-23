@@ -28,7 +28,7 @@ async def test_accepted_live_mailbox_frame_acks_the_logical_identity() -> None:
         mailbox_for="PROJ/A",
         mailbox_advance=lambda _data: True,
     )
-    agent.hub_protocol_version = 2
+    agent.session.hub_protocol_version = 2
     sender = AsyncMock()
     agent.send_message = sender  # type: ignore[method-assign] # probe double
 
@@ -57,7 +57,7 @@ async def test_refused_mailbox_frame_neither_advances_nor_acks() -> None:
         mailbox_for="PROJ/A",
         mailbox_advance=lambda _data: False,
     )
-    agent.hub_protocol_version = 2
+    agent.session.hub_protocol_version = 2
     sender = AsyncMock()
     agent.send_message = sender  # type: ignore[method-assign] # probe double
 
@@ -79,7 +79,7 @@ async def test_refused_mailbox_frame_neither_advances_nor_acks() -> None:
 
 async def test_old_hub_withholds_additive_ack_but_keeps_local_cursor() -> None:
     agent = SynapseAgent("PROJ/A", _ignore, mailbox=True)
-    agent.hub_protocol_version = 1
+    agent.session.hub_protocol_version = 1
     sender = AsyncMock()
     agent.send_message = sender  # type: ignore[method-assign] # probe double
 
@@ -101,7 +101,7 @@ async def test_old_hub_withholds_additive_ack_but_keeps_local_cursor() -> None:
 
 async def test_direct_ack_omits_blank_mailbox_identity() -> None:
     agent = SynapseAgent("PROJ/A", _ignore)
-    agent.hub_protocol_version = 2
+    agent.session.hub_protocol_version = 2
     sender = AsyncMock()
     agent.send_message = sender  # type: ignore[method-assign] # probe double
 

@@ -65,10 +65,14 @@ class Connection(Protocol):
     """The client surface the grace drives: one connection, its welcome and its verdicts."""
 
     running: bool
-    hub_id: str
     last_close_code: int | None
     last_close_reason: str
     callback: MessageCallback | None
+
+    @property
+    def hub_id(self) -> str:
+        """Hub identity from the latest welcome."""
+        raise NotImplementedError
 
     async def connect(self) -> None:
         """Run one connection until it closes."""

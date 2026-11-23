@@ -220,7 +220,7 @@ class _RecordingAgent(SynapseAgent):
 
     def __init__(self) -> None:
         super().__init__("ALPHA/alice", verbose=False, persist_lease_epochs=False)
-        self.hub_id = "hub-under-test"
+        self.session.hub_id = "hub-under-test"
         self.sent: list[dict[str, Any]] = []
 
     async def send_message(

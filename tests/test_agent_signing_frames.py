@@ -12,25 +12,43 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.asyncio.client import ClientConnection
 
 from synapse_channel.client.agent import SynapseAgent
-from synapse_channel.client.agent_lifecycle import _mailbox_heartbeat_fields
 from synapse_channel.client.frame_signing_client import ClientFrameSession
-from synapse_channel.core.identity_keys import public_key_b64, write_signing_key
-from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType
+from synapse_channel.core.identity_keys import write_signing_key
+from synapse_channel.core.protocol import MessageType
 
 
-class _Capture:
+class _Socket:
+    """Fake socket that records sends and ends the read loop at once."""
+
     def __init__(self) -> None:
         self.sent: list[str] = []
 
-    async def send(self, raw: str) -> None:
-        self.sent.append(raw)
+    async def send(self, raw: str | bytes) -> None:
+        self.sent.append(raw.decode() if isinstance(raw, bytes) else raw)
+
+    def __aiter__(self) -> _Socket:
+        return self
+
+    async def __anext__(self) -> str:
+        raise StopAsyncIteration
+
+
+class _Open:
+    def __init__(self, socket: _Socket) -> None:
+        self._socket = socket
+
+    async def __aenter__(self) -> _Socket:
+        return self._socket
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
 
 
 def _freeze(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -84,34 +102,20 @@ async def test_signed_frames_stay_byte_identical(
 ) -> None:
     _freeze(monkeypatch)
     agent = _agent(tmp_path)
-    capture = _Capture()
-    agent.connection = cast(ClientConnection, capture)
-    extra: dict[str, Any] = {
-        "takeover": True,
-        "wake_capability": agent.wake_capability,
-        "protocol_version": WIRE_PROTOCOL_VERSION,
-        "lease": True,
-        "owner_lease": agent.owner_lease,
-        "roles": ["worker"],
-    }
-    extra.update(
-        _mailbox_heartbeat_fields(agent.mailbox, agent._mailbox_since_seq, agent.mailbox_for)
-    )
-    public = agent.signing.identity_public_key() if hasattr(agent, "signing") else None
-    identity_key = getattr(agent, "_identity_key", None)
-    if public is None and identity_key is not None:
-        public = public_key_b64(identity_key)
-    if public is not None:
-        extra["identity_public_key"] = public
-    await agent.send_message(
-        MessageType.HEARTBEAT, target="System", payload="online", sign_identity=True, **extra
-    )
+    socket = _Socket()
+
+    def open_socket(*_args: object, **_kwargs: object) -> _Open:
+        return _Open(socket)
+
+    monkeypatch.setattr("synapse_channel.client.agent_lifecycle.connect", open_socket)
+    await agent.connect()
+    agent.connection = cast(ClientConnection, socket)
     await agent.send_message(MessageType.CLAIM, target="System", payload="task-a")
-    agent.frame_session = ClientFrameSession("hub-a", "session-nonce")
+    agent.session.frame_session = ClientFrameSession("hub-a", "session-nonce")
     await agent.send_message(MessageType.CHAT, target="all", payload="hello")
-    agent.frame_session = None
+    agent.session.frame_session = None
     await agent.advertise(description="reads", skills=("review",))
-    frames = [json.loads(raw) for raw in capture.sent]
+    frames = [json.loads(raw) for raw in socket.sent]
     assert [frame["type"] for frame in frames] == [
         MessageType.HEARTBEAT,
         MessageType.CLAIM,
