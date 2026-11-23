@@ -15,11 +15,7 @@ from typing import Any
 import pytest
 
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.operation_attempt_ledger import (
-    AttemptLedger,
-    LevelCriteria,
-    LevelJudgement,
-)
+from synapse_channel.core.operation_attempt_ledger import AttemptLedger
 from synapse_channel.core.operation_attempts import OperationFact
 from synapse_channel.core.operation_level_criteria import (
     CriteriaItem,
@@ -33,6 +29,7 @@ from synapse_channel.core.operation_level_criteria import (
     decode_raise_request,
     unmet,
 )
+from synapse_channel.core.operation_level_ledger import LevelCriteria, LevelJudgement, LevelLedger
 from synapse_channel.core.persistence import EventStore
 
 EFFECTS = ("file", "git_publication", "deployment", "migration")
@@ -297,3 +294,13 @@ def test_criteria_and_judgements_are_restored_and_a_malformed_row_is_skipped(
     candidate.note_criteria(DIGEST, LevelCriteria(99, "project:Q", "A3", (), "H/other"))
     candidate.publish_from(ledger)
     assert candidate.criteria[DIGEST].seq == criteria
+
+
+def test_a_second_criteria_with_the_same_digest_keeps_the_first_record() -> None:
+    """A later note for a digest does not replace the first sequence or declarer."""
+    ledger = LevelLedger()
+    ledger.note_criteria(DIGEST, LevelCriteria(1, "project:P", "A2", (), "S/first"))
+    ledger.note_criteria(DIGEST, LevelCriteria(9, "project:P", "A3", (), "S/later"))
+    kept = ledger.criteria[DIGEST]
+    assert kept.seq == 1
+    assert kept.declared_by == "S/first"

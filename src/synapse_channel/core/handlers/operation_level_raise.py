@@ -43,11 +43,7 @@ from typing import TYPE_CHECKING, Any
 from synapse_channel.core.acl import OPERATION_JUDGE, OPERATION_LEVEL, Target, scope_grant
 from synapse_channel.core.atomic_operations import OperationDraft
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.operation_attempt_ledger import (
-    AttemptLedger,
-    LevelCriteria,
-    LevelJudgement,
-)
+from synapse_channel.core.operation_attempt_ledger import AttemptLedger
 from synapse_channel.core.operation_attempts import INVALID_REQUEST
 from synapse_channel.core.operation_level_criteria import (
     CRITERIA_RECORDED,
@@ -74,6 +70,7 @@ from synapse_channel.core.operation_level_criteria import (
     decode_raise_request,
     unmet,
 )
+from synapse_channel.core.operation_level_ledger import LevelCriteria, LevelJudgement
 from synapse_channel.core.operation_levels import KIND_PERSON, approver_kind, rank
 from synapse_channel.core.operation_records import VERIFIER_FOR_EFFECT
 from synapse_channel.core.protocol import MessageType

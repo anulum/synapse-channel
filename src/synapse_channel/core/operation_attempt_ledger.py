@@ -87,6 +87,12 @@ from synapse_channel.core.operation_level_criteria import (
     ITEM_VERIFIED_EFFECTS,
     CriteriaItem,
 )
+from synapse_channel.core.operation_level_ledger import (
+    LevelCriteria,
+    LevelJudgement,
+    LevelLedger,
+    _ScopeLevel,
+)
 from synapse_channel.core.operation_levels import DEFAULT_LEVEL, LEVELS, lowest
 from synapse_channel.core.operation_stop_ledger import StopLedger, _ScopeStops, _StopRow
 from synapse_channel.core.operation_stop_readbacks import (
@@ -171,37 +177,6 @@ _LEVEL_KINDS = (
     EventKind.OPERATION_TRIGGER,
 )
 """The rows of a scope's level: its records, criteria, judgements and triggers."""
-
-
-@dataclass(frozen=True)
-class LevelCriteria:
-    """One recorded criteria: what a raise of ``scope`` to ``target`` must show."""
-
-    seq: int
-    scope: str
-    target: str
-    items: tuple[CriteriaItem, ...]
-    declared_by: str
-
-
-@dataclass(frozen=True)
-class LevelJudgement:
-    """One recorded judgement of a criteria."""
-
-    digest: str
-    verdict: str
-    judge: str
-
-
-@dataclass
-class _ScopeLevel:
-    """One scope's autonomy level, the epoch of its latest record and its level line."""
-
-    level: str = DEFAULT_LEVEL
-    epoch: int = 0
-    line: int = 0
-    step_down: int = 0
-    """The sequence of the scope's latest record that lowered its level; 0 when none."""
 
 
 @dataclass(frozen=True)
@@ -432,9 +407,7 @@ class AttemptLedger:
     def __init__(self, store: EventStore | None) -> None:
         self._operations: dict[str, _Operation] = {}
         self._stop_ledger = StopLedger()
-        self._levels: dict[str, _ScopeLevel] = {}
-        self._criteria: dict[str, LevelCriteria] = {}
-        self._judgements: dict[int, LevelJudgement] = {}
+        self._level_ledger = LevelLedger()
         if store is not None:
             for event in store.iter_events(kinds=_RESTORED_KINDS):
                 self.apply_event(event)
@@ -457,25 +430,23 @@ class AttemptLedger:
     @property
     def levels(self) -> dict[str, _ScopeLevel]:
         """Return the live levels of every scope, for :meth:`publish_from`."""
-        return self._levels
+        return self._level_ledger.levels
 
     @property
     def criteria(self) -> dict[str, LevelCriteria]:
         """Return the recorded criteria by digest, for :meth:`publish_from`."""
-        return self._criteria
+        return self._level_ledger.criteria
 
     @property
     def judgements(self) -> dict[int, LevelJudgement]:
         """Return the recorded judgements by sequence, for :meth:`publish_from`."""
-        return self._judgements
+        return self._level_ledger.judgements
 
     def publish_from(self, other: AttemptLedger) -> None:
         """Install the tables of a candidate that the hub's actor has made durable."""
         self._operations = other.operations
         self._stop_ledger.publish_from(other.stops, other.stop_rows)
-        self._levels = other.levels
-        self._criteria = other.criteria
-        self._judgements = other.judgements
+        self._level_ledger.publish_from(other.levels, other.criteria, other.judgements)
 
     def apply_event(self, event: StoredEvent) -> None:
         """Apply one journalled row; a row that lacks a field the hub writes is skipped."""
@@ -676,15 +647,11 @@ class AttemptLedger:
 
     def note_level(self, scope: str, seq: int, *, level: str, epoch: int) -> None:
         """Record that the row at ``seq`` set ``scope`` to ``level`` at ``epoch``."""
-        previous = self._levels.get(scope) or _ScopeLevel()
-        lowered = LEVELS.index(level) < LEVELS.index(previous.level)
-        step_down = seq if lowered else previous.step_down
-        self._levels[scope] = _ScopeLevel(level, epoch, seq, step_down)
+        self._level_ledger.note_level(scope, seq, level=level, epoch=epoch)
 
     def level_of(self, scope: str) -> tuple[str, int]:
         """Return the level of ``scope`` and its latest record's epoch; ``A1`` and 0 without one."""
-        record = self._levels.get(scope)
-        return (DEFAULT_LEVEL, 0) if record is None else (record.level, record.epoch)
+        return self._level_ledger.level_of(scope)
 
     def level_facts(self, operation_id: str) -> tuple[str, tuple[str, int] | None]:
         """Return an operation's level, the lowest of its scopes, and its level line.
@@ -699,7 +666,7 @@ class AttemptLedger:
         scopes = self._scopes_of(operation_id)
         line: tuple[str, int] | None = None
         for scope in scopes:
-            record = self._levels.get(scope)
+            record = self.levels.get(scope)
             if record is not None and (line is None or record.line > line[1]):
                 line = (scope, record.line)
         return lowest(self.level_of(scope)[0] for scope in scopes), line
@@ -753,16 +720,15 @@ class AttemptLedger:
 
     def note_criteria(self, digest: str, criteria: LevelCriteria) -> None:
         """Record a criteria under its digest; the first record of a digest stands."""
-        self._criteria.setdefault(digest, criteria)
+        self._level_ledger.note_criteria(digest, criteria)
 
     def note_judgement(self, seq: int, judgement: LevelJudgement) -> None:
         """Record the judgement journalled at ``seq``."""
-        self._judgements[seq] = judgement
+        self._level_ledger.note_judgement(seq, judgement)
 
     def window_start(self, scope: str, criteria_seq: int) -> int:
         """Return where a count of ``scope`` starts: after its criteria and its latest step down."""
-        record = self._levels.get(scope)
-        return max(criteria_seq, 0 if record is None else record.step_down)
+        return self._level_ledger.window_start(scope, criteria_seq)
 
     def _in_scope(self, scope: str) -> list[_Operation]:
         return [

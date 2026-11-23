@@ -15,19 +15,14 @@ from typing import Any
 from synapse_channel.core.attempt_markers import AttemptMarker
 from synapse_channel.core.handlers.operation_triggers import note_written, write_trigger
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.operation_attempt_ledger import (
-    AttemptLedger,
-    AttemptSummary,
-    AttemptView,
-    LevelCriteria,
-    LevelJudgement,
-)
+from synapse_channel.core.operation_attempt_ledger import AttemptLedger, AttemptSummary, AttemptView
 from synapse_channel.core.operation_attempts import APPROVED_FRESH, OperationFact
 from synapse_channel.core.operation_level_criteria import (
     ITEM_INCORRECT_ACCEPTANCES,
     CriteriaItem,
     criteria_digest,
 )
+from synapse_channel.core.operation_level_ledger import LevelCriteria, LevelJudgement
 from synapse_channel.core.operation_stop_ledger import StopLedger
 from synapse_channel.core.operation_stop_readbacks import (
     RESULT_APPLIED,
