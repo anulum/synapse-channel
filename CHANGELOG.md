@@ -137,6 +137,13 @@ execution evidence when carrying a release claim forward.
   the next forward calls. Every existing `A2ABridge` constructor parameter stays, and the constructor stays
   keyword-only. The execution's lock field remains `transition_lock`.
 
+- **The Agent2Agent access boundary now lives in `A2AAccessPolicy`; behaviour is unchanged.** Construction
+  still normalises origins and authorities, in that order, and still refuses an Origin allow-list that has no trusted
+  endpoint authority. `auth_token` and `allowed_origins` are now read-only: they return the same values and there is
+  no setter. `allowed_authorities` keeps a setter, and a later assignment is stored as given. Every existing
+  `A2ABridge` constructor parameter stays, and the constructor stays keyword-only. The HTTP handler reads the bridge's
+  current policy on each request.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

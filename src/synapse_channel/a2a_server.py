@@ -21,16 +21,16 @@ import time
 import uuid
 from collections.abc import Callable, Coroutine, Sequence
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from dataclasses import replace
 from typing import Any, ClassVar
 
 from synapse_channel import a2a_errors
 from synapse_channel.a2a import JsonMap
+from synapse_channel.a2a_access import A2AAccessPolicy
 from synapse_channel.a2a_events import A2ATaskEvents
 from synapse_channel.a2a_http_protocol import (
     endpoint_authorities,
     non_negative_int,
-    normalise_authority,
-    normalise_origin,
 )
 from synapse_channel.a2a_outcome import protocol_observation
 from synapse_channel.a2a_push import A2APushNotifier, PushDeliverer, http_push_deliverer
@@ -215,20 +215,17 @@ class A2ABridge:
             clock=push_clock,
             create_config=self.create_push_notification_config,
         )
-        self.auth_token = auth_token
-        # Normalised once here so the per-request check is a plain membership
-        # test and the HTTP edge never re-implements origin comparison rules.
-        self.allowed_origins = tuple(normalise_origin(origin) for origin in allowed_origins)
         authority_source = (
             _agent_card_http_authorities(agent_card)
             if allowed_authorities is None
             else allowed_authorities
         )
-        self.allowed_authorities = tuple(
-            normalise_authority(authority) for authority in authority_source
+        origins, authorities = A2AAccessPolicy.normalised(allowed_origins, authority_source)
+        self._access = A2AAccessPolicy(
+            auth_token=auth_token,
+            allowed_origins=origins,
+            allowed_authorities=authorities,
         )
-        if self.allowed_origins and not self.allowed_authorities:
-            raise ValueError("an Origin allow-list requires a trusted endpoint authority")
         self.task_timeout_seconds = max(task_timeout_seconds, 0.0)
         self.subscribe_wait_seconds = max(subscribe_wait_seconds, 0.0)
         # Durable event history is shared with the task store so a restarted
@@ -255,6 +252,26 @@ class A2ABridge:
     def agent(self, agent: Any) -> None:
         """Use ``agent`` for the next forward."""
         self._correlator.agent = agent
+
+    @property
+    def auth_token(self) -> str | None:
+        """Return the bearer token checked on each request."""
+        return self._access.auth_token
+
+    @property
+    def allowed_origins(self) -> tuple[str, ...]:
+        """Return the Origin allow-list checked on each request."""
+        return self._access.allowed_origins
+
+    @property
+    def allowed_authorities(self) -> tuple[str, ...]:
+        """Return the Host authorities checked on each request."""
+        return self._access.allowed_authorities
+
+    @allowed_authorities.setter
+    def allowed_authorities(self, allowed_authorities: Any) -> None:
+        """Store ``allowed_authorities`` as given for the next request."""
+        self._access = replace(self._access, allowed_authorities=allowed_authorities)
 
     def _gc_retained_tasks(self, *, now: float | None = None) -> list[str]:
         """Prune expired terminal tasks and drop bridge-local indexes."""
