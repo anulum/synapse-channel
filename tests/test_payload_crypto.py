@@ -186,7 +186,7 @@ def test_payload_decryption_rejects_wrong_key_and_invalid_utf8() -> None:
         lambda: decrypt_payload(envelope, b"w" * 32, context=context)
     )
 
-    from synapse_channel.core.at_rest import require_aes_gcm
+    from synapse_channel.core.at_rest_format import require_aes_gcm
 
     nonce = b"n" * 12
     aad = base64.urlsafe_b64decode(envelope["aad"].encode("ascii"))

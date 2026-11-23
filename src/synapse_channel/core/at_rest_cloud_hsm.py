@@ -35,7 +35,6 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from synapse_channel.core.at_rest import (
-    KEY_BYTES,
     AtRestCipher,
     _read_wrapped_key_document,
     _write_new_key_file,
@@ -45,6 +44,7 @@ from synapse_channel.core.at_rest import (
     unwrap_data_key,
     wrap_data_key,
 )
+from synapse_channel.core.at_rest_format import KEY_BYTES
 
 CLOUD_HSM_BACKEND = "cloud-hsm"
 """Wrapped-key ``backend`` tag for a cloud HSM / cloud KMS key-encryption key."""

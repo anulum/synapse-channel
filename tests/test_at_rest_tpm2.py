@@ -19,10 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.core.at_rest import (
-    WRAPPED_KEY_SCHEMA,
-    generate_wrapped_key_file,
-)
+from synapse_channel.core.at_rest import generate_wrapped_key_file
+from synapse_channel.core.at_rest_format import WRAPPED_KEY_SCHEMA
 from synapse_channel.core.at_rest_tpm2 import (
     DEFAULT_TPM2_TCTI,
     TEMPLATE_VERSION,

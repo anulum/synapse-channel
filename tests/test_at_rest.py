@@ -18,14 +18,8 @@ from pathlib import Path
 import pytest
 from cryptography.exceptions import InvalidTag
 
-from synapse_channel.core import at_rest
+from synapse_channel.core import at_rest, at_rest_format
 from synapse_channel.core.at_rest import (
-    ENVELOPE_MAGIC,
-    GCM_MESSAGE_LIMIT,
-    GCM_REKEY_WARNING_THRESHOLD,
-    KEY_BYTES,
-    PASSPHRASE_SCRYPT_BACKEND,
-    WRAPPED_KEY_SCHEMA,
     AtRestCipher,
     AtRestKeyExhausted,
     AtRestSurface,
@@ -52,6 +46,14 @@ from synapse_channel.core.at_rest import (
 from synapse_channel.core.at_rest_counter import (
     InMemoryMessageCounter,
     PersistentMessageCounter,
+)
+from synapse_channel.core.at_rest_format import (
+    ENVELOPE_MAGIC,
+    GCM_MESSAGE_LIMIT,
+    GCM_REKEY_WARNING_THRESHOLD,
+    KEY_BYTES,
+    PASSPHRASE_SCRYPT_BACKEND,
+    WRAPPED_KEY_SCHEMA,
 )
 
 
@@ -754,7 +756,7 @@ def _block_import(monkeypatch: pytest.MonkeyPatch, module_name: str) -> None:
 def test_require_aes_gcm_names_the_missing_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
     _block_import(monkeypatch, "cryptography.hazmat.primitives.ciphers.aead")
     with pytest.raises(RuntimeError, match="optional 'cryptography'"):
-        at_rest.require_aes_gcm()
+        at_rest_format.require_aes_gcm()
 
 
 def test_key_wrap_names_the_missing_dependency(monkeypatch: pytest.MonkeyPatch) -> None:

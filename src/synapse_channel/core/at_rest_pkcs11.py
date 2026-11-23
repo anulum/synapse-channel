@@ -37,12 +37,12 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.at_rest import (
-    KEY_BYTES,
     AtRestCipher,
     _read_wrapped_key_document,
     _write_new_key_file,
     _write_wrapped_key_document,
 )
+from synapse_channel.core.at_rest_format import KEY_BYTES
 
 PKCS11_BACKEND = "pkcs11"
 """Wrapped-key ``backend`` tag for a key-encryption key held on a PKCS#11 token."""

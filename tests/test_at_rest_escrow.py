@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.core.at_rest import KEY_BYTES, generate_key_file, load_key_file
+from synapse_channel.core.at_rest import generate_key_file, load_key_file
 from synapse_channel.core.at_rest_escrow import (
     ESCROW_SHARE_SCHEMA,
     EscrowShare,
@@ -26,6 +26,7 @@ from synapse_channel.core.at_rest_escrow import (
     split_key_file,
     write_escrow_share,
 )
+from synapse_channel.core.at_rest_format import KEY_BYTES
 
 
 def test_split_and_recover_exact_threshold() -> None:

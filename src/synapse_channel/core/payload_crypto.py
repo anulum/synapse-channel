@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict, cast
 
-from synapse_channel.core.at_rest import KEY_BYTES, NONCE_BYTES, require_aes_gcm
+from synapse_channel.core.at_rest_format import KEY_BYTES, NONCE_BYTES, require_aes_gcm
 from synapse_channel.core.errors import SynapseError
 
 PAYLOAD_ENVELOPE_VERSION = 2

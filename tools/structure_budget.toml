@@ -406,8 +406,3 @@ allowed = 0
 reason = "argparse has no public API for listing a parser's actions or a subparser group's choice actions; this adapter is the one module allowed to read them, and cli.py and cli_completions.py go through it."
 owner = "f636"
 review_by = "2026-12-31"
-
-[[moves]]
-from = "src/synapse_channel/core/state.py::SynapseState.transfer_protected_write_custody"
-measure = "function_branches"
-to = "src/synapse_channel/core/protected_write_state.py::ProtectedWriteState.transfer_custody"

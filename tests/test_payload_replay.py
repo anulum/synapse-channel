@@ -29,7 +29,7 @@ import pytest
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
 from synapse_channel.cli_messaging_listen import _render_chat_payload
-from synapse_channel.core.at_rest import NONCE_BYTES, require_aes_gcm
+from synapse_channel.core.at_rest_format import NONCE_BYTES, require_aes_gcm
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.payload_crypto import (
     LEGACY_PAYLOAD_ENVELOPE_VERSION,

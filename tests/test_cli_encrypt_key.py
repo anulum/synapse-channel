@@ -20,7 +20,7 @@ from synapse_channel import (
     cli_encrypt_key_hardware,
     cli_encrypt_key_profile,
 )
-from synapse_channel.core.at_rest import KEY_BYTES
+from synapse_channel.core.at_rest_format import KEY_BYTES
 
 
 def test_parser_registers_encrypt_key_subcommands() -> None:
@@ -286,7 +286,7 @@ def test_rewrap_rejects_mismatched_new_passphrase(
 
 
 def test_generate_parser_defaults_scrypt_and_passphrase_flags() -> None:
-    from synapse_channel.core.at_rest import (
+    from synapse_channel.core.at_rest_format import (
         DEFAULT_SCRYPT_N,
         DEFAULT_SCRYPT_P,
         DEFAULT_SCRYPT_R,

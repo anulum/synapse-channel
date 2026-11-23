@@ -31,7 +31,8 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel import __version__
-from synapse_channel.core.at_rest import KEY_BYTES, load_key_file
+from synapse_channel.core.at_rest import load_key_file
+from synapse_channel.core.at_rest_format import KEY_BYTES
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.mailbox_pending_layout import copy_mailbox_layout
 from synapse_channel.core.persistence_store_format import (
@@ -128,7 +129,7 @@ def pragma_key_literal(key: bytes) -> str:
     Parameters
     ----------
     key : bytes
-        Exactly :data:`~synapse_channel.core.at_rest.KEY_BYTES` random key bytes.
+        Exactly :data:`~synapse_channel.core.at_rest_format.KEY_BYTES` random key bytes.
 
     Returns
     -------

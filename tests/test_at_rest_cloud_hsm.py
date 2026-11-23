@@ -19,12 +19,7 @@ from typing import Any
 
 import pytest
 
-from synapse_channel.core.at_rest import (
-    KEY_BYTES,
-    WRAPPED_KEY_SCHEMA,
-    generate_key_file,
-    generate_wrapped_key_file,
-)
+from synapse_channel.core.at_rest import generate_key_file, generate_wrapped_key_file
 from synapse_channel.core.at_rest_cloud_hsm import (
     CLOUD_HSM_BACKEND,
     PROVIDER_AWS_KMS,
@@ -36,6 +31,7 @@ from synapse_channel.core.at_rest_cloud_hsm import (
     generate_wrapped_key_file_cloud_hsm,
     require_boto3,
 )
+from synapse_channel.core.at_rest_format import KEY_BYTES, WRAPPED_KEY_SCHEMA
 
 
 @contextmanager

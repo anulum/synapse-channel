@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.core.at_rest import KEY_BYTES
+from synapse_channel.core.at_rest_format import KEY_BYTES
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import (
     SQLCIPHER_INSTALL_HINT,
