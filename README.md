@@ -1948,11 +1948,11 @@ an installed protected runtime or revocation fencing.
 |---|---:|
 | Package version | 0.99.63 |
 | Public API exports | 70 |
-| Package modules | 1099 |
-| Classes | 1599 |
+| Package modules | 1100 |
+| Classes | 1601 |
 | Wire message types | 135 |
 | CLI subcommands | 332 |
-| Test functions | 15645 |
+| Test functions | 15649 |
 | Benchmark harnesses | 17 |
 | Documentation pages | 101 |
 | GitHub Actions workflows | 29 |

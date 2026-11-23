@@ -88,21 +88,17 @@ from synapse_channel.core.operation_level_criteria import (
     CriteriaItem,
 )
 from synapse_channel.core.operation_levels import DEFAULT_LEVEL, LEVELS, lowest
+from synapse_channel.core.operation_stop_ledger import StopLedger, _ScopeStops, _StopRow
 from synapse_channel.core.operation_stop_readbacks import (
-    CLOSING_RESULTS,
     RESULT_APPLIED,
     RESULT_SEALED,
-    RESULT_UNSEALABLE,
     marker_reads_applied,
     marker_reads_sealed,
 )
 from synapse_channel.core.operation_stop_states import (
     STATE_AT_REST,
     STATE_STOP_REQUESTED,
-    ListedAttempt,
     StopState,
-    compute_stop_state,
-    profile_for,
 )
 from synapse_channel.core.operation_stops import scopes_of
 from synapse_channel.core.operation_triggers import (
@@ -206,33 +202,6 @@ class _ScopeLevel:
     line: int = 0
     step_down: int = 0
     """The sequence of the scope's latest record that lowered its level; 0 when none."""
-
-
-@dataclass
-class _ScopeStops:
-    """One scope's stops: the standing stop, its epoch, its listed operations and the line."""
-
-    standing: int | None = None
-    epoch: int = 0
-    listed: tuple[str, ...] = ()
-    line: int = 0
-
-
-@dataclass
-class _StopRow:
-    """One recorded stop: its scope, the attempts it listed and what was read back for each."""
-
-    scope: str
-    epoch: int
-    listed: tuple[tuple[str, str], ...]
-    readbacks: dict[str, str]
-    readback_seqs: dict[str, int] = field(default_factory=dict)
-    resumed: StopState | None = None
-    """The state computed when a resume lifted this stop; it stands from then on."""
-    recorded_at: float = 0.0
-    """The hub's wall-clock time of the stop; 0 when its row did not state one."""
-    bound_triggered: bool = False
-    """Whether the hub recorded the stop's ``stop_unsettled`` trigger."""
 
 
 @dataclass(frozen=True)
@@ -462,8 +431,7 @@ class AttemptLedger:
 
     def __init__(self, store: EventStore | None) -> None:
         self._operations: dict[str, _Operation] = {}
-        self._stops: dict[str, _ScopeStops] = {}
-        self._stop_rows: dict[int, _StopRow] = {}
+        self._stop_ledger = StopLedger()
         self._levels: dict[str, _ScopeLevel] = {}
         self._criteria: dict[str, LevelCriteria] = {}
         self._judgements: dict[int, LevelJudgement] = {}
@@ -479,12 +447,12 @@ class AttemptLedger:
     @property
     def stops(self) -> dict[str, _ScopeStops]:
         """Return the live stops of every scope, for :meth:`publish_from`."""
-        return self._stops
+        return self._stop_ledger.stops
 
     @property
     def stop_rows(self) -> dict[int, _StopRow]:
         """Return the live recorded stops by journal sequence, for :meth:`publish_from`."""
-        return self._stop_rows
+        return self._stop_ledger.stop_rows
 
     @property
     def levels(self) -> dict[str, _ScopeLevel]:
@@ -504,8 +472,7 @@ class AttemptLedger:
     def publish_from(self, other: AttemptLedger) -> None:
         """Install the tables of a candidate that the hub's actor has made durable."""
         self._operations = other.operations
-        self._stops = other.stops
-        self._stop_rows = other.stop_rows
+        self._stop_ledger.publish_from(other.stops, other.stop_rows)
         self._levels = other.levels
         self._criteria = other.criteria
         self._judgements = other.judgements
@@ -631,15 +598,11 @@ class AttemptLedger:
         recorded_at: float = 0.0,
     ) -> None:
         """Record that ``scope`` is stopped by the row at ``seq``, listing (operation, attempt)."""
-        stops = self._stops.setdefault(scope, _ScopeStops())
-        names = tuple(dict.fromkeys(operation_id for operation_id, _attempt in listed))
-        stops.standing, stops.epoch, stops.listed, stops.line = seq, epoch, names, seq
-        self._stop_rows[seq] = _StopRow(scope, epoch, listed, {}, recorded_at=recorded_at)
+        self._stop_ledger.note_stop(scope, seq, epoch=epoch, listed=listed, recorded_at=recorded_at)
 
     def stop_lists(self, stop_seq: int, operation_id: str, attempt_id: str) -> bool:
         """Return whether the stop recorded at ``stop_seq`` listed this attempt."""
-        row = self._stop_rows.get(stop_seq)
-        return row is not None and (operation_id, attempt_id) in row.listed
+        return self._stop_ledger.lists(stop_seq, operation_id, attempt_id)
 
     def note_readback(
         self,
@@ -663,14 +626,7 @@ class AttemptLedger:
         earlier ``not_started`` claim or matched ``sealed`` marker verification
         on it records a contradiction.
         """
-        row = self._stop_rows.get(stop_seq)
-        if row is not None:
-            current = row.readbacks.get(attempt_id)
-            if current is None or (
-                current not in (*CLOSING_RESULTS, RESULT_UNSEALABLE) and result in CLOSING_RESULTS
-            ):
-                row.readbacks[attempt_id] = result
-                row.readback_seqs[attempt_id] = seq
+        self._stop_ledger.record_readback(stop_seq, attempt_id, result, seq=seq)
         entry = self._operations.get(operation_id)
         if entry is None or not self.stop_lists(stop_seq, operation_id, attempt_id):
             return
@@ -712,15 +668,11 @@ class AttemptLedger:
 
     def readback_of(self, stop_seq: int, attempt_id: str) -> str | None:
         """Return the kept read-back result of an attempt for a stop, or ``None``."""
-        row = self._stop_rows.get(stop_seq)
-        return None if row is None else row.readbacks.get(attempt_id)
+        return self._stop_ledger.readback_of(stop_seq, attempt_id)
 
     def kept_readback(self, stop_seq: int, attempt_id: str) -> tuple[str, int] | None:
         """Return ``(result, seq)`` of the kept read-back for ``(stop_seq, attempt_id)``."""
-        row = self._stop_rows.get(stop_seq)
-        if row is None or attempt_id not in row.readbacks:
-            return None
-        return row.readbacks[attempt_id], row.readback_seqs.get(attempt_id, 0)
+        return self._stop_ledger.kept_readback(stop_seq, attempt_id)
 
     def note_level(self, scope: str, seq: int, *, level: str, epoch: int) -> None:
         """Record that the row at ``seq`` set ``scope`` to ``level`` at ``epoch``."""
@@ -843,7 +795,7 @@ class AttemptLedger:
                     attempt.approval_seq > since for attempt in entry.attempts
                 )
         containing = self.scopes_containing(scope)
-        for seq, row in self._stop_rows.items():
+        for seq, row in self.stop_rows.items():
             computed = self.stop_state(seq) if seq > since and row.scope in containing else None
             if computed is not None and computed.state == STATE_AT_REST:
                 counts[ITEM_STOPS_AT_REST] += 1
@@ -870,9 +822,7 @@ class AttemptLedger:
         entry = self._operations.get(operation_id) if isinstance(operation_id, str) else None
         if entry is not None:
             entry.triggered.add(cause)
-        row = self._stop_rows.get(stop_seq) if type(stop_seq) is int else None
-        if row is not None:
-            row.bound_triggered = True
+        self._stop_ledger.mark_bound_triggered(stop_seq)
 
     def contradicted_at(self, operation_id: str) -> int:
         """Return the sequence of the operation's first independent contradiction, or 0."""
@@ -904,7 +854,7 @@ class AttemptLedger:
             for operation_id, entry in sorted(self._operations.items())
             if _past_deadline_unverified(entry, now, since)
         ]
-        for seq, row in sorted(self._stop_rows.items()):
+        for seq, row in sorted(self.stop_rows.items()):
             if self._unsettled(seq, row, now, stop_bound, since):
                 lowers = above(self._levels_of((row.scope,)), TRIGGER_TARGET)
                 subject = {"stop_seq": seq}
@@ -953,16 +903,11 @@ class AttemptLedger:
 
     def stop_identity(self, stop_seq: int) -> tuple[str, int] | None:
         """Return the scope and epoch of the stop recorded at ``stop_seq``, or ``None``."""
-        row = self._stop_rows.get(stop_seq)
-        return None if row is None else (row.scope, row.epoch)
+        return self._stop_ledger.stop_identity(stop_seq)
 
     def stops_listing(self, operation_id: str) -> tuple[int, ...]:
         """Return the sequences of the recorded stops that listed an attempt of the operation."""
-        return tuple(
-            seq
-            for seq, row in self._stop_rows.items()
-            if any(listed_op == operation_id for listed_op, _attempt in row.listed)
-        )
+        return self._stop_ledger.stops_listing(operation_id)
 
     def attempt_count(self, operation_id: str) -> int:
         """Return the number of attempts opened for ``operation_id``."""
@@ -971,19 +916,20 @@ class AttemptLedger:
 
     def listed_pair_count(self, operation_id: str) -> int:
         """Return how many recorded stop listings name an attempt of ``operation_id``."""
-        return sum(
-            1
-            for row in self._stop_rows.values()
-            for listed_op, _attempt in row.listed
-            if listed_op == operation_id
-        )
+        return self._stop_ledger.listed_pair_count(operation_id)
 
-    def _reconciled(self, operation_id: str, attempt_id: str) -> bool:
+    def reconciled(self, operation_id: str, attempt_id: str) -> bool:
+        """Return whether the attempt is reconciled or its operation is closed."""
         entry = self._operations.get(operation_id)
         if entry is None:
             return False
         attempt = next((item for item in entry.attempts if item.attempt_id == attempt_id), None)
         return entry.closed or (attempt is not None and attempt.reconciled)
+
+    def assurance(self, operation_id: str) -> str | None:
+        """Return the operation's declared assurance, or ``None`` when it has none."""
+        fact = self.operation(operation_id)
+        return None if fact is None else fact.assurance
 
     def stop_state(self, stop_seq: int) -> StopState | None:
         """Return the computed state of the stop recorded at ``stop_seq``, or ``None``.
@@ -993,26 +939,7 @@ class AttemptLedger:
         hub keeps no evidence of the isolated profile. A resumed stop keeps the
         state computed at its resume.
         """
-        row = self._stop_rows.get(stop_seq)
-        if row is None:
-            return None
-        if row.resumed is not None:
-            return row.resumed
-        facts = [
-            ListedAttempt(
-                operation_id,
-                attempt_id,
-                row.readbacks.get(attempt_id),
-                self._reconciled(operation_id, attempt_id),
-            )
-            for operation_id, attempt_id in row.listed
-        ]
-        assurances = [
-            None if (fact := self.operation(operation_id)) is None else fact.assurance
-            for operation_id, _attempt in row.listed
-        ]
-        profile = profile_for(assurances, isolation_evidence=False)
-        return compute_stop_state(facts, closing=CLOSING_RESULTS, profile=profile)
+        return self._stop_ledger.state(stop_seq, self)
 
     def stop_closed(self, stop_seq: int) -> bool:
         """Return whether every attempt the stop listed has a ``sealed`` or ``applied`` read-back.
@@ -1020,30 +947,19 @@ class AttemptLedger:
         An executor's own report is not read: a stop trusts markers, not reports.
         A stop that listed nothing is closed; an unknown sequence is not.
         """
-        row = self._stop_rows.get(stop_seq)
-        if row is None:
-            return False
-        return all(row.readbacks.get(attempt) in CLOSING_RESULTS for _op, attempt in row.listed)
+        return self._stop_ledger.stop_closed(stop_seq)
 
     def note_resume(self, scope: str, seq: int) -> None:
         """Record that the row at ``seq`` lifted the stop of ``scope``; its state stands as now."""
-        stops = self._stops.setdefault(scope, _ScopeStops())
-        row = None if stops.standing is None else self._stop_rows.get(stops.standing)
-        if row is not None and stops.standing is not None:
-            row.resumed = self.stop_state(stops.standing)
-        stops.standing, stops.line = None, seq
+        self._stop_ledger.resume(scope, seq, self)
 
     def standing_stop(self, scope: str) -> tuple[int, int] | None:
         """Return the standing stop of ``scope`` as (journal sequence, epoch), or ``None``."""
-        stops = self._stops.get(scope)
-        if stops is None or stops.standing is None:
-            return None
-        return stops.standing, stops.epoch
+        return self._stop_ledger.standing_stop(scope)
 
     def epoch(self, scope: str) -> int:
         """Return the epoch of the latest stop of ``scope``; 0 when it was never stopped."""
-        stops = self._stops.get(scope)
-        return 0 if stops is None else stops.epoch
+        return self._stop_ledger.epoch(scope)
 
     def _scopes_of(self, operation_id: str) -> tuple[str, ...]:
         fact = self.operation(operation_id)
@@ -1066,7 +982,7 @@ class AttemptLedger:
         stopped_by: tuple[str, int] | None = None
         line: tuple[str, int] | None = None
         for scope in self._scopes_of(operation_id):
-            stops = self._stops.get(scope)
+            stops = self.stops.get(scope)
             if stops is None:
                 continue
             if stopped_by is None and stops.standing is not None:
@@ -1092,11 +1008,8 @@ class AttemptLedger:
 
     def standing_listed(self, stop_seq: int) -> tuple[OpenAttempt, ...]:
         """Return the attempts ``stop_seq`` listed that are neither sealed nor reconciled."""
-        row = self._stop_rows.get(stop_seq)
-        if row is None:
-            return ()
         found: list[OpenAttempt] = []
-        for operation_id, attempt_id in row.listed:
+        for operation_id, attempt_id in self._stop_ledger.listed(stop_seq):
             entry = self._operations.get(operation_id)
             if entry is None or entry.closed:
                 continue
@@ -1124,7 +1037,7 @@ class AttemptLedger:
 
     def actors(self, scope: str) -> frozenset[str]:
         """Return the actors of ``scope``: declarers of operations it lists or would list."""
-        stops = self._stops.get(scope)
+        stops = self.stops.get(scope)
         listed = () if stops is None else stops.listed
         declarers = {
             entry.fact.declarer

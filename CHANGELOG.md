@@ -62,6 +62,8 @@ execution evidence when carrying a release claim forward.
   `core/hub_component_normalization.py` retains the runtime `TypeError` refusal for legacy and untyped
   callers, and `config_fingerprint` is unchanged.
 
+- **A hub keeps its stop records in one component.** Recording a stop, the read-back it keeps and a resume behave as before. `operations` stays the same live dictionary. The new module `core/operation_stop_ledger.py` adds `StopLedger` and the `AttemptRead` port. `AttemptLedger` adds `reconciled(operation_id, attempt_id)` and `assurance(operation_id)`. Every existing name keeps its signature. `mark_bound_triggered` records a bound trigger only for an `int` stop sequence, so a boolean does not mark sequence 1.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.
