@@ -18,6 +18,15 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Changed
+
+- **The two-person operator-relay approval ledger publishes a committed candidate through a public port; behaviour is
+  unchanged.** `PendingRelayApproval` (frozen, slotted) and `RelayApprovalPublicationParts` (frozen, slotted) expose
+  pending `(RelayApprovalKey, PendingRelayApproval)` pairs oldest first through
+  `RelayApprovalLedger.publication_parts()`, excluding capacity. `publish_from` reads that port instead of
+  `candidate._pending`, and `core/operator_relay_approval.py` leaves the structure budget's private-access ledger.
+  Every quorum verdict, audit payload and wire frame is unchanged.
+
 ## [0.99.63] - 2026-11-22
 
 Core 0.99.63 lets the dashboard's Fleet mirror read the advisory export that

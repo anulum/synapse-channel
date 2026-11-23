@@ -113,11 +113,34 @@ class ApprovalOutcome:
 
 
 @dataclass(frozen=True, slots=True)
-class _Pending:
-    """The recorded first request awaiting a second operator."""
+class PendingRelayApproval:
+    """One recorded first relay request awaiting a second distinct principal.
+
+    Attributes
+    ----------
+    requester : str
+        Human-readable operator label of the first request.
+    principal : str
+        Opaque verified federation principal of the first request.
+    """
 
     requester: str
     principal: str
+
+
+@dataclass(frozen=True, slots=True)
+class RelayApprovalPublicationParts:
+    """Immutable pending-entry snapshot for :meth:`RelayApprovalLedger.publish_from`.
+
+    Attributes
+    ----------
+    pending : tuple of (RelayApprovalKey, PendingRelayApproval)
+        Pending records in insertion order, oldest first, so capacity eviction
+        after publication continues to drop the oldest entry. Capacity stays
+        on the live ledger and is deliberately excluded from these parts.
+    """
+
+    pending: tuple[tuple[RelayApprovalKey, PendingRelayApproval], ...]
 
 
 class RelayApprovalLedger:
@@ -134,7 +157,7 @@ class RelayApprovalLedger:
         if capacity < 1:
             raise ValueError("approval ledger capacity must be at least 1")
         self._capacity = capacity
-        self._pending: OrderedDict[RelayApprovalKey, _Pending] = OrderedDict()
+        self._pending: OrderedDict[RelayApprovalKey, PendingRelayApproval] = OrderedDict()
 
     @property
     def pending_count(self) -> int:
@@ -168,9 +191,19 @@ class RelayApprovalLedger:
             for key, record in self._pending.items()
         ]
 
+    def publication_parts(self) -> RelayApprovalPublicationParts:
+        """Return the immutable pending-entry snapshot for :meth:`publish_from` only.
+
+        Unlike :meth:`pending`, which intentionally omits the verified principal
+        for dashboard and query views, these parts preserve both ``requester``
+        and ``principal`` in oldest-first insertion order. Capacity remains owned
+        by the live ledger and is omitted from the returned parts.
+        """
+        return RelayApprovalPublicationParts(pending=tuple(self._pending.items()))
+
     def publish_from(self, candidate: RelayApprovalLedger) -> None:
         """Publish a committed candidate while preserving this ledger's object identity."""
-        self._pending = OrderedDict(candidate._pending)
+        self._pending = OrderedDict(candidate.publication_parts().pending)
 
     def restore_audit(self, payload: Mapping[str, object]) -> None:
         """Fold one durable inbound relay audit into pending quorum state.
@@ -197,7 +230,7 @@ class RelayApprovalLedger:
         if not isinstance(principal, str) or not principal.strip():
             self._pending.pop(key, None)
             return
-        restored = _Pending(requester=requester.strip(), principal=principal.strip())
+        restored = PendingRelayApproval(requester=requester.strip(), principal=principal.strip())
         existing = self._pending.get(key)
         if existing is None:
             self._record(key, restored.requester, restored.principal)
@@ -260,7 +293,7 @@ class RelayApprovalLedger:
         """Store a first request pending, evicting the oldest if at capacity."""
         if len(self._pending) >= self._capacity:
             self._pending.popitem(last=False)
-        self._pending[key] = _Pending(requester=operator, principal=principal)
+        self._pending[key] = PendingRelayApproval(requester=operator, principal=principal)
 
 
 def _key_from_audit(payload: Mapping[str, object]) -> RelayApprovalKey | None:

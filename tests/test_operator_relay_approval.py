@@ -8,13 +8,18 @@
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+from typing import Any, cast
+
 import pytest
 
 from synapse_channel.core.operator_relay import RELAY_RELEASE
 from synapse_channel.core.operator_relay_approval import (
     ApprovalStatus,
+    PendingRelayApproval,
     RelayApprovalKey,
     RelayApprovalLedger,
+    RelayApprovalPublicationParts,
 )
 from synapse_channel.core.operator_relay_wire import RelayActionRequest
 
@@ -242,6 +247,106 @@ def test_publish_from_preserves_live_ledger_identity() -> None:
     live.publish_from(candidate)
     assert id(live) == identity
     assert live.pending() == candidate.pending()
+
+
+def test_publish_from_preserves_verified_principal_for_same_and_second_operator() -> None:
+    live = RelayApprovalLedger()
+    candidate = RelayApprovalLedger()
+    candidate.submit(_request("alice"), principal=_principal("peer-a"))
+    identity = id(live)
+
+    live.publish_from(candidate)
+
+    assert id(live) == identity
+    same_principal = live.submit(_request("alice-alias"), principal=_principal("peer-a"))
+    assert same_principal.status is ApprovalStatus.AWAITING
+    assert same_principal.requester == "alice"
+    assert same_principal.approver == ""
+    assert same_principal.requester_principal == _principal("peer-a")
+    assert same_principal.approver_principal == ""
+    assert live.pending_count == 1
+
+    approved = live.submit(_request("bob"), principal=_principal("peer-b"))
+    assert approved.status is ApprovalStatus.APPROVED
+    assert approved.requester == "alice"
+    assert approved.approver == "bob"
+    assert approved.requester_principal == _principal("peer-a")
+    assert approved.approver_principal == _principal("peer-b")
+    assert live.pending_count == 0
+
+
+def test_publish_from_preserves_oldest_first_eviction_order() -> None:
+    live = RelayApprovalLedger(capacity=2)
+    candidate = RelayApprovalLedger(capacity=2)
+    candidate.submit(_request("alice", task="MY-NS/a"), principal=_principal("peer-a"))
+    candidate.submit(_request("carol", task="MY-NS/b"), principal=_principal("peer-c"))
+
+    live.publish_from(candidate)
+    live.submit(_request("dave", task="MY-NS/c"), principal=_principal("peer-d"))
+
+    assert [item["task_id"] for item in live.pending()] == ["MY-NS/b", "MY-NS/c"]
+    assert (
+        live.submit(_request("bob", task="MY-NS/a"), principal=_principal("peer-b")).status
+        is ApprovalStatus.RECORDED
+    )
+
+
+def test_publish_from_isolates_live_ledger_from_post_publish_candidate_mutations() -> None:
+    live = RelayApprovalLedger()
+    candidate = RelayApprovalLedger()
+    candidate.submit(_request("alice", task="MY-NS/a"), principal=_principal("peer-a"))
+
+    live.publish_from(candidate)
+    before = live.publication_parts()
+
+    candidate.submit(_request("bob", task="MY-NS/a"), principal=_principal("peer-b"))
+    candidate.submit(_request("carol", task="MY-NS/z"), principal=_principal("peer-c"))
+
+    assert live.publication_parts() == before
+    assert live.pending() == [
+        {
+            "action": RELAY_RELEASE,
+            "namespace": "MY-NS",
+            "task_id": "MY-NS/a",
+            "requester": "alice",
+        }
+    ]
+    assert (
+        live.submit(_request("bob", task="MY-NS/a"), principal=_principal("peer-b")).status
+        is ApprovalStatus.APPROVED
+    )
+    assert [item["task_id"] for item in candidate.pending()] == ["MY-NS/z"]
+
+
+def test_publication_parts_are_frozen_oldest_first_and_exclude_capacity() -> None:
+    ledger = RelayApprovalLedger(capacity=4)
+    ledger.submit(_request("alice", task="MY-NS/a"), principal=_principal("peer-a"))
+    ledger.submit(_request("carol", task="MY-NS/b"), principal=_principal("peer-c"))
+
+    parts = ledger.publication_parts()
+
+    assert isinstance(parts, RelayApprovalPublicationParts)
+    assert isinstance(parts.pending, tuple)
+    assert not hasattr(parts, "capacity")
+    assert hasattr(parts, "__slots__")
+    assert parts.pending == (
+        (
+            RelayApprovalKey(action=RELAY_RELEASE, namespace="MY-NS", task_id="MY-NS/a"),
+            PendingRelayApproval(requester="alice", principal=_principal("peer-a")),
+        ),
+        (
+            RelayApprovalKey(action=RELAY_RELEASE, namespace="MY-NS", task_id="MY-NS/b"),
+            PendingRelayApproval(requester="carol", principal=_principal("peer-c")),
+        ),
+    )
+    record = parts.pending[0][1]
+    assert hasattr(record, "__slots__")
+    with pytest.raises(FrozenInstanceError):
+        cast(Any, parts).pending = ()
+    with pytest.raises(FrozenInstanceError):
+        cast(Any, record).requester = "mallory"
+    with pytest.raises(FrozenInstanceError):
+        cast(Any, record).principal = "federation-peer:mallory"
 
 
 def test_restore_pending_audit_requires_a_distinct_live_principal_to_approve() -> None:
