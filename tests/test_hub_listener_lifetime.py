@@ -29,7 +29,7 @@ async def test_a_real_revoked_listener_never_publishes_ready(tmp_path: Path) -> 
     interceptions = 0
     with EventStore(tmp_path / "journal.db") as journal:
         hub = build_hub(HubConfig(journal=journal))
-        checkpoint = hub._checkpoint_store
+        checkpoint = hub._checkpoint.store
         assert checkpoint is not None
         tasks_before = asyncio.all_tasks()
 

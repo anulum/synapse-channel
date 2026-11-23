@@ -15,7 +15,7 @@ from typing import Unpack, cast
 
 import pytest
 
-from synapse_channel.core import hub_component_lifetime as checkpoint_module
+from synapse_channel.core import hub_checkpoint as checkpoint_module
 from synapse_channel.core.attachment_serving import AttachmentServingPolicy
 from synapse_channel.core.attachment_store import AttachmentStore
 from synapse_channel.core.hub import SynapseHub

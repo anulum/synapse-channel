@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -44,9 +45,11 @@ def test_unconfigured_checkpoint_refuses_before_io_with_native_optimization(
         config = HubConfig(journal=journal, anti_rollback_checkpoint=False)
         lifetime = build_lifetime(config, None, None)
         with pytest.raises(ValueError, match="requires a configured checkpoint path"):
-            lifetime.reopen_checkpoint(journal)
+            lifetime.checkpoint.reopen(journal)
         assert journal.count() == 0
     path = tmp_path / "events.db"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
     process = subprocess.run(
         [
             sys.executable,
@@ -57,6 +60,7 @@ def test_unconfigured_checkpoint_refuses_before_io_with_native_optimization(
             str(path),
         ],
         cwd=tmp_path,
+        env=env,
         capture_output=True,
         text=True,
         timeout=20,

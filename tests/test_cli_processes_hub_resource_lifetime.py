@@ -166,7 +166,7 @@ def test_unstarted_hub_closes_checkpoint_before_journal_and_anchors_last_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A constructed but unserved hub still releases and anchors its own store."""
-    from synapse_channel.core import hub_component_lifetime as checkpoint_module
+    from synapse_channel.core import hub_checkpoint as checkpoint_module
 
     checkpoints: list[MerkleCheckpointStore] = []
     database = tmp_path / "events.db"

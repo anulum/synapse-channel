@@ -17,10 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from synapse_channel.core.durable_ingress import DurableIngressQuota
+from synapse_channel.core.hub_checkpoint import HubCheckpoint, open_checkpoint
 from synapse_channel.core.hub_config import HubConfig
 from synapse_channel.core.merkle_checkpoint import (
     LiveCheckpoint,
-    MerkleCheckpointStore,
     checkpoint_path_for,
 )
 from synapse_channel.core.persistence import EventStore
@@ -30,40 +30,12 @@ from synapse_channel.core.persistence import EventStore
 class HubLifetimeComponents:
     """Owned checkpoint, transport synchronization, clock and relay location."""
 
-    checkpoint_path: Path | None
-    live_checkpoint: LiveCheckpoint | None
+    checkpoint: HubCheckpoint
     serving: asyncio.Event
     guard_evidence_quota: DurableIngressQuota
     clock: Callable[[], float]
     started: float
     relay_log: Path | None
-
-    def reopen_checkpoint(self, journal: EventStore) -> LiveCheckpoint:
-        """Reopen and verify the checkpoint at this graph's configured path.
-
-        Parameters
-        ----------
-        journal:
-            Current caller-owned journal to verify against the retained chain.
-
-        Returns
-        -------
-        LiveCheckpoint
-            The verified checkpoint acquired by the same factory as the
-            initial checkpoint. The serving hub owns its eventual close.
-
-        Raises
-        ------
-        ValueError
-            If this graph was configured without a checkpoint path.
-        Exception
-            The original acquisition or verification error. The factory
-            releases its partial acquisition before propagating a refusal.
-        """
-        path = self.checkpoint_path
-        if path is None:
-            raise ValueError("checkpoint reopening requires a configured checkpoint path")
-        return open_checkpoint(journal, path)
 
 
 def validate_attachments(config: HubConfig) -> None:
@@ -101,17 +73,6 @@ def checkpoint_interval(config: HubConfig) -> float:
     return interval
 
 
-def open_checkpoint(journal: EventStore, path: Path) -> LiveCheckpoint:
-    """Verify and anchor the chain, releasing the database on any refused start."""
-    store = MerkleCheckpointStore(path)
-    try:
-        store.verify(journal)
-        return LiveCheckpoint(store, journal)
-    except BaseException:
-        store.close()
-        raise
-
-
 def initial_checkpoint(config: HubConfig) -> tuple[Path | None, LiveCheckpoint | None]:
     """Acquire a checkpoint only for a configured persistent journal."""
     if not (
@@ -134,8 +95,11 @@ def build_lifetime(
     """Create synchronization and timing services around the acquired checkpoint."""
     clock = config.clock or time.monotonic
     return HubLifetimeComponents(
-        checkpoint_path=path,
-        live_checkpoint=live,
+        checkpoint=HubCheckpoint(
+            path=path,
+            live=live,
+            interval=checkpoint_interval(config),
+        ),
         serving=asyncio.Event(),
         guard_evidence_quota=DurableIngressQuota(
             max_events=100, max_bytes=262144, window_seconds=60.0

@@ -103,14 +103,9 @@ from synapse_channel.core.idempotency import IdempotencyCache
 from synapse_channel.core.identity_enrollments import (
     merge_enrolled_keys,
 )
-from synapse_channel.core.merkle_checkpoint import (
-    LiveCheckpoint,
-    MerkleCheckpointStore,
-)
 from synapse_channel.core.message_auth import (
     EventSignatureKey,
 )
-from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
 from synapse_channel.core.protected_write_proposal import ProtectedWriteProposalLimits
 from synapse_channel.core.protected_write_session_auth import (
@@ -467,7 +462,6 @@ class SynapseHub(HubConfigView):
         """
         if "_connection" in vars(self):
             raise ValueError("hub components are already installed")
-        self._live_checkpoint: LiveCheckpoint | None = None
         if isinstance(config, HubComponents):
             if legacy:
                 raise TypeError("cannot combine hub components and legacy keyword options")
@@ -490,9 +484,7 @@ class SynapseHub(HubConfigView):
             self._receive_state(components)
             self.config_epoch = config_fingerprint(resolved) if config is not None else ""
         except BaseException:
-            self._live_checkpoint = None
-            if components.lifetime.live_checkpoint is not None:
-                components.lifetime.live_checkpoint.close()
+            components.lifetime.checkpoint.release_without_anchor()
             raise
 
     def component_callbacks(self) -> HubComponentCallbacks:
@@ -522,9 +514,7 @@ class SynapseHub(HubConfigView):
         self.attachment_serving_policy = components.requested.attachment_serving_policy
         self.attachment_store = components.requested.attachment_store
         self.journal = components.requested.journal
-        self._checkpoint_path = lifetime.checkpoint_path
-        self._reopen_checkpoint = lifetime.reopen_checkpoint
-        self._live_checkpoint = lifetime.live_checkpoint
+        self._checkpoint = lifetime.checkpoint
         self._serving = lifetime.serving
         self.guard_evidence_quota = lifetime.guard_evidence_quota
         self.clock = lifetime.clock
@@ -1540,11 +1530,6 @@ class SynapseHub(HubConfigView):
             raise RuntimeError("hub signalled readiness without a bound address")
         return self._bound_address
 
-    @property
-    def _checkpoint_store(self) -> MerkleCheckpointStore | None:
-        """The open checkpoint chain, or ``None`` when anchoring is off or closed."""
-        return None if self._live_checkpoint is None else self._live_checkpoint.store
-
     def _record_identity_proof(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
         """Record the key a verified registration proved.
 
@@ -1616,36 +1601,6 @@ class SynapseHub(HubConfigView):
         policy = self.multihub_serving_policy
         return policy is not None and policy.authorise(sender=sender, websocket=websocket).allowed
 
-    def _open_live_checkpoint(self, journal: EventStore) -> None:
-        """Open the checkpoint chain, verify the log against it, then anchor it.
-
-        Fail closed BEFORE serving: a truncated or rewritten log is a hard error
-        at startup, never a quiet restart. Only then is the current state anchored
-        as the newest chain link. The bound factory retains the configured
-        checkpoint location and releases its partial connection on refusal.
-        """
-        self._live_checkpoint = self._reopen_checkpoint(journal)
-
-    async def _checkpoint_anchor_loop(self, live: LiveCheckpoint) -> None:
-        """Anchor the live log every ``checkpoint_interval`` seconds while serving.
-
-        The loop is cancelled before :meth:`_close_live_checkpoint` releases ``live``.
-        """
-        while True:
-            await asyncio.sleep(self.checkpoint_interval)
-            live.anchor()
-
-    def _close_live_checkpoint(self) -> None:
-        """Anchor the final state and release the checkpoint store (clean shutdown)."""
-        live = self._live_checkpoint
-        if live is None:
-            return
-        self._live_checkpoint = None
-        try:
-            live.anchor()
-        finally:
-            live.close()
-
     def close(self) -> None:
         """Release hub-owned startup resources after serving has stopped.
 
@@ -1662,7 +1617,7 @@ class SynapseHub(HubConfigView):
         """
         if self._bound_address is not None:
             raise RuntimeError("stop and await hub serving before closing startup resources")
-        self._close_live_checkpoint()
+        self._checkpoint.close()
 
     async def serve(
         self,
@@ -1736,13 +1691,7 @@ class SynapseHub(HubConfigView):
         self._guard_at_rest(host)
         if self.journal is not None and self.stable_delivery_hub_id:
             self.journal.delivery.verify_origin_hub(self.hub_id)
-        if (
-            self._checkpoint_path is not None
-            and self._live_checkpoint is None
-            and isinstance(self.journal, EventStore)
-        ):
-            # A hub served again after a clean shutdown re-verifies before serving.
-            self._open_live_checkpoint(self.journal)
+        self._checkpoint.reopen_if_closed(self.journal)
         self._bind_host = host
         self._bind_port = int(port)
         self._bound_address = None
@@ -1830,9 +1779,9 @@ class SynapseHub(HubConfigView):
                 token_watcher=self._ingress.token_set_watcher,
                 trigger_watcher=self._trigger_watcher,
                 key_rechecker=self._frame_gate.recheck_loop,
-                current_checkpoint=lambda: self._live_checkpoint,
-                anchor_checkpoint=self._checkpoint_anchor_loop,
+                current_checkpoint=self._checkpoint.current,
+                anchor_checkpoint=self._checkpoint.anchor_loop,
                 flush_audit=self._ingress.flush_audit,
-                close_checkpoint=self._close_live_checkpoint,
+                close_checkpoint=self._checkpoint.close,
             ),
         )

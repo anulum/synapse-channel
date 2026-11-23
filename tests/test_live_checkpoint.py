@@ -75,7 +75,7 @@ async def test_post_start_writes_are_anchored_within_the_window(tmp_path: Path) 
     start_seq = store.max_seq()
     async with running_hub(hub) as (_hub, uri):
         await _write_chats(uri, 3)
-        live = hub._checkpoint_store
+        live = hub._checkpoint.store
         assert live is not None
         await _until(lambda: _latest_seq(live) == store.max_seq())
         anchored = store.max_seq()
@@ -103,10 +103,10 @@ async def test_a_clean_stop_anchors_at_once_and_releases_the_store(tmp_path: Pat
     hub = SynapseHub(journal=store, checkpoint_interval=3600.0)
     async with running_hub(hub) as (_hub, uri):
         await _write_chats(uri, 2)
-        checkpoint = hub._checkpoint_store
+        checkpoint = hub._checkpoint.store
         assert checkpoint is not None
         written = store.max_seq()
-    assert hub._checkpoint_store is None
+    assert hub._checkpoint.store is None
     with pytest.raises(sqlite3.ProgrammingError):
         checkpoint.latest()
     chain = MerkleCheckpointStore(checkpoint_path_for(db))
@@ -128,12 +128,12 @@ async def test_a_hub_served_again_reverifies_before_serving(tmp_path: Path) -> N
     async with running_hub(hub) as (_hub, uri):
         await _write_chats(uri, 2)
     async with running_hub(hub) as (_hub, uri):
-        assert hub._checkpoint_store is not None
+        assert hub._checkpoint.store is not None
         await _write_chats(uri, 1)
     _cut_after(db, 1)
     with pytest.raises(AntiRollbackError):
         await hub.serve("localhost", 0)
-    assert hub._checkpoint_store is None
+    assert hub._checkpoint.store is None
     store.close()
 
 

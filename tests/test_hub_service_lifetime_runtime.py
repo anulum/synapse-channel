@@ -59,7 +59,7 @@ async def test_services_expire_and_retry_using_the_same_durable_store(tmp_path: 
                 assert not stop.is_set()
                 assert len(peer.received) == 1
             assert settled()
-            assert hub._live_checkpoint is None
+            assert hub._checkpoint.current() is None
             store.delivery.verify_replay()
         with EventStore(path) as reopened:
             delivery = reopened.delivery.get(intent.operation_key)

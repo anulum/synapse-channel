@@ -24,4 +24,4 @@ with EventStore(path) as journal:
     config = HubConfig(journal=journal, anti_rollback_checkpoint=False)
     lifetime = build_lifetime(config, None, None)
     print(json.dumps({"optimization": sys.flags.optimize}))
-    lifetime.reopen_checkpoint(journal)
+    lifetime.checkpoint.reopen(journal)

@@ -37,7 +37,7 @@ names = ["argparse._SubParsersAction"]
 [ceilings.init_attributes]
 
 [ceilings.initialisation_attributes]
-"src/synapse_channel/core/hub.py::SynapseHub" = 74
+"src/synapse_channel/core/hub.py::SynapseHub" = 72
 
 [ceilings.init_constructions]
 
@@ -378,7 +378,7 @@ names = ["argparse._SubParsersAction"]
 "tools/vendor_watch.py::load_matrix" = 22
 
 [ceilings.module_internal_imports]
-"src/synapse_channel/core/hub.py" = 37
+"src/synapse_channel/core/hub.py" = 35
 "src/synapse_channel/participants/__init__.py" = 45
 
 [ceilings.private_access]

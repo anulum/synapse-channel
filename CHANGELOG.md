@@ -144,6 +144,10 @@ execution evidence when carrying a release claim forward.
   `A2ABridge` constructor parameter stays, and the constructor stays keyword-only. The HTTP handler reads the bridge's
   current policy on each request.
 
+- **A hub keeps its live checkpoint in one component.** Opening, reopening, anchoring and
+  closing that checkpoint behave as before. `serve`, `close`, `bound_address` and
+  `wait_until_serving` keep their signatures. No public name changes.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

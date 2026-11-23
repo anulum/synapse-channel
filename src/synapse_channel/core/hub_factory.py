@@ -112,7 +112,7 @@ def build_hub(
             raise ValueError("hub components belong to another configuration record")
         SynapseHub.__init__(hub, components)
     except BaseException:
-        if components.callbacks.owner is hub and components.lifetime.live_checkpoint is not None:
-            components.lifetime.live_checkpoint.close()
+        if components.callbacks.owner is hub:
+            components.lifetime.checkpoint.release_without_anchor()
         raise
     return hub

@@ -22,7 +22,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from hub_e2e_helpers import read_until_type, running_hub
 from hub_service_lifetime_examples import until
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.merkle_checkpoint import MerkleCheckpointStore
+from synapse_channel.core.merkle_checkpoint import MerkleCheckpointStore, checkpoint_path_for
 from synapse_channel.core.message_forward_transport import MessageForwardPeer, forward_message
 from synapse_channel.core.message_forward_wire import MessageForwardRequest, MessageForwardResult
 from synapse_channel.core.persistence import EventStore
@@ -33,8 +33,7 @@ async def test_direct_serving_reopens_and_finalizes_the_same_checkpoint(tmp_path
     """Real clients still register/chat across two lifetimes on one caller store."""
     with EventStore(tmp_path / "hub.db") as store:
         hub = SynapseHub(hub_id="lifetime", journal=store, checkpoint_interval=0.01)
-        checkpoint_path = hub._checkpoint_path
-        assert checkpoint_path is not None
+        checkpoint_path = checkpoint_path_for(tmp_path / "hub.db")
         for index in range(2):
             async with running_hub(hub) as (_, uri):
                 async with connect(uri) as websocket:
@@ -55,7 +54,7 @@ async def test_direct_serving_reopens_and_finalizes_the_same_checkpoint(tmp_path
                         return current.seq == store.max_seq()
 
                     await until(anchored)
-            assert hub._live_checkpoint is None
+            assert hub._checkpoint.current() is None
             with closing(MerkleCheckpointStore(checkpoint_path)) as checkpoints:
                 latest = checkpoints.latest()
                 assert latest is not None and latest.seq == store.max_seq()
@@ -66,18 +65,18 @@ async def test_failed_direct_bind_retains_caller_checkpoint_until_close(tmp_path
     """A genuinely occupied port preserves startup failure and caller ownership."""
     with EventStore(tmp_path / "bind.db") as store:
         hub = SynapseHub(hub_id="bind-failure", journal=store)
-        checkpoint = hub._live_checkpoint
+        checkpoint = hub._checkpoint.current()
         tasks_before = asyncio.all_tasks()
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
             held.bind(("127.0.0.1", 0))
             held.listen()
             with pytest.raises(OSError):
                 await hub.serve("127.0.0.1", held.getsockname()[1])
-        assert hub._live_checkpoint is checkpoint
+        assert hub._checkpoint.current() is checkpoint
         assert asyncio.all_tasks() <= tasks_before
         assert store.max_seq() == 0
         hub.close()
-        assert hub._live_checkpoint is None
+        assert hub._checkpoint.current() is None
 
 
 async def test_direct_stop_joins_actual_peer_io_before_final_store_release(tmp_path: Path) -> None:
@@ -120,6 +119,6 @@ async def test_direct_stop_joins_actual_peer_io_before_final_store_release(tmp_p
             finally:
                 release.set()
             assert drained.is_set()
-            assert hub._live_checkpoint is None
+            assert hub._checkpoint.current() is None
             entry = store.message_forward.outbox_entry("b" * 32)
             assert entry is not None and entry.state == "pending"

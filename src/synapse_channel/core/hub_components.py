@@ -28,7 +28,7 @@ class HubComponents:
     Configuration normalization is separate from the requested posture used to
     fingerprint the start. Component records freeze bindings; their actual
     registries remain mutable. Supplied journals, replay stores and attachments
-    retain caller ownership. Only ``lifetime.live_checkpoint`` transfers to the
+    retain caller ownership. Only ``lifetime.checkpoint`` transfers to the
     target after successful installation.
     """
 

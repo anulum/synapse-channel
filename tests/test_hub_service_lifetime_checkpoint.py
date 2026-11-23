@@ -34,9 +34,9 @@ async def test_checkpoint_outlives_actual_anchor_task_cancellation(
     entered, drained = asyncio.Event(), asyncio.Event()
     with EventStore(tmp_path / "checkpoint-order.db") as store:
         hub = SynapseHub(hub_id="checkpoint-order", journal=store, checkpoint_interval=0.01)
-        checkpoint = hub._live_checkpoint
+        checkpoint = hub._checkpoint.current()
         assert checkpoint is not None
-        original = hub._checkpoint_anchor_loop
+        original = hub._checkpoint.anchor_loop
 
         async def observed_anchor(live: LiveCheckpoint) -> None:
             """Delegate real anchoring, then query its actual store during cancellation."""
@@ -49,7 +49,7 @@ async def test_checkpoint_outlives_actual_anchor_task_cancellation(
                 assert store.max_seq() > 0
                 drained.set()
 
-        monkeypatch.setattr(hub, "_checkpoint_anchor_loop", observed_anchor)
+        monkeypatch.setattr(hub._checkpoint, "anchor_loop", observed_anchor)
         async with running_hub(hub) as (_, uri):
             await asyncio.wait_for(entered.wait(), 5)
             async with connect(uri) as websocket:
@@ -69,5 +69,5 @@ async def test_checkpoint_outlives_actual_anchor_task_cancellation(
 
             await until(anchored)
         assert drained.is_set(), "checkpoint closed before the anchor task drained"
-        assert hub._live_checkpoint is None
+        assert hub._checkpoint.current() is None
         assert store.max_seq() > 0

@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
-from synapse_channel.core import hub_component_lifetime as checkpoint_module
+from synapse_channel.core import hub_checkpoint as checkpoint_module
 from synapse_channel.core import hub_factory
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.hub_component_callbacks import HubComponentCallbacks
@@ -26,7 +26,7 @@ from synapse_channel.core.hub_config_limits import HubLimits
 from synapse_channel.core.hub_factory import build_components, build_hub
 from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.merkle_checkpoint import MerkleCheckpointStore
+from synapse_channel.core.merkle_checkpoint import LiveCheckpoint, MerkleCheckpointStore
 from synapse_channel.core.persistence import EventStore
 
 
@@ -71,6 +71,8 @@ async def test_custom_graph_is_installed_once_and_routes_real_socket_messages(
         assert hub.counters is graph.clients.counters
         assert hub.state_mutations is graph.state.mutations
         assert hub.config_epoch == config_fingerprint(requested)
+        opened = graph.lifetime.checkpoint.current()
+        assert opened is not None
         async with running_hub(hub) as (_, uri):
             alpha = await connect_agent("FACTORY/alpha", uri)
             beta = await connect_agent("FACTORY/beta", uri)
@@ -87,9 +89,9 @@ async def test_custom_graph_is_installed_once_and_routes_real_socket_messages(
             finally:
                 await close_agents(alpha, beta)
         assert journal.count() > 0
-        assert graph.lifetime.live_checkpoint is not None
+        assert graph.lifetime.checkpoint.current() is None
         with pytest.raises(sqlite3.ProgrammingError, match="closed"):
-            graph.lifetime.live_checkpoint.store.latest()
+            opened.store.latest()
 
 
 def test_factory_refuses_foreign_graph_without_closing_its_checkpoint(tmp_path: Path) -> None:
@@ -106,32 +108,36 @@ def test_factory_refuses_foreign_graph_without_closing_its_checkpoint(tmp_path: 
         try:
             with pytest.raises(ValueError, match="another target"):
                 build_hub(requested, component_factory=foreign)
-            assert graph.lifetime.live_checkpoint is not None
-            assert graph.lifetime.live_checkpoint.store.latest() is not None
+            live = graph.lifetime.checkpoint.current()
+            assert live is not None
+            assert live.store.latest() is not None
             SynapseHub.__init__(owner, graph)
             assert owner.next_msg_id() == 1
         finally:
-            if graph.lifetime.live_checkpoint is not None:
-                graph.lifetime.live_checkpoint.close()
+            if graph.lifetime.checkpoint.current() is not None:
+                graph.lifetime.checkpoint.release_without_anchor()
 
 
 def test_stale_configuration_refusal_closes_only_the_new_owned_checkpoint(tmp_path: Path) -> None:
     """A factory returning another request cannot leak its just-acquired resource."""
     captured: list[HubComponents] = []
+    opened: list[LiveCheckpoint] = []
 
     def stale(config: HubConfig, callbacks: HubComponentCallbacks) -> HubComponents:
         """Compose a real graph while replacing the requested record identity."""
         graph = build_components(replace(config), callbacks)
+        live = graph.lifetime.checkpoint.current()
+        assert live is not None
+        opened.append(live)
         captured.append(graph)
         return graph
 
     with EventStore(tmp_path / "events.db") as journal:
         with pytest.raises(ValueError, match="another configuration"):
             build_hub(HubConfig(journal=journal), component_factory=stale)
-        live = captured[0].lifetime.live_checkpoint
-        assert live is not None
+        assert captured[0].lifetime.checkpoint.current() is None
         with pytest.raises(sqlite3.ProgrammingError, match="closed"):
-            live.store.latest()
+            opened[0].store.latest()
         journal.append(EventKind.CHAT, {"sender": "caller", "payload": "still writable"})
         assert journal.count() == 1
 
