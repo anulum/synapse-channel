@@ -351,26 +351,27 @@ def test_request_push_config_ignores_missing_or_malformed_configuration() -> Non
     bridge = _bridge()
     task = bridge.create_working_task(_message())
 
-    assert bridge._store_request_push_config({}, task_id=str(task["id"])) is None
+    assert bridge._notifier.store_request_config({}, task_id=str(task["id"])) is None
     assert (
-        bridge._store_request_push_config({"configuration": "bad"}, task_id=str(task["id"])) is None
+        bridge._notifier.store_request_config({"configuration": "bad"}, task_id=str(task["id"]))
+        is None
     )
     assert (
-        bridge._store_request_push_config(
+        bridge._notifier.store_request_config(
             {"configuration": {"taskPushNotificationConfig": "bad"}},
             task_id=str(task["id"]),
         )
         is None
     )
     assert (
-        bridge._store_request_push_config(
+        bridge._notifier.store_request_config(
             {"configuration": {"taskPushNotificationConfig": {"pushNotificationConfig": "bad"}}},
             task_id=str(task["id"]),
         )
         is None
     )
     assert (
-        bridge._store_request_push_config(
+        bridge._notifier.store_request_config(
             {
                 "configuration": {
                     "taskPushNotificationConfig": {
@@ -394,7 +395,7 @@ def test_push_delivery_suppresses_network_errors_and_omits_incomplete_auth() -> 
     bridge = _bridge(push_deliverer=deliver)
     task = bridge.create_working_task(_message())
 
-    bridge._deliver_push_notification(
+    bridge._notifier.deliver(
         task=task,
         config={
             "webhookUrl": "https://example.test/hook",

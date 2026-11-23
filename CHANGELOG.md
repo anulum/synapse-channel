@@ -125,6 +125,12 @@ execution evidence when carrying a release claim forward.
   `replay`, `ReplayResult`, `restore_active_multihub_partitions`, and `restore_active_multihub_quarantines`
   moves from `synapse_channel.core.journal` to `synapse_channel.core.journal_replay`.
 
+- **Agent2Agent push delivery now lives in `A2APushNotifier`; behaviour is unchanged.** The notifier owns the
+  deliverer, the retry delays, the sleep and the clock. `deliver`, `deliver_all` and `store_request_config` keep the
+  previous bodies. Every existing `A2ABridge` constructor parameter stays, the constructor stays keyword-only, and the
+  push-config CRUD handlers still delegate to the store. `ConformanceA2ABridge` still calls
+  `_store_request_push_config`, which is now one forwarding line, because that caller sits outside this move.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

@@ -20,6 +20,7 @@ import json
 import time
 import uuid
 from collections.abc import Callable, Sequence
+from typing import cast
 from urllib import request
 from urllib.error import URLError
 from urllib.parse import urlparse
@@ -35,6 +36,10 @@ from synapse_channel.a2a_push_delivery import (
     Sleeper,
     deliver_with_retries,
 )
+from synapse_channel.a2a_store import A2ATaskStore
+
+PushConfigCreator = Callable[[str, JsonMap], JsonMap | None]
+"""Bridge callback that stores one push-notification config."""
 
 PushDeliverer = Callable[[JsonMap], None]
 LOCAL_TARGET_ERROR = safe_webhook_transport.LOCAL_TARGET_ERROR
@@ -224,3 +229,68 @@ def deliver_push_notification(
         sleep=sleep,
         clock=clock,
     )
+
+
+class A2APushNotifier:
+    """Owns push-delivery timing and sends stored task updates.
+
+    The bridge keeps the push-config CRUD handlers. This object owns the
+    deliverer, the retry delays, the sleep and the clock, and it reads the
+    task store when a task update is delivered.
+    """
+
+    def __init__(
+        self,
+        *,
+        store: A2ATaskStore,
+        deliverer: PushDeliverer,
+        retry_delays_seconds: Sequence[float],
+        sleep: Sleeper,
+        clock: Clock,
+        create_config: PushConfigCreator,
+    ) -> None:
+        self._store = store
+        self._deliverer = deliverer
+        self._retry_delays_seconds = retry_delays_seconds
+        self._sleep = sleep
+        self._clock = clock
+        self._create_config = create_config
+
+    def deliver(self, *, task: JsonMap, config: JsonMap) -> PushDeliveryResult:
+        """Deliver one task update and durably record its sanitized result."""
+        return deliver_push_notification(
+            task=task,
+            config=config,
+            push_deliverer=self._deliverer,
+            record_attempt=self._store.record_push_delivery_attempt,
+            retry_delays_seconds=self._retry_delays_seconds,
+            sleep=self._sleep,
+            clock=self._clock,
+        )
+
+    def deliver_all(self, task: JsonMap) -> None:
+        """Deliver one task update to every stored push config for the task."""
+        for config in self._store.list_push_configs(str(task["id"])):
+            self.deliver(task=task, config=config)
+
+    def store_request_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:
+        """Store a send-time push notification config when one is present."""
+        configuration = payload.get("configuration")
+        if not isinstance(configuration, dict):
+            return None
+        task_config = configuration.get("taskPushNotificationConfig")
+        if not isinstance(task_config, dict):
+            return None
+        if "pushNotificationConfig" in task_config:
+            nested_config = task_config["pushNotificationConfig"]
+            if not isinstance(nested_config, dict):
+                return None
+            config = nested_config
+        else:
+            config = task_config
+        task = self._store.get(task_id)
+        if task is None:
+            return None
+        stored = cast(JsonMap, self._create_config(task_id, config))
+        self.deliver(task=task, config=stored)
+        return stored

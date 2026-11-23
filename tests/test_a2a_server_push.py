@@ -411,3 +411,44 @@ def test_failed_push_keeps_task_truth_and_records_terminal_delivery_truth() -> N
     assert sleeps == [0.0]
     assert "push-secret" not in repr(evidence)
     assert "secret diagnostic" not in repr(evidence)
+
+
+def test_completion_delivers_one_update_to_every_stored_push_config() -> None:
+    """One completed task delivers that update to each of its stored push configs."""
+    deliveries: list[dict[str, Any]] = []
+    bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card={},
+        target="WORKER",
+        store=A2ATaskStore(),
+        push_deliverer=deliveries.append,
+    )
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    bridge.create_push_notification_config(task["id"], {"webhookUrl": "https://example.test/one"})
+    bridge.create_push_notification_config(task["id"], {"webhookUrl": "https://example.test/two"})
+
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": "done",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
+        }
+    )
+
+    assert {delivery["url"] for delivery in deliveries} == {
+        "https://example.test/one",
+        "https://example.test/two",
+    }
+    assert len(deliveries) == 2
+    assert all(
+        delivery["payload"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+        for delivery in deliveries
+    )

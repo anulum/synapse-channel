@@ -21,7 +21,7 @@ import time
 import uuid
 from collections.abc import Callable, Coroutine, Sequence
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 from synapse_channel import a2a_errors
 from synapse_channel.a2a import JsonMap
@@ -39,11 +39,10 @@ from synapse_channel.a2a_outcome import (
     execution_id,
     protocol_observation,
 )
-from synapse_channel.a2a_push import PushDeliverer, deliver_push_notification, http_push_deliverer
+from synapse_channel.a2a_push import A2APushNotifier, PushDeliverer, http_push_deliverer
 from synapse_channel.a2a_push_delivery import (
     DEFAULT_PUSH_RETRY_DELAYS_SECONDS,
     Clock,
-    PushDeliveryResult,
     Sleeper,
     validate_retry_delays,
 )
@@ -266,10 +265,14 @@ class A2ABridge:
         self.target = target
         self.store = store or A2ATaskStore()
         self._submit = submit
-        self._push_deliverer = push_deliverer or http_push_deliverer
-        self._push_retry_delays_seconds = validate_retry_delays(push_retry_delays_seconds)
-        self._push_sleep = push_sleep
-        self._push_clock = push_clock
+        self._notifier = A2APushNotifier(
+            store=self.store,
+            deliverer=push_deliverer or http_push_deliverer,
+            retry_delays_seconds=validate_retry_delays(push_retry_delays_seconds),
+            sleep=push_sleep,
+            clock=push_clock,
+            create_config=self.create_push_notification_config,
+        )
         self.auth_token = auth_token
         # Normalised once here so the per-request check is a plain membership
         # test and the HTTP edge never re-implements origin comparison rules.
@@ -390,7 +393,7 @@ class A2ABridge:
             message=message,
             operation_timeout_seconds=operation_timeout_seconds,
         )
-        self._store_request_push_config(payload, task_id=str(task["id"]))
+        self._notifier.store_request_config(payload, task_id=str(task["id"]))
         return {"task": task}
 
     def stream_message(self, payload: JsonMap, *, protocol_version: str | None = None) -> JsonMap:
@@ -406,7 +409,7 @@ class A2ABridge:
             protocol_version=protocol_version,
             message=message,
         )
-        self._store_request_push_config(payload, task_id=str(task["id"]))
+        self._notifier.store_request_config(payload, task_id=str(task["id"]))
         return {"task": task}
 
     def _conformance_answer(
@@ -476,7 +479,7 @@ class A2ABridge:
             operation_timeout_seconds=operation_timeout_seconds,
             continue_existing=True,
         )
-        self._deliver_push_notifications(stored)
+        self._notifier.deliver_all(stored)
         return stored
 
     def _forward_message(
@@ -511,43 +514,12 @@ class A2ABridge:
                 )
 
     def _store_request_push_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:
-        """Store a send-time push notification config when one is present."""
-        configuration = payload.get("configuration")
-        if not isinstance(configuration, dict):
-            return None
-        task_config = configuration.get("taskPushNotificationConfig")
-        if not isinstance(task_config, dict):
-            return None
-        if "pushNotificationConfig" in task_config:
-            nested_config = task_config["pushNotificationConfig"]
-            if not isinstance(nested_config, dict):
-                return None
-            config = nested_config
-        else:
-            config = task_config
-        task = self.store.get(task_id)
-        if task is None:
-            return None
-        stored = cast(JsonMap, self.create_push_notification_config(task_id, config))
-        self._deliver_push_notification(task=task, config=stored)
-        return stored
+        """Forward one send-time push config to the notifier.
 
-    def _deliver_push_notification(self, *, task: JsonMap, config: JsonMap) -> PushDeliveryResult:
-        """Deliver one task update and durably record its sanitized result."""
-        return deliver_push_notification(
-            task=task,
-            config=config,
-            push_deliverer=self._push_deliverer,
-            record_attempt=self.store.record_push_delivery_attempt,
-            retry_delays_seconds=self._push_retry_delays_seconds,
-            sleep=self._push_sleep,
-            clock=self._push_clock,
-        )
-
-    def _deliver_push_notifications(self, task: JsonMap) -> None:
-        """Deliver one task update to every stored push config for the task."""
-        for config in self.store.list_push_configs(str(task["id"])):
-            self._deliver_push_notification(task=task, config=config)
+        The conformance bridge calls this name, and that module is outside
+        this move, so the name stays as one forwarding line.
+        """
+        return self._notifier.store_request_config(payload, task_id=task_id)
 
     def _set_task_status(
         self,
@@ -574,7 +546,7 @@ class A2ABridge:
         """Publish one task update to local subscribers and configured webhooks."""
         self._events.publish(str(task["id"]), task)
         if deliver_push:
-            self._deliver_push_notifications(task)
+            self._notifier.deliver_all(task)
 
     def _remove_pending_task(self, task_id: str) -> None:
         """Remove ``task_id`` from all pending fallback correlation lists."""
