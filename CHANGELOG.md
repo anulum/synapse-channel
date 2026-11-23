@@ -91,6 +91,15 @@ execution evidence when carrying a release claim forward.
   or clear. `hub_id`, `hub_protocol_version`, `frame_session` and `delivery_incarnation` are
   bound from the welcome and the delivery-session frame.
 
+- **An agent keeps its socket in one transport.** Attaching and detaching the socket, recording
+  the close and resetting an attempt behave as before. `uri`, `token`, `connection`,
+  `heartbeat_interval`, `ping_interval`, `ping_timeout` and `ready_event` are now read-only and
+  none of them keeps a setter: `uri`, `token`, `heartbeat_interval`, `ping_interval` and
+  `ping_timeout` are set through the constructor's unchanged keyword arguments, and
+  `ready_event` remains the same event the transport holds, which a caller may still set or
+  clear. `connection` is attached by connecting. `running`, `last_close_code` and
+  `last_close_reason` keep a setter.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

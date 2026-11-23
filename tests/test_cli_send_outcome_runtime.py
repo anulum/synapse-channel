@@ -183,7 +183,7 @@ class ClosedChatSocketAgent(SynapseAgent):
             connection = self.connection
             await connection.close()
             # Retain the real closed socket to exercise the SDK write-loss race.
-            self.connection = connection
+            self.transport.connection = connection
         await super().send_message(msg_type, **extra)
 
 

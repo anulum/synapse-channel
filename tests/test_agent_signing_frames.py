@@ -109,7 +109,7 @@ async def test_signed_frames_stay_byte_identical(
 
     monkeypatch.setattr("synapse_channel.client.agent_lifecycle.connect", open_socket)
     await agent.connect()
-    agent.connection = cast(ClientConnection, socket)
+    agent.transport.connection = cast(ClientConnection, socket)
     await agent.send_message(MessageType.CLAIM, target="System", payload="task-a")
     agent.session.frame_session = ClientFrameSession("hub-a", "session-nonce")
     await agent.send_message(MessageType.CHAT, target="all", payload="hello")

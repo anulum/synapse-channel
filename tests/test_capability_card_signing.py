@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
+from websockets.asyncio.client import ClientConnection
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.capability_card_signing import (
@@ -214,7 +216,7 @@ async def test_agent_advertise_signs_normalised_card_fields(tmp_path: Path) -> N
         capability_card_lifetime_seconds=60.0,
     )
     connection = _Connection()
-    agent.connection = connection  # type: ignore[assignment] # capture stands in for the socket
+    agent.transport.connection = cast(ClientConnection, connection)
 
     await agent.advertise(
         description="  worker  ",
@@ -235,7 +237,7 @@ async def test_agent_advertise_signs_normalised_card_fields(tmp_path: Path) -> N
 async def test_unsigned_agent_can_advertise_a_manifest_digest() -> None:
     agent = SynapseAgent("P/a", machine_identity=False)
     connection = _Connection()
-    agent.connection = connection  # type: ignore[assignment] # capture stands in for the socket
+    agent.transport.connection = cast(ClientConnection, connection)
 
     await agent.advertise(manifest_digest="sha256:abc")
 

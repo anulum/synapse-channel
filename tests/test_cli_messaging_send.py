@@ -924,7 +924,7 @@ async def test_unknown_send_does_not_abort_a_socket_that_is_already_gone(
             **extra: object,
         ) -> None:
             if msg_type == MessageType.CHAT:
-                self.connection = None
+                self.transport.connection = None
                 raise OSError("socket already gone")
             await super().send_message(
                 msg_type,

@@ -36,8 +36,12 @@ class _DispatchAgent(Protocol):
     callback: MessageCallback | None
     lease_memory: AgentLeaseMemory
     name: str
-    ready_event: Any
     session: AgentDeliverySession
+
+    @property
+    def ready_event(self) -> Any:
+        """The event set by a welcome."""
+        raise NotImplementedError
 
     @property
     def on_lease_granted(self) -> Callable[[str], None] | None:

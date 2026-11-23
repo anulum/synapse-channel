@@ -23,8 +23,13 @@ __all__ = ["_OutboundAgent"]
 class _OutboundAgent(Protocol):
     """Attributes required to serialise and send outbound envelopes."""
 
-    connection: ClientConnection | None
     name: str
+
+    @property
+    def connection(self) -> ClientConnection | None:
+        """Socket of the current attempt, or ``None`` when detached."""
+        raise NotImplementedError
+
     lease_memory: AgentLeaseMemory
     signing: AgentSigningIdentity
 

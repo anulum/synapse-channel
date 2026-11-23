@@ -19,6 +19,7 @@ from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
 from synapse_channel.client.agent_delivery_session import AgentDeliverySession
 from synapse_channel.client.agent_signing_identity import AgentSigningIdentity
+from synapse_channel.client.agent_transport import AgentTransport
 from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType
 
 DEFAULT_HUB_URI = "ws://localhost:8876"
@@ -26,9 +27,6 @@ DEFAULT_HUB_URI = "ws://localhost:8876"
 
 HUB_URI_ENV_VAR = "SYNAPSE_URI"
 """Environment variable that overrides the default hub URI for the CLI."""
-
-MINIMUM_HEARTBEAT_INTERVAL = 5.0
-"""Floor applied to the configured heartbeat interval, in seconds."""
 
 MAX_HUB_MESSAGE_BYTES = 8 * 1024 * 1024
 """Finite decompressed hub-response limit, aligned with cockpit live frames."""
@@ -80,24 +78,53 @@ def _received_close(exc: ConnectionClosedError) -> tuple[int | None, str]:
 class _LifecycleAgent(Protocol):
     """Attributes and helper methods required by the lifecycle mixin."""
 
-    connection: ClientConnection | None
-    heartbeat_interval: float
-    last_close_code: int | None
-    last_close_reason: str
     name: str
-    ping_interval: float
-    ping_timeout: float
-    ready_event: Any
     roles: tuple[str, ...]
-    running: bool
-    token: str | None
-    uri: str
     verbose: bool
     wake_capability: str
-    _connect_active: bool
-    _heartbeat_task: asyncio.Task[None] | None
     signing: AgentSigningIdentity
     session: AgentDeliverySession
+    transport: AgentTransport
+
+    @property
+    def connection(self) -> ClientConnection | None:
+        """Socket of the current attempt, or ``None`` when detached."""
+        raise NotImplementedError
+
+    @property
+    def heartbeat_interval(self) -> float:
+        """Seconds between keepalive heartbeats."""
+        raise NotImplementedError
+
+    @property
+    def ping_interval(self) -> float:
+        """Seconds between client keepalive pings."""
+        raise NotImplementedError
+
+    @property
+    def ping_timeout(self) -> float:
+        """Seconds to wait for a ping reply."""
+        raise NotImplementedError
+
+    @property
+    def ready_event(self) -> Any:
+        """The event set by a welcome."""
+        raise NotImplementedError
+
+    @property
+    def running(self) -> bool:
+        """Whether the listener should keep reading."""
+        raise NotImplementedError
+
+    @property
+    def token(self) -> str | None:
+        """Bearer presented on the registration heartbeat."""
+        raise NotImplementedError
+
+    @property
+    def uri(self) -> str:
+        """Hub URI this agent connects to."""
+        raise NotImplementedError
 
     @property
     def owner_lease(self) -> str:
@@ -143,12 +170,6 @@ class _LifecycleAgent(Protocol):
 class AgentLifecycleMixin:
     """Manage WebSocket connection setup, readiness, heartbeat, and shutdown."""
 
-    connection: ClientConnection | None
-    last_close_code: int | None
-    last_close_reason: str
-    _connect_active: bool
-    _heartbeat_task: asyncio.Task[None] | None
-
     def _reset_attempt(self: _LifecycleAgent) -> None:
         """Clear the state a previous connection attempt left behind.
 
@@ -157,10 +178,8 @@ class AgentLifecycleMixin:
         in particular must not outlive it: the next welcome opens a new one,
         and a frame signed for the old one in between would be refused.
         """
-        self.running = True
-        self.ready_event.clear()
+        self.transport.reset_attempt()
         self.session.reset_attempt()
-        self.last_close_code, self.last_close_reason = None, ""
 
     async def connect(self: _LifecycleAgent) -> None:
         """Open the connection and run the inbound listener until it closes.
@@ -185,9 +204,7 @@ class AgentLifecycleMixin:
         RuntimeError
             If another :meth:`connect` call on this agent has not returned yet.
         """
-        if self._connect_active:
-            raise RuntimeError(f"{self.name}: connect() is already active; await it first")
-        self._connect_active = True
+        self.transport.start_attempt(self.name)
         self._reset_attempt()
         heartbeat: asyncio.Task[None] | None = None
         try:
@@ -197,7 +214,7 @@ class AgentLifecycleMixin:
                 ping_timeout=self.ping_timeout,
                 max_size=MAX_HUB_MESSAGE_BYTES,
             ) as websocket:
-                self.connection = websocket
+                self.transport.attach(websocket)
                 if self.verbose:
                     print(f"[{self.name}] Online and connected to Synapse.")
                 # Register identity immediately so presence and /who are accurate
@@ -240,7 +257,7 @@ class AgentLifecycleMixin:
                     **extra,
                 )
                 heartbeat = asyncio.create_task(self._heartbeat_loop())
-                self._heartbeat_task = heartbeat
+                self.transport.bind_heartbeat(heartbeat)
 
                 async for raw in websocket:
                     if not self.running:
@@ -262,18 +279,16 @@ class AgentLifecycleMixin:
             elif self.verbose:
                 print(f"[{self.name}] Connection lost: {exc}")
         except ConnectionClosedError as exc:
-            self.last_close_code, self.last_close_reason = _received_close(exc)
+            self.transport.record_close(*_received_close(exc))
             if self.verbose:
                 print(f"[{self.name}] Connection lost: {exc}")
         finally:
-            self.running = False
-            self.ready_event.clear()
+            self.transport.close_listener()
             self.session.end_attempt()
-            self.connection = None
             if heartbeat is not None:
                 heartbeat.cancel()
                 await asyncio.gather(heartbeat, return_exceptions=True)
-            self._connect_active = False
+            self.transport.release_attempt()
 
     async def wait_until_ready(self: _LifecycleAgent, timeout: float = 5.0) -> bool:
         """Wait until the hub's welcome message has been received.

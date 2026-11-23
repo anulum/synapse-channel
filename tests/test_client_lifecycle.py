@@ -88,7 +88,7 @@ async def test_rejected_tunnel_handshake_cleans_up_and_allows_retry(
         assert ("WebSocket handshake failed" in output.out) is verbose
         assert "origin/host not allowed" not in output.out
 
-        agent.uri = uri
+        agent.transport.uri = uri
         task = asyncio.create_task(agent.connect())
         try:
             assert await agent.wait_until_ready(timeout=1.0)
@@ -565,7 +565,7 @@ async def test_reconnecting_the_same_agent_clears_readiness_and_rearms_the_loop(
         agent = SynapseAgent("lifecycle/reconnect", uri=uri, verbose=False, machine_identity=False)
         first = await _connect_until_ready(agent)
         assert agent.running is True and agent.connection is not None
-        first_heartbeat = agent._heartbeat_task
+        first_heartbeat = agent.transport._heartbeat_task
         assert first_heartbeat is not None and not first_heartbeat.done()
 
         await _close_and_join(agent, first)
@@ -580,7 +580,7 @@ async def test_reconnecting_the_same_agent_clears_readiness_and_rearms_the_loop(
         second = await _connect_until_ready(agent)
         assert agent.running is True and agent.connection is not None
         assert agent.hub_id == "syn-test"
-        second_heartbeat = agent._heartbeat_task
+        second_heartbeat = agent.transport._heartbeat_task
         assert second_heartbeat is not None and second_heartbeat is not first_heartbeat
         assert not second_heartbeat.done()
         await _close_and_join(agent, second)
@@ -612,7 +612,7 @@ async def test_a_refused_attempt_leaves_the_agent_reusable_for_a_live_hub() -> N
     assert agent.running is False and agent.connection is None
     assert await agent.wait_until_ready(0.1) is False
     async with running_hub() as (_, uri):
-        agent.uri = uri
+        agent.transport.uri = uri
         session = await _connect_until_ready(agent)
         assert agent.running is True
         await _close_and_join(agent, session)
@@ -632,7 +632,7 @@ async def test_each_attempt_resets_the_previous_close_diagnostics(
     assert (agent.last_close_code, agent.last_close_reason) == (4008, "policy")
     monkeypatch.undo()
     async with running_hub() as (_, uri):
-        agent.uri = uri
+        agent.transport.uri = uri
         session = await _connect_until_ready(agent)
         assert (agent.last_close_code, agent.last_close_reason) == (None, "")
         await _close_and_join(agent, session)

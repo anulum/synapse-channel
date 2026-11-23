@@ -30,7 +30,6 @@ from synapse_channel.client.agent_lease_memory import AgentLeaseMemory, seat_sto
 from synapse_channel.client.agent_lifecycle import (
     DEFAULT_HUB_URI,
     HUB_URI_ENV_VAR,
-    MINIMUM_HEARTBEAT_INTERVAL,
     AgentLifecycleMixin,
     _is_connection_refused,
     default_hub_uri,
@@ -38,6 +37,7 @@ from synapse_channel.client.agent_lifecycle import (
 from synapse_channel.client.agent_outbound import AgentOutboundMixin
 from synapse_channel.client.agent_queries import AgentQueryMixin
 from synapse_channel.client.agent_signing_identity import AgentSigningIdentity
+from synapse_channel.client.agent_transport import MINIMUM_HEARTBEAT_INTERVAL, AgentTransport
 from synapse_channel.client.frame_signing_client import ClientFrameSession
 from synapse_channel.core.capability_card_signing import (
     DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
@@ -221,19 +221,16 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         lease_epoch_root: Path | None = None,
     ) -> None:
         self.name = name
-        self.uri = uri
-        self.connection: ClientConnection | None = None
         self.callback = on_message_callback
-        self.running = True
-        self.heartbeat_interval = max(float(heartbeat_interval), MINIMUM_HEARTBEAT_INTERVAL)
-        self._heartbeat_task: asyncio.Task[None] | None = None
-        self._connect_active = False
-        self.ready_event = asyncio.Event()
-        self.last_close_code: int | None = None
-        self.last_close_reason: str = ""
         self.verbose = bool(verbose)
-        self.token = token
         self.roles = tuple(roles)
+        self.transport = AgentTransport(
+            uri=uri,
+            token=token,
+            heartbeat_interval=heartbeat_interval,
+            ping_interval=ping_interval,
+            ping_timeout=ping_timeout,
+        )
         self.wake_capability = normalize_wake_capability(wake_capability, default=WAKE_DIRECT)
         self.session = AgentDeliverySession(
             mailbox=mailbox,
@@ -263,8 +260,71 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
             capability_card_project=capability_card_project,
             capability_card_lifetime_seconds=capability_card_lifetime_seconds,
         )
-        self.ping_interval = float(ping_interval)
-        self.ping_timeout = float(ping_timeout)
+
+    @property
+    def uri(self) -> str:
+        """Hub URI this agent connects to."""
+        return self.transport.uri
+
+    @property
+    def token(self) -> str | None:
+        """Bearer presented on the registration heartbeat, if one was given."""
+        return self.transport.token
+
+    @property
+    def connection(self) -> ClientConnection | None:
+        """Socket of the current attempt, or ``None`` when detached."""
+        return self.transport.connection
+
+    @property
+    def heartbeat_interval(self) -> float:
+        """Seconds between keepalive heartbeats, floored at the minimum."""
+        return self.transport.heartbeat_interval
+
+    @property
+    def ping_interval(self) -> float:
+        """Seconds between client keepalive pings."""
+        return self.transport.ping_interval
+
+    @property
+    def ping_timeout(self) -> float:
+        """Seconds to wait for a ping reply before dropping the connection."""
+        return self.transport.ping_timeout
+
+    @property
+    def ready_event(self) -> asyncio.Event:
+        """The event set by a welcome, the same object the transport holds."""
+        return self.transport.ready_event
+
+    @property
+    def running(self) -> bool:
+        """Whether the listener should keep reading."""
+        return self.transport.running
+
+    @running.setter
+    def running(self, value: bool) -> None:
+        """Stop or re-arm the listener."""
+        self.transport.running = value
+
+    @property
+    def last_close_code(self) -> int | None:
+        """Close code of the socket that just ended, or ``None``."""
+        return self.transport.last_close_code
+
+    @last_close_code.setter
+    def last_close_code(self, value: int | None) -> None:
+        """Record a close code from a caller that still writes this name."""
+        self.transport.last_close_code = value
+
+    @property
+    def last_close_reason(self) -> str:
+        """Close reason of the socket that just ended."""
+        return self.transport.last_close_reason
+
+    @last_close_reason.setter
+    def last_close_reason(self, value: str) -> None:
+        """Record a close reason from a caller that still writes this name."""
+        self.transport.last_close_reason = value
 
     @property
     def lease_epochs(self) -> dict[str, int]:

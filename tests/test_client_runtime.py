@@ -32,7 +32,7 @@ async def test_heartbeat_tick_sends_when_connected() -> None:
 
 async def test_heartbeat_loop_runs_one_tick() -> None:
     async with connected_recording_agent("A") as (agent, messages):
-        agent.heartbeat_interval = 0.01
+        agent.transport.heartbeat_interval = 0.01
         loop = asyncio.create_task(agent._heartbeat_loop())
         await wait_for_recorded_count(messages, 2)
         agent.running = False

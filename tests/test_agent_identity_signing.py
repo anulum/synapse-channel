@@ -12,9 +12,11 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from typing import cast
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from websockets.asyncio.client import ClientConnection
 
 from hub_e2e_helpers import running_hub
 from synapse_channel.client.agent import SynapseAgent
@@ -45,7 +47,7 @@ class _CaptureConnection:
 
 def _capture(agent: SynapseAgent) -> _CaptureConnection:
     connection = _CaptureConnection()
-    agent.connection = connection  # type: ignore[assignment] # capture stands in for the socket
+    agent.transport.connection = cast(ClientConnection, connection)
     return connection
 
 
