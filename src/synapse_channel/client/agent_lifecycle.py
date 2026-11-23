@@ -17,8 +17,8 @@ from typing import Any, Protocol
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
+from synapse_channel.client.agent_signing_identity import AgentSigningIdentity
 from synapse_channel.client.frame_signing_client import ClientFrameSession
-from synapse_channel.core.identity_keys import public_key_b64
 from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType
 
 DEFAULT_HUB_URI = "ws://localhost:8876"
@@ -105,7 +105,7 @@ class _LifecycleAgent(Protocol):
     _delivery_session_token: str | None
     _connect_active: bool
     _heartbeat_task: asyncio.Task[None] | None
-    _identity_key: Any
+    signing: AgentSigningIdentity
     _mailbox_since_seq: int
     frame_session: ClientFrameSession | None
 
@@ -244,12 +244,12 @@ class AgentLifecycleMixin:
                 if self._delivery_session_token is not None:
                     extra["delivery_session_token"] = self._delivery_session_token
                     extra["delivery_capabilities"] = self.delivery_capabilities
-                if self._identity_key is not None:
+                if (identity_public_key := self.signing.identity_public_key()) is not None:
                     # Carry the public half of the signing key so a first-use
                     # hub can verify the registration self-contained and pin
                     # the name to it (trust-on-first-use); an operator-bundle
                     # hub simply ignores the field.
-                    extra["identity_public_key"] = public_key_b64(self._identity_key)
+                    extra["identity_public_key"] = identity_public_key
                 if self.request_lease:
                     # Opt into a hub ownership lease on the bound name; the hub
                     # answers a fresh grant with a lease_granted frame.

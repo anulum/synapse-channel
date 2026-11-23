@@ -36,17 +36,15 @@ from synapse_channel.client.agent_lifecycle import (
 )
 from synapse_channel.client.agent_outbound import AgentOutboundMixin
 from synapse_channel.client.agent_queries import AgentQueryMixin
+from synapse_channel.client.agent_signing_identity import AgentSigningIdentity
 from synapse_channel.client.frame_signing_client import ClientFrameSession
 from synapse_channel.client.lease_epoch_store import LeaseEpochStore
 from synapse_channel.core.capability_card_signing import (
     DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
 )
 from synapse_channel.core.delivery_modes import MODES, QUALITIES
-from synapse_channel.core.identity_keys import load_signing_key
-from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.release_sidecar import is_release_sidecar, release_owner
 from synapse_channel.core.wake_capability import WAKE_DIRECT, normalize_wake_capability
-from synapse_channel.machine_identity import machine_identity_agent_kwargs
 
 __all__ = [
     "DEFAULT_HUB_URI",
@@ -242,18 +240,6 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         persist_lease_epochs: bool = True,
         lease_epoch_root: Path | None = None,
     ) -> None:
-        if identity_key_path is None and machine_identity:
-            # Present the zero-config machine identity by default. Every verb
-            # that builds an agent signs uniformly — the 2026-07-10 incident
-            # 1603 lockout class, where arming pinned a name and every other
-            # (unsigned) verb was then refused 4013, cannot recur through a
-            # forgotten call site. Best-effort by contract: on a core-only
-            # install or an unreadable key this resolves to nothing and the
-            # connection proceeds unsigned, exactly as before.
-            resolved = machine_identity_agent_kwargs()
-            if resolved:
-                identity_key_path = str(resolved["identity_key_path"])
-                identity_key_id = identity_key_id or str(resolved["identity_key_id"])
         self.name = name
         self.uri = uri
         self.connection: ClientConnection | None = None
@@ -292,47 +278,20 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.request_lease = bool(request_lease)
         self.owner_lease = str(owner_lease)
         self.on_lease_granted = on_lease_granted
-        self._message_auth_key: MessageAuthKey | None = None
-        if per_message_auth_key_id is not None and per_message_auth_secret is not None:
-            secret = (
-                per_message_auth_secret
-                if isinstance(per_message_auth_secret, bytes)
-                else per_message_auth_secret.encode("utf-8")
-            )
-            self._message_auth_key = MessageAuthKey(
-                key_id=str(per_message_auth_key_id), secret=secret, senders=frozenset({name})
-            )
-        self._message_auth_sequence = 0
         self.lease_epochs: dict[str, int] = {}
         self._lease_epoch_store = _epoch_store_for(name, persist_lease_epochs, lease_epoch_root)
-        self._identity_key = load_signing_key(identity_key_path) if identity_key_path else None
-        self._identity_key_id = str(identity_key_id)
-        self._identity_sequence = 0
-        if bool(capability_card_key_path) != bool(capability_card_key_id.strip()):
-            raise ValueError(
-                "capability_card_key_path and capability_card_key_id must be supplied together"
-            )
-        inferred_project = name.split("/", 1)[0] if "/" in name else ""
-        requested_project = str(capability_card_project).strip()
-        if capability_card_key_path and not inferred_project:
-            raise ValueError("a signed live capability card requires a namespaced agent name")
-        if capability_card_key_path and requested_project not in ("", inferred_project):
-            raise ValueError(
-                "capability_card_project must match the agent namespace resolved by the hub"
-            )
-        self._capability_card_project = inferred_project or requested_project
-        self._capability_card_key = (
-            load_signing_key(capability_card_key_path) if capability_card_key_path else None
+        self.signing = AgentSigningIdentity(
+            name=name,
+            identity_key_path=identity_key_path,
+            identity_key_id=identity_key_id,
+            machine_identity=machine_identity,
+            per_message_auth_key_id=per_message_auth_key_id,
+            per_message_auth_secret=per_message_auth_secret,
+            capability_card_key_path=capability_card_key_path,
+            capability_card_key_id=capability_card_key_id,
+            capability_card_project=capability_card_project,
+            capability_card_lifetime_seconds=capability_card_lifetime_seconds,
         )
-        self._capability_card_key_id = str(capability_card_key_id).strip()
-        self._capability_card_sequence = 0
-        self._capability_card_lifetime_seconds = float(capability_card_lifetime_seconds)
-        if (
-            self._capability_card_lifetime_seconds <= 0.0
-            or self._capability_card_lifetime_seconds != self._capability_card_lifetime_seconds
-            or self._capability_card_lifetime_seconds == float("inf")
-        ):
-            raise ValueError("capability_card_lifetime_seconds must be finite and positive")
         self.ping_interval = float(ping_interval)
         self.ping_timeout = float(ping_timeout)
 

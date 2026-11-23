@@ -9,16 +9,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 from websockets.asyncio.client import ClientConnection
 
+from synapse_channel.client.agent_signing_identity import AgentSigningIdentity
 from synapse_channel.client.frame_signing_client import ClientFrameSession
 from synapse_channel.client.lease_epoch_store import LeaseEpochStore
-from synapse_channel.core.message_auth import MessageAuthKey
-
-if TYPE_CHECKING:
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 __all__ = ["_OutboundAgent"]
 
@@ -29,20 +26,11 @@ class _OutboundAgent(Protocol):
     connection: ClientConnection | None
     name: str
     hub_protocol_version: int | None
-    _message_auth_key: MessageAuthKey | None
-    _message_auth_sequence: int
     lease_epochs: dict[str, int]
     _lease_epoch_store: LeaseEpochStore | None
     hub_id: str
     frame_session: ClientFrameSession | None
-    _identity_key: Ed25519PrivateKey | None
-    _identity_key_id: str
-    _identity_sequence: int
-    _capability_card_key: Ed25519PrivateKey | None
-    _capability_card_key_id: str
-    _capability_card_project: str
-    _capability_card_sequence: int
-    _capability_card_lifetime_seconds: float
+    signing: AgentSigningIdentity
 
     async def send_message(
         self,

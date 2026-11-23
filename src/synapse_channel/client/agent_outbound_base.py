@@ -10,18 +10,10 @@
 from __future__ import annotations
 
 import json
-import secrets
 from collections.abc import Mapping
 from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
-from synapse_channel.client.frame_signing_client import sign_outbound
-from synapse_channel.core.identity_keys import sign_registration
-from synapse_channel.core.message_auth import (
-    DEFAULT_SIGNED_MESSAGE_TYPES,
-    next_message_auth_sequence,
-    sign_frame,
-)
 from synapse_channel.core.protocol import (
     ATTACHMENT_REQUEST_TYPES,
     MIN_ACK_PROTOCOL_VERSION,
@@ -46,8 +38,7 @@ class AgentSendMixin:
             raise ValueError("unknown attachment request type")
         if (self.hub_protocol_version or 0) < MIN_ATTACHMENT_PROTOCOL_VERSION:
             raise ValueError("hub does not advertise attachment protocol version four")
-        if self._message_auth_key is None:
-            raise ValueError("attachment requests require a per-message key")
+        self.signing.require_message_auth()
         await self.send_message(msg_type, target="SynapseHub", **fields)
 
     async def send_message(
@@ -82,31 +73,12 @@ class AgentSendMixin:
         if self.connection is None:
             return
         msg = build_envelope(self.name, msg_type, target=target, payload=payload, **extra)
-        if self._message_auth_key is not None and msg_type in DEFAULT_SIGNED_MESSAGE_TYPES:
-            msg.setdefault("idem_key", secrets.token_urlsafe(18))
-            self._message_auth_sequence = next_message_auth_sequence(self._message_auth_sequence)
-            msg = sign_frame(
-                msg,
-                key=self._message_auth_key,
-                nonce=secrets.token_urlsafe(18),
-                sequence=self._message_auth_sequence,
-            )
-        if not sign_identity and self.frame_session is not None and self._identity_key is not None:
-            msg = sign_outbound(
-                msg,
-                self.frame_session,
-                key_id=self._identity_key_id,
-                private_key=self._identity_key,
-            )
-        if sign_identity and self._identity_key is not None:
-            self._identity_sequence += 1
-            msg = sign_registration(
-                msg,
-                private_key=self._identity_key,
-                key_id=self._identity_key_id,
-                nonce=secrets.token_urlsafe(18),
-                sequence=self._identity_sequence,
-            )
+        msg = self.signing.apply_to_envelope(
+            msg,
+            msg_type=msg_type,
+            sign_identity=sign_identity,
+            frame_session=self.frame_session,
+        )
         await self.connection.send(json.dumps(msg))
 
     async def chat(

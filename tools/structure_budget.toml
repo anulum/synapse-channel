@@ -35,10 +35,10 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/multihub_watch.py::MultiHubWatch" = 13
 
 [ceilings.init_attributes]
-"src/synapse_channel/client/agent.py::SynapseAgent" = 43
+"src/synapse_channel/client/agent.py::SynapseAgent" = 34
 
 [ceilings.initialisation_attributes]
-"src/synapse_channel/client/agent.py::SynapseAgent" = 43
+"src/synapse_channel/client/agent.py::SynapseAgent" = 34
 "src/synapse_channel/core/hub.py::SynapseHub" = 74
 
 [ceilings.init_constructions]
@@ -100,9 +100,7 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/cli_streams.py::add_parsers" = 87
 "src/synapse_channel/cli_tasks.py::add_parsers" = 63
 "src/synapse_channel/cli_workflow.py::add_parsers" = 94
-"src/synapse_channel/client/agent.py::SynapseAgent.__init__" = 93
 "src/synapse_channel/client/agent_lifecycle.py::AgentLifecycleMixin.connect" = 96
-"src/synapse_channel/client/agent_outbound_capability.py::AgentCapabilityMixin.advertise" = 71
 "src/synapse_channel/client/diagnostics.py::check_multi_seat_posture" = 69
 "src/synapse_channel/client/diagnostics.py::check_sqlcipher_event_store" = 76
 "src/synapse_channel/codex_mcp_package.py::apply_codex_package" = 86
@@ -245,10 +243,9 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/cli_release.py::_release" = 67
 "src/synapse_channel/cli_streams.py::_cmd_relay" = 18
 "src/synapse_channel/cli_waker.py::_cmd_waker" = 16
-"src/synapse_channel/client/agent.py::SynapseAgent.__init__" = 25
 "src/synapse_channel/client/agent_dispatch.py::AgentDispatchMixin._dispatch" = 20
 "src/synapse_channel/client/agent_lifecycle.py::AgentLifecycleMixin.connect" = 22
-"src/synapse_channel/client/agent_outbound_capability.py::AgentCapabilityMixin.advertise" = 17
+"src/synapse_channel/client/agent_outbound_capability.py::AgentCapabilityMixin.advertise" = 16
 "src/synapse_channel/client/diagnostics.py::check_multi_seat_posture" = 20
 "src/synapse_channel/client/diagnostics.py::check_unread_addressees" = 18
 "src/synapse_channel/client/provider_budget.py::ProviderQuote.load" = 22

@@ -173,8 +173,8 @@ def test_core_only_default_degrades_to_unsigned(
 
     agent = SynapseAgent(_SENDER, uri="ws://unused")
 
-    assert agent._identity_key is None
-    assert agent._identity_key_id == ""
+    assert agent.signing.has_identity_key is False
+    assert agent.signing.identity_key_id == ""
 
 
 async def test_keyed_agent_is_admitted_by_a_binding_hub_end_to_end(tmp_path: Path) -> None:

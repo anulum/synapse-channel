@@ -40,8 +40,8 @@ def test_a_sidecar_signs_with_the_shared_machine_key(
     sidecar = _sidecar(tmp_path)
     key = identity_dir(base=tmp_path) / MACHINE_KEY_FILENAME
     assert key.is_file()
-    assert seat._identity_key_id == sidecar._identity_key_id
-    assert seat._identity_key_id.startswith("machine-")
+    assert seat.signing.identity_key_id == sidecar.signing.identity_key_id
+    assert seat.signing.identity_key_id.startswith("machine-")
     assert not any("release" in path.name for path in tmp_path.rglob("*"))
 
 

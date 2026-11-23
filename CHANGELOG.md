@@ -68,6 +68,10 @@ execution evidence when carrying a release claim forward.
 
 - **A hub keeps its trigger timing in functions.** Asking which triggers are due behaves as before. The new module `core/operation_trigger_timing.py` holds those queries and no table. `AttemptLedger` adds `operation_scopes(operation_id)`. Every existing name keeps its signature.
 
+- **An agent signs through one signing identity.** The constructor keywords are unchanged.
+  Identity, message authentication and capability-card counters advance only inside that
+  object, and nothing on the agent returns a private key.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

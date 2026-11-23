@@ -110,9 +110,9 @@ def test_cmd_worker_threads_capability_card_signing(tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
 
     def record_worker(worker: SynapseLLMWorker) -> None:
-        captured["key_id"] = worker.agent._capability_card_key_id
-        captured["project"] = worker.agent._capability_card_project
-        captured["lifetime"] = worker.agent._capability_card_lifetime_seconds
+        captured["key_id"] = worker.agent.signing.capability_card_key_id
+        captured["project"] = worker.agent.signing.capability_card_project
+        captured["lifetime"] = worker.agent.signing.capability_card_lifetime_seconds
 
     assert (
         cli_processes._cmd_worker(

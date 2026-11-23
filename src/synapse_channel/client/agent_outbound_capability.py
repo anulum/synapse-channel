@@ -13,8 +13,6 @@ from collections.abc import Mapping
 from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
-from synapse_channel.core.capability import normalized_capability_card
-from synapse_channel.core.capability_card_signing import sign_capability_card
 from synapse_channel.core.protocol import MessageType
 
 __all__ = ["AgentCapabilityMixin"]
@@ -72,7 +70,7 @@ class AgentCapabilityMixin:
             whose ``-rx`` sidecar the connection is (a wake listener
             registering its seat).
         """
-        if self._capability_card_key is None:
+        if not self.signing.has_capability_card_key:
             extra: dict[str, Any] = {}
             if agent:
                 extra["agent"] = agent
@@ -104,40 +102,15 @@ class AgentCapabilityMixin:
                 "a signed capability card can only advertise its own identity; "
                 "the 'agent' override is reserved for unsigned sidecar registrations"
             )
-        card = normalized_capability_card(
-            self.name,
+        extra = self.signing.signed_capability_fields(
             description=description,
             skills=skills,
             task_classes=task_classes,
             model=model,
-            project=self._capability_card_project,
             manifest_digest=manifest_digest,
             contracts=contracts,
             meta=meta,
         )
-        self._capability_card_sequence += 1
-        card = sign_capability_card(
-            card,
-            key_id=self._capability_card_key_id,
-            private_key=self._capability_card_key,
-            sequence=self._capability_card_sequence,
-            lifetime_seconds=self._capability_card_lifetime_seconds,
-        )
-        extra = {
-            key: card[key]
-            for key in (
-                "description",
-                "skills",
-                "task_classes",
-                "model",
-                "project",
-                "manifest_digest",
-                "contracts",
-                "meta",
-                "signature",
-            )
-            if card.get(key)
-        }
         if persist:
             extra["persist"] = True
         if dispatchable is not None:
