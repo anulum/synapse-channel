@@ -69,7 +69,7 @@ The ledger also keeps each scope's stops (:mod:`~synapse_channel.core.operation_
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -101,20 +101,18 @@ from synapse_channel.core.operation_stop_readbacks import (
     marker_reads_applied,
     marker_reads_sealed,
 )
-from synapse_channel.core.operation_stop_states import (
-    STATE_AT_REST,
-    STATE_STOP_REQUESTED,
-    StopState,
-)
+from synapse_channel.core.operation_stop_states import STATE_AT_REST, StopState
 from synapse_channel.core.operation_stops import scopes_of
-from synapse_channel.core.operation_triggers import (
-    CAUSE_ACTOR_REQUEST,
-    CAUSE_DEADLINE_UNVERIFIED,
-    CAUSE_STOP_UNSETTLED,
-    TRIGGER_TARGET,
-    Trigger,
-    above,
+from synapse_channel.core.operation_trigger_timing import (
+    actor_trigger as _actor_trigger,
 )
+from synapse_channel.core.operation_trigger_timing import (
+    due_triggers as _due_triggers,
+)
+from synapse_channel.core.operation_trigger_timing import (
+    operation_trigger as _operation_trigger,
+)
+from synapse_channel.core.operation_triggers import Trigger
 
 if TYPE_CHECKING:
     from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -266,18 +264,6 @@ def _time_of(payload: Mapping[str, Any]) -> float:
     """Return a row's ``hub_time``, or 0 when it states none."""
     value = payload.get("hub_time")
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
-
-
-def _past_deadline_unverified(entry: _Operation, now: float, since: float) -> bool:
-    """Return whether a deadline passed in (since, now], ended, unverified and not yet triggered."""
-    deadline = entry.fact.deadline
-    return (
-        deadline is not None
-        and since < deadline <= now
-        and not entry.closed
-        and any(attempt.ended for attempt in entry.attempts)
-        and CAUSE_DEADLINE_UNVERIFIED not in entry.triggered
-    )
 
 
 _MARKER_UNSCOPED = "unscoped"
@@ -663,7 +649,7 @@ class AttemptLedger:
             the scope and sequence of the latest level record of any of them,
             or ``None`` when none has a record.
         """
-        scopes = self._scopes_of(operation_id)
+        scopes = self.operation_scopes(operation_id)
         line: tuple[str, int] | None = None
         for scope in scopes:
             record = self.levels.get(scope)
@@ -677,7 +663,7 @@ class AttemptLedger:
             return (scope,)
         kind, _, name = scope.partition(":")
         if kind == "operation" and self.operation(name) is not None:
-            return self._scopes_of(name)
+            return self.operation_scopes(name)
         return (scope, "installation")
 
     def stopped_within(self, scope: str) -> tuple[str, int] | None:
@@ -734,7 +720,7 @@ class AttemptLedger:
         return [
             entry
             for operation_id, entry in self._operations.items()
-            if scope in self._scopes_of(operation_id)
+            if scope in self.operation_scopes(operation_id)
         ]
 
     def level_counts(self, scope: str, since: int, now: float) -> dict[str, int]:
@@ -795,15 +781,9 @@ class AttemptLedger:
         entry = self._operations.get(operation_id)
         return 0 if entry is None else entry.contradicted_seq
 
-    def _levels_of(self, scopes: Iterable[str]) -> tuple[tuple[str, str, int], ...]:
-        return tuple((scope, *self.level_of(scope)) for scope in scopes)
-
     def operation_trigger(self, operation_id: str, cause: str, *, shown_by: int = 0) -> Trigger:
         """Return the trigger ``cause`` of an operation: every containing scope above A1 falls."""
-        lowers = above(self._levels_of(self._scopes_of(operation_id)), TRIGGER_TARGET)
-        subject = {"operation_id": operation_id}
-        scope = f"operation:{operation_id}"
-        return Trigger(cause, scope, TRIGGER_TARGET, lowers, shown_by, "", subject)
+        return _operation_trigger(self, operation_id, cause, shown_by=shown_by)
 
     def due_triggers(self, now: float, stop_bound: float, since: float = 0.0) -> list[Trigger]:
         """Return the triggers the watcher records at ``now``, once each.
@@ -815,35 +795,11 @@ class AttemptLedger:
         after ``since`` counts, so a watcher started on a long journal writes no
         burst of old triggers.
         """
-        found = [
-            self.operation_trigger(operation_id, CAUSE_DEADLINE_UNVERIFIED)
-            for operation_id, entry in sorted(self._operations.items())
-            if _past_deadline_unverified(entry, now, since)
-        ]
-        for seq, row in sorted(self.stop_rows.items()):
-            if self._unsettled(seq, row, now, stop_bound, since):
-                lowers = above(self._levels_of((row.scope,)), TRIGGER_TARGET)
-                subject = {"stop_seq": seq}
-                found.append(
-                    Trigger(
-                        CAUSE_STOP_UNSETTLED, row.scope, TRIGGER_TARGET, lowers, seq, "", subject
-                    )
-                )
-        return found
-
-    def _unsettled(self, seq: int, row: _StopRow, now: float, bound: float, since: float) -> bool:
-        passed = row.recorded_at + bound
-        if row.bound_triggered or row.resumed is not None or not row.recorded_at > 0:
-            return False
-        if not since < passed <= now:
-            return False
-        state = self.stop_state(seq)
-        return state is not None and state.state == STATE_STOP_REQUESTED
+        return _due_triggers(self, now, stop_bound, since)
 
     def actor_trigger(self, scope: str, target: str, actor: str) -> Trigger:
         """Return an actor's own step down of ``scope`` to ``target``."""
-        lowers = above(self._levels_of((scope,)), target)
-        return Trigger(CAUSE_ACTOR_REQUEST, scope, target, lowers, 0, actor, {})
+        return _actor_trigger(self, scope, target, actor)
 
     def scope_actors(self, scope: str) -> frozenset[str]:
         """Return the declarers and executors of every operation ``scope`` contains."""
@@ -862,7 +818,7 @@ class AttemptLedger:
         for operation_id in sorted(self._operations):
             if self._operations[operation_id].fact.intent_sha256 != digest:
                 continue
-            for scope in self._scopes_of(operation_id):
+            for scope in self.operation_scopes(operation_id):
                 if self.level_of(scope)[0] == DEFAULT_LEVEL:
                     return scope
         return None
@@ -927,7 +883,8 @@ class AttemptLedger:
         """Return the epoch of the latest stop of ``scope``; 0 when it was never stopped."""
         return self._stop_ledger.epoch(scope)
 
-    def _scopes_of(self, operation_id: str) -> tuple[str, ...]:
+    def operation_scopes(self, operation_id: str) -> tuple[str, ...]:
+        """Return every scope that contains ``operation_id``, the narrowest first."""
         fact = self.operation(operation_id)
         if fact is None:
             return scopes_of(operation_id, None, None)
@@ -947,7 +904,7 @@ class AttemptLedger:
         """
         stopped_by: tuple[str, int] | None = None
         line: tuple[str, int] | None = None
-        for scope in self._scopes_of(operation_id):
+        for scope in self.operation_scopes(operation_id):
             stops = self.stops.get(scope)
             if stops is None:
                 continue
@@ -992,7 +949,7 @@ class AttemptLedger:
         """Return every attempt in ``scope`` that is neither sealed nor reconciled."""
         found: list[OpenAttempt] = []
         for operation_id, entry in self._operations.items():
-            if entry.closed or scope not in self._scopes_of(operation_id):
+            if entry.closed or scope not in self.operation_scopes(operation_id):
                 continue
             found.extend(
                 OpenAttempt(operation_id, attempt.attempt_id, entry.fact.task_id, attempt.executor)

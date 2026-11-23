@@ -66,6 +66,8 @@ execution evidence when carrying a release claim forward.
 
 - **A hub keeps its level records in one component.** Recording a level, a criteria and a judgement behaves as before. Level counts stay on the attempt ledger. The new module `core/operation_level_ledger.py` adds `LevelLedger`, and `LevelCriteria` and `LevelJudgement` now live there. Every existing `AttemptLedger` name keeps its signature. The first criteria recorded for a digest keeps its sequence and its declarer.
 
+- **A hub keeps its trigger timing in functions.** Asking which triggers are due behaves as before. The new module `core/operation_trigger_timing.py` holds those queries and no table. `AttemptLedger` adds `operation_scopes(operation_id)`. Every existing name keeps its signature.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

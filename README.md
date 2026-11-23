@@ -1948,7 +1948,7 @@ an installed protected runtime or revocation fencing.
 |---|---:|
 | Package version | 0.99.63 |
 | Public API exports | 70 |
-| Package modules | 1101 |
+| Package modules | 1102 |
 | Classes | 1602 |
 | Wire message types | 135 |
 | CLI subcommands | 332 |
