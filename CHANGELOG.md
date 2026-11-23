@@ -148,6 +148,11 @@ execution evidence when carrying a release claim forward.
   closing that checkpoint behave as before. `serve`, `close`, `bound_address` and
   `wait_until_serving` keep their signatures. No public name changes.
 
+- **A hub keeps its listener in one component.** Binding, publishing readiness and
+  clearing the address behave as before. A bind-all listener with no advertised
+  host refuses a localhost Host. `serve`, `close`, `bound_address` and
+  `wait_until_serving` keep their signatures. No public name changes.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

@@ -24,14 +24,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import socket
 import ssl
-from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
-from contextlib import AsyncExitStack
+from collections.abc import Callable, Coroutine, Iterable, Mapping
 from pathlib import Path
 from typing import Any, Unpack
 
-from websockets.asyncio.server import Server, serve
 from websockets.http11 import Request, Response
 
 from synapse_channel.core.acl import (
@@ -55,7 +52,7 @@ from synapse_channel.core.hub_component_callbacks import HubComponentCallbacks
 from synapse_channel.core.hub_components import HubComponents
 from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 from synapse_channel.core.hub_config_view import HubConfigView
-from synapse_channel.core.hub_connection import HubConnection, shared_port_sockets
+from synapse_channel.core.hub_connection import HubConnection
 from synapse_channel.core.hub_constructor_options import HubLegacyOptions, resolve_hub_config
 from synapse_channel.core.hub_defaults import (
     DEFAULT_AUTH_TIMEOUT,
@@ -121,14 +118,6 @@ from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.terminal_text import terminal_text
 
 logger = logging.getLogger("synapse.hub")
-
-# The websockets server logs its connection lifecycle here — a descendant of the
-# ``synapse`` logger, so its records reach the app's handler, where
-# HandshakeAbortFilter (installed by configure_logging) quiets only the benign
-# aborted-handshake tracebacks. websockets creates a per-connection *child* of
-# this logger, so the filter must live on the handler (which sees child records),
-# not on this logger (whose filters a child record bypasses).
-ws_server_logger = logging.getLogger("synapse.hub.ws")
 
 __all__ = [
     "DEFAULT_AUTH_TIMEOUT",
@@ -515,14 +504,11 @@ class SynapseHub(HubConfigView):
         self.attachment_store = components.requested.attachment_store
         self.journal = components.requested.journal
         self._checkpoint = lifetime.checkpoint
-        self._serving = lifetime.serving
+        self._server = lifetime.server
         self.guard_evidence_quota = lifetime.guard_evidence_quota
         self.clock = lifetime.clock
         self._started = lifetime.started
         self.relay_log = lifetime.relay_log
-        self._bind_host = DEFAULT_HOST
-        self._bind_port = DEFAULT_PORT
-        self._bound_address: tuple[str, int] | None = None
 
     def _receive_security(self, components: HubComponents) -> None:
         """Retain the graph's actual replay, enrollment and pinning services."""
@@ -1490,7 +1476,7 @@ class SynapseHub(HubConfigView):
         :attr:`enable_metrics` is set); other paths proceed to the WebSocket upgrade.
         """
         return http_request_response(
-            self, request, bind_host=self._bind_host, bind_port=self._bind_port
+            self, request, bind_host=self._server.bind_host, bind_port=self._server.bind_port
         )
 
     @property
@@ -1503,7 +1489,7 @@ class SynapseHub(HubConfigView):
         racy reserve-and-release probe. Every address the host name resolves
         to listens on that same port.
         """
-        return self._bound_address
+        return self._server.bound_address
 
     async def wait_until_serving(self, timeout: float = 3.0) -> tuple[str, int]:
         """Wait for :meth:`serve` to bind and return its actual TCP address.
@@ -1525,10 +1511,7 @@ class SynapseHub(HubConfigView):
         RuntimeError
             If readiness is signalled without an active address.
         """
-        await asyncio.wait_for(self._serving.wait(), timeout=timeout)
-        if self._bound_address is None:
-            raise RuntimeError("hub signalled readiness without a bound address")
-        return self._bound_address
+        return await self._server.wait_until_serving(timeout)
 
     def _record_identity_proof(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
         """Record the key a verified registration proved.
@@ -1615,7 +1598,7 @@ class SynapseHub(HubConfigView):
         RuntimeError
             If the server is still bound; stop and await serving first.
         """
-        if self._bound_address is not None:
+        if self._server.bound_address is not None:
             raise RuntimeError("stop and await hub serving before closing startup resources")
         self._checkpoint.close()
 
@@ -1639,49 +1622,17 @@ class SynapseHub(HubConfigView):
             Server TLS context; None serves plain WebSockets.
         """
         stop = self._prepare_serving(host, port, ssl_context)
-        started = False
-        services = self._service_lifetime()
-        listener: list[socket.socket] | None = None
-        adopted = 0
-        try:
-            listener = shared_port_sockets(host, int(port))
-            async with AsyncExitStack() as stack:
-                await stack.enter_async_context(services.monitoring())
-                if listener is None:
-                    server = await stack.enter_async_context(
-                        self._open_server(host, port, ssl_context, None)
-                    )
-                    await server.start_serving()
-                    self._record_bound_sockets(server.sockets, host)
-                else:
-                    bound: list[socket.socket] = []
-                    for listening in listener:
-                        server = await stack.enter_async_context(
-                            self._open_server(host, port, ssl_context, listening)
-                        )
-                        adopted += 1
-                        await server.start_serving()
-                        bound.extend(server.sockets)
-                    self._record_bound_sockets(bound, host)
-                started = True
-                self._serving.set()
-                self._log_server_address(host, ssl_context)
-                services.start(stop)
-                await stop.wait()
-                services.check_completed()
-        except BaseException:
-            if listener is not None:
-                for leftover in listener[adopted:]:
-                    leftover.close()
-            if not started:
-                # A startup waiter must report a failed bind instead of a readiness timeout.
-                self._serving.set()
-            raise
-        finally:
-            await services.finish(started)
-            self._bound_address = None
-            if started:
-                self._serving.clear()
+        await self._server.serve(
+            host,
+            port,
+            ssl_context,
+            stop=stop,
+            services=self._service_lifetime(),
+            handler=self.handler,
+            process_request=self._process_request,
+            max_size=self.max_msg_bytes,
+            close_timeout=self.shutdown_close_timeout,
+        )
 
     def _prepare_serving(
         self, host: str, port: int, ssl_context: ssl.SSLContext | None
@@ -1692,75 +1643,9 @@ class SynapseHub(HubConfigView):
         if self.journal is not None and self.stable_delivery_hub_id:
             self.journal.delivery.verify_origin_hub(self.hub_id)
         self._checkpoint.reopen_if_closed(self.journal)
-        self._bind_host = host
-        self._bind_port = int(port)
-        self._bound_address = None
-        self._serving.clear()
         stop = asyncio.Event()
         self._install_signal_handlers(asyncio.get_running_loop(), stop)
         return stop
-
-    def _open_server(
-        self,
-        host: str,
-        port: int,
-        ssl_context: ssl.SSLContext | None,
-        listening: socket.socket | None,
-    ) -> Server:
-        """Open one listener. Accepting waits for the caller's ``start_serving``.
-
-        A cancellation that arrives while the listener opens still closes its
-        socket. ``listening`` is one already bound socket that shares its port
-        with the hub's other addresses.
-        """
-        if listening is None:
-            return serve(
-                self.handler,
-                host,
-                port,
-                max_size=self.max_msg_bytes,
-                max_queue=DEFAULT_MAX_QUEUE,
-                ping_interval=DEFAULT_PING_INTERVAL,
-                ping_timeout=DEFAULT_PING_TIMEOUT,
-                close_timeout=self.shutdown_close_timeout,
-                process_request=self._process_request,
-                ssl=ssl_context,
-                logger=ws_server_logger,
-                start_serving=False,
-            )
-        return serve(
-            self.handler,
-            sock=listening,
-            max_size=self.max_msg_bytes,
-            max_queue=DEFAULT_MAX_QUEUE,
-            ping_interval=DEFAULT_PING_INTERVAL,
-            ping_timeout=DEFAULT_PING_TIMEOUT,
-            close_timeout=self.shutdown_close_timeout,
-            process_request=self._process_request,
-            ssl=ssl_context,
-            logger=ws_server_logger,
-            start_serving=False,
-        )
-
-    def _record_bound_sockets(self, sockets: Sequence[socket.socket], host: str) -> None:
-        """Record the listening sockets before publishing successful readiness."""
-        if not sockets:
-            raise RuntimeError("hub server bound without a listening socket")
-        ports = {int(listening.getsockname()[1]) for listening in sockets}
-        if len(ports) != 1:
-            raise RuntimeError("hub server bound different ports for one name")
-        self._bind_port = next(iter(ports))
-        self._bound_address = (host, self._bind_port)
-
-    def _log_server_address(self, host: str, ssl_context: ssl.SSLContext | None) -> None:
-        """Log the actual assigned port with its existing transport scheme."""
-        scheme = "wss" if ssl_context is not None else "ws"
-        logger.info(
-            "Synapse Hub running on %s://%s:%d",
-            scheme,
-            host,
-            self._bind_port,
-        )
 
     def release_sidecar_is_narrowed(self, websocket: Any) -> bool:
         """Return whether a sidecar on ``websocket`` may release only its trigger."""

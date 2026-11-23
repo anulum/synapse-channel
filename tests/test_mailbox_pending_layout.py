@@ -408,7 +408,7 @@ def test_the_walk_logs_and_finishes_before_the_hub_listens(
         caplog.set_level(logging.INFO, logger="synapse.hub")
         hub = SynapseHub.from_config(HubConfig(journal=store, hub_id="pending-layout"))
         try:
-            assert hub._bound_address is None
+            assert hub.bound_address is None
             assert "mailbox pending layout walk started event_rows=1" in caplog.text
             assert "mailbox pending layout walk finished event_rows=1 hit_rows=1" in caplog.text
             assert layout_version(store.storage.connection) == 1

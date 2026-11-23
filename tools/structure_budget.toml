@@ -37,7 +37,7 @@ names = ["argparse._SubParsersAction"]
 [ceilings.init_attributes]
 
 [ceilings.initialisation_attributes]
-"src/synapse_channel/core/hub.py::SynapseHub" = 72
+"src/synapse_channel/core/hub.py::SynapseHub" = 69
 
 [ceilings.init_constructions]
 

@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import math
 import time
 from collections.abc import Callable
@@ -19,6 +18,12 @@ from pathlib import Path
 from synapse_channel.core.durable_ingress import DurableIngressQuota
 from synapse_channel.core.hub_checkpoint import HubCheckpoint, open_checkpoint
 from synapse_channel.core.hub_config import HubConfig
+from synapse_channel.core.hub_defaults import (
+    DEFAULT_MAX_QUEUE,
+    DEFAULT_PING_INTERVAL,
+    DEFAULT_PING_TIMEOUT,
+)
+from synapse_channel.core.hub_server import HubServer
 from synapse_channel.core.merkle_checkpoint import (
     LiveCheckpoint,
     checkpoint_path_for,
@@ -28,10 +33,10 @@ from synapse_channel.core.persistence import EventStore
 
 @dataclass(frozen=True, kw_only=True)
 class HubLifetimeComponents:
-    """Owned checkpoint, transport synchronization, clock and relay location."""
+    """Owned checkpoint, listener, clock and relay location."""
 
     checkpoint: HubCheckpoint
-    serving: asyncio.Event
+    server: HubServer
     guard_evidence_quota: DurableIngressQuota
     clock: Callable[[], float]
     started: float
@@ -100,7 +105,11 @@ def build_lifetime(
             live=live,
             interval=checkpoint_interval(config),
         ),
-        serving=asyncio.Event(),
+        server=HubServer(
+            max_queue=DEFAULT_MAX_QUEUE,
+            ping_interval=DEFAULT_PING_INTERVAL,
+            ping_timeout=DEFAULT_PING_TIMEOUT,
+        ),
         guard_evidence_quota=DurableIngressQuota(
             max_events=100, max_bytes=262144, window_seconds=60.0
         ),
