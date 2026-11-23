@@ -417,12 +417,24 @@ def test_status_update_handles_non_mapping_metadata() -> None:
 
 
 def test_pending_and_sender_matching_edge_paths() -> None:
-    bridge = _bridge()
-    assert bridge._pending_task_for_sender("WORKER") is None
-    bridge._pending_by_target["WORKER"] = ["missing"]
-    assert bridge._pending_task_for_sender("WORKER") is None
-    assert "WORKER" not in bridge._pending_by_target
-    assert bridge._sender_matches_task({"metadata": "bad"}, "ANY") is True
+    class _HideMissing(A2ATaskStore):
+        """Return no task once the edge asks for a pending id the store lost."""
+
+        hide = False
+
+        def get(self, task_id: str) -> dict[str, Any] | None:
+            if self.hide:
+                return None
+            return super().get(task_id)
+
+    store = _HideMissing()
+    bridge = _bridge(store=store)
+    correlator = bridge._correlator
+    assert correlator.pending_for_sender("WORKER") is None
+    bridge.create_working_task(_message())
+    store.hide = True
+    assert correlator.pending_for_sender("WORKER") is None
+    assert correlator.sender_matches({"metadata": "bad"}, "ANY") is True
 
 
 def test_synapse_frame_ignores_unmatched_or_invalid_frames() -> None:

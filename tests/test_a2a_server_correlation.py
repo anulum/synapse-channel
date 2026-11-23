@@ -395,3 +395,119 @@ def test_concurrent_duplicate_correlated_reply_completes_once() -> None:
     assert updated["status"]["state"] == "TASK_STATE_COMPLETED"
     assert len(updated.get("history", [])) == 2
     assert len(updated.get("artifacts", [])) == 1
+
+
+def _fallback_ids(bridge: A2ABridge, target: str) -> list[str]:
+    """Return one target's fallback queue on the bridge or its correlator."""
+    holder: Any = bridge
+    correlator = getattr(holder, "_correlator", None)
+    pending = correlator._pending if correlator is not None else holder._pending_by_target
+    return [str(task_id) for task_id in pending.get(target, ())]
+
+
+def _user_message(task_id: str, context_id: str, message_id: str, text: str) -> dict[str, Any]:
+    """Build one user message the bridge can forward."""
+    return {
+        "taskId": task_id,
+        "contextId": context_id,
+        "messageId": message_id,
+        "role": "ROLE_USER",
+        "parts": [{"text": text}],
+    }
+
+
+def test_metadata_completion_leaves_the_next_plain_reply_for_the_later_task() -> None:
+    """A correlated completion leaves the sender's next plain reply for the later task."""
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    first = bridge.create_completed_task(
+        _user_message("task-a", "ctx-a", "m1", "first"),
+        target="WORKER",
+    )
+    second = bridge.create_completed_task(
+        _user_message("task-b", "ctx-b", "m2", "second"),
+        target="WORKER",
+    )
+
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": "answer for a",
+            "metadata": {"a2aTaskId": first["id"], "a2aContextId": first["contextId"]},
+        }
+    )
+    bridge.handle_synapse_frame({"type": "chat", "sender": "WORKER", "payload": "answer for b"})
+
+    first_updated = bridge.store.get(first["id"])
+    second_updated = bridge.store.get(second["id"])
+    assert first_updated is not None
+    assert second_updated is not None
+    assert first_updated["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert second_updated["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert second_updated["status"]["message"]["parts"][0]["text"] == "answer for b"
+
+
+def test_a_second_forward_keeps_one_fallback_slot_for_the_later_task() -> None:
+    """Two forwards of one open task leave the later task's plain reply free."""
+    agent = RecordingAgent()
+    bridge = A2ABridge(agent=agent, agent_card={}, target="WORKER", store=A2ATaskStore())
+    first = bridge.create_completed_task(
+        _user_message("task-a", "ctx-a", "m1", "first forward"),
+        target="WORKER",
+    )
+    bridge.send_message(
+        {"message": _user_message(first["id"], first["contextId"], "m1-again", "second forward")},
+        protocol_version="1.0",
+    )
+    assert [target for target, _payload in agent.messages] == ["WORKER", "WORKER"]
+    assert _fallback_ids(bridge, "WORKER").count(first["id"]) == 1
+
+    second = bridge.create_completed_task(
+        _user_message("task-b", "ctx-b", "m2", "later"),
+        target="WORKER",
+    )
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": "answer for a",
+            "metadata": {"a2aTaskId": first["id"], "a2aContextId": first["contextId"]},
+        }
+    )
+    bridge.handle_synapse_frame({"type": "chat", "sender": "WORKER", "payload": "answer for b"})
+
+    first_updated = bridge.store.get(first["id"])
+    second_updated = bridge.store.get(second["id"])
+    assert first_updated is not None
+    assert second_updated is not None
+    assert first_updated["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert second_updated["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert second_updated["status"]["message"]["parts"][0]["text"] == "answer for b"
+
+
+def test_a_different_exchange_reply_leaves_the_task_open_and_pending() -> None:
+    """A reply for a different exchange leaves the task open and still pending."""
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        _user_message("task-a", "ctx-a", "m1", "compute"),
+        target="WORKER",
+    )
+    expected = task["metadata"]["synapseExecutionOutcome"]["operation_id"]
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": "wrong exchange",
+            "metadata": {
+                "a2aTaskId": task["id"],
+                "a2aContextId": task["contextId"],
+                "a2aOperationId": f"{expected}-other",
+            },
+        }
+    )
+
+    updated = bridge.store.get(task["id"])
+    assert updated is not None
+    assert updated["status"]["state"] == "TASK_STATE_WORKING"
+    assert updated.get("artifacts") == []
+    assert _fallback_ids(bridge, "WORKER") == [task["id"]]

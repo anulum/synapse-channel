@@ -26,19 +26,13 @@ from typing import Any, ClassVar
 from synapse_channel import a2a_errors
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_events import A2ATaskEvents
-from synapse_channel.a2a_execution import A2AExecution
 from synapse_channel.a2a_http_protocol import (
     endpoint_authorities,
     non_negative_int,
     normalise_authority,
     normalise_origin,
 )
-from synapse_channel.a2a_outcome import (
-    OPERATION_KEY,
-    bind_reply,
-    execution_id,
-    protocol_observation,
-)
+from synapse_channel.a2a_outcome import protocol_observation
 from synapse_channel.a2a_push import A2APushNotifier, PushDeliverer, http_push_deliverer
 from synapse_channel.a2a_push_delivery import (
     DEFAULT_PUSH_RETRY_DELAYS_SECONDS,
@@ -47,10 +41,10 @@ from synapse_channel.a2a_push_delivery import (
     validate_retry_delays,
 )
 from synapse_channel.a2a_rpc import dispatch_json_rpc
+from synapse_channel.a2a_runtime import build_a2a_runtime
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.a2a_task_flow import (
     build_working_task,
-    render_message_text,
     resolve_target,
 )
 from synapse_channel.a2a_task_flow import (
@@ -71,12 +65,6 @@ from synapse_channel.a2a_validation import (
 )
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.numeric_coercion import safe_float
-
-A2A_METADATA_TASK_ID = "a2aTaskId"
-"""Chat metadata key carrying the bridge task id."""
-
-A2A_METADATA_CONTEXT_ID = "a2aContextId"
-"""Chat metadata key carrying the bridge context id."""
 
 
 def _agent_card_http_authorities(agent_card: JsonMap) -> tuple[str, ...]:
@@ -102,38 +90,6 @@ def _agent_card_http_authorities(agent_card: JsonMap) -> tuple[str, ...]:
             if authority not in authorities:
                 authorities.append(authority)
     return tuple(authorities)
-
-
-def _valid_metadata_id(value: object) -> str | None:
-    """Return ``value`` as a bridge-safe id, or ``None`` when unusable."""
-    if value is None:
-        return None
-    candidate = str(value)
-    try:
-        validate_bridge_id(candidate, field="metadata")
-    except ValueError:
-        return None
-    return candidate
-
-
-def _a2a_metadata_correlation(data: JsonMap) -> tuple[str | None, str | None, bool]:
-    """Extract trusted A2A correlation fields from structured chat metadata.
-
-    The boolean is ``True`` only when the frame attempted A2A correlation. A
-    malformed attempt is rejected by the caller instead of falling back to text or
-    sender inference, which keeps user-controlled chat content from selecting a
-    task.
-    """
-    metadata = data.get("metadata")
-    if not isinstance(metadata, dict):
-        return None, None, False
-    if A2A_METADATA_TASK_ID not in metadata and A2A_METADATA_CONTEXT_ID not in metadata:
-        return None, None, False
-    return (
-        _valid_metadata_id(metadata.get(A2A_METADATA_TASK_ID)),
-        _valid_metadata_id(metadata.get(A2A_METADATA_CONTEXT_ID)),
-        True,
-    )
 
 
 class SynapseAgentRuntime:
@@ -214,19 +170,6 @@ class SynapseAgentRuntime:
             await asyncio.gather(*pending, return_exceptions=True)
 
 
-class _TargetLocks:
-    """One lock per SYNAPSE target, created on first use."""
-
-    def __init__(self) -> None:
-        self._locks: dict[str, threading.Lock] = {}
-        self._guard = threading.Lock()
-
-    def for_target(self, target: str) -> threading.Lock:
-        """Return the lock that orders hand-offs to ``target``."""
-        with self._guard:
-            return self._locks.setdefault(target, threading.Lock())
-
-
 class A2ABridge:
     """Translate A2A HTTP operations into SYNAPSE operations.
 
@@ -260,7 +203,6 @@ class A2ABridge:
         task_timeout_seconds: float = 300.0,
         subscribe_wait_seconds: float = 0.0,
     ) -> None:
-        self.agent = agent
         self.agent_card = agent_card
         self.target = target
         self.store = store or A2ATaskStore()
@@ -289,24 +231,30 @@ class A2ABridge:
             raise ValueError("an Origin allow-list requires a trusted endpoint authority")
         self.task_timeout_seconds = max(task_timeout_seconds, 0.0)
         self.subscribe_wait_seconds = max(subscribe_wait_seconds, 0.0)
-        self._pending_by_target: dict[str, list[str]] = {}
-        # Fallback reply correlation pairs a sender's replies with its pending
-        # tasks in send order, so hand-offs to one target stay serialised while
-        # other targets and task reservation proceed independently.
-        self._target_locks = _TargetLocks()
         # Durable event history is shared with the task store so a restarted
         # bridge can replay prior lifecycle snapshots for open tasks.
         self._events = A2ATaskEvents(durable_store=self.store)
         self._task_creation_lock = threading.RLock()
-        self._correlation_lock = threading.RLock()
-        self.execution = A2AExecution(
-            self.store,
-            self._forward_message,
-            self._set_task_status,
-            self._publish_task_update,
-            self._correlation_lock,
+        runtime = build_a2a_runtime(
+            agent=agent,
+            store=self.store,
+            run=self._run,
+            write_status=self._set_task_status,
+            publish=self._publish_task_update,
         )
+        self._correlator = runtime.correlator
+        self.execution = runtime.execution
         self._recover_stale_open_tasks(now=time.time())
+
+    @property
+    def agent(self) -> Any:
+        """Return the agent the next forward calls."""
+        return self._correlator.agent
+
+    @agent.setter
+    def agent(self, agent: Any) -> None:
+        """Use ``agent`` for the next forward."""
+        self._correlator.agent = agent
 
     def _gc_retained_tasks(self, *, now: float | None = None) -> list[str]:
         """Prune expired terminal tasks and drop bridge-local indexes."""
@@ -314,7 +262,7 @@ class A2ABridge:
         if not removed:
             return []
         for task_id in removed:
-            self._remove_pending_task(task_id)
+            self._correlator.remove_pending(task_id)
         self._events.drop(removed)
         return removed
 
@@ -482,37 +430,6 @@ class A2ABridge:
         self._notifier.deliver_all(stored)
         return stored
 
-    def _forward_message(
-        self,
-        message: JsonMap,
-        *,
-        task_id: str,
-        context_id: str,
-        target: str,
-        operation_timeout_seconds: float | None = None,
-    ) -> None:
-        """Forward one task-bound message and maintain fallback correlation."""
-        with self._target_locks.for_target(target):
-            pending = self._pending_by_target.setdefault(target, [])
-            if task_id not in pending:
-                pending.append(task_id)
-            text = render_message_text(message)
-            if text:
-                self._run(
-                    self.agent.chat(
-                        text,
-                        target=target,
-                        metadata={
-                            A2A_METADATA_TASK_ID: task_id,
-                            A2A_METADATA_CONTEXT_ID: context_id,
-                            OPERATION_KEY: execution_id(
-                                {"id": task_id, "contextId": context_id}, message
-                            ),
-                        },
-                    ),
-                    timeout_seconds=operation_timeout_seconds,
-                )
-
     def _store_request_push_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:
         """Forward one send-time push config to the notifier.
 
@@ -548,80 +465,9 @@ class A2ABridge:
         if deliver_push:
             self._notifier.deliver_all(task)
 
-    def _remove_pending_task(self, task_id: str) -> None:
-        """Remove ``task_id`` from all pending fallback correlation lists."""
-        for target, pending in list(self._pending_by_target.items()):
-            self._pending_by_target[target] = [stored for stored in pending if stored != task_id]
-            if not self._pending_by_target[target]:
-                del self._pending_by_target[target]
-
-    def _pending_task_for_sender(self, sender: str) -> str | None:
-        """Return the oldest pending task for one SYNAPSE sender."""
-        pending = self._pending_by_target.get(sender)
-        if not pending:
-            return None
-        while pending:
-            task_id = pending.pop(0)
-            if self.store.get(task_id) is not None:
-                return task_id
-        del self._pending_by_target[sender]
-        return None
-
-    def _sender_matches_task(self, task: JsonMap, sender: str) -> bool:
-        """Return whether ``sender`` is allowed to complete ``task``."""
-        metadata = task.get("metadata")
-        target = ""
-        if isinstance(metadata, dict):
-            target = str(metadata.get("synapseTarget") or "")
-        return target in {"", "all", sender}
-
     def handle_synapse_frame(self, data: JsonMap) -> None:
         """Correlate an inbound SYNAPSE chat frame to an open A2A task."""
-        with self._correlation_lock:
-            if data.get("type") != "chat":
-                return
-            payload = str(data.get("payload", ""))
-            sender = str(data.get("sender", ""))
-
-            task_id, context_id, has_correlation_metadata = _a2a_metadata_correlation(data)
-            if has_correlation_metadata and (task_id is None or context_id is None):
-                return
-            if task_id is None and sender in self._pending_by_target:
-                task_id = self._pending_task_for_sender(sender)
-
-            if not task_id:
-                return
-            task = self.store.get(task_id)
-            if task is None or not self._sender_matches_task(task, sender):
-                return
-            if has_correlation_metadata and str(task.get("contextId", "")) != context_id:
-                return
-            status = task.get("status", {})
-            if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
-                return
-
-            task = bind_reply(task, data)
-            if task is None:
-                return
-
-            reply_text = payload.strip()
-            reply_part: JsonMap = {
-                "messageId": str(uuid.uuid4()),
-                "role": "ROLE_AGENT",
-                "parts": [{"text": reply_text, "mediaType": "text/plain"}],
-            }
-            task["history"] = [*task.get("history", []), reply_part]
-            task["artifacts"] = list(task.get("artifacts", []))
-            task["artifacts"].append(
-                {
-                    "artifactId": f"synapse-reply-{task_id}",
-                    "name": "SYNAPSE reply",
-                    "description": f"Correlated reply from {sender}",
-                    "parts": [{"text": reply_text, "mediaType": "text/plain"}],
-                }
-            )
-            self._remove_pending_task(task_id)
-            self._set_task_status(task, state="TASK_STATE_COMPLETED", message=reply_part)
+        self._correlator.handle_frame(data)
 
     def expire_timed_out_tasks(self, *, now: float | None = None) -> list[JsonMap]:
         """Fail open tasks whose reply deadline has elapsed."""
@@ -642,7 +488,7 @@ class A2ABridge:
         if self.task_timeout_seconds <= 0.0:
             return []
         failed: list[JsonMap] = []
-        with self._correlation_lock:
+        with self._correlator.lock:
             for task in self.store.list_tasks():
                 status = task.get("status", {})
                 if not isinstance(status, dict) or status.get("state") not in OPEN_TASK_STATES:
@@ -663,7 +509,7 @@ class A2ABridge:
                     "role": "ROLE_AGENT",
                     "parts": [{"text": detail, "mediaType": "text/plain"}],
                 }
-                self._remove_pending_task(task_id)
+                self._correlator.remove_pending(task_id)
                 failed.append(
                     self._set_task_status(task, state="TASK_STATE_FAILED", message=message)
                 )
@@ -708,14 +554,14 @@ class A2ABridge:
 
     def cancel_task(self, task_id: str) -> JsonMap | None:
         """Cancel a stored A2A task."""
-        with self._correlation_lock:
+        with self._correlator.lock:
             task = self.store.get(task_id)
             if task is None:
                 return None
             status = task.get("status", {})
             if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
                 return task
-            self._remove_pending_task(task_id)
+            self._correlator.remove_pending(task_id)
             return self._set_task_status(task, state="TASK_STATE_CANCELED")
 
     def subscribe_task(self, task_id: str) -> JsonMap | None:
