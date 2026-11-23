@@ -48,13 +48,8 @@ from synapse_channel.core.message_auth import (
     verify_frame,
 )
 from synapse_channel.core.message_auth_key_set import MessageAuthKeySet
-from synapse_channel.core.multihub_claim_transport import (
-    ClaimForwarder,
-    ClaimForwardError,
-    ClaimForwardPeer,
-    ClaimForwardTimeoutError,
-)
-from synapse_channel.core.multihub_claim_wire import ClaimForwardRequest
+from synapse_channel.core.multihub_claim_forwarding import ClaimForwarding
+from synapse_channel.core.multihub_claim_transport import ClaimForwarder, ClaimForwardPeer
 from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipOutcome
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.release_confirmation import (
@@ -138,10 +133,14 @@ class HubFrameGates:
         self._acl_policy = acl_policy
         self._namespace_ownership = namespace_ownership
         self._observed_asserting_hubs_feed = observed_asserting_hubs
-        self._claim_peers = claim_peers
-        self._claim_forwarder = claim_forwarder
-        self._counters = counters
-        self._hub_id = hub_id
+        self._claim_forwarding = ClaimForwarding(
+            claim_peers=claim_peers,
+            claim_forwarder=claim_forwarder,
+            counters=counters,
+            hub_id=hub_id,
+            send_json=send_json,
+            system=system,
+        )
         self._send_json = send_json
         self._system = system
 
@@ -274,7 +273,7 @@ class HubFrameGates:
                 ),
             )
             return False
-        if decision.outcome is OwnershipOutcome.REMOTE and await self.forward_remote_claim(
+        if decision.outcome is OwnershipOutcome.REMOTE and await self._claim_forwarding.forward(
             sender, namespace, task_id, data, decision.owner_hub_id or "", websocket
         ):
             return False
@@ -309,98 +308,3 @@ class HubFrameGates:
         if self._observed_asserting_hubs_feed is None:
             return ()
         return tuple(self._observed_asserting_hubs_feed(namespace))
-
-    async def forward_remote_claim(
-        self,
-        sender: str,
-        namespace: str,
-        task_id: str,
-        data: dict[str, Any],
-        owner_hub_id: str,
-        websocket: Any,
-    ) -> bool:
-        """Forward a remote-owned claim to its owning hub and relay the verdict to the claimant.
-
-        The owning hub applies the claim authoritatively and answers with a grant or a denial,
-        which is relayed privately to the claimant — a grant carries the authentic lease fields,
-        so the client sees the same ``CLAIM_GRANTED`` it would for a local claim.
-
-        Returns
-        -------
-        bool
-            ``True`` when the claim was forwarded and a verdict relayed, so the local grant path
-            must not also run. ``False`` when no route is configured for the owner, the task
-            carries no id to forward, or the forward failed — leaving the caller to refuse the
-            claim and name the owner, fail-closed.
-        """
-        peer = self._claim_peers.get(owner_hub_id) if self._claim_peers else None
-        if peer is None or not task_id:
-            return False
-        request = ClaimForwardRequest(
-            namespace=namespace, claimant=sender, task_id=task_id, claim=data
-        )
-        self._counters.forwarded_claims += 1
-        try:
-            forward_kwargs: dict[str, Any] = {
-                "uri": peer.uri,
-                "local_id": self._hub_id,
-                "token": peer.token,
-            }
-            if peer.connector is not None:
-                forward_kwargs["connector"] = peer.connector
-            if peer.signer is not None:
-                forward_kwargs["signer"] = peer.signer
-            result = await self._claim_forwarder(request, **forward_kwargs)
-        except ClaimForwardTimeoutError:
-            self._counters.forwarded_claim_timeouts += 1
-            logger.warning(
-                "Forwarding claim %r for %s to owner %s timed out",
-                task_id,
-                sender,
-                owner_hub_id,
-            )
-            await self._send_json(
-                websocket,
-                self._system(
-                    f"claim refused: owning hub {owner_hub_id!r} did not answer "
-                    f"forwarded claim {task_id!r} before timeout",
-                    msg_type=MessageType.CLAIM_DENIED,
-                    target=sender,
-                    task_id=task_id,
-                    namespace=namespace,
-                    owner_hub_id=owner_hub_id,
-                    ownership="remote",
-                    forward_error="timeout",
-                ),
-            )
-            return True
-        except ClaimForwardError:
-            logger.warning(
-                "Forwarding claim %r for %s to owner %s failed", task_id, sender, owner_hub_id
-            )
-            return False
-        if result.granted and result.grant is not None:
-            self._counters.forwarded_claims_granted += 1
-            await self._send_json(
-                websocket,
-                self._system(
-                    result.detail or f"claim granted by {owner_hub_id}",
-                    msg_type=MessageType.CLAIM_GRANTED,
-                    target=sender,
-                    **result.grant,
-                ),
-            )
-        else:
-            self._counters.forwarded_claims_denied += 1
-            await self._send_json(
-                websocket,
-                self._system(
-                    result.detail or "claim refused by the owning hub",
-                    msg_type=MessageType.CLAIM_DENIED,
-                    target=sender,
-                    task_id=task_id,
-                    namespace=namespace,
-                    owner_hub_id=owner_hub_id,
-                ),
-            )
-        return True

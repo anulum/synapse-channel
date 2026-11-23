@@ -476,8 +476,9 @@ it on the grant path — a claim whose namespace (derived from the agent identit
 ACL derives it) the hub does not own is refused with a `claim_denied` naming the owning
 hub, so the caller knows where to route it; a hub with no map grants every namespace, as
 a single hub does today. The networked half now ships too, opt-in: a hub configured with
-`claim_peers` (a route to each owning hub) forwards a remote-owned claim over a connection
-through `core/multihub_claim_transport.py`, the owner grants it on the serving side
+`claim_peers` (a route to each owning hub) forwards a remote-owned claim from the
+origin half (`core/multihub_claim_forwarding.py`) over a connection through
+`core/multihub_claim_transport.py`, the owner grants it on the serving side
 (`core/handlers/multihub_claim.py`), and the verdict is relayed to the claimant — a grant
 carrying the owner's authentic lease. An unreachable owner falls back to the refusal that
 names the owner, fail-closed. Runtime partition detection ships too, opt-in: a hub wired with

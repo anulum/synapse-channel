@@ -28,7 +28,6 @@ from synapse_channel.core.multihub_claim_transport import (
     ClaimForwarder,
     ClaimForwardError,
     ClaimForwardPeer,
-    ClaimForwardTimeoutError,
 )
 from synapse_channel.core.multihub_claim_wire import ClaimForwardResult
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
@@ -56,11 +55,13 @@ class _FakeForwarder:
         self._result = result
         self._error = error
         self.calls: list[tuple[str, str | None]] = []
+        self.requests: list[Any] = []
 
     async def __call__(
         self, request: Any, *, uri: str, local_id: str, token: str | None = None
     ) -> ClaimForwardResult:
         self.calls.append((uri, local_id))
+        self.requests.append(request)
         if self._error is not None:
             raise self._error
         assert self._result is not None
@@ -325,7 +326,11 @@ async def test_claim_ownership_ignores_non_claim_frames() -> None:
 
 async def test_claim_ownership_grants_a_locally_owned_namespace() -> None:
     ownership = NamespaceOwnership({"P": "syn-local"}, "syn-local")
-    gates, rec = _gates(namespace_ownership=ownership)
+    gates, rec = _gates(
+        namespace_ownership=ownership,
+        claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/")},
+        claim_forwarder=_never_forwards(),
+    )
     assert (
         await gates.authorise_claim_ownership("P/a", MessageType.CLAIM, {"task_id": "T1"}, _WS)
         is True
@@ -353,7 +358,36 @@ async def test_claim_ownership_forwards_a_remote_owned_namespace() -> None:
 
     assert result is False  # handled here — the local grant path must not also run
     assert forwarder.calls == [("ws://remote/", "syn-local")]
+    assert len(forwarder.requests) == 1
+    assert forwarder.requests[0].namespace == "P"
+    assert forwarder.requests[0].task_id == "T1"
+    assert forwarder.requests[0].claimant == "P/a"
     assert rec.sent[0][1]["type"] == MessageType.CLAIM_GRANTED
+
+
+async def test_claim_ownership_refuses_local_renewal_before_forwarding() -> None:
+    ownership = NamespaceOwnership({"P": "syn-remote"}, "syn-local")
+    gates, rec = _gates(
+        namespace_ownership=ownership,
+        claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/")},
+        claim_forwarder=_never_forwards(),
+    )
+
+    result = await gates.authorise_claim_ownership(
+        "P/a",
+        MessageType.CLAIM,
+        {"task_id": "T1", "local_renewal": True, "renewal_id": "r1", "idem_key": "k1"},
+        _WS,
+    )
+
+    assert result is False
+    frame = rec.sent[0][1]
+    assert frame["type"] == MessageType.CLAIM_DENIED
+    assert frame["reason_code"] == "RENEWAL_REQUIRES_OWNER_HUB"
+    assert frame["owner_hub_id"] == "syn-remote"
+    assert frame["task_id"] == "T1"
+    assert frame["renewal_id"] == "r1"
+    assert frame["claim_request_id"] == "k1"
 
 
 async def test_claim_ownership_refuses_when_the_forward_fails() -> None:
@@ -370,6 +404,8 @@ async def test_claim_ownership_refuses_when_the_forward_fails() -> None:
     assert result is False
     frame = rec.sent[0][1]
     assert frame["type"] == MessageType.CLAIM_DENIED
+    assert frame["ownership"] == "remote"
+    assert frame["owner_hub_id"] == "syn-remote"
     assert "does not own namespace" in frame["payload"]
 
 
@@ -411,119 +447,5 @@ def test_observed_asserting_hubs_reads_the_feed() -> None:
     assert gates.observed_asserting_hubs("P") == ("P-h1", "h2")
 
 
-# -- forward_remote_claim ----------------------------------------------------
-
-
-async def test_forward_remote_claim_without_peers_is_a_no_op() -> None:
-    gates, rec = _gates(claim_peers=None)
-    assert await gates.forward_remote_claim("P/a", "P", "T1", {}, "syn-remote", _WS) is False
-    assert rec.sent == []
-
-
-async def test_forward_remote_claim_without_a_route_for_the_owner() -> None:
-    gates, rec = _gates(claim_peers={"other": ClaimForwardPeer(uri="ws://other/")})
-    assert await gates.forward_remote_claim("P/a", "P", "T1", {}, "syn-remote", _WS) is False
-    assert rec.sent == []
-
-
-async def test_forward_remote_claim_without_a_task_id() -> None:
-    gates, rec = _gates(claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/")})
-    assert await gates.forward_remote_claim("P/a", "P", "", {}, "syn-remote", _WS) is False
-    assert rec.sent == []
-
-
-async def test_forward_remote_claim_relays_a_grant() -> None:
-    grant = ClaimForwardResult(
-        granted=True,
-        task_id="T1",
-        namespace="P",
-        owner_hub_id="syn-remote",
-        detail="granted upstream",
-        grant={"task_id": "T1", "lease_expires_at": 9.0},
-    )
-    forwarder = _FakeForwarder(result=grant)
-    counters = HubCounters()
-    gates, rec = _gates(
-        claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/", token="tok")},
-        claim_forwarder=cast(ClaimForwarder, forwarder),
-        counters=counters,
-    )
-
-    result = await gates.forward_remote_claim("P/a", "P", "T1", {}, "syn-remote", _WS)
-
-    assert result is True
-    frame = rec.sent[0][1]
-    assert frame["type"] == MessageType.CLAIM_GRANTED
-    assert frame["task_id"] == "T1"
-    assert counters.forwarded_claims == 1
-    assert counters.forwarded_claims_granted == 1
-
-
-async def test_forward_remote_claim_relays_a_denial() -> None:
-    denied = ClaimForwardResult(
-        granted=False, task_id="T1", namespace="P", owner_hub_id="syn-remote"
-    )
-    forwarder = _FakeForwarder(result=denied)
-    counters = HubCounters()
-    gates, rec = _gates(
-        claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/")},
-        claim_forwarder=cast(ClaimForwarder, forwarder),
-        counters=counters,
-    )
-
-    result = await gates.forward_remote_claim("P/a", "P", "T1", {}, "syn-remote", _WS)
-
-    assert result is True
-    assert rec.sent[0][1]["type"] == MessageType.CLAIM_DENIED
-    assert counters.forwarded_claims == 1
-    assert counters.forwarded_claims_denied == 1
-
-
-async def test_forward_remote_claim_treats_a_grantless_grant_as_a_denial() -> None:
-    # granted is True but no lease fields accompanied it — relayed as a denial.
-    grantless = ClaimForwardResult(
-        granted=True, task_id="T1", namespace="P", owner_hub_id="syn-remote", grant=None
-    )
-    forwarder = _FakeForwarder(result=grantless)
-    gates, rec = _gates(
-        claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/")},
-        claim_forwarder=cast(ClaimForwarder, forwarder),
-    )
-
-    assert await gates.forward_remote_claim("P/a", "P", "T1", {}, "syn-remote", _WS) is True
-    assert rec.sent[0][1]["type"] == MessageType.CLAIM_DENIED
-
-
-async def test_forward_remote_claim_returns_false_on_a_forward_error() -> None:
-    forwarder = _FakeForwarder(error=ClaimForwardError("owner unreachable"))
-    counters = HubCounters()
-    gates, rec = _gates(
-        claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/")},
-        claim_forwarder=cast(ClaimForwarder, forwarder),
-        counters=counters,
-    )
-
-    assert await gates.forward_remote_claim("P/a", "P", "T1", {}, "syn-remote", _WS) is False
-    assert rec.sent == []
-    assert counters.forwarded_claims == 1
-    assert counters.forwarded_claim_timeouts == 0
-
-
-async def test_forward_remote_claim_reports_timeout_and_refuses_in_place() -> None:
-    forwarder = _FakeForwarder(error=ClaimForwardTimeoutError("owner timed out"))
-    counters = HubCounters()
-    gates, rec = _gates(
-        claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/")},
-        claim_forwarder=cast(ClaimForwarder, forwarder),
-        counters=counters,
-    )
-
-    handled = await gates.forward_remote_claim("P/a", "P", "T1", {}, "syn-remote", _WS)
-
-    assert handled is True
-    frame = rec.sent[0][1]
-    assert frame["type"] == MessageType.CLAIM_DENIED
-    assert frame["forward_error"] == "timeout"
-    assert "did not answer" in frame["payload"]
-    assert counters.forwarded_claims == 1
-    assert counters.forwarded_claim_timeouts == 1
+def test_hub_frame_gates_keeps_no_forward_remote_claim_alias() -> None:
+    assert not hasattr(HubFrameGates, "forward_remote_claim")

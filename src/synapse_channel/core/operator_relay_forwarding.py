@@ -69,7 +69,7 @@ class OperatorRelayForwarding:
     """Route an inbound operator-relay frame: apply locally, forward to the owner, or refuse.
 
     The origin-side counterpart to
-    :meth:`~synapse_channel.core.hub_frame_gates.HubFrameGates.forward_remote_claim`. It runs as
+    :meth:`~synapse_channel.core.multihub_claim_forwarding.ClaimForwarding.forward`. It runs as
     a gate before dispatch: :meth:`route` returns whether the frame may proceed to the local
     serving handler (this hub owns the namespace) or was handled here (forwarded to the owner and
     the verdict relayed, or refused). Policy inputs are captured at construction — the hub never

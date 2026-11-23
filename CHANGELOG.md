@@ -43,6 +43,10 @@ execution evidence when carrying a release claim forward.
   `core/handlers/dead_letter_forwarding.py`, while `route_chat` passes `partial(escalate_dead_letter, hub)`. Wire
   frames, escalation audits and peer-forwarding behaviour are unchanged.
 
+- **The origin half of cross-hub claim forwarding moves out of `HubFrameGates` into `core/multihub_claim_forwarding.py` (`ClaimForwarding`); behaviour is unchanged.**
+  - **The boundary.** `ClaimForwarding` owns route lookup, `ClaimForwardRequest` construction, forwarding with the peer's transport options (`uri`, `local_id`, `token`, and optional `connector` and `signer`), attempt and outcome counters, timeout refusal (`forward_error="timeout"`), and verdict relay (`forward()` and `_relay_verdict()`). `HubFrameGates` keeps its 14-parameter constructor as a facade, retains per-message authentication, ACL enforcement, and namespace-ownership authorisation, and removes `forward_remote_claim` with no alias.
+  - **Why.** Forwarding execution is the origin half of cross-hub claim routing (parallel to `OperatorRelayForwarding`), separate from authorisation policy; moving it removes `HubFrameGates.forward_remote_claim` from the structure budget with no new ceiling added and leaves `core/hub_component_delivery.py` and `synapse_channel.federation_api` unchanged.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

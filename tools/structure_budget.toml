@@ -139,7 +139,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/handlers/planning.py::handle_ledger_task_update" = 63
 "src/synapse_channel/core/hub_clients.py::HubClientRegistry.resolve_sender" = 142
 "src/synapse_channel/core/hub_federation_gate.py::HubFederationGate.authorise" = 71
-"src/synapse_channel/core/hub_frame_gates.py::HubFrameGates.forward_remote_claim" = 71
 "src/synapse_channel/core/hub_state_seed.py::seed_hub_state" = 72
 "src/synapse_channel/core/mcp_config.py::_parse_server" = 67
 "src/synapse_channel/core/mcp_config_launch.py::bind_mcp_server_launch" = 82

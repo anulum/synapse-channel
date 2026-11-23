@@ -1260,8 +1260,10 @@ hub, and only that hub grants claims inside it.
 routed to the namespace's owning hub, never satisfied from the observed fold.
 
 **Implementation.** `core/multihub_fold.py` (`ObservedClaim`, advisory-only),
-`core/multihub_claim_transport.py` / `core/handlers/multihub_claim.py`
-(forward-to-owner, fail-closed authorisation).
+`core/hub_frame_gates.py` (fail-closed authorisation by ownership),
+`core/multihub_claim_forwarding.py` (`ClaimForwarding`: forward to the owner and
+relay the verdict), `core/multihub_claim_transport.py`, and
+`core/handlers/multihub_claim.py` (serving half).
 
 **Pinned by.** `tests/test_multihub_fold.py`, `tests/test_hub_claim_forwarding.py`.
 
