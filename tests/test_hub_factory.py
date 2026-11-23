@@ -21,7 +21,8 @@ from synapse_channel.core import hub_factory
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.hub_component_callbacks import HubComponentCallbacks
 from synapse_channel.core.hub_components import HubComponents
-from synapse_channel.core.hub_config import HubConfig, HubLimits, config_fingerprint
+from synapse_channel.core.hub_config import HubConfig, config_fingerprint
+from synapse_channel.core.hub_config_limits import HubLimits
 from synapse_channel.core.hub_factory import build_components, build_hub
 from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
 from synapse_channel.core.journal import EventKind

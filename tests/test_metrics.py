@@ -134,7 +134,8 @@ def test_corrupt_journal_rows_degrade_health_and_metric(tmp_path: Path) -> None:
 
 
 def test_health_snapshot_reports_the_config_epoch_of_a_configured_hub() -> None:
-    from synapse_channel.core.hub_config import HubConfig, HubLimits, config_fingerprint
+    from synapse_channel.core.hub_config import HubConfig, config_fingerprint
+    from synapse_channel.core.hub_config_limits import HubLimits
 
     config = HubConfig(limits=HubLimits(max_clients=7))
     hub = SynapseHub.from_config(config)

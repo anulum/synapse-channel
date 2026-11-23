@@ -47,6 +47,15 @@ execution evidence when carrying a release claim forward.
   - **The boundary.** `ClaimForwarding` owns route lookup, `ClaimForwardRequest` construction, forwarding with the peer's transport options (`uri`, `local_id`, `token`, and optional `connector` and `signer`), attempt and outcome counters, timeout refusal (`forward_error="timeout"`), and verdict relay (`forward()` and `_relay_verdict()`). `HubFrameGates` keeps its 14-parameter constructor as a facade, retains per-message authentication, ACL enforcement, and namespace-ownership authorisation, and removes `forward_remote_claim` with no alias.
   - **Why.** Forwarding execution is the origin half of cross-hub claim routing (parallel to `OperatorRelayForwarding`), separate from authorisation policy; moving it removes `HubFrameGates.forward_remote_claim` from the structure budget with no new ceiling added and leaves `core/hub_component_delivery.py` and `synapse_channel.federation_api` unchanged.
 
+- **Hub configuration family records now live in their owning area modules; behaviour is unchanged.**
+  `HubAuthConfig` moves to `core/hub_config_auth.py`, `HubLimits` and `TakeoverDamping` move to
+  `core/hub_config_limits.py`, `HubMetricsConfig` and `HubLiveness` move to `core/hub_config_metrics.py`,
+  and `MultiHubConfig` and `FederationConfig` move to `core/hub_config_routing.py`. `core/hub_config.py`
+  still exports all eight names in `__all__` as the exact same objects, so the deep import path keeps
+  working; every top-level package export (`synapse_channel.*`) is unchanged (`HubLiveness` remains
+  unexported); and each moved family record's `__module__` is now its owning area module.
+  `core/hub_config.py` drops from 31 to 12 internal imports and leaves the structure-budget ledger.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

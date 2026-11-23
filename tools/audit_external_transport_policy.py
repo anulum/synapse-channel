@@ -173,7 +173,7 @@ EXTERNAL_TRANSPORT_POLICIES: Final[tuple[ExternalTransportPolicy, ...]] = (
         timeout_concurrency="inherits hub HTTP handshake and connection ceilings",
         sanitized_errors="fixed unauthorized response and numeric metric labels only",
         evidence=(
-            "synapse_channel.core.hub_config:HubMetricsConfig",
+            "synapse_channel.core.hub_config_metrics:HubMetricsConfig",
             "synapse_channel.core.hub_exposure:exposure_problems",
             "synapse_channel.core.hub_http:metrics_authorised",
             "synapse_channel.core.metrics:render_prometheus",

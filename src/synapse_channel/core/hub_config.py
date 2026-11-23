@@ -9,17 +9,19 @@
 
 ``SynapseHub.__init__`` accepts a :class:`HubConfig` record as its canonical
 input. Existing keyword callers remain supported through the typed
-``HubLegacyOptions`` boundary. :class:`HubConfig` groups settings into their
-families — ceilings (:class:`HubLimits`), name-takeover damping
-(:class:`TakeoverDamping`), authentication and access control
-(:class:`HubAuthConfig`), the HTTP metrics endpoint
-(:class:`HubMetricsConfig`), the stale-recipient delivery gate
-(:class:`HubLiveness`), multi-hub claim routing (:class:`MultiHubConfig`),
-and cross-domain federation (:class:`FederationConfig`). Family records own
-defaults. The hub retains normalized settings in its configuration record and
-keeps live state separately. :meth:`HubConfig.to_kwargs` supplies the original
-keyword surface for embedding subclasses and other legacy callers. Contract
-tests pin all 86 original names, types and defaults independently.
+``HubLegacyOptions`` boundary. :class:`HubConfig` composes seven family records
+owned by their area modules — ceilings (:class:`HubLimits`) and name-takeover
+damping (:class:`TakeoverDamping`) in :mod:`~synapse_channel.core.hub_config_limits`,
+authentication and access control (:class:`HubAuthConfig`) in
+:mod:`~synapse_channel.core.hub_config_auth`, the HTTP metrics endpoint
+(:class:`HubMetricsConfig`) and stale-recipient delivery gate (:class:`HubLiveness`)
+in :mod:`~synapse_channel.core.hub_config_metrics`, and multi-hub claim routing
+(:class:`MultiHubConfig`) and cross-domain federation (:class:`FederationConfig`)
+in :mod:`~synapse_channel.core.hub_config_routing`. Family records own defaults.
+The hub retains normalized settings in its configuration record and keeps live
+state separately. :meth:`HubConfig.to_kwargs` supplies the original keyword
+surface for embedding subclasses and other legacy callers. Contract tests pin
+all 86 original names, types and defaults independently.
 
 Construct a hub from a record with
 :meth:`~synapse_channel.core.hub.SynapseHub.from_config`::
@@ -35,92 +37,27 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.core.acl import AclPolicy
-from synapse_channel.core.agent_liveness import (
-    DEFAULT_RECIPIENT_LIVENESS_WINDOW,
-    DEFAULT_WAITER_LIVENESS_WINDOW,
-    DEFAULT_WARN_STALE_RECIPIENTS,
-)
 from synapse_channel.core.attachment_serving import AttachmentServingPolicy
 from synapse_channel.core.attachment_store import AttachmentStore
-from synapse_channel.core.auth import TokenAuthenticator
-from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
-from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
-from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
-from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
 from synapse_channel.core.durable_ingress import DurableIngressQuota
-from synapse_channel.core.federation import FederationBundle
+from synapse_channel.core.hub_config_auth import HubAuthConfig
+from synapse_channel.core.hub_config_limits import HubLimits, TakeoverDamping
+from synapse_channel.core.hub_config_metrics import HubLiveness, HubMetricsConfig
+from synapse_channel.core.hub_config_routing import FederationConfig, MultiHubConfig
 from synapse_channel.core.hub_defaults import (
-    DEFAULT_AUTH_TIMEOUT,
-    DEFAULT_COMPACT_HINT_THRESHOLD,
     DEFAULT_FEED_CHAT_MARKERS,
-    DEFAULT_MAX_CLIENTS,
-    DEFAULT_MAX_CONNECTIONS_PER_HOST,
-    DEFAULT_MAX_FINDINGS_PER_AGENT,
-    DEFAULT_MAX_HISTORY,
-    DEFAULT_MAX_MSG_BYTES,
     DEFAULT_RELAY_MAX_LINES,
     DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
-    DEFAULT_STOP_BOUND_SECONDS,
-    DEFAULT_TAKEOVER_COOLDOWN,
-    DEFAULT_TAKEOVER_OSCILLATION_THRESHOLD,
-    DEFAULT_TAKEOVER_OSCILLATION_WINDOW,
-    DEFAULT_TAKEOVER_QUARANTINE,
-)
-from synapse_channel.core.identity_enrollments import (
-    DEFAULT_ENROLLMENT_RATE,
-    DEFAULT_ENROLLMENT_WINDOW_SECONDS,
-)
-from synapse_channel.core.ledger import (
-    DEFAULT_MAX_PROGRESS,
-    DEFAULT_MAX_PROGRESS_PER_AUTHOR,
-    DEFAULT_MAX_PROGRESS_PER_TASK,
 )
 from synapse_channel.core.merkle_checkpoint import DEFAULT_CHECKPOINT_INTERVAL
-from synapse_channel.core.message_auth import (
-    DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
-    EventSignatureTrustBundle,
-    MessageAuthKey,
-)
-from synapse_channel.core.message_auth_durable import (
-    DurableMessageAuthReplayStore,
-    SequenceFloorMode,
-)
-from synapse_channel.core.message_forward_origin import DEFAULT_FORWARD_TTL_SECONDS
-from synapse_channel.core.message_forward_transport import (
-    MessageForwarder,
-    MessageForwardPeer,
-    forward_message,
-)
-from synapse_channel.core.multihub_claim_transport import (
-    ClaimForwarder,
-    ClaimForwardPeer,
-    forward_claim,
-)
-from synapse_channel.core.multihub_serving import (
-    MultiHubServingPolicy,
-    PeerCertificateSource,
-    live_peer_certificate_der,
-)
-from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL
-from synapse_channel.core.namespace_ownership import NamespaceOwnership
-from synapse_channel.core.operator_relay_transport import (
-    OperatorRelayPeer,
-    RelayForwarder,
-    relay_operator_action,
-)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protected_write_admission_journal import ProtectedAdmissionReplayPolicy
 from synapse_channel.core.ratelimit import RateLimiter
-from synapse_channel.core.role_grants import RoleGrants
-from synapse_channel.core.scoping import MAX_DECLARED_PATHS
-from synapse_channel.core.spend_ledger import SpendLedger
-from synapse_channel.core.state import MAX_CLAIMS_PER_AGENT, MAX_OFFERS_PER_AGENT
 
 __all__ = [
     "FederationConfig",
@@ -132,168 +69,6 @@ __all__ = [
     "MultiHubConfig",
     "TakeoverDamping",
 ]
-
-
-@dataclass(frozen=True, kw_only=True)
-class HubLimits:
-    """Every ceiling the hub enforces: retention, quotas, and transport bounds.
-
-    Field names retain the original ``SynapseHub`` keywords. See the hub's
-    parameter documentation for the meaning and failure mode of each bound.
-    """
-
-    max_history: int = DEFAULT_MAX_HISTORY
-    max_msg_bytes: int = DEFAULT_MAX_MSG_BYTES
-    max_clients: int = DEFAULT_MAX_CLIENTS
-    max_unauth_clients: int | None = None
-    max_connections_per_host: int | None = DEFAULT_MAX_CONNECTIONS_PER_HOST
-    max_progress: int = DEFAULT_MAX_PROGRESS
-    max_progress_per_author: int = DEFAULT_MAX_PROGRESS_PER_AUTHOR
-    max_progress_per_task: int = DEFAULT_MAX_PROGRESS_PER_TASK
-    board_task_cap: int | None = None
-    max_findings_per_agent: int = DEFAULT_MAX_FINDINGS_PER_AGENT
-    max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT
-    max_offers_per_agent: int = MAX_OFFERS_PER_AGENT
-    max_paths_per_claim: int = MAX_DECLARED_PATHS
-    compact_hint_threshold: int = DEFAULT_COMPACT_HINT_THRESHOLD
-    dead_letter_escalation_threshold: int = DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
-
-
-@dataclass(frozen=True, kw_only=True)
-class TakeoverDamping:
-    """Damping and ownership rules applied when one agent name is contested.
-
-    Cooldown blunts a single eviction storm; the oscillation window and
-    threshold detect two waiters at war over one name; quarantine pins a
-    thrashing name to its current owner. The lease offline TTL bounds how
-    long a name's ownership lease outlives its holder's disconnect, so a
-    re-arming owner re-takes its name and a stranger cannot squat it in the
-    gap.
-    """
-
-    takeover_cooldown: float = DEFAULT_TAKEOVER_COOLDOWN
-    takeover_oscillation_window: float = DEFAULT_TAKEOVER_OSCILLATION_WINDOW
-    takeover_oscillation_threshold: int = DEFAULT_TAKEOVER_OSCILLATION_THRESHOLD
-    takeover_quarantine: float = DEFAULT_TAKEOVER_QUARANTINE
-    lease_offline_ttl: float = DEFAULT_LEASE_OFFLINE_TTL
-
-
-@dataclass(frozen=True, kw_only=True)
-class HubAuthConfig:
-    """Connection authentication, per-message authentication, and ACL enforcement.
-
-    Everything here defaults to the open loopback posture: no token, no
-    signed frames, no ACL. Each mechanism is opt-in and composes with the
-    others exactly as the flat keyword surface documents.
-    """
-
-    authenticator: TokenAuthenticator | None = None
-    auth_timeout: float = DEFAULT_AUTH_TIMEOUT
-    insecure_off_loopback: bool = False
-    insecure_plaintext_at_rest: bool = False
-    per_message_auth_keys: Mapping[str, MessageAuthKey] | list[MessageAuthKey] | None = None
-    require_per_message_auth: bool = False
-    per_message_auth_window_seconds: float = DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS
-    per_message_auth_replay_capacity: int = 4096
-    per_message_auth_replay_store: DurableMessageAuthReplayStore | None = None
-    per_message_auth_sequence_floor_mode: SequenceFloorMode | str = SequenceFloorMode.OFF
-    signed_event_trust_bundle: EventSignatureTrustBundle | None = None
-    capability_card_trust_bundle: CapabilityCardTrustBundle | None = None
-    acl_policy: AclPolicy | None = None
-    require_acl: bool = False
-    role_grants: RoleGrants | None = None
-    # Live approval-load state (core.approval_load.ApprovalLoad) for a declared policy.
-    # Held as ``object`` because this module is at its structure-budget ceiling of 31
-    # internal imports; normalisation refuses any non-None value that is not an
-    # ApprovalLoad (TypeError), and the hub's view narrows it to ``ApprovalLoad | None``.
-    approval_load: object = None
-    # Validated name/project/'*' -> custodian entries (see core.mailbox_custodians).
-    mailbox_custodians: Mapping[str, str] | None = None
-    require_role_claim: bool = False
-    require_fencing_epoch: bool = False
-    require_signed_frames: bool = False
-    require_identity_proof: bool = False
-    identity_trust_bundle: EventSignatureTrustBundle | None = None
-    require_identity_binding: bool = False
-    identity_pin_path: str | Path | None = None
-    identity_enrollment_path: str | Path | None = None
-    identity_enrollment_namespaces: tuple[str, ...] = ()
-    identity_enrollment_rate: int = DEFAULT_ENROLLMENT_RATE
-    identity_enrollment_window_seconds: float = DEFAULT_ENROLLMENT_WINDOW_SECONDS
-    private_directed_messages: bool = False
-    verdict_authority: Mapping[str, frozenset[str]] = field(default_factory=dict)
-    verdict_gate_enabled: bool = True
-    allow_unrecorded_verdict_inputs: bool = False
-    ladder_enabled: bool = False
-    stop_bound_seconds: float = DEFAULT_STOP_BOUND_SECONDS
-
-
-@dataclass(frozen=True, kw_only=True)
-class HubMetricsConfig:
-    """The optional HTTP ``/metrics`` and ``/health`` endpoint and its token or token set.
-
-    ``metrics_token_set`` (hub keyword of the same name) is an authenticator for the two
-    routes beside, or instead of, ``metrics_token``: normally a
-    :class:`~synapse_channel.core.token_set.TokenSetAuthenticator` read from an owner-only
-    token-set file (``--metrics-token-set``). The file is re-read when it changes, so the
-    metrics bearer rotates without a restart; entries carry validity windows, and an entry
-    that names agents admits no metrics request. With a journal, each applied or rejected
-    set is an audit row.
-    """
-
-    enable_metrics: bool = False
-    metrics_token: str | None = None
-    metrics_token_set: TokenAuthenticator | None = None
-    metrics_query_token_ok: bool = False
-    allowed_origins: tuple[str, ...] = ()
-    advertised_host: str | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
-class HubLiveness:
-    """The stale-recipient policy that tells a present agent from a deaf one.
-
-    On by default: a directed message to a recipient that is present but has no
-    proof of liveness — no ``-rx`` waiter sidecar whose keepalive is fresh within
-    ``waiter_liveness_window`` seconds, and no genuine reaction within
-    ``recipient_liveness_window`` seconds — draws a private warning, cannot count
-    as a positive directed delivery, and is marked distinctly by ``/who``.
-    Operators can opt out explicitly for the legacy socket-presence behaviour.
-    """
-
-    warn_stale_recipients: bool = DEFAULT_WARN_STALE_RECIPIENTS
-    recipient_liveness_window: float = DEFAULT_RECIPIENT_LIVENESS_WINDOW
-    waiter_liveness_window: float = DEFAULT_WAITER_LIVENESS_WINDOW
-
-
-@dataclass(frozen=True, kw_only=True)
-class MultiHubConfig:
-    """Multi-hub routing: serving policy, ownership, claim, relay and message forwarding."""
-
-    multihub_serving_policy: MultiHubServingPolicy | None = None
-    spend_ledger: SpendLedger | None = None
-    namespace_ownership: NamespaceOwnership | None = None
-    claim_peers: Mapping[str, ClaimForwardPeer] | None = None
-    claim_forwarder: ClaimForwarder = forward_claim
-    relay_peers: Mapping[str, OperatorRelayPeer] | None = None
-    relay_forwarder: RelayForwarder = relay_operator_action
-    message_peers: Mapping[str, MessageForwardPeer] | None = None
-    message_forwarder: MessageForwarder = forward_message
-    message_forward_ttl: float = DEFAULT_FORWARD_TTL_SECONDS
-    require_relay_reason: bool = False
-    require_two_person_relay: bool = False
-    observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None
-    dead_letter_forwarder: DeadLetterForwarder | None = forward_dead_letter
-
-
-@dataclass(frozen=True, kw_only=True)
-class FederationConfig:
-    """Cross-domain federation: the peering bundle, certificate reader, and served offer."""
-
-    federation_bundle: FederationBundle | None = None
-    federation_cert_source: PeerCertificateSource = live_peer_certificate_der
-    federation_offer_path: str | Path | None = None
-
 
 #: HubConfig attributes holding nested family records, mapped to their record type.
 _FAMILY_TYPES: dict[str, type[Any]] = {

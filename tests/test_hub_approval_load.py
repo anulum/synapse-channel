@@ -44,7 +44,8 @@ from synapse_channel.core.approvals import (
 from synapse_channel.core.attention import project_hub_attention
 from synapse_channel.core.handlers.approval_load_admission import NO_JOURNAL_REFUSAL
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.hub_config import HubAuthConfig, HubConfig
+from synapse_channel.core.hub_config import HubConfig
+from synapse_channel.core.hub_config_auth import HubAuthConfig
 from synapse_channel.core.journal import (
     EventKind,
     record_approval_load_policy,

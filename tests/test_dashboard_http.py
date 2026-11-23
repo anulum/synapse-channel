@@ -23,7 +23,8 @@ import synapse_channel.dashboard_hub_snapshot as hub_snapshot_module
 from dashboard_helpers import _authorized_get, _http_get
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.hub_config import HubConfig, HubLimits, config_fingerprint
+from synapse_channel.core.hub_config import HubConfig, config_fingerprint
+from synapse_channel.core.hub_config_limits import HubLimits
 from synapse_channel.core.journal import EventKind, record_operator_relay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import (

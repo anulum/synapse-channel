@@ -12,7 +12,7 @@ import math
 
 import pytest
 
-from synapse_channel.core.hub_config import HubAuthConfig
+from synapse_channel.core.hub_config_auth import HubAuthConfig
 from synapse_channel.core.rate_policy import (
     HubExposurePosture,
     RateLimits,

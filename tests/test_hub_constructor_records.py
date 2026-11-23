@@ -19,14 +19,11 @@ from synapse_channel.core import hub_component_lifetime as checkpoint_module
 from synapse_channel.core.attachment_serving import AttachmentServingPolicy
 from synapse_channel.core.attachment_store import AttachmentStore
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.hub_config import (
-    HubAuthConfig,
-    HubConfig,
-    HubLimits,
-    HubMetricsConfig,
-    config_fingerprint,
-)
+from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 from synapse_channel.core.hub_config_attribute import ConfigAttribute
+from synapse_channel.core.hub_config_auth import HubAuthConfig
+from synapse_channel.core.hub_config_limits import HubLimits
+from synapse_channel.core.hub_config_metrics import HubMetricsConfig
 from synapse_channel.core.hub_constructor_options import HubLegacyOptions
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.merkle_checkpoint import MerkleCheckpointStore

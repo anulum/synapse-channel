@@ -24,7 +24,8 @@ from hub_e2e_helpers import Recorder, running_hub
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.hub_config import HubAuthConfig, HubConfig
+from synapse_channel.core.hub_config import HubConfig
+from synapse_channel.core.hub_config_auth import HubAuthConfig
 from synapse_channel.core.protocol import MessageType
 
 

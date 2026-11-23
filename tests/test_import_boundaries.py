@@ -17,11 +17,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def _top_level_imports(relative_path: str) -> set[str]:
     tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
-    return {
-        node.module
-        for node in tree.body
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    }
+    imports: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            imports.add(node.module)
+        elif isinstance(node, ast.Import):
+            imports.update(alias.name for alias in node.names)
+    return imports
 
 
 def test_git_path_identity_depends_on_neutral_runtime_not_gitclaim() -> None:
@@ -36,6 +38,24 @@ def test_hub_config_depends_on_neutral_defaults_not_hub_runtime() -> None:
 
     assert "synapse_channel.core.hub_defaults" in imports
     assert "synapse_channel.core.hub" not in imports
+
+    config_modules = (
+        "src/synapse_channel/core/hub_config.py",
+        "src/synapse_channel/core/hub_config_auth.py",
+        "src/synapse_channel/core/hub_config_limits.py",
+        "src/synapse_channel/core/hub_config_metrics.py",
+        "src/synapse_channel/core/hub_config_routing.py",
+    )
+    defaults_importers = {
+        "src/synapse_channel/core/hub_config.py",
+        "src/synapse_channel/core/hub_config_auth.py",
+        "src/synapse_channel/core/hub_config_limits.py",
+    }
+    for module_path in config_modules:
+        module_imports = _top_level_imports(module_path)
+        assert "synapse_channel.core.hub" not in module_imports, module_path
+        if module_path in defaults_importers:
+            assert "synapse_channel.core.hub_defaults" in module_imports, module_path
 
 
 def test_compatibility_imports_reexport_the_same_git_runtime_objects() -> None:

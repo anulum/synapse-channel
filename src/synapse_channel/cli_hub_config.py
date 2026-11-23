@@ -18,15 +18,11 @@ import argparse
 from dataclasses import replace
 
 from synapse_channel.cli_verdicts import verdict_policy_from_args
-from synapse_channel.core.hub_config import (
-    HubAuthConfig,
-    HubConfig,
-    HubLimits,
-    HubLiveness,
-    HubMetricsConfig,
-    MultiHubConfig,
-    TakeoverDamping,
-)
+from synapse_channel.core.hub_config import HubConfig
+from synapse_channel.core.hub_config_auth import HubAuthConfig
+from synapse_channel.core.hub_config_limits import HubLimits, TakeoverDamping
+from synapse_channel.core.hub_config_metrics import HubLiveness, HubMetricsConfig
+from synapse_channel.core.hub_config_routing import MultiHubConfig
 from synapse_channel.core.hub_defaults import DEFAULT_MAX_CONNECTIONS_PER_HOST
 from synapse_channel.core.identity_enrollments import (
     DEFAULT_ENROLLMENT_RATE,
