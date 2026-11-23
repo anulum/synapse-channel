@@ -24,7 +24,7 @@ import pytest
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import cli
 from synapse_channel.cli_messaging_wait import UNREADABLE_CURSOR_EXIT_CODE, _note_anchor, _wait
-from synapse_channel.core.handlers.messaging import _send_frames
+from synapse_channel.core.handlers.mailbox_replay import send_frames
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.mailbox_cursor import read_waiter_cursor
@@ -196,7 +196,7 @@ async def test_replay_frames_fall_back_to_one_send_at_a_time() -> None:
         async def send_json(self, _websocket: Any, frame: dict[str, Any]) -> None:
             sent.append(frame)
 
-    await _send_frames(cast(Any, _Hub()), None, [{"seq": 4}])
+    await send_frames(cast(Any, _Hub()), None, [{"seq": 4}])
     assert sent == [{"seq": 4}]
 
 

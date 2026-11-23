@@ -15,7 +15,7 @@ import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.core.acl import OBSERVE, AclPolicy, AclRule
-from synapse_channel.core.handlers.messaging import _directed_audience
+from synapse_channel.core.handlers.chat_delivery import _directed_audience
 from synapse_channel.core.hub import SynapseHub
 
 

@@ -17,7 +17,7 @@ from typing import Any, cast
 
 import pytest
 
-from synapse_channel.core.handlers.messaging import _replay_directed_backlog
+from synapse_channel.core.handlers.mailbox_replay import replay_directed_backlog
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.mailbox_pending import MailboxPendingTracker
@@ -84,7 +84,7 @@ async def test_live_send_during_replay_stays_behind_the_backlog(tmp_path: Path) 
         hub = SynapseHub(journal=store)
         socket = _Socket()
         hub.clients.agent_sockets[_SEAT] = socket
-        replay = asyncio.create_task(_replay_directed_backlog(hub, _SEAT, _SEAT, 0, socket))
+        replay = asyncio.create_task(replay_directed_backlog(hub, _SEAT, _SEAT, 0, socket))
         await socket.first.wait()
         live = asyncio.create_task(
             hub.send_to_agent(
@@ -112,7 +112,7 @@ async def test_live_send_is_not_written_when_replay_drops(tmp_path: Path) -> Non
         hub = SynapseHub(journal=store)
         socket = _Socket(fail_after=1, pause_first=True)
         hub.clients.agent_sockets[_SEAT] = socket
-        replay = asyncio.create_task(_replay_directed_backlog(hub, _SEAT, _SEAT, 0, socket))
+        replay = asyncio.create_task(replay_directed_backlog(hub, _SEAT, _SEAT, 0, socket))
         await socket.first.wait()
         live = asyncio.create_task(
             hub.send_to_agent(
@@ -318,7 +318,7 @@ async def test_replay_without_backlog_sender_uses_send_json(tmp_path: Path) -> N
             sent.append(seq)
 
     try:
-        await _replay_directed_backlog(cast(Any, _Hub()), _SEAT, _SEAT, 0, object())
+        await replay_directed_backlog(cast(Any, _Hub()), _SEAT, _SEAT, 0, object())
     finally:
         store.close()
     assert sent == [1, 2, 3]

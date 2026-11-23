@@ -27,6 +27,16 @@ execution evidence when carrying a release claim forward.
   `candidate._pending`, and `core/operator_relay_approval.py` leaves the structure budget's private-access ledger.
   Every quorum verdict, audit payload and wire frame is unchanged.
 
+- **The registration heartbeat handler and mailbox replay helpers now live in their own handler modules; behaviour is
+  unchanged.** `handle_heartbeat` and its `VerbSpec` move from `core/handlers/messaging.py` to
+  `core/handlers/heartbeat.py` (composed into the messaging family via `*HEARTBEAT_VERB_SPECS` in
+  `core/handlers/messaging.py`), and mailbox recipient resolution and reconnect backlog replay (`mailbox_recipient`,
+  `mailbox_acl_allows`, `replay_directed_backlog`, `replay_absent_cursor`, `send_frames`, `MAILBOX_REPLAY_READ_CAP`)
+  move to public helpers in `core/handlers/mailbox_replay.py` shared by `heartbeat.py` and `messaging.handle_ack`.
+  Unused private re-exports (`_directed_audience`, `_matching_online_recipients`) are dropped from
+  `core/handlers/messaging.py`. Hub-side liveness refresh, claim expiry, wait pruning, wire frames, journal events and
+  verb registrations are unchanged.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

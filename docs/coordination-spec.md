@@ -1117,7 +1117,9 @@ Without a journal, restart persistence and durable mailbox watermarks are absent
 Compaction and configured history/identity bounds still limit recovery; the
 diagnostic target count itself is process-local and bounded, not a durable queue.
 
-**Implementation.** `core/handlers/messaging.py` (dead-letter record),
+**Implementation.** `core/handlers/chat_delivery.py` (dead-letter record),
+`core/handlers/heartbeat.py` and `core/handlers/mailbox_replay.py`
+(registration replay, `since_seq` and absent-cursor anchor),
 `core/mailbox_pending.py:MailboxPendingTracker` (monotonic watermark, replay,
 restart projection), `core/role_mailbox.py` (role mailbox keys and the
 personal/role split).

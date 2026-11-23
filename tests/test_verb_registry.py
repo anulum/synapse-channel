@@ -59,7 +59,7 @@ _FROZEN_DISPATCH = {
     "finding": "memory.handle_finding",
     "guard_denial": "guard_evidence.handle_guard_denial",
     "handoff": "leasing.handle_handoff",
-    "heartbeat": "messaging.handle_heartbeat",
+    "heartbeat": "heartbeat.handle_heartbeat",
     "history_request": "snapshots.handle_history_request",
     "identity_enroll": "identity_enrollments.handle_identity_enroll",
     "identity_pin_reclaim": "identity_pins.handle_identity_pin_reclaim",

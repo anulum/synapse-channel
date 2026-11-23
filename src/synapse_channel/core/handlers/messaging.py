@@ -4,15 +4,15 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — base channel messaging handlers (chat relay + heartbeat)
-"""Base messaging handlers: the chat relay and the heartbeat keepalive.
+# SYNAPSE_CHANNEL — base channel messaging handlers (chat relay and acknowledgement)
+"""Base messaging handlers: the chat relay and acknowledgement.
 
 Chat is the channel's broadcast primitive: the hub stamps the message with a
 sequence id and hub id, retains it in bounded history, journals it when a durable
-log is attached, and fans it out to every socket. The heartbeat carries no
-payload — the liveness side effect has already been applied by the routing core
-before dispatch — so its handler is a deliberate no-op kept in the registry for a
-uniform dispatch table.
+log is attached, and fans it out to every socket. Acknowledgements settle
+deferred delivery receipts for reconnected directed recipients. This module also
+composes the messaging verb family by unpacking :data:`heartbeat.VERB_SPECS` into
+:data:`VERB_SPECS`.
 """
 
 from __future__ import annotations
@@ -25,19 +25,11 @@ from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.core.acl import (
-    MAILBOX,
-    WOULD_ALLOW,
-    Target,
-    evaluate_access,
-)
-from synapse_channel.core.agent_liveness import waiter_sidecar_names
 from synapse_channel.core.chat_dedupe import chat_digest
 from synapse_channel.core.dead_letter_escalation import (
     escalation_notice,
 )
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError, forwarding_notice
-from synapse_channel.core.dead_letters import is_directed_target
 from synapse_channel.core.directed_delivery_liveness import (
     DeliveryLiveness,
     classify_completed_delivery,
@@ -47,14 +39,12 @@ from synapse_channel.core.handlers.chat_delivery import (
     ChatDeliveryRequest,
     deliver_local_chat,
 )
-from synapse_channel.core.handlers.chat_delivery import _directed_audience as _directed_audience
-from synapse_channel.core.handlers.chat_delivery import (
-    _matching_online_recipients as _matching_online_recipients,
-)
 from synapse_channel.core.handlers.delivery_feedback import (
     send_delivery_receipt,
     settle_delivery_receipt,
 )
+from synapse_channel.core.handlers.heartbeat import VERB_SPECS as HEARTBEAT_VERB_SPECS
+from synapse_channel.core.handlers.mailbox_replay import mailbox_recipient
 from synapse_channel.core.hub_address import HUB_ADDRESS_SEPARATOR
 from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.journal import (
@@ -64,15 +54,13 @@ from synapse_channel.core.journal import (
     record_dead_letter_escalation,
     record_dead_letter_forwarding,
 )
-from synapse_channel.core.mailbox_pending import replayed_frames
 from synapse_channel.core.message_forward_origin import forward_chat
 from synapse_channel.core.message_response import validate_semantic_response
-from synapse_channel.core.numeric_coercion import safe_float, safe_int
+from synapse_channel.core.numeric_coercion import safe_float
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
-from synapse_channel.core.protocol import MessageType, is_recipient, system_message
+from synapse_channel.core.protocol import MessageType, is_recipient
 from synapse_channel.core.verb_access import message_access
 from synapse_channel.core.verb_registry import VerbSpec
-from synapse_channel.core.wake_capability import normalize_wake_capability
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -705,7 +693,7 @@ async def handle_ack(
     raw_seq = data.get("seq")
     if isinstance(raw_seq, bool) or not isinstance(raw_seq, int):
         return
-    recipient = _mailbox_recipient(sender, data.get("mailbox_for"), hub=hub)
+    recipient = mailbox_recipient(sender, data.get("mailbox_for"), hub=hub)
     roles = hub.roles_of(sender)
     hub.mailbox_pending.acknowledge(recipient, raw_seq, roles=roles)
     entry = hub.pending_receipts.peek(raw_seq)
@@ -720,240 +708,6 @@ async def handle_ack(
         recipient=recipient,
         acknowledged_by=sender,
     )
-
-
-MAILBOX_REPLAY_READ_CAP = 1000
-"""Upper bound on journal chat events scanned for one reconnect backlog replay.
-
-A briefly-offline recipient's missed directed messages sit within a bounded window
-of recent chat, so scanning at most this many keeps a reconnect cheap and bounds a
-mailbox heartbeat's cost. A gap so long that a recipient's messages fall beyond the
-window degrades to the durable feed (``syn-inbox``), which has no such bound — the
-backlog replay adds promptness, it does not replace the feed as the unbounded record.
-"""
-
-
-async def _replay_directed_backlog(
-    hub: MessagingContext, name: str, recipient: str, since_seq: int, websocket: Any
-) -> None:
-    """Push the directed chats ``recipient`` missed while offline, from the durable journal.
-
-    On a mailbox-capable reconnect the hub resumes from the client's ``since_seq``
-    cursor: it reads journalled chat events after it and keeps those directed at
-    ``recipient`` (by name, project or glob) that ``recipient`` did not send itself.
-    Mail addressed to a role is replayed from the role's own mailbox instead: for each
-    role the connection holds, the chats still pending after the role's watermark,
-    however far back they lie, because the role's mail may predate this holder. The
-    two sets are merged by ``seq`` without duplicates and re-sent to the reconnecting
-    socket marked ``replayed`` with their durable journal ``seq`` — so the client wakes
-    on and dedups the backlog by ``seq`` exactly as it would live traffic. Dedup keys on
-    ``seq``, not ``msg_id``, because the per-hub ``msg_id`` counter resets on restart
-    while ``seq`` never repeats.
-
-    ``recipient`` is the identity whose backlog is wanted; it is the connecting ``name``
-    for an agent that connects under its own identity, but a wake-listener connects under
-    a receive-only ``-rx`` name while waiting on its bare identity, so it declares that
-    identity separately and the replay is filtered by it, not by the socket's name. Roles
-    are still read from the connection (``name``), the socket the roles were bound to. A
-    journal-less hub cannot replay and returns silently; a broadcast is never replayed
-    (the feed already carries it and re-pushing it would re-storm every reconnect).
-    """
-    if hub.journal is None:
-        return
-    roles = hub.roles_of(name)
-    events = hub.journal.read_since(
-        since_seq, kinds=(EventKind.CHAT,), limit=MAILBOX_REPLAY_READ_CAP
-    )
-    personal = [
-        event
-        for event in events
-        if str(event.payload.get("sender") or "") != recipient
-        and is_directed_target(str(event.payload.get("target") or "all"))
-        and is_recipient(str(event.payload.get("target") or "all"), recipient)
-    ]
-    role_mail = hub.mailbox_pending.role_backlog(roles, limit=MAILBOX_REPLAY_READ_CAP)
-    await _send_frames(hub, websocket, replayed_frames(personal, role_mail))
-
-
-async def _send_frames(hub: MessagingContext, websocket: Any, frames: list[dict[str, Any]]) -> None:
-    """Write replay frames in order, holding the socket until the batch is out.
-
-    Parameters
-    ----------
-    hub : MessagingContext
-        Hub that owns the socket's broadcaster.
-    websocket : Any
-        The reconnecting socket.
-    frames : list of dict
-        Frames already marked for replay. An empty list writes nothing.
-    """
-    if not frames:
-        return
-    # One backlog write holds live frames for this socket until the older
-    # sequences are written, so a live frame cannot land between them.
-    broadcaster = getattr(hub, "_broadcaster", None)
-    send_many = getattr(broadcaster, "send_json_many", None)
-    if send_many is not None:
-        await send_many(websocket, frames)
-        return
-    for frame in frames:
-        await hub.send_json(websocket, frame)
-
-
-async def _replay_absent_cursor(
-    hub: MessagingContext, name: str, recipient: str, websocket: Any
-) -> None:
-    """Anchor a missing waiter cursor without replaying personal history.
-
-    The anchor is the journal tip at this heartbeat. Personal mail already in
-    the journal stays there. The anchor frame carries ``mailbox_pending_before``,
-    the pending count for this identity read before the watermark moves, so the
-    waiter can say how many messages addressed to that name are still unread.
-    ``--since 0`` reaches them. Mail for a role this connection holds is still
-    pushed, because a role's backlog is not one seat's old transcript. The
-    socket is told the anchor even when nothing was replayed.
-
-    Parameters
-    ----------
-    hub : MessagingContext
-        Hub whose journal and mailbox tracker supply the replay.
-    name : str
-        Connection name the roles were bound to.
-    recipient : str
-        Identity whose exact-name mailbox is wanted.
-    websocket : Any
-        Socket to push the replay and the anchor notice to.
-    """
-    journal = hub.journal
-    anchor = journal.max_seq() if journal is not None else 0
-    roles = hub.roles_of(name)
-    pending_before = hub.mailbox_pending.pending_count(recipient)
-    role_mail = hub.mailbox_pending.role_backlog(roles, limit=MAILBOX_REPLAY_READ_CAP)
-    await _send_frames(hub, websocket, replayed_frames(role_mail))
-    await hub.send_json(
-        websocket,
-        system_message(
-            "mailbox cursor anchored",
-            hub_id=str(getattr(hub, "hub_id", "") or ""),
-            mailbox_anchor=anchor,
-            mailbox_pending_before=pending_before,
-        ),
-    )
-    hub.mailbox_pending.advance(recipient, anchor, roles=roles, source="cursor")
-
-
-def _mailbox_acl_allows(hub: MessagingContext, connection: str, requested: str) -> bool:
-    """Return whether the ACL policy grants ``connection`` mailbox access to ``requested``.
-
-    Consulted only when a policy is loaded. The grant is the policy-file finish of the
-    mailbox conditions: self and ``-rx`` sidecars do not need it; a trusted monitor that
-    is neither still may, via a ``mailbox`` rule on target kind ``agent``.
-    """
-    policy = hub.acl_policy
-    if policy is None:
-        return False
-    decision = evaluate_access(
-        subject=connection,
-        project=project_of(connection),
-        permission=MAILBOX,
-        target=Target("agent", requested),
-        policy=policy,
-    )
-    return decision.decision == WOULD_ALLOW
-
-
-def _mailbox_recipient(connection: str, declared: Any, hub: MessagingContext | None = None) -> str:
-    """Resolve whose directed backlog a mailbox heartbeat may replay onto ``connection``.
-
-    A mailbox client may name, in ``declared`` (the heartbeat's ``mailbox_for``), an
-    identity other than its connection name — a wake-listener connects under a
-    receive-only ``<identity>-rx`` name while waiting on the bare ``<identity>``. But
-    replaying an *arbitrary* named identity's directed backlog on an unauthenticated
-    assertion would let any socket pull another identity's missed directed messages
-    from the journal. A declared identity is honoured when:
-
-    1. it is the connection itself, or
-    2. the connection is the ``-rx`` sidecar of that identity, or
-    3. the loaded ACL policy grants the connection the ``mailbox`` permission on
-       that identity (target kind ``agent``).
-
-    Any other value (including blank or non-string) falls back to the connection's own
-    backlog rather than dropping the socket. Structural self/``-rx`` is not by itself
-    proof the socket is genuine — pair with connect token and identity binding; the
-    ACL grant is the policy-file path for a trusted non-sidecar monitor.
-    """
-    if not isinstance(declared, str):
-        return connection
-    requested = declared.strip()
-    if not requested or requested == connection:
-        return connection
-    if connection in waiter_sidecar_names(requested):
-        return requested
-    if hub is not None and _mailbox_acl_allows(hub, connection, requested):
-        return requested
-    return connection
-
-
-async def handle_heartbeat(
-    hub: MessagingContext, sender: str, data: dict[str, Any], websocket: Any
-) -> None:
-    """Register any declared roles and replay a missed directed backlog on request.
-
-    The registration heartbeat may carry a ``roles`` list of ``<project>/<role>``
-    names this identity answers to. Binding them here lets a directed message to a
-    role reach its holder and show in ``/who`` instead of being counted a dead letter.
-    Only a list is honoured, and non-string or blank entries are dropped rather than
-    rejected, so a malformed field degrades to no roles instead of dropping the socket.
-    When role-claim enforcement is on (``--require-role-claim``), a declared role the
-    role-grant store does not authorise for this identity is dropped the same forgiving
-    way (see :meth:`~synapse_channel.core.hub.MessagingContext.permitted_role_claims`), so a
-    socket cannot squat a role no operator granted it. A keepalive with no ``roles``
-    field leaves an earlier binding untouched. With a journal, a role set that differs
-    from the connection's last journalled one is recorded as a ``role_binding`` event,
-    so the role mailboxes and a quiet name's last roles survive a restart.
-
-    A mailbox-capable client also sets ``mailbox: true`` and ``since_seq`` (the last
-    durable chat ``seq`` it processed) on its *registration* heartbeat, and the hub
-    replays the directed messages it missed while offline from the journal — turning
-    the pull-based ``syn-inbox`` catch-up into an automatic push on reconnect. Only a
-    literal ``True`` triggers a replay. ``mailbox_cursor`` of ``"absent"`` with
-    no ``since_seq`` anchors at the journal tip. Personal history stays in the
-    journal and role mail is still replayed. Any other missing or malformed
-    ``since_seq`` degrades to ``0``
-    (replay the whole retained window) rather than dropping the socket. A
-    keepalive omits ``mailbox``, so it never re-storms the backlog.
-
-    An optional ``mailbox_for`` string names the identity whose backlog is wanted when
-    it differs from the connection ``sender`` — a wake-listener connects under a
-    receive-only ``-rx`` name but waits on its bare identity, so it declares that here
-    and the replay is filtered by it. It is honoured when it names ``sender``, the
-    identity ``sender`` is the ``-rx`` sidecar of, or an ACL ``mailbox`` grant on that
-    identity (see :func:`_mailbox_recipient`); a missing, blank, or unauthorised value
-    falls back to ``sender``, so an agent connecting under its own identity needs no
-    such field and no socket can pull an arbitrary identity's directed backlog by
-    naming it without a grant.
-    """
-    raw_roles = data.get("roles")
-    if isinstance(raw_roles, list):
-        cleaned = (item.strip() for item in raw_roles if isinstance(item, str) and item.strip())
-        declared = tuple(dict.fromkeys(cleaned))
-        hub.set_agent_roles(sender, hub.permitted_role_claims(sender, declared))
-        hub.mailbox_pending.bind_roles(sender, hub.roles_of(sender))
-    if "wake_capability" in data:
-        hub.set_wake_capability(sender, normalize_wake_capability(data.get("wake_capability")))
-    if data.get("mailbox") is True:
-        recipient = _mailbox_recipient(sender, data.get("mailbox_for"), hub=hub)
-        if data.get("mailbox_cursor") == "absent" and "since_seq" not in data:
-            await _replay_absent_cursor(hub, sender, recipient, websocket)
-        else:
-            since_seq = safe_int(data.get("since_seq"), default=0, min_value=0, allow_bool=False)
-            hub.mailbox_pending.advance(
-                recipient,
-                since_seq,
-                roles=hub.roles_of(sender),
-                source="cursor",
-            )
-            await _replay_directed_backlog(hub, sender, recipient, since_seq, websocket)
 
 
 VERB_SPECS = (
@@ -997,16 +751,5 @@ VERB_SPECS = (
         minimum_wire_version=2,
         commands=(),
     ),
-    VerbSpec(
-        request_types=(MessageType.HEARTBEAT,),
-        handler=handle_heartbeat,
-        reply_types=(MessageType.CHAT,),
-        mutates=True,
-        replay_protected=False,
-        mutation_guarded=False,
-        accesses=None,
-        event_kinds=(EventKind.MAILBOX_WATERMARK, EventKind.ROLE_BINDING),
-        minimum_wire_version=1,
-        commands=(),
-    ),
+    *HEARTBEAT_VERB_SPECS,
 )
