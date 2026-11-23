@@ -19,6 +19,7 @@ from websockets.asyncio.client import ClientConnection, connect
 
 from hub_e2e_helpers import read_until_type, running_hub
 from synapse_channel.core.acl import MAILBOX, AclPolicy, AclRule
+from synapse_channel.core.handlers.dead_letter_escalation import escalate_dead_letter
 from synapse_channel.core.handlers.heartbeat import handle_heartbeat
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
@@ -606,3 +607,22 @@ async def test_handle_heartbeat_normalises_wake_capability_before_binding() -> N
         object(),
     )
     assert recorded == [("PROJ/bob", "direct"), ("PROJ/bob", "unknown")]
+
+
+async def test_escalate_dead_letter_broadcasts_and_skips_journal_when_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise public escalate_dead_letter directly without a journal or peer map."""
+    broadcasts: list[dict[str, Any]] = []
+    hub = SynapseHub(hub_id="syn-esc-unit", dead_letter_escalation_threshold=2)
+
+    async def capture(frame: dict[str, Any]) -> None:
+        broadcasts.append(dict(frame))
+
+    monkeypatch.setattr(hub, "broadcast", capture)
+    await escalate_dead_letter(hub, target="PROJ/absent", count=2, sender="PROJ/sender")
+    assert len(broadcasts) == 1
+    assert broadcasts[0]["type"] == MessageType.DEAD_LETTER_ESCALATION
+    assert broadcasts[0]["escalation_target"] == "PROJ/absent"
+    assert broadcasts[0]["escalation_count"] == 2
+    assert broadcasts[0]["last_sender"] == "PROJ/sender"

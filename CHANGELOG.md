@@ -37,6 +37,12 @@ execution evidence when carrying a release claim forward.
   `core/handlers/messaging.py`. Hub-side liveness refresh, claim expiry, wait pruning, wire frames, journal events and
   verb registrations are unchanged.
 
+- **Hub-level dead-letter escalation and peer forwarding now live in their own handler modules; behaviour is
+  unchanged.** `escalate_dead_letter` moves from `core/handlers/messaging.py` to
+  `core/handlers/dead_letter_escalation.py` and `forward_dead_letter_to_peer` joins the serving half in
+  `core/handlers/dead_letter_forwarding.py`, while `route_chat` passes `partial(escalate_dead_letter, hub)`. Wire
+  frames, escalation audits and peer-forwarding behaviour are unchanged.
+
 ### Fixed
 
 - The test suite clears ambient seat-shell environment variables (`SYN_INBOX_SOURCE`, `SYN_HOME`, `SYN_IDENTITY`, `SYN_PROJECT`, `SYN_TMUX_PROVIDER`, `SYNAPSE_WAITER_PIDFILE`, and `SYNAPSE_AUTO_CONNECT`) for the duration of a test session and restores any prior values on teardown, so tests run hermetically inside an active operator or agent seat shell while tests of environment resolution continue to set them explicitly with `monkeypatch.setenv`.

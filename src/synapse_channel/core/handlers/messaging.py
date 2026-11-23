@@ -18,7 +18,6 @@ composes the messaging verb family by unpacking :data:`heartbeat.VERB_SPECS` int
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -26,10 +25,6 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.chat_dedupe import chat_digest
-from synapse_channel.core.dead_letter_escalation import (
-    escalation_notice,
-)
-from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError, forwarding_notice
 from synapse_channel.core.directed_delivery_liveness import (
     DeliveryLiveness,
     classify_completed_delivery,
@@ -39,6 +34,7 @@ from synapse_channel.core.handlers.chat_delivery import (
     ChatDeliveryRequest,
     deliver_local_chat,
 )
+from synapse_channel.core.handlers.dead_letter_escalation import escalate_dead_letter
 from synapse_channel.core.handlers.delivery_feedback import (
     send_delivery_receipt,
     settle_delivery_receipt,
@@ -46,18 +42,10 @@ from synapse_channel.core.handlers.delivery_feedback import (
 from synapse_channel.core.handlers.heartbeat import VERB_SPECS as HEARTBEAT_VERB_SPECS
 from synapse_channel.core.handlers.mailbox_replay import mailbox_recipient
 from synapse_channel.core.hub_address import HUB_ADDRESS_SEPARATOR
-from synapse_channel.core.identity_namespace import project_of
-from synapse_channel.core.journal import (
-    DEAD_LETTER_DIRECTION_OUT,
-    EventKind,
-    record_chat,
-    record_dead_letter_escalation,
-    record_dead_letter_forwarding,
-)
+from synapse_channel.core.journal import EventKind, record_chat
 from synapse_channel.core.message_forward_origin import forward_chat
 from synapse_channel.core.message_response import validate_semantic_response
 from synapse_channel.core.numeric_coercion import safe_float
-from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
 from synapse_channel.core.protocol import MessageType, is_recipient
 from synapse_channel.core.verb_access import message_access
 from synapse_channel.core.verb_registry import VerbSpec
@@ -216,8 +204,6 @@ if TYPE_CHECKING:
             """Return the warn stale recipients used by this handler family."""
             ...
 
-
-logger = logging.getLogger("synapse.messaging")
 
 MAX_CLIENT_MSG_ID_BYTES = 256
 """Maximum UTF-8 size of the optional receiver-side chat dedupe identity."""
@@ -530,96 +516,10 @@ async def route_chat(
             digest=digest,
             remember=remember,
             accepted_at=accepted_at,
-            escalate=partial(_escalate_dead_letter, hub),
+            escalate=partial(escalate_dead_letter, hub),
         )
     )
     return ChatRouting(delivery=delivery, directed=directed)
-
-
-async def _escalate_dead_letter(
-    hub: MessagingContext, *, target: str, count: int, sender: str
-) -> None:
-    """Escalate a dead-letter blackhole that has crossed its threshold.
-
-    The escalation is an active signal, never a re-delivery (the ledger holds no message bodies):
-    the hub broadcasts a one-line notice to every connected socket — so an operator sees a growing
-    blackhole live — and journals an audit-only event when a durable log is attached, so the
-    escalation is also reviewable after the fact. The named target is almost certainly not
-    connected (that is why its messages are dead-lettering), so the notice reaches the operators and
-    peers who can act, not the missing reader.
-    """
-    # Persist before notifying, so a reader that sees the broadcast can trust the audit is written.
-    if hub.journal is not None:
-        record_dead_letter_escalation(
-            hub.journal,
-            {
-                "target": target,
-                "count": count,
-                "last_sender": sender,
-                "threshold": hub.dead_letter_escalation_threshold,
-            },
-        )
-    notice = escalation_notice(target, count, sender)
-    await hub.broadcast(
-        hub.system(
-            notice,
-            msg_type=MessageType.DEAD_LETTER_ESCALATION,
-            escalation_target=target,
-            escalation_count=count,
-            last_sender=sender,
-        )
-    )
-    await _forward_dead_letter_to_peer(hub, target=target, count=count)
-
-
-async def _forward_dead_letter_to_peer(hub: MessagingContext, *, target: str, count: int) -> None:
-    """Forward a blackhole signal to the peer hub whose domain owns the target, if any.
-
-    The target's namespace is resolved through the same namespace-ownership and relay-route roster
-    the operator relay uses. When it resolves to a peer this hub does not own, the origin records a
-    durable, audit-only forwarding event (a pointer — the target, its undelivered count, and the
-    origin and owner hub ids; never a message body) and, when a forwarder is configured, transmits
-    that pointer to the owning hub best-effort. A local, unrouted, ungoverned, or partitioned
-    namespace forwards nothing: the local escalation already covers a target this hub owns, and a
-    signal is never sent to a hub the operator did not route to.
-    """
-    if hub.namespace_ownership is None or not hub.relay_peers:
-        return
-    namespace = project_of(target)
-    if not namespace:
-        return
-    asserting = hub.observed_asserting_hubs(namespace) if hub.observed_asserting_hubs else ()
-    decision = hub.namespace_ownership.resolve(namespace, asserting_hubs=asserting)
-    route = route_operator_relay(decision, relay_peers=hub.relay_peers)
-    if route.kind is not RelayRouteKind.FORWARD or route.peer is None:
-        return
-    notice = forwarding_notice(
-        target, count, origin_hub_id=hub.hub_id, owner_hub_id=decision.owner_hub_id or ""
-    )
-    if hub.journal is not None:
-        # The wire pointer stays the bare four-field notice; the audit adds the ``out`` direction
-        # so this origin-side record reconciles with the owning hub's inbound record of the same
-        # forward.
-        record_dead_letter_forwarding(
-            hub.journal, {**notice, "direction": DEAD_LETTER_DIRECTION_OUT}
-        )
-    if hub.dead_letter_forwarder is None:
-        return
-    try:
-        kwargs: dict[str, Any] = {
-            "uri": route.peer.uri,
-            "local_id": hub.hub_id,
-            "token": route.peer.token,
-        }
-        if route.peer.connector is not None:
-            kwargs["connector"] = route.peer.connector
-        if route.peer.signer is not None:
-            kwargs["signer"] = route.peer.signer
-        await hub.dead_letter_forwarder(notice, **kwargs)
-    except DeadLetterForwardError as exc:
-        # Best-effort over the already-durable audit: a peer we could not reach degrades to
-        # "recorded but not delivered", never a lost signal or a crashed escalation.
-        logger.warning("Dead-letter forward to %s failed: %s", route.peer.uri, exc)
 
 
 async def _route_channel_chat(

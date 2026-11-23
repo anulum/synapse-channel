@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from websockets.asyncio.client import ClientConnection, connect
 
 from hub_e2e_helpers import read_until_type, running_hub
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError
-from synapse_channel.core.handlers.messaging import _forward_dead_letter_to_peer
+from synapse_channel.core.handlers.dead_letter_forwarding import forward_dead_letter_to_peer
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
@@ -184,7 +184,7 @@ async def test_forward_is_a_noop_without_an_ownership_map() -> None:
         hub_id=_EDGE, relay_peers={_OWNER: OperatorRelayPeer(uri="ws://owner/", token=None)}
     )
     assert hub.namespace_ownership is None
-    await _forward_dead_letter_to_peer(hub, target=_TARGET, count=1)  # returns without raising
+    await forward_dead_letter_to_peer(hub, target=_TARGET, count=1)  # returns without raising
 
 
 async def test_forward_consults_the_observed_asserting_hubs_feed(tmp_path: Path) -> None:
@@ -204,7 +204,7 @@ async def test_forward_consults_the_observed_asserting_hubs_feed(tmp_path: Path)
         dead_letter_forwarder=forwarder,
         observed_asserting_hubs=asserting,
     )
-    await _forward_dead_letter_to_peer(hub, target=_TARGET, count=1)
+    await forward_dead_letter_to_peer(hub, target=_TARGET, count=1)
     store.close()
     assert seen == [_NAMESPACE]  # the partition feed was consulted for the target's namespace
     assert forwarder.calls == [(_EXPECTED, "ws://owner/", _EDGE, "tok")]
@@ -220,5 +220,42 @@ async def test_forward_without_a_journal_still_transmits() -> None:
         dead_letter_forwarder=forwarder,
     )
     assert hub.journal is None
-    await _forward_dead_letter_to_peer(hub, target=_TARGET, count=1)
+    await forward_dead_letter_to_peer(hub, target=_TARGET, count=1)
     assert forwarder.calls == [(_EXPECTED, "ws://owner/", _EDGE, "tok")]
+
+
+async def test_forward_passes_peer_connector_and_signer_when_configured() -> None:
+    """Pass configured peer connector and signer through to the dead-letter forwarder."""
+    captured: list[tuple[dict[str, Any], dict[str, Any]]] = []
+
+    async def recording_forwarder(notice: dict[str, Any], **kwargs: Any) -> None:
+        captured.append((dict(notice), dict(kwargs)))
+
+    connector = object()
+    signer = object()
+    hub = SynapseHub(
+        hub_id=_EDGE,
+        namespace_ownership=NamespaceOwnership(owners={_NAMESPACE: _OWNER}, local_hub_id=_EDGE),
+        relay_peers={
+            _OWNER: OperatorRelayPeer(
+                uri="ws://owner/",
+                token="tok",
+                connector=cast(Any, connector),
+                signer=cast(Any, signer),
+            )
+        },
+        dead_letter_forwarder=recording_forwarder,
+    )
+    await forward_dead_letter_to_peer(hub, target=_TARGET, count=1)
+    assert captured == [
+        (
+            _EXPECTED,
+            {
+                "uri": "ws://owner/",
+                "local_id": _EDGE,
+                "token": "tok",
+                "connector": connector,
+                "signer": signer,
+            },
+        )
+    ]

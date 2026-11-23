@@ -4,12 +4,15 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — serving half of cross-hub dead-letter forwarding (record on the owning hub)
-"""Serving half of cross-hub dead-letter forwarding: record a peer's pointer on the owning hub.
+# SYNAPSE_CHANNEL — hub-level cross-hub dead-letter forwarding (initiating and serving halves)
+"""Hub-level cross-hub dead-letter forwarding: initiating and serving halves.
 
-The initiating half (:mod:`synapse_channel.core.dead_letter_forwarding_transport`) hands a blackhole
-pointer to the hub whose domain owns the blackholed target; this module receives it. A peer forwards
-a :data:`~synapse_channel.core.protocol.MessageType.DEAD_LETTER_FORWARDING` frame carrying the
+:func:`forward_dead_letter_to_peer` is the origin hub's initiating half, handing
+a blackhole pointer to the hub whose domain owns the blackholed target through
+:mod:`synapse_channel.core.dead_letter_forwarding_transport`;
+:func:`handle_dead_letter_forwarding` is the owning hub's serving half that
+receives it. A peer forwards a
+:data:`~synapse_channel.core.protocol.MessageType.DEAD_LETTER_FORWARDING` frame carrying the
 :func:`~synapse_channel.core.dead_letter_forwarding.forwarding_notice` pointer, and this hub — which
 owns the target's namespace and can actually reach the reader — journals the fact and tells its
 operators, so a gap invisible on the owning side becomes visible where it can be acted on.
@@ -36,17 +39,21 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.dead_letter_forwarding import (
+    DeadLetterForwardError,
     DeadLetterForwardingWireError,
     ForwardingNotice,
     decode_forwarding_notice,
+    forwarding_notice,
     incoming_forwarding_notice,
 )
 from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.journal import (
     DEAD_LETTER_DIRECTION_IN,
+    DEAD_LETTER_DIRECTION_OUT,
     EventKind,
     record_dead_letter_forwarding,
 )
+from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.verb_registry import VerbSpec
 
@@ -54,6 +61,7 @@ if TYPE_CHECKING:
     from typing import Protocol
 
     from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.handlers.messaging import MessagingContext
     from synapse_channel.core.multihub_serving import MultiHubServingPolicy
     from synapse_channel.core.namespace_ownership import NamespaceOwnership
 
@@ -72,6 +80,56 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger("synapse.messaging")
+
+
+async def forward_dead_letter_to_peer(hub: MessagingContext, *, target: str, count: int) -> None:
+    """Forward a blackhole signal to the peer hub whose domain owns the target, if any.
+
+    The target's namespace is resolved through the same namespace-ownership and relay-route roster
+    the operator relay uses. When it resolves to a peer this hub does not own, the origin records a
+    durable, audit-only forwarding event (a pointer — the target, its undelivered count, and the
+    origin and owner hub ids; never a message body) and, when a forwarder is configured, transmits
+    that pointer to the owning hub best-effort. A local, unrouted, ungoverned, or partitioned
+    namespace forwards nothing: the local escalation already covers a target this hub owns, and a
+    signal is never sent to a hub the operator did not route to.
+    """
+    if hub.namespace_ownership is None or not hub.relay_peers:
+        return
+    namespace = project_of(target)
+    if not namespace:
+        return
+    asserting = hub.observed_asserting_hubs(namespace) if hub.observed_asserting_hubs else ()
+    decision = hub.namespace_ownership.resolve(namespace, asserting_hubs=asserting)
+    route = route_operator_relay(decision, relay_peers=hub.relay_peers)
+    if route.kind is not RelayRouteKind.FORWARD or route.peer is None:
+        return
+    notice = forwarding_notice(
+        target, count, origin_hub_id=hub.hub_id, owner_hub_id=decision.owner_hub_id or ""
+    )
+    if hub.journal is not None:
+        # The wire pointer stays the bare four-field notice; the audit adds the ``out`` direction
+        # so this origin-side record reconciles with the owning hub's inbound record of the same
+        # forward.
+        record_dead_letter_forwarding(
+            hub.journal, {**notice, "direction": DEAD_LETTER_DIRECTION_OUT}
+        )
+    if hub.dead_letter_forwarder is None:
+        return
+    try:
+        kwargs: dict[str, Any] = {
+            "uri": route.peer.uri,
+            "local_id": hub.hub_id,
+            "token": route.peer.token,
+        }
+        if route.peer.connector is not None:
+            kwargs["connector"] = route.peer.connector
+        if route.peer.signer is not None:
+            kwargs["signer"] = route.peer.signer
+        await hub.dead_letter_forwarder(notice, **kwargs)
+    except DeadLetterForwardError as exc:
+        # Best-effort over the already-durable audit: a peer we could not reach degrades to
+        # "recorded but not delivered", never a lost signal or a crashed escalation.
+        logger.warning("Dead-letter forward to %s failed: %s", route.peer.uri, exc)
 
 
 async def handle_dead_letter_forwarding(
