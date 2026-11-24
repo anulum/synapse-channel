@@ -80,12 +80,15 @@ class RecordingRunner:
         session_environment: str | None = (
             "SYN_PROJECT=SYNAPSE-CHANNEL\nSYN_IDENTITY=SYNAPSE-CHANNEL/codex-main\n"
         ),
+        max_waits: int | None = None,
     ) -> None:
         self.calls: list[list[str]] = []
         self.envs: list[Mapping[str, str] | None] = []
         self.results = list(results)
         self.consume_submit = consume_submit
         self.session_environment = session_environment
+        self.max_waits = max_waits
+        self.wait_calls = 0
         self.buffer_text = ""
         self.buffer_pasted = False
 
@@ -101,6 +104,12 @@ class RecordingRunner:
         del capture_output, text, check
         self.calls.append(list(args))
         self.envs.append(env)
+        if len(args) > 1 and args[1] == "wait":
+            self.wait_calls += 1
+            if self.max_waits is not None and self.wait_calls > self.max_waits:
+                raise AssertionError(
+                    f"unexpected extra wait call #{self.wait_calls} (limit {self.max_waits})"
+                )
         if len(args) > 1 and args[1] == "show-environment":
             if self.session_environment is None:
                 return subprocess.CompletedProcess(list(args), 1, "", "no environment")
@@ -1238,7 +1247,8 @@ def test_wait_and_wake_unregisters_after_timeout_when_the_session_disappears(
         [
             _result(["synapse", "wait"], 2),
             _result(["tmux", "has-session"], 1),
-        ]
+        ],
+        max_waits=1,
     )
 
     result = wait_and_wake(config, runner=runner, sleeper=RecordingSleeper())
@@ -1833,6 +1843,7 @@ def test_a_timed_out_wait_refuses_an_invalid_binding_at_once(tmp_path: Path) -> 
     runner = RecordingRunner(
         [_result(["synapse", "wait"], 2)],
         session_environment="SYN_PROJECT=OTHER\nSYN_IDENTITY=OTHER/pane\n",
+        max_waits=1,
     )
     sleeper = RecordingSleeper()
 
@@ -1845,4 +1856,12 @@ def test_a_timed_out_wait_refuses_an_invalid_binding_at_once(tmp_path: Path) -> 
     )
 
     assert result == BINDING_REFUSAL_EXIT_CODE
+    assert runner.wait_calls == 1
+    assert [call[:2] for call in runner.calls] == [
+        ["synapse", "wait"],
+        ["tmux", "has-session"],
+        ["tmux", "show-environment"],
+        ["tmux", "display-message"],
+        ["tmux", "capture-pane"],
+    ]
     assert sleeper.delays == []
