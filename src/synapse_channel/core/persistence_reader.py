@@ -105,6 +105,10 @@ class EventLogReader:
         When the store needs a newer store format than this release reads.
     SqlCipherKeyError
         When the store cannot be read with the given key, or needs one.
+    SqlCipherUnavailableError
+        When a key or key file is given, but no SQLCipher package is installed.
+    ValueError
+        When the key file fails validation.
     """
 
     def __init__(

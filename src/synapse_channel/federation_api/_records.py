@@ -7,13 +7,32 @@
 # SYNAPSE_CHANNEL — federation interface: record keeping
 """Record keeping: the federation interface names of this capability.
 
-Read a journal snapshot, export its records with a commitment, and observe their
-retention. Import these names from ``synapse_channel.federation_api``; this module only
-groups them.
+Read a journal snapshot or read-only event store, export its records with a
+commitment, and observe their retention. Import these names from
+``synapse_channel.federation_api``; this module only groups them.
 """
 
 from __future__ import annotations
 
+from synapse_channel.core.event_row_recovery import (
+    CorruptEventReason,
+    CorruptEventRow,
+)
+from synapse_channel.core.persistence import StoredOperation
+from synapse_channel.core.persistence_reader import (
+    EventLogReader,
+    ReadableEventLog,
+)
+from synapse_channel.core.persistence_sqlcipher import (
+    ReadOnlyOpenRefused,
+    SqlCipherKeyError,
+    SqlCipherUnavailableError,
+)
+from synapse_channel.core.persistence_store_format import (
+    STORE_FORMAT,
+    JournalInstance,
+    StoreFormatRefused,
+)
 from synapse_channel.core.record_keeping import (
     build_export,
     export_to_json,
@@ -32,8 +51,19 @@ from synapse_channel.core.record_retention import (
 )
 
 __all__ = [
+    "CorruptEventReason",
+    "CorruptEventRow",
     "DEFAULT_MAX_EVENTS",
     "DEFAULT_MAX_PAYLOAD_BYTES",
+    "EventLogReader",
+    "JournalInstance",
+    "ReadOnlyOpenRefused",
+    "ReadableEventLog",
+    "STORE_FORMAT",
+    "SqlCipherKeyError",
+    "SqlCipherUnavailableError",
+    "StoreFormatRefused",
+    "StoredOperation",
     "assess_retention",
     "build_export",
     "export_to_json",

@@ -33,10 +33,16 @@ import collections.abc
 import dataclasses
 import importlib
 import inspect
+import os
+import sqlite3
+import subprocess
+import sys
 import typing
+from pathlib import Path
 
 import pytest
 
+import synapse_channel
 from synapse_channel import federation_api
 
 # Record primitives (dataclass or NamedTuple) → the field names a consumer reads.
@@ -96,16 +102,15 @@ _CONTRACT_SIZE = (
 )
 
 
-# Every Core symbol the fleet tier imports, by module, with its kind: ``class``, ``callable``
-# (a function or a callable type alias) or ``value`` (a constant or a non-callable type
-# alias). The list is the fleet tier's consumed-symbol inventory as of its admission of
-# Core 0.99.49, with attachment fetch and local import added, with its copies of
-# Core's record-keeping modules replaced by their functions, and with the operation
-# record projector added for the fleet tier to adopt in place of its own evidence
-# collector. It pins existence and kind only, so a removal, a rename or a change
-# between kinds fails here, in this repository's CI, before a release can break the
-# consumer; the required fields and parameters of the most used primitives stay pinned
-# above.
+# Every Core symbol in the federation surface inventory, by module, with its kind:
+# ``class``, ``callable`` (a function or a callable type alias) or ``value`` (a constant or
+# a non-callable type alias). The list holds the fleet tier's consumed-symbol inventory as
+# of its admission of Core 0.99.49 (with attachment fetch, local import, and record-keeping
+# replacements) plus the operation record projector and read-only store reader names that
+# the fleet tier adopts in its retirement units. It pins existence and kind only, so a
+# removal, a rename or a change between kinds fails here, in this repository's CI, before a
+# release can break the consumer; the required fields and parameters of the most used
+# primitives stay pinned above.
 _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     "synapse_channel.client.agent": {
         "SynapseAgent": "class",
@@ -164,6 +169,10 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
         "RowMacKey": "class",
         "load_or_create_row_mac_key": "callable",
         "row_mac_key_path": "callable",
+    },
+    "synapse_channel.core.event_row_recovery": {
+        "CorruptEventReason": "class",
+        "CorruptEventRow": "class",
     },
     "synapse_channel.core.federation": {
         "FederationBundle": "class",
@@ -248,6 +257,21 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     },
     "synapse_channel.core.persistence": {
         "StoredEvent": "class",
+        "StoredOperation": "class",
+    },
+    "synapse_channel.core.persistence_reader": {
+        "EventLogReader": "class",
+        "ReadableEventLog": "class",
+    },
+    "synapse_channel.core.persistence_sqlcipher": {
+        "ReadOnlyOpenRefused": "class",
+        "SqlCipherKeyError": "class",
+        "SqlCipherUnavailableError": "class",
+    },
+    "synapse_channel.core.persistence_store_format": {
+        "JournalInstance": "class",
+        "STORE_FORMAT": "value",
+        "StoreFormatRefused": "class",
     },
     "synapse_channel.core.protocol": {
         "MessageType": "class",
@@ -304,8 +328,8 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     },
 }
 
-_FLEET_SYMBOLS = 119
-_FLEET_MODULES = 38
+_FLEET_SYMBOLS = 130
+_FLEET_MODULES = 42
 
 
 def _kind(obj: object) -> str:
@@ -435,3 +459,279 @@ def test_every_fleet_import_is_on_the_federation_interface_from_its_module() -> 
 
 def test_the_kind_of_a_symbol_is_class_callable_or_value() -> None:
     assert (_kind(int), _kind(len), _kind(7)) == ("class", "callable", "value")
+
+
+_READ_ONLY_STORE_MODULES: tuple[str, ...] = (
+    "synapse_channel.core.event_row_recovery",
+    "synapse_channel.core.persistence",
+    "synapse_channel.core.persistence_reader",
+    "synapse_channel.core.persistence_sqlcipher",
+    "synapse_channel.core.persistence_store_format",
+)
+
+_APPROVED_STORE_EXPORTS: frozenset[str] = frozenset(
+    {
+        "CorruptEventReason",
+        "CorruptEventRow",
+        "EventLogReader",
+        "JournalInstance",
+        "ReadOnlyOpenRefused",
+        "ReadableEventLog",
+        "STORE_FORMAT",
+        "SqlCipherKeyError",
+        "SqlCipherUnavailableError",
+        "StoreFormatRefused",
+        "StoredEvent",
+        "StoredOperation",
+    }
+)
+
+
+def _create_fresh_store(path: Path) -> object:
+    """Writer-side test fixture helper: create a valid store with one event."""
+    from synapse_channel.core.persistence import EventStore
+
+    with EventStore(path) as writer:
+        writer.append("chat", {"sender": "P/alice", "text": "hello"})
+        return writer.journal_instance()
+
+
+def _derived_connection_denylist() -> dict[str, object]:
+    """Derive public connection-taking or connect_* callables across the five store modules."""
+    denied: dict[str, object] = {}
+    for module_path in _READ_ONLY_STORE_MODULES:
+        module = importlib.import_module(module_path)
+        for name, obj in inspect.getmembers(module, inspect.isfunction):
+            if name.startswith("_") or obj.__module__ != module_path:
+                continue
+            params = set(inspect.signature(obj).parameters)
+            if name.startswith("connect_") or bool(params & {"conn", "connection"}):
+                denied[name] = obj
+    return denied
+
+
+def test_read_only_store_exports_stay_within_allowlist_and_off_raw_connections(
+    tmp_path: Path,
+) -> None:
+    # (a) Allowlist: the federation surface exposes exactly the 12 approved names from the
+    # five store modules (11 read-only store reader symbols plus StoredEvent).
+    inventory_store_names = {
+        symbol
+        for module_path in _READ_ONLY_STORE_MODULES
+        for symbol in _FLEET_IMPORTS.get(module_path, {})
+    }
+    assert inventory_store_names == _APPROVED_STORE_EXPORTS
+
+    exported_objects = {name: getattr(federation_api, name) for name in federation_api.__all__}
+    live_store_names = {
+        name
+        for name, obj in exported_objects.items()
+        if getattr(obj, "__module__", None) in _READ_ONLY_STORE_MODULES
+    }
+    live_store_names |= {name for name in federation_api.__all__ if name in inventory_store_names}
+    assert live_store_names == _APPROVED_STORE_EXPORTS
+
+    # (b) Derived denylist: no connect_* or conn/connection-taking function is reachable.
+    denied = _derived_connection_denylist()
+    assert {"read_journal_instance", "stored_store_format", "connect_event_store"} <= set(denied)
+    for name, fn in denied.items():
+        assert not hasattr(federation_api, name)
+        assert name not in federation_api.__all__
+        assert all(obj is not fn for obj in exported_objects.values())
+
+    # (c) Live reader instance and exported store classes expose no raw connection.
+    db = tmp_path / "live.db"
+    _create_fresh_store(db)
+    with federation_api.EventLogReader(db) as reader:
+        public_attrs = {
+            name for name in (*vars(reader), *dir(type(reader))) if not name.startswith("_")
+        }
+        for attr in public_attrs:
+            assert not isinstance(getattr(reader, attr), sqlite3.Connection), (
+                f"EventLogReader.{attr} exposed a raw sqlite3.Connection"
+            )
+
+    for name in _APPROVED_STORE_EXPORTS:
+        obj = getattr(federation_api, name)
+        if not isinstance(obj, type):
+            continue
+        for member_name in dir(obj):
+            if member_name.startswith("_"):
+                continue
+            member = getattr(obj, member_name)
+            if inspect.isfunction(member) or inspect.ismethod(member):
+                params = set(inspect.signature(member).parameters)
+                assert not (params & {"conn", "connection"}), (
+                    f"{name}.{member_name} accepts a raw connection parameter"
+                )
+
+
+def test_read_only_store_refusals_through_federation_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 1. Missing path inside a missing subdirectory creates nothing.
+    missing_dir = tmp_path / "missing_subdir"
+    missing_db = missing_dir / "events.db"
+    with pytest.raises(federation_api.ReadOnlyOpenRefused):
+        federation_api.EventLogReader(missing_db)
+    assert not missing_dir.exists()
+    assert not missing_db.exists()
+    assert not Path(f"{missing_db}-wal").exists()
+    assert not Path(f"{missing_db}-shm").exists()
+
+    # 2. Existing empty SQLite file without an events table is refused unchanged.
+    empty_db = tmp_path / "empty.db"
+    sqlite3.connect(empty_db).close()
+    empty_bytes = empty_db.read_bytes()
+    empty_mtime = empty_db.stat().st_mtime_ns
+    with pytest.raises(federation_api.ReadOnlyOpenRefused):
+        federation_api.EventLogReader(empty_db)
+    assert empty_db.read_bytes() == empty_bytes
+    assert empty_db.stat().st_mtime_ns == empty_mtime
+
+    # 3. Non-SQLite junk file opened without a key raises SqlCipherKeyError.
+    junk_db = tmp_path / "junk.db"
+    junk_db.write_bytes(b"not-a-sqlite-header" * 16)
+    with pytest.raises(federation_api.SqlCipherKeyError):
+        federation_api.EventLogReader(junk_db)
+
+    # 4. Keyed open without an importable SQLCipher driver raises SqlCipherUnavailableError.
+    existing_db = tmp_path / "existing.db"
+    _create_fresh_store(existing_db)
+    monkeypatch.setitem(sys.modules, "sqlcipher3", None)
+    monkeypatch.setitem(sys.modules, "pysqlcipher3", None)
+    with pytest.raises(federation_api.SqlCipherUnavailableError):
+        federation_api.EventLogReader(existing_db, key=bytes(32))
+
+    # 5. A store whose format floor exceeds STORE_FORMAT is refused unchanged.
+    future_db = tmp_path / "future.db"
+    _create_fresh_store(future_db)
+    future_floor = federation_api.STORE_FORMAT + 1
+    conn = sqlite3.connect(future_db)
+    try:
+        conn.execute(
+            "UPDATE store_format SET floor = ?, floor_release = ? WHERE id = 1",
+            (future_floor, "9.0.0"),
+        )
+        conn.execute(f"PRAGMA user_version = {future_floor}")
+        conn.commit()
+    finally:
+        conn.close()
+    future_bytes = future_db.read_bytes()
+    with pytest.raises(federation_api.StoreFormatRefused) as refused:
+        federation_api.EventLogReader(future_db)
+    assert refused.value.floor == future_floor
+    assert future_db.read_bytes() == future_bytes
+
+
+def test_read_only_store_reads_and_static_protocol_through_federation_api(tmp_path: Path) -> None:
+    from synapse_channel.core.persistence import EventStore
+
+    db = tmp_path / "reads.db"
+    with EventStore(db) as writer:
+        writer.commit_operation(
+            operation_key="op-key-1",
+            request_digest="a" * 64,
+            response={"ok": True},
+            events=[("chat", {"sender": "P/alice", "text": "committed"})],
+            intent={"kind": "test"},
+        )
+        corrupt_seq = writer.append("chat", {"sender": "P/alice", "text": "will-corrupt"})
+        expected_instance = writer.journal_instance()
+
+    # Corrupt the second row's JSON payload directly via sqlite3 in test setup.
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("UPDATE events SET payload = ? WHERE seq = ?", ("{not-json", corrupt_seq))
+        conn.commit()
+    finally:
+        conn.close()
+
+    with federation_api.EventLogReader(db) as reader:
+        # 6. journal_instance() matches EventStore.journal_instance() and has exported type.
+        actual_instance = reader.journal_instance()
+        assert actual_instance == expected_instance
+        assert isinstance(actual_instance, federation_api.JournalInstance)
+
+        # 7. get_operation() returns StoredOperation; corrupt_rows() returns CorruptEventRow
+        #    whose reasons are CorruptEventReason members.
+        stored_op = reader.get_operation("op-key-1")
+        assert isinstance(stored_op, federation_api.StoredOperation)
+        assert stored_op.operation_key == "op-key-1"
+
+        corrupt = reader.corrupt_rows()
+        assert len(corrupt) == 1
+        assert isinstance(corrupt[0], federation_api.CorruptEventRow)
+        assert corrupt[0].seq == corrupt_seq
+        assert corrupt[0].reasons
+        assert all(
+            isinstance(reason, federation_api.CorruptEventReason) for reason in corrupt[0].reasons
+        )
+
+    # 8. Strict mypy probe: every new name is usable from federation_api alone, and both
+    #    EventLogReader and EventStore satisfy federation_api.ReadableEventLog.
+    consumer = tmp_path / "records_consumer.py"
+    consumer.write_text(
+        "\n".join(
+            (
+                "from pathlib import Path",
+                "from synapse_channel.core.persistence import EventStore",
+                "from synapse_channel.federation_api import (",
+                "    STORE_FORMAT,",
+                "    CorruptEventReason,",
+                "    CorruptEventRow,",
+                "    EventLogReader,",
+                "    JournalInstance,",
+                "    ReadableEventLog,",
+                "    ReadOnlyOpenRefused,",
+                "    SqlCipherKeyError,",
+                "    SqlCipherUnavailableError,",
+                "    StoredEvent,",
+                "    StoredOperation,",
+                "    StoreFormatRefused,",
+                ")",
+                "",
+                "def check(",
+                "    path: Path,",
+                "    writer: EventStore,",
+                ") -> tuple[",
+                "    int, JournalInstance | None, StoredOperation | None, list[StoredEvent]",
+                "]:",
+                "    writer_as_log: ReadableEventLog = writer",
+                "    _ = writer_as_log.max_seq()",
+                "    try:",
+                "        reader = EventLogReader(path)",
+                "    except (",
+                "        ReadOnlyOpenRefused,",
+                "        StoreFormatRefused,",
+                "        SqlCipherKeyError,",
+                "        SqlCipherUnavailableError,",
+                "    ):",
+                "        return STORE_FORMAT, None, None, []",
+                "    reader_as_log: ReadableEventLog = reader",
+                "    rows: tuple[CorruptEventRow, ...] = reader.corrupt_rows()",
+                "    reasons: tuple[CorruptEventReason, ...] = rows[0].reasons if rows else ()",
+                "    _ = reasons",
+                "    events = reader_as_log.read_since(0)",
+                "    return (",
+                "        STORE_FORMAT,",
+                "        reader.journal_instance(),",
+                "        reader.get_operation('k'),",
+                "        events,",
+                "    )",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    package_root = Path(synapse_channel.__file__).resolve().parents[1]
+    probe = subprocess.run(
+        [sys.executable, "-m", "mypy", "--strict", str(consumer)],
+        capture_output=True,
+        check=False,
+        cwd=package_root,
+        env={**os.environ, "PYTHONPATH": str(package_root)},
+        text=True,
+        timeout=180,
+    )
+    assert probe.returncode == 0, probe.stdout + probe.stderr

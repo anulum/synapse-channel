@@ -20,6 +20,16 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **Read-only event-log reader exports on `synapse_channel.federation_api`.** Exported `EventLogReader`,
+  `ReadableEventLog`, `JournalInstance`, `STORE_FORMAT`, `StoreFormatRefused`, `ReadOnlyOpenRefused`,
+  `SqlCipherKeyError`, `SqlCipherUnavailableError`, `CorruptEventRow`, `CorruptEventReason`, and `StoredOperation`
+  lazily through `federation_api._records` (raising the federation surface from 119 to 130 symbols across 42 modules).
+  Opening an event store through `federation_api.EventLogReader` is read-only and creates nothing on a missing path or
+  missing subdirectory, refusing missing or non-event-table files with `ReadOnlyOpenRefused`, newer store formats with
+  `StoreFormatRefused`, unreadable or unkeyed encrypted/non-SQLite files with `SqlCipherKeyError`, and keyed opens
+  without an installed SQLCipher driver with `SqlCipherUnavailableError`, while keeping raw database connections and
+  `EventStore` off `federation_api`.
+
 - **Read-only per-task operation record projector on `synapse_channel.federation_api`.** Added
   `core/operation_record_reader.py` and the lazy `federation_api._operations` capability module exporting
   `OperationRecordReader`, `OperationEvent`, `OperationEvidenceSnapshot`, `OperationRecordSnapshot`,
