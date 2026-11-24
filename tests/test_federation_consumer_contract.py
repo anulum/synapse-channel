@@ -99,11 +99,13 @@ _CONTRACT_SIZE = (
 # Every Core symbol the fleet tier imports, by module, with its kind: ``class``, ``callable``
 # (a function or a callable type alias) or ``value`` (a constant or a non-callable type
 # alias). The list is the fleet tier's consumed-symbol inventory as of its admission of
-# Core 0.99.49, with attachment fetch and local import added, and with its copies of
-# Core's record-keeping modules replaced by their functions. It pins existence and kind
-# only, so a removal, a rename or a change between kinds fails here, in this repository's
-# CI, before a release can break the consumer; the required fields and parameters of the
-# most used primitives stay pinned above.
+# Core 0.99.49, with attachment fetch and local import added, with its copies of
+# Core's record-keeping modules replaced by their functions, and with the operation
+# record projector added for the fleet tier to adopt in place of its own evidence
+# collector. It pins existence and kind only, so a removal, a rename or a change
+# between kinds fails here, in this repository's CI, before a release can break the
+# consumer; the required fields and parameters of the most used primitives stay pinned
+# above.
 _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     "synapse_channel.client.agent": {
         "SynapseAgent": "class",
@@ -229,6 +231,17 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
         "PING_INTERVAL": "value",
         "network_fetcher": "callable",
     },
+    "synapse_channel.core.operation_record_reader": {
+        "IndependentVerificationRecord": "class",
+        "OPERATION_RECORD_KINDS": "value",
+        "OperationAttemptSnapshot": "class",
+        "OperationEvent": "class",
+        "OperationEvidenceSnapshot": "class",
+        "OperationMalformedRecord": "class",
+        "OperationRecordReader": "class",
+        "OperationRecordSnapshot": "class",
+        "SCOPE_STOP_RECORD_KINDS": "value",
+    },
     "synapse_channel.core.peer_identity": {
         "PeerRegistrationSigner": "class",
         "load_peer_registration_signer": "callable",
@@ -291,8 +304,8 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     },
 }
 
-_FLEET_SYMBOLS = 110
-_FLEET_MODULES = 37
+_FLEET_SYMBOLS = 119
+_FLEET_MODULES = 38
 
 
 def _kind(obj: object) -> str:

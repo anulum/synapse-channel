@@ -30,6 +30,7 @@ stability page. The private submodules only group the names by capability:
 - Receipts and integrity: ``merkle``, ``receipt_signing``, ``event_row_mac``.
 - Identity and TLS: ``identity_keys``, ``peer_identity``, ``tls``.
 - Record keeping: ``record_keeping``, ``record_keeping_source``, ``record_retention``.
+- Operation record projection: ``operation_record_reader``.
 - Health and entitlement: ``fleet_health``, ``entitlement_advert``.
 - Protocol and client: ``protocol``, ``client.agent``.
 """
@@ -102,6 +103,17 @@ if TYPE_CHECKING:
         certificate_sha256_pin_from_der,
         load_peer_registration_signer,
         load_signing_key,
+    )
+    from synapse_channel.federation_api._operations import (
+        OPERATION_RECORD_KINDS,
+        SCOPE_STOP_RECORD_KINDS,
+        IndependentVerificationRecord,
+        OperationAttemptSnapshot,
+        OperationEvent,
+        OperationEvidenceSnapshot,
+        OperationMalformedRecord,
+        OperationRecordReader,
+        OperationRecordSnapshot,
     )
     from synapse_channel.federation_api._peers import (
         PING_INTERVAL,
@@ -284,6 +296,16 @@ _CAPABILITY_OF: dict[str, str] = {
     "render_retention": "_records",
     "retention_to_json": "_records",
     "utc_event_time": "_records",
+    # Operation record projection
+    "IndependentVerificationRecord": "_operations",
+    "OPERATION_RECORD_KINDS": "_operations",
+    "OperationAttemptSnapshot": "_operations",
+    "OperationEvent": "_operations",
+    "OperationEvidenceSnapshot": "_operations",
+    "OperationMalformedRecord": "_operations",
+    "OperationRecordReader": "_operations",
+    "OperationRecordSnapshot": "_operations",
+    "SCOPE_STOP_RECORD_KINDS": "_operations",
     # Health and entitlement
     "EntitlementAdvertError": "_health",
     "build_local_fleet_health": "_health",
@@ -328,6 +350,7 @@ __all__ = [
     "HubEvent",
     "HubEventRef",
     "IdentityKeyError",
+    "IndependentVerificationRecord",
     "LIFECYCLE",
     "MAX_CHUNK_BYTES",
     "MTLSPeerTrustBundle",
@@ -336,9 +359,16 @@ __all__ = [
     "MessageType",
     "MultiHubAuthorisation",
     "MultiHubAuthoriser",
+    "OPERATION_RECORD_KINDS",
     "ObservedBoardConflict",
     "ObservedBoardProvenance",
     "ObservedState",
+    "OperationAttemptSnapshot",
+    "OperationEvent",
+    "OperationEvidenceSnapshot",
+    "OperationMalformedRecord",
+    "OperationRecordReader",
+    "OperationRecordSnapshot",
     "OtelProjection",
     "OtelSpanRecord",
     "OwnerRevocation",
@@ -346,6 +376,7 @@ __all__ = [
     "PeerRegistrationSigner",
     "ProtocolNegotiation",
     "RowMacKey",
+    "SCOPE_STOP_RECORD_KINDS",
     "SERVICE_NAME",
     "SPAN_ID_HEX_LENGTH",
     "SPAN_STATUS_ERROR",

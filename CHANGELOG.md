@@ -18,6 +18,20 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- **Read-only per-task operation record projector on `synapse_channel.federation_api`.** Added
+  `core/operation_record_reader.py` and the lazy `federation_api._operations` capability module exporting
+  `OperationRecordReader`, `OperationEvent`, `OperationEvidenceSnapshot`, `OperationRecordSnapshot`,
+  `OperationAttemptSnapshot`, `IndependentVerificationRecord`, `OperationMalformedRecord`, `OPERATION_RECORD_KINDS`,
+  and `SCOPE_STOP_RECORD_KINDS` (raising the federation surface from 110 to 119 symbols across 38 modules). The reader
+  partitions task-scoped operation and claim records per task, refuses merged multi-task snapshots, applies scope-level
+  stop and resume records across existing and later tasks, reports unattributed operation rows via
+  `unattributed_seqs()`, gates both `sealed` and `applied` stop read-back attempt transitions on the kept read-back,
+  and shares Core's marker recomputation and verification-marker matching helpers through
+  `core/operation_stop_readbacks.py` (`recomputed_marker_kind`, `match_verification_marker`, `MARKER_*`) without
+  altering live `AttemptLedger` behaviour.
+
 ## [0.99.64] - 2026-11-24
 
 Core 0.99.64 gives each part of the agent client and the hub one owner. Behaviour is unchanged

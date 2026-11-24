@@ -73,11 +73,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.core.attempt_markers import (
-    AttemptMarker,
-    commit_id_length,
-    commit_object_format,
-)
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.operation_attempts import APPROVED_FRESH, OperationFact
 from synapse_channel.core.operation_level_criteria import (
@@ -96,10 +91,12 @@ from synapse_channel.core.operation_level_ledger import (
 from synapse_channel.core.operation_levels import DEFAULT_LEVEL, LEVELS, lowest
 from synapse_channel.core.operation_stop_ledger import StopLedger, _ScopeStops, _StopRow
 from synapse_channel.core.operation_stop_readbacks import (
+    MARKER_UNSCOPED,
     RESULT_APPLIED,
     RESULT_SEALED,
     marker_reads_applied,
     marker_reads_sealed,
+    match_verification_marker,
 )
 from synapse_channel.core.operation_stop_states import STATE_AT_REST, StopState
 from synapse_channel.core.operation_stops import scopes_of
@@ -266,24 +263,11 @@ def _time_of(payload: Mapping[str, Any]) -> float:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
 
 
-_MARKER_UNSCOPED = "unscoped"
-_MARKER_MATCHED = "matched"
-_MARKER_MISMATCHED = "mismatched"
-
-
 def _mark_ended(attempt: _Attempt) -> None:
     """Mark ``attempt`` ended and reconcile it if its marker was already observed."""
     attempt.ended = True
     if attempt.marker_observed:
         attempt.reconciled = True
-
-
-def _marker_object_format(marker_object: str) -> str | None:
-    """Return ``sha1`` or ``sha256`` for a valid marker object id, else ``None``."""
-    try:
-        return commit_object_format(commit_id_length(marker_object, marker_object))
-    except ValueError:
-        return None
 
 
 def _record_contradiction(entry: _Operation, seq: int) -> None:
@@ -294,71 +278,26 @@ def _record_contradiction(entry: _Operation, seq: int) -> None:
         entry.contradicted_seq = seq
 
 
-def _attempt_matched_marker(
-    operation_id: str,
-    attempt_id: str,
-    intent_sha256: str,
-    *,
-    object_format: str,
-    marker_object: str,
-    effect: str,
-) -> str | None:
-    """Return ``applied`` or ``sealed`` when ``marker_object`` matches ``attempt_id``.
-
-    An ``applied`` blob matches either ``observed`` or ``absent`` (branch moved);
-    a ``sealed`` blob matches only ``absent``, never ``observed``.
-    """
-    try:
-        objects = AttemptMarker(operation_id, attempt_id, intent_sha256).objects(object_format)
-    except ValueError:
-        return None
-    if marker_object == objects.applied:
-        return RESULT_APPLIED
-    if marker_object == objects.sealed and effect == "absent":
-        return RESULT_SEALED
-    return None
-
-
 def _match_marker_attempt(
     entry: _Operation,
     operation_id: str,
     effect: str,
     evidence: Mapping[str, Any] | None,
 ) -> tuple[str, _Attempt | None, str | None]:
-    """Classify ``evidence`` as ``unscoped``, ``matched`` (one attempt + blob) or ``mismatched``.
-
-    When ``evidence`` carries ``attempt_id``, only that attempt is checked so a
-    blob belonging to another attempt is ``mismatched``. When ``attempt_id`` is
-    absent (rows written before ``0.99.59`` dropped 32-hex attempt ids), every
-    attempt of ``entry`` is checked; at most one can match because the marker
-    blob hashes the attempt id.
-    """
-    if evidence is None:
-        return _MARKER_UNSCOPED, None, None
-    raw_marker = evidence.get("marker_object")
-    if not isinstance(raw_marker, str) or not raw_marker:
-        return _MARKER_UNSCOPED, None, None
-    intent_sha256 = entry.fact.intent_sha256
-    object_format = _marker_object_format(raw_marker)
-    if intent_sha256 is None or object_format is None:
-        return _MARKER_MISMATCHED, None, None
-    raw_attempt = evidence.get("attempt_id")
-    if raw_attempt is not None:
-        candidates = [attempt for attempt in entry.attempts if attempt.attempt_id == raw_attempt]
-    else:
-        candidates = list(entry.attempts)
-    for attempt in candidates:
-        blob_kind = _attempt_matched_marker(
-            operation_id,
-            attempt.attempt_id,
-            intent_sha256,
-            object_format=object_format,
-            marker_object=raw_marker,
-            effect=effect,
-        )
-        if blob_kind is not None:
-            return _MARKER_MATCHED, attempt, blob_kind
-    return _MARKER_MISMATCHED, None, None
+    """Match ``evidence`` against ``entry.attempts`` via :func:`match_verification_marker`."""
+    match_kind, matched_id, blob_kind = match_verification_marker(
+        operation_id,
+        entry.fact.intent_sha256,
+        [attempt.attempt_id for attempt in entry.attempts],
+        effect,
+        evidence,
+    )
+    matched = (
+        None
+        if matched_id is None
+        else next((attempt for attempt in entry.attempts if attempt.attempt_id == matched_id), None)
+    )
+    return match_kind, matched, blob_kind
 
 
 def _bound(entry: Mapping[str, Any]) -> int:
@@ -1057,7 +996,7 @@ class AttemptLedger:
                         _record_contradiction(entry, seq)
                 if matched.ended:
                     matched.reconciled = True
-            elif match_kind == _MARKER_UNSCOPED:
+            elif match_kind == MARKER_UNSCOPED:
                 for attempt in entry.attempts:
                     if attempt.ended:
                         attempt.reconciled = True

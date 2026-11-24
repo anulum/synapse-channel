@@ -36,7 +36,7 @@ This module is pure; the hub's handler applies the ledger's checks.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -46,6 +46,8 @@ from synapse_channel.core.attempt_markers import (
     OBJECT_ID_LENGTHS,
     UNKNOWN,
     AttemptMarker,
+    commit_id_length,
+    commit_object_format,
 )
 
 RESULT_SEALED = "sealed"
@@ -57,6 +59,10 @@ READBACK_RESULTS = (RESULT_SEALED, RESULT_APPLIED, RESULT_UNSEALABLE, RESULT_UNR
 
 CLOSING_RESULTS = frozenset({RESULT_SEALED, RESULT_APPLIED})
 """The results that close an attempt for its stop."""
+
+MARKER_UNSCOPED = "unscoped"
+MARKER_MATCHED = "matched"
+MARKER_MISMATCHED = "mismatched"
 
 UNREAD_REASONS = (NOT_REACHED, BASE_GONE, UNKNOWN)
 """Why a seal's read-back is ``unread``: the seal flow's answers that show no marker."""
@@ -207,7 +213,7 @@ def recompute_readback_result(
     return None
 
 
-def _recomputed_marker_kind(
+def recomputed_marker_kind(
     *,
     operation_id: str,
     attempt_id: str,
@@ -233,6 +239,81 @@ def _recomputed_marker_kind(
     return None
 
 
+def _marker_object_format(marker_object: str) -> str | None:
+    """Return ``sha1`` or ``sha256`` for a valid marker object id, else ``None``."""
+    try:
+        return commit_object_format(commit_id_length(marker_object, marker_object))
+    except ValueError:
+        return None
+
+
+def _attempt_matched_marker(
+    operation_id: str,
+    attempt_id: str,
+    intent_sha256: str,
+    *,
+    object_format: str,
+    marker_object: str,
+    effect: str,
+) -> str | None:
+    """Return ``applied`` or ``sealed`` when ``marker_object`` matches ``attempt_id``.
+
+    An ``applied`` blob matches either ``observed`` or ``absent`` (branch moved);
+    a ``sealed`` blob matches only ``absent``, never ``observed``.
+    """
+    try:
+        objects = AttemptMarker(operation_id, attempt_id, intent_sha256).objects(object_format)
+    except ValueError:
+        return None
+    if marker_object == objects.applied:
+        return RESULT_APPLIED
+    if marker_object == objects.sealed and effect == "absent":
+        return RESULT_SEALED
+    return None
+
+
+def match_verification_marker(
+    operation_id: str,
+    intent_sha256: str | None,
+    attempt_ids: Sequence[str],
+    effect: str,
+    evidence: Mapping[str, Any] | None,
+) -> tuple[str, str | None, str | None]:
+    """Classify ``evidence`` as ``unscoped``, ``matched`` (one attempt id + blob) or ``mismatched``.
+
+    When ``evidence`` carries ``attempt_id``, only that attempt is checked so a
+    blob belonging to another attempt is ``mismatched``. When ``attempt_id`` is
+    absent (rows written before ``0.99.59`` dropped 32-hex attempt ids), every
+    attempt in ``attempt_ids`` is checked; at most one can match because the
+    marker blob hashes the attempt id.
+    """
+    if evidence is None:
+        return MARKER_UNSCOPED, None, None
+    raw_marker = evidence.get("marker_object")
+    if not isinstance(raw_marker, str) or not raw_marker:
+        return MARKER_UNSCOPED, None, None
+    object_format = _marker_object_format(raw_marker)
+    if intent_sha256 is None or object_format is None:
+        return MARKER_MISMATCHED, None, None
+    raw_attempt = evidence.get("attempt_id")
+    if raw_attempt is not None:
+        candidates = [attempt_id for attempt_id in attempt_ids if attempt_id == raw_attempt]
+    else:
+        candidates = list(attempt_ids)
+    for attempt_id in candidates:
+        blob_kind = _attempt_matched_marker(
+            operation_id,
+            attempt_id,
+            intent_sha256,
+            object_format=object_format,
+            marker_object=raw_marker,
+            effect=effect,
+        )
+        if blob_kind is not None:
+            return MARKER_MATCHED, attempt_id, blob_kind
+    return MARKER_MISMATCHED, None, None
+
+
 def marker_reads_sealed(
     *,
     operation_id: str,
@@ -244,7 +325,7 @@ def marker_reads_sealed(
 ) -> bool:
     """Return whether the marker fields match the hub's recomputed ``sealed`` marker."""
     return (
-        _recomputed_marker_kind(
+        recomputed_marker_kind(
             operation_id=operation_id,
             attempt_id=attempt_id,
             intent_sha256=intent_sha256,
@@ -267,7 +348,7 @@ def marker_reads_applied(
 ) -> bool:
     """Return whether the marker fields match the hub's recomputed ``applied`` marker."""
     return (
-        _recomputed_marker_kind(
+        recomputed_marker_kind(
             operation_id=operation_id,
             attempt_id=attempt_id,
             intent_sha256=intent_sha256,
