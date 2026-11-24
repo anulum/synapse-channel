@@ -95,6 +95,62 @@ def test_assert_owner_only_file_refuses_group_readable_on_posix(tmp_path: Path) 
         assert_owner_only_file_path(path, purpose="loose")
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory mode-bit loosen path")
+def test_assert_owner_only_dir_refuses_group_readable_on_posix(tmp_path: Path) -> None:
+    directory = tmp_path / "group_readable_dir"
+    directory.mkdir()
+    directory.chmod(0o750)
+    with pytest.raises(SecurePathError, match="accessible by other users"):
+        assert_owner_only_dir_path(directory, purpose="group dir")
+    fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        with pytest.raises(SecurePathError, match="accessible by other users"):
+            assert_owner_only_descriptor(fd, path=directory, purpose="group dir", directory=True)
+    finally:
+        os.close(fd)
+
+
+def test_read_owner_only_file_bytes_enforces_max_bytes_boundary(tmp_path: Path) -> None:
+    from synapse_channel.core.secure_path import _read_bounded_file_bytes, open_nofollow_leaf
+
+    limit = 64
+    exact = tmp_path / "exact.secret"
+    assert create_owner_only_file(exact) is True
+    exact_payload = b"k" * limit
+    exact.write_bytes(exact_payload)
+    assert read_owner_only_file_bytes(exact, purpose="boundary", max_bytes=limit) == exact_payload
+
+    over = tmp_path / "over.secret"
+    assert create_owner_only_file(over) is True
+    over.write_bytes(b"k" * (limit + 1))
+    with pytest.raises(SecurePathError, match=f"exceeds the {limit}-byte secret-file limit"):
+        read_owner_only_file_bytes(over, purpose="boundary", max_bytes=limit)
+
+    # Also verify _read_bounded_file_bytes enforces max_bytes if a file grows after fstat.
+    fd = open_nofollow_leaf(over)
+    try:
+        with pytest.raises(SecurePathError, match=f"exceeds the {limit}-byte secret-file limit"):
+            _read_bounded_file_bytes(fd, size=limit, max_bytes=limit, path=over, purpose="boundary")
+    finally:
+        os.close(fd)
+
+
+def test_read_owner_only_file_bytes_reads_multi_chunk_payload(tmp_path: Path) -> None:
+    # Larger than the 64 KiB read chunk so single-chunk truncation fails.
+    payload = bytes((index * 31) % 251 for index in range(200_000))
+    target = tmp_path / "large.secret"
+    assert create_owner_only_file(target) is True
+    target.write_bytes(payload)
+    assert read_owner_only_file_bytes(target, purpose="large") == payload
+    assert read_owner_only_file_bytes(target, purpose="large", max_bytes=len(payload)) == payload
+    assert (
+        read_owner_only_file_bytes(target, purpose="large", max_bytes=len(payload) + 4096)
+        == payload
+    )
+    with pytest.raises(SecurePathError, match=f"exceeds the {len(payload) - 1}-byte"):
+        read_owner_only_file_bytes(target, purpose="large", max_bytes=len(payload) - 1)
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX ownership monkeypatch")
 def test_assert_owner_only_file_refuses_foreign_owner_on_posix(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1483,16 +1539,25 @@ def test_windows_apply_owner_only_uses_set_security_info_and_verifies_same_handl
 # ---------------------------------------------------------------------------
 
 
-def _win32_read_dacl_protected(handle: wintypes.HANDLE) -> bool:
-    """Return whether ``SE_DACL_PROTECTED`` (0x1000) is set on ``handle``."""
+def _win32_descriptor_dacl_protected(sd: ctypes.c_void_p) -> bool:
+    """Return whether ``SE_DACL_PROTECTED`` (0x1000) is set on ``sd``."""
     advapi32 = win_sec._load_advapi32()
-    kernel32 = win_sec._load_kernel32()
     advapi32.GetSecurityDescriptorControl.argtypes = [
         ctypes.c_void_p,
         ctypes.POINTER(wintypes.WORD),
         ctypes.POINTER(wintypes.DWORD),
     ]
     advapi32.GetSecurityDescriptorControl.restype = wintypes.BOOL
+    control = wintypes.WORD()
+    revision = wintypes.DWORD()
+    assert advapi32.GetSecurityDescriptorControl(sd, ctypes.byref(control), ctypes.byref(revision))
+    return bool(control.value & 0x1000)
+
+
+def _win32_read_dacl_protected(handle: wintypes.HANDLE) -> bool:
+    """Return whether ``SE_DACL_PROTECTED`` (0x1000) is set on ``handle``."""
+    advapi32 = win_sec._load_advapi32()
+    kernel32 = win_sec._load_kernel32()
     owner = ctypes.c_void_p()
     dacl = ctypes.c_void_p()
     sd = ctypes.c_void_p()
@@ -1510,22 +1575,26 @@ def _win32_read_dacl_protected(handle: wintypes.HANDLE) -> bool:
     )
     assert status == 0
     try:
-        control = wintypes.WORD()
-        revision = wintypes.DWORD()
-        assert advapi32.GetSecurityDescriptorControl(
-            sd, ctypes.byref(control), ctypes.byref(revision)
-        )
-        return bool(control.value & 0x1000)
+        return _win32_descriptor_dacl_protected(sd)
     finally:
         if sd.value:
             kernel32.LocalFree(sd)
 
 
-def _win32_grant_everyone_read(target: Path, sid: str) -> None:
-    """Set a non-protected DACL granting Everyone read access via native Win32."""
+def _win32_grant_everyone_read(target: Path, sid: str, *, directory: bool = False) -> None:
+    """Set a DACL granting Everyone read access via native Win32.
+
+    For directories, sets a protected inheritable (``OICI``) DACL so child files
+    created without ``D:P`` inherit the Everyone ACE from ``target``.
+    """
     advapi32 = win_sec._load_advapi32()
     kernel32 = win_sec._load_kernel32()
-    sddl = f"D:(A;;FA;;;{sid})(A;;FA;;;SY)(A;;FR;;;WD)"
+    if directory:
+        sddl = f"D:P(A;OICI;FA;;;{sid})(A;OICI;FA;;;SY)(A;OICI;FR;;;WD)"
+        info_flags = win_sec.DACL_SECURITY_INFORMATION | win_sec.PROTECTED_DACL_SECURITY_INFORMATION
+    else:
+        sddl = f"D:(A;;FA;;;{sid})(A;;FA;;;SY)(A;;FR;;;WD)"
+        info_flags = win_sec.DACL_SECURITY_INFORMATION | 0x20000000
     sd = ctypes.c_void_p()
     assert advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
         sddl, win_sec.SDDL_REVISION_1, ctypes.byref(sd), None
@@ -1534,7 +1603,7 @@ def _win32_grant_everyone_read(target: Path, sid: str) -> None:
         kernel32,
         target,
         desired_access=win_sec.WRITE_DAC | win_sec.READ_CONTROL | win_sec.FILE_READ_ATTRIBUTES,
-        directory=False,
+        directory=directory,
         purpose="win32 test",
     )
     try:
@@ -1544,10 +1613,9 @@ def _win32_grant_everyone_read(target: Path, sid: str) -> None:
         assert advapi32.GetSecurityDescriptorDacl(
             sd, ctypes.byref(dacl_present), ctypes.byref(dacl_ptr), ctypes.byref(dacl_defaulted)
         )
-        unprotected_dacl = win_sec.DACL_SECURITY_INFORMATION | 0x20000000
         status = int(
             advapi32.SetSecurityInfo(
-                handle, win_sec.SE_FILE_OBJECT, unprotected_dacl, None, None, dacl_ptr, None
+                handle, win_sec.SE_FILE_OBJECT, info_flags, None, None, dacl_ptr, None
             )
         )
         assert status == 0
@@ -1556,12 +1624,51 @@ def _win32_grant_everyone_read(target: Path, sid: str) -> None:
         kernel32.LocalFree(sd)
 
 
+def _win32_set_null_dacl(target: Path) -> None:
+    """Replace ``target``'s DACL with a real protected NULL DACL via native Win32."""
+    advapi32 = win_sec._load_advapi32()
+    kernel32 = win_sec._load_kernel32()
+    handle = win_sec._open_nofollow_handle(
+        kernel32,
+        target,
+        desired_access=win_sec.WRITE_DAC | win_sec.READ_CONTROL | win_sec.FILE_READ_ATTRIBUTES,
+        directory=False,
+        purpose="win32 null dacl test",
+    )
+    try:
+        flags = win_sec.DACL_SECURITY_INFORMATION | win_sec.PROTECTED_DACL_SECURITY_INFORMATION
+        status = int(
+            advapi32.SetSecurityInfo(handle, win_sec.SE_FILE_OBJECT, flags, None, None, None, None)
+        )
+        assert status == 0
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="real Windows NT birth DACL read-back proof")
 def test_win32_create_owner_only_file_sets_birth_protected_dacl(tmp_path: Path) -> None:
-    target = tmp_path / "birth.secret"
+    sid = current_user_key().value
+    with win_sec.owner_birth_security_descriptor(sid, directory=False) as birth_sd:
+        assert _win32_descriptor_dacl_protected(birth_sd) is True
+
+    broad_parent = tmp_path / "broad_parent"
+    broad_parent.mkdir()
+    _win32_grant_everyone_read(broad_parent, sid, directory=True)
+
+    # Prove a plain child inherits Everyone from broad_parent when D:P is absent.
+    inherited = broad_parent / "inherited.txt"
+    inherited.write_bytes(b"plain")
+    with pytest.raises(SecurePathError, match="other principals"):
+        assert_owner_only_file_path(inherited, purpose="inherited")
+
+    target = broad_parent / "birth.secret"
     assert create_owner_only_file(target) is True
     assert create_owner_only_file(target) is False
-    sid = current_user_key().value
+    assert_owner_only_file_path(target, purpose="birth")
+
+    # Re-applying inheritable Everyone on the parent must not propagate into birth.secret.
+    _win32_grant_everyone_read(broad_parent, sid, directory=True)
+    assert_owner_only_file_path(target, purpose="birth after parent re-grant")
     kernel32 = win_sec._load_kernel32()
     handle = win_sec._open_nofollow_handle(
         kernel32,
@@ -1579,10 +1686,79 @@ def test_win32_create_owner_only_file_sets_birth_protected_dacl(tmp_path: Path) 
         kernel32.CloseHandle(handle)
     assert owner_sid == sid
     assert dacl_present is True
+    assert all(ace.sid != "S-1-1-0" for ace in aces)
     assert {(ace.ace_type, ace.mask, ace.sid) for ace in aces} == {
         (0, 0x001F01FF, sid),
         (0, 0x001F01FF, "S-1-5-18"),
     }
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="real Windows NT NULL DACL refusal proof")
+def test_win32_null_dacl_file_is_refused(tmp_path: Path) -> None:
+    target = tmp_path / "null_dacl.secret"
+    assert create_owner_only_file(target) is True
+    target.write_bytes(b"secret-payload")
+    assert_owner_only_file_path(target, purpose="before null dacl")
+    _win32_set_null_dacl(target)
+    with pytest.raises(SecurePathError, match="NULL DACL"):
+        assert_owner_only_file_path(target, purpose="null dacl")
+    with pytest.raises(SecurePathError, match="NULL DACL"):
+        read_owner_only_file_bytes(target, purpose="null dacl")
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="real Windows NT directory-as-file refusal proof",
+)
+def test_win32_directory_is_refused_as_regular_file(tmp_path: Path) -> None:
+    import msvcrt
+
+    msvcrt_mod: Any = msvcrt
+    private_dir = tmp_path / "private_dir"
+    private_dir.mkdir()
+    apply_owner_only_dir(private_dir)
+    assert_owner_only_dir_path(private_dir, purpose="private dir")
+
+    # Path-level file helpers refuse a real directory (CreateFileW without
+    # FILE_FLAG_BACKUP_SEMANTICS fails closed with ERROR_ACCESS_DENIED before
+    # _check_handle_file_info is reached).
+    with pytest.raises(SecurePathError, match="cannot open|not a regular file"):
+        assert_owner_only_file_path(private_dir, purpose="dir as file")
+    with pytest.raises(SecurePathError, match="cannot open|not a regular file"):
+        read_owner_only_file_bytes(private_dir, purpose="dir as file")
+
+    # Pass a real NT directory descriptor through assert_owner_only_descriptor
+    # with directory=False so _check_handle_file_info's regular-file guard is
+    # directly exercised on a real owner-only directory handle.
+    kernel32 = win_sec._load_kernel32()
+    handle = win_sec._open_nofollow_handle(
+        kernel32,
+        private_dir,
+        desired_access=win_sec.READ_CONTROL | win_sec.FILE_READ_ATTRIBUTES,
+        directory=True,
+        purpose="dir descriptor proof",
+    )
+    raw_handle = int(handle.value or 0)
+    assert raw_handle != 0
+    descriptor_flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)
+    try:
+        dir_fd = int(msvcrt_mod.open_osfhandle(raw_handle, descriptor_flags))
+    except OSError:
+        kernel32.CloseHandle(handle)
+        raise
+    try:
+        with pytest.raises(SecurePathError, match="not a regular file"):
+            assert_owner_only_descriptor(
+                dir_fd, path=private_dir, purpose="dir as file", directory=False
+            )
+    finally:
+        os.close(dir_fd)
+
+    # Mirror guard: a real owner-only file is refused when directory=True.
+    private_file = tmp_path / "private_file.secret"
+    assert create_owner_only_file(private_file) is True
+    with pytest.raises(SecurePathError, match="not a directory"):
+        assert_owner_only_dir_path(private_file, purpose="file as dir")
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="real Windows NT apply over Everyone ACE proof")

@@ -288,9 +288,10 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_relay_trim.py": (3, "platform-guard"),
     "tests/test_reliability_workflow_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_secret_files.py": (8, "platform-guard"),
-    # 5 POSIX mode/ownership/symlink guards + 5 real Windows NT custody proofs
-    # (birth protected DACL, apply over Everyone ACE, read accept/refuse, reparse, hard link).
-    "tests/test_secure_path.py": (10, "platform-guard"),
+    # 6 POSIX mode/ownership/symlink guards + 7 real Windows NT custody proofs
+    # (birth protected DACL under broad parent, NULL DACL, directory-as-file,
+    # apply over Everyone ACE, read accept/refuse, reparse, hard link).
+    "tests/test_secure_path.py": (13, "platform-guard"),
     # The stand-in git that keeps its pipes open is a POSIX shell script.
     "tests/test_semantic_diff.py": (1, "platform-guard"),
     "tests/test_service_status.py": (1, "platform-guard"),
