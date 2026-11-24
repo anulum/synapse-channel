@@ -28,10 +28,10 @@ from synapse_channel import federation_api
 
 # The federation surface inventory (109 at its introduction, 110 once the fleet tier dropped
 # its record-keeping copies and read Core's wire version where it is defined, 119 with the
-# operation record projector, and 130 with the read-only event-log reader exports adopted in
-# the fleet retirement units); changing the count is a reviewed edit here, in the inventory
-# guard and on the API stability page.
-_SURFACE_SIZE = 130
+# operation record projector, 130 with the read-only event-log reader exports, and 133 with
+# the Fleet mirror contract parser exports); changing the count is a reviewed edit here, in
+# the inventory guard and on the API stability page.
+_SURFACE_SIZE = 133
 
 
 def test_the_surface_is_sorted_unique_and_of_the_promised_size() -> None:
@@ -54,7 +54,12 @@ def test_the_capability_modules_partition_the_surface() -> None:
 def test_a_name_off_the_surface_is_an_attribute_error() -> None:
     with pytest.raises(AttributeError, match="has no attribute 'EventStore'"):
         _ = federation_api.EventStore
-    assert not hasattr(federation_api, "_private_helper")
+    for private_or_deferred in (
+        "_private_helper",
+        "MAX_MIRROR_BYTES",
+        "parse_mirror_document",
+    ):
+        assert not hasattr(federation_api, private_or_deferred)
 
 
 def test_listing_and_star_import_show_exactly_the_surface() -> None:

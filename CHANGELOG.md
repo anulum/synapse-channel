@@ -20,6 +20,12 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **Fleet mirror contract exports on `synapse_channel.federation_api`.** Added `MIRROR_CONTRACT_VERSION = 1` in
+  `fleet_mirror_contract.py` (used directly by `parse_mirror` with byte-identical version-one validation) and
+  exported `MIRROR_CONTRACT_VERSION`, `MirrorVersionError`, and `parse_mirror` lazily through
+  `federation_api._health` (raising the federation surface from 130 to 133 symbols across 43 modules).
+  `MAX_MIRROR_BYTES` remains internal and off `federation_api`.
+
 - **Read-only event-log reader exports on `synapse_channel.federation_api`.** Exported `EventLogReader`,
   `ReadableEventLog`, `JournalInstance`, `STORE_FORMAT`, `StoreFormatRefused`, `ReadOnlyOpenRefused`,
   `SqlCipherKeyError`, `SqlCipherUnavailableError`, `CorruptEventRow`, `CorruptEventReason`, and `StoredOperation`

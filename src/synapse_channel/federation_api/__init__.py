@@ -33,7 +33,8 @@ stability page. The private submodules only group the names by capability:
   ``record_retention``, ``persistence_reader``, ``persistence_store_format``,
   ``persistence_sqlcipher``, ``event_row_recovery``, ``persistence``.
 - Operation record projection: ``operation_record_reader``.
-- Health and entitlement: ``fleet_health``, ``entitlement_advert``.
+- Health, entitlement and mirror contract: ``fleet_health``, ``entitlement_advert``,
+  ``fleet_mirror_contract``.
 - Protocol and client: ``protocol``, ``client.agent``.
 """
 
@@ -92,8 +93,11 @@ if TYPE_CHECKING:
         trace_id_for_task,
     )
     from synapse_channel.federation_api._health import (
+        MIRROR_CONTRACT_VERSION,
         EntitlementAdvertError,
+        MirrorVersionError,
         build_local_fleet_health,
+        parse_mirror,
         validate_advert,
     )
     from synapse_channel.federation_api._identity import (
@@ -330,9 +334,12 @@ _CAPABILITY_OF: dict[str, str] = {
     "OperationRecordReader": "_operations",
     "OperationRecordSnapshot": "_operations",
     "SCOPE_STOP_RECORD_KINDS": "_operations",
-    # Health and entitlement
+    # Health, entitlement and mirror contract
     "EntitlementAdvertError": "_health",
+    "MIRROR_CONTRACT_VERSION": "_health",
+    "MirrorVersionError": "_health",
     "build_local_fleet_health": "_health",
+    "parse_mirror": "_health",
     "validate_advert": "_health",
     # Protocol and client
     "MessageType": "_protocol",
@@ -381,10 +388,12 @@ __all__ = [
     "JournalInstance",
     "LIFECYCLE",
     "MAX_CHUNK_BYTES",
+    "MIRROR_CONTRACT_VERSION",
     "MTLSPeerTrustBundle",
     "MTLSTrustedPeer",
     "MerkleRoot",
     "MessageType",
+    "MirrorVersionError",
     "MultiHubAuthorisation",
     "MultiHubAuthoriser",
     "OPERATION_RECORD_KINDS",
@@ -449,6 +458,7 @@ __all__ = [
     "load_store",
     "merge_event_logs",
     "network_fetcher",
+    "parse_mirror",
     "parse_task_causal_parent",
     "peer_from_dict",
     "projection_to_json",

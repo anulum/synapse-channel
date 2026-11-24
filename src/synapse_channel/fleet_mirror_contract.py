@@ -28,6 +28,9 @@ from typing import Any
 
 from synapse_channel.core.errors import SynapseError
 
+MIRROR_CONTRACT_VERSION = 1
+"""Supported advisory Fleet mirror export contract version."""
+
 MAX_MIRROR_BYTES = 4 * 1024 * 1024
 _MAX_UNSIGNED_INT64 = 2**64 - 1
 _ENVELOPE_REQUIRED = frozenset({"version", "source_id", "exported_at", "advisory", "snapshot"})
@@ -159,7 +162,7 @@ def parse_mirror(raw: str) -> dict[str, Any]:
     except (RecursionError, OverflowError) as exc:
         raise ValueError("mirror nesting or number exceeds limit") from exc
     doc = _mapping_with_optional_generation(parsed, _ENVELOPE_REQUIRED, "envelope")
-    if type(doc["version"]) is not int or doc["version"] != 1:
+    if type(doc["version"]) is not int or doc["version"] != MIRROR_CONTRACT_VERSION:
         raise MirrorVersionError("unsupported mirror version")
     if (
         not isinstance(doc["source_id"], str)

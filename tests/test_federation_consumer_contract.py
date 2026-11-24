@@ -33,6 +33,7 @@ import collections.abc
 import dataclasses
 import importlib
 import inspect
+import json
 import os
 import sqlite3
 import subprocess
@@ -322,14 +323,19 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
         "certificate_sha256_pin": "callable",
         "certificate_sha256_pin_from_der": "callable",
     },
+    "synapse_channel.fleet_mirror_contract": {
+        "MIRROR_CONTRACT_VERSION": "value",
+        "MirrorVersionError": "class",
+        "parse_mirror": "callable",
+    },
     "synapse_channel.otel_export": {
         "DEFAULT_EXPORT_TIMEOUT": "value",
         "push_projection": "callable",
     },
 }
 
-_FLEET_SYMBOLS = 130
-_FLEET_MODULES = 42
+_FLEET_SYMBOLS = 133
+_FLEET_MODULES = 43
 
 
 def _kind(obj: object) -> str:
@@ -719,6 +725,108 @@ def test_read_only_store_reads_and_static_protocol_through_federation_api(tmp_pa
                 "        reader.get_operation('k'),",
                 "        events,",
                 "    )",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    package_root = Path(synapse_channel.__file__).resolve().parents[1]
+    probe = subprocess.run(
+        [sys.executable, "-m", "mypy", "--strict", str(consumer)],
+        capture_output=True,
+        check=False,
+        cwd=package_root,
+        env={**os.environ, "PYTHONPATH": str(package_root)},
+        text=True,
+        timeout=180,
+    )
+    assert probe.returncode == 0, probe.stdout + probe.stderr
+
+
+def test_mirror_contract_exports_boundary_parity_and_strict_mypy_consumer(tmp_path: Path) -> None:
+    """Pin the 3-symbol mirror contract export boundary, v1 behaviour, and strict mypy use."""
+    import synapse_channel.fleet_mirror_contract as mirror_mod
+
+    exported = set(federation_api.__all__)
+    expected = {"MIRROR_CONTRACT_VERSION", "MirrorVersionError", "parse_mirror"}
+    mirror_exports = {
+        name
+        for name in exported
+        if name in vars(mirror_mod) and getattr(federation_api, name) is getattr(mirror_mod, name)
+    }
+    assert mirror_exports == expected
+    assert "MAX_MIRROR_BYTES" not in exported
+    assert not hasattr(federation_api, "MAX_MIRROR_BYTES")
+    assert not hasattr(federation_api, "parse_mirror_document")
+
+    assert type(federation_api.MIRROR_CONTRACT_VERSION) is int
+    assert federation_api.MIRROR_CONTRACT_VERSION == 1
+    assert federation_api.MirrorVersionError is mirror_mod.MirrorVersionError
+    assert federation_api.parse_mirror is mirror_mod.parse_mirror
+
+    base_doc: dict[str, object] = {
+        "version": federation_api.MIRROR_CONTRACT_VERSION,
+        "source_id": "fleet-a",
+        "exported_at": 1_700_000_000.0,
+        "advisory": True,
+        "snapshot": {
+            "advisory": "read-only advisory view",
+            "generated_at": 1_700_000_000.0,
+            "peers": [],
+            "tasks": [],
+            "progress_notes": 0,
+        },
+    }
+    parsed = federation_api.parse_mirror(json.dumps(base_doc))
+    assert parsed == base_doc
+
+    generation = {"version": 1, "device": 17, "inode": 99, "marker": "a" * 32}
+    with_gen = {
+        **base_doc,
+        "writer_generation": generation,
+        "snapshot": {
+            **typing.cast(dict[str, object], base_doc["snapshot"]),
+            "writer_generation": generation,
+        },
+    }
+    assert federation_api.parse_mirror(json.dumps(with_gen)) == with_gen
+
+    # Unsupported versions raise MirrorVersionError (also a ValueError with code='mirror_version').
+    for bad_version in (0, 2, True, "1"):
+        bad = {**base_doc, "version": bad_version}
+        with pytest.raises(
+            federation_api.MirrorVersionError, match="unsupported mirror version"
+        ) as exc_info:
+            federation_api.parse_mirror(json.dumps(bad))
+        assert isinstance(exc_info.value, ValueError)
+        assert exc_info.value.code == "mirror_version"
+
+    # Malformed v1 shape raises plain ValueError, not MirrorVersionError.
+    mismatched_gen = {**base_doc, "writer_generation": generation}
+    with pytest.raises(ValueError, match="both envelope and snapshot") as val_exc:
+        federation_api.parse_mirror(json.dumps(mismatched_gen))
+    assert not isinstance(val_exc.value, federation_api.MirrorVersionError)
+
+    # Strict mypy probe importing only through federation_api.
+    consumer = tmp_path / "mirror_consumer.py"
+    consumer.write_text(
+        "\n".join(
+            (
+                "from typing import Any",
+                "from synapse_channel.federation_api import (",
+                "    MIRROR_CONTRACT_VERSION,",
+                "    MirrorVersionError,",
+                "    parse_mirror,",
+                ")",
+                "",
+                "def check_export(raw: str) -> dict[str, Any] | None:",
+                "    expected: int = MIRROR_CONTRACT_VERSION",
+                "    try:",
+                "        doc = parse_mirror(raw)",
+                "    except MirrorVersionError:",
+                "        return None",
+                "    assert doc['version'] == expected",
+                "    return doc",
                 "",
             )
         ),
