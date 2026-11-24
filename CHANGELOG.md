@@ -20,16 +20,19 @@ execution evidence when carrying a release claim forward.
 
 ## [0.99.64] - 2026-11-24
 
-Core 0.99.64 gives each part of the agent client and the hub one owner; behaviour and the
-public entry points are unchanged. An agent keeps its signing identity, lease memory, delivery
-session and socket transport in separate components. The hub keeps its listener, live checkpoint,
-configuration family records, protected-write tables, attempt stops, levels and trigger timing,
-and the origin half of cross-hub claim forwarding in their own owners. Journal replay moves to the
-reader side, the at-rest format and key lifecycle become layered modules, and the Agent2Agent
-bridge and the tmux agent bridge give push delivery, frame correlation, access policy, the wake
-vocabulary, provider resolution, the wake registry and the wait loop their own modules. Moved
-deep import paths are named in the entries below. The test suite no longer reads ambient
-seat-shell variables.
+Core 0.99.64 gives each part of the agent client and the hub one owner. Behaviour is unchanged
+except one edge: a boolean stop sequence no longer marks a bound trigger at sequence 1. Public names
+keep their signatures, with two shape changes: the seven protected-write tables on `SynapseState`
+become read-only properties that return the component's own dictionaries, and
+`HubAuthConfig.approval_load` is typed `ApprovalLoad | None`. An agent keeps its signing identity,
+lease memory, delivery session and socket transport in separate components. The hub keeps its
+listener, live checkpoint, configuration family records, protected-write tables, attempt stops,
+levels and trigger timing, and the origin half of cross-hub claim forwarding in their own owners.
+Journal replay moves to the reader side, the at-rest format and key lifecycle become layered
+modules, and the Agent2Agent bridge and the tmux agent bridge give push delivery, frame correlation,
+access policy, the wake vocabulary, provider resolution, the wake registry and the wait loop their
+own modules. Moved deep import paths are named in the entries below. The test suite no longer reads
+ambient seat-shell variables.
 
 ### Changed
 
