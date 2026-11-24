@@ -18,6 +18,19 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.64] - 2026-11-24
+
+Core 0.99.64 gives each part of the agent client and the hub one owner; behaviour and the
+public entry points are unchanged. An agent keeps its signing identity, lease memory, delivery
+session and socket transport in separate components. The hub keeps its listener, live checkpoint,
+configuration family records, protected-write tables, attempt stops, levels and trigger timing,
+and the origin half of cross-hub claim forwarding in their own owners. Journal replay moves to the
+reader side, the at-rest format and key lifecycle become layered modules, and the Agent2Agent
+bridge and the tmux agent bridge give push delivery, frame correlation, access policy, the wake
+vocabulary, provider resolution, the wake registry and the wait loop their own modules. Moved
+deep import paths are named in the entries below. The test suite no longer reads ambient
+seat-shell variables.
+
 ### Changed
 
 - **The tmux wait loop lives in one module.** `wait_and_wake` and the wait

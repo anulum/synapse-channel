@@ -229,7 +229,7 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     for released_in_0_99_63 in ("including its matching `writer_generation` record",):
         assert released_in_0_99_63 in shipped, released_in_0_99_63
         assert released_in_0_99_63 not in unreleased, released_in_0_99_63
-    assert "At 0.99.63 nothing on `main` is outside a release." in unreleased
+    assert "At 0.99.64 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:

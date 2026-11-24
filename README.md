@@ -1946,7 +1946,7 @@ an installed protected runtime or revocation fencing.
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.99.63 |
+| Package version | 0.99.64 |
 | Public API exports | 70 |
 | Package modules | 1119 |
 | Classes | 1613 |
@@ -2230,7 +2230,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
   title   = {SYNAPSE CHANNEL: Local-first multi-agent coordination bus},
   url      = {https://github.com/anulum/synapse-channel},
   doi      = {10.5281/zenodo.20801559},
-  version = {0.99.63},
+  version = {0.99.64},
   year     = {2026}
 }
 ```

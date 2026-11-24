@@ -397,7 +397,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.63 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.64 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities
