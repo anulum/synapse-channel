@@ -21,7 +21,11 @@ import pytest
 
 from fixtures.opencode.composer import native_composer
 from fixtures.opencode.llm import ScriptedLlmServer
-from synapse_channel.agent_tmux import inject_wake, registry_path, status
+from synapse_channel.agent_tmux import (
+    inject_wake,
+    status,
+)
+from synapse_channel.agent_tmux_registry import registry_path
 from synapse_channel.opencode_composer_probe import footer_is_probeable, profile_directory
 
 

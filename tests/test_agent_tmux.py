@@ -15,7 +15,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -30,7 +30,6 @@ from synapse_channel.agent_tmux import (
     _wait_command,
     build_wake_prompt,
     inject_wake,
-    registry_path,
     start_session,
     status,
     wait_and_wake,
@@ -40,11 +39,22 @@ from synapse_channel.agent_tmux_provider import (
     agent_binary,
     provider_family_of,
 )
+from synapse_channel.agent_tmux_registry import (
+    _pending_wake,
+    _record_wake_launch,
+    _wake_prompt_staged,
+    _write_registry,
+    registry_path,
+)
 from synapse_channel.agent_tmux_types import (
     DEFAULT_AGENT_PANE_COMMANDS,
     AgentTmuxConfig,
     AgentTmuxWakeResult,
 )
+from synapse_channel.core.private_dir import ensure_private_dir
+from synapse_channel.opencode_composer import PROTOCOL
+from synapse_channel.opencode_composer_files import read_document, write_document
+from synapse_channel.opencode_composer_state import profile_directory, set_stage_verified
 
 
 class RecordingSleeper:
@@ -1594,7 +1604,7 @@ def test_a_visible_stage_is_adopted_unless_composer_files_prove_the_stage(
 
 
 def test_the_vocabulary_imports_around_the_transport() -> None:
-    """Vocabulary and provider resolution load without pulling the transport in."""
+    """Vocabulary, provider resolution and the registry load without the transport."""
     env = os.environ.copy()
     root = Path(__file__).resolve().parents[1] / "src"
     env["PYTHONPATH"] = str(root) + os.pathsep + env.get("PYTHONPATH", "")
@@ -1612,14 +1622,22 @@ def test_the_vocabulary_imports_around_the_transport() -> None:
         "assert 'synapse_channel.agent_tmux_wait' not in sys.modules\n"
         "import synapse_channel.agent_tmux\n"
     )
+    registry_first = (
+        "import sys\n"
+        "import synapse_channel.agent_tmux_registry\n"
+        "assert 'synapse_channel.agent_tmux' not in sys.modules\n"
+        "assert 'synapse_channel.agent_tmux_wait' not in sys.modules\n"
+        "import synapse_channel.agent_tmux\n"
+    )
     transport_first = (
         "import sys\n"
         "import synapse_channel.agent_tmux\n"
         "assert 'synapse_channel.agent_tmux_wait' not in sys.modules\n"
         "import synapse_channel.agent_tmux_provider\n"
+        "import synapse_channel.agent_tmux_registry\n"
         "import synapse_channel.agent_tmux_types\n"
     )
-    for script in (vocabulary_first, provider_first, transport_first):
+    for script in (vocabulary_first, provider_first, registry_first, transport_first):
         completed = subprocess.run(
             [sys.executable, "-c", script],
             check=False,
@@ -1630,6 +1648,172 @@ def test_the_vocabulary_imports_around_the_transport() -> None:
         assert completed.returncode == 0, completed.stderr
 
 
+_NONCE_A = "ab" * 16
+_NONCE_B = "cd" * 16
+
+
+def _native_target(tmp_path: Path, nonce: str = _NONCE_A) -> AgentTmuxConfig:
+    """Publish one real native profile and return its readback target."""
+    config = AgentTmuxConfig(
+        identity="E2E/readback",
+        session="synapse-readback",
+        cwd=tmp_path,
+        agent_command=("opencode", "--mini"),
+        registry_dir=tmp_path / "registry",
+        opencode_editor_readback=True,
+    )
+    root = profile_directory(config)
+    ensure_private_dir(root, parents=True, purpose="native composer profile")
+    write_document(
+        root,
+        "profile.json",
+        {
+            "protocol": PROTOCOL,
+            "identity": config.identity,
+            "session": config.session,
+            "launch_nonce": nonce,
+        },
+    )
+    return config
+
+
+def _registry_document(config: AgentTmuxConfig) -> dict[str, Any]:
+    """Return the real registry file for ``config``."""
+    loaded = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    return cast(dict[str, Any], loaded)
+
+
+def _stage_is_verified(config: AgentTmuxConfig) -> bool:
+    """Return the verified bit from the real stage document."""
+    document = read_document(profile_directory(config) / "stage.json")
+    return document.get("verified") is True
+
+
 def test_provider_family_skips_a_flag_before_the_agent_binary() -> None:
     """A flag whose path names another provider does not choose the family."""
     assert provider_family_of(("node", "--config=/opt/claude", "codex")) == "codex"
+
+
+def test_a_boolean_start_code_reads_back_as_absent(tmp_path: Path) -> None:
+    """A stored start code of true is not an integer and is dropped."""
+    config = _config(tmp_path)
+    registry_path(config).write_text(
+        json.dumps({"last_start_returncode": True}) + "\n",
+        encoding="utf-8",
+    )
+
+    _write_registry(config, pending_wake=False)
+
+    assert _registry_document(config)["last_start_returncode"] is None
+
+
+def test_only_a_boolean_true_marks_a_wake_pending(tmp_path: Path) -> None:
+    """A pending flag of 1 or yes is not a queued wake; only true is."""
+    config = _config(tmp_path)
+    path = registry_path(config)
+    for stored in (1, "yes"):
+        path.write_text(json.dumps({"pending_wake": stored}) + "\n", encoding="utf-8")
+        assert _pending_wake(config) is False
+    path.write_text(json.dumps({"pending_wake": True}) + "\n", encoding="utf-8")
+    assert _pending_wake(config) is True
+
+
+def test_a_later_registry_write_keeps_the_stored_start_code(tmp_path: Path) -> None:
+    """A write that omits the start code leaves the stored integer in place."""
+    config = _config(tmp_path)
+    _write_registry(config, last_start_returncode=7)
+
+    _write_registry(config, pending_wake=True)
+
+    assert _registry_document(config)["last_start_returncode"] == 7
+
+
+def test_clearing_a_pending_wake_drops_native_stage_verification(tmp_path: Path) -> None:
+    """A pending value of false clears native stage verification and stores no nonce."""
+    config = _native_target(tmp_path)
+    ensure_private_dir(profile_directory(config), parents=True, purpose="native composer profile")
+    set_stage_verified(config, True)
+
+    assert _record_wake_launch(config, {}, False, True) is None
+
+    assert _stage_is_verified(config) is False
+
+
+def test_an_unstaged_wake_leaves_native_stage_verification(tmp_path: Path) -> None:
+    """A staged value of false returns no nonce and leaves the stage document."""
+    config = _native_target(tmp_path)
+    ensure_private_dir(profile_directory(config), parents=True, purpose="native composer profile")
+    set_stage_verified(config, True)
+
+    recorded = _record_wake_launch(config, {"wake_launch_nonce": _NONCE_A}, True, False)
+
+    assert recorded is None
+    assert _stage_is_verified(config) is True
+
+
+def test_an_unknown_staged_flag_keeps_the_previous_launch_nonce(tmp_path: Path) -> None:
+    """A missing staged flag keeps the nonce already stored in the registry file."""
+    config = _native_target(tmp_path)
+    registry_path(config).write_text(
+        json.dumps({"wake_launch_nonce": _NONCE_A}) + "\n",
+        encoding="utf-8",
+    )
+
+    _write_registry(config, pending_wake=True)
+
+    assert _registry_document(config)["wake_launch_nonce"] == _NONCE_A
+
+
+def test_a_new_staged_launch_clears_verification_when_the_nonce_changes(
+    tmp_path: Path,
+) -> None:
+    """Staging on a different launch stores the current nonce and clears verification."""
+    config = _native_target(tmp_path, _NONCE_B)
+    ensure_private_dir(profile_directory(config), parents=True, purpose="native composer profile")
+    set_stage_verified(config, True)
+    registry_path(config).write_text(
+        json.dumps({"wake_launch_nonce": _NONCE_A, "wake_prompt_staged": True}) + "\n",
+        encoding="utf-8",
+    )
+
+    _write_registry(config, pending_wake=True, wake_prompt_staged=True)
+
+    stored = _registry_document(config)
+    assert stored["wake_launch_nonce"] == _NONCE_B
+    assert _stage_is_verified(config) is False
+
+
+def test_staging_again_clears_verification_when_the_stored_flag_was_not_true(
+    tmp_path: Path,
+) -> None:
+    """The same launch still clears verification when the stored staged flag is not true."""
+    config = _native_target(tmp_path)
+    ensure_private_dir(profile_directory(config), parents=True, purpose="native composer profile")
+    set_stage_verified(config, True)
+    registry_path(config).write_text(
+        json.dumps({"wake_launch_nonce": _NONCE_A, "wake_prompt_staged": False}) + "\n",
+        encoding="utf-8",
+    )
+
+    _write_registry(config, pending_wake=True, wake_prompt_staged=True)
+
+    assert _registry_document(config)["wake_launch_nonce"] == _NONCE_A
+    assert _stage_is_verified(config) is False
+
+
+def test_a_changed_launch_makes_a_staged_prompt_unread(tmp_path: Path) -> None:
+    """Readback treats a staged prompt from another launch as not staged."""
+    config = _native_target(tmp_path)
+    registry_path(config).write_text(
+        json.dumps(
+            {
+                "pending_wake": True,
+                "wake_prompt_staged": True,
+                "wake_launch_nonce": _NONCE_B,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert _wake_prompt_staged(config) is False

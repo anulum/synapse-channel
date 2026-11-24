@@ -23,11 +23,13 @@ import pytest
 
 from synapse_channel.agent_tmux import (
     BINDING_REFUSAL_EXIT_CODE,
-    _write_registry,
     build_wake_prompt,
     inject_wake,
-    registry_path,
     start_session,
+)
+from synapse_channel.agent_tmux_registry import (
+    _write_registry,
+    registry_path,
 )
 from synapse_channel.agent_tmux_types import AgentTmuxConfig
 

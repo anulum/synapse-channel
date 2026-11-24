@@ -40,7 +40,7 @@ def profile_directory(config: AgentTmuxConfig) -> Path:
     pathlib.Path
         Profile path beneath the owner-only registry directory.
     """
-    from synapse_channel.agent_tmux import registry_path
+    from synapse_channel.agent_tmux_registry import registry_path
 
     key = hashlib.sha256((config.identity + "\0" + config.session).encode()).hexdigest()[:24]
     return registry_path(config).parent / f"opencode-{key}"

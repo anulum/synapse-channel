@@ -46,10 +46,10 @@ from pathlib import Path
 from typing import Any, Literal, TextIO
 
 from synapse_channel.agent_tmux import (
-    record_waiter_stop,
     wait_and_wake,
     wait_executor,
 )
+from synapse_channel.agent_tmux_registry import record_waiter_stop
 from synapse_channel.agent_tmux_types import (
     DEFAULT_PANE_PROBE_INTERVAL,
     AgentTmuxConfig,

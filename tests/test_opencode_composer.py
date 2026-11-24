@@ -19,7 +19,12 @@ from pathlib import Path
 import pytest
 
 from fixtures.opencode.composer import controller_config_code, native_composer
-from synapse_channel.agent_tmux import inject_wake, registry_path, start_session, status
+from synapse_channel.agent_tmux import (
+    inject_wake,
+    start_session,
+    status,
+)
+from synapse_channel.agent_tmux_registry import registry_path
 from synapse_channel.opencode_composer import PROFILE_ENV
 from synapse_channel.opencode_composer_files import write_document
 from synapse_channel.opencode_composer_probe import footer_is_probeable, profile_directory

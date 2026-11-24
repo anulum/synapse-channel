@@ -20,6 +20,10 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **The tmux wake-target registry lives in one module.** `RegistryRecord`,
+  `registry_path` and `record_waiter_stop` move to `agent_tmux_registry`.
+  The transport still reads that record when it launches and wakes.
+
 - **Provider resolution for a tmux wake lives in one module.** `provider_command`,
   `without_clean_environment`, `agent_binary`, `provider_family_of` and the Codex
   launch override move to `agent_tmux_provider`. The transport still launches and

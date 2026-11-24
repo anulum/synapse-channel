@@ -17,16 +17,18 @@ code should use the generic ``AgentTmux*`` symbols directly.
 from __future__ import annotations
 
 from synapse_channel.agent_tmux import (
-    RegistryRecord,
     _backoff_delay,
     build_wake_prompt,
     inject_wake,
-    registry_path,
     start_session,
     status,
     wait_and_wake,
 )
 from synapse_channel.agent_tmux_provider import agent_binary
+from synapse_channel.agent_tmux_registry import (
+    RegistryRecord,
+    registry_path,
+)
 from synapse_channel.agent_tmux_types import (
     DEFAULT_AGENT_PANE_COMMANDS,
     DEFAULT_SUBMIT_DELAY,

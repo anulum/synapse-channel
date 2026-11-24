@@ -33,10 +33,8 @@ import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import agent_tmux, cli_messaging_wait, seat_waiter
-from synapse_channel.agent_tmux import (
-    _wait_command,
-    record_waiter_stop,
-)
+from synapse_channel.agent_tmux import _wait_command
+from synapse_channel.agent_tmux_registry import record_waiter_stop, registry_path
 from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.cli_messaging_wait import registered_line
 from synapse_channel.client.agent import SynapseAgent
@@ -551,7 +549,7 @@ def test_a_stopped_waiter_ends_at_once_and_records_nothing(tmp_path: Path) -> No
 
 def test_the_registry_records_a_stopped_waiter(tmp_path: Path) -> None:
     config = _config(tmp_path, "ws://h")
-    path = agent_tmux.registry_path(config)
+    path = registry_path(config)
     path.write_text('{"identity": "T/waiter", "pending_wake": false}\n', encoding="utf-8")
     record_waiter_stop(config, "binding refused")
     entry = json.loads(path.read_text(encoding="utf-8"))
@@ -697,7 +695,7 @@ def test_a_stopped_waiter_is_also_recorded_in_the_session_ledger(
     (line,) = list(read_events(tmp_path / "ledger"))
     assert (line["event"], line["row_id"]) == ("observe", "b:1:2")
     assert line["waiter"] == {"state": "stopped", "reason": "binding refused"}
-    entry = json.loads(agent_tmux.registry_path(config).read_text(encoding="utf-8"))
+    entry = json.loads(registry_path(config).read_text(encoding="utf-8"))
     assert entry["waiter_stopped"]["reason"] == "binding refused"
     without = open_seat_waiter(
         WakeTarget("synapse-T_waiter"),

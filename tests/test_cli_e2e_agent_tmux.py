@@ -42,10 +42,10 @@ from synapse_channel.agent_tmux import (
     PANE_CAPTURE_MAX_CHARS,
     build_wake_prompt,
     inject_wake,
-    registry_path,
     status,
     wait_and_wake,
 )
+from synapse_channel.agent_tmux_registry import registry_path
 from synapse_channel.agent_tmux_types import AgentTmuxConfig
 
 _TMUX = shutil.which("tmux")
