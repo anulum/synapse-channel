@@ -18,6 +18,24 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Security
+
+- **Hardened Windows owner-only file and directory custody through held NT handles (`core/secure_path.py`,
+  `core/secure_path_windows.py`, `core/secret_files.py`).** Closed three Windows path-string race windows:
+  `read_owner_only_file_bytes`, `assert_owner_only_file_path`, and `assert_owner_only_dir_path` now validate owner SID,
+  DACL, non-reparse attributes, file/directory kind, and hard-link count through a single held NT handle via
+  `GetFileInformationByHandle` and `GetSecurityInfo` (removing `GetNamedSecurityInfoW` and the separate `stat().st_nlink`
+  check), and `secret_files._read_owner_only_text_windows` now opens the no-follow descriptor first and proves custody
+  before and after reading through `assert_owner_only_descriptor` on that same descriptor. Fixed a fail-open defect on
+  non-standard Windows ACE types: both the native DACL reader and `evaluate_windows_owner_only_policy` now refuse any
+  ACE type other than `ACCESS_ALLOWED` (`0x0`) and `ACCESS_DENIED` (`0x1`) (such as object `0x5`, callback `0x9`, or
+  audit `0x2` ACEs) while retaining allow-list skipping of deny ACEs. Replaced `takeown`/`icacls` subprocesses with
+  birth-time protected owner/SYSTEM DACLs (`CreateFileW` + `SECURITY_ATTRIBUTES`) in `create_owner_only_file` and
+  handle-based `SetSecurityInfo` (with same-handle read-back verification and fail-closed `SecurePathError` on
+  `ERROR_INVALID_OWNER` or any error) in `apply_owner_only_file` and `apply_owner_only_dir`. `current_user_key()` on
+  Windows now resolves the process token SID natively and fails closed instead of invoking `whoami` via `PATH`, leaving
+  zero `subprocess` imports and zero security-lint suppressions in `secure_path.py` and `secure_path_windows.py`.
+
 ### Added
 
 - **Peer `JournalInstance` propagation on the multi-hub event-log pull wire.** Added `journal_instance()` to the

@@ -35,7 +35,7 @@ from pathlib import Path
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secure_path import (
     SecurePathError,
-    assert_owner_only_file_path,
+    assert_owner_only_descriptor,
     owner_only_floor_available,
 )
 
@@ -197,6 +197,39 @@ def _read_owner_only_text(
         raise SecretFileError(f"{flag}: {path} is not valid UTF-8") from exc
 
 
+def _map_windows_secure_path_error(
+    exc: SecurePathError,
+    *,
+    path: Path,
+    flag: str,
+) -> SecretFileError:
+    """Map portable :class:`SecurePathError` failures onto :class:`SecretFileError`."""
+    message = str(exc)
+    if "effective user" in message or "not owned" in message:
+        return SecretFileError(f"{flag}: {path} is not owned by the effective hub service user")
+    if (
+        "accessible by other" in message
+        or "NULL DACL" in message
+        or "ACE for" in message
+        or "unsupported ACE" in message
+    ):
+        return SecretFileError(
+            f"{flag}: {path} is accessible by other users; a secret file must be "
+            "owner-only (restrict the NT DACL to the current user)"
+        )
+    if "hard links" in message:
+        return SecretFileError(message)
+    if "symlink" in message:
+        return SecretFileError(f"{flag}: cannot securely open {path}: symlink refused")
+    if "not a regular" in message:
+        return SecretFileError(f"{flag}: {path} is not a regular secret file")
+    if "unavailable" in message:
+        return SecretFileError(
+            f"{flag}: secure owner-only file validation is unavailable on this platform"
+        )
+    return SecretFileError(f"{flag}: {message}")
+
+
 def _read_owner_only_text_windows(
     path: Path,
     *,
@@ -204,36 +237,7 @@ def _read_owner_only_text_windows(
     limit: int,
     require_single_link: bool,
 ) -> str:
-    """Windows branch: prove NT owner-only DACL, then read bounded UTF-8."""
-    try:
-        assert_owner_only_file_path(
-            path,
-            purpose=flag,
-            require_single_link=require_single_link,
-        )
-    except SecurePathError as exc:
-        # Map portable errors onto SecretFileError so CLI callers see one type.
-        message = str(exc)
-        if "effective user" in message or "not owned" in message:
-            raise SecretFileError(
-                f"{flag}: {path} is not owned by the effective hub service user"
-            ) from exc
-        if "accessible by other" in message or "NULL DACL" in message or "ACE for" in message:
-            raise SecretFileError(
-                f"{flag}: {path} is accessible by other users; a secret file must be "
-                "owner-only (restrict the NT DACL to the current user)"
-            ) from exc
-        if "hard links" in message:
-            raise SecretFileError(message) from exc
-        if "symlink" in message:
-            raise SecretFileError(f"{flag}: cannot securely open {path}: symlink refused") from exc
-        if "not a regular" in message:
-            raise SecretFileError(f"{flag}: {path} is not a regular secret file") from exc
-        if "unavailable" in message:
-            raise SecretFileError(
-                f"{flag}: secure owner-only file validation is unavailable on this platform"
-            ) from exc
-        raise SecretFileError(f"{flag}: {message}") from exc
+    """Windows branch: open no-follow first, prove NT DACL on that handle, then read UTF-8."""
     try:
         descriptor = open_nofollow_descriptor(path)
     except OSError as exc:
@@ -241,6 +245,15 @@ def _read_owner_only_text_windows(
             f"{flag}: cannot securely open {path}: {exc.strerror or exc}"
         ) from exc
     try:
+        try:
+            assert_owner_only_descriptor(
+                descriptor,
+                path=path,
+                purpose=flag,
+                require_single_link=require_single_link,
+            )
+        except SecurePathError as exc:
+            raise _map_windows_secure_path_error(exc, path=path, flag=flag) from exc
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode):
             raise SecretFileError(f"{flag}: {path} is not a regular secret file")
@@ -263,10 +276,11 @@ def _read_owner_only_text_windows(
             or info.st_ctime_ns != after.st_ctime_ns
         ):
             raise SecretFileError(f"{flag}: {path} changed while its policy was being read")
-        # Re-prove the DACL after the read so a concurrent ACL loosen is caught.
+        # Re-prove the DACL on the same held descriptor so a concurrent ACL loosen is caught.
         try:
-            assert_owner_only_file_path(
-                path,
+            assert_owner_only_descriptor(
+                descriptor,
+                path=path,
                 purpose=flag,
                 require_single_link=require_single_link,
             )
