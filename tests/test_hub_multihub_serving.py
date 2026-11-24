@@ -201,10 +201,13 @@ async def test_empty_batch_does_not_move_the_cursor(tmp_path: Path) -> None:
     async with running_hub(hub) as (_, uri):
         await _seed_chats(uri, 3)
         snapshot = await _pull(uri, after_seq=3)
+    expected_instance = store.journal_instance()
     store.close()
     assert snapshot.events == ()
     assert snapshot.next_cursor == 3
     assert snapshot.log_end_seq == 3
+    assert expected_instance is not None
+    assert snapshot.journal_instance == expected_instance
 
 
 async def test_hub_without_a_journal_serves_an_empty_snapshot(tmp_path: Path) -> None:
@@ -215,6 +218,7 @@ async def test_hub_without_a_journal_serves_an_empty_snapshot(tmp_path: Path) ->
     assert snapshot.events == ()
     assert snapshot.next_cursor == 5
     assert snapshot.log_end_seq is None
+    assert snapshot.journal_instance is None
 
 
 async def test_a_malformed_request_is_answered_with_an_empty_snapshot(tmp_path: Path) -> None:
@@ -230,6 +234,7 @@ async def test_a_malformed_request_is_answered_with_an_empty_snapshot(tmp_path: 
     assert snapshot.events == ()
     assert snapshot.next_cursor == 0
     assert snapshot.log_end_seq is None
+    assert snapshot.journal_instance is None
 
 
 async def test_a_hub_without_a_policy_refuses_every_peer(tmp_path: Path) -> None:
@@ -244,6 +249,7 @@ async def test_a_hub_without_a_policy_refuses_every_peer(tmp_path: Path) -> None
     assert snapshot.events == ()
     assert snapshot.next_cursor == 0
     assert snapshot.log_end_seq is None
+    assert snapshot.journal_instance is None
 
 
 async def test_a_trusted_peer_is_served_under_a_serving_policy(tmp_path: Path) -> None:
@@ -255,10 +261,13 @@ async def test_a_trusted_peer_is_served_under_a_serving_policy(tmp_path: Path) -
     async with running_hub(hub) as (_, uri):
         await _seed_chats(uri, 3)
         snapshot = await _pull(uri, after_seq=0)
+    expected_instance = store.journal_instance()
     store.close()
     assert [event.seq for event in snapshot.events] == [1, 2, 3]
     assert snapshot.next_cursor == 3
     assert snapshot.log_end_seq == 3
+    assert expected_instance is not None
+    assert snapshot.journal_instance == expected_instance
 
 
 async def test_an_untrusted_certificate_is_refused_with_an_empty_snapshot(tmp_path: Path) -> None:
@@ -275,6 +284,7 @@ async def test_an_untrusted_certificate_is_refused_with_an_empty_snapshot(tmp_pa
     assert snapshot.events == ()
     assert snapshot.next_cursor == 1
     assert snapshot.log_end_seq is None
+    assert snapshot.journal_instance is None
 
 
 async def test_a_sender_without_a_grant_is_refused(tmp_path: Path) -> None:
@@ -290,3 +300,4 @@ async def test_a_sender_without_a_grant_is_refused(tmp_path: Path) -> None:
     assert snapshot.events == ()
     assert snapshot.next_cursor == 0
     assert snapshot.log_end_seq is None
+    assert snapshot.journal_instance is None

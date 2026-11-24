@@ -53,6 +53,7 @@ from synapse_channel.core.multihub_fold import (
 from synapse_channel.core.multihub_merge import HubEvent, hub_cursors, merge_event_logs, tag_events
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.persistence_reader import ReadableEventLog
+from synapse_channel.core.persistence_store_format import JournalInstance
 from synapse_channel.core.protocol import ProtocolNegotiation
 
 EventFetcher = Callable[[int], Awaitable[Sequence[StoredEvent]]]
@@ -68,14 +69,27 @@ class ProtocolAwareEventFetcher(Protocol):
     last_clock_skew: ClockSkew | None
     """Most recent peer clock-skew observation exposed by the fetcher."""
 
+    last_journal_instance: JournalInstance | None
+    """Most recent peer store journal instance observed by the fetcher."""
+
+
+class _StoreFetcher:
+    """Callable event fetcher over a readable store exposing journal-instance metadata."""
+
+    def __init__(self, store: ReadableEventLog) -> None:
+        self._store = store
+        self.last_journal_instance: JournalInstance | None = None
+
+    async def __call__(self, after_seq: int) -> Sequence[StoredEvent]:
+        """Read events past ``after_seq`` and refresh ``last_journal_instance``."""
+        events = self._store.read_since(after_seq)
+        self.last_journal_instance = self._store.journal_instance()
+        return events
+
 
 def store_fetcher(store: ReadableEventLog) -> EventFetcher:
     """Return a fetcher that reads a peer event log over its ``read_since`` seam."""
-
-    async def fetch(after_seq: int) -> Sequence[StoredEvent]:
-        return store.read_since(after_seq)
-
-    return fetch
+    return _StoreFetcher(store)
 
 
 class MultiHubFollower:

@@ -60,6 +60,7 @@ from synapse_channel.core.multihub_wire import (
 from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
 from synapse_channel.core.peer_token import PeerToken, current_peer_token
 from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_store_format import JournalInstance
 from synapse_channel.core.protocol import (
     MessageType,
     ProtocolNegotiation,
@@ -304,6 +305,7 @@ class _NetworkFetcher:
         self.last_protocol_negotiation: ProtocolNegotiation | None = None
         self.last_log_end_seq: int | None = None
         self.last_clock_skew: ClockSkew | None = None
+        self.last_journal_instance: JournalInstance | None = None
 
     async def __call__(self, after_seq: int) -> Sequence[StoredEvent]:
         """Fetch peer events after ``after_seq`` and capture wire-version metadata."""
@@ -339,6 +341,7 @@ class _NetworkFetcher:
                 )
             snapshot = decode_log_snapshot(frame)
             self.last_log_end_seq = snapshot.log_end_seq
+            self.last_journal_instance = snapshot.journal_instance
         except MultiHubFetchError:
             raise
         except (

@@ -9,12 +9,14 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 import pytest
 
 from synapse_channel.core.multihub_wire import (
     AFTER_SEQ_FIELD,
     EVENTS_FIELD,
+    JOURNAL_INSTANCE_FIELD,
     KIND_FIELD,
     LIMIT_FIELD,
     LOG_END_SEQ_FIELD,
@@ -33,6 +35,7 @@ from synapse_channel.core.multihub_wire import (
     encode_stored_event,
 )
 from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_store_format import JournalInstance
 
 
 def _event(seq: int, *, ts: float = 1.5, kind: str = "chat") -> StoredEvent:
@@ -240,3 +243,96 @@ def test_decode_log_snapshot_rejects_missing_cursor() -> None:
 def test_decode_log_snapshot_rejects_bad_log_end() -> None:
     with pytest.raises(MultiHubWireError, match="log_end_seq must be an integer"):
         decode_log_snapshot({EVENTS_FIELD: [], NEXT_CURSOR_FIELD: 0, LOG_END_SEQ_FIELD: "later"})
+
+
+def test_log_snapshot_journal_instance_round_trips_and_omission_is_none() -> None:
+    inst_zero = JournalInstance(instance="0123456789abcdef" * 2, floor=0)
+    inst_max = JournalInstance(instance="fedcba9876543210" * 2, floor=2**63 - 1)
+    for inst in (inst_zero, inst_max):
+        snap = LogSnapshot(events=(_event(1),), next_cursor=1, log_end_seq=1, journal_instance=inst)
+        encoded = encode_log_snapshot(snap)
+        assert encoded[JOURNAL_INSTANCE_FIELD] == {"instance": inst.instance, "floor": inst.floor}
+        assert decode_log_snapshot(encoded) == snap
+
+    none_snap = LogSnapshot(events=(), next_cursor=0)
+    assert encode_log_snapshot(none_snap)[JOURNAL_INSTANCE_FIELD] is None
+    assert decode_log_snapshot({EVENTS_FIELD: [], NEXT_CURSOR_FIELD: 0}).journal_instance is None
+    assert (
+        decode_log_snapshot(
+            {EVENTS_FIELD: [], NEXT_CURSOR_FIELD: 0, JOURNAL_INSTANCE_FIELD: None}
+        ).journal_instance
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("bad_instance", "match"),
+    [
+        ("not-an-instance", "must be a JournalInstance or None"),
+        (JournalInstance(instance="a" * 31, floor=0), "32 lower-case hex digits"),
+        (JournalInstance(instance="a" * 33, floor=0), "32 lower-case hex digits"),
+        (JournalInstance(instance="A" * 32, floor=0), "32 lower-case hex digits"),
+        (JournalInstance(instance="g" * 32, floor=0), "32 lower-case hex digits"),
+        (JournalInstance(instance="a" * 32, floor=-1), "must not be negative"),
+        (JournalInstance(instance="a" * 32, floor=True), "must be an integer"),
+        (JournalInstance(instance="a" * 32, floor=2**63), "must not exceed"),
+    ],
+)
+def test_encode_log_snapshot_rejects_invalid_journal_instance(
+    bad_instance: object, match: str
+) -> None:
+    snap = LogSnapshot(events=(), next_cursor=0, journal_instance=cast(Any, bad_instance))
+    with pytest.raises(MultiHubWireError, match=match):
+        encode_log_snapshot(snap)
+
+
+@pytest.mark.parametrize(
+    ("raw_instance", "match"),
+    [
+        ("not-a-map", "journal_instance body must be a JSON object"),
+        (["list"], "journal_instance body must be a JSON object"),
+        ({"instance": "a" * 32}, "must contain exactly 'instance' and 'floor'"),
+        ({"floor": 0}, "must contain exactly 'instance' and 'floor'"),
+        (
+            {"instance": "a" * 32, "floor": 0, "extra": 1},
+            "must contain exactly 'instance' and 'floor'",
+        ),
+        ({"instance": 123, "floor": 0}, "journal_instance.instance must be a string"),
+        ({"instance": "a" * 31, "floor": 0}, "32 lower-case hex digits"),
+        ({"instance": "a" * 33, "floor": 0}, "32 lower-case hex digits"),
+        ({"instance": "A" * 32, "floor": 0}, "32 lower-case hex digits"),
+        ({"instance": "z" * 32, "floor": 0}, "32 lower-case hex digits"),
+        ({"instance": "a" * 32, "floor": True}, "journal_instance.floor must be an integer"),
+        ({"instance": "a" * 32, "floor": "0"}, "journal_instance.floor must be an integer"),
+        ({"instance": "a" * 32, "floor": 1.5}, "journal_instance.floor must be an integer"),
+        ({"instance": "a" * 32, "floor": None}, "journal_instance.floor must be an integer"),
+        ({"instance": "a" * 32, "floor": -1}, "journal_instance.floor must not be negative"),
+        ({"instance": "a" * 32, "floor": 2**63}, "journal_instance.floor must not exceed"),
+    ],
+)
+def test_decode_log_snapshot_rejects_invalid_journal_instance(
+    raw_instance: object, match: str
+) -> None:
+    with pytest.raises(MultiHubWireError, match=match):
+        decode_log_snapshot(
+            {EVENTS_FIELD: [], NEXT_CURSOR_FIELD: 0, JOURNAL_INSTANCE_FIELD: raw_instance}
+        )
+
+
+@pytest.mark.parametrize(
+    ("raw_instance", "match"),
+    [
+        ({}, "must contain exactly 'instance' and 'floor'"),
+        ([], "journal_instance body must be a JSON object"),
+        (0, "journal_instance body must be a JSON object"),
+        (False, "journal_instance body must be a JSON object"),
+        ("", "journal_instance body must be a JSON object"),
+    ],
+)
+def test_decode_log_snapshot_rejects_falsy_non_null_journal_instance(
+    raw_instance: object, match: str
+) -> None:
+    with pytest.raises(MultiHubWireError, match=match):
+        decode_log_snapshot(
+            {EVENTS_FIELD: [], NEXT_CURSOR_FIELD: 0, JOURNAL_INSTANCE_FIELD: raw_instance}
+        )

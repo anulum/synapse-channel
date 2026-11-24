@@ -35,12 +35,14 @@ cursor unadvanced — the fail-closed posture the follower already relies on.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.persistence_store_format import JournalInstance
 
 AFTER_SEQ_FIELD = "after_seq"
 """Request field: the exclusive lower-bound cursor (events with ``seq`` above it are wanted)."""
@@ -56,6 +58,15 @@ NEXT_CURSOR_FIELD = "next_cursor"
 
 LOG_END_SEQ_FIELD = "log_end_seq"
 """Snapshot field: the peer log's current high-water, for lag diagnostics."""
+
+JOURNAL_INSTANCE_FIELD = "journal_instance"
+"""Snapshot field: the peer store's recorded journal instance and sequence floor, when known."""
+
+_JOURNAL_INSTANCE_ID_FIELD = "instance"
+_JOURNAL_INSTANCE_FLOOR_FIELD = "floor"
+_JOURNAL_INSTANCE_KEYS = frozenset({_JOURNAL_INSTANCE_ID_FIELD, _JOURNAL_INSTANCE_FLOOR_FIELD})
+_JOURNAL_INSTANCE_ID_RE = re.compile(r"[0-9a-f]{32}")
+_MAX_INT64 = 2**63 - 1
 
 SEQ_FIELD = "seq"
 """Event field: the monotonic sequence number."""
@@ -112,11 +123,15 @@ class LogSnapshot:
     log_end_seq : int or None, optional
         Peer log maximum sequence when the serving hub can report it. Older peers omit it,
         so ``None`` means exact lag is unavailable.
+    journal_instance : JournalInstance or None, optional
+        Peer event store's recorded journal instance and sequence floor when known. Older
+        peers and hubs without persistence omit it or send ``null``, decoding to ``None``.
     """
 
     events: tuple[StoredEvent, ...]
     next_cursor: int
     log_end_seq: int | None = None
+    journal_instance: JournalInstance | None = None
 
 
 def encode_stored_event(event: StoredEvent) -> dict[str, Any]:
@@ -239,13 +254,14 @@ def encode_log_snapshot(snapshot: LogSnapshot) -> dict[str, Any]:
     Returns
     -------
     dict[str, Any]
-        A mapping with ``events`` (a list of encoded events), ``next_cursor``, and
-        ``log_end_seq`` when known.
+        A mapping with ``events`` (a list of encoded events), ``next_cursor``,
+        ``log_end_seq`` when known, and ``journal_instance`` when known.
 
     Raises
     ------
     MultiHubWireError
-        If ``next_cursor`` is negative, or any event's ``seq`` is negative.
+        If ``next_cursor`` is negative, any event's ``seq`` is negative, or
+        ``journal_instance`` is malformed.
     """
     return {
         EVENTS_FIELD: [encode_stored_event(event) for event in snapshot.events],
@@ -255,6 +271,7 @@ def encode_log_snapshot(snapshot: LogSnapshot) -> dict[str, Any]:
             if snapshot.log_end_seq is None
             else _non_negative(snapshot.log_end_seq, LOG_END_SEQ_FIELD)
         ),
+        JOURNAL_INSTANCE_FIELD: _encode_journal_instance(snapshot.journal_instance),
     }
 
 
@@ -275,7 +292,7 @@ def decode_log_snapshot(raw: object) -> LogSnapshot:
     ------
     MultiHubWireError
         If the body is not a mapping, ``events`` is missing or not a list, any event is
-        malformed, or ``next_cursor``/``log_end_seq`` is malformed.
+        malformed, or ``next_cursor``/``log_end_seq``/``journal_instance`` is malformed.
     """
     body = _require_mapping(raw, "snapshot")
     raw_events = body.get(EVENTS_FIELD)
@@ -288,7 +305,55 @@ def decode_log_snapshot(raw: object) -> LogSnapshot:
         events=events,
         next_cursor=_require_int(body.get(NEXT_CURSOR_FIELD), NEXT_CURSOR_FIELD),
         log_end_seq=None if raw_log_end is None else _require_int(raw_log_end, LOG_END_SEQ_FIELD),
+        journal_instance=_decode_journal_instance(body.get(JOURNAL_INSTANCE_FIELD)),
     )
+
+
+def _encode_journal_instance(instance: JournalInstance | None) -> dict[str, Any] | None:
+    """Encode an optional :class:`JournalInstance` for the snapshot wire body."""
+    if instance is None:
+        return None
+    if not isinstance(instance, JournalInstance):
+        raise MultiHubWireError(f"{JOURNAL_INSTANCE_FIELD} must be a JournalInstance or None")
+    instance_id = _require_journal_instance_id(instance.instance)
+    floor = _require_bounded_int64(instance.floor, f"{JOURNAL_INSTANCE_FIELD}.floor")
+    return {
+        _JOURNAL_INSTANCE_ID_FIELD: instance_id,
+        _JOURNAL_INSTANCE_FLOOR_FIELD: floor,
+    }
+
+
+def _decode_journal_instance(raw: object) -> JournalInstance | None:
+    """Decode an optional ``journal_instance`` object from a snapshot body."""
+    if raw is None:
+        return None
+    body = _require_mapping(raw, JOURNAL_INSTANCE_FIELD)
+    if set(body) != _JOURNAL_INSTANCE_KEYS:
+        msg = f"{JOURNAL_INSTANCE_FIELD} must contain exactly 'instance' and 'floor'"
+        raise MultiHubWireError(msg)
+    instance_id = _require_journal_instance_id(body[_JOURNAL_INSTANCE_ID_FIELD])
+    floor = _require_bounded_int64(
+        body[_JOURNAL_INSTANCE_FLOOR_FIELD], f"{JOURNAL_INSTANCE_FIELD}.floor"
+    )
+    return JournalInstance(instance=instance_id, floor=floor)
+
+
+def _require_journal_instance_id(value: object) -> str:
+    """Return ``value`` as a 32-digit lowercase hex journal instance identifier."""
+    text = _require_str(value, f"{JOURNAL_INSTANCE_FIELD}.instance")
+    if _JOURNAL_INSTANCE_ID_RE.fullmatch(text) is None:
+        msg = f"{JOURNAL_INSTANCE_FIELD}.instance must be 32 lower-case hex digits"
+        raise MultiHubWireError(msg)
+    return text
+
+
+def _require_bounded_int64(value: object, name: str) -> int:
+    """Return ``value`` as a non-negative integer bounded by signed 64-bit max."""
+    number = _require_int(value, name)
+    if number > _MAX_INT64:
+        msg = f"{name} must not exceed {_MAX_INT64}"
+        raise MultiHubWireError(msg)
+    return number
 
 
 def _require_mapping(value: object, name: str) -> Mapping[str, Any]:

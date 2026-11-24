@@ -44,12 +44,14 @@ from synapse_channel.core.multihub_transport import (
 from synapse_channel.core.multihub_wire import (
     AFTER_SEQ_FIELD,
     EVENTS_FIELD,
+    JOURNAL_INSTANCE_FIELD,
     LIMIT_FIELD,
     NEXT_CURSOR_FIELD,
     LogSnapshot,
     encode_log_snapshot,
 )
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence_store_format import JournalInstance
 from synapse_channel.core.protocol import (
     MAX_JSON_DEPTH,
     WIRE_PROTOCOL_VERSION,
@@ -72,6 +74,7 @@ class _ProtocolAwareFetcher(Protocol):
 
     last_protocol_negotiation: ProtocolNegotiation | None
     last_clock_skew: ClockSkew | None
+    last_journal_instance: JournalInstance | None
 
 
 def _event(seq: int) -> StoredEvent:
@@ -755,3 +758,85 @@ def test_live_certificate_pin_converts_tls_errors_to_fetch_errors() -> None:
 
     with pytest.raises(MultiHubFetchError, match="not TLS"):
         _live_certificate_pin(cast(Any, _NoTLSSocket()))
+
+
+async def test_network_fetcher_captures_resets_and_guards_last_journal_instance(
+    tmp_path: Path,
+) -> None:
+    """Capture live JournalInstance, reset on omission, and fail closed on bad wire."""
+    # 1. Live hub -> network_fetcher on both non-empty and empty caught-up pages.
+    certfile, keyfile = _write_self_signed_cert(tmp_path)
+    server_context = build_server_ssl_context(certfile=certfile, keyfile=keyfile)
+    pin = certificate_sha256_pin(certfile)
+    store = EventStore(tmp_path / "live.db")
+    expected_instance = store.journal_instance()
+    assert expected_instance is not None
+    from synapse_channel.core.hub import SynapseHub
+
+    der = x509.load_pem_x509_certificate(certfile.read_bytes()).public_bytes(
+        serialization.Encoding.DER
+    )
+    hub = SynapseHub(
+        hub_id="syn-inst",
+        journal=store,
+        multihub_serving_policy=_serving_policy(pin, der, ("follower",)),
+    )
+    port = free_port()
+    task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
+    try:
+        await _await_listening(port)
+        uri = f"wss://localhost:{port}"
+        await _seed_chats_tls(uri, certfile, 2)
+        fetch = network_fetcher(uri, local_id="follower", connector=pinned_connector(pin))
+        observed = cast(_ProtocolAwareFetcher, fetch)
+        assert observed.last_journal_instance is None
+        first = await fetch(0)
+        assert [event.seq for event in first] == [1, 2]
+        assert observed.last_journal_instance == expected_instance
+        empty = await fetch(2)
+        assert empty == ()
+        assert observed.last_journal_instance == expected_instance
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        store.close()
+
+    # 2. Scripted peer: bound -> malformed (keeps previous) -> omitted (resets to None).
+    inst = JournalInstance(instance="ab" * 16, floor=4)
+    bound_frame = _wire(
+        {
+            "type": _SNAPSHOT,
+            **encode_log_snapshot(
+                LogSnapshot(
+                    events=(_event(1),), next_cursor=1, log_end_seq=1, journal_instance=inst
+                )
+            ),
+        }
+    )
+    malformed_frame = _wire(
+        {
+            "type": _SNAPSHOT,
+            EVENTS_FIELD: [],
+            NEXT_CURSOR_FIELD: 1,
+            JOURNAL_INSTANCE_FIELD: {"instance": "BAD", "floor": 0},
+        }
+    )
+    omitted_frame = _wire({"type": _SNAPSHOT, EVENTS_FIELD: [], NEXT_CURSOR_FIELD: 1})
+    queued = [bound_frame, malformed_frame, omitted_frame]
+
+    @contextlib.asynccontextmanager
+    async def scripted(_uri: str) -> AsyncIterator[_FakeSocket]:
+        yield _FakeSocket([queued.pop(0)])
+
+    scripted_fetch = network_fetcher("ws://peer", local_id="follower", connector=scripted)
+    scripted_obs = cast(_ProtocolAwareFetcher, scripted_fetch)
+    assert len(await scripted_fetch(0)) == 1
+    assert scripted_obs.last_journal_instance == inst
+
+    with pytest.raises(MultiHubFetchError, match="32 lower-case hex digits"):
+        await scripted_fetch(1)
+    assert scripted_obs.last_journal_instance == inst
+
+    assert await scripted_fetch(1) == ()
+    assert scripted_obs.last_journal_instance is None

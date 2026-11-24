@@ -20,6 +20,14 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **Peer `JournalInstance` propagation on the multi-hub event-log pull wire.** Added `journal_instance()` to the
+  `ReadableEventLog` protocol (already implemented by `EventStore` and `EventLogReader`), added the additive optional
+  `journal_instance` field to `MULTIHUB_LOG_SNAPSHOT` / `LogSnapshot` (keeping wire protocol version 7 and decoding
+  missing or `null` values from older peers as `None`, while refusing malformed objects with `MultiHubWireError`),
+  wired served pulls to report the serving store's `JournalInstance` for authorised peers only, and exposed
+  `last_journal_instance` on both the fetcher returned by `network_fetcher(...)` and `store_fetcher(...)` while
+  keeping `ProtocolAwareEventFetcher` internal.
+
 - **Fleet mirror contract exports on `synapse_channel.federation_api`.** Added `MIRROR_CONTRACT_VERSION = 1` in
   `fleet_mirror_contract.py` (used directly by `parse_mirror` with byte-identical version-one validation) and
   exported `MIRROR_CONTRACT_VERSION`, `MirrorVersionError`, and `parse_mirror` lazily through

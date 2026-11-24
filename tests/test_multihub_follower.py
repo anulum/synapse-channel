@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 import pytest
 
@@ -24,6 +24,8 @@ from synapse_channel.core.multihub_equivocation import (
 )
 from synapse_channel.core.multihub_follower import MultiHubFollower, store_fetcher
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence_reader import EventLogReader
+from synapse_channel.core.persistence_store_format import JournalInstance
 
 
 def _stored(seq: int, ts: float, kind: str, **payload: Any) -> StoredEvent:
@@ -466,3 +468,90 @@ async def test_fold_failure_does_not_publish_candidate_or_fetch_metadata(
     assert follower.clock_skew("east") is None
     monkeypatch.undo()
     assert follower.observed().board == {}
+
+
+async def test_store_fetcher_exposes_and_refreshes_last_journal_instance(tmp_path: Path) -> None:
+    """store_fetcher exposes last_journal_instance across EventStore, EventLogReader, and None."""
+
+    class _ObservedFetcher(Protocol):
+        last_journal_instance: JournalInstance | None
+
+    db = tmp_path / "peer.db"
+    store = EventStore(db)
+    try:
+        store.append(EventKind.CHAT, {"text": "hello"}, ts=1.0)
+        expected = store.journal_instance()
+        assert expected is not None
+
+        writer_fetch = store_fetcher(store)
+        writer_obs = cast(_ObservedFetcher, writer_fetch)
+        assert writer_obs.last_journal_instance is None
+        batch = await writer_fetch(0)
+        assert [event.seq for event in batch] == [1]
+        assert writer_obs.last_journal_instance == expected
+        # Empty caught-up page still refreshes last_journal_instance.
+        assert await writer_fetch(1) == []
+        assert writer_obs.last_journal_instance == expected
+    finally:
+        store.close()
+
+    with EventLogReader(db) as reader:
+        reader_fetch = store_fetcher(reader)
+        reader_obs = cast(_ObservedFetcher, reader_fetch)
+        assert reader_obs.last_journal_instance is None
+        batch = await reader_fetch(0)
+        assert [event.seq for event in batch] == [1]
+        assert reader_obs.last_journal_instance == expected
+
+    # Custom ReadableEventLog transitioning from bound to None resets last_journal_instance,
+    # and a read_since failure leaves the prior observation untouched.
+    class _SwitchableLog:
+        def __init__(self, instance: JournalInstance | None) -> None:
+            self.instance = instance
+            self.fail = False
+
+        def iter_events(
+            self,
+            *,
+            through_seq: int | None = None,
+            kinds: Any = None,
+            after_seq: int | None = None,
+            apply_row_quarantine: bool = True,
+        ) -> Any:
+            return iter(())
+
+        def read_since(
+            self, after_seq: int, *, kinds: Any = None, limit: int | None = None
+        ) -> list[StoredEvent]:
+            if self.fail:
+                raise RuntimeError("boom")
+            return []
+
+        def max_seq(self) -> int:
+            return 0
+
+        def latest_at_or_before(self, through_seq: int) -> StoredEvent | None:
+            return None
+
+        def get_operation(self, operation_key: str) -> Any:
+            return None
+
+        def journal_instance(self) -> JournalInstance | None:
+            return self.instance
+
+    inst = JournalInstance(instance="cd" * 16, floor=7)
+    log = _SwitchableLog(inst)
+    custom_fetch = store_fetcher(log)
+    custom_obs = cast(_ObservedFetcher, custom_fetch)
+    await custom_fetch(0)
+    assert custom_obs.last_journal_instance == inst
+
+    log.fail = True
+    with pytest.raises(RuntimeError, match="boom"):
+        await custom_fetch(0)
+    assert custom_obs.last_journal_instance == inst
+
+    log.fail = False
+    log.instance = None
+    await custom_fetch(0)
+    assert custom_obs.last_journal_instance is None

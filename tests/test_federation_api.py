@@ -58,6 +58,7 @@ def test_a_name_off_the_surface_is_an_attribute_error() -> None:
         "_private_helper",
         "MAX_MIRROR_BYTES",
         "parse_mirror_document",
+        "ProtocolAwareEventFetcher",
     ):
         assert not hasattr(federation_api, private_or_deferred)
 

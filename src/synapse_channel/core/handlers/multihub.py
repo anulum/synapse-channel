@@ -151,8 +151,14 @@ def _read_snapshot(hub: MultihubContext, request: LogRequest) -> LogSnapshot:
         return LogSnapshot(events=(), next_cursor=request.after_seq)
     log_end_seq = hub.journal.max_seq()
     events = tuple(hub.journal.read_since(request.after_seq, limit=request.limit))
+    journal_instance = hub.journal.journal_instance()
     next_cursor = events[-1].seq if events else request.after_seq
-    return LogSnapshot(events=events, next_cursor=next_cursor, log_end_seq=log_end_seq)
+    return LogSnapshot(
+        events=events,
+        next_cursor=next_cursor,
+        log_end_seq=log_end_seq,
+        journal_instance=journal_instance,
+    )
 
 
 VERB_SPECS = (

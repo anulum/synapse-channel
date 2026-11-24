@@ -832,7 +832,8 @@ configured principal grants as protected dashboard data:
   reliability panel consumes;
 - `/events.json?since=SEQ&limit=N` — the raw event-log tail past a
   cursor, in the exact multihub snapshot shape (`events`, `next_cursor`,
-  and `log_end_seq`),
+  `log_end_seq`, and `journal_instance`, which is always `null` on this
+  feed),
   so a polling client can continue through retained rows. Each event of a kind
   the hub knows also carries the hub's words for it: `actor`, the identity its
   writer recorded (empty when the record names none, as for a release), and

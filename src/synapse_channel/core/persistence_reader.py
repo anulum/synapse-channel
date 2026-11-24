@@ -84,6 +84,9 @@ class ReadableEventLog(Protocol):
     def get_operation(self, operation_key: str) -> StoredOperation | None:
         """Return one completed operation, or ``None`` when it is not recorded."""
 
+    def journal_instance(self) -> JournalInstance | None:
+        """Return the store's journal instance and sequence floor, or ``None`` if unrecorded."""
+
 
 class EventLogReader:
     """An existing event log, opened for reading only.
