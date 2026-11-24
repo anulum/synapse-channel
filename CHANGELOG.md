@@ -20,6 +20,11 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **The tmux wait loop lives in one module.** `wait_and_wake` and the wait
+  command, backoff, first registration and bridge wait move to
+  `agent_tmux_wait`. `agent_tmux.inject_wake`, `start_session` and `status`
+  stay. The wait loop calls the transport; the transport does not import it.
+
 - **The tmux wake-target registry lives in one module.** `RegistryRecord`,
   `registry_path` and `record_waiter_stop` move to `agent_tmux_registry`.
   The transport still reads that record when it launches and wakes.

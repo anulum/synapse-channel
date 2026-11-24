@@ -16,7 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel import agent_tmux, agent_tmux_provider, agent_tmux_types, codex_tmux
+from synapse_channel import (
+    agent_tmux,
+    agent_tmux_provider,
+    agent_tmux_types,
+    agent_tmux_wait,
+    codex_tmux,
+)
 from synapse_channel.codex_tmux import (
     CODEX_PANE_COMMANDS,
     CodexTmuxConfig,
@@ -32,7 +38,7 @@ def test_codex_aliases_are_the_generic_agent_symbols() -> None:
     assert CodexTmuxStatus is agent_tmux_types.AgentTmuxStatus
     assert CodexTmuxWakeResult is agent_tmux_types.AgentTmuxWakeResult
     assert codex_tmux.inject_wake is agent_tmux.inject_wake
-    assert codex_tmux.wait_and_wake is agent_tmux.wait_and_wake
+    assert codex_tmux.wait_and_wake is agent_tmux_wait.wait_and_wake
     assert CODEX_PANE_COMMANDS is agent_tmux_types.DEFAULT_AGENT_PANE_COMMANDS
 
 

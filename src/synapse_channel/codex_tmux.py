@@ -17,12 +17,10 @@ code should use the generic ``AgentTmux*`` symbols directly.
 from __future__ import annotations
 
 from synapse_channel.agent_tmux import (
-    _backoff_delay,
     build_wake_prompt,
     inject_wake,
     start_session,
     status,
-    wait_and_wake,
 )
 from synapse_channel.agent_tmux_provider import agent_binary
 from synapse_channel.agent_tmux_registry import (
@@ -46,6 +44,7 @@ from synapse_channel.agent_tmux_types import (
 from synapse_channel.agent_tmux_types import (
     AgentTmuxWakeResult as CodexTmuxWakeResult,
 )
+from synapse_channel.agent_tmux_wait import _backoff_delay, wait_and_wake
 
 CODEX_PANE_COMMANDS = DEFAULT_AGENT_PANE_COMMANDS
 """Backwards-compatible alias for :data:`agent_tmux_types.DEFAULT_AGENT_PANE_COMMANDS`."""

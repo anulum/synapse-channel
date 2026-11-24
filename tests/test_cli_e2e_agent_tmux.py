@@ -43,10 +43,10 @@ from synapse_channel.agent_tmux import (
     build_wake_prompt,
     inject_wake,
     status,
-    wait_and_wake,
 )
 from synapse_channel.agent_tmux_registry import registry_path
 from synapse_channel.agent_tmux_types import AgentTmuxConfig
+from synapse_channel.agent_tmux_wait import wait_and_wake
 
 _TMUX = shutil.which("tmux")
 _CODEX = shutil.which("codex")

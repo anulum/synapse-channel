@@ -9,7 +9,7 @@
 
 Without this module a tmux seat has two waiter processes besides its agent
 (``agent-tmux wait`` and its ``synapse wait`` child). Here the seat holder runs
-the same wait loop, :func:`~synapse_channel.agent_tmux.wait_and_wake`, in one
+the same wait loop, :func:`~synapse_channel.agent_tmux_wait.wait_and_wake`, in one
 thread, and each bridge wait runs inside the process too:
 
 * **Its own event loop.** Each wait runs with :func:`asyncio.run` in the waiter
@@ -45,15 +45,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TextIO
 
-from synapse_channel.agent_tmux import (
-    wait_and_wake,
-    wait_executor,
-)
 from synapse_channel.agent_tmux_registry import record_waiter_stop
 from synapse_channel.agent_tmux_types import (
     DEFAULT_PANE_PROBE_INTERVAL,
     AgentTmuxConfig,
 )
+from synapse_channel.agent_tmux_wait import wait_and_wake, wait_executor
 from synapse_channel.session_ledger import LauncherRecord
 
 SEAT_LOG_LIMIT_BYTES = 4 * 1024 * 1024
@@ -251,7 +248,7 @@ class InProcessWait:
         probe: Callable[[], int],
         heartbeat: Callable[[], None] | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], int]:
-        """Run one wait; see :class:`~synapse_channel.agent_tmux.ProbedWait`."""
+        """Run one wait; see :class:`~synapse_channel.agent_tmux_wait.ProbedWait`."""
         del env  # the holder's own environment; a pane-bridge wait never yields
         refusal = [0]
         if self._quiet is not None:

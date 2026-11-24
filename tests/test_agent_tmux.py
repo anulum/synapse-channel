@@ -20,19 +20,15 @@ from typing import Any, cast
 import pytest
 
 from fixtures.agent_tmux_provider_screens import PROVIDER_SCREENS
-from synapse_channel import agent_tmux
+from synapse_channel import agent_tmux_wait
 from synapse_channel.agent_tmux import (
     BINDING_REFUSAL_EXIT_CODE,
-    NO_TAKEOVER_UNSUPPORTED_EXIT_CODE,
-    _backoff_delay,
     _bounded_native_command,
     _pane_is_safe_for_submit,
-    _wait_command,
     build_wake_prompt,
     inject_wake,
     start_session,
     status,
-    wait_and_wake,
 )
 from synapse_channel.agent_tmux_provider import (
     _provider_family,
@@ -50,6 +46,12 @@ from synapse_channel.agent_tmux_types import (
     DEFAULT_AGENT_PANE_COMMANDS,
     AgentTmuxConfig,
     AgentTmuxWakeResult,
+)
+from synapse_channel.agent_tmux_wait import (
+    NO_TAKEOVER_UNSUPPORTED_EXIT_CODE,
+    _backoff_delay,
+    _wait_command,
+    wait_and_wake,
 )
 from synapse_channel.core.private_dir import ensure_private_dir
 from synapse_channel.opencode_composer import PROTOCOL
@@ -1366,7 +1368,7 @@ def test_wait_and_wake_jitters_the_default_backoff(tmp_path: Path) -> None:
 
 def test_wait_command_threads_a_custom_uri_and_token(tmp_path: Path) -> None:
     """A non-default hub and a token both ride on the one-shot wait command."""
-    from synapse_channel.agent_tmux import _wait_command
+    from synapse_channel.agent_tmux_wait import _wait_command
 
     config = _config(tmp_path)
     custom = replace(config, uri="ws://coordinator:9999", token="secret-token")
@@ -1569,7 +1571,7 @@ def test_only_the_exact_registered_line_drops_the_guard(
     code: int, stdout: str, stderr: str, held: bool, tmp_path: Path
 ) -> None:
     """An exit code is never proof that the name was held: ``2`` is also a usage error."""
-    config, proc, refusal = agent_tmux._first_registration(
+    config, proc, refusal = agent_tmux_wait._first_registration(
         _guarded(tmp_path), _result(["synapse", "wait"], code, stdout, stderr), 0
     )
     assert refusal == 0 and proc.returncode == code
@@ -1604,7 +1606,7 @@ def test_a_visible_stage_is_adopted_unless_composer_files_prove_the_stage(
 
 
 def test_the_vocabulary_imports_around_the_transport() -> None:
-    """Vocabulary, provider resolution and the registry load without the transport."""
+    """Vocabulary, provider, the registry and the wait loop load in one direction."""
     env = os.environ.copy()
     root = Path(__file__).resolve().parents[1] / "src"
     env["PYTHONPATH"] = str(root) + os.pathsep + env.get("PYTHONPATH", "")
@@ -1637,7 +1639,13 @@ def test_the_vocabulary_imports_around_the_transport() -> None:
         "import synapse_channel.agent_tmux_registry\n"
         "import synapse_channel.agent_tmux_types\n"
     )
-    for script in (vocabulary_first, provider_first, registry_first, transport_first):
+    wait_last = (
+        "import sys\n"
+        "import synapse_channel.agent_tmux\n"
+        "assert 'synapse_channel.agent_tmux_wait' not in sys.modules\n"
+        "import synapse_channel.agent_tmux_wait\n"
+    )
+    for script in (vocabulary_first, provider_first, registry_first, transport_first, wait_last):
         completed = subprocess.run(
             [sys.executable, "-c", script],
             check=False,
@@ -1817,3 +1825,24 @@ def test_a_changed_launch_makes_a_staged_prompt_unread(tmp_path: Path) -> None:
     )
 
     assert _wake_prompt_staged(config) is False
+
+
+def test_a_timed_out_wait_refuses_an_invalid_binding_at_once(tmp_path: Path) -> None:
+    """A bounded wait timeout re-checks the binding and refuses a mismatch at once."""
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [_result(["synapse", "wait"], 2)],
+        session_environment="SYN_PROJECT=OTHER\nSYN_IDENTITY=OTHER/pane\n",
+    )
+    sleeper = RecordingSleeper()
+
+    result = wait_and_wake(
+        config,
+        runner=runner,
+        max_wakes=1,
+        sleeper=sleeper,
+        max_wait_failures=1,
+    )
+
+    assert result == BINDING_REFUSAL_EXIT_CODE
+    assert sleeper.delays == []

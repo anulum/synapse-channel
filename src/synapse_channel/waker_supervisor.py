@@ -15,8 +15,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol
 
-from synapse_channel.agent_tmux import wait_and_wake
 from synapse_channel.agent_tmux_types import AgentTmuxConfig
+from synapse_channel.agent_tmux_wait import wait_and_wake
 from synapse_channel.waker_config import DESIRED_INHIBITED, load_waker_config
 from synapse_channel.waker_transition import transition_state
 

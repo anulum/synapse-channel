@@ -18,12 +18,12 @@ from pathlib import Path
 import pytest
 
 from cli_e2e_helpers import _candidate_environment, isolated_hub, run_cli
-from synapse_channel import agent_tmux
-from synapse_channel.agent_tmux import (
+from synapse_channel import agent_tmux_wait
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
+from synapse_channel.agent_tmux_wait import (
     _bridge_wait,
     _retry_exit,
 )
-from synapse_channel.agent_tmux_types import AgentTmuxConfig
 
 
 def _finished(returncode: int) -> subprocess.CompletedProcess[str]:
@@ -63,7 +63,7 @@ def test_an_old_synapse_keeps_the_bridge_on_the_one_shot_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A ``synapse`` that refuses the parent binding is detected once and then used one-shot."""
-    monkeypatch.setattr(agent_tmux, "_ONE_SHOT_WAIT_BINARIES", set())
+    monkeypatch.setattr(agent_tmux_wait, "_ONE_SHOT_WAIT_BINARIES", set())
     binary, calls = _legacy_synapse(tmp_path)
     config = AgentTmuxConfig(
         identity="LEGACY/seat",
@@ -74,7 +74,7 @@ def test_an_old_synapse_keeps_the_bridge_on_the_one_shot_wait(
     )
     first, refusal = _bridge_wait(config, runner=subprocess.run, heartbeat=None)
     assert (first.returncode, refusal) == (2, 0)
-    assert agent_tmux._ONE_SHOT_WAIT_BINARIES == {str(binary)}
+    assert agent_tmux_wait._ONE_SHOT_WAIT_BINARIES == {str(binary)}
     second, refusal = _bridge_wait(config, runner=subprocess.run, heartbeat=None)
     assert (second.returncode, refusal) == (2, 0)
     lines = calls.read_text(encoding="utf-8").splitlines()
@@ -95,7 +95,7 @@ def test_the_logged_refusal_shows_controls_instead_of_sending_them(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A refusal carrying terminal controls is logged with the controls made visible."""
-    monkeypatch.setattr(agent_tmux, "_ONE_SHOT_WAIT_BINARIES", set())
+    monkeypatch.setattr(agent_tmux_wait, "_ONE_SHOT_WAIT_BINARIES", set())
     binary = tmp_path / "synapse-noisy"
     binary.write_text(
         f"#!{sys.executable}\n"

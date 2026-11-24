@@ -32,10 +32,10 @@ from typing import Any
 import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
-from synapse_channel import agent_tmux, cli_messaging_wait, seat_waiter
-from synapse_channel.agent_tmux import _wait_command
+from synapse_channel import agent_tmux_wait, cli_messaging_wait, seat_waiter
 from synapse_channel.agent_tmux_registry import record_waiter_stop, registry_path
 from synapse_channel.agent_tmux_types import AgentTmuxConfig
+from synapse_channel.agent_tmux_wait import _wait_command
 from synapse_channel.cli_messaging_wait import registered_line
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.pane_bridge_wait import run_probed_wait
@@ -489,13 +489,13 @@ def test_a_waiter_whose_loop_ends_records_why_and_the_seat_runs_on(
     seen: list[object] = []
 
     def loop(config: AgentTmuxConfig, *, sleeper: Callable[[float], object]) -> int:
-        seen.append(agent_tmux._PROBED_WAIT.get())  # waits run in-process here
+        seen.append(agent_tmux_wait._PROBED_WAIT.get())  # waits run in-process here
         return 9
 
     waiter = _waiter(tmp_path, loop, records.record)
     _finish(waiter)
     assert seen == [waiter._executor]
-    assert agent_tmux._PROBED_WAIT.get() is None  # never leaked to this thread
+    assert agent_tmux_wait._PROBED_WAIT.get() is None  # never leaked to this thread
     assert waiter.reason == "the wait loop ended with 9"
     assert records.stops == [(waiter.config, "the wait loop ended with 9")]
     assert (
@@ -576,11 +576,13 @@ def test_the_bridge_runs_its_wait_through_the_threads_executor(tmp_path: Path) -
         return subprocess.CompletedProcess(list(command), 2, "", ""), 7
 
     config = _config(tmp_path, "ws://h", synapse_bin="/nonexistent/synapse")
-    with agent_tmux.wait_executor(executor):
-        result, refusal = agent_tmux._bridge_wait(config, runner=subprocess.run, heartbeat=None)
+    with agent_tmux_wait.wait_executor(executor):
+        result, refusal = agent_tmux_wait._bridge_wait(
+            config, runner=subprocess.run, heartbeat=None
+        )
     assert (result.returncode, refusal) == (2, 7)
     assert calls and calls[0][1:3] == ["wait", "--name"]
-    assert agent_tmux._PROBED_WAIT.get() is None
+    assert agent_tmux_wait._PROBED_WAIT.get() is None
 
 
 # --- opening and closing the seat's waiter -----------------------------------------

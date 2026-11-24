@@ -220,7 +220,7 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/a2a_interop_trace.py::run_local_interop_trace" = 50
 "src/synapse_channel/a2a_rpc.py::_dispatch_method" = 21
 "src/synapse_channel/a2a_store.py::A2ATaskStore._load" = 17
-"src/synapse_channel/agent_tmux.py::wait_and_wake" = 20
+"src/synapse_channel/agent_tmux_wait.py::wait_and_wake" = 20
 "src/synapse_channel/claude_plugin_install.py::inspect_plugin" = 17
 "src/synapse_channel/cli_a2a_serve.py::_cmd_a2a_serve" = 32
 "src/synapse_channel/cli_benchmark.py::_cmd_benchmark" = 46
@@ -406,3 +406,8 @@ allowed = 0
 reason = "argparse has no public API for listing a parser's actions or a subparser group's choice actions; this adapter is the one module allowed to read them, and cli.py and cli_completions.py go through it."
 owner = "f636"
 review_by = "2026-12-31"
+
+[[moves]]
+from = "src/synapse_channel/agent_tmux.py::wait_and_wake"
+measure = "function_branches"
+to = "src/synapse_channel/agent_tmux_wait.py::wait_and_wake"
