@@ -33,12 +33,14 @@ import time
 from collections.abc import Callable
 
 from synapse_channel.agent_tmux import (
-    AgentTmuxConfig,
-    CommandRunner,
-    Sleeper,
     build_wake_prompt,
     inject_wake,
     status,
+)
+from synapse_channel.agent_tmux_types import (
+    AgentTmuxConfig,
+    CommandRunner,
+    Sleeper,
 )
 from synapse_channel.wake_adapters import (
     ACCEPTED,

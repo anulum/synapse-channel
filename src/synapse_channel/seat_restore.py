@@ -52,9 +52,11 @@ from pathlib import Path
 
 from synapse_channel.agent_tmux import (
     SEAT_HOLD_SUBCOMMAND,
+    start_session,
+)
+from synapse_channel.agent_tmux_types import (
     AgentTmuxConfig,
     AgentTmuxWakeResult,
-    start_session,
 )
 from synapse_channel.core.private_dir import ensure_private_dir
 from synapse_channel.reap import safe_key

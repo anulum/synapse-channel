@@ -16,7 +16,10 @@ from typing import Any
 import pytest
 
 from _platform_caps import requires_linux
-from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxStatus
+from synapse_channel.agent_tmux_types import (
+    AgentTmuxConfig,
+    AgentTmuxStatus,
+)
 from synapse_channel.waker_config import (
     DESIRED_ARMED,
     DESIRED_INHIBITED,

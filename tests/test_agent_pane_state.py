@@ -27,7 +27,11 @@ from synapse_channel.agent_pane_state import (
     screen_is_safe_for_submit,
     staged_wake_was_consumed,
 )
-from synapse_channel.agent_tmux import AgentTmuxConfig, build_wake_prompt, status
+from synapse_channel.agent_tmux import (
+    build_wake_prompt,
+    status,
+)
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.core.private_dir import ensure_private_dir
 from synapse_channel.opencode_composer import (
     PROFILE_ENV,

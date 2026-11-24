@@ -18,7 +18,11 @@ from functools import partial
 from pathlib import Path
 from typing import Protocol
 
-from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxStatus, status
+from synapse_channel.agent_tmux import status
+from synapse_channel.agent_tmux_types import (
+    AgentTmuxConfig,
+    AgentTmuxStatus,
+)
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.service_setup import (
     default_synapse_bin,

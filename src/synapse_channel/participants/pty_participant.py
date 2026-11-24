@@ -18,7 +18,7 @@ data; only the routing nudge touches the terminal, so a remote sender can never 
 
 A peer running the turn responder answers with a typed result; a peer without one still answers
 through the relay's degraded free-text fallback. The seat fronts exactly the peer named by
-:attr:`~synapse_channel.agent_tmux.AgentTmuxConfig.identity`, so its
+:attr:`~synapse_channel.agent_tmux_types.AgentTmuxConfig.identity`, so its
 :attr:`PtyParticipant.identity` is that peer's bus identity and the relay both addresses the
 request to it and matches the reply by it. The relay connects under a separate ``sender_identity``
 (it cannot listen as the peer it is talking to). As with every participant, an unreachable hub or
@@ -36,11 +36,11 @@ import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from typing import TYPE_CHECKING
 
 from synapse_channel.agent_tmux import (
-    CommandRunner,
     agent_binary,
     inject_wake,
     start_session,
 )
+from synapse_channel.agent_tmux_types import CommandRunner
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.participants.participant import (
     ParticipantChannel,
@@ -49,7 +49,7 @@ from synapse_channel.participants.participant import (
 from synapse_channel.participants.turn_relay import RelaySettings, relay_turn
 
 if TYPE_CHECKING:
-    from synapse_channel.agent_tmux import AgentTmuxConfig
+    from synapse_channel.agent_tmux_types import AgentTmuxConfig
     from synapse_channel.cli_messaging_types import AgentFactory
     from synapse_channel.participants.envelope import TurnRequest, TurnResult
 

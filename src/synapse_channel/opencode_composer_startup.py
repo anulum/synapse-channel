@@ -32,7 +32,10 @@ from synapse_channel.opencode_composer_probe import (
 )
 
 if TYPE_CHECKING:
-    from synapse_channel.agent_tmux import AgentTmuxConfig, CommandRunner
+    from synapse_channel.agent_tmux_types import (
+        AgentTmuxConfig,
+        CommandRunner,
+    )
 
 
 class _CommandResult(Protocol):

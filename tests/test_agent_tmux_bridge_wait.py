@@ -19,7 +19,11 @@ import pytest
 
 from cli_e2e_helpers import _candidate_environment, isolated_hub, run_cli
 from synapse_channel import agent_tmux
-from synapse_channel.agent_tmux import AgentTmuxConfig, _bridge_wait, _retry_exit
+from synapse_channel.agent_tmux import (
+    _bridge_wait,
+    _retry_exit,
+)
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 
 
 def _finished(returncode: int) -> subprocess.CompletedProcess[str]:

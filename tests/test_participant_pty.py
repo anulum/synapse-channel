@@ -25,7 +25,7 @@ from typing import Any
 import pytest
 
 from synapse_channel import agent_tmux
-from synapse_channel.agent_tmux import AgentTmuxConfig
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.participants.envelope import (
     TurnRequest,
     build_turn_result,

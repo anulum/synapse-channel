@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from _platform_caps import requires_proc
-from synapse_channel.agent_tmux import AgentTmuxConfig
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.waker_config import DESIRED_INHIBITED, WakerConfig, save_waker_config
 from synapse_channel.waker_supervisor import (
     INHIBITED_EXIT_CODE,

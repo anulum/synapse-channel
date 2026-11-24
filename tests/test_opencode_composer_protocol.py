@@ -401,7 +401,7 @@ def test_native_readback_preserves_input_across_controller_timezones(tmp_path: P
         config = native.config
         script = (
             "from pathlib import Path;import subprocess;"
-            "from synapse_channel.agent_tmux import AgentTmuxConfig;"
+            "from synapse_channel.agent_tmux_types import AgentTmuxConfig;"
             "from synapse_channel.opencode_composer_probe import inspect_editor_composer;"
             f"config=AgentTmuxConfig({config.identity!r},{config.session!r},"
             f"Path({str(config.cwd)!r}),agent_command={config.agent_command!r},"

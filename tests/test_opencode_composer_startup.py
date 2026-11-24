@@ -332,7 +332,8 @@ def test_killed_startup_controller_recovers_only_its_unpublished_client(tmp_path
         config = native.config
         script = (
             "from pathlib import Path\nimport os,signal,subprocess\n"
-            "from synapse_channel.agent_tmux import AgentTmuxConfig,start_session\n"
+            "from synapse_channel.agent_tmux_types import AgentTmuxConfig\n"
+            "from synapse_channel.agent_tmux import start_session\n"
             f"cfg=AgentTmuxConfig({config.identity!r},{config.session!r},"
             f"Path({str(config.cwd)!r}),agent_command={config.agent_command!r},"
             f"tmux_bin={config.tmux_bin!r},registry_dir=Path({str(config.registry_dir)!r}),"

@@ -23,13 +23,13 @@ import pytest
 
 from synapse_channel.agent_tmux import (
     BINDING_REFUSAL_EXIT_CODE,
-    AgentTmuxConfig,
     _write_registry,
     build_wake_prompt,
     inject_wake,
     registry_path,
     start_session,
 )
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 
 pytestmark = pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is not installed")
 

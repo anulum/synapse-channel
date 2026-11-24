@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Protocol
 
-    from synapse_channel.agent_tmux import (
+    from synapse_channel.agent_tmux_types import (
         AgentTmuxConfig,
         AgentTmuxWakeResult,
         CommandRunner,

@@ -31,11 +31,11 @@ import pytest
 
 from synapse_channel import wake_marks
 from synapse_channel.agent_tmux import (
-    AgentTmuxConfig,
     build_wake_prompt,
     registry_path,
     start_session,
 )
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.wake_adapters import ACCEPTED, REFUSED, UNCERTAIN, WakeTarget
 from synapse_channel.wake_adapters.pane_bridge import KIND, PROVES, PaneBridgeAdapter
 from synapse_channel.wake_relay import WAKE_FAILED, relay

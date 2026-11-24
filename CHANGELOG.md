@@ -20,6 +20,8 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **The tmux wake vocabulary lives in one module.** `Sleeper`, `CommandRunner`, `AgentTmuxConfig`, `AgentTmuxWakeResult`, `AgentTmuxStatus` and the `DEFAULT_*` pane, submit and wait constants move to `agent_tmux_types`. `agent_tmux.inject_wake`, `start_session` and `status` stay, as do `BINDING_REFUSAL_EXIT_CODE` and `PANE_CAPTURE_MAX_CHARS`.
+
 - **The two-person operator-relay approval ledger publishes a committed candidate through a public port; behaviour is
   unchanged.** `PendingRelayApproval` (frozen, slotted) and `RelayApprovalPublicationParts` (frozen, slotted) expose
   pending `(RelayApprovalKey, PendingRelayApproval)` pairs oldest first through

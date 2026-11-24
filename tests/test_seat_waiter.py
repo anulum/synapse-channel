@@ -33,7 +33,11 @@ import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import agent_tmux, cli_messaging_wait, seat_waiter
-from synapse_channel.agent_tmux import AgentTmuxConfig, _wait_command, record_waiter_stop
+from synapse_channel.agent_tmux import (
+    _wait_command,
+    record_waiter_stop,
+)
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.cli_messaging_wait import registered_line
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.pane_bridge_wait import run_probed_wait

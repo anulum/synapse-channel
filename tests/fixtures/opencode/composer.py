@@ -26,7 +26,11 @@ from fixtures.opencode.llm import ScriptedLlmServer
 from fixtures.opencode.process import find_opencode, isolated_environment
 from fixtures.tmux_reap import stop_private_tmux_server
 from synapse_channel import agent_tmux as tmux_module
-from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxWakeResult, start_session
+from synapse_channel.agent_tmux import start_session
+from synapse_channel.agent_tmux_types import (
+    AgentTmuxConfig,
+    AgentTmuxWakeResult,
+)
 from synapse_channel.opencode_composer_files import read_document
 from synapse_channel.opencode_composer_probe import (
     ComposerSnapshot,
@@ -139,7 +143,8 @@ def controller_config_code(config: AgentTmuxConfig) -> str:
     """
     return (
         "from pathlib import Path\nimport os,signal,subprocess\n"
-        "from synapse_channel.agent_tmux import AgentTmuxConfig,inject_wake\n"
+        "from synapse_channel.agent_tmux_types import AgentTmuxConfig\n"
+        "from synapse_channel.agent_tmux import inject_wake\n"
         f"cfg=AgentTmuxConfig({config.identity!r},{config.session!r},"
         f"Path({str(config.cwd)!r}),agent_command={config.agent_command!r},"
         f"tmux_bin={config.tmux_bin!r},registry_dir=Path({str(config.registry_dir)!r}),"

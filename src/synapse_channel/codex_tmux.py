@@ -17,13 +17,7 @@ code should use the generic ``AgentTmux*`` symbols directly.
 from __future__ import annotations
 
 from synapse_channel.agent_tmux import (
-    DEFAULT_AGENT_PANE_COMMANDS,
-    DEFAULT_SUBMIT_DELAY,
-    DEFAULT_WAIT_RETRY_BASE,
-    DEFAULT_WAIT_RETRY_CAP,
-    CommandRunner,
     RegistryRecord,
-    Sleeper,
     _backoff_delay,
     agent_binary,
     build_wake_prompt,
@@ -33,18 +27,26 @@ from synapse_channel.agent_tmux import (
     status,
     wait_and_wake,
 )
-from synapse_channel.agent_tmux import (
+from synapse_channel.agent_tmux_types import (
+    DEFAULT_AGENT_PANE_COMMANDS,
+    DEFAULT_SUBMIT_DELAY,
+    DEFAULT_WAIT_RETRY_BASE,
+    DEFAULT_WAIT_RETRY_CAP,
+    CommandRunner,
+    Sleeper,
+)
+from synapse_channel.agent_tmux_types import (
     AgentTmuxConfig as CodexTmuxConfig,
 )
-from synapse_channel.agent_tmux import (
+from synapse_channel.agent_tmux_types import (
     AgentTmuxStatus as CodexTmuxStatus,
 )
-from synapse_channel.agent_tmux import (
+from synapse_channel.agent_tmux_types import (
     AgentTmuxWakeResult as CodexTmuxWakeResult,
 )
 
 CODEX_PANE_COMMANDS = DEFAULT_AGENT_PANE_COMMANDS
-"""Backwards-compatible alias for :data:`agent_tmux.DEFAULT_AGENT_PANE_COMMANDS`."""
+"""Backwards-compatible alias for :data:`agent_tmux_types.DEFAULT_AGENT_PANE_COMMANDS`."""
 
 __all__ = [
     "CODEX_PANE_COMMANDS",

@@ -53,7 +53,10 @@ from synapse_channel.opencode_composer_state import (
 from synapse_channel.waker_commands import run_waker_command
 
 if TYPE_CHECKING:
-    from synapse_channel.agent_tmux import AgentTmuxConfig, CommandRunner
+    from synapse_channel.agent_tmux_types import (
+        AgentTmuxConfig,
+        CommandRunner,
+    )
 
 
 @dataclass(frozen=True)

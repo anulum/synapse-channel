@@ -201,7 +201,8 @@ def test_a_session_started_by_the_product_survives_the_unit_that_started_it(rig:
     # hand-written bridge unit runs ``synapse agent-tmux start``.
     code = (
         "from pathlib import Path\n"
-        "from synapse_channel.agent_tmux import AgentTmuxConfig, start_session\n"
+        "from synapse_channel.agent_tmux_types import AgentTmuxConfig\n"
+        "from synapse_channel.agent_tmux import start_session\n"
         "config = AgentTmuxConfig(\n"
         "    identity='TEST/seat', session='work', cwd=Path('/'),\n"
         "    agent_command=('sleep', '600'),\n"

@@ -23,15 +23,17 @@ from pathlib import Path
 from typing import Protocol
 
 from synapse_channel.agent_tmux import (
+    inject_wake,
+    start_session,
+    status,
+    wait_and_wake,
+)
+from synapse_channel.agent_tmux_types import (
     DEFAULT_PANE_PROBE_INTERVAL,
     DEFAULT_SUBMIT_DELAY,
     AgentTmuxConfig,
     AgentTmuxStatus,
     AgentTmuxWakeResult,
-    inject_wake,
-    start_session,
-    status,
-    wait_and_wake,
 )
 from synapse_channel.client.agent import default_hub_uri
 

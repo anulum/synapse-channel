@@ -24,7 +24,7 @@ from synapse_channel.opencode_composer_files import (
 )
 
 if TYPE_CHECKING:
-    from synapse_channel.agent_tmux import AgentTmuxConfig
+    from synapse_channel.agent_tmux_types import AgentTmuxConfig
 
 
 def profile_directory(config: AgentTmuxConfig) -> Path:

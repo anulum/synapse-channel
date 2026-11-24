@@ -13,7 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel import cli, cli_agent_tmux
-from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxStatus, AgentTmuxWakeResult
+from synapse_channel.agent_tmux_types import (
+    AgentTmuxConfig,
+    AgentTmuxStatus,
+    AgentTmuxWakeResult,
+)
 
 
 def test_parser_registers_agent_tmux_start_with_agent_command() -> None:

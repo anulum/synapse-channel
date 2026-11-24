@@ -13,7 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel import cli, cli_agent_tmux, cli_codex_tmux
-from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxWakeResult
+from synapse_channel.agent_tmux_types import (
+    AgentTmuxConfig,
+    AgentTmuxWakeResult,
+)
 
 
 def test_codex_tmux_command_is_registered_with_codex_flag() -> None:

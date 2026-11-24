@@ -34,14 +34,16 @@ from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import cli_services, worker_session
 from synapse_channel.agent_tmux import (
     CODEX_MANAGED_UPDATE_CONFIG,
-    AgentTmuxConfig,
-    AgentTmuxWakeResult,
     _managed_agent_command,
     _provider_family,
     agent_binary,
     provider_command,
     provider_family_of,
     without_clean_environment,
+)
+from synapse_channel.agent_tmux_types import (
+    AgentTmuxConfig,
+    AgentTmuxWakeResult,
 )
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.secret_files import read_secret_file

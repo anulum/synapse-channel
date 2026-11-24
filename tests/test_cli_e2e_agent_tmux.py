@@ -40,13 +40,13 @@ from cli_e2e_helpers import _candidate_environment, _release, _stop, isolated_hu
 from home_redirect import redirect_home
 from synapse_channel.agent_tmux import (
     PANE_CAPTURE_MAX_CHARS,
-    AgentTmuxConfig,
     build_wake_prompt,
     inject_wake,
     registry_path,
     status,
     wait_and_wake,
 )
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 
 _TMUX = shutil.which("tmux")
 _CODEX = shutil.which("codex")

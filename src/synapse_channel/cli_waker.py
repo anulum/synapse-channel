@@ -14,7 +14,10 @@ import shlex
 import sys
 from pathlib import Path
 
-from synapse_channel.agent_tmux import DEFAULT_PANE_PROBE_INTERVAL, DEFAULT_SUBMIT_DELAY
+from synapse_channel.agent_tmux_types import (
+    DEFAULT_PANE_PROBE_INTERVAL,
+    DEFAULT_SUBMIT_DELAY,
+)
 from synapse_channel.cli_waker_relay import add_parser as add_relay_parser
 from synapse_channel.cli_waker_uncertainty import add_parsers as add_uncertainty_parsers
 from synapse_channel.client.agent import default_hub_uri

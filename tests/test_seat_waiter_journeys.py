@@ -28,7 +28,8 @@ from pathlib import Path
 import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
-from synapse_channel.agent_tmux import AgentTmuxConfig, start_session
+from synapse_channel.agent_tmux import start_session
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.seat_hold import marker_path
 from synapse_channel.seat_restore import wait_for_marker
 from synapse_channel.session_ledger_collect import children, descendants, read_procs

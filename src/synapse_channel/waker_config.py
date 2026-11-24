@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import cast
 
-from synapse_channel.agent_tmux import AgentTmuxConfig
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.private_dir import ensure_private_dir

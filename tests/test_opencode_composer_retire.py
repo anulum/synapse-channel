@@ -30,7 +30,7 @@ from typing import Any
 import pytest
 
 from fixtures.tmux_reap import pane_sessions, processes_in_sessions, stop_private_tmux_server
-from synapse_channel.agent_tmux import AgentTmuxConfig
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.opencode_composer import LAUNCH_ENV
 from synapse_channel.opencode_composer_startup import (
     _pane_groups,

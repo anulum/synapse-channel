@@ -38,7 +38,11 @@ from typing import Any
 from synapse_channel.a2a_http import make_a2a_http_server
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
-from synapse_channel.agent_tmux import AgentTmuxConfig, inject_wake, start_session
+from synapse_channel.agent_tmux import (
+    inject_wake,
+    start_session,
+)
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.dashboard import start_dashboard_server
 

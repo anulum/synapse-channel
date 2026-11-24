@@ -19,7 +19,7 @@ from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.agent_tmux import DEFAULT_PANE_PROBE_INTERVAL
+from synapse_channel.agent_tmux_types import DEFAULT_PANE_PROBE_INTERVAL
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.seat_hold import hold_seat
 from synapse_channel.seat_waiter import WakeTarget

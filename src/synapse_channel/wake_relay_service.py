@@ -12,7 +12,7 @@ from __future__ import annotations
 import socket
 from pathlib import Path
 
-from synapse_channel.agent_tmux import AgentTmuxConfig
+from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.core.event_row_mac import RowMacError, load_or_create_row_mac_key
 from synapse_channel.core.persistence_receipt_view import ReceiptProjectionError
 from synapse_channel.wake_adapters import WakeAdapter, WakeTarget, validate_deadline

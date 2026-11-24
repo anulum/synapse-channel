@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from synapse_channel import cli, cli_waker
-from synapse_channel.agent_tmux import AgentTmuxStatus
+from synapse_channel.agent_tmux_types import AgentTmuxStatus
 from synapse_channel.waker_service import WakerOperationResult, WakerStatus
 
 IDENTITY = "repo/codex-1"

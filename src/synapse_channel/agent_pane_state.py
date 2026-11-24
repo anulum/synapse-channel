@@ -13,7 +13,10 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from synapse_channel.agent_tmux import AgentTmuxConfig, CommandRunner
+    from synapse_channel.agent_tmux_types import (
+        AgentTmuxConfig,
+        CommandRunner,
+    )
 
 PROVIDER_IDLE_PATTERNS = {
     "codex": re.compile(r"(?m)^\s*›(?:\s|$)"),

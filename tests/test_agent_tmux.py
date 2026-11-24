@@ -9,7 +9,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -21,10 +23,7 @@ from fixtures.agent_tmux_provider_screens import PROVIDER_SCREENS
 from synapse_channel import agent_tmux
 from synapse_channel.agent_tmux import (
     BINDING_REFUSAL_EXIT_CODE,
-    DEFAULT_AGENT_PANE_COMMANDS,
     NO_TAKEOVER_UNSUPPORTED_EXIT_CODE,
-    AgentTmuxConfig,
-    AgentTmuxWakeResult,
     _backoff_delay,
     _bounded_native_command,
     _pane_is_safe_for_submit,
@@ -37,6 +36,11 @@ from synapse_channel.agent_tmux import (
     start_session,
     status,
     wait_and_wake,
+)
+from synapse_channel.agent_tmux_types import (
+    DEFAULT_AGENT_PANE_COMMANDS,
+    AgentTmuxConfig,
+    AgentTmuxWakeResult,
 )
 
 
@@ -1584,3 +1588,32 @@ def test_a_visible_stage_is_adopted_unless_composer_files_prove_the_stage(
 
     assert inject_wake(config).detail == "probed"
     assert adopted == [not readback]
+
+
+def test_the_vocabulary_imports_around_the_transport() -> None:
+    """Either import order loads, and the vocabulary does not pull the transport in."""
+    env = os.environ.copy()
+    root = Path(__file__).resolve().parents[1] / "src"
+    env["PYTHONPATH"] = str(root) + os.pathsep + env.get("PYTHONPATH", "")
+    vocabulary_first = (
+        "import sys\n"
+        "import synapse_channel.agent_tmux_types\n"
+        "assert 'synapse_channel.agent_tmux' not in sys.modules\n"
+        "assert 'synapse_channel.agent_tmux_wait' not in sys.modules\n"
+        "import synapse_channel.agent_tmux\n"
+    )
+    transport_first = (
+        "import sys\n"
+        "import synapse_channel.agent_tmux\n"
+        "assert 'synapse_channel.agent_tmux_wait' not in sys.modules\n"
+        "import synapse_channel.agent_tmux_types\n"
+    )
+    for script in (vocabulary_first, transport_first):
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert completed.returncode == 0, completed.stderr
