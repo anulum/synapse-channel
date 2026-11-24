@@ -33,6 +33,7 @@ stability page. The private submodules only group the names by capability:
   ``record_retention``, ``persistence_reader``, ``persistence_store_format``,
   ``persistence_sqlcipher``, ``event_row_recovery``, ``persistence``.
 - Operation record projection: ``operation_record_reader``.
+- Owner-only path validation: ``secure_path``.
 - Health, entitlement and mirror contract: ``fleet_health``, ``entitlement_advert``,
   ``fleet_mirror_contract``.
 - Protocol and client: ``protocol``, ``client.agent``.
@@ -188,6 +189,16 @@ if TYPE_CHECKING:
         retention_to_json,
         utc_event_time,
     )
+    from synapse_channel.federation_api._security import (
+        PortableUserKey,
+        SecurePathError,
+        WindowsAce,
+        assert_owner_only_descriptor,
+        assert_owner_only_file_path,
+        current_user_key,
+        evaluate_windows_owner_only_policy,
+        owner_only_floor_available,
+    )
     from synapse_channel.federation_api._spend import (
         DEFAULT_SPEND_TIMEOUT,
         Connector,
@@ -334,6 +345,15 @@ _CAPABILITY_OF: dict[str, str] = {
     "OperationRecordReader": "_operations",
     "OperationRecordSnapshot": "_operations",
     "SCOPE_STOP_RECORD_KINDS": "_operations",
+    # Owner-only path validation
+    "PortableUserKey": "_security",
+    "SecurePathError": "_security",
+    "WindowsAce": "_security",
+    "assert_owner_only_descriptor": "_security",
+    "assert_owner_only_file_path": "_security",
+    "current_user_key": "_security",
+    "evaluate_windows_owner_only_policy": "_security",
+    "owner_only_floor_available": "_security",
     # Health, entitlement and mirror contract
     "EntitlementAdvertError": "_health",
     "MIRROR_CONTRACT_VERSION": "_health",
@@ -411,6 +431,7 @@ __all__ = [
     "OwnerRevocation",
     "PING_INTERVAL",
     "PeerRegistrationSigner",
+    "PortableUserKey",
     "ProtocolNegotiation",
     "ReadOnlyOpenRefused",
     "ReadableEventLog",
@@ -422,6 +443,7 @@ __all__ = [
     "SPAN_STATUS_UNSET",
     "STORE_FORMAT",
     "STORE_VERSION",
+    "SecurePathError",
     "SpanAttributeValue",
     "SpanLinkRecord",
     "SpendEpochError",
@@ -435,6 +457,9 @@ __all__ = [
     "SynapseAgent",
     "TASK_CAUSAL_PARENT_FIELD",
     "TaskStatus",
+    "WindowsAce",
+    "assert_owner_only_descriptor",
+    "assert_owner_only_file_path",
     "assess_retention",
     "authorise_multihub_peer",
     "build_export",
@@ -445,7 +470,9 @@ __all__ = [
     "certificate_sha256_pin_from_der",
     "check_receipt_merkle_signature",
     "correlation_points",
+    "current_user_key",
     "encode_claim_forward_request",
+    "evaluate_windows_owner_only_policy",
     "export_to_json",
     "fold_observed_state",
     "forward_claim",
@@ -458,6 +485,7 @@ __all__ = [
     "load_store",
     "merge_event_logs",
     "network_fetcher",
+    "owner_only_floor_available",
     "parse_mirror",
     "parse_task_causal_parent",
     "peer_from_dict",

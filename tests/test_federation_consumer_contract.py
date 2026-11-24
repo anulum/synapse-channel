@@ -30,6 +30,7 @@ by accident.
 from __future__ import annotations
 
 import collections.abc
+import ctypes
 import dataclasses
 import importlib
 import inspect
@@ -107,11 +108,11 @@ _CONTRACT_SIZE = (
 # ``class``, ``callable`` (a function or a callable type alias) or ``value`` (a constant or
 # a non-callable type alias). The list holds the fleet tier's consumed-symbol inventory as
 # of its admission of Core 0.99.49 (with attachment fetch, local import, and record-keeping
-# replacements) plus the operation record projector and read-only store reader names that
-# the fleet tier adopts in its retirement units. It pins existence and kind only, so a
-# removal, a rename or a change between kinds fails here, in this repository's CI, before a
-# release can break the consumer; the required fields and parameters of the most used
-# primitives stay pinned above.
+# replacements) plus the operation record projector, read-only store reader, Fleet mirror
+# contract, and owner-only path validation names that the fleet tier adopts in its
+# retirement units. It pins existence and kind only, so a removal, a rename or a change
+# between kinds fails here, in this repository's CI, before a release can break the
+# consumer; the required fields and parameters of the most used primitives stay pinned above.
 _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     "synapse_channel.client.agent": {
         "SynapseAgent": "class",
@@ -300,6 +301,16 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
         "render_retention": "callable",
         "retention_to_json": "callable",
     },
+    "synapse_channel.core.secure_path": {
+        "PortableUserKey": "class",
+        "SecurePathError": "class",
+        "WindowsAce": "class",
+        "assert_owner_only_descriptor": "callable",
+        "assert_owner_only_file_path": "callable",
+        "current_user_key": "callable",
+        "evaluate_windows_owner_only_policy": "callable",
+        "owner_only_floor_available": "callable",
+    },
     "synapse_channel.core.spend_epoch": {
         "OwnerRevocation": "class",
         "SpendEpochError": "class",
@@ -334,8 +345,8 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     },
 }
 
-_FLEET_SYMBOLS = 133
-_FLEET_MODULES = 43
+_FLEET_SYMBOLS = 141
+_FLEET_MODULES = 44
 
 
 def _kind(obj: object) -> str:
@@ -829,6 +840,236 @@ def test_mirror_contract_exports_boundary_parity_and_strict_mypy_consumer(tmp_pa
                 "        return None",
                 "    assert doc['version'] == expected",
                 "    return doc",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    package_root = Path(synapse_channel.__file__).resolve().parents[1]
+    probe = subprocess.run(
+        [sys.executable, "-m", "mypy", "--strict", str(consumer)],
+        capture_output=True,
+        check=False,
+        cwd=package_root,
+        env={**os.environ, "PYTHONPATH": str(package_root)},
+        text=True,
+        timeout=180,
+    )
+    assert probe.returncode == 0, probe.stdout + probe.stderr
+
+
+_SECURITY_MODULES: tuple[str, ...] = (
+    "synapse_channel.core.secure_path",
+    "synapse_channel.core.secure_path_windows",
+)
+
+_APPROVED_SECURITY_EXPORTS: frozenset[str] = frozenset(
+    {
+        "PortableUserKey",
+        "SecurePathError",
+        "WindowsAce",
+        "assert_owner_only_descriptor",
+        "assert_owner_only_file_path",
+        "current_user_key",
+        "evaluate_windows_owner_only_policy",
+        "owner_only_floor_available",
+    }
+)
+
+
+def _derived_security_creator_denylist() -> dict[str, object]:
+    """Derive public create_*, apply_*, or *birth* callables across both secure-path modules."""
+    denied: dict[str, object] = {}
+    for module_path in _SECURITY_MODULES:
+        module = importlib.import_module(module_path)
+        for name, obj in inspect.getmembers(module, callable):
+            if name.startswith("_") or getattr(obj, "__module__", None) != module_path:
+                continue
+            if name.startswith(("create_", "apply_", "windows_create_", "windows_apply_")) or (
+                "birth" in name
+            ):
+                denied[name] = obj
+    return denied
+
+
+def _is_ctypes_type(candidate: object) -> bool:
+    """Return whether ``candidate`` is a ``ctypes`` type or annotation mentioning ``ctypes``."""
+    if isinstance(candidate, str):
+        return "ctypes" in candidate or "wintypes" in candidate
+    if isinstance(candidate, type):
+        module_name = getattr(candidate, "__module__", "")
+        if module_name == "ctypes" or module_name.startswith("ctypes."):
+            return True
+        if issubclass(candidate, (ctypes.Structure, ctypes.Union, ctypes.Array)):
+            return True
+    origin = typing.get_origin(candidate)
+    if origin is not None and _is_ctypes_type(origin):
+        return True
+    return any(_is_ctypes_type(arg) for arg in typing.get_args(candidate))
+
+
+def test_security_exports_stay_within_allowlist_and_off_creators_and_ctypes() -> None:
+    # (a) Exact allowlist: 8 approved names from core.secure_path, 0 from core.secure_path_windows.
+    inventory_sec_names = {
+        symbol
+        for module_path in _SECURITY_MODULES
+        for symbol in _FLEET_IMPORTS.get(module_path, {})
+    }
+    assert inventory_sec_names == _APPROVED_SECURITY_EXPORTS
+    assert "synapse_channel.core.secure_path_windows" not in _FLEET_IMPORTS
+
+    exported_objects = {name: getattr(federation_api, name) for name in federation_api.__all__}
+    live_sec_names = {
+        name
+        for name, obj in exported_objects.items()
+        if getattr(obj, "__module__", None) == "synapse_channel.core.secure_path"
+    }
+    live_sec_names |= {name for name in federation_api.__all__ if name in inventory_sec_names}
+    assert live_sec_names == _APPROVED_SECURITY_EXPORTS
+
+    live_win_names = {
+        name
+        for name, obj in exported_objects.items()
+        if getattr(obj, "__module__", None) == "synapse_channel.core.secure_path_windows"
+    }
+    assert live_win_names == set()
+
+    # (b) Derived denylist: creator/apply/birth helpers are non-empty and unreachable.
+    denied = _derived_security_creator_denylist()
+    assert {
+        "apply_owner_only_dir",
+        "apply_owner_only_file",
+        "create_owner_only_file",
+        "owner_birth_sddl",
+        "owner_birth_security_descriptor",
+    } <= set(denied)
+    for name, fn in denied.items():
+        assert not hasattr(federation_api, name)
+        assert name not in federation_api.__all__
+        assert all(obj is not fn for obj in exported_objects.values())
+
+    # (c) Zero ctypes types exported or referenced in any exported annotation.
+    for name, obj in exported_objects.items():
+        assert not _is_ctypes_type(obj), f"federation_api.{name} leaked a ctypes type"
+        assert not _is_ctypes_type(type(obj)), f"federation_api.{name} leaked a ctypes value"
+        if inspect.isfunction(obj):
+            for param_name, ann in obj.__annotations__.items():
+                assert not _is_ctypes_type(ann), (
+                    f"federation_api.{name} annotation {param_name!r} leaked ctypes: {ann!r}"
+                )
+        elif isinstance(obj, type):
+            for field_name, ann in getattr(obj, "__annotations__", {}).items():
+                assert not _is_ctypes_type(ann), (
+                    f"federation_api.{name}.{field_name} leaked ctypes: {ann!r}"
+                )
+            for member_name in dir(obj):
+                if member_name.startswith("_") and member_name != "__init__":
+                    continue
+                member = getattr(obj, member_name)
+                if inspect.isfunction(member) or inspect.ismethod(member):
+                    for param_name, ann in getattr(member, "__annotations__", {}).items():
+                        assert not _is_ctypes_type(ann), (
+                            f"federation_api.{name}.{member_name} annotation {param_name!r} "
+                            f"leaked ctypes: {ann!r}"
+                        )
+
+
+def test_owner_only_path_validation_through_federation_api(tmp_path: Path) -> None:
+    assert federation_api.owner_only_floor_available() is (os.name in ("posix", "nt"))
+    identity = federation_api.current_user_key()
+    assert isinstance(identity, federation_api.PortableUserKey)
+    assert identity.value
+
+    # Pure Windows owner-only policy through federation_api names only.
+    sample_path = Path("C:/private/key")
+    sid = "S-1-5-21-100"
+    federation_api.evaluate_windows_owner_only_policy(
+        path=sample_path,
+        purpose="consumer",
+        owner_sid=sid,
+        current_sid=sid,
+        dacl_present=True,
+        aces=(
+            federation_api.WindowsAce(ace_type=0, mask=0x001F01FF, sid=sid),
+            federation_api.WindowsAce(ace_type=0, mask=0x001F01FF, sid="S-1-5-18"),
+            federation_api.WindowsAce(ace_type=1, mask=0x001F01FF, sid="S-1-1-0"),
+        ),
+    )
+    for bad_ace_type in (0x5, 0x9, 0x2):
+        with pytest.raises(federation_api.SecurePathError, match="unsupported ACE type"):
+            federation_api.evaluate_windows_owner_only_policy(
+                path=sample_path,
+                purpose="consumer",
+                owner_sid=sid,
+                current_sid=sid,
+                dacl_present=True,
+                aces=(
+                    federation_api.WindowsAce(ace_type=bad_ace_type, mask=0x120089, sid="S-1-1-0"),
+                ),
+            )
+    with pytest.raises(federation_api.SecurePathError, match="accessible by other principals"):
+        federation_api.evaluate_windows_owner_only_policy(
+            path=sample_path,
+            purpose="consumer",
+            owner_sid=sid,
+            current_sid=sid,
+            dacl_present=True,
+            aces=(federation_api.WindowsAce(ace_type=0, mask=0x00120089, sid="S-1-1-0"),),
+        )
+
+    if os.name == "posix":
+        secret = tmp_path / "consumer.secret"
+        secret.write_bytes(b"token")
+        secret.chmod(0o600)
+        federation_api.assert_owner_only_file_path(
+            secret, purpose="consumer", require_single_link=True
+        )
+        fd = os.open(secret, os.O_RDONLY)
+        try:
+            federation_api.assert_owner_only_descriptor(
+                fd, path=secret, purpose="consumer", require_single_link=True
+            )
+        finally:
+            os.close(fd)
+        secret.chmod(0o644)
+        with pytest.raises(federation_api.SecurePathError, match="accessible by other users"):
+            federation_api.assert_owner_only_file_path(secret, purpose="consumer")
+
+    # Strict mypy probe: all 8 security names usable from federation_api alone.
+    consumer = tmp_path / "security_consumer.py"
+    consumer.write_text(
+        "\n".join(
+            (
+                "from pathlib import Path",
+                "from synapse_channel.federation_api import (",
+                "    PortableUserKey,",
+                "    SecurePathError,",
+                "    WindowsAce,",
+                "    assert_owner_only_descriptor,",
+                "    assert_owner_only_file_path,",
+                "    current_user_key,",
+                "    evaluate_windows_owner_only_policy,",
+                "    owner_only_floor_available,",
+                ")",
+                "",
+                "def verify(path: Path, fd: int) -> PortableUserKey | None:",
+                "    if not owner_only_floor_available():",
+                "        return None",
+                "    key: PortableUserKey = current_user_key()",
+                "    try:",
+                "        assert_owner_only_file_path(path, purpose='k', require_single_link=True)",
+                "        assert_owner_only_descriptor(fd, path=path, purpose='k')",
+                "        evaluate_windows_owner_only_policy(",
+                "            path=path,",
+                "            purpose='k',",
+                "            owner_sid=key.value,",
+                "            current_sid=key.value,",
+                "            dacl_present=True,",
+                "            aces=(WindowsAce(ace_type=0, mask=0x001F01FF, sid=key.value),),",
+                "        )",
+                "    except SecurePathError:",
+                "        return None",
+                "    return key",
                 "",
             )
         ),

@@ -38,6 +38,13 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- **Owner-only path validation exports on `synapse_channel.federation_api`.** Exported `PortableUserKey`,
+  `SecurePathError`, `WindowsAce`, `assert_owner_only_descriptor`, `assert_owner_only_file_path`, `current_user_key`,
+  `evaluate_windows_owner_only_policy`, and `owner_only_floor_available` lazily through `federation_api._security`
+  (raising the federation surface from 133 to 141 symbols across 44 modules). File/directory creation and apply
+  helpers, birth-descriptor helpers, `core/secure_path_windows.py`, and all `ctypes` types remain internal and off
+  `federation_api`.
+
 - **Peer `JournalInstance` propagation on the multi-hub event-log pull wire.** Added `journal_instance()` to the
   `ReadableEventLog` protocol (already implemented by `EventStore` and `EventLogReader`), added the additive optional
   `journal_instance` field to `MULTIHUB_LOG_SNAPSHOT` / `LogSnapshot` (keeping wire protocol version 7 and decoding

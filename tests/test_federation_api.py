@@ -28,10 +28,11 @@ from synapse_channel import federation_api
 
 # The federation surface inventory (109 at its introduction, 110 once the fleet tier dropped
 # its record-keeping copies and read Core's wire version where it is defined, 119 with the
-# operation record projector, 130 with the read-only event-log reader exports, and 133 with
-# the Fleet mirror contract parser exports); changing the count is a reviewed edit here, in
+# operation record projector, 130 with the read-only event-log reader exports, 133 with the
+# Fleet mirror contract parser exports, and 141 with the owner-only path validation names
+# adopted in the fleet retirement units); changing the count is a reviewed edit here, in
 # the inventory guard and on the API stability page.
-_SURFACE_SIZE = 133
+_SURFACE_SIZE = 141
 
 
 def test_the_surface_is_sorted_unique_and_of_the_promised_size() -> None:
@@ -59,6 +60,11 @@ def test_a_name_off_the_surface_is_an_attribute_error() -> None:
         "MAX_MIRROR_BYTES",
         "parse_mirror_document",
         "ProtocolAwareEventFetcher",
+        "create_owner_only_file",
+        "apply_owner_only_file",
+        "apply_owner_only_dir",
+        "owner_birth_sddl",
+        "owner_birth_security_descriptor",
     ):
         assert not hasattr(federation_api, private_or_deferred)
 
