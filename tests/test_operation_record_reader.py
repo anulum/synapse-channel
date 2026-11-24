@@ -777,6 +777,252 @@ def test_verification_marker_matching_outcomes_and_reconciliation_edges() -> Non
     assert sealed_first_op.applied_readback_seqs == (5,)
 
 
+def test_executor_outcome_applies_to_latest_attempt_not_first() -> None:
+    """An executor's outcome attaches to its latest attempt, not its first."""
+    # First attempt sealed, second open -> confirmed_done lands on second (no contradiction).
+    retry_after_seal = OperationRecordReader(task_id="T")
+    _feed_all(
+        retry_after_seal,
+        [
+            _declared("T", "op-retry", 1),
+            _opened("T", "op-retry", _ATTEMPT_1),
+            (
+                EventKind.OPERATION_SEALED,
+                {"task_id": "T", "operation_id": "op-retry", "attempt_id": _ATTEMPT_1},
+            ),
+            _opened("T", "op-retry", _ATTEMPT_2),
+            _outcome("T", "op-retry", state="confirmed_done"),
+        ],
+    )
+    assert retry_after_seal.snapshot().operations["op-retry"].contradicted_seq is None
+
+    # First attempt open, second attempt sealed -> confirmed_done contradicts the sealed second.
+    second_sealed = OperationRecordReader(task_id="T")
+    _feed_all(
+        second_sealed,
+        [
+            _declared("T", "op-second-sealed", 1),
+            _opened("T", "op-second-sealed", _ATTEMPT_1),
+            _opened("T", "op-second-sealed", _ATTEMPT_2),
+            (
+                EventKind.OPERATION_SEALED,
+                {"task_id": "T", "operation_id": "op-second-sealed", "attempt_id": _ATTEMPT_2},
+            ),
+            _outcome("T", "op-second-sealed", state="confirmed_done"),
+        ],
+    )
+    assert second_sealed.snapshot().operations["op-second-sealed"].contradicted_seq == 5
+
+    # Two open attempts by the same executor, then confirmed_done marks only the second attempt.
+    seal_second = OperationRecordReader(task_id="T")
+    _feed_all(
+        seal_second,
+        [
+            _declared("T", "op-mark-latest", 1),
+            _opened("T", "op-mark-latest", _ATTEMPT_1),
+            _opened("T", "op-mark-latest", _ATTEMPT_2),
+            _outcome("T", "op-mark-latest", state="unknown", external_effect="confirmed_done"),
+            (
+                EventKind.OPERATION_SEALED,
+                {"task_id": "T", "operation_id": "op-mark-latest", "attempt_id": _ATTEMPT_2},
+            ),
+        ],
+    )
+    assert seal_second.snapshot().operations["op-mark-latest"].contradicted_seq == 5
+
+    seal_first = OperationRecordReader(task_id="T")
+    _feed_all(
+        seal_first,
+        [
+            _declared("T", "op-mark-latest", 1),
+            _opened("T", "op-mark-latest", _ATTEMPT_1),
+            _opened("T", "op-mark-latest", _ATTEMPT_2),
+            _outcome("T", "op-mark-latest", state="unknown", external_effect="confirmed_done"),
+            (
+                EventKind.OPERATION_SEALED,
+                {"task_id": "T", "operation_id": "op-mark-latest", "attempt_id": _ATTEMPT_1},
+            ),
+        ],
+    )
+    assert seal_first.snapshot().operations["op-mark-latest"].contradicted_seq is None
+
+
+def test_non_fresh_attempt_answers_open_no_attempt_and_record_no_malformed_row() -> None:
+    """Refusals and other non-fresh attempt answers open no attempt and are not malformed."""
+    reader = OperationRecordReader(task_id="T")
+    _feed_all(
+        reader,
+        [
+            _declared("T", "op-refused", 1),
+            (
+                EventKind.OPERATION_ATTEMPT_ANSWERED,
+                {
+                    "task_id": "T",
+                    "operation_id": "op-refused",
+                    "sender": "P/worker",
+                    "answer": "refused",
+                    "attempt_id": _ATTEMPT_1,
+                },
+            ),
+            (
+                EventKind.OPERATION_ATTEMPT_ANSWERED,
+                {
+                    "task_id": "T",
+                    "operation_id": "op-refused",
+                    "sender": "P/worker",
+                    "answer": "stopped",
+                },
+            ),
+            (
+                EventKind.OPERATION_ATTEMPT_ANSWERED,
+                {
+                    "task_id": "T",
+                    "operation_id": "op-refused",
+                    "sender": "P/worker",
+                    "answer": "already_verified",
+                    "attempt_id": _ATTEMPT_2,
+                },
+            ),
+        ],
+    )
+    snap = reader.snapshot()
+    assert snap.malformed == ()
+    assert snap.operations["op-refused"].attempts == ()
+
+
+def test_seal_after_ended_attempt_does_not_mark_sealed_or_contradict() -> None:
+    """A seal naming an already-ended attempt leaves it unsealed and uncontradicted."""
+    done_then_seal = OperationRecordReader(task_id="T")
+    _feed_all(
+        done_then_seal,
+        [
+            _declared("T", "op-ended", 1),
+            _opened("T", "op-ended", _ATTEMPT_1),
+            _outcome("T", "op-ended", state="confirmed_done"),
+            (
+                EventKind.OPERATION_SEALED,
+                {"task_id": "T", "operation_id": "op-ended", "attempt_id": _ATTEMPT_1},
+            ),
+        ],
+    )
+    snap_done = done_then_seal.snapshot()
+    op_done = snap_done.operations["op-ended"]
+    assert snap_done.malformed == ()
+    assert op_done.contradicted_seq is None
+    assert op_done.attempts == (
+        OperationAttemptSnapshot(_ATTEMPT_1, "P/worker", 2, True, False, False, False),
+    )
+
+    failed_then_seal = OperationRecordReader(task_id="T")
+    _feed_all(
+        failed_then_seal,
+        [
+            _declared("T", "op-failed", 1),
+            _opened("T", "op-failed", _ATTEMPT_1),
+            _outcome("T", "op-failed", state="confirmed_failed"),
+            (
+                EventKind.OPERATION_SEALED,
+                {"task_id": "T", "operation_id": "op-failed", "attempt_id": _ATTEMPT_1},
+            ),
+        ],
+    )
+    op_failed = failed_then_seal.snapshot().operations["op-failed"]
+    assert op_failed.contradicted_seq is None
+    assert op_failed.attempts == (
+        OperationAttemptSnapshot(_ATTEMPT_1, "P/worker", 2, True, False, False, False),
+    )
+
+
+def test_declarer_self_verification_never_reconciles_and_independent_verifier_does() -> None:
+    """Only a sender distinct from a known declarer can reconcile attempts."""
+    marker_1 = AttemptMarker("op-indep", _ATTEMPT_1, _DIGEST)
+    objs_1 = marker_1.objects("sha256")
+    reader = OperationRecordReader(task_id="T")
+    _feed_all(
+        reader,
+        [
+            _declared("T", "op-indep", 1, effect="git_publication", intent_sha256=_DIGEST),
+            _opened("T", "op-indep", _ATTEMPT_1),
+            _outcome("T", "op-indep", state="confirmed_failed"),
+            _verified("T", "op-indep", "observed", "verified", "self_unscoped", sender="P/worker"),
+            _verified(
+                "T",
+                "op-indep",
+                "observed",
+                "verified",
+                "self_marker",
+                sender="P/worker",
+                evidence={"attempt_id": _ATTEMPT_1, "marker_object": objs_1.applied},
+            ),
+        ],
+    )
+    before = reader.snapshot().operations["op-indep"]
+    assert before.verified == ()
+    assert before.checked is False
+    assert before.contradicted_seq is None
+    assert before.attempts == (
+        OperationAttemptSnapshot(_ATTEMPT_1, "P/worker", 2, True, False, False, False),
+    )
+
+    # An independent sender reconciles the ended attempt and records the verification.
+    indep_kind, indep_payload = _verified(
+        "T", "op-indep", "observed", "verified", "independent_ok", sender="Q/checker"
+    )
+    reader.feed(indep_kind, 6, indep_payload)
+    after = reader.snapshot().operations["op-indep"]
+    assert after.checked is True
+    assert after.verified == (IndependentVerificationRecord(6, "file_change", "independent_ok"),)
+    assert after.attempts == (
+        OperationAttemptSnapshot(_ATTEMPT_1, "P/worker", 2, True, False, False, True),
+    )
+
+    # Declarer self-verification with an opposing marker blob does not contradict a sealed attempt.
+    marker_2 = AttemptMarker("op-self-blob", _ATTEMPT_1, _DIGEST)
+    objs_2 = marker_2.objects("sha256")
+    sealed_self = OperationRecordReader(task_id="T")
+    _feed_all(
+        sealed_self,
+        [
+            _declared("T", "op-self-blob", 1, effect="git_publication", intent_sha256=_DIGEST),
+            _opened("T", "op-self-blob", _ATTEMPT_1),
+            (
+                EventKind.OPERATION_SEALED,
+                {"task_id": "T", "operation_id": "op-self-blob", "attempt_id": _ATTEMPT_1},
+            ),
+            _verified(
+                "T",
+                "op-self-blob",
+                "observed",
+                "verified",
+                "self_applied",
+                sender="P/worker",
+                evidence={"attempt_id": _ATTEMPT_1, "marker_object": objs_2.applied},
+            ),
+        ],
+    )
+    sealed_op = sealed_self.snapshot().operations["op-self-blob"]
+    assert sealed_op.verified == ()
+    assert sealed_op.contradicted_seq is None
+    assert sealed_op.attempts[0].sealed is True
+    assert sealed_op.attempts[0].reconciled is False
+
+    # Without a declaration establishing declarer, verification cannot establish independence.
+    undeclared = OperationRecordReader(task_id="T")
+    _feed_all(
+        undeclared,
+        [
+            _opened("T", "op-undeclared", _ATTEMPT_1),
+            _outcome("T", "op-undeclared", state="confirmed_failed"),
+            _verified("T", "op-undeclared", "observed", "verified", "no_decl", sender="Q/checker"),
+        ],
+    )
+    undeclared_op = undeclared.snapshot().operations["op-undeclared"]
+    assert undeclared_op.declarer is None
+    assert undeclared_op.attempts == (
+        OperationAttemptSnapshot(_ATTEMPT_1, "P/worker", 1, True, False, False, False),
+    )
+
+
 @pytest.mark.parametrize(
     ("rows", "expected_detail", "scope_level"),
     [
