@@ -46,13 +46,16 @@ from typing import Protocol
 
 from synapse_channel import agent_pane_state as _pane_classification
 from synapse_channel.agent_pane_state import (
-    PROVIDER_IDLE_PATTERNS as _PROVIDER_IDLE_PATTERNS,
-)
-from synapse_channel.agent_pane_state import (
     bound_pane_state,
     bound_screen_safety,
     bound_staged_wake_was_consumed,
     provider_compatibility,
+)
+from synapse_channel.agent_tmux_provider import (
+    _has_codex_update_override,
+    _managed_agent_command,
+    _provider_family,
+    agent_binary,
 )
 from synapse_channel.agent_tmux_types import (
     DEFAULT_WAIT_RETRY_BASE,
@@ -73,9 +76,6 @@ from synapse_channel.waiter_identity import pane_waiter_name
 _pane_state = _pane_classification.pane_state
 _screen_is_safe_for_submit = _pane_classification.screen_is_safe_for_submit
 _staged_wake_was_consumed = _pane_classification.staged_wake_was_consumed
-
-CODEX_MANAGED_UPDATE_CONFIG = "check_for_update_on_startup=false"
-"""Codex override used when Synapse centrally manages provider launches."""
 
 BINDING_REFUSAL_EXIT_CODE = 4
 """Stable refusal code when a live tmux session belongs to another identity."""
@@ -98,66 +98,6 @@ class RegistryRecord:
     wake_prompt_staged: bool = False
     pending_since: float | None = None
     wake_launch_nonce: str | None = None
-
-
-SEAT_HOLD_SUBCOMMAND = "seat-hold"
-"""The ``synapse`` subcommand that runs an agent behind its seat holder."""
-
-
-def provider_command(command: Sequence[str]) -> tuple[str, ...]:
-    """Return the agent's own command inside a pane command.
-
-    A seat restored behind its holder runs ``synapse seat-hold <options> --
-    <agent>``, after an ``env -i NAME=value …`` prefix that gives it a clean
-    environment. Its agent is what follows ``--``; the prefix's values and the
-    holder's option values come first and must never decide the provider (an
-    identity such as ``ops/claude-…``, or a path, can name any agent). Every
-    other command is its own.
-
-    Parameters
-    ----------
-    command : Sequence[str]
-        The pane's command, as ``AgentTmuxConfig.agent_command`` holds it.
-
-    Returns
-    -------
-    tuple[str, ...]
-        The agent's argument vector.
-    """
-    parts = without_clean_environment(tuple(command))
-    if parts[1:2] == (SEAT_HOLD_SUBCOMMAND,) and "--" in parts[2:]:
-        return parts[parts.index("--", 2) + 1 :]
-    return tuple(command)
-
-
-def without_clean_environment(parts: tuple[str, ...]) -> tuple[str, ...]:
-    """Return ``parts`` without a leading ``env -i NAME=value …`` prefix, if it has one."""
-    if parts[:2] != ("env", "-i"):
-        return parts
-    index = 2
-    while index < len(parts) and "=" in parts[index] and not parts[index].startswith("-"):
-        index += 1
-    return parts[index:]
-
-
-def agent_binary(config: AgentTmuxConfig) -> str:
-    """Return the agent binary name probed for in the pane's start command.
-
-    Parameters
-    ----------
-    config : AgentTmuxConfig
-        Wake target whose ``agent_command`` names the launch binary.
-
-    Returns
-    -------
-    str
-        The basename of the first launch token (e.g. ``codex`` or ``kimi``), or
-        an empty string when ``agent_command`` is empty.
-    """
-    command = provider_command(config.agent_command)
-    if not command:
-        return ""
-    return Path(command[0]).name
 
 
 def _safe_key(identity: str) -> str:
@@ -378,47 +318,6 @@ def build_wake_prompt(identity: str) -> str:
         "status and broadcasts; continue any active user-directed task and wait only when "
         "otherwise idle."
     )
-
-
-def _provider_family(config: AgentTmuxConfig) -> str | None:
-    """Return the supported terminal provider named by the agent's own command."""
-    return provider_family_of(config.agent_command)
-
-
-def provider_family_of(command: Sequence[str]) -> str | None:
-    """Return the supported provider named by the agent's own command in ``command``."""
-    for token in provider_command(command):
-        if token.startswith("-"):
-            continue
-        binary = Path(token).name.lower()
-        for suffix in (".js", ".mjs", ".cjs", ".py"):
-            if binary.endswith(suffix):
-                binary = binary[: -len(suffix)]
-        for provider in _PROVIDER_IDLE_PATTERNS:
-            if binary == provider or binary.startswith(f"{provider}-"):
-                return provider
-    return None
-
-
-def _has_codex_update_override(command: Sequence[str]) -> bool:
-    """Return whether ``command`` explicitly configures Codex update checks."""
-    return any("check_for_update_on_startup" in token.replace(" ", "") for token in command)
-
-
-def _managed_agent_command(config: AgentTmuxConfig) -> tuple[str, ...]:
-    """Return the provider command with centrally managed Codex update checks.
-
-    Existing sessions are never rewritten or restarted. The override applies
-    only when Synapse creates a new Codex tmux session, and an explicit owner
-    override in ``agent_command`` always wins. Behind a seat holder the agent's
-    own command is the tail after ``--``, so the override lands there, as the
-    agent's argument.
-    """
-    command = config.agent_command
-    agent = provider_command(command)
-    if _provider_family(config) != "codex" or _has_codex_update_override(agent):
-        return command
-    return (*command, "--config", CODEX_MANAGED_UPDATE_CONFIG)
 
 
 def _capture_pane(config: AgentTmuxConfig, *, runner: CommandRunner) -> tuple[str | None, str]:

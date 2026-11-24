@@ -32,7 +32,7 @@ import pytest
 import synapse_channel
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import cli_services, worker_session
-from synapse_channel.agent_tmux import (
+from synapse_channel.agent_tmux_provider import (
     CODEX_MANAGED_UPDATE_CONFIG,
     _managed_agent_command,
     _provider_family,

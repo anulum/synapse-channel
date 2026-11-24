@@ -50,10 +50,8 @@ import time
 from collections.abc import Callable, Container, Mapping, Sequence
 from pathlib import Path
 
-from synapse_channel.agent_tmux import (
-    SEAT_HOLD_SUBCOMMAND,
-    start_session,
-)
+from synapse_channel.agent_tmux import start_session
+from synapse_channel.agent_tmux_provider import SEAT_HOLD_SUBCOMMAND
 from synapse_channel.agent_tmux_types import (
     AgentTmuxConfig,
     AgentTmuxWakeResult,

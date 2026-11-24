@@ -410,7 +410,7 @@ class LauncherRecord:
         starttime = pid_starttime(pid)
         if starttime is None:
             return
-        from synapse_channel.agent_tmux import provider_family_of
+        from synapse_channel.agent_tmux_provider import provider_family_of
 
         self.row = row_id(boot_id(), pid, starttime)
         project, slash, _name = identity.partition("/")

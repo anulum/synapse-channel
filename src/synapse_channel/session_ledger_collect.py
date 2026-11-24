@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from synapse_channel.agent_tmux import provider_family_of
+from synapse_channel.agent_tmux_provider import provider_family_of
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.private_dir import ensure_private_dir
 from synapse_channel.session_ledger import (

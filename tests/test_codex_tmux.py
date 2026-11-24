@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel import agent_tmux, agent_tmux_types, codex_tmux
+from synapse_channel import agent_tmux, agent_tmux_provider, agent_tmux_types, codex_tmux
 from synapse_channel.codex_tmux import (
     CODEX_PANE_COMMANDS,
     CodexTmuxConfig,
@@ -45,7 +45,7 @@ def test_codex_config_defaults_to_the_codex_launch_command(tmp_path: Path) -> No
     )
 
     assert config.agent_command == ("codex",)
-    assert agent_tmux.agent_binary(config) == "codex"
+    assert agent_tmux_provider.agent_binary(config) == "codex"
 
 
 def test_inject_wake_through_codex_surface_uses_safe_bracketed_delivery(tmp_path: Path) -> None:

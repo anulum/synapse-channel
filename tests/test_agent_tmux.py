@@ -27,15 +27,18 @@ from synapse_channel.agent_tmux import (
     _backoff_delay,
     _bounded_native_command,
     _pane_is_safe_for_submit,
-    _provider_family,
     _wait_command,
-    agent_binary,
     build_wake_prompt,
     inject_wake,
     registry_path,
     start_session,
     status,
     wait_and_wake,
+)
+from synapse_channel.agent_tmux_provider import (
+    _provider_family,
+    agent_binary,
+    provider_family_of,
 )
 from synapse_channel.agent_tmux_types import (
     DEFAULT_AGENT_PANE_COMMANDS,
@@ -1591,7 +1594,7 @@ def test_a_visible_stage_is_adopted_unless_composer_files_prove_the_stage(
 
 
 def test_the_vocabulary_imports_around_the_transport() -> None:
-    """Either import order loads, and the vocabulary does not pull the transport in."""
+    """Vocabulary and provider resolution load without pulling the transport in."""
     env = os.environ.copy()
     root = Path(__file__).resolve().parents[1] / "src"
     env["PYTHONPATH"] = str(root) + os.pathsep + env.get("PYTHONPATH", "")
@@ -1602,13 +1605,21 @@ def test_the_vocabulary_imports_around_the_transport() -> None:
         "assert 'synapse_channel.agent_tmux_wait' not in sys.modules\n"
         "import synapse_channel.agent_tmux\n"
     )
+    provider_first = (
+        "import sys\n"
+        "import synapse_channel.agent_tmux_provider\n"
+        "assert 'synapse_channel.agent_tmux' not in sys.modules\n"
+        "assert 'synapse_channel.agent_tmux_wait' not in sys.modules\n"
+        "import synapse_channel.agent_tmux\n"
+    )
     transport_first = (
         "import sys\n"
         "import synapse_channel.agent_tmux\n"
         "assert 'synapse_channel.agent_tmux_wait' not in sys.modules\n"
+        "import synapse_channel.agent_tmux_provider\n"
         "import synapse_channel.agent_tmux_types\n"
     )
-    for script in (vocabulary_first, transport_first):
+    for script in (vocabulary_first, provider_first, transport_first):
         completed = subprocess.run(
             [sys.executable, "-c", script],
             check=False,
@@ -1617,3 +1628,8 @@ def test_the_vocabulary_imports_around_the_transport() -> None:
             env=env,
         )
         assert completed.returncode == 0, completed.stderr
+
+
+def test_provider_family_skips_a_flag_before_the_agent_binary() -> None:
+    """A flag whose path names another provider does not choose the family."""
+    assert provider_family_of(("node", "--config=/opt/claude", "codex")) == "codex"

@@ -20,6 +20,11 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- **Provider resolution for a tmux wake lives in one module.** `provider_command`,
+  `without_clean_environment`, `agent_binary`, `provider_family_of` and the Codex
+  launch override move to `agent_tmux_provider`. The transport still launches and
+  wakes through `agent_tmux`.
+
 - **The tmux wake vocabulary lives in one module.** `Sleeper`, `CommandRunner`, `AgentTmuxConfig`, `AgentTmuxWakeResult`, `AgentTmuxStatus` and the `DEFAULT_*` pane, submit and wait constants move to `agent_tmux_types`. `agent_tmux.inject_wake`, `start_session` and `status` stay, as do `BINDING_REFUSAL_EXIT_CODE` and `PANE_CAPTURE_MAX_CHARS`.
 
 - **The two-person operator-relay approval ledger publishes a committed candidate through a public port; behaviour is

@@ -36,10 +36,10 @@ import subprocess  # nosec B404 # fixed argument vectors only, never a shell
 from typing import TYPE_CHECKING
 
 from synapse_channel.agent_tmux import (
-    agent_binary,
     inject_wake,
     start_session,
 )
+from synapse_channel.agent_tmux_provider import agent_binary
 from synapse_channel.agent_tmux_types import CommandRunner
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.participants.participant import (

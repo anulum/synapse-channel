@@ -20,10 +20,8 @@ from collections.abc import Mapping, Sequence
 from functools import partial
 from pathlib import Path
 
-from synapse_channel.agent_tmux import (
-    start_session,
-    without_clean_environment,
-)
+from synapse_channel.agent_tmux import start_session
+from synapse_channel.agent_tmux_provider import without_clean_environment
 from synapse_channel.agent_tmux_types import AgentTmuxConfig
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.core.errors import SynapseError
