@@ -569,6 +569,30 @@ def system_message(
     return msg
 
 
+def target_parts(target: str | None) -> tuple[str, ...]:
+    """Split a recipient field into the parts delivery matches, stripped and non-blank.
+
+    This is the one splitter for a ``target``: :func:`is_recipient` reads it, and
+    so does the ACL access mapper, so a target is authorised exactly as it is
+    delivered. An empty or absent target is the broadcast ``"all"``.
+
+    Parameters
+    ----------
+    target : str or None
+        The recipient field of a message.
+
+    Returns
+    -------
+    tuple of str
+        ``("all",)`` for a broadcast; otherwise every comma part with its
+        surrounding whitespace removed, blank parts left out, in order.
+    """
+    cleaned = (target or "all").strip()
+    if cleaned in ("", "all"):
+        return ("all",)
+    return tuple(part for part in (raw.strip() for raw in cleaned.split(",")) if part)
+
+
 def is_recipient(target: str, name: str, roles: Iterable[str] = ()) -> bool:
     """Return whether ``name`` is an addressee of a message sent to ``target``.
 
@@ -616,11 +640,11 @@ def is_recipient(target: str, name: str, roles: Iterable[str] = ()) -> bool:
         fnmatch.fnmatchcase(name, part)
         or fnmatch.fnmatchcase(project, part)
         or any(fnmatch.fnmatchcase(role, part) for role in role_names)
-        for part in (raw.strip() for raw in cleaned.split(",") if raw.strip())
+        for part in target_parts(cleaned)
     )
 
 
-_GLOB_CHARACTERS = frozenset("*?[")
+GLOB_CHARACTERS = frozenset("*?[")
 """The characters that make a target part a glob for :func:`fnmatch.fnmatchcase`."""
 
 
@@ -638,7 +662,7 @@ def _has_literal_project_segment(part: str) -> bool:
         ``True`` when the text before the part's first ``/`` (the whole part when it
         has none) holds none of ``*``, ``?`` or ``[``.
     """
-    return not _GLOB_CHARACTERS.intersection(part.split("/", 1)[0])
+    return not GLOB_CHARACTERS.intersection(part.split("/", 1)[0])
 
 
 def is_directed(target: str, name: str, roles: Iterable[str] = ()) -> bool:

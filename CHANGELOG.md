@@ -20,6 +20,18 @@ execution evidence when carrying a release claim forward.
 
 ### Security
 
+- **An enforced message ACL now authorises every part of a chat target (`core/verb_access.py`, `core/acl.py`,
+  `core/protocol.py`).** The message access mapper authorised a target as one string, and a rule's glob matched that
+  whole string. So a sender granted `message agent PROJ/*` passed the ACL for `PROJ/x,OTHER/victim` or `PROJ/x,*`,
+  because `*` matched the comma and everything after it, and delivery then reached `OTHER/victim`, or every seat. The
+  same grant also admitted `PROJ/x@PEER`, so it authorised forwarding to that name on every configured peer hub. Now
+  every comma part needs its own grant, split by the new `protocol.target_parts`, the splitter delivery uses, and one
+  denied part refuses the frame. A glob part is granted only by containment: by a pattern equal to it, or by a pattern
+  `L*` whose literal `L` begins the part's literal prefix, so `*` needs a rule `*`. A rule's glob is never matched
+  against a glob's text, because `PROJ/?` matches the text `PROJ/*`. A seat on a peer hub is the new target kind
+  `hub_agent`, which no `agent` rule grants. **Migration for hubs that enforce an ACL and forward chat:** add a
+  `message` rule of kind `hub_agent` for each peer seat a sender may reach, for example `PROJ/x@PEER`. The
+  delivery-request verb uses the same mapper. Hubs without `--require-acl` are unchanged.
 - **A secured hub no longer fans frames out to sockets that have not authenticated (`core/hub_clients.py`,
   `core/hub_broadcast.py`).** A socket joins the hub's connection table when it connects, before its first frame
   passes the token gate, and every broadcast went to the whole table. On a hub started with a token, a socket that

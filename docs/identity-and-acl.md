@@ -340,7 +340,7 @@ permission vocabulary should stay small and auditable:
 
 | Permission | Scope |
 | --- | --- |
-| `message` | Send chat and direct messages to allowed targets. |
+| `message` | Send chat and direct messages to allowed targets. Target kind `agent`. Every comma part of a target needs its own grant, and one denied part refuses the whole frame. A glob part (one holding `*`, `?` or `[`) is granted only when the rule contains everything it can reach: a pattern exactly equal to the part, or a pattern `L*` whose literal `L` begins the part's text before its first glob character. So `PROJ/*` grants `PROJ/a*` but not `*` or `S*/*`, and `*` needs a rule `*`. A seat on a peer hub, `<seat>@<hub>`, is target kind `hub_agent`, which no `agent` rule grants; forwarding to it needs its own rule, such as `message hub_agent PROJ/x@PEER`. |
 | `claim` | Create, update, hand off, or checkpoint claims for allowed task targets. Verbs declaring path accesses also check those paths. |
 | `release` | Release claims and publish release receipts; this is the release permission. |
 | `board` | Create and update blackboard tasks or findings. |

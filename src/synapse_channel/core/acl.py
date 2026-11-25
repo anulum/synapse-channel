@@ -29,6 +29,7 @@ from typing import Any
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.identity_namespace import project_of
+from synapse_channel.core.protocol import GLOB_CHARACTERS
 
 MESSAGE = "message"
 CLAIM = "claim"
@@ -232,10 +233,16 @@ class Target:
         ``board``, ``metrics``, ``dashboard``, or ``namespace``.
     value : str
         Concrete target value compared against a rule's glob pattern.
+    glob : bool, optional
+        Whether ``value`` is itself an address glob, as a message target part such
+        as ``PROJ/*`` is. A rule grants a glob value only when every address the
+        value can match is one the rule grants (see :meth:`AclRule.matches`).
+        ``False`` by default, so a value is compared literally.
     """
 
     kind: str
     value: str
+    glob: bool = False
 
 
 @dataclass(frozen=True)
@@ -263,13 +270,37 @@ class AclRule:
     reason: str = ""
 
     def matches(self, *, project: str, permission: str, target: Target) -> bool:
-        """Return whether this rule grants ``permission`` on ``target``."""
+        """Return whether this rule grants ``permission`` on ``target``.
+
+        A literal value is granted when it matches the rule's pattern. A glob value
+        is granted only by containment: when it equals the pattern, or when the
+        pattern is ``L*`` with a literal ``L`` that the value's literal prefix (the
+        text before its first glob character) starts with. Matching a glob's text
+        against the pattern would be unsound, because ``PROJ/?`` matches the text
+        ``PROJ/*``, which reaches ``PROJ/longname``.
+        """
         return (
             self.permission == permission
             and self.target_kind == target.kind
             and (not self.namespace or self.namespace == project)
-            and fnmatchcase(target.value, self.target_pattern)
+            and _pattern_grants(self.target_pattern, target)
         )
+
+
+def _pattern_grants(pattern: str, target: Target) -> bool:
+    """Return whether ``pattern`` grants ``target``'s value, by containment for a glob."""
+    if not target.glob:
+        return fnmatchcase(target.value, pattern)
+    if target.value == pattern:
+        return True
+    literal = pattern[:-1]
+    if not pattern.endswith("*") or GLOB_CHARACTERS.intersection(literal):
+        return False
+    first_glob = min(
+        (index for index, char in enumerate(target.value) if char in GLOB_CHARACTERS),
+        default=len(target.value),
+    )
+    return target.value[:first_glob].startswith(literal)
 
 
 @dataclass(frozen=True)

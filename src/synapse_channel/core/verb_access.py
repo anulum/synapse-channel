@@ -21,8 +21,18 @@ from synapse_channel.core.acl import (
     RELEASE,
     Target,
 )
+from synapse_channel.core.hub_address import HUB_ADDRESS_SEPARATOR
+from synapse_channel.core.protocol import GLOB_CHARACTERS, target_parts
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS, normalize_paths
 from synapse_channel.core.verb_registry import AccessMapper
+
+HUB_AGENT = "hub_agent"
+"""The ACL target kind of a seat on a peer hub, ``<seat>@<hub>``.
+
+No ``agent`` rule grants it: a grant for local seats never authorises forwarding
+to the same names on a peer hub. An operator grants forwarding with a rule of this
+kind, for example ``message hub_agent PROJ/x@PEER``.
+"""
 
 
 def field_access(
@@ -62,11 +72,27 @@ def nested_access(permission: str, kind: str, field: str, member: str) -> Access
 
 
 def message_access(data: dict[str, Any]) -> list[tuple[str, Target]]:
-    """Authorize the stripped channel, otherwise the direct or all-agent target."""
+    """Authorize the stripped channel, otherwise every part of the direct or all-agent target.
+
+    The target is split by :func:`~synapse_channel.core.protocol.target_parts`, the
+    splitter delivery uses, and every part needs its own grant, so one granted part
+    cannot carry a chat to another. A glob part is marked as a glob, which a rule
+    grants only by containment. A part naming a seat on a peer hub is a
+    :data:`HUB_AGENT` target.
+    """
     channel = str(data.get("channel") or "").strip()
     if channel:
         return [(MESSAGE, Target("channel", channel))]
-    return [(MESSAGE, Target("agent", str(data.get("target") or "all")))]
+    return [
+        (MESSAGE, _message_target(part)) for part in target_parts(str(data.get("target") or "all"))
+    ]
+
+
+def _message_target(part: str) -> Target:
+    """Return the ACL target of one message target part."""
+    if HUB_ADDRESS_SEPARATOR in part:
+        return Target(HUB_AGENT, part)
+    return Target("agent", part, glob=bool(GLOB_CHARACTERS.intersection(part)))
 
 
 def claim_access(data: dict[str, Any]) -> list[tuple[str, Target]]:
