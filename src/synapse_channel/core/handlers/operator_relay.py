@@ -58,6 +58,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.acl import OPERATOR_RELAY
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
 from synapse_channel.core.journal import (
     RELAY_DIRECTION_IN,
@@ -80,6 +81,7 @@ from synapse_channel.core.operator_relay_wire import (
 )
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import SynapseState
+from synapse_channel.core.verb_access import field_access
 from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
@@ -713,8 +715,10 @@ VERB_SPECS = (
         ),
         mutates=True,
         replay_protected=False,
-        mutation_guarded=False,
-        accesses=None,
+        # Guarded: the access gate needs ``operator-relay`` on the namespace, and the
+        # journal-recovery quarantine refuses a relay on the forwarding and the owning hub.
+        mutation_guarded=True,
+        accesses=field_access(OPERATOR_RELAY, "namespace", "namespace", strip=True),
         event_kinds=(
             EventKind.OPERATOR_RELAY,
             EventKind.RELEASE,

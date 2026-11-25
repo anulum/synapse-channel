@@ -241,6 +241,7 @@ def build_gates(
             journal=config.journal,
             send_json=callbacks.send_json,
             system=callbacks.system,
+            acl_policy=config.auth.acl_policy,
         ),
         frame_signing=frame_signing,
         frame_signature_gate=frame_signature_gate,

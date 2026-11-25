@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 
 from synapse_channel.core import operator_relay_forwarding as orf
+from synapse_channel.core.acl import OPERATOR_RELAY, AclPolicy, AclRule
 from synapse_channel.core.journal import RELAY_DIRECTION_OUT
 from synapse_channel.core.operator_relay_routing import RelayRoute, RelayRouteKind
 from synapse_channel.core.operator_relay_transport import (
@@ -42,6 +43,12 @@ _REQUEST = RelayActionRequest(
     break_glass=False,
     idem_key="relay-attempt-7",
 )
+
+
+_RELAY_GRANT = AclPolicy(
+    [AclRule(OPERATOR_RELAY, "namespace", "lab-a/shared", "", "alice may relay in lab-a")]
+)
+"""The origin's policy: the requester ``alice`` may relay in the request's namespace."""
 
 
 class _Decision:
@@ -78,6 +85,7 @@ def _build(
     journal: object | None = None,
     observed: Any = None,
     recorder: _Recorder,
+    acl_policy: AclPolicy | None = _RELAY_GRANT,
 ) -> orf.OperatorRelayForwarding:
     return orf.OperatorRelayForwarding(
         namespace_ownership=cast("NamespaceOwnership | None", ownership),
@@ -88,6 +96,7 @@ def _build(
         journal=cast("EventStore | None", journal),
         send_json=recorder.send_json,
         system=recorder.system,
+        acl_policy=acl_policy,
     )
 
 

@@ -38,6 +38,8 @@ import logging
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import Any
 
+from synapse_channel.core.acl import OPERATOR_RELAY, WOULD_ALLOW, AclPolicy, Target, evaluate_access
+from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.journal import RELAY_DIRECTION_OUT, record_operator_relay
 from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipDecision
 from synapse_channel.core.operator_relay_routing import (
@@ -63,6 +65,12 @@ logger = logging.getLogger("synapse.hub")
 
 _FORWARD_FAILED = "relay to the owning hub failed"
 """Detail reported to the requester when the forward never reached the owner's verdict."""
+
+RELAY_NOT_AUTHORISED = "operator_relay_not_authorised"
+"""Detail when no ``operator-relay`` grant lets the local sender relay in the namespace."""
+
+RELAY_OPERATOR_NOT_SENDER = "operator_not_sender"
+"""Detail when the request names an operator other than the authenticated sender."""
 
 
 class OperatorRelayForwarding:
@@ -98,6 +106,11 @@ class OperatorRelayForwarding:
         The hub's per-socket send (``hub.send_json``), used to reply to the requester.
     system : Callable[..., dict]
         The hub's system-message factory (``hub.system``), used to stamp each reply.
+    acl_policy : AclPolicy or None, optional
+        The hub's access policy. Before a relay is forwarded, the local sender must hold
+        ``operator-relay`` on the relay's namespace in it, with or without enforcement,
+        because the forward uses this hub's own federation identity. ``None`` forwards no
+        relay at all.
     """
 
     def __init__(
@@ -111,7 +124,9 @@ class OperatorRelayForwarding:
         journal: EventStore | None,
         send_json: Callable[[Any, dict[str, Any]], Awaitable[None]],
         system: Callable[..., dict[str, Any]],
+        acl_policy: AclPolicy | None = None,
     ) -> None:
+        self._acl_policy = acl_policy
         self._namespace_ownership = namespace_ownership
         self._relay_peers = relay_peers
         self._relay_forwarder = relay_forwarder
@@ -159,17 +174,7 @@ class OperatorRelayForwarding:
             )
             return False
         if route.kind is RelayRouteKind.FORWARD:
-            if route.peer is None:  # Defensive fail-closed guard for an invalid injected route.
-                result = RelayActionResult(
-                    applied=False,
-                    action=request.action,
-                    namespace=request.namespace,
-                    task_id=request.task_id,
-                    owner_hub_id=decision.owner_hub_id or self._hub_id,
-                    detail="relay route has no configured peer",
-                )
-            else:
-                result = await self._forward(sender, request, route.peer, decision)
+            result = await self._forward_authorised(sender, request, route.peer, decision)
         else:
             logger.warning(
                 "Refused operator relay %r from %r in namespace %r: %s",
@@ -188,6 +193,51 @@ class OperatorRelayForwarding:
             )
         await self._reply(websocket, sender, result)
         return False
+
+    async def _forward_authorised(
+        self,
+        sender: str,
+        request: RelayActionRequest,
+        peer: OperatorRelayPeer | None,
+        decision: OwnershipDecision,
+    ) -> RelayActionResult:
+        """Forward a remote-owned relay only for a local sender who may relay as itself.
+
+        The sender must hold ``operator-relay`` on the namespace, and the request's operator
+        must be the sender: a different name is refused, never rebound. A refusal is answered
+        here and nothing reaches the owner or the outbound audit.
+        """
+        refusal = self._local_refusal(sender, request)
+        if refusal is None and peer is None:  # Defensive guard for an invalid injected route.
+            refusal = "relay route has no configured peer"
+        if refusal is not None or peer is None:
+            logger.warning("Refused to forward operator relay from %r: %s", sender, refusal)
+            return RelayActionResult(
+                applied=False,
+                action=request.action,
+                namespace=request.namespace,
+                task_id=request.task_id,
+                owner_hub_id=decision.owner_hub_id or self._hub_id,
+                detail=str(refusal),
+            )
+        return await self._forward(sender, request, peer, decision)
+
+    def _local_refusal(self, sender: str, request: RelayActionRequest) -> str | None:
+        """Return why the local sender may not relay through this hub, or ``None``."""
+        if self._acl_policy is None:
+            return RELAY_NOT_AUTHORISED
+        decision = evaluate_access(
+            subject=sender,
+            project=project_of(sender),
+            permission=OPERATOR_RELAY,
+            target=Target("namespace", request.namespace),
+            policy=self._acl_policy,
+        )
+        if decision.decision != WOULD_ALLOW:
+            return RELAY_NOT_AUTHORISED
+        if request.operator != sender:
+            return RELAY_OPERATOR_NOT_SENDER
+        return None
 
     async def _forward(
         self,

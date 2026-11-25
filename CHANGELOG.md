@@ -20,6 +20,19 @@ execution evidence when carrying a release claim forward.
 
 ### Security
 
+- **A hub forwards an operator relay only for a local sender granted `operator-relay`, in its own name
+  (`core/operator_relay_forwarding.py`, `core/handlers/operator_relay.py`, `core/acl.py`).** A hub that does not own a
+  namespace forwarded a relay request, such as a force release, to the owning peer using its own federation
+  identity, and it never checked who asked: any client of that hub could free a claim on the owner, under any
+  operator name it wrote into the request. Before forwarding, the hub now requires the sender to hold the new
+  permission `operator-relay` on the relay's namespace, always, with or without `--require-acl`. A hub without an
+  access policy forwards no relay. The request's operator must be the authenticated sender; another name is refused,
+  not rebound. The relay verb is now a guarded mutation, so the journal-recovery quarantine refuses it on the
+  forwarding and the owning hub alike, and an owner that enforces an ACL also requires `operator-relay` for the peer
+  hub that relays. The permission is deliberately not `release`, so a broad local release grant never becomes a
+  cross-hub one. **Migration for federated deployments:** grant `operator-relay` on each namespace an operator may
+  relay in, for example `{"permission": "operator-relay", "target_kind": "namespace", "target_pattern": "OWNED"}`, and
+  send the relay as the operator itself.
 - **An enforced message ACL now authorises every part of a chat target (`core/verb_access.py`, `core/acl.py`,
   `core/protocol.py`).** The message access mapper authorised a target as one string, and a rule's glob matched that
   whole string. So a sender granted `message agent PROJ/*` passed the ACL for `PROJ/x,OTHER/victim` or `PROJ/x,*`,

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -16,9 +17,10 @@ from cryptography.hazmat.primitives import serialization
 from websockets.asyncio.client import ClientConnection, connect
 
 from hub_e2e_helpers import read_until_type, running_hub, send_json
+from synapse_channel.core.acl import AclPolicy, AclRule
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal import EventKind, record_claim
 from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.operator_relay_routing import NO_RELAY_ROUTE
@@ -32,6 +34,7 @@ from synapse_channel.core.operator_relay_wire import (
 from synapse_channel.core.peer_token import PeerToken
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.state import TaskClaim
 from synapse_channel.core.tls import MTLSPeerTrustBundle, MTLSTrustedPeer, certificate_sha256_pin
 
 _NAMESPACE = "OWNED"
@@ -40,6 +43,12 @@ _EDGE = "syn-edge"
 _AGENT = "edge-operator"
 _DOMAIN = "domain-edge"
 _KEY = "OWNED:main:2026-06"
+_RELAY = "operator-relay"
+_GRANTS = AclPolicy(
+    [AclRule(_RELAY, "namespace", _NAMESPACE, "", "edge operators may relay in the namespace")]
+)
+_NOT_AUTHORISED = "operator_relay_not_authorised"
+_NOT_SENDER = "operator_not_sender"
 
 
 def _edge_ownership() -> NamespaceOwnership:
@@ -85,8 +94,12 @@ def _edge_hub(
     peers: bool = True,
     journal: EventStore | None = None,
     ownership: NamespaceOwnership | None = None,
+    acl_policy: AclPolicy | None = _GRANTS,
 ) -> SynapseHub:
-    """Return a non-owning origin hub that relays a remote-owned action through ``forwarder``."""
+    """Return a non-owning origin hub that relays a remote-owned action through ``forwarder``.
+
+    By default its policy grants the edge's agents ``operator-relay`` in the namespace.
+    """
     relay_peers = {_OWNER: OperatorRelayPeer(uri="ws://owner/", token="tok")} if peers else None
     return SynapseHub(
         hub_id=_EDGE,
@@ -94,6 +107,7 @@ def _edge_hub(
         relay_peers=relay_peers,
         relay_forwarder=forwarder,
         journal=journal,
+        acl_policy=acl_policy,
     )
 
 
@@ -106,7 +120,7 @@ async def _connect(uri: str, name: str) -> ClientConnection:
 
 
 def _request(
-    *, task_id: str = "t1", operator: str = "ops-admin", reason: str = "", break_glass: bool = False
+    *, task_id: str = "t1", operator: str = _AGENT, reason: str = "", break_glass: bool = False
 ) -> RelayActionRequest:
     """A relay request as a local agent sends it, asserting an origin id the hub must override."""
     return RelayActionRequest(
@@ -152,7 +166,7 @@ async def test_forwards_a_remote_owned_relay_and_relays_the_applied_verdict(tmp_
     # tag preserved, over the route.
     forwarded, peer_uri, local_id, token = forwarder.calls[0]
     assert forwarded.origin_hub_id == _EDGE  # the agent-asserted origin was overridden
-    assert forwarded.operator == "ops-admin"
+    assert forwarded.operator == _AGENT  # the operator is the authenticated sender
     assert forwarded.namespace == _NAMESPACE
     assert forwarded.task_id == "t1"
     assert forwarded.reason == "wedged by a crash"
@@ -397,6 +411,7 @@ async def test_a_live_origin_hub_relays_a_release_to_a_live_owning_hub(tmp_path:
             hub_id=_EDGE,
             namespace_ownership=_edge_ownership(),
             relay_peers={_OWNER: OperatorRelayPeer(uri=owner_uri)},
+            acl_policy=_GRANTS,
         )
         async with running_hub(edge) as (_, edge_uri):
             reply = await _relay(edge_uri, _request())
@@ -405,3 +420,115 @@ async def test_a_live_origin_hub_relays_a_release_to_a_live_owning_hub(tmp_path:
     assert result.applied is True
     assert result.owner_hub_id == _OWNER
     assert "t1" not in owner.state.claims  # the lease lives on — and was freed on — the owner
+
+
+async def test_a_live_edge_refuses_an_ungranted_agent_and_the_owner_keeps_its_claim(
+    tmp_path: Path,
+) -> None:
+    """An edge never lends its federation identity to a local agent that holds no grant."""
+    pin, der = _write_peer_cert(tmp_path)
+    owner = SynapseHub(
+        hub_id=_OWNER,
+        namespace_ownership=NamespaceOwnership(owners={_NAMESPACE: _OWNER}, local_hub_id=_OWNER),
+        multihub_serving_policy=_owner_serving_policy(pin, der),
+    )
+    owner.state.claim("OWNED/holder", "t1")
+    async with running_hub(owner) as (_, owner_uri):
+        edge = SynapseHub(
+            hub_id=_EDGE,
+            namespace_ownership=_edge_ownership(),
+            relay_peers={_OWNER: OperatorRelayPeer(uri=owner_uri)},
+            acl_policy=AclPolicy([AclRule(_RELAY, "namespace", "OTHER", "", "another namespace")]),
+        )
+        async with running_hub(edge) as (_, edge_uri):
+            reply = await _relay(edge_uri, _request())
+    result = decode_relay_result(reply)
+    assert result.applied is False
+    assert result.detail == _NOT_AUTHORISED
+    assert owner.state.claims["t1"].owner == "OWNED/holder"
+
+
+async def test_an_ungranted_agent_is_refused_without_forwarding(tmp_path: Path) -> None:
+    """A policy that grants the agent no ``operator-relay`` in the namespace forwards nothing."""
+    forwarder = _FakeRelayForwarder(result=_applied())
+    journal = EventStore(tmp_path / "events.db")
+    other = AclPolicy([AclRule(_RELAY, "namespace", "OTHER", "", "another namespace")])
+    hub = _edge_hub(forwarder, journal=journal, acl_policy=other)
+    async with running_hub(hub) as (_, uri):
+        reply = await _relay(uri, _request())
+    result = decode_relay_result(reply)
+    assert (result.applied, result.detail) == (False, _NOT_AUTHORISED)
+    assert forwarder.calls == []
+    assert [e for e in journal.read_all() if e.kind == EventKind.OPERATOR_RELAY] == []
+
+
+async def test_a_hub_without_a_policy_forwards_nothing() -> None:
+    """With no access policy at all, an edge refuses to relay rather than relay for anyone."""
+    forwarder = _FakeRelayForwarder(result=_applied())
+    hub = _edge_hub(forwarder, acl_policy=None)
+    async with running_hub(hub) as (_, uri):
+        reply = await _relay(uri, _request())
+    result = decode_relay_result(reply)
+    assert (result.applied, result.detail) == (False, _NOT_AUTHORISED)
+    assert forwarder.calls == []
+
+
+async def test_an_operator_other_than_the_sender_is_refused() -> None:
+    """A granted agent cannot relay in another operator's name; it is refused, not rebound."""
+    forwarder = _FakeRelayForwarder(result=_applied())
+    hub = _edge_hub(forwarder)
+    async with running_hub(hub) as (_, uri):
+        reply = await _relay(uri, _request(operator="ops-admin"))
+    result = decode_relay_result(reply)
+    assert (result.applied, result.detail) == (False, _NOT_SENDER)
+    assert forwarder.calls == []
+
+
+def _recovering_journal(path: Path) -> EventStore:
+    """Return a journal whose one row is corrupt, so its hub must refuse every mutation."""
+    store = EventStore(path)
+    record_claim(
+        store,
+        TaskClaim(
+            task_id="SEED",
+            owner="seed-owner",
+            note="seed",
+            claimed_at=1000.0,
+            lease_expires_at=9_999_999_999.0,
+            status="claimed",
+            data_ref="",
+            worktree="wt",
+            paths=("src",),
+            epoch=1,
+        ),
+    )
+    damaged = store.max_seq()
+    store.close()
+    writer = sqlite3.connect(path)
+    writer.execute("UPDATE events SET payload = 'not json' WHERE seq = ?", (damaged,))
+    writer.commit()
+    writer.close()
+    return EventStore(path)
+
+
+async def test_a_relay_is_refused_while_the_journal_needs_recovery(tmp_path: Path) -> None:
+    """Both the edge and the owner refuse a relay while their journal needs recovery."""
+    forwarder = _FakeRelayForwarder(result=_applied())
+    edge = _edge_hub(forwarder, journal=_recovering_journal(tmp_path / "edge.db"))
+    owner = SynapseHub(
+        hub_id=_OWNER,
+        namespace_ownership=NamespaceOwnership(owners={_NAMESPACE: _OWNER}, local_hub_id=_OWNER),
+        journal=_recovering_journal(tmp_path / "owner.db"),
+    )
+    for hub in (edge, owner):
+        async with running_hub(hub) as (_, uri):
+            async with await _connect(uri, _AGENT) as ws:
+                await send_json(
+                    ws,
+                    sender=_AGENT,
+                    type=MessageType.OPERATOR_RELAY_REQUEST,
+                    **encode_relay_request(_request()),
+                )
+                refused = await read_until_type(ws, MessageType.ERROR)
+        assert refused["journal_recovery_required"] is True
+    assert forwarder.calls == []

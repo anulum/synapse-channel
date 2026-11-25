@@ -157,6 +157,7 @@ _FROZEN_MUTATION_GUARD = frozenset(
         "operation_record",
         "operation_resume",
         "operation_stop",
+        "operator_relay_request",
         "offer_resource",
         "release",
         "resource",

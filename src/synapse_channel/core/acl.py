@@ -61,6 +61,7 @@ ATTACHMENT_READ = "attachment-read"
 ATTACHMENT_WRITE = "attachment-write"
 ATTACHMENT_ADMIN = "attachment-admin"
 FEED_READ = "feed-read"
+OPERATOR_RELAY = "operator-relay"
 
 PERMISSIONS = frozenset(
     {
@@ -94,6 +95,7 @@ PERMISSIONS = frozenset(
         ATTACHMENT_WRITE,
         ATTACHMENT_ADMIN,
         FEED_READ,
+        OPERATOR_RELAY,
     }
 )
 """The auditable permission vocabulary an ACL rule may grant.
@@ -112,6 +114,13 @@ the federation follower) read the retained feed and never need it.
 via a mailbox heartbeat (``mailbox_for``). Target kind is ``agent``; the pattern matches
 the identity whose backlog is requested. Self and ``-rx`` sidecar naming still work
 without a grant; this verb is the policy-file path for a trusted monitor that is neither.
+
+``OPERATOR_RELAY`` grants a local identity the right to have this hub forward an operator
+relay, such as a force release, to the peer hub that owns a namespace. Target kind is
+``namespace``; the pattern matches the namespace the relay acts in. The forwarding hub lends
+its own federation identity, so it checks this grant always, with or without enforcement,
+and a hub without a policy forwards no relay. It is deliberately not ``release``: a broad
+local release grant must not become a cross-hub one.
 
 ``FEED_READ`` grants a memory consumer the hub's forward event feed through
 ``history_request.feed_query`` and the right to acknowledge it with ``feed_ack``.

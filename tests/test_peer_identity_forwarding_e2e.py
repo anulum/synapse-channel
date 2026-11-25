@@ -26,6 +26,7 @@ from websockets.asyncio.client import connect
 from websockets.asyncio.server import ServerConnection, serve
 
 from hub_e2e_helpers import read_until_type, running_hub, send_json
+from synapse_channel.core.acl import OPERATOR_RELAY, AclPolicy, AclRule
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.identity_binding import load_identity_trust_bundle, verify_registration
 from synapse_channel.core.identity_keys import (
@@ -111,14 +112,16 @@ async def test_a_relayed_operator_action_is_signed(tmp_path: Path) -> None:
         action="release",
         namespace=NAMESPACE,
         task_id="t1",
-        operator="ops-admin",
+        operator=f"{NAMESPACE}/ops",
         origin_hub_id="asserted",
     )
+    grant = AclRule(OPERATOR_RELAY, "namespace", NAMESPACE, "", "the operator may relay")
     async with _owner() as (owner_uri, frames):
         hub = SynapseHub(
             hub_id=EDGE,
             namespace_ownership=_ownership(),
             relay_peers={OWNER: OperatorRelayPeer(uri=owner_uri, signer=signer)},
+            acl_policy=AclPolicy([grant]),
         )
         async with running_hub(hub) as (_hub_ref, uri), connect(uri) as ws:
             await read_until_type(ws, "welcome")
