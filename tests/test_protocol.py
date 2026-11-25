@@ -176,6 +176,85 @@ def test_is_directed_excludes_broadcast() -> None:
     assert not is_directed("", "B")
 
 
+_SEAT = "SYNAPSE-CHANNEL/seat-1"
+_ROLE = "SYNAPSE-CHANNEL/architect"
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "*",
+        "*/*",
+        "S*/*",
+        "*/seat-1",
+        "?*",
+        "[S]*",
+        "a,*",
+        "?YNAPSE-CHANNEL/seat-1",
+        "[S]YNAPSE-CHANNEL/seat-1",
+    ],
+)
+def test_a_glob_in_the_project_segment_never_directs(target: str) -> None:
+    """A part whose project segment is a glob is an audience, so it wakes nobody.
+
+    Each target matches the seat as a glob, which is why every one of them woke
+    a directed-only waiter before. The role holder is refused the same way.
+    """
+    from synapse_channel.core.protocol import is_directed, wakes
+
+    assert not is_directed(target, _SEAT)
+    assert not is_directed(target, _SEAT, (_ROLE,))
+    assert not is_directed(target, "user/terminal-1", (_ROLE,))
+    assert not wakes(target, _SEAT, directed_only=True, sender="A")
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        _SEAT,
+        "SYNAPSE-CHANNEL/*",
+        "SYNAPSE-CHANNEL/seat-*",
+        "SYNAPSE-CHANNEL/seat-?",
+        "SYNAPSE-CHANNEL/[s]eat-1",
+        "x,SYNAPSE-CHANNEL/*",
+    ],
+)
+def test_a_glob_after_a_literal_project_segment_still_directs(target: str) -> None:
+    """A group glob inside a named project keeps waking that project's seats."""
+    from synapse_channel.core.protocol import is_directed, wakes
+
+    assert is_directed(target, _SEAT)
+    assert wakes(target, _SEAT, directed_only=True, sender="A")
+
+
+def test_the_project_segment_ends_at_the_first_slash() -> None:
+    """Only the text before the first ``/`` must be literal; a later glob still matches."""
+    from synapse_channel.core.protocol import is_directed
+
+    assert is_directed("SYNAPSE-CHANNEL/*/b", "SYNAPSE-CHANNEL/a/b")
+    assert not is_directed("S*/a/b", "SYNAPSE-CHANNEL/a/b")
+
+
+def test_a_role_glob_inside_its_project_directs_the_holder() -> None:
+    """The rule reads a role target the same way as a name target."""
+    from synapse_channel.core.protocol import is_directed
+
+    assert is_directed(_ROLE, "user/terminal-1", (_ROLE,))
+    assert is_directed("SYNAPSE-CHANNEL/arch*", "user/terminal-1", (_ROLE,))
+    assert not is_directed("*/architect", "user/terminal-1", (_ROLE,))
+
+
+def test_a_cross_project_glob_still_reaches_the_inbox_and_wakes_on_priority() -> None:
+    """Only the wake question changes: ``*`` stays an audience like ``all``."""
+    from synapse_channel.core.protocol import wakes
+
+    assert is_recipient("*", _SEAT)
+    assert wakes("*", _SEAT, directed_only=True, sender="A", priority=True)
+    assert wakes("all", _SEAT, directed_only=True, sender="A", priority=True)
+    assert wakes("*", _SEAT, directed_only=True, sender="CEO")
+    assert wakes("*", _SEAT, directed_only=False, sender="A")
+
+
 def test_addresses_project() -> None:
     from synapse_channel.core.protocol import addresses_project
 

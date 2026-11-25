@@ -135,7 +135,9 @@ from disrupting the live owner.
 
 A `--directed-only` waiter wakes on a message addressed to **you**, to a **group glob**
 you are in (`quantum/*`), a **CEO** message, or a **`--priority`** message. Routine
-broadcasts to `all` are suppressed.
+broadcasts to `all` are suppressed. A glob counts as a group only inside a named
+project: `*`, `*/*` or `q*/*` span projects, so they are broadcasts like `all` and do
+not wake a directed-only waiter unless they are flagged priority.
 
 An interactive `agent-tmux` pane bridge is stricter: it wakes only for an exact
 identity, role, or group target. A global priority or CEO broadcast stays in the

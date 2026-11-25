@@ -620,6 +620,27 @@ def is_recipient(target: str, name: str, roles: Iterable[str] = ()) -> bool:
     )
 
 
+_GLOB_CHARACTERS = frozenset("*?[")
+"""The characters that make a target part a glob for :func:`fnmatch.fnmatchcase`."""
+
+
+def _has_literal_project_segment(part: str) -> bool:
+    """Return whether a target part names its project without a glob.
+
+    Parameters
+    ----------
+    part : str
+        One stripped, non-blank part of a comma-separated target.
+
+    Returns
+    -------
+    bool
+        ``True`` when the text before the part's first ``/`` (the whole part when it
+        has none) holds none of ``*``, ``?`` or ``[``.
+    """
+    return not _GLOB_CHARACTERS.intersection(part.split("/", 1)[0])
+
+
 def is_directed(target: str, name: str, roles: Iterable[str] = ()) -> bool:
     """Return whether ``target`` names ``name`` specifically rather than broadcasting.
 
@@ -630,6 +651,14 @@ def is_directed(target: str, name: str, roles: Iterable[str] = ()) -> bool:
     ``<project>/<seat>`` sub-seat. A reader uses this to wake only on messages addressed
     to it, a role it holds, or a group glob it is in, and to treat both ``all`` broadcasts
     and project-level traffic as read-when-convenient.
+
+    A group glob is directed only inside a named project: a part counts only when its
+    project segment — the text before its first ``/``, or the whole part when it has
+    none — holds no glob character. So ``"quantum/*"`` and ``"quantum/seat-*"`` wake
+    the ``quantum`` seats they cover, while ``"*"``, ``"*/*"`` or ``"q*/*"`` are
+    audiences like ``"all"`` and never count as directed. As with ``"all"``, only a
+    priority flag or a priority sender then wakes a directed-only waiter (see
+    :func:`wakes`), and an interactive pane bridge is not woken at all.
 
     This is the WAKE question, deliberately distinct from the INBOX question
     (:func:`is_recipient`): a sub-seat still *receives* a bare-project message, it just is
@@ -652,17 +681,21 @@ def is_directed(target: str, name: str, roles: Iterable[str] = ()) -> bool:
     Returns
     -------
     bool
-        ``True`` only when a non-broadcast target part matches ``name`` or one of its
-        ``roles`` directly (an exact name/role or a glob covering it); a bare project
-        matches a waiter named exactly that project, not its sub-seats.
+        ``True`` only when a non-broadcast target part with a literal project segment
+        matches ``name`` or one of its ``roles`` directly (an exact name/role or a glob
+        covering it); a bare project matches a waiter named exactly that project, not
+        its sub-seats.
     """
     cleaned = (target or "all").strip()
     if cleaned in ("", "all"):
         return False
     role_names = tuple(roles)
     return any(
-        fnmatch.fnmatchcase(name, part)
-        or any(fnmatch.fnmatchcase(role, part) for role in role_names)
+        _has_literal_project_segment(part)
+        and (
+            fnmatch.fnmatchcase(name, part)
+            or any(fnmatch.fnmatchcase(role, part) for role in role_names)
+        )
         for part in (raw.strip() for raw in cleaned.split(",") if raw.strip())
     )
 

@@ -655,6 +655,41 @@ async def test_pane_bridge_ignores_global_priority_wakes_then_accepts_exact_targ
     assert "global directive" not in out
 
 
+async def test_pane_bridge_ignores_a_cross_project_glob_then_accepts_its_project_glob(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A glob that spans projects is an audience, so it never spends a pane's provider turn."""
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="P/seat-rx",
+                for_name="P/seat",
+                timeout=2.0,
+                directed_only=True,
+                poll_interval=0.01,
+                wake_capability=WAKE_PANE_BRIDGE,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "P/seat-rx")
+            await _send_chat(uri, "A", "*", "every pane", priority=True)
+            await _send_chat(uri, "A", "*/*", "every seat")
+            await asyncio.sleep(0.1)
+            assert not wait_task.done(), "a cross-project glob woke an interactive pane"
+            await _send_chat(uri, "A", "P/*", "project glob")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "A: project glob" in out
+    assert "every pane" not in out
+    assert "every seat" not in out
+
+
 async def test_wait_exits_when_connection_drops() -> None:
     manager: AbstractAsyncContextManager[tuple[SynapseHub, str]] = running_hub(SynapseHub())
     _hub, uri = await manager.__aenter__()

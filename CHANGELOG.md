@@ -20,6 +20,15 @@ execution evidence when carrying a release claim forward.
 
 ### Security
 
+- **A glob that spans projects no longer counts as a directed wake (`core/protocol.py`).** `is_directed` matched
+  every comma part as a glob, so a target such as `*`, `*/*`, `q*/*` or `*/seat` matched every waiter. It woke every
+  `--directed-only` waiter on the hub, and every interactive pane bridge, which by design ignores even priority and
+  CEO broadcasts so that one message cannot start a provider turn in every open terminal. A part now counts as
+  directed only when its project segment (the text before its first `/`, or the whole part when it has none) holds
+  no `*`, `?` or `[`. Group globs inside a named project, such as `quantum/*` and `quantum/seat-*`, wake the seats
+  they cover as before, for names and roles alike. A cross-project glob is an audience like `all`: it still reaches
+  every inbox, and a directed-only waiter wakes on it only when it is flagged priority or comes from a priority
+  sender, as with `all`. To wake every directed-only waiter, send to `all` with `--priority`.
 - **Hardened Windows owner-only file and directory custody through held NT handles (`core/secure_path.py`,
   `core/secure_path_windows.py`, `core/secret_files.py`).** Closed three Windows path-string race windows:
   `read_owner_only_file_bytes`, `assert_owner_only_file_path`, and `assert_owner_only_dir_path` now validate owner SID,
