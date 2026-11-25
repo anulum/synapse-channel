@@ -147,6 +147,7 @@ def test_quarantine_shape_and_error_never_carry_event_payloads() -> None:
         "conflicting_fingerprint": "b" * 64,
         "detected_at": 123.0,
         "observer_id": "hub-local",
+        "cause": "equivocation",
         "status": "quarantined",
     }
     error = MultiHubPeerQuarantinedError(quarantine)

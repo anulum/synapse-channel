@@ -591,6 +591,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "multihub_integrity",
         Exception,
     ),
+    "MultiHubJournalInstanceChangedError": (
+        "synapse_channel.core.multihub_equivocation",
+        "multihub_journal_instance_changed",
+        Exception,
+    ),
     "MultiHubPeerQuarantinedError": (
         "synapse_channel.core.multihub_equivocation",
         "multihub_peer_quarantined",

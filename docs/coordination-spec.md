@@ -1324,6 +1324,10 @@ contain bounded metadata and both fingerprints, never the event payload. Timesta
 arrival order, authentication, or lexical digest order MUST NOT select a winner.
 New events in an exclusive cursor response MUST be contiguous; an unseen sequence at
 or below the cursor, a gap, or rollback MUST fail before publication.
+A peer whose journal instance changes after the follower read rows from it MUST be
+treated the same way: nothing from that batch becomes live, and the peer stays
+quarantined, with the cause `journal_instance_changed` and the digests of both
+instances as evidence, until the same explicit recovery rebinds it to the new journal.
 
 **Implementation.** `core/multihub_equivocation.py` (canonical fingerprint,
 typed failures, batch validation), `core/multihub_follower.py` (candidate publish,
@@ -1332,7 +1336,8 @@ quarantine, explicit recovery), `core/journal.py` (durable bounded evidence),
 
 **Pinned by.** `tests/test_multihub_equivocation.py`,
 `tests/test_multihub_merge.py`, `tests/test_multihub_follower.py`,
-`tests/test_multihub_watch.py`, `tests/test_journal.py`.
+`tests/test_multihub_watch.py`, `tests/test_journal.py`,
+`tests/test_multihub_journal_instance_change.py`.
 
 ### INV-MH-6 — divergent observed task heads stay visibly unresolved
 

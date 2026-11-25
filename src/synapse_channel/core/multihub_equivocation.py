@@ -19,6 +19,16 @@ from typing import Any, Protocol, TypeGuard, TypeVar
 from synapse_channel.core.errors import SynapseError
 
 _FINGERPRINT_DOMAIN = b"synapse-channel:multihub-event-fingerprint:v1\x00"
+_INSTANCE_DOMAIN = b"synapse-channel:multihub-journal-instance:v1\x00"
+
+EQUIVOCATION = "equivocation"
+"""Quarantine cause: one global event identity was presented with two contents."""
+
+JOURNAL_INSTANCE_CHANGED = "journal_instance_changed"
+"""Quarantine cause: a peer's journal instance changed under the follower's cursor."""
+
+QUARANTINE_CAUSES = frozenset({EQUIVOCATION, JOURNAL_INSTANCE_CHANGED})
+"""Every cause a peer quarantine records."""
 _HEX_DIGEST_LENGTH = 64
 
 
@@ -101,6 +111,34 @@ class MultiHubSequenceError(MultiHubIntegrityError):
         )
 
 
+class MultiHubJournalInstanceChangedError(MultiHubIntegrityError):
+    """A peer's journal instance changed under the follower's cursor.
+
+    A restored copy, a rotation or a format conversion starts a new journal whose
+    sequence numbers start again. Reading it past the old cursor would skip every row
+    below that cursor without a signal, so the follower stops instead.
+    """
+
+    code = "multihub_journal_instance_changed"
+
+    def __init__(
+        self,
+        *,
+        peer_id: str,
+        cursor: int,
+        accepted_fingerprint: str,
+        conflicting_fingerprint: str,
+    ) -> None:
+        self.peer_id = peer_id
+        self.cursor = cursor
+        self.accepted_fingerprint = accepted_fingerprint
+        self.conflicting_fingerprint = conflicting_fingerprint
+        super().__init__(
+            f"peer {peer_id!r}'s journal instance changed after sequence {cursor}; "
+            "nothing past the old cursor was read, and the peer needs an explicit recovery"
+        )
+
+
 class MultiHubPeerQuarantinedError(MultiHubIntegrityError):
     """An automatic poll was attempted for a persistently quarantined peer."""
 
@@ -108,9 +146,13 @@ class MultiHubPeerQuarantinedError(MultiHubIntegrityError):
 
     def __init__(self, quarantine: FederationQuarantine) -> None:
         self.quarantine = quarantine
+        what = (
+            "its journal instance changed after"
+            if quarantine.cause == JOURNAL_INSTANCE_CHANGED
+            else "equivocation at"
+        )
         super().__init__(
-            f"peer {quarantine.peer_id!r} is quarantined after equivocation "
-            f"at sequence {quarantine.seq}"
+            f"peer {quarantine.peer_id!r} is quarantined after {what} sequence {quarantine.seq}"
         )
 
 
@@ -132,6 +174,10 @@ class FederationQuarantine:
         Local UNIX timestamp at which the conflict was detected.
     observer_id : str
         Local hub or process identity that detected the conflict.
+    cause : str
+        Why the peer is quarantined, one of :data:`QUARANTINE_CAUSES`. For
+        ``journal_instance_changed`` the sequence is the follower's cursor and the two
+        fingerprints are the digests of the old and the new journal instance.
     """
 
     peer_id: str
@@ -140,6 +186,7 @@ class FederationQuarantine:
     conflicting_fingerprint: str
     detected_at: float
     observer_id: str = ""
+    cause: str = EQUIVOCATION
 
     def to_dict(self) -> dict[str, object]:
         """Return bounded evidence without either event payload."""
@@ -150,6 +197,7 @@ class FederationQuarantine:
             "conflicting_fingerprint": self.conflicting_fingerprint,
             "detected_at": self.detected_at,
             "observer_id": self.observer_id,
+            "cause": self.cause,
             "status": "quarantined",
         }
 
@@ -258,6 +306,28 @@ def validate_content_bound_batch(
         expected_seq += 1
     events.clear()
     events.update(candidate)
+
+
+def journal_instance_fingerprint(instance: str, floor: int) -> str:
+    """Return the domain-separated SHA-256 digest of one journal instance and its floor.
+
+    Parameters
+    ----------
+    instance : str
+        The journal instance identity.
+    floor : int
+        The highest sequence the store held when the instance was written.
+
+    Returns
+    -------
+    str
+        64 lower-case hexadecimal digits, so quarantine evidence stays digest-only.
+    """
+    digest = hashlib.sha256()
+    digest.update(_INSTANCE_DOMAIN)
+    digest.update(_frame(b"i", instance.encode("utf-8")))
+    digest.update(_frame(b"f", str(floor).encode("ascii")))
+    return digest.hexdigest()
 
 
 def valid_fingerprint(value: object) -> TypeGuard[str]:

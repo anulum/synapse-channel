@@ -2350,7 +2350,9 @@ claim/release evidence, delivery, sandbox-run, policy, approval, operator-relay,
 cross-hub, A2A-validation, and postmortem receipt families.
 Federation receipts also include durable multi-hub equivocation quarantines and
 explicit recoveries. The quarantine record exposes peer id, sequence, both event
-fingerprints, detection metadata, and status, but never the conflicting payload;
+fingerprints (or, for a changed journal instance, both instance digests), detection
+metadata, its cause (`equivocation` or `journal_instance_changed`), and status, but
+never the conflicting payload;
 `synapse event-query DB "universal-receipts PEER" --json` is the forensic read.
 Channel queries return metadata-only records so private-channel bodies are not
 printed by this forensic path. Receipt queries return the requested, immediate,

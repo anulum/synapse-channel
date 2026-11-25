@@ -40,9 +40,12 @@ from synapse_channel.core.journal import (
 )
 from synapse_channel.core.journal_replay import restore_active_multihub_quarantines
 from synapse_channel.core.multihub_equivocation import (
+    JOURNAL_INSTANCE_CHANGED,
     FederationQuarantine,
     MultiHubEquivocationError,
+    MultiHubJournalInstanceChangedError,
     MultiHubPeerQuarantinedError,
+    journal_instance_fingerprint,
     validate_content_bound_batch,
 )
 from synapse_channel.core.multihub_fold import (
@@ -111,6 +114,7 @@ class MultiHubFollower:
         self._cursors: dict[str, int] = {}
         self._protocol_negotiations: dict[str, ProtocolNegotiation] = {}
         self._clock_skews: dict[str, ClockSkew] = {}
+        self._journal_instances: dict[str, JournalInstance] = {}
         self._journal = journal
         self._observer_id = observer_id
         self._clock = clock
@@ -141,6 +145,22 @@ class MultiHubFollower:
                 raise MultiHubPeerQuarantinedError(quarantine)
             cursor = self._cursors.get(peer_id, 0)
             fetched = await fetch(cursor)
+            instance = _fetcher_journal_instance(fetch)
+            known = self._journal_instances.get(peer_id)
+            if cursor > 0 and instance is not None and known is not None and instance != known:
+                # A new journal restarts its sequence: reading it past the old cursor
+                # would skip every row below it. Stop, with evidence, until recovery.
+                # At cursor 0 nothing would be skipped, so the new instance is simply read.
+                changed = MultiHubJournalInstanceChangedError(
+                    peer_id=peer_id,
+                    cursor=cursor,
+                    accepted_fingerprint=journal_instance_fingerprint(known.instance, known.floor),
+                    conflicting_fingerprint=journal_instance_fingerprint(
+                        instance.instance, instance.floor
+                    ),
+                )
+                self._quarantine_instance_change(changed)
+                raise changed
             candidate = dict(self._events)
             try:
                 validate_content_bound_batch(
@@ -166,6 +186,8 @@ class MultiHubFollower:
             skew = _fetcher_clock_skew(fetch)
             if skew is not None:
                 self._clock_skews[peer_id] = skew
+            if instance is not None:
+                self._journal_instances[peer_id] = instance
             self._events = candidate
             self._cursors = cursors
             return observed
@@ -237,6 +259,7 @@ class MultiHubFollower:
         self._cursors.pop(peer_id, None)
         self._protocol_negotiations.pop(peer_id, None)
         self._clock_skews.pop(peer_id, None)
+        self._journal_instances.pop(peer_id, None)
         self._quarantines.pop(peer_id, None)
 
     def _quarantine(self, conflict: MultiHubEquivocationError) -> None:
@@ -253,6 +276,21 @@ class MultiHubFollower:
         if self._journal is not None:
             record_multihub_equivocation(self._journal, quarantine)
 
+    def _quarantine_instance_change(self, change: MultiHubJournalInstanceChangedError) -> None:
+        """Freeze one peer whose journal instance changed, with digest-only evidence."""
+        quarantine = FederationQuarantine(
+            peer_id=change.peer_id,
+            seq=change.cursor,
+            accepted_fingerprint=change.accepted_fingerprint,
+            conflicting_fingerprint=change.conflicting_fingerprint,
+            detected_at=self._clock(),
+            observer_id=self._observer_id,
+            cause=JOURNAL_INSTANCE_CHANGED,
+        )
+        self._quarantines[change.peer_id] = quarantine
+        if self._journal is not None:
+            record_multihub_equivocation(self._journal, quarantine)
+
 
 def _fetcher_protocol_negotiation(fetch: EventFetcher) -> ProtocolNegotiation | None:
     """Return optional protocol metadata exposed by a network fetcher."""
@@ -260,6 +298,12 @@ def _fetcher_protocol_negotiation(fetch: EventFetcher) -> ProtocolNegotiation | 
     if isinstance(candidate, ProtocolNegotiation):
         return candidate
     return None
+
+
+def _fetcher_journal_instance(fetch: EventFetcher) -> JournalInstance | None:
+    """Return the journal instance the fetcher observed on its last read, if it exposes one."""
+    candidate = getattr(fetch, "last_journal_instance", None)
+    return candidate if isinstance(candidate, JournalInstance) else None
 
 
 def _fetcher_clock_skew(fetch: EventFetcher) -> ClockSkew | None:

@@ -20,6 +20,16 @@ execution evidence when carrying a release claim forward.
 
 ### Security
 
+- **A multi-hub follower stops when a peer's journal instance changes under its cursor
+  (`core/multihub_follower.py`, `core/multihub_equivocation.py`, `core/journal.py`).** A peer's store carries a
+  journal instance, and a restored copy, a rotation or a format conversion starts a new one whose sequence numbers
+  start again. The follower kept its old cursor and asked the new journal only for rows above it, so every row below
+  the cursor was missing from the observed view without any signal. The follower now remembers the instance it read
+  each peer under. When it changes after rows were read, it merges nothing from that batch, raises
+  `MultiHubJournalInstanceChangedError`, and quarantines the peer with digest-only evidence, `cause`
+  `journal_instance_changed`, which persists across a restart like an equivocation quarantine. Only the explicit,
+  named `recover_peer` rebinds the peer, and the next poll reads the new journal from its first row. A quarantine row
+  written before this change replays as an equivocation, as it was.
 - **An owning hub keeps a forwarded claim while the peer hub that forwarded it is connected
   (`core/claim_holder_presence.py`, `core/state_models.py`, `core/handlers/multihub_claim.py`).** The owner releases
   a claim whose holder has been offline for the whole lease window, and it judged that by whether the holder had a

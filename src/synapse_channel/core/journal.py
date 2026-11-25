@@ -48,7 +48,11 @@ from synapse_channel.core.message_auth_key_watch import (
     MESSAGE_KEY_SET_APPLIED_KIND,
     MESSAGE_KEY_SET_REJECTED_KIND,
 )
-from synapse_channel.core.multihub_equivocation import FederationQuarantine, valid_fingerprint
+from synapse_channel.core.multihub_equivocation import (
+    QUARANTINE_CAUSES,
+    FederationQuarantine,
+    valid_fingerprint,
+)
 from synapse_channel.core.notification_events import NOTIFICATION_FIELD, notification_metadata
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import ResourceOffer, TaskClaim
@@ -507,6 +511,8 @@ def _bounded_multihub_quarantine_payload(
         or not math.isfinite(quarantine.detected_at)
     ):
         raise ValueError("multi-hub quarantine detection time must be finite")
+    if quarantine.cause not in QUARANTINE_CAUSES:
+        raise ValueError("multi-hub quarantine cause is not a recorded cause")
     return {
         **_bounded_identity("peer_id", quarantine.peer_id),
         **_bounded_identity("observer_id", quarantine.observer_id),
@@ -514,6 +520,7 @@ def _bounded_multihub_quarantine_payload(
         "accepted_fingerprint": quarantine.accepted_fingerprint,
         "conflicting_fingerprint": quarantine.conflicting_fingerprint,
         "detected_at": quarantine.detected_at,
+        "cause": quarantine.cause,
         "status": "quarantined",
     }
 

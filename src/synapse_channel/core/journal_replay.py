@@ -44,7 +44,12 @@ from synapse_channel.core.ledger import (
     LedgerTask,
     ProgressNote,
 )
-from synapse_channel.core.multihub_equivocation import FederationQuarantine, valid_fingerprint
+from synapse_channel.core.multihub_equivocation import (
+    EQUIVOCATION,
+    QUARANTINE_CAUSES,
+    FederationQuarantine,
+    valid_fingerprint,
+)
 from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.path_identity import parse_optional_claim_scope_identity
 from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -167,6 +172,7 @@ def restore_active_multihub_quarantines(
         seq = seq_raw if isinstance(seq_raw, int) and not isinstance(seq_raw, bool) else 0
         accepted = event.payload.get("accepted_fingerprint")
         conflicting = event.payload.get("conflicting_fingerprint")
+        cause = str(event.payload.get("cause") or EQUIVOCATION)
         active[peer_id] = FederationQuarantine(
             peer_id=peer_id,
             seq=seq,
@@ -174,6 +180,8 @@ def restore_active_multihub_quarantines(
             conflicting_fingerprint=(conflicting if valid_fingerprint(conflicting) else "0" * 64),
             detected_at=float(event.ts),
             observer_id=str(event.payload.get("observer_id") or ""),
+            # Rows written before causes were recorded are equivocations.
+            cause=cause if cause in QUARANTINE_CAUSES else EQUIVOCATION,
         )
     return active
 
