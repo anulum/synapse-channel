@@ -60,13 +60,14 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl import OPERATOR_RELAY
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
+from synapse_channel.core.federation_serving import authorise_federated_mutation, claim_namespace
 from synapse_channel.core.journal import (
     RELAY_DIRECTION_IN,
     EventKind,
     record_operator_relay,
     record_operator_release,
 )
-from synapse_channel.core.operator_relay import RelayDecision, authorise_relay
+from synapse_channel.core.operator_relay import RELAYABLE_ACTIONS, RelayDecision, authorise_relay
 from synapse_channel.core.operator_relay_approval import (
     ApprovalOutcome,
     ApprovalStatus,
@@ -85,6 +86,7 @@ from synapse_channel.core.verb_access import field_access
 from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from typing import Protocol
 
     from synapse_channel.core.handler_context import HandlerContext
@@ -120,8 +122,16 @@ if TYPE_CHECKING:
             """Return the require two person relay used by this handler family."""
             ...
 
+        @property
+        def observed_asserting_hubs(self) -> Callable[[str], Iterable[str]] | None:
+            """Return the feed of hub ids observed asserting authority over a namespace."""
+            ...
+
 
 logger = logging.getLogger(__name__)
+
+RELAY_CLAIM_OUTSIDE_NAMESPACE = "claim_not_in_namespace"
+"""Detail when the relayed task is not a claim held in the request's namespace."""
 
 RELAY_STATUS_APPLIED = "applied"
 """Audit status: the relay was carried out (single-operator, or the second-operator approval)."""
@@ -270,36 +280,33 @@ def _authorise(
 ) -> _RelayAuthorisation:
     """Compose the peer, scope, and ownership gates into one relay authorisation decision.
 
-    The peer gate reads the live certificate through the hub's serving policy; a hub with no
-    policy authorises nothing. The bounded scope the policy returns and this hub's namespace
-    ownership feed the deny-by-default policy in
-    :func:`~synapse_channel.core.operator_relay.authorise_relay`.
+    The shared serving-side authorisation
+    (:func:`~synapse_channel.core.federation_serving.authorise_federated_mutation`) checks the
+    peer for the request's own namespace, reads its scope for that namespace, and resolves
+    ownership with the observed asserting hubs; a hub with no policy authorises nothing. Its
+    results feed the deny-by-default policy in
+    :func:`~synapse_channel.core.operator_relay.authorise_relay`, which keeps the order in
+    which an unverified peer learns only that it is not authorised.
     """
-    ownership = hub.namespace_ownership
-    owns_namespace = ownership is not None and ownership.resolve(request.namespace).grants_locally
-    require_reason = hub.require_relay_reason
-    policy = hub.multihub_serving_policy
-    if policy is None:
-        return _RelayAuthorisation(
-            authorise_relay(
-                request,
-                peer_authorised=False,
-                scope=(),
-                owns_namespace=owns_namespace,
-                require_reason=require_reason,
-            )
-        )
-    authorisation = policy.authorise(sender=sender, websocket=websocket)
-    peer_authorised = authorisation.allowed and bool(authorisation.principal)
+    action = RELAYABLE_ACTIONS.get(request.action)
+    serving = authorise_federated_mutation(
+        policy=hub.multihub_serving_policy,
+        ownership=hub.namespace_ownership,
+        observed_asserting_hubs=hub.observed_asserting_hubs,
+        sender=sender,
+        websocket=websocket,
+        namespace=request.namespace,
+        verb=action.verb if action is not None else request.action,
+    )
     return _RelayAuthorisation(
         authorise_relay(
             request,
-            peer_authorised=peer_authorised,
-            scope=authorisation.scope,
-            owns_namespace=owns_namespace,
-            require_reason=require_reason,
+            peer_authorised=serving.peer_authorised,
+            scope=serving.scope,
+            owns_namespace=serving.namespace_owned,
+            require_reason=hub.require_relay_reason,
         ),
-        principal=authorisation.principal if peer_authorised else "",
+        principal=serving.principal,
     )
 
 
@@ -367,11 +374,19 @@ def _prepare_release(
     requester_principal: str = "",
     approver_principal: str = "",
 ) -> _ReleaseApplication:
-    """Apply a force-release to one state object and build its audit payload."""
+    """Apply a force-release to one state object and build its audit payload.
+
+    The release is bound to the namespace the peer was authorised for: a claim held in another
+    namespace is refused and nothing is freed. A task with no claim frees nothing either; the
+    state reports it as not currently claimed.
+    """
     task_id = request.task_id.strip()
     existing = state.claims.get(task_id)
     previous_owner = existing.owner if existing is not None else ""
-    applied, detail = state.force_release(request.task_id, by=request.operator)
+    if existing is not None and claim_namespace(existing.owner) != request.namespace:
+        applied, detail = False, RELAY_CLAIM_OUTSIDE_NAMESPACE
+    else:
+        applied, detail = state.force_release(request.task_id, by=request.operator)
     payload = None
     if applied:
         payload = {

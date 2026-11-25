@@ -44,6 +44,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.claim_holder_presence import release_abandoned_claims
+from synapse_channel.core.federation_serving import authorise_federated_mutation, claim_namespace
 from synapse_channel.core.handlers.leasing import apply_claim_async, claim_grant_fields
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_claim_wire import (
@@ -57,6 +58,7 @@ from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
     from typing import Protocol
 
     from synapse_channel.core.event_row_recovery import CorruptEventRow
@@ -81,6 +83,11 @@ if TYPE_CHECKING:
         @property
         def namespace_ownership(self) -> NamespaceOwnership | None:
             """Return the namespace ownership used by this handler family."""
+            ...
+
+        @property
+        def observed_asserting_hubs(self) -> Callable[[str], Iterable[str]] | None:
+            """Return the feed of hub ids observed asserting authority over a namespace."""
             ...
 
 
@@ -202,73 +209,62 @@ def _refuse_claim(
 ) -> ClaimForwardResult | None:
     """Return a denial result when the peer or this hub may not grant the claim, else ``None``.
 
-    The fail-closed gates a forwarded claim must clear before it is applied: the peer must be
-    an authorised federated hub, this hub's journal must not need recovery, and this hub must
-    authoritatively own the namespace. A refusal names this hub so the forwarding side knows
-    who answered.
+    The fail-closed gates a forwarded claim must clear before it is applied, in order: the
+    peer is trusted for the request's own namespace
+    (:func:`~synapse_channel.core.federation_serving.authorise_federated_mutation`), this
+    hub's journal does not need recovery, the peering's scope grants ``claim`` in the
+    namespace, this hub owns the namespace uncontested, and the claim is bound to the request
+    (:func:`_unbound`). The recovery state is checked after the peer, so an unauthorised peer
+    never learns it. A refusal names this hub so the forwarding side knows who answered.
     """
-    if not _peer_authorised(hub, sender, websocket):
-        logger.warning("Refused multi-hub claim from peer %r: peer not authorised", sender)
-        return ClaimForwardResult(
-            granted=False,
-            task_id=request.task_id,
-            namespace=request.namespace,
-            owner_hub_id=hub.hub_id,
-            detail="peer not authorised to forward claims",
-        )
-    if hub.journal_corrupt_rows:
-        # The journal recovery gate refuses every local mutation while startup replay has
-        # quarantined corrupt rows; a forwarded claim is a mutation too. Checked after the
-        # peer is authorised, so an unauthorised peer never learns the recovery state.
-        logger.warning("Refused multi-hub claim from peer %r: journal recovery required", sender)
-        return ClaimForwardResult(
-            granted=False,
-            task_id=request.task_id,
-            namespace=request.namespace,
-            owner_hub_id=hub.hub_id,
-            detail="durable journal recovery is required",
-        )
-    if not _owns_namespace(hub, request.namespace):
-        logger.warning(
-            "Refused multi-hub claim from peer %r: hub does not own namespace %r",
-            sender,
-            request.namespace,
-        )
-        return ClaimForwardResult(
-            granted=False,
-            task_id=request.task_id,
-            namespace=request.namespace,
-            owner_hub_id=hub.hub_id,
-            detail=f"this hub does not own namespace {request.namespace!r}",
-        )
+    serving = authorise_federated_mutation(
+        policy=hub.multihub_serving_policy,
+        ownership=hub.namespace_ownership,
+        observed_asserting_hubs=hub.observed_asserting_hubs,
+        sender=sender,
+        websocket=websocket,
+        namespace=request.namespace,
+        verb="claim",
+    )
+    detail: str | None
+    if not serving.peer_authorised:
+        detail = "peer not authorised to forward claims"
+    elif hub.journal_corrupt_rows:
+        detail = "durable journal recovery is required"
+    elif not serving.scope_granted:
+        detail = f"peering scope does not grant claim in namespace {request.namespace!r}"
+    elif not serving.namespace_owned:
+        detail = f"this hub does not own namespace {request.namespace!r}"
+    else:
+        detail = _unbound(hub, request)
+    if detail is None:
+        return None
+    logger.warning("Refused multi-hub claim from peer %r: %s", sender, detail)
+    return ClaimForwardResult(
+        granted=False,
+        task_id=request.task_id,
+        namespace=request.namespace,
+        owner_hub_id=hub.hub_id,
+        detail=detail,
+    )
+
+
+def _unbound(hub: MultihubClaimContext, request: ClaimForwardRequest) -> str | None:
+    """Return why a forwarded claim does not bind to its stated namespace and task, or ``None``.
+
+    The claim body must claim the request's own task, the claimant must be a seat of the
+    request's namespace, and a live claim on that task held in another namespace is not
+    the peer's to contend for.
+    """
+    body_task = str(request.claim.get("task_id") or "").strip()
+    if body_task != request.task_id:
+        return "claim body names another task than the request"
+    if claim_namespace(request.claimant) != request.namespace:
+        return f"claimant is not a seat of namespace {request.namespace!r}"
+    existing = hub.state.claims.get(request.task_id)
+    if existing is not None and claim_namespace(existing.owner) != request.namespace:
+        return f"task is held in another namespace than {request.namespace!r}"
     return None
-
-
-def _peer_authorised(hub: MultihubClaimContext, sender: str, websocket: Any) -> bool:
-    """Return whether the hub's serving policy permits ``sender`` to forward a claim.
-
-    A forwarded claim mutates lease state, so the gate is stricter than the read-only log
-    pull: a hub with no :class:`~synapse_channel.core.multihub_serving.MultiHubServingPolicy`
-    refuses every forwarded claim rather than accepting an unauthenticated remote mutation.
-    When a policy is configured, the decision is taken from the peer's live certificate.
-    """
-    policy = hub.multihub_serving_policy
-    if policy is None:
-        return False
-    return policy.authorise(sender=sender, websocket=websocket).allowed
-
-
-def _owns_namespace(hub: MultihubClaimContext, namespace: str) -> bool:
-    """Return whether this hub authoritatively and uncontestedly owns ``namespace``.
-
-    A hub with no :class:`~synapse_channel.core.namespace_ownership.NamespaceOwnership` map
-    owns nothing it could be forwarded a claim for, so it refuses; otherwise the namespace
-    must resolve to a local, uncontested grant.
-    """
-    ownership = hub.namespace_ownership
-    if ownership is None:
-        return False
-    return ownership.resolve(namespace).grants_locally
 
 
 async def _send_result(

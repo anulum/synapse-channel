@@ -800,7 +800,7 @@ async def test_board_actor_serializes_unkeyed_write_behind_atomic_commit(
 async def test_operator_relay_commits_once_and_replays_exact_verdict(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "operator-relay.db")
     hub = _RecordingHub(store)
-    assert hub.state.claim("holder", "T1")[0]
+    assert hub.state.claim("SYNAPSE-CHANNEL/holder", "T1")[0]
     request = RelayActionRequest(
         action="release",
         namespace="SYNAPSE-CHANNEL",
@@ -881,7 +881,7 @@ async def test_operator_relay_cancellation_after_commit_publishes_release(
 ) -> None:
     store = EventStore(tmp_path / "operator-relay-cancel.db")
     hub = _RecordingHub(store)
-    assert hub.state.claim("holder", "T1")[0]
+    assert hub.state.claim("SYNAPSE-CHANNEL/holder", "T1")[0]
     started = threading.Event()
     finish = threading.Event()
     original = store.commit_operation
@@ -930,7 +930,7 @@ async def test_two_person_relay_cancellation_publishes_quorum_and_release(
 ) -> None:
     store = EventStore(tmp_path / "two-person-relay-cancel.db")
     hub = _RecordingHub(store)
-    assert hub.state.claim("holder", "T1")[0]
+    assert hub.state.claim("SYNAPSE-CHANNEL/holder", "T1")[0]
     first = RelayActionRequest(
         action="release",
         namespace="SYNAPSE-CHANNEL",
@@ -1013,7 +1013,7 @@ async def test_two_person_actor_serializes_unkeyed_approval_behind_keyed_pending
 ) -> None:
     store = EventStore(tmp_path / "two-person-relay-serialization.db")
     hub = _RecordingHub(store)
-    assert hub.state.claim("holder", "T1")[0]
+    assert hub.state.claim("SYNAPSE-CHANNEL/holder", "T1")[0]
     started = threading.Event()
     finish = threading.Event()
     original = store.commit_operation

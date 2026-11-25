@@ -46,6 +46,7 @@ from synapse_channel.core.dead_letter_forwarding import (
     forwarding_notice,
     incoming_forwarding_notice,
 )
+from synapse_channel.core.federation_serving import authorise_federated_mutation
 from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.journal import (
     DEAD_LETTER_DIRECTION_IN,
@@ -58,6 +59,7 @@ from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
     from typing import Protocol
 
     from synapse_channel.core.handler_context import HandlerContext
@@ -76,6 +78,11 @@ if TYPE_CHECKING:
         @property
         def namespace_ownership(self) -> NamespaceOwnership | None:
             """Return the namespace ownership used by this handler family."""
+            ...
+
+        @property
+        def observed_asserting_hubs(self) -> Callable[[str], Iterable[str]] | None:
+            """Return the feed of hub ids observed asserting authority over a namespace."""
             ...
 
 
@@ -186,19 +193,28 @@ def _authorised(
 ) -> bool:
     """Return whether ``sender`` may forward ``notice`` to this hub, logging any refusal.
 
-    Two deny-closed gates must both pass: the peer is authorised by the hub's serving policy (a hub
-    with no policy authorises nothing), and this hub authoritatively owns the target's namespace (a
-    pointer for a namespace this hub does not own is misrouted or spoofed). Neither gate needs the
-    pointer's self-asserted ``owner_hub_id`` — ownership is decided by this hub's own map, not by a
-    field the sender controls.
+    The shared serving-side authorisation
+    (:func:`~synapse_channel.core.federation_serving.authorise_federated_mutation`) must pass:
+    the peer is trusted for the target's own namespace (a hub with no policy authorises
+    nothing), and this hub owns that namespace uncontested (a pointer for a namespace this hub
+    does not own is misrouted or spoofed). The pointer passes no scope verb: it changes no
+    coordination state, it only journals an audit event and tells operators. Neither gate needs
+    the pointer's self-asserted ``owner_hub_id``; ownership is decided by this hub's own map.
     """
-    policy = hub.multihub_serving_policy
-    if policy is None or not policy.authorise(sender=sender, websocket=websocket).allowed:
+    namespace = project_of(notice.target)
+    serving = authorise_federated_mutation(
+        policy=hub.multihub_serving_policy,
+        ownership=hub.namespace_ownership,
+        observed_asserting_hubs=hub.observed_asserting_hubs,
+        sender=sender,
+        websocket=websocket,
+        namespace=namespace,
+        verb=None,
+    )
+    if not serving.peer_authorised:
         logger.warning("Refused dead-letter forwarding from unauthorised peer %r", sender)
         return False
-    ownership = hub.namespace_ownership
-    namespace = project_of(notice.target)
-    if ownership is None or not ownership.resolve(namespace).grants_locally:
+    if not serving.namespace_owned:
         logger.warning(
             "Refused dead-letter forwarding for %r from peer %r: namespace %r is not owned here",
             notice.target,

@@ -20,6 +20,23 @@ execution evidence when carrying a release claim forward.
 
 ### Security
 
+- **An owning hub authorises a federated peer for the request's namespace, and binds what it touches
+  (`core/federation_serving.py`, `core/handlers/operator_relay.py`, `core/handlers/multihub_claim.py`,
+  `core/handlers/dead_letter_forwarding.py`).** The serving side of a relayed release, a forwarded claim and a
+  dead-letter pointer checked that the peer was trusted, but for the namespace of the peer's own grant, and it never
+  bound the object to the request. A peer trusted for any namespace could forward a claim into another namespace this
+  hub owns, under any claimant and for any task named in the claim's body. A relayed release stated for one namespace
+  freed a claim held in another. A forwarded claim was served in a namespace another hub was observed to assert. One
+  serving-side function, `authorise_federated_mutation`, now checks each of them: the peer through
+  `authorise_namespace` for the request's own namespace, the peering scope for the action's verb (`release`,
+  `claim`; a dead-letter pointer, which changes no coordination state, names no verb), and ownership uncontested by
+  the observed asserting hubs. The object is bound to the request: a relayed release frees only a claim held in its
+  namespace; a forwarded claim's body must claim the request's task, for a claimant of the request's namespace, and
+  a task held in another namespace is refused. A structural test fails when a peer-reachable mutating verb bypasses
+  the shared function without a named exemption. **Migration for federated deployments:** a peering that forwards
+  claims must grant the `claim` scope verb in each namespace it forwards claims into (the owner previously served a
+  forwarded claim without checking any scope), and a relayed release frees only a claim whose owner is a
+  `<project>/<seat>` name in the relay's namespace.
 - **A hub forwards an operator relay only for a local sender granted `operator-relay`, in its own name
   (`core/operator_relay_forwarding.py`, `core/handlers/operator_relay.py`, `core/acl.py`).** A hub that does not own a
   namespace forwarded a relay request, such as a force release, to the owning peer using its own federation

@@ -69,7 +69,10 @@ def _federation(*, namespaces: frozenset[str] = frozenset({NAMESPACE})) -> Feder
                 namespaces=namespaces,
                 certificate_pins=frozenset({_PIN}),
                 signing_key_ids=frozenset({SIGNING_KEY}),
-                scope_grants=(ScopeGrant(verb="read", namespace=NAMESPACE),),
+                scope_grants=(
+                    ScopeGrant(verb="read", namespace=NAMESPACE),
+                    ScopeGrant(verb="claim", namespace=NAMESPACE),
+                ),
             )
         ]
     )
@@ -277,7 +280,10 @@ def test_the_identity_composition_keeps_every_other_layer() -> None:
 
     allowed = decide()
     assert allowed.allowed and allowed.reason == AUTHORISED
-    assert allowed.scope == (ScopeGrant(verb="read", namespace=NAMESPACE),)
+    assert allowed.scope == (
+        ScopeGrant(verb="read", namespace=NAMESPACE),
+        ScopeGrant(verb="claim", namespace=NAMESPACE),
+    )
     assert decide(domain_id="unknown").reason == FederationDenyReason.UNKNOWN_DOMAIN
     assert decide(namespace="OTHER").reason == FederationDenyReason.NAMESPACE_NOT_GRANTED
     assert decide(signing_key_id="other").reason == FederationDenyReason.SIGNING_KEY_NOT_ACCEPTED
