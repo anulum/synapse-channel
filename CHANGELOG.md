@@ -18,6 +18,21 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.65] - 2026-11-25
+
+Core 0.99.65 closes authorisation and storage defects found in review, and adds read-only
+federation exports. An owning hub now authorises a federated peer for the request's namespace,
+requires a scope grant and uncontested ownership, and binds the claim that a relayed release frees
+or a forwarded claim takes to that namespace. An edge hub forwards an operator relay only for a
+sender granted the new `operator-relay` permission, in that sender's own name. An enforced message
+ACL authorises every part of a chat target, judging globs by containment. A secured hub fans frames
+out only to authenticated sockets, a glob that spans projects no longer counts as a directed wake,
+and a plaintext-to-SQLCipher conversion copies the whole store. Federated deployments and hubs that
+enforce an ACL must add grants; each Security entry below names its migration. Windows owner-only
+custody now works through held NT handles. `synapse_channel.federation_api` adds owner-only path
+validation, the Fleet mirror contract, read-only event-log reader types and a per-task operation
+record projector, and a multi-hub event pull carries the peer's journal instance.
+
 ### Security
 
 - **An owning hub authorises a federated peer for the request's namespace, and binds what it touches

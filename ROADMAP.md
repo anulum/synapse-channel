@@ -364,7 +364,17 @@ interfaces, maturity, and release commitments.
   authority. See [multi-hub sync](docs/multi-hub-sync.md) and the
   [federated trust model](docs/federated-trust-model.md). Out-of-tree
   federation consumers import from one package, `synapse_channel.federation_api`
-  (see [API stability](docs/api-stability.md)).
+  (see [API stability](docs/api-stability.md)). It also carries the read-only
+  event-log reader types, the per-task operation record projector, the Fleet
+  mirror contract and owner-only path validation, and a multi-hub event pull
+  carries the peer's journal instance.
+- An owning hub serves a relayed release, a forwarded claim or a dead-letter
+  pointer only for a peer authorised for the request's namespace, with a scope
+  grant and uncontested ownership, and binds the claim it frees or takes to
+  that namespace. An edge hub forwards an operator relay only for a sender
+  granted `operator-relay`, in its own name. An enforced message ACL authorises
+  every part of a chat target, and a secured hub fans frames out only to
+  sockets that authenticated. See [identity and ACL](docs/identity-and-acl.md).
 
 ## Shipped experimental surfaces
 
@@ -397,7 +407,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.64 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.65 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities
