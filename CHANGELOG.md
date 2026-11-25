@@ -18,6 +18,21 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Security
+
+- **An owning hub keeps a forwarded claim while the peer hub that forwarded it is connected
+  (`core/claim_holder_presence.py`, `core/state_models.py`, `core/handlers/multihub_claim.py`).** The owner releases
+  a claim whose holder has been offline for the whole lease window, and it judged that by whether the holder had a
+  socket on the owner. A claim forwarded by a peer hub is held by a claimant connected to that peer, never to the
+  owner, so the owner counted it as offline from the start and force-released a live federated claim after one
+  window; another seat could then take the same task. The owner now records the forwarding peer on the claim
+  (`TaskClaim.via_peer`, kept out of public snapshots and written to the journal, so a restart keeps it) and judges a
+  forwarded claim by that peer's connection: it stands while the peer is connected, and it is released only after
+  the peer has been away for the whole window, as a local holder's claim is. The state snapshot's
+  `holder_online` and `holder_offline_seconds` follow the same rule, and a release names the forwarding peer. A
+  claimant that later renews directly on the owner becomes a local holder. Journals written before this change
+  replay their claims as local, as before.
+
 ## [0.99.65] - 2026-11-25
 
 Core 0.99.65 closes authorisation and storage defects found in review, and adds read-only

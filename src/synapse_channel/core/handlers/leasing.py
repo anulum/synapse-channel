@@ -317,6 +317,7 @@ def apply_claim(
     body: Mapping[str, Any],
     *,
     quota_principal: str | None = None,
+    via_peer: str = "",
 ) -> ClaimApplication:
     """Apply a scoped claim to the hub's state on a claimant's behalf, journalling a grant.
 
@@ -344,6 +345,10 @@ def apply_claim(
     quota_principal : str or None, optional
         Stable server-derived bucket charged for the claim. ``None`` preserves
         compatibility for direct internal callers by falling back to ``claimant``.
+    via_peer : str, optional
+        The peer hub that forwarded the claim, recorded on the lease and journalled with
+        it so the claim's liveness here follows that peer's connection; empty for a
+        direct claim.
 
     Returns
     -------
@@ -402,6 +407,7 @@ def apply_claim(
         git=git,
         require_unclaimed=bool(body.get("local_renewal")),
         claim_request_id=claim_request_id,
+        via_peer=via_peer,
     )
 
 
@@ -419,6 +425,7 @@ def _apply_parsed_claim(
     git: GitContext | None,
     require_unclaimed: bool,
     claim_request_id: str,
+    via_peer: str = "",
 ) -> ClaimApplication:
     """Commit a parsed lease before clearing only its satisfied wait."""
     with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
@@ -433,6 +440,7 @@ def _apply_parsed_claim(
             path_identity=path_identity,
             git=git,
             require_unclaimed=require_unclaimed,
+            via_peer=via_peer,
         )
         claim = hub.state.claims.get(task_id) if ok else None
         if claim is not None and hub.journal is not None:
@@ -474,6 +482,7 @@ async def apply_claim_async(
     body: Mapping[str, Any],
     *,
     quota_principal: str | None = None,
+    via_peer: str = "",
 ) -> ClaimApplication:
     """Apply and persist a claim through the serialized off-loop actor."""
     journal = hub.journal
@@ -488,6 +497,7 @@ async def apply_claim_async(
             claimant,
             body,
             quota_principal=quota_principal,
+            via_peer=via_peer,
         )
 
     def persist(store: EventStore, application: ClaimApplication) -> None:

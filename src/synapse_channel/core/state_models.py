@@ -135,6 +135,12 @@ class TaskClaim:
         ``None`` for a plain claim, which a narrowed sidecar treats as manual.
         The hub runs no git. It reads ``auto_release_on`` only to refuse a
         sidecar release on a shared-token or no-token hub.
+    via_peer : str
+        The peer hub that forwarded this claim, set by the owning hub when it grants
+        a forwarded claim; empty for a claim made on this hub. The claimant of a
+        forwarded claim is connected to that peer, never to this hub, so the claim's
+        liveness here is the peer's connection. Like ``quota_principal`` it is kept out
+        of public snapshots and written to the journal, so a restart keeps the binding.
     """
 
     task_id: str
@@ -153,6 +159,7 @@ class TaskClaim:
     checkpoint: str = ""
     git: GitContext | None = None
     ownership_epoch: int = 0
+    via_peer: str = ""
 
     def __post_init__(self) -> None:
         """Use the current generation when no earlier ownership anchor was supplied."""
@@ -206,15 +213,18 @@ class TaskClaim:
         return snapshot
 
     def as_persisted_dict(self) -> dict[str, Any]:
-        """Return a durable snapshot including private quota accounting.
+        """Return a durable snapshot including private quota and liveness accounting.
 
         Public state and protocol views use :meth:`as_dict`, which omits the
-        credential-derived principal. The append-only journal needs the bucket so
-        replay preserves quota enforcement across a hub restart.
+        credential-derived principal and the forwarding peer. The append-only journal
+        needs both, so replay preserves quota enforcement and a forwarded claim's
+        liveness binding across a hub restart.
         """
         snapshot = self.as_dict()
         if self.quota_principal:
             snapshot["quota_principal"] = self.quota_principal
+        if self.via_peer:
+            snapshot["via_peer"] = self.via_peer
         return snapshot
 
 

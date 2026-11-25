@@ -148,6 +148,29 @@ async def handle_multihub_claim_request(
         )
         return
 
+    await _send_result(hub, websocket, sender, await _grant_forwarded_claim(hub, sender, request))
+
+
+async def _grant_forwarded_claim(
+    hub: MultihubClaimContext, sender: str, request: ClaimForwardRequest
+) -> ClaimForwardResult:
+    """Apply a forwarded claim through the authoritative grant core and return the verdict.
+
+    Parameters
+    ----------
+    hub : MultihubClaimContext
+        The owning hub whose lease state the claim is applied to.
+    sender : str
+        The forwarding peer hub, charged as the claim's quota bucket and recorded as the peer
+        whose connection keeps the lease alive here.
+    request : ClaimForwardRequest
+        The decoded request, already authorised and not a duplicate of a live lease.
+
+    Returns
+    -------
+    ClaimForwardResult
+        The grant, after it was broadcast to this hub's own agents, or the refusal.
+    """
     await release_abandoned_claims(hub)
     # The serving policy has authenticated the peer, but the nested claimant is
     # still a peer assertion. Charge every alias forwarded by one peer to that
@@ -157,6 +180,9 @@ async def handle_multihub_claim_request(
         request.claimant,
         request.claim,
         quota_principal=f"federation-peer:{sender}",
+        # The claimant is connected to the forwarding peer, never to this hub, so the
+        # lease lives by that peer's connection here.
+        via_peer=sender,
     )
     if application.claim is not None:
         hub.counters.claims_granted += 1
@@ -182,7 +208,7 @@ async def handle_multihub_claim_request(
             owner_hub_id=hub.hub_id,
             detail=application.message,
         )
-    await _send_result(hub, websocket, sender, result)
+    return result
 
 
 def _duplicate_forwarded_claim(

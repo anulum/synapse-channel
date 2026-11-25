@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl import RECALL
+from synapse_channel.core.claim_holder_presence import liveness_subject
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.release_confirmation import read_release_confirmation
@@ -160,8 +161,10 @@ async def handle_state_request(
     now = hub.claim_holders.clock()
     online = hub.clients.agent_sockets
     for claim in snapshot["active_claims"]:
-        owner = str(claim.get("owner") or "")
-        away = hub.claim_holders.offline_seconds(owner, online=owner in online, now=now)
+        held = hub.state.claims.get(str(claim.get("task_id") or ""))
+        # A forwarded claim lives by its forwarding peer, exactly as the sweep judges it.
+        subject = liveness_subject(held) if held is not None else str(claim.get("owner") or "")
+        away = hub.claim_holders.offline_seconds(subject, online=subject in online, now=now)
         claim["holder_online"] = away is None
         claim["holder_offline_seconds"] = None if away is None else round(away, 3)
     await hub.send_json(

@@ -20,6 +20,11 @@ DEFAULT_LEASE_OFFLINE_TTL`, ``lease_offline_ttl``):
   (so replay after a restart agrees), and announces it; the waiting claimant then competes
   normally.
 
+A claim forwarded by a peer hub is held by a claimant connected to that peer, never to this
+hub, so its holder here is the forwarding peer (:attr:`~synapse_channel.core.state_models.
+TaskClaim.via_peer`, see :func:`liveness_subject`): the claim stands while the peer is
+connected, and the window runs from the peer's departure.
+
 The lease TTL stays the upper bound either way. Time is measured with the hub's monotonic
 clock, so after a hub restart a restored claim's holder counts as offline from the moment
 the hub started.
@@ -34,6 +39,7 @@ from typing import TYPE_CHECKING
 from synapse_channel.core.journal import record_release
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import SynapseState
+from synapse_channel.core.state_models import TaskClaim
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -51,6 +57,23 @@ if TYPE_CHECKING:
 
 HOLDER_OFFLINE_ACTOR = "hub:holder-offline"
 """Identity a release of an abandoned claim is attributed to."""
+
+
+def liveness_subject(claim: TaskClaim) -> str:
+    """Return the name whose connection keeps ``claim`` alive on this hub.
+
+    Parameters
+    ----------
+    claim : TaskClaim
+        A claim held on this hub.
+
+    Returns
+    -------
+    str
+        The forwarding peer for a claim a peer hub forwarded, whose claimant is never
+        connected here; otherwise the claim's owner.
+    """
+    return claim.via_peer or claim.owner
 
 
 @dataclass
@@ -79,6 +102,20 @@ class ClaimHolderPresence:
     def returned(self, name: str) -> None:
         """Record that ``name`` is connected again."""
         self._offline_since.pop(name, None)
+
+    def left_if_holding(self, name: str, claims: Collection[TaskClaim]) -> None:
+        """Record that ``name`` disconnected when a claim still lives by its connection.
+
+        Parameters
+        ----------
+        name : str
+            The name whose connection closed.
+        claims : Collection[TaskClaim]
+            The hub's current claims. A claim lives by ``name`` when ``name`` holds it, or when
+            the peer hub ``name`` forwarded it (:func:`liveness_subject`).
+        """
+        if any(liveness_subject(claim) == name for claim in claims):
+            self.left(name)
 
     def offline_seconds(self, name: str, *, online: bool, now: float) -> float | None:
         """Return how long ``name`` has been offline, or ``None`` while it is connected.
@@ -110,6 +147,7 @@ class AbandonedRelease:
     task_id: str
     owner: str
     offline_seconds: float
+    via_peer: str = ""
 
 
 def abandoned_claims(
@@ -120,6 +158,8 @@ def abandoned_claims(
     now: float,
 ) -> list[AbandonedRelease]:
     """Return the claims in ``state`` whose holders have been offline for the whole window.
+
+    A forwarded claim's holder is its forwarding peer (:func:`liveness_subject`).
 
     Parameters
     ----------
@@ -139,9 +179,17 @@ def abandoned_claims(
     """
     found: list[AbandonedRelease] = []
     for task_id, claim in sorted(state.claims.items()):
-        away = presence.offline_seconds(claim.owner, online=claim.owner in online, now=now)
+        subject = liveness_subject(claim)
+        away = presence.offline_seconds(subject, online=subject in online, now=now)
         if away is not None and away >= presence.window:
-            found.append(AbandonedRelease(task_id=task_id, owner=claim.owner, offline_seconds=away))
+            found.append(
+                AbandonedRelease(
+                    task_id=task_id,
+                    owner=claim.owner,
+                    offline_seconds=away,
+                    via_peer=claim.via_peer,
+                )
+            )
     return found
 
 
@@ -190,9 +238,14 @@ async def release_abandoned_claims(hub: ClaimHolderContext) -> list[AbandonedRel
     )
     for item in released:
         hub.counters.claims_released_abandoned += 1
+        holder = (
+            f"holder {item.owner}, forwarded by peer hub {item.via_peer},"
+            if item.via_peer
+            else f"holder {item.owner}"
+        )
         await hub.broadcast(
             hub.system(
-                f"Claim '{item.task_id}' released: holder {item.owner} offline for "
+                f"Claim '{item.task_id}' released: {holder} offline for "
                 f"{item.offline_seconds:.0f}s, past the {presence.window:.0f}s lease window.",
                 msg_type=MessageType.RELEASE_GRANTED,
                 task_id=item.task_id,

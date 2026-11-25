@@ -903,9 +903,11 @@ class SynapseHub(HubConfigView):
         return self.liveness.roster_liveness()
 
     def _claim_holder_left(self, name: str) -> None:
-        """Start the offline window for ``name`` when it still holds a claim."""
-        if any(claim.owner == name for claim in self.state.claims.values()):
-            self.claim_holders.left(name)
+        """Start the offline window for ``name`` when a claim still lives by its connection.
+
+        That is a claim ``name`` holds, or a claim the peer hub ``name`` forwarded.
+        """
+        self.claim_holders.left_if_holding(name, self.state.claims.values())
 
     def uptime_seconds(self) -> float:
         """Return seconds elapsed since the hub was constructed."""

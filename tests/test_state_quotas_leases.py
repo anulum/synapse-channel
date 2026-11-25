@@ -190,6 +190,21 @@ def test_renewed_lease_survives_its_superseded_heap_entry() -> None:
     assert state.claims["T1"].epoch == 2
 
 
+def test_a_same_scope_renewal_keeps_the_ownership_anchor_and_a_new_scope_restarts_it() -> None:
+    # Records bound to the first grant's epoch stay valid across a renewal of the same
+    # owner and exact scope; a renewal that changes the scope anchors at its own epoch.
+    state = SynapseState(default_ttl_seconds=100.0)
+    state.claim("A", "T1", now=0.0, worktree="wt", paths=("a.py",))
+    anchor = state.claims["T1"].epoch
+    state.claim("A", "T1", now=10.0, worktree="wt", paths=("a.py",))
+    renewed = state.claims["T1"]
+    assert renewed.epoch != anchor
+    assert renewed.ownership_epoch == anchor
+    state.claim("A", "T1", now=20.0, worktree="wt", paths=("b.py",))
+    rescoped = state.claims["T1"]
+    assert rescoped.ownership_epoch == rescoped.epoch != anchor
+
+
 def test_released_task_leaves_only_a_harmless_stale_heap_entry() -> None:
     # Release deletes the claim but not its heap entry; popping the orphan later
     # is a no-op, not a crash.

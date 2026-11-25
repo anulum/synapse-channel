@@ -273,6 +273,25 @@ async def test_a_claim_forward_needs_the_claim_scope(tmp_path: Path) -> None:
     assert "tA7" not in hub.state.claims
 
 
+async def test_the_claims_one_peer_forwards_share_one_quota_bucket(tmp_path: Path) -> None:
+    """A peer cannot multiply the owner's claim cap by rotating the claimant names it forwards.
+
+    The nested claimant is the peer's own assertion, so the owner charges every claim one peer
+    forwards to that peer's bucket. With a cap of one, a second alias from the same peer is
+    refused, and the first claim stands.
+    """
+    pin, der = _write_peer_cert(tmp_path)
+    hub = _owner(_policy(pin, der, trusted=_A, scope=[("claim", _A)]))
+    hub.state.max_claims_per_agent = 1
+    async with running_hub(hub) as (_, uri):
+        first = await _forward(uri, _claim(_A, "tQ1", claimant=f"{_A}/alice", body_task="tQ1"))
+        rotated = await _forward(uri, _claim(_A, "tQ2", claimant=f"{_A}/bob", body_task="tQ2"))
+    assert first is True
+    assert rotated is False
+    assert hub.state.claims["tQ1"].owner == f"{_A}/alice"
+    assert "tQ2" not in hub.state.claims
+
+
 async def test_an_abandoned_claim_of_another_namespace_is_freed_only_for_its_namespace(
     tmp_path: Path,
 ) -> None:

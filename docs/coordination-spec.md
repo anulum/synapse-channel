@@ -1046,11 +1046,21 @@ MUST be announced with `released_by: "hub:holder-offline"`. A holder that
 reconnects inside the window resets it. After a hub restart the window runs from
 hub start. The lease TTL remains the upper bound.
 
-**Implementation.** `core/claim_holder_presence.py`, called from
-`handlers/leasing.py:handle_claim` and `handlers/multihub_claim.py`; departures from
-`hub_connection.py:unregister`; state marks in `handlers/snapshots.py`.
+A claim the owning hub granted on a peer hub's forward is held by a claimant
+connected to that peer, never to the owner, so its holder for this rule MUST be the
+forwarding peer: the claim stands while that peer is connected, and the window runs
+from the peer's departure. The owner MUST record the forwarding peer with the claim
+in its journal, so a restart keeps the binding, and the state snapshot's holder
+marks MUST follow the same holder. A claimant that renews directly on the owner
+becomes a local holder.
 
-**Pinned by.** `tests/test_claim_holder_presence.py`.
+**Implementation.** `core/claim_holder_presence.py` (`liveness_subject`), called from
+`handlers/leasing.py:handle_claim` and `handlers/multihub_claim.py`; departures from
+`hub_connection.py:unregister`; state marks in `handlers/snapshots.py`; the
+forwarding peer recorded as `TaskClaim.via_peer` (`core/state_models.py`).
+
+**Pinned by.** `tests/test_claim_holder_presence.py`,
+`tests/test_federated_claim_liveness.py`.
 
 ## 7. Per-verb delivery guarantees
 

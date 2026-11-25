@@ -119,6 +119,33 @@ def _clamp_ttl(seconds: float) -> float:
     return min(max(seconds, MINIMUM_TTL_SECONDS), MAXIMUM_TTL_SECONDS)
 
 
+def _ownership_anchor(
+    existing: TaskClaim | None,
+    agent: str,
+    worktree: str,
+    paths: tuple[str, ...],
+    path_identity: ClaimScopeIdentity | None,
+) -> int:
+    """Return the ownership anchor a new grant continues, or 0 when it starts a new one.
+
+    Parameters
+    ----------
+    existing : TaskClaim or None
+        The claim the task held before this grant, if any.
+    agent, worktree, paths, path_identity
+        The new grant's owner and exact scope.
+
+    Returns
+    -------
+    int
+        The existing claim's anchor when the same owner keeps the exact same scope; 0
+        otherwise, so the new claim anchors at its own epoch.
+    """
+    if existing is None:
+        return 0
+    return existing.continuation_epoch(agent, worktree, paths, path_identity)
+
+
 class SynapseState:
     """Authoritative registry of presence, claims, tasks, and resources.
 
@@ -405,6 +432,7 @@ class SynapseState:
         path_identity: ClaimScopeIdentity | None = None,
         git: GitContext | None = None,
         require_unclaimed: bool = False,
+        via_peer: str = "",
     ) -> tuple[bool, str]:
         """Acquire or renew a scoped lease on a task.
 
@@ -447,6 +475,10 @@ class SynapseState:
             preserves the direct-call compatibility behaviour by using ``agent``.
         require_unclaimed : bool, optional
             Refuse an existing lease even for the same owner when starting a supervised command.
+        via_peer : str, optional
+            The peer hub that forwarded this claim, when the owning hub grants a forwarded
+            claim; empty for a claim made on this hub. Every grant or renewal records the
+            value it is given, so a claimant that later renews directly becomes local.
 
         Returns
         -------
@@ -511,13 +543,10 @@ class SynapseState:
             paths=norm_paths,
             path_identity=path_identity,
             epoch=self._next_epoch(),
-            ownership_epoch=(
-                existing.continuation_epoch(agent, worktree, norm_paths, path_identity)
-                if existing is not None
-                else 0
-            ),
+            ownership_epoch=_ownership_anchor(existing, agent, worktree, norm_paths, path_identity),
             checkpoint=self._claim_checkpoint(agent, task, existing),
             git=git,
+            via_peer=via_peer,
         )
         self.claims[task] = claim
         self._track_lease(claim)

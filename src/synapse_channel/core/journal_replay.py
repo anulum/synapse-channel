@@ -239,6 +239,8 @@ def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
         version=int(payload.get("version", 0)),
         checkpoint=str(payload.get("checkpoint", "")),
         git=git,
+        # Older logs predate forwarded-claim liveness; their claims stay local.
+        via_peer=str(payload.get("via_peer", "")),
     )
 
 
