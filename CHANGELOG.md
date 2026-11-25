@@ -184,6 +184,14 @@ record projector, and a multi-hub event pull carries the peer's journal instance
 
 ### Fixed
 
+- **`synapse ops run --hub` names the tool's current fingerprint when it refuses a changed intent, and the
+  protocol states every executing client's duty to recompose (`cli_ops_hub.py`, `docs/protocol.md`).** An intent's
+  `tool_descriptor_sha256` is bound into the digest an approval names, and the run already recomposed the intent from
+  a fresh plan and refused a digest other than the approved one before the hub was asked. The refusal did not say
+  that the executable itself had changed; it now carries its fingerprint. The protocol now says that the hub never
+  sees the tool, so any client executing under an approved intent must recompose and compare before an attempt. An
+  end-to-end test replaces the executable after approval, with and without requalifying the catalogue: it never
+  runs, and the hub is never asked.
 - **A plaintext-to-SQLCipher conversion now copies the whole store (`core/persistence_sqlcipher.py`,
   `synapse sqlcipher migrate`).** `migrate_plaintext_to_sqlcipher` copied only the events, a finished mailbox layout
   and the format record, and it recreated the events table without `AUTOINCREMENT`. After a compaction of the

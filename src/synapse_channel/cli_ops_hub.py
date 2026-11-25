@@ -229,11 +229,18 @@ def _composed_digest(args: argparse.Namespace, intent: HubIntent) -> str:
 def _check_before_attempt(
     args: argparse.Namespace, run: RunPlan, observer: RunPlan | None, journal: Path
 ) -> None:
-    """Refuse, before the hub is asked, a changed plan or a run the grants do not cover."""
+    """Refuse, before the hub is asked, a changed plan or a run the grants do not cover.
+
+    The intent is recomposed from a fresh plan, so its tool descriptor is the
+    executable's fingerprint now. The approved statement is not known here, only its
+    digest, so the refusal names the current fingerprint for the operator to compare
+    with the declared intent.
+    """
     if _composed_digest(args, _intent(args, run, observer, journal)) != args.intent_sha256:
         raise OperationRunRefused(
             "the plan, the file, the component's state or the identity changed since the "
-            "intent was declared; declare again"
+            f"intent was declared (the tool's executable is now {run.fingerprint}); "
+            "declare again"
         )
     grants = load_grants(args.grants)
     if not authorised(grants, subject=args.subject, row=run.row, now=time.time()):

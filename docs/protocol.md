@@ -221,6 +221,14 @@ does not add agent grades to protocol envelopes.
   `intent_invalid`, a deadline not after the hub's clock `intent_expired`; a
   deadline more than 366 days ahead is invalid. An intent grants nothing; an
   approval may name its digest.
+  The hub never sees the tool an intent names: `tool_descriptor_sha256` is the
+  executing client's own attestation, bound into the digest an approval names.
+  A client that executes under an approved intent therefore MUST recompose the
+  intent from what it would run now, with the descriptor of the executable it
+  would invoke, and MUST refuse, before it asks for an attempt, when that digest
+  is not the approved one. `synapse ops run --hub` does both, names the
+  executable's current fingerprint when it refuses, and fingerprints the
+  executable again just before it runs it.
   An id is declared once per hub; the journal keeps the claim's current epoch as
   `snapshot_epoch`. An `outcome` carries one `synapse.execution-outcome.v1`
   `report`; a `verification` carries one `synapse.result-verification.v1`
