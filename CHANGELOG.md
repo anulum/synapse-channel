@@ -20,6 +20,16 @@ execution evidence when carrying a release claim forward.
 
 ### Security
 
+- **A secured hub no longer fans frames out to sockets that have not authenticated (`core/hub_clients.py`,
+  `core/hub_broadcast.py`).** A socket joins the hub's connection table when it connects, before its first frame
+  passes the token gate, and every broadcast went to the whole table. On a hub started with a token, a socket that
+  never authenticated therefore received every broadcast during its `--auth-timeout` window: chat to `all`, presence
+  updates, and directed chat too, because directed chat is fanned out to every socket unless
+  `--private-directed-messages` is set. Reconnecting repeated that, bounded only by the unauthenticated-connection
+  ceiling. Fan-out now takes its sockets from the new `HubClientRegistry.fanout_clients`: every connected socket on an
+  open hub, as before, and on a secured hub only the sockets bound to a name. A socket binds a name only after its
+  first frame authenticated. Writes to one socket (a refusal, the welcome, a replay) are unchanged, and open hubs
+  behave as before.
 - **A glob that spans projects no longer counts as a directed wake (`core/protocol.py`).** `is_directed` matched
   every comma part as a glob, so a target such as `*`, `*/*`, `q*/*` or `*/seat` matched every waiter. It woke every
   `--directed-only` waiter on the hub, and every interactive pane bridge, which by design ignores even priority and

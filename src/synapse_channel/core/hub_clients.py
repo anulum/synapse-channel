@@ -50,9 +50,11 @@ class HubClientRegistry:
         takeover_oscillation_threshold: int = 5,
         takeover_quarantine: float = 60.0,
         lease_offline_ttl: float = DEFAULT_LEASE_OFFLINE_TTL,
+        secured: bool = False,
     ) -> None:
         self.counters = counters if counters is not None else HubCounters()
         self._clock = clock
+        self._secured = secured
         self._capacity = ConnectionCapacity(
             max_clients=max_clients,
             max_unauth_clients=max_unauth_clients,
@@ -127,6 +129,26 @@ class HubClientRegistry:
     def host_at_capacity(self, websocket: Any) -> bool:
         """Return whether ``websocket``'s remote host already holds its socket cap."""
         return self._capacity.host_at_capacity(websocket)
+
+    def fanout_clients(self) -> tuple[Any, ...]:
+        """Return the sockets a one-to-many write may reach.
+
+        On an open hub that is every connected socket. On a secured hub it is only
+        the sockets bound to a name: a socket binds a name only after its first frame
+        passed the token gate, so a socket still in its pre-authentication window
+        receives no fan-out, and neither does one whose name was revoked or taken
+        over. This is an allow-list on purpose: a socket that is connected but not
+        bound is left out, whatever state it is in. Writes to one socket, such as a
+        refusal, the welcome or a replay, do not come through here.
+
+        Returns
+        -------
+        tuple
+            The sockets, in the connection table's order.
+        """
+        if not self._secured:
+            return tuple(self.connected_clients)
+        return tuple(socket for socket in self.connected_clients if socket in self.socket_agent)
 
     def add_client(self, websocket: Any) -> None:
         """Record a newly admitted socket."""

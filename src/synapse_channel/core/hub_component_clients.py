@@ -50,6 +50,7 @@ def build_clients(
         takeover_oscillation_threshold=config.takeover.takeover_oscillation_threshold,
         takeover_quarantine=config.takeover.takeover_quarantine,
         lease_offline_ttl=config.takeover.lease_offline_ttl,
+        secured=config.auth.authenticator is not None,
     )
     return HubClientComponents(
         channels=ChannelRegistry(),

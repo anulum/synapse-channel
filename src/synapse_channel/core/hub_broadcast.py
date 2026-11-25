@@ -8,8 +8,9 @@
 """Outbound messaging for the routing hub.
 
 :class:`HubBroadcaster` owns how a message leaves the hub: serialising one frame to
-a single socket, fanning a broadcast out to every connected client (mirroring it to
-the relay log first), addressing one named agent, and composing a presence update.
+a single socket, fanning a broadcast out to every socket the client registry admits
+to fan-out (mirroring it to the relay log first), addressing one named agent, and
+composing a presence update.
 It reads the live socket registry rather than capturing it, mirrors through the
 :class:`~synapse_channel.core.hub_relay.RelayMirror`, and takes the hub's system-message
 factory and online-agents roster as injected callbacks, so it carries no back-reference
@@ -37,8 +38,10 @@ class HubBroadcaster:
     Parameters
     ----------
     clients : HubClientRegistry
-        The live socket registry; ``connected_clients`` and ``agent_sockets`` are
-        read fresh on each send so membership changes are always reflected.
+        The live socket registry; its fan-out sockets
+        (:meth:`~synapse_channel.core.hub_clients.HubClientRegistry.fanout_clients`)
+        and ``agent_sockets`` are read fresh on each send so membership changes are
+        always reflected.
     relay : RelayMirror
         Mirror every broadcast is written to before it fans out, so a disconnected
         observer can catch up from the file later.
@@ -83,10 +86,12 @@ class HubBroadcaster:
         """Mirror and fan out one frame, returning successful bound socket names.
 
         The message is mirrored to the relay log first — even with no socket
-        connected — so the log captures it for a later observer.
+        connected — so the log captures it for a later observer. It then goes to the
+        registry's fan-out sockets: every connected socket on an open hub, and only
+        the authenticated, name-bound ones on a secured hub.
         """
         await self._relay.mirror_async(data)
-        clients = tuple(self._clients.connected_clients)
+        clients = self._clients.fanout_clients()
         owners = {socket: self._clients.socket_agent.get(socket) for socket in clients}
         if not clients:
             return frozenset()

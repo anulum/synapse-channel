@@ -238,8 +238,8 @@ another live connection already holds that name.
 A hub started with `--token <secret>` requires that token. Present it with `--token`,
 `--token-file <path>` (so it is not visible in `ps`), or the `SYNAPSE_TOKEN` environment
 variable — precedence is `--token` → `--token-file` → env. An unauthenticated socket gets
-no welcome or roster and is closed after `--auth-timeout` seconds (default 10), so an idle
-connection cannot sit on the `--max-clients` budget. On an **open** hub the same
+no welcome, roster, chat or presence frame, and is closed after `--auth-timeout` seconds
+(default 10), so an idle connection cannot sit on the `--max-clients` budget. On an **open** hub the same
 deadline applies to the first name-binding registration (`4012` reason
 `registration timeout`); a first frame that does not bind is closed with
 `registration required` (`4010`).
