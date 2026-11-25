@@ -1853,9 +1853,10 @@ live journal today: `encrypt-key restore` restores key envelopes, and
 multi-hub recovery appends.
 
 A plaintext-to-SQLCipher conversion (`synapse sqlcipher migrate`) copies the
-events but writes a fresh format record into the encrypted copy, so the copy
-starts a new journal instance, with the copied journal's highest sequence as
-its `instance_floor`. A consumer bound to the plaintext journal is answered
+whole database, every table with its rows and the events table's sequence
+counter, but clears the journal instance it carried over, so the copy starts a
+new journal instance, with the copied journal's highest sequence as its
+`instance_floor`. A consumer bound to the plaintext journal is answered
 `source_changed` by a hub that serves the encrypted one, and rebinds
 deliberately. Its acks travel with the rows but belong to the old instance, so
 they register no consumer there until it acks again. This fails closed: no

@@ -90,6 +90,19 @@ execution evidence when carrying a release claim forward.
   `core/operation_stop_readbacks.py` (`recomputed_marker_kind`, `match_verification_marker`, `MARKER_*`) without
   altering live `AttemptLedger` behaviour.
 
+### Fixed
+
+- **A plaintext-to-SQLCipher conversion now copies the whole store (`core/persistence_sqlcipher.py`,
+  `synapse sqlcipher migrate`).** `migrate_plaintext_to_sqlcipher` copied only the events, a finished mailbox layout
+  and the format record, and it recreated the events table without `AUTOINCREMENT`. After a compaction of the
+  converted store, a new event could therefore reuse a deleted sequence, which breaks resume cursors. Every other
+  durable table, among them pending message forwards, the operation and receipt outboxes and delivery state, was left
+  behind. The conversion now copies the whole database with SQLCipher's `sqlcipher_export`. It then clears the journal
+  instance it carried over, through the new `forget_copied_journal_instance` in `core/persistence_store_format.py`, so
+  the copy still starts a new journal instance whose floor is its highest sequence, as before. The copy is built in an
+  owner-only staging file beside the destination and published by a hard link that refuses an existing destination, so
+  a conversion that fails at any step leaves no destination and no staging file behind.
+
 ## [0.99.64] - 2026-11-24
 
 Core 0.99.64 gives each part of the agent client and the hub one owner. Behaviour is unchanged

@@ -24,7 +24,9 @@ hub's in-memory state and does **not** replace host filesystem permissions.
 
 from __future__ import annotations
 
+import contextlib
 import os
+import secrets
 import sqlite3
 from collections.abc import Mapping
 from pathlib import Path
@@ -34,8 +36,8 @@ from synapse_channel import __version__
 from synapse_channel.core.at_rest_format import KEY_BYTES
 from synapse_channel.core.at_rest_keys import load_key_file
 from synapse_channel.core.errors import SynapseError
-from synapse_channel.core.mailbox_pending_layout import copy_mailbox_layout
 from synapse_channel.core.persistence_store_format import (
+    forget_copied_journal_instance,
     record_store_format,
     refuse_newer_store_format,
 )
@@ -396,11 +398,18 @@ def migrate_plaintext_to_sqlcipher(
     """Offline-copy a plaintext event store into a new SQLCipher database.
 
     The hub (and any other writer) must be stopped. ``destination`` must not
-    already exist. Rows are copied with their original ``seq`` / ``ts`` / ``kind``
-    / ``payload`` so resume cursors stay valid. A source this release cannot read
-    is refused before anything is copied; the encrypted copy records this
-    release's store format, which is at least the source's.
-    The destination is restricted to owner-only mode when the platform supports it.
+    already exist. SQLCipher's ``sqlcipher_export`` copies the whole database:
+    every table with its rows, every index and trigger, and the events table's
+    ``AUTOINCREMENT`` counter. So sequences keep their numbers, compaction never
+    hands a deleted sequence out again, and state such as pending outbox rows
+    survives the conversion. A source this release cannot read is refused before
+    anything is copied. The copy then drops the journal instance it carried over
+    and records this release's store format, which is at least the source's, so it
+    starts a new journal instance whose floor is its highest sequence.
+    All of that happens in an owner-only staging file created exclusively beside
+    ``destination``. Only the finished copy is published, by a hard link that
+    refuses an existing destination. A failure at any step publishes nothing and
+    removes the staging file, so a destination never carries its source's instance.
 
     Parameters
     ----------
@@ -446,41 +455,62 @@ def migrate_plaintext_to_sqlcipher(
     plain = sqlite3.connect(str(src))
     try:
         refuse_newer_store_format(plain, path=src, reader_release=__version__)
-        columns = {str(info[1]) for info in plain.execute("PRAGMA table_info(events)")}
-        # Row MACs travel with their rows; a log from before them has none.
-        query = (
-            "SELECT seq, ts, kind, payload, mac FROM events ORDER BY seq"
-            if "mac" in columns
-            else "SELECT seq, ts, kind, payload, NULL FROM events ORDER BY seq"
-        )
-        rows = list(plain.execute(query))
-        enc = connect_sqlcipher(dst, material)
-        try:
-            enc.execute(
-                "CREATE TABLE IF NOT EXISTS events ("
-                "seq INTEGER PRIMARY KEY, "
-                "ts REAL NOT NULL, "
-                "kind TEXT NOT NULL, "
-                "payload TEXT NOT NULL, "
-                "mac TEXT)"
-            )
-            enc.executemany(
-                "INSERT INTO events (seq, ts, kind, payload, mac) VALUES (?, ?, ?, ?, ?)",
-                rows,
-            )
-            copy_mailbox_layout(plain, enc)
-            record_store_format(enc, release=__version__)
-            enc.commit()
-            enc.execute("PRAGMA journal_mode=WAL")
-            enc.commit()
-        finally:
-            enc.close()
+        rows = int(plain.execute("SELECT count(*) FROM events").fetchone()[0])
     finally:
         plain.close()
+    staging = _create_staging(dst)
+    try:
+        _export_whole_store(src, staging, material)
+        _finish_converted_copy(staging, material)
+        os.link(staging, dst)
+    finally:
+        _discard_staging(staging)
     _restrict_owner(dst)
     _restrict_owner(Path(f"{dst}-wal"))
     _restrict_owner(Path(f"{dst}-shm"))
-    return {"rows": len(rows)}
+    return {"rows": rows}
+
+
+def _create_staging(destination: Path) -> Path:
+    """Exclusively create the empty owner-only file a conversion fills before publishing it."""
+    staging = destination.with_name(f".{destination.name}.{secrets.token_hex(8)}.converting")
+    descriptor = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    os.close(descriptor)
+    return staging
+
+
+def _export_whole_store(source: Path, staging: Path, key: bytes) -> None:
+    """Copy every table, index, trigger and sequence counter of ``source`` into ``staging``."""
+    exporter = import_sqlcipher_module().connect(str(source))
+    try:
+        # SQLCipher accepts the x'hex' key only as a SQL literal; the path is bound.
+        exporter.execute(
+            f'ATTACH DATABASE ? AS encrypted KEY "{pragma_key_literal(key)}"', (str(staging),)
+        )
+        exporter.execute("SELECT sqlcipher_export('encrypted')")
+        exporter.execute("DETACH DATABASE encrypted")
+    finally:
+        exporter.close()
+
+
+def _finish_converted_copy(staging: Path, key: bytes) -> None:
+    """Give the exported copy a new journal instance, this release's format and WAL mode."""
+    enc = connect_sqlcipher(staging, key)
+    try:
+        forget_copied_journal_instance(enc)
+        record_store_format(enc, release=__version__)
+        enc.commit()
+        enc.execute("PRAGMA journal_mode=WAL")
+        enc.commit()
+    finally:
+        enc.close()
+
+
+def _discard_staging(staging: Path) -> None:
+    """Remove a conversion's staging file and its journal siblings, whichever exist."""
+    for path in (staging, *(Path(f"{staging}{suffix}") for suffix in ("-wal", "-shm", "-journal"))):
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
 
 
 def _restrict_owner(path: Path) -> None:

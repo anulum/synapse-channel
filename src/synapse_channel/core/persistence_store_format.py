@@ -186,6 +186,27 @@ def _assign_journal_instance(connection: Any) -> None:
     )
 
 
+def forget_copied_journal_instance(connection: Any) -> None:
+    """Clear the journal instance that a whole-database copy carried over from its source.
+
+    A copy is a different journal from its source: both files could go on accepting
+    rows, so they must never share an instance. After the value is cleared,
+    :func:`record_store_format` draws a new instance, with the copy's highest sequence
+    as its floor, exactly as it does for a copy that started without a record. Only a
+    copy that no hub has served yet is ever passed here; a live store keeps its instance.
+    A record from before the instance columns has nothing to clear. Nothing is committed.
+
+    Parameters
+    ----------
+    connection : connection
+        The new copy's connection, before :func:`record_store_format`.
+    """
+    if {"journal_instance", "instance_floor"} <= _record_columns(connection):
+        connection.execute(
+            "UPDATE store_format SET journal_instance = NULL, instance_floor = NULL WHERE id = 1"
+        )
+
+
 def _floor_release(connection: Any) -> str | None:
     """Return the release recorded as having raised the floor, without writing."""
     record = _stored_record(connection)
