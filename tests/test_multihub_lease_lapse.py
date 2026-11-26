@@ -146,7 +146,7 @@ def test_a_regrant_without_a_lease_forgets_the_old_one() -> None:
     }
 
 
-@pytest.mark.parametrize("lease", [True, "10", float("inf"), float("nan")])
+@pytest.mark.parametrize("lease", [True, "10", float("inf"), float("-inf"), float("nan")])
 def test_a_lease_that_is_not_a_finite_number_is_unknown(lease: object) -> None:
     """A lease field that is no finite number states no lease, so the claim stays live."""
     events = [
