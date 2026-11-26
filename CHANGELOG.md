@@ -43,6 +43,17 @@ execution evidence when carrying a release claim forward.
   claimant that later renews directly on the owner becomes a local holder. Journals written before this change
   replay their claims as local, as before.
 
+### Fixed
+
+- **A claim repeated through a peer hub renews the lease on the owning hub, as a direct repeat does
+  (`core/handlers/multihub_claim.py`).** A claimant that holds a live lease may repeat its claim to renew it, and on
+  the owning hub that gives a fresh epoch and a new expiry. When the claimant was connected to a peer hub, the owner
+  answered the forwarded repeat with the existing lease unchanged, so a remote claimant could never extend its lease
+  past its first TTL. The owner now applies a forwarded repeat through the same grant core as a direct one: the
+  lease is renewed, journalled, broadcast and counted. The serving check still runs first, so a peer that has lost its
+  `claim` scope, or a namespace this hub no longer owns, renews nothing. A supervised renewal (`renew_epoch`) still
+  requires a direct connection to the owning hub (`RENEWAL_REQUIRES_OWNER_HUB`), as before.
+
 ## [0.99.65] - 2026-11-25
 
 Core 0.99.65 closes authorisation and storage defects found in review, and adds read-only

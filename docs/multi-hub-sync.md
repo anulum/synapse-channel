@@ -415,7 +415,10 @@ connection. Serving admission is enforced independently; a configured library
 pull-side authoriser adds its own pre-connect check (`MultiHubServingPolicy`, see
 [Boundaries](#boundaries)). Opt-in claim forwarding also ships: a hub configured with
 `--namespace-owner` and `--claim-peer HUB_ID=URI` routes a remote-owned claim to that
-namespace's owning hub and relays the owner's verdict. Cross-hub messaging ships as well:
+namespace's owning hub and relays the owner's verdict. A claimant that holds the live lease
+and repeats its claim through the peer renews the lease on the owner, as a direct repeat does;
+a supervised renewal (`renew_epoch`) still needs a direct connection to the owning hub.
+Cross-hub messaging ships as well:
 with `--message-peer HUB_ID=URI` agents address seats on a peer as `PROJECT/seat@HUB_ID` (see
 [Messages across hubs](#messages-across-hubs)). What remains outside this design is
 automatic peer discovery, global consensus, and a merge that could turn observed peer state

@@ -34,13 +34,15 @@ remote agent's behalf, so the gate is stricter and fails closed at every step:
 A granted claim is applied through the one authoritative async grant core
 (:func:`~synapse_channel.core.handlers.leasing.apply_claim_async`) and broadcast to this hub's own
 agents, exactly as a direct claim is, then the same grant fields are relayed back so the
-forwarding hub can hand its client an authentic ``CLAIM_GRANTED``.
+forwarding hub can hand its client an authentic ``CLAIM_GRANTED``. A repeated claim from the
+claimant that already holds the live lease therefore renews it here as a direct repeat does: a
+fresh epoch and a new expiry, journalled and broadcast. The forwarding hub sends each claim once
+and never retries, so a repeat is always the claimant's own.
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.claim_holder_presence import release_abandoned_claims
@@ -65,7 +67,6 @@ if TYPE_CHECKING:
     from synapse_channel.core.handlers.leasing import LeasingContext
     from synapse_channel.core.multihub_serving import MultiHubServingPolicy
     from synapse_channel.core.namespace_ownership import NamespaceOwnership
-    from synapse_channel.core.state_models import TaskClaim
 
     class MultihubClaimContext(LeasingContext, Protocol):
         """Capabilities consumed by multihub claim handlers and their callees."""
@@ -131,23 +132,6 @@ async def handle_multihub_claim_request(
         await _send_result(hub, websocket, sender, refusal)
         return
 
-    duplicate = _duplicate_forwarded_claim(hub, request)
-    if duplicate is not None:
-        await _send_result(
-            hub,
-            websocket,
-            sender,
-            ClaimForwardResult(
-                granted=True,
-                task_id=request.task_id,
-                namespace=request.namespace,
-                owner_hub_id=hub.hub_id,
-                detail=f"Task '{request.task_id}' already claimed by {request.claimant}.",
-                grant=claim_grant_fields(duplicate),
-            ),
-        )
-        return
-
     await _send_result(hub, websocket, sender, await _grant_forwarded_claim(hub, sender, request))
 
 
@@ -164,7 +148,8 @@ async def _grant_forwarded_claim(
         The forwarding peer hub, charged as the claim's quota bucket and recorded as the peer
         whose connection keeps the lease alive here.
     request : ClaimForwardRequest
-        The decoded request, already authorised and not a duplicate of a live lease.
+        The decoded request, already authorised. A claimant that already holds the live lease
+        renews it, as a direct repeat does.
 
     Returns
     -------
@@ -209,25 +194,6 @@ async def _grant_forwarded_claim(
             detail=application.message,
         )
     return result
-
-
-def _duplicate_forwarded_claim(
-    hub: MultihubClaimContext, request: ClaimForwardRequest
-) -> TaskClaim | None:
-    """Return the live existing lease for a duplicate forwarded claim, if present.
-
-    The idempotency key for a forwarded grant is ``(task_id, claimant)``. If a peer retries
-    the same forward after losing the result frame, the owning hub relays the existing lease
-    without renewing it, rebroadcasting it, journalling another claim, or incrementing the
-    owner grant counter. A stale lease is not considered duplicate; the normal grant path may
-    reclaim it.
-    """
-    existing = hub.state.claims.get(request.task_id)
-    if existing is None or existing.owner != request.claimant:
-        return None
-    if existing.lease_expires_at <= time.time():
-        return None
-    return existing
 
 
 def _refuse_claim(

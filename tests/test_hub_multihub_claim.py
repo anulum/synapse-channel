@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 from cryptography import x509
@@ -17,7 +18,7 @@ from websockets.asyncio.client import ClientConnection, connect
 from hub_e2e_helpers import read_until_type, running_hub, send_json
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import record_chat
+from synapse_channel.core.journal import EventKind, record_chat
 from synapse_channel.core.multihub_claim_wire import (
     ClaimForwardRequest,
     ClaimForwardResult,
@@ -28,6 +29,7 @@ from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHub
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.state_models import TaskClaim
 from synapse_channel.core.tls import (
     MTLSPeerTrustBundle,
     MTLSTrustedPeer,
@@ -75,13 +77,17 @@ def _write_peer_cert(tmp_path: Path) -> tuple[str, bytes]:
     return pin, der
 
 
-def _serving_policy(pin: str, der: bytes, *, sender: str = "peer") -> MultiHubServingPolicy:
+def _serving_policy(
+    pin: str, der: bytes, *, sender: str = "peer", claim_scope: bool = True
+) -> MultiHubServingPolicy:
     """Build a serving policy trusting ``sender`` under ``pin``, reading ``der`` off any socket.
 
     The end-to-end harness runs over plaintext ``ws://``, so a real client certificate is not
     available; injecting the certificate source proves the handler wiring without a mutual-TLS
-    handshake, which the ``test_multihub_serving`` unit tests cover separately.
+    handshake, which the ``test_multihub_serving`` unit tests cover separately. With
+    ``claim_scope`` false the peering grants no ``claim`` scope, so forwarded claims are refused.
     """
+    scope = (ScopeGrant(verb="claim", namespace=_NAMESPACE),) if claim_scope else ()
     return MultiHubServingPolicy(
         federation=FederationBundle(
             [
@@ -90,7 +96,7 @@ def _serving_policy(pin: str, der: bytes, *, sender: str = "peer") -> MultiHubSe
                     namespaces=frozenset({_NAMESPACE}),
                     certificate_pins=frozenset({pin}),
                     signing_key_ids=frozenset({_KEY}),
-                    scope_grants=(ScopeGrant(verb="claim", namespace=_NAMESPACE),),
+                    scope_grants=scope,
                 )
             ]
         ),
@@ -191,23 +197,76 @@ async def test_relayed_grant_echoes_the_requested_task(tmp_path: Path) -> None:
     assert result.namespace == _NAMESPACE
 
 
-async def test_duplicate_forwarded_claim_is_idempotent_for_same_claimant(
-    tmp_path: Path,
-) -> None:
+def _age(hub: SynapseHub, task_id: str, seconds: float) -> TaskClaim:
+    """Move a live lease ``seconds`` into the past, still live, and return it."""
+    held = hub.state.claims[task_id]
+    aged = replace(
+        held,
+        claimed_at=held.claimed_at - seconds,
+        lease_expires_at=held.lease_expires_at - seconds,
+    )
+    hub.state.claims[task_id] = aged
+    return aged
+
+
+async def test_a_forwarded_re_claim_renews_the_lease_like_a_direct_one(tmp_path: Path) -> None:
+    """A repeat from the lease holder renews it: a fresh epoch and a later expiry, journalled."""
     pin, der = _write_peer_cert(tmp_path)
-    hub = _owning_hub(policy=_serving_policy(pin, der), ownership=_owns())
+    journal = EventStore(tmp_path / "owner.db")
+    hub = _owning_hub(policy=_serving_policy(pin, der), ownership=_owns(), journal=journal)
     async with running_hub(hub) as (_, uri):
         first = await _forward(uri, _request())
-        original = hub.state.claims["t1"]
+        aged = _age(hub, "t1", 5.0)
         second = await _forward(uri, _request())
 
     assert first.granted is True
     assert second.granted is True
-    assert first.grant is not None
     assert second.grant is not None
-    assert second.detail == "Task 't1' already claimed by SYNAPSE-CHANNEL/alice."
-    assert first.grant["epoch"] == second.grant["epoch"]
-    assert hub.state.claims["t1"] == original
+    renewed = hub.state.claims["t1"]
+    assert renewed.owner == "SYNAPSE-CHANNEL/alice"
+    assert renewed.via_peer == "peer"
+    assert renewed.epoch > aged.epoch
+    assert renewed.lease_expires_at > aged.lease_expires_at
+    assert second.grant["epoch"] == renewed.epoch
+    assert hub.counters.claims_granted == 2
+    assert len([row for row in journal.read_all() if row.kind == EventKind.CLAIM]) == 2
+
+
+async def test_a_forwarded_re_claim_is_refused_once_the_peer_loses_its_claim_scope(
+    tmp_path: Path,
+) -> None:
+    """The serving check runs before a renewal, so a peer without the claim scope renews nothing."""
+    pin, der = _write_peer_cert(tmp_path)
+    hub = _owning_hub(policy=_serving_policy(pin, der), ownership=_owns())
+    async with running_hub(hub) as (_, uri):
+        first = await _forward(uri, _request())
+        held = hub.state.claims["t1"]
+        hub.multihub_serving_policy = _serving_policy(pin, der, claim_scope=False)
+        second = await _forward(uri, _request())
+
+    assert first.granted is True
+    assert second.granted is False
+    assert hub.state.claims["t1"] == held
+    assert hub.counters.claims_granted == 1
+
+
+async def test_a_forwarded_re_claim_is_refused_once_another_hub_owns_the_namespace(
+    tmp_path: Path,
+) -> None:
+    """A renewal needs this hub to own the namespace still; a moved namespace renews nothing."""
+    pin, der = _write_peer_cert(tmp_path)
+    hub = _owning_hub(policy=_serving_policy(pin, der), ownership=_owns())
+    async with running_hub(hub) as (_, uri):
+        first = await _forward(uri, _request())
+        held = hub.state.claims["t1"]
+        hub.namespace_ownership = NamespaceOwnership(
+            owners={_NAMESPACE: "syn-b"}, local_hub_id=_OWNER
+        )
+        second = await _forward(uri, _request())
+
+    assert first.granted is True
+    assert second.granted is False
+    assert hub.state.claims["t1"] == held
     assert hub.counters.claims_granted == 1
 
 
