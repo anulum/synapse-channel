@@ -18,6 +18,18 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.66] - 2026-11-26
+
+Core 0.99.66 hardens multi-hub federation. A follower stops on a peer whose journal instance
+changes under its cursor and quarantines it until an explicit recovery. An owning hub keeps a
+forwarded claim while the peer hub that forwarded it is connected, and a claim repeated through a
+peer hub renews its lease as a direct repeat does. The multi-hub log serves, and a follower keeps,
+only the public view of a claim, so a claim's private accounting no longer leaves its hub; upgrade
+followers before owners. A claim whose lease lapsed on the hub that granted it no longer asserts
+its namespace, so a partition that only an expired claim caused now heals. `synapse ops run --hub`
+names the executable's current fingerprint when it refuses a changed intent, and the protocol
+states every executing client's duty to recompose the intent before an attempt.
+
 ### Security
 
 - **A multi-hub follower stops when a peer's journal instance changes under its cursor

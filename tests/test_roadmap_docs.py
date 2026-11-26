@@ -237,7 +237,15 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     ):
         assert released_in_0_99_65 in shipped, released_in_0_99_65
         assert released_in_0_99_65 not in unreleased, released_in_0_99_65
-    assert "At 0.99.65 nothing on `main` is outside a release." in unreleased
+    for released_in_0_99_66 in (
+        "quarantines it until `recover_peer`",
+        "claim while the forwarding peer hub is connected",
+        "The multi-hub log serves only the public view of a claim",
+        "a claim whose lease lapsed on its own hub stops asserting its namespace",
+    ):
+        assert released_in_0_99_66 in shipped, released_in_0_99_66
+        assert released_in_0_99_66 not in unreleased, released_in_0_99_66
+    assert "At 0.99.66 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:

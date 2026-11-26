@@ -375,6 +375,12 @@ interfaces, maturity, and release commitments.
   granted `operator-relay`, in its own name. An enforced message ACL authorises
   every part of a chat target, and a secured hub fans frames out only to
   sockets that authenticated. See [identity and ACL](docs/identity-and-acl.md).
+- A multi-hub follower stops on a peer whose journal instance changes under its
+  cursor and quarantines it until `recover_peer`. An owning hub keeps a forwarded
+  claim while the forwarding peer hub is connected, and a repeat through a peer
+  hub renews the lease. The multi-hub log serves only the public view of a claim,
+  and a claim whose lease lapsed on its own hub stops asserting its namespace.
+  See [multi-hub sync](docs/multi-hub-sync.md).
 
 ## Shipped experimental surfaces
 
@@ -407,7 +413,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.65 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.66 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities
