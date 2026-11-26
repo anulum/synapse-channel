@@ -102,6 +102,14 @@ execution evidence when carrying a release claim forward.
   gh's credential helper, so the step that runs Python never holds it.
   `tests/test_workflow_checkout_credentials.py` refuses any checkout that persists its credential.
 
+### Changed
+
+- **The vendor compatibility reviews cover Claude Code 2.1.332, Codex CLI 0.172.0, Gemini CLI 0.71.1 and Pi 1.6.1
+  (`integrations/vendor-watch/compatibility.json`).** The scheduled `vendor-watch` check had refused since these
+  releases' notes were unreviewed. Each surface now records what changes for its adapter, and the Claude Code entry
+  names the claim-hook failure policy (`onFailure: "block"`) that must be qualified before a current release is
+  admitted. The verified versions are unchanged.
+
 ### Fixed
 
 - **`synapse mcp-tools` lists every page of a server's tools (`core/mcp_outbound.py`).** Discovery read only the
