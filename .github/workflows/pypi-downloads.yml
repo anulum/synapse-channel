@@ -41,12 +41,13 @@ jobs:
         with:
           ref: metrics
           path: metrics-branch
-          persist-credentials: true
+          persist-credentials: false
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Snapshot and commit the bounded metrics path
+        id: snapshot
         working-directory: metrics-branch
         shell: bash
         run: |
@@ -74,6 +75,22 @@ jobs:
             exit 1
           fi
           git commit -m "metrics: pypi download snapshot for ${package}"
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+      - name: Push the metrics commit
+        if: steps.snapshot.outputs.committed == 'true'
+        working-directory: metrics-branch
+        shell: bash
+        env:
+          # No checkout persists a credential. The token reaches only this step, through
+          # gh's credential helper, so the step that runs Python never holds it.
+          GH_TOKEN: ${{ github.token }}
+          GIT_CONFIG_COUNT: "2"
+          GIT_CONFIG_KEY_0: credential.helper
+          GIT_CONFIG_VALUE_0: ""
+          GIT_CONFIG_KEY_1: credential.helper
+          GIT_CONFIG_VALUE_1: "!gh auth git-credential"
+        run: |
+          set -euo pipefail
           git push origin HEAD:refs/heads/metrics
       - name: Upload download series artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

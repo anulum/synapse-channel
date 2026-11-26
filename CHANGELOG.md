@@ -95,6 +95,13 @@ execution evidence when carrying a release claim forward.
   still answer with a structured deny on exit 0. Reinstall the plugin or re-merge
   `synapse adapters claude-claim-hook --print-config` to pick it up.
 
+- **No workflow keeps the job token in a checkout's git config (`.github/workflows/*.yml`).** `actions/checkout`
+  stores the job token in `.git/config` unless told otherwise, and every later step of the job, build tools and
+  third-party actions included, could then read it. All 49 checkouts now set `persist-credentials: false`; 32 did
+  not. The daily metrics job, the only one that pushes, receives its write token in a separate push step through
+  gh's credential helper, so the step that runs Python never holds it.
+  `tests/test_workflow_checkout_credentials.py` refuses any checkout that persists its credential.
+
 ### Fixed
 
 - **`synapse mcp-tools` lists every page of a server's tools (`core/mcp_outbound.py`).** Discovery read only the
