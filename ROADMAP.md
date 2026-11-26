@@ -381,6 +381,10 @@ interfaces, maturity, and release commitments.
   hub renews the lease. The multi-hub log serves only the public view of a claim,
   and a claim whose lease lapsed on its own hub stops asserting its namespace.
   See [multi-hub sync](docs/multi-hub-sync.md).
+- An inclusion proof must carry 32-byte hashes and exact integer positions, in
+  Python and in the cockpit. The multi-hub log withholds every event kind no
+  follower consumes, and outbound MCP tools can be pinned by descriptor. The
+  Claude Code claim hook refuses a tool call when the hook itself fails.
 
 ## Shipped experimental surfaces
 
@@ -413,7 +417,7 @@ contracts and external evidence mature:
 
 Changes that reach the `main` branch after a release are listed here, in no
 release yet, until a release carries them. The "Unreleased" section of the
-[changelog](CHANGELOG.md) records them. At 0.99.66 nothing on `main` is
+[changelog](CHANGELOG.md) records them. At 0.99.67 nothing on `main` is
 outside a release.
 
 ## Active pre-1.0 priorities

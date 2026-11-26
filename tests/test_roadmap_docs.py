@@ -245,7 +245,15 @@ def test_roadmap_moves_released_work_out_of_the_unreleased_section() -> None:
     ):
         assert released_in_0_99_66 in shipped, released_in_0_99_66
         assert released_in_0_99_66 not in unreleased, released_in_0_99_66
-    assert "At 0.99.66 nothing on `main` is outside a release." in unreleased
+    for released_in_0_99_67 in (
+        "An inclusion proof must carry 32-byte hashes and exact integer positions",
+        "The multi-hub log withholds every event kind no",
+        "outbound MCP tools can be pinned by descriptor",
+        "Claude Code claim hook refuses a tool call when the hook itself fails",
+    ):
+        assert released_in_0_99_67 in shipped, released_in_0_99_67
+        assert released_in_0_99_67 not in unreleased, released_in_0_99_67
+    assert "At 0.99.67 nothing on `main` is outside a release." in unreleased
 
 
 def test_roadmap_shipped_cli_claims_exist_in_the_production_parser() -> None:

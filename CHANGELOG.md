@@ -18,6 +18,20 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.67] - 2026-11-26
+
+Core 0.99.67 closes security defects found in review and audit, and hardens the CI supply chain. A Merkle
+inclusion proof must carry 32-byte hashes and exact integer positions, so a proof split at another boundary no
+longer verifies; the multi-hub log withholds every event kind no follower consumes; a sandbox manifest refuses a
+write flag that is not a boolean and a guest path that is not normalised; an at-rest backup binds each copy by
+digest under a sealed manifest and restores only to the given profile; outbound MCP tools can be pinned by
+descriptor, and discovery reads every page; the Claude Code claim hook refuses a tool call when the hook itself
+fails, which Claude Code 2.1.329 and newer otherwise let through, so seats should reinstall the hook or plugin;
+and `mcp-gate new-bearer` writes a generated bearer only to a new owner-only file or on explicit request. No
+workflow keeps the job token in a checkout, and every CI job starts under an egress monitor in audit mode.
+Reopening an event store no longer scans the whole table. Some manifests and commands change: each Security entry
+below names what an existing setup must do.
+
 ### Security
 
 - **The multi-hub log serves only what followers consume (`core/multihub_public_view.py`).** Beyond the claim
