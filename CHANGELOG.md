@@ -133,6 +133,21 @@ execution evidence when carrying a release claim forward.
   cursor for up to 32 pages (`MCP_TOOL_LIST_MAX_PAGES`). A server that needs more pages, or that repeats a cursor,
   is refused with an error, never shown in part. The session protocol's `list_tools` takes the SDK's `params`.
 
+- **Reopening an initialized `EventStore` no longer repeats a full `events` table scan or acquires a write lock
+  (`core/persistence.py`, `core/persistence_receipts.py`, `core/persistence_store_format.py`,
+  `core/persistence_schema.py`, `core/delivery_replay.py`).** Previously, every `EventStore.__init__` ran
+  `ReceiptTable.backfill()` — scanning the entire unindexed `events` table for legacy receipt rows and upserting
+  every matched aggregate inside an open write transaction — and ran `verify_delivery_replay()` with a second
+  unindexed full-table `events` scan. Opening a large live event store from a CLI or tool could stall behind the
+  hub's SQLite write lock or stall hub renewals while scanning hundreds of thousands of rows. `store_format` now
+  records a durable sequence watermark (`receipt_backfill_through_seq`, advanced atomically in the open transaction
+  and by transactional receipt commits when contiguous), and `events` gains two partial indexes
+  (`events_delivery_receipt_kind_seq_idx` and `events_delivery_intent_kind_seq_idx`) matching the literal receipt
+  backfill and version-three delivery replay queries. Reopening an up-to-date store issues zero `SCAN events` and
+  zero write statements, while any unprojected receipt event appended beyond the watermark (for example after a
+  downgrade to a pre-transactional release) is still projected on the next open through the partial index without
+  a table scan.
+
 ## [0.99.66] - 2026-11-26
 
 Core 0.99.66 hardens multi-hub federation. A follower stops on a peer whose journal instance

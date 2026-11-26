@@ -26,6 +26,47 @@ def create_row_mac_index(connection: Any) -> None:
     )
 
 
+def create_delivery_replay_index(connection: Any) -> None:
+    """Index version-three delivery events so startup replay audit skips unrelated rows.
+
+    Parameters
+    ----------
+    connection : connection
+        The owner's existing DB-API connection. The partial predicate matches
+        :func:`~synapse_channel.core.delivery_replay.verify_delivery_replay`
+        literally so SQLite uses this index instead of scanning ``events``.
+    """
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS events_delivery_intent_kind_seq_idx "
+        "ON events(kind, seq) WHERE kind IN ("
+        "'delivery_cancel_requested', "
+        "'delivery_intent_accepted', "
+        "'delivery_intent_queued', "
+        "'delivery_intent_transition', "
+        "'delivery_receiving_hub_bound')"
+    )
+
+
+def create_receipt_backfill_index(connection: Any) -> None:
+    """Index delivery-receipt events so startup watermark backfill skips unrelated rows.
+
+    Parameters
+    ----------
+    connection : connection
+        The owner's existing DB-API connection. The partial predicate matches
+        :meth:`~synapse_channel.core.persistence_receipts.ReceiptTable.backfill`
+        literally so SQLite uses this index instead of scanning ``events``.
+    """
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS events_delivery_receipt_kind_seq_idx "
+        "ON events(kind, seq) WHERE kind IN ("
+        "'delivery_receipt_deferred', "
+        "'delivery_receipt_expired', "
+        "'delivery_receipt_immediate', "
+        "'delivery_receipt_requested')"
+    )
+
+
 def create_event_schema(connection: Any) -> None:
     """Create the append-only event table without changing transaction ownership.
 

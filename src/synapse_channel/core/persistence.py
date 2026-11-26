@@ -72,13 +72,16 @@ from synapse_channel.core.persistence_receipt_codec import encode_object, prepar
 from synapse_channel.core.persistence_receipts import ReceiptTable
 from synapse_channel.core.persistence_schema import (
     create_aef_schema,
+    create_delivery_replay_index,
     create_event_schema,
     create_operation_schema,
+    create_receipt_backfill_index,
     create_receipt_schema,
 )
 from synapse_channel.core.persistence_store_format import (
     JournalInstance,
     read_journal_instance,
+    record_receipt_backfill_watermark,
     record_store_format,
 )
 
@@ -228,7 +231,9 @@ class EventStore:
             ensure_mailbox_schema(self._conn)
             create_operation_schema(self._conn)
             create_receipt_schema(self._conn)
-            self._backfill_delivery_receipt_aggregates()
+            self._ensure_mac_column()
+            create_receipt_backfill_index(self._conn)
+            backfill_through_seq = self._backfill_delivery_receipt_aggregates()
             self.storage.aef_kinds = frozenset(str(kind) for kind in aef_outbox_kinds)
             if self.storage.aef_kinds:
                 create_aef_schema(self._conn)
@@ -238,10 +243,11 @@ class EventStore:
                 ).fetchone()
                 is not None
             )
-            self._ensure_mac_column()
+            create_delivery_replay_index(self._conn)
             # connect_event_store already refused a newer format; record ours
             # before the first event this release appends.
             record_store_format(self._conn, release=__version__)
+            record_receipt_backfill_watermark(self._conn, through_seq=backfill_through_seq)
             self.delivery = DeliveryPersistence(
                 self._conn,
                 self._lock,
@@ -345,8 +351,8 @@ class EventStore:
         )
 
     @inherit_documentation(ReceiptTable.backfill)
-    def _backfill_delivery_receipt_aggregates(self) -> None:
-        """Project legacy receipt events into the additive aggregate table once."""
+    def _backfill_delivery_receipt_aggregates(self) -> int:
+        """Project legacy receipt events beyond the stored watermark through the partial index."""
         return self._families.receipts.backfill()
 
     @inherit_documentation(ReceiptTable.commit_delivery_receipt_transition)

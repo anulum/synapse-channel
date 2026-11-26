@@ -753,6 +753,19 @@ before the upgrade. A log that a crashed hub left with a `-wal` beside it is che
 read-only, so the refusal does not fold that WAL into the log; it stays where the
 writer left it.
 
+The `store_format` record also carries a durable sequence watermark
+(`receipt_backfill_through_seq`) for delivery-receipt projection, and the event
+table carries two partial indexes: `events_delivery_receipt_kind_seq_idx`
+covering legacy delivery-receipt events and `events_delivery_intent_kind_seq_idx`
+covering version-three delivery events. Transactional receipt writes advance the
+watermark atomically when no earlier unprojected receipt exists, and startup
+backfill queries only receipt events strictly above the watermark through the
+partial index. Once a store is up to date, a later `EventStore` open performs
+neither a full-table `events` scan nor a write transaction, so CLI or diagnostic
+opens do not contend for the SQLite write lock against an active writer, while
+any unprojected receipt written by an older release beyond the watermark is
+still projected on reopen without a table scan.
+
 Releases from before the first one that records a format do not read it, so a
 downgrade below that release is not guarded. Across a raised format the only way
 back is a copy of the stopped log, with its siblings and keys as described above,

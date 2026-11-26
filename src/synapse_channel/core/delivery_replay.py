@@ -31,7 +31,6 @@ from synapse_channel.core.delivery_ownership import validate_receiving_hub, vali
 from synapse_channel.core.delivery_persistence import (
     DELIVERY_ACCEPTED,
     DELIVERY_CANCEL_REQUESTED,
-    DELIVERY_EVENT_KINDS,
     DELIVERY_OWNER_BOUND,
     DELIVERY_QUEUED,
     DELIVERY_TRANSITION,
@@ -100,6 +99,17 @@ class _ReplayState:
     storage_profile: int = 3
 
 
+_DELIVERY_REPLAY_EVENTS_SQL = (
+    "SELECT seq, kind, payload FROM events WHERE kind IN ("
+    "'delivery_cancel_requested', "
+    "'delivery_intent_accepted', "
+    "'delivery_intent_queued', "
+    "'delivery_intent_transition', "
+    "'delivery_receiving_hub_bound'"
+    ") ORDER BY seq"
+)
+
+
 def verify_delivery_replay(connection: Any) -> None:
     """Reject any disagreement among delivery events, aggregates and outbox.
 
@@ -110,10 +120,7 @@ def verify_delivery_replay(connection: Any) -> None:
     idempotency: dict[tuple[str, str], str] = {}
     notifications: dict[str, tuple[str, str]] = {}
     mutations: dict[tuple[str, str], tuple[str, int]] = {}
-    rows = connection.execute(
-        "SELECT seq, kind, payload FROM events WHERE kind IN (?, ?, ?, ?, ?) ORDER BY seq",
-        tuple(sorted(DELIVERY_EVENT_KINDS)),
-    ).fetchall()
+    rows = connection.execute(_DELIVERY_REPLAY_EVENTS_SQL).fetchall()
     for seq_raw, kind, raw_payload in rows:
         seq = int(seq_raw)
         payload = _object(raw_payload, label="delivery event")

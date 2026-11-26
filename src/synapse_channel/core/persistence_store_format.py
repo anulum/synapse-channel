@@ -249,6 +249,66 @@ def refuse_newer_store_format(connection: Any, *, path: str | Path, reader_relea
     return floor
 
 
+def receipt_backfill_watermark(connection: Any) -> int | None:
+    """Return the highest event sequence covered by receipt backfill, reading only.
+
+    Parameters
+    ----------
+    connection : connection
+        An open SQLite or SQLCipher DB-API connection to the event store.
+
+    Returns
+    -------
+    int or None
+        The durably recorded ``receipt_backfill_through_seq`` watermark, or
+        ``None`` for a new or pre-watermark store.
+    """
+    if "receipt_backfill_through_seq" not in _record_columns(connection):
+        return None
+    row = connection.execute(
+        "SELECT receipt_backfill_through_seq FROM store_format WHERE id = 1"
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return int(row[0])
+
+
+def record_receipt_backfill_watermark(connection: Any, *, through_seq: int) -> int:
+    """Durably record or advance the receipt backfill watermark inside the owner's transaction.
+
+    The caller has already run :func:`record_store_format`, so ``store_format``
+    row ``id = 1`` exists. When the recorded watermark already covers
+    ``through_seq``, nothing is written so a reopen issues no write
+    transaction. Nothing is committed here; the store's owner commits the
+    watermark atomically with any backfilled rows.
+
+    Parameters
+    ----------
+    connection : connection
+        The store owner's connection, after :func:`record_store_format`.
+    through_seq : int
+        Highest receipt event sequence covered by backfill or transactional writes.
+
+    Returns
+    -------
+    int
+        The durable watermark now in force.
+    """
+    target = max(0, int(through_seq))
+    current = receipt_backfill_watermark(connection)
+    if current is not None and current >= target:
+        return current
+    if "receipt_backfill_through_seq" not in _record_columns(connection):
+        connection.execute(
+            "ALTER TABLE store_format ADD COLUMN receipt_backfill_through_seq INTEGER"
+        )
+    connection.execute(
+        "UPDATE store_format SET receipt_backfill_through_seq = ? WHERE id = 1",
+        (target,),
+    )
+    return target
+
+
 def record_store_format(connection: Any, *, release: str) -> int:
     """Record this release's format as the store's floor inside the owner's transaction.
 
@@ -290,7 +350,8 @@ def record_store_format(connection: Any, *, release: str) -> int:
             "floor_release TEXT NOT NULL, "
             "last_writer_release TEXT NOT NULL, "
             "journal_instance TEXT, "
-            "instance_floor INTEGER)"
+            "instance_floor INTEGER, "
+            "receipt_backfill_through_seq INTEGER)"
         )
         # The update names the release columns only: an instance is never rewritten.
         connection.execute(

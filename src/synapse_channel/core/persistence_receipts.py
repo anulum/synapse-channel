@@ -29,8 +29,51 @@ from synapse_channel.core.persistence_receipt_codec import (
     legacy_receipt_row,
     prepare_transition,
 )
+from synapse_channel.core.persistence_store_format import (
+    receipt_backfill_watermark,
+    record_receipt_backfill_watermark,
+)
 
 logger = logging.getLogger("synapse_channel.core.persistence")
+
+RECEIPT_BACKFILL_EVENT_KINDS: tuple[str, ...] = (
+    "delivery_receipt_deferred",
+    "delivery_receipt_expired",
+    "delivery_receipt_immediate",
+    "delivery_receipt_requested",
+)
+
+_RECEIPT_BACKFILL_EVENTS_SQL = (
+    "SELECT seq, kind, payload FROM events WHERE kind IN ("
+    "'delivery_receipt_deferred', "
+    "'delivery_receipt_expired', "
+    "'delivery_receipt_immediate', "
+    "'delivery_receipt_requested'"
+    ") AND seq > ? ORDER BY seq"
+)
+
+_RECEIPT_UNCOVERED_GAP_SQL = (
+    "SELECT 1 FROM events WHERE kind IN ("
+    "'delivery_receipt_deferred', "
+    "'delivery_receipt_expired', "
+    "'delivery_receipt_immediate', "
+    "'delivery_receipt_requested'"
+    ") AND seq > ? AND seq < ? LIMIT 1"
+)
+
+
+def _advance_watermark_if_contiguous(connection: Any, event_seq: int) -> None:
+    """Advance ``receipt_backfill_through_seq`` after one transactional receipt write.
+
+    Leaves the watermark unchanged if an earlier unprojected receipt event exists
+    between the stored watermark and ``event_seq`` so the next open still projects it.
+    """
+    current = receipt_backfill_watermark(connection)
+    if current is None or event_seq <= current:
+        return
+    if connection.execute(_RECEIPT_UNCOVERED_GAP_SQL, (current, event_seq)).fetchone() is not None:
+        return
+    record_receipt_backfill_watermark(connection, through_seq=event_seq)
 
 
 class ReceiptTable:
@@ -99,6 +142,7 @@ class ReceiptTable:
                         request_seq,
                     ),
                 )
+                _advance_watermark_if_contiguous(self.storage.connection, request_seq)
                 hook("after_aggregate_insert")
                 self.storage.connection.commit()
                 committed = True
@@ -111,15 +155,16 @@ class ReceiptTable:
             finally:
                 self.storage.restore_normal(committed)
 
-    def backfill(self) -> None:
-        """Project legacy receipt events into the additive aggregate table once."""
+    def backfill(self) -> int:
+        """Project legacy receipt events beyond the stored watermark through the partial index."""
+        watermark = receipt_backfill_watermark(self.storage.connection)
+        after_seq = watermark if watermark is not None else 0
         rows = self.storage.connection.execute(
-            "SELECT seq, kind, payload FROM events WHERE kind IN "
-            "('delivery_receipt_requested', 'delivery_receipt_immediate', "
-            "'delivery_receipt_deferred', 'delivery_receipt_expired') ORDER BY "
-            "seq"
+            _RECEIPT_BACKFILL_EVENTS_SQL, (after_seq,)
         ).fetchall()
+        through_seq = after_seq
         for event_seq, kind, encoded in rows:
+            through_seq = max(through_seq, int(event_seq))
             projected = legacy_receipt_row(event_seq, kind, encoded)
             if projected is None:
                 continue
@@ -135,6 +180,7 @@ class ReceiptTable:
                 ),
                 projected,
             )
+        return through_seq
 
     def commit_delivery_receipt_transition(
         self,
@@ -246,6 +292,7 @@ class ReceiptTable:
                 encode_object(frame),
             ),
         )
+        _advance_watermark_if_contiguous(self.storage.connection, event_seq)
 
     def delivery_receipt_aggregate(self, message_seq: int) -> DeliveryReceiptAggregate | None:
         """Return the current durable receipt aggregate for one chat sequence."""
