@@ -72,6 +72,30 @@ describe("auditPathLength", () => {
 });
 
 describe("verifyInclusion", () => {
+  it("refuses a proof that moves a node boundary into its leaf and path", async () => {
+    // The two leaves joined, L0 || L1, hash under 0x01 to the real two-leaf root. Split anywhere
+    // else (one byte as the leaf, the other 63 as the one path entry), they reach the same root
+    // for a leaf that is not in the log. Every hash must be 32 bytes.
+    const joined = new Uint8Array([...LEAVES[0], ...LEAVES[1]]);
+    const [head, rest] = [joined.slice(0, 1), joined.slice(1)];
+    expect(hex(await sha256(Uint8Array.of(0x01), head, rest))).toBe(hex(N01));
+    for (const [leaf, entry] of [
+      [head, rest],
+      [new Uint8Array(0), joined],
+    ] as const) {
+      expect(
+        await verifyInclusion({
+          seq: 1,
+          index: 0,
+          treeSize: 2,
+          leaf: hex(leaf),
+          path: [hex(entry)],
+          root: hex(N01),
+        }),
+      ).toBe(false);
+    }
+  });
+
   it("verifies a known-answer proof and its single-leaf edge", async () => {
     expect(await verifyInclusion(PROOF_FOR_2)).toBe(true);
     const single = hex(LEAVES[0]);

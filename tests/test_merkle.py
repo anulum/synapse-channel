@@ -144,6 +144,26 @@ def test_through_seq_limits_the_committed_tree() -> None:
 # --- verification rejections -------------------------------------------------
 
 
+def test_a_proof_that_moves_a_node_boundary_is_refused() -> None:
+    """A two-leaf root is not reached by splitting the joined leaves at another boundary.
+
+    ``SHA-256(0x01 || L0 || L1)`` is the root of the two leaves ``L0`` and ``L1``. Split anywhere
+    else, as an empty leaf with both joined as the path entry or one byte with the other 63, the
+    same bytes reach the same root for a leaf that is not in the log. Each hash must be 32 bytes.
+    """
+    events = _events(2)
+    left, right = leaf_hash(events[0]), leaf_hash(events[1])
+    root = build_root(events).root
+    joined = left + right
+    for leaf, entry in ((b"", joined), (joined[:1], joined[1:])):
+        assert _node(leaf, entry).hex() == root
+        moved = InclusionProof(
+            seq=1, index=0, tree_size=2, leaf=leaf.hex(), path=(entry.hex(),), root=root
+        )
+        assert verify_inclusion(moved) is False
+        assert verify_inclusion(proof_from_json(proof_to_json(moved))) is False
+
+
 def test_verify_rejects_tampered_leaf() -> None:
     proof = build_proof(_events(6), 4)
     assert proof is not None
