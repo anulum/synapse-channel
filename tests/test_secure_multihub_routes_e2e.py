@@ -32,7 +32,7 @@ from synapse_channel.core.dead_letter_forwarding import forwarding_notice
 from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal import EventKind, record_claim
 from synapse_channel.core.multihub_claim_transport import forward_claim
 from synapse_channel.core.multihub_claim_wire import ClaimForwardRequest
 from synapse_channel.core.multihub_equivocation import MultiHubEquivocationError
@@ -48,6 +48,7 @@ from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.operator_relay_transport import relay_operator_action
 from synapse_channel.core.operator_relay_wire import RelayActionRequest
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.state_models import TaskClaim
 from synapse_channel.core.tls import (
     MTLSPeerTrustBundle,
     MTLSTrustedPeer,
@@ -244,8 +245,22 @@ async def test_follower_and_watch_share_the_live_mtls_allow_deny_boundary(
 async def test_authenticated_mtls_peer_equivocation_still_fails_closed(
     tmp_path: Path,
 ) -> None:
-    async with _running_secure_hub(tmp_path) as (_hub, _store, material, uri):
+    async with _running_secure_hub(tmp_path) as (_hub, store, material, uri):
         await _seed_chat(uri, material.ca)
+        # The equivocation is made on a kind the log serves. A withheld kind reaches the
+        # follower as its constant stub, so only its kind, sequence and time are bound.
+        now = time.time()
+        record_claim(
+            store,
+            TaskClaim(
+                task_id="t-eq",
+                owner="local-writer",
+                note="",
+                claimed_at=now,
+                lease_expires_at=now + 60,
+            ),
+        )
+        claim_seq = max(event.seq for event in store.read_all() if event.kind == EventKind.CLAIM)
         authenticated = network_fetcher(
             uri,
             local_id=_ORIGIN,
@@ -261,8 +276,8 @@ async def test_authenticated_mtls_peer_equivocation_still_fails_closed(
         # same real mTLS serving path. Production code performs no such mutation.
         with contextlib.closing(sqlite3.connect(tmp_path / "events.db")) as connection, connection:
             connection.execute(
-                "UPDATE events SET payload = ? WHERE seq = 1",
-                (json.dumps({"sender": "local-writer", "payload": "equivocated"}),),
+                "UPDATE events SET payload = ? WHERE seq = ?",
+                (json.dumps({"task_id": "t-eq", "owner": "equivocated"}), claim_seq),
             )
 
         async def hostile_replay(_after_seq: int) -> Sequence[StoredEvent]:
@@ -271,7 +286,7 @@ async def test_authenticated_mtls_peer_equivocation_still_fails_closed(
         with pytest.raises(MultiHubEquivocationError):
             await follower.poll(_OWNER, hostile_replay)
 
-        assert follower.cursor(_OWNER) == 1
+        assert follower.cursor(_OWNER) == claim_seq
         assert follower.observed().to_dict() == before
         assert [event.kind for event in evidence.read_all()] == [EventKind.MULTIHUB_EQUIVOCATION]
         evidence.close()

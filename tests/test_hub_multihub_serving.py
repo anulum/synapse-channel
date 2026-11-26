@@ -22,11 +22,13 @@ from synapse_channel.core import multihub_serving
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import (
+    EventKind,
     record_checkpoint,
     record_claim,
     record_handoff,
     record_task_update,
 )
+from synapse_channel.core.multihub_public_view import PUBLIC_VIEW_VERSION, is_withheld
 from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
 from synapse_channel.core.multihub_wire import LogSnapshot, decode_log_snapshot
 from synapse_channel.core.persistence import EventStore
@@ -343,3 +345,33 @@ async def test_a_served_claim_carries_only_its_public_fields(tmp_path: Path) -> 
     assert all(event.payload == claim.as_dict() for event in served)
     assert all(not private & set(event.payload) for event in served)
     assert all(private <= set(event.payload) for event in journalled)
+
+
+async def test_a_withheld_kind_arrives_as_its_stub_and_an_operation_without_its_request_key(
+    tmp_path: Path,
+) -> None:
+    """Over a real socket: principals stay home, the log stays contiguous, Fleet's fields arrive."""
+    pin, der = _write_peer_cert(tmp_path)
+    store = EventStore(tmp_path / "events.db")
+    relay = {"approver_principal": "op:alice", "requester_principal": "op:bob", "relay": "r1"}
+    store.append(EventKind.OPERATOR_RELAY, relay)
+    declared = {"operation_id": "op-1", "sender": "a", "effect": "e", "request_key": "k-1"}
+    store.append(EventKind.OPERATION_DECLARED, declared)
+    hub = SynapseHub(
+        hub_id="syn-a", journal=store, multihub_serving_policy=_serving_policy(pin, der)
+    )
+    async with running_hub(hub) as (_, uri):
+        snapshot = await _pull(uri, after_seq=0)
+    journalled = {event.kind: event.payload for event in store.read_all()}
+    store.close()
+    served = {event.kind: event for event in snapshot.events}
+    assert [event.seq for event in snapshot.events] == list(range(1, len(snapshot.events) + 1))
+    assert served[EventKind.OPERATOR_RELAY].payload == {"_withheld": PUBLIC_VIEW_VERSION}
+    assert is_withheld(served[EventKind.OPERATOR_RELAY])
+    assert served[EventKind.OPERATION_DECLARED].payload == {
+        "operation_id": "op-1",
+        "sender": "a",
+        "effect": "e",
+    }
+    assert journalled[EventKind.OPERATOR_RELAY] == relay
+    assert journalled[EventKind.OPERATION_DECLARED] == declared

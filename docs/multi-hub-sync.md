@@ -562,6 +562,15 @@ the peer's log since my cursor, verify its content bindings, and apply the folds
 conflicting identities fail closed instead of merging, and only namespace-ownership
 changes need an explicit, operator-confirmed step.
 
+A peer serves its log through the public view (`core/multihub_public_view.py`, version
+`public-v2`), and a follower applies the same view to everything it fetches. The view
+denies by default, by kind. A kind with a named follower consumer is served with only the
+fields its consumers read, the operation records lose their request keys, and
+`ledger_task` is served unchanged. Every other kind keeps its sequence, time and kind, and
+arrives as the stub `{"_withheld": "public-v2"}`, so the log stays contiguous while
+principals, session identifiers and token identifiers stay in the owner's own journal. A
+new kind is withheld until it is listed with its consumer.
+
 ## Local-first guarantee
 
 An uncontested namespace assigned to the local hub can operate without a peer

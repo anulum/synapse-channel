@@ -239,6 +239,8 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
         "tag_events": "callable",
     },
     "synapse_channel.core.multihub_public_view": {
+        "PUBLIC_VIEW_VERSION": "value",
+        "is_withheld": "callable",
         "public_event_view": "callable",
     },
     "synapse_channel.core.multihub_transport": {
@@ -348,7 +350,7 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     },
 }
 
-_FLEET_SYMBOLS = 142
+_FLEET_SYMBOLS = 144
 _FLEET_MODULES = 45
 
 

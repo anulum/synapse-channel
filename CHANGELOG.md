@@ -18,6 +18,26 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Security
+
+- **The multi-hub log serves only what followers consume (`core/multihub_public_view.py`).** Beyond the claim
+  snapshots, the log served every journal event whole, so operator-relay principals, protected-write enrollment
+  principals and session identifiers, guard-denial credential digests, token identifiers, chat session identifiers,
+  finding provenance and operation request keys reached every authorised follower, though no follower reads them.
+  The public view, now `public-v2`, denies by default, by kind:
+  - a kind with a named follower consumer is served with only the fields its consumers read: the claim snapshots,
+    releases, ledger progress, entitlement adverts, partition and heal records, and delivery receipts;
+  - the operation records that Fleet reads lose only `request_key`;
+  - `ledger_task` is served unchanged;
+  - every other kind keeps its `seq`, `ts` and `kind`, and is served as the constant stub
+    `{"_withheld": "public-v2"}`, so the follower's log stays contiguous.
+
+  A kind added later is withheld until it is listed with its consumer and fields. A withheld event's fingerprint
+  still binds its kind, sequence and time, but not its payload, so a peer that changes only that payload is not
+  reported as equivocating; no follower reads it. `PUBLIC_VIEW_VERSION` and
+  `is_withheld` are exported from `synapse_channel.federation_api` (the surface is now 144). Upgrade followers,
+  Fleet included, before owners.
+
 ## [0.99.66] - 2026-11-26
 
 Core 0.99.66 hardens multi-hub federation. A follower stops on a peer whose journal instance

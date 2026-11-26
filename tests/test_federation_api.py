@@ -30,10 +30,11 @@ from synapse_channel import federation_api
 # its record-keeping copies and read Core's wire version where it is defined, 119 with the
 # operation record projector, 130 with the read-only event-log reader exports, 133 with the
 # Fleet mirror contract parser exports, 141 with the owner-only path validation names
-# adopted in the fleet retirement units, and 142 with the public event view a follower
-# applies before it fingerprints a peer's events); changing the count is a reviewed edit
+# adopted in the fleet retirement units, 142 with the public event view a follower
+# applies before it fingerprints a peer's events, and 144 with its version and the
+# withheld-stub test); changing the count is a reviewed edit
 # here, in the inventory guard and on the API stability page.
-_SURFACE_SIZE = 142
+_SURFACE_SIZE = 144
 
 
 def test_the_surface_is_sorted_unique_and_of_the_promised_size() -> None:

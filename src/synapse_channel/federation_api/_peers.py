@@ -48,6 +48,8 @@ from synapse_channel.core.multihub_merge import (
     tag_events,
 )
 from synapse_channel.core.multihub_public_view import (
+    PUBLIC_VIEW_VERSION,
+    is_withheld,
     public_event_view,
 )
 from synapse_channel.core.multihub_transport import (
@@ -71,10 +73,12 @@ __all__ = [
     "ObservedBoardProvenance",
     "ObservedState",
     "PING_INTERVAL",
+    "PUBLIC_VIEW_VERSION",
     "STORE_VERSION",
     "StoredEvent",
     "authorise_multihub_peer",
     "fold_observed_state",
+    "is_withheld",
     "load_store",
     "merge_event_logs",
     "network_fetcher",
