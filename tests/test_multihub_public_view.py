@@ -43,7 +43,9 @@ def _claim() -> TaskClaim:
         owner="SYNAPSE-CHANNEL/alice",
         note="forwarded work",
         claimed_at=10.0,
-        lease_expires_at=70.0,
+        # A lease the journal's wall clock has not reached: a follower drops a claim once its
+        # own hub's journal passes the claim's lease (multi-hub lease lapse).
+        lease_expires_at=4_102_444_800.0,
         quota_principal="federation-peer:syn-c",
         paths=("a.py",),
         path_identity=ClaimScopeIdentity(

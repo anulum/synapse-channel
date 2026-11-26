@@ -39,7 +39,10 @@ partition at runtime from the peers observed asserting a namespace. The hub popu
 feed itself: `synapse hub --multihub-watch PEER=URI` (repeatable, requiring
 `--namespace-owner`) runs a standing follower (`core/multihub_watch.py`) that polls each
 named peer on a bounded interval and folds the observed claims into the assertions the
-ownership gate consumes. Naming a peer is the operator confirmation for the always-on
+ownership gate consumes. A peer's claim stops asserting once that peer's own journal reaches
+the claim's lease, so a lapsed claim does not hold a namespace partitioned. A peer that journals nothing
+after its lease has passed keeps asserting until it does; a silent or unreachable peer is
+resolved by the operator re-establishing ownership. Naming a peer is the operator confirmation for the always-on
 outbound connection — nothing is auto-discovered — and a failed poll keeps the last
 successful observation, so an outage never lets a contested namespace silently resume
 granting. When the hub has a durable journal, entering or changing a contested
@@ -67,7 +70,9 @@ contested namespace, have shipped:
   board (verified causal heads, then display-only last-write-wins among unresolved heads),
   the grow-only progress ledger, and the
   **observed claim** view — the latest claim each peer reports, tagged with its hub, marked
-  advisory, cleared on release, and **never granted**. A claim is observed by its public
+  advisory, cleared on release or once the granting hub's own journal reaches the claim's
+  `lease_expires_at` (a hub expires a lapsed claim without journalling a release, and only
+  that hub's clock counts), and **never granted**. A claim is observed by its public
   fields only: a hub serves, and a follower keeps, the public view of each claim,
   task update, checkpoint and handoff event
   (`core/multihub_public_view.py`), so the credential-derived quota principal and the

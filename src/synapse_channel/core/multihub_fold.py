@@ -29,6 +29,7 @@ same merged log always folds to the same view.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -48,6 +49,52 @@ from synapse_channel.core.task_causality import (
 
 _CLAIM_KINDS = frozenset({EventKind.CLAIM, EventKind.TASK_UPDATE})
 """Event kinds that assert or refresh a claim on a task (folded as observed, never granted)."""
+
+
+def _lease_of(payload: Mapping[str, Any]) -> float | None:
+    """Return a claim's finite ``lease_expires_at``, or ``None`` when it states none."""
+    value = payload.get("lease_expires_at")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    lease = float(value)
+    return lease if math.isfinite(lease) else None
+
+
+class _LeaseLapse:
+    """Tell a claim whose lease has lapsed on the hub that granted it.
+
+    A hub expires a lapsed claim in memory and journals no release, so a follower reads the
+    lapse from that hub's own journal: a claim is lapsed once an event of the granting hub
+    is stamped at or after its ``lease_expires_at``, exactly as the hub's sweep keeps only a
+    lease later than its clock. Another hub's clock never lapses it, and a claim that states
+    no lease stays live until its release.
+    """
+
+    def __init__(self) -> None:
+        self._leases: dict[tuple[str, str], float] = {}
+        self._latest: dict[str, float] = {}
+
+    def observe(self, event: HubEvent, task_id: str) -> None:
+        """Advance the event's hub clock and record or drop its task's lease."""
+        self._latest[event.hub_id] = max(event.ts, self._latest.get(event.hub_id, event.ts))
+        if not task_id:
+            return
+        identity = (event.hub_id, task_id)
+        if event.kind in _CLAIM_KINDS:
+            lease = _lease_of(event.payload)
+            if lease is not None:
+                self._leases[identity] = lease
+            elif event.kind == EventKind.CLAIM:
+                self._leases.pop(identity, None)
+        elif event.kind == EventKind.RELEASE:
+            self._leases.pop(identity, None)
+
+    def lapsed(self, hub_id: str, task_id: str) -> bool:
+        """Return whether ``hub_id``'s journal has reached the lease of its claim on ``task_id``."""
+        lease = self._leases.get((hub_id, task_id))
+        latest = self._latest.get(hub_id)
+        return lease is not None and latest is not None and latest >= lease
+
 
 BOARD_DISPLAY_WARNING = (
     "Verified content-bound parent edges suppress only proven ancestors; remaining timestamp "
@@ -316,10 +363,16 @@ def asserting_owners_from_events(
     of task ``T`` must never clear another hub's independently recorded claim on
     its own task ``T``.  This fold therefore keys live claims by
     ``(hub_id, task_id)`` and orders each hub by its authoritative local sequence.
+
+    A hub expires a lapsed claim without journalling a release, so a claim also stops
+    asserting once its hub's own journal reaches the claim's ``lease_expires_at``; only that
+    hub's clock counts, and a claim that states no lease stays live until its release.
     """
     live: dict[tuple[str, str], Mapping[str, Any]] = {}
+    lapse = _LeaseLapse()
     for event in sorted(events, key=lambda item: (item.hub_id, item.seq)):
         task_id = _task_id_of(event)
+        lapse.observe(event, task_id)
         if not task_id:
             continue
         identity = (event.hub_id, task_id)
@@ -329,7 +382,9 @@ def asserting_owners_from_events(
             live.pop(identity, None)
 
     owners: dict[str, set[str]] = {}
-    for (hub_id, _task_id), claim in live.items():
+    for (hub_id, task_id), claim in live.items():
+        if lapse.lapsed(hub_id, task_id):
+            continue
         owner = str(claim.get("owner", "")).strip()
         namespace = project_of(owner) if owner else ""
         if namespace:
@@ -474,6 +529,40 @@ def _parent_graph_has_cycle(
     return consumed != len(inbound)
 
 
+def _observed_claims(events: Iterable[HubEvent]) -> dict[str, ObservedClaim]:
+    """Return the latest claim per task, cleared on release or once its own hub's lease lapses.
+
+    Parameters
+    ----------
+    events : Iterable[HubEvent]
+        Hub-tagged events in merged order.
+
+    Returns
+    -------
+    dict[str, ObservedClaim]
+        The advisory claim view: per task, the latest claim any hub reported, without a
+        claim a release ended or one whose granting hub's journal reached its lease.
+    """
+    observed: dict[str, ObservedClaim] = {}
+    lapse = _LeaseLapse()
+    for event in events:
+        task_id = _task_id_of(event)
+        lapse.observe(event, task_id)
+        if not task_id:
+            continue
+        if event.kind in _CLAIM_KINDS:
+            observed[task_id] = ObservedClaim(
+                task_id=task_id, hub_id=event.hub_id, claim=dict(event.payload)
+            )
+        elif event.kind == EventKind.RELEASE:
+            observed.pop(task_id, None)
+    return {
+        task_id: claim
+        for task_id, claim in observed.items()
+        if not lapse.lapsed(claim.hub_id, task_id)
+    }
+
+
 def fold_observed_state(events: Iterable[HubEvent]) -> ObservedState:
     """Fold a merged, ordered multi-hub log into the observed mergeable view.
 
@@ -490,15 +579,16 @@ def fold_observed_state(events: Iterable[HubEvent]) -> ObservedState:
         last-write-wins among unresolved heads), its winning-event provenance,
         payload-free unresolved divergence records, the grow-only progress
         ledger, and the observed claim view (latest claim per task, cleared on
-        release). No claim is granted; the claim view is advisory.
+        release or once the granting hub's own journal reaches its lease). No claim is
+        granted; the claim view is advisory.
     """
     board: dict[str, Mapping[str, Any]] = {}
     board_provenance: dict[str, ObservedBoardProvenance] = {}
     board_events: dict[str, list[HubEvent]] = {}
     content_bound_task_events: dict[tuple[str, int], HubEvent] = {}
     progress: list[Mapping[str, Any]] = []
-    observed_claims: dict[str, ObservedClaim] = {}
-    for event in events:
+    ordered = tuple(events)
+    for event in ordered:
         if event.kind == EventKind.LEDGER_TASK:
             task_id = _task_id_of(event)
             if task_id:
@@ -508,14 +598,6 @@ def fold_observed_state(events: Iterable[HubEvent]) -> ObservedState:
                     board_events.setdefault(task_id, []).append(event)
         elif event.kind == EventKind.LEDGER_PROGRESS:
             progress.append(dict(event.payload))
-        elif event.kind in _CLAIM_KINDS:
-            task_id = _task_id_of(event)
-            if task_id:
-                observed_claims[task_id] = ObservedClaim(
-                    task_id=task_id, hub_id=event.hub_id, claim=dict(event.payload)
-                )
-        elif event.kind == EventKind.RELEASE:
-            observed_claims.pop(_task_id_of(event), None)
 
     board_heads: dict[str, tuple[ObservedBoardContender, ...]] = {}
     all_task_events = content_bound_task_events
@@ -550,5 +632,5 @@ def fold_observed_state(events: Iterable[HubEvent]) -> ObservedState:
         board_provenance=board_provenance,
         board_conflicts=_board_conflicts(board_heads),
         progress=tuple(progress),
-        observed_claims=observed_claims,
+        observed_claims=_observed_claims(ordered),
     )

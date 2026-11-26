@@ -66,6 +66,19 @@ execution evidence when carrying a release claim forward.
   `claim` scope, or a namespace this hub no longer owns, renews nothing. A supervised renewal (`renew_epoch`) still
   requires a direct connection to the owning hub (`RENEWAL_REQUIRES_OWNER_HUB`), as before.
 
+- **A claim whose lease lapsed on the hub that granted it no longer asserts its namespace
+  (`core/multihub_fold.py`).** A hub expires a lapsed claim in memory and journals no release,
+  so `asserting_owners_from_events` kept such a claim live until a release that never came.
+  The granting hub was then observed asserting the namespace for ever: once another hub
+  granted there, or the owner moved, the namespace read as partitioned and never healed, and
+  the ownership gate and the federated serving check refused in it. A claim now stops
+  asserting once an event of the granting hub's own journal is stamped at or after its
+  `lease_expires_at`, as that hub's sweep expires it; another hub's clock never lapses it,
+  a later update without a lease keeps the granted one, and a claim that states no lease
+  stays live until its release, as before. The advisory observed-claim view drops a lapsed
+  claim the same way.
+
+
 ## [0.99.65] - 2026-11-25
 
 Core 0.99.65 closes authorisation and storage defects found in review, and adds read-only
