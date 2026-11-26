@@ -9,14 +9,17 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.merkle import (
     EMPTY_ROOT,
+    InclusionProof,
     RunningRoot,
     build_proof,
     build_root,
@@ -246,6 +249,56 @@ def test_proof_from_json_rejects_non_integer_index() -> None:
     payload["index"] = "middle"
     with pytest.raises(ValueError, match="malformed inclusion proof"):
         proof_from_json(payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("seq", True),
+        ("index", False),
+        ("tree_size", True),
+        ("seq", 1.5),
+        ("index", 0.5),
+        ("tree_size", 2.5),
+        ("leaf", 12),
+        ("path", [12]),
+        ("root", 12),
+    ],
+)
+def test_proof_from_json_requires_exact_field_types(field: str, value: object) -> None:
+    proof = build_proof(_events(2), 1)
+    assert proof is not None
+    payload = proof_to_json(proof)
+    payload[field] = value
+    with pytest.raises(ValueError, match="malformed inclusion proof"):
+        proof_from_json(payload)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda proof: replace(proof, seq=True),
+        lambda proof: replace(proof, index=False),
+        lambda proof: replace(proof, tree_size=cast("int", 2.5)),
+        lambda proof: replace(proof, leaf="ab"),
+        lambda proof: replace(proof, path=("ab",)),
+        lambda proof: replace(proof, root="ab"),
+        lambda proof: replace(proof, root="é" * 64),
+        lambda proof: replace(proof, root=cast("str", 12)),
+    ],
+)
+def test_verify_refuses_invalid_proof_fields(
+    change: Callable[[InclusionProof], InclusionProof],
+) -> None:
+    proof = build_proof(_events(2), 1)
+    assert proof is not None
+    assert verify_inclusion(change(proof)) is False
+
+
+def test_verify_requires_lowercase_sha256_text() -> None:
+    proof = build_proof(_events(2), 1)
+    assert proof is not None
+    assert verify_inclusion(replace(proof, root=proof.root.upper())) is False
 
 
 def test_root_json_shape() -> None:

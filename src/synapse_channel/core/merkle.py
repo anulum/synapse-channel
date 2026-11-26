@@ -38,6 +38,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -260,24 +261,40 @@ def build_proof(
     )
 
 
+def _decode_proof_hash(value: object) -> bytes | None:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        return None
+    return bytes.fromhex(value)
+
+
 def verify_inclusion(proof: InclusionProof) -> bool:
     """Return whether an inclusion proof reconstructs its own root.
 
-    Recomputes the root from the leaf and audit path alone — no full tree — and
-    compares it, in constant time, to the proof's claimed root. A proof whose path
-    length does not match its ``(index, tree_size)`` position is rejected.
+    Require integer proof positions and canonical SHA-256 hashes before
+    recomputing the root. Compare the reconstructed root in constant time.
     """
+    if (
+        type(proof.seq) is not int
+        or type(proof.index) is not int
+        or type(proof.tree_size) is not int
+    ):
+        return False
     if proof.index < 0 or proof.index >= proof.tree_size:
         return False
     if len(proof.path) != _audit_path_length(proof.index, proof.tree_size):
         return False
-    try:
-        leaf = bytes.fromhex(proof.leaf)
-        path = [bytes.fromhex(node) for node in proof.path]
-    except ValueError:
+    leaf = _decode_proof_hash(proof.leaf)
+    root = _decode_proof_hash(proof.root)
+    if leaf is None or root is None:
         return False
+    path: list[bytes] = []
+    for node in proof.path:
+        decoded = _decode_proof_hash(node)
+        if decoded is None:
+            return False
+        path.append(decoded)
     computed = _root_from_path(proof.index, proof.tree_size, leaf, path)
-    return hmac.compare_digest(computed.hex(), proof.root)
+    return hmac.compare_digest(computed, root)
 
 
 def verify_root(root: str, expected: str) -> bool:
@@ -389,16 +406,27 @@ def proof_from_json(data: dict[str, object]) -> InclusionProof:
         seq = data["seq"]
         index = data["index"]
         tree_size = data["tree_size"]
-        if not (isinstance(seq, int) and isinstance(index, int) and isinstance(tree_size, int)):
+        if type(seq) is not int or type(index) is not int or type(tree_size) is not int:
             msg = "proof 'seq', 'index', and 'tree_size' must be integers"
             raise TypeError(msg)
+        leaf = data["leaf"]
+        root = data["root"]
+        if not isinstance(leaf, str) or not isinstance(root, str):
+            msg = "proof 'leaf' and 'root' must be strings"
+            raise TypeError(msg)
+        path: list[str] = []
+        for node in raw_path:
+            if not isinstance(node, str):
+                msg = "proof 'path' entries must be strings"
+                raise TypeError(msg)
+            path.append(node)
         return InclusionProof(
             seq=seq,
             index=index,
             tree_size=tree_size,
-            leaf=str(data["leaf"]),
-            path=tuple(str(node) for node in raw_path),
-            root=str(data["root"]),
+            leaf=leaf,
+            path=tuple(path),
+            root=root,
         )
     except (KeyError, TypeError) as exc:
         msg = f"malformed inclusion proof: {exc}"

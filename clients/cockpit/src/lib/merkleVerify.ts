@@ -34,7 +34,7 @@ export type VerifyResult =
   | { readonly kind: "unserved" }
   | { readonly kind: "error"; readonly message: string };
 
-/** Parse the proof feed's payload; null = not an object at all. */
+/** Parse a present or absent proof payload, rejecting malformed fields. */
 export function parseProof(
   raw: unknown,
 ): { readonly present: true; readonly proof: InclusionProof } | { readonly present: false; readonly note: string } | null {
@@ -43,25 +43,22 @@ export function parseProof(
   if (record["present"] === false) {
     return { present: false, note: typeof record["note"] === "string" ? record["note"] : "no event at that sequence" };
   }
-  const path = Array.isArray(record["path"])
-    ? record["path"].filter((node): node is string => typeof node === "string")
-    : [];
-  return {
-    present: true,
-    proof: {
-      seq: typeof record["seq"] === "number" ? record["seq"] : 0,
-      index: typeof record["index"] === "number" ? record["index"] : -1,
-      treeSize: typeof record["tree_size"] === "number" ? record["tree_size"] : 0,
-      leaf: typeof record["leaf"] === "string" ? record["leaf"] : "",
-      path,
-      root: typeof record["root"] === "string" ? record["root"] : "",
-    },
-  };
+  const { seq, index, tree_size: treeSize, leaf, path, root } = record;
+  if (
+    typeof seq !== "number" || typeof index !== "number" || typeof treeSize !== "number" ||
+    typeof leaf !== "string" || typeof root !== "string" ||
+    !Array.isArray(path) || !path.every((node: unknown): node is string => typeof node === "string")
+  ) return null;
+  return { present: true, proof: { seq, index, treeSize, leaf, path, root } };
+}
+
+function isSha256Hex(hex: unknown): hex is string {
+  return typeof hex === "string" && hex.length === 64 && !/[^0-9a-f]/.test(hex);
 }
 
 function hexToBytes(hex: string): Uint8Array | null {
-  if (hex.length === 0 || hex.length % 2 !== 0 || /[^0-9a-fA-F]/.test(hex)) return null;
-  const out = new Uint8Array(hex.length / 2);
+  if (!isSha256Hex(hex)) return null;
+  const out = new Uint8Array(32);
   for (let i = 0; i < out.length; i += 1) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   return out;
 }
@@ -113,10 +110,13 @@ async function rootFromPath(
  * all read as a mismatch, never as verified.
  */
 export async function verifyInclusion(proof: InclusionProof): Promise<boolean> {
-  if (proof.index < 0 || proof.index >= proof.treeSize) return false;
+  if (
+    !Number.isSafeInteger(proof.seq) || !Number.isSafeInteger(proof.index) ||
+    !Number.isSafeInteger(proof.treeSize) || proof.index < 0 || proof.index >= proof.treeSize
+  ) return false;
   if (proof.path.length !== auditPathLength(proof.index, proof.treeSize)) return false;
   const leaf = hexToBytes(proof.leaf);
-  if (leaf === null) return false;
+  if (leaf === null || !isSha256Hex(proof.root)) return false;
   const path: Uint8Array[] = [];
   for (const node of proof.path) {
     const bytes = hexToBytes(node);
@@ -124,7 +124,7 @@ export async function verifyInclusion(proof: InclusionProof): Promise<boolean> {
     path.push(bytes);
   }
   const computed = bytesToHex(await rootFromPath(proof.index, proof.treeSize, leaf, path));
-  return computed === proof.root.trim().toLowerCase();
+  return computed === proof.root;
 }
 
 const PROOF_URL = "/merkle-proof.json";
@@ -135,14 +135,15 @@ export async function fetchAndVerify(
   fetcher: typeof fetch = authenticatedFetch,
   url: string = PROOF_URL,
 ): Promise<VerifyResult> {
+  if (!Number.isSafeInteger(seq)) return { kind: "error", message: "proof sequence must be a safe integer" };
   try {
-    const response = await fetcher(`${url}?seq=${Math.trunc(seq)}`);
+    const response = await fetcher(`${url}?seq=${seq}`);
     if (response.status === 404) return { kind: "unserved" };
     if (!response.ok) return { kind: "error", message: `hub returned ${response.status}` };
     const parsed = parseProof(await response.json());
-    if (parsed === null) return { kind: "error", message: "proof payload was not an object" };
+    if (parsed === null) return { kind: "error", message: "malformed proof payload" };
     if (!parsed.present) return { kind: "absent", note: parsed.note };
-    return (await verifyInclusion(parsed.proof))
+    return parsed.proof.seq === seq && (await verifyInclusion(parsed.proof))
       ? { kind: "verified", root: parsed.proof.root }
       : { kind: "mismatch" };
   } catch (cause) {

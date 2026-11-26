@@ -99,20 +99,53 @@ describe("verifyInclusion", () => {
     expect(await verifyInclusion({ ...PROOF_FOR_2, leaf: "zz" })).toBe(false);
     expect(await verifyInclusion({ ...PROOF_FOR_2, path: ["zz", "aa", "bb"] })).toBe(false);
   });
+  it.each([
+    { leaf: "ab" },
+    { path: ["ab", ...PROOF_FOR_2.path.slice(1)] },
+    { root: "ab" },
+    { index: 2.5 },
+    { seq: 3.5 },
+    { treeSize: Number.MAX_SAFE_INTEGER + 1 },
+  ])("refuses malformed proof fields before hashing (%o)", async (changes) => {
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    try {
+      const proof = { ...PROOF_FOR_2, root: "00".repeat(32), ...changes };
+      expect(await verifyInclusion(proof)).toBe(false);
+      expect(digest).not.toHaveBeenCalled();
+    } finally {
+      digest.mockRestore();
+    }
+  });
+
+  it("requires lower-case SHA-256 text", async () => {
+    expect(await verifyInclusion({ ...PROOF_FOR_2, root: PROOF_FOR_2.root.toUpperCase() })).toBe(false);
+  });
 });
 
 describe("parseProof", () => {
-  it("parses present and absent shapes, defaulting junk fields", () => {
+  const payload = {
+    seq: 3, index: 2, tree_size: 5,
+    leaf: PROOF_FOR_2.leaf, path: PROOF_FOR_2.path, root: PROOF_FOR_2.root,
+  };
+
+  it("parses well-typed present and absent proofs", () => {
     expect(parseProof(null)).toBeNull();
     expect(parseProof({ present: false, note: "past the log" })).toEqual({ present: false, note: "past the log" });
     expect(parseProof({ present: false })).toEqual({ present: false, note: "no event at that sequence" });
-    const parsed = parseProof({ seq: 3, index: 2, tree_size: 5, leaf: "ab", path: ["cd", 7], root: "ef" });
-    expect(parsed).toEqual({
-      present: true,
-      proof: { seq: 3, index: 2, treeSize: 5, leaf: "ab", path: ["cd"], root: "ef" },
-    });
-    const junk = parseProof({});
-    expect(junk?.present === true && junk.proof.index).toBe(-1);
+    expect(parseProof(payload)).toEqual({ present: true, proof: PROOF_FOR_2 });
+  });
+
+  it.each([
+    {},
+    { ...payload, seq: true },
+    { ...payload, index: false },
+    { ...payload, tree_size: true },
+    { ...payload, leaf: 12 },
+    { ...payload, path: "ab" },
+    { ...payload, path: [12, ...payload.path] },
+    { ...payload, root: 12 },
+  ])("refuses malformed payloads (%o)", (malformed) => {
+    expect(parseProof(malformed)).toBeNull();
   });
 });
 
@@ -140,7 +173,7 @@ describe("fetchAndVerify", () => {
     ).toEqual({ kind: "error", message: "hub returned 500" });
     expect(
       await fetchAndVerify(1, vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify([1])))),
-    ).toEqual({ kind: "error", message: "proof payload was not an object" });
+    ).toEqual({ kind: "error", message: "malformed proof payload" });
     expect(await fetchAndVerify(1, vi.fn<typeof fetch>().mockRejectedValue(new Error("down")))).toEqual({
       kind: "error",
       message: "down",
@@ -149,6 +182,28 @@ describe("fetchAndVerify", () => {
       kind: "error",
       message: "plain",
     });
+  });
+
+
+  it("checks the returned sequence before hashing", async () => {
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    try {
+      const response = new Response(JSON.stringify({
+        seq: 4, index: 2, tree_size: 5,
+        leaf: PROOF_FOR_2.leaf, path: PROOF_FOR_2.path, root: "00".repeat(32),
+      }));
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response);
+      expect(await fetchAndVerify(3, fetcher)).toEqual({ kind: "mismatch" });
+      expect(digest).not.toHaveBeenCalled();
+    } finally {
+      digest.mockRestore();
+    }
+  });
+
+  it("does not make a request for a non-integer sequence", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    expect((await fetchAndVerify(3.5, fetcher)).kind).toBe("error");
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("runs on its defaults against the global fetch, which fails visibly in tests", async () => {

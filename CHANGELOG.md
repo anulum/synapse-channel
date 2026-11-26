@@ -38,6 +38,14 @@ execution evidence when carrying a release claim forward.
   `is_withheld` are exported from `synapse_channel.federation_api` (the surface is now 144). Upgrade followers,
   Fleet included, before owners.
 
+- **A Merkle inclusion proof must carry 32-byte hashes and exact integer positions (`core/merkle.py`,
+  `clients/cockpit/src/lib/merkleVerify.ts`).** Both verifiers decoded a proof's leaf and path at any width, so the
+  bytes under one node could be split across the leaf and a path entry at another boundary and still reach the
+  root: a proof for a leaf that is not in the log verified. Both now require every hash to be 64 lowercase hex
+  characters and every position to be an integer (a safe integer in the cockpit; a JSON boolean or a non-string
+  hash is refused in Python), and the cockpit checks that the proof the hub returned is for the sequence it asked
+  for.
+
 ### Fixed
 
 - **`synapse mcp-tools` lists every page of a server's tools (`core/mcp_outbound.py`).** Discovery read only the
