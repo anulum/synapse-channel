@@ -245,6 +245,54 @@ def test_run_threads_the_workspace_root_to_the_runner(tmp_path: Path) -> None:
     assert captured["approved_roots"] == (str(root),)
 
 
+def test_validate_refuses_a_non_boolean_write_before_any_preopen(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A write flag that is not a boolean is malformed, so no host path is preopened."""
+    preopened: list[str] = []
+
+    def _preopen(host_path: str, *, approved_roots: object = ()) -> object:
+        preopened.append(host_path)
+        raise AssertionError("a malformed manifest must not preopen")
+
+    monkeypatch.setattr("synapse_channel.cli_sandbox.check_preopen_host", _preopen)
+    work = tmp_path / "work"
+    work.mkdir()
+    for stored in ("false", "yes", 1):
+        manifest = _manifest_file(
+            tmp_path,
+            filesystem=[{"host_path": str(work), "guest_path": "/data", "write": stored}],
+        )
+        args = _args("validate", str(manifest), "--check-paths")
+        assert args.func(args) == 2
+        assert "boolean" in capsys.readouterr().err
+    assert preopened == []
+
+
+def test_run_refuses_a_non_boolean_write_before_preopening(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The run path refuses a non-boolean write before the runner can preopen."""
+    preopened: list[object] = []
+
+    def _runner(*_args: object, **_kwargs: object) -> RunReceipt:
+        preopened.append(True)
+        return _receipt()
+
+    work = tmp_path / "work"
+    work.mkdir()
+    tool = _tool(tmp_path)
+    for stored in ("false", 1):
+        manifest = _manifest_file(
+            tmp_path,
+            filesystem=[{"host_path": str(work), "guest_path": "/data", "write": stored}],
+        )
+        args = _args("run", str(tool), "--manifest", str(manifest), "--approve")
+        assert _cmd_run(args, runner=_runner) == 2
+        assert "boolean" in capsys.readouterr().err
+    assert preopened == []
+
+
 def test_validate_rejects_a_broken_manifest(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

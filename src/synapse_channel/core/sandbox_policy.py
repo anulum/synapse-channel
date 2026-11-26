@@ -24,6 +24,7 @@ numeric caps checked here and enforced by the runtime, not ACL targets.
 
 from __future__ import annotations
 
+import posixpath
 from dataclasses import dataclass
 from typing import Any
 
@@ -50,6 +51,7 @@ class SandboxDenyReason:
     MEMORY_EXCEEDS_GRANT = "memory_exceeds_grant"
     FUEL_EXCEEDS_GRANT = "fuel_exceeds_grant"
     WALLCLOCK_EXCEEDS_GRANT = "wallclock_exceeds_grant"
+    PATH_NOT_NORMALISED = "path_not_normalised"
 
 
 class SandboxManifestError(SynapseError, ValueError):
@@ -200,8 +202,24 @@ class SandboxDecision:
         }
 
 
+def _is_normal_guest_path(path: str) -> bool:
+    """Return whether ``path`` is an absolute guest path already in normal form.
+
+    A parent segment, a dot segment, a repeated slash or a relative path is not
+    normal. Comparing those as text would treat a climb out of a grant as inside it.
+    """
+    if not path.startswith("/") or path.startswith("//"):
+        return False
+    return path == posixpath.normpath(path)
+
+
 def _under(path: str, root: str) -> bool:
-    """Return whether ``path`` is ``root`` or sits inside the ``root`` subtree."""
+    """Return whether ``path`` is ``root`` or sits inside the ``root`` subtree.
+
+    Both must already be normalised absolute paths. Anything else is outside.
+    """
+    if not _is_normal_guest_path(path) or not _is_normal_guest_path(root):
+        return False
     trimmed = root.rstrip("/")
     return path == trimmed or path.startswith(trimmed + "/")
 
@@ -210,7 +228,10 @@ def _filesystem_reason(
     guest_path: str, write: bool, grants: tuple[FilesystemGrant, ...]
 ) -> str | None:
     """Return a deny reason for one filesystem access, or ``None`` when it is covered."""
+    abnormal = not _is_normal_guest_path(guest_path)
     covering = [grant for grant in grants if _under(guest_path, grant.guest_path)]
+    if abnormal:
+        return SandboxDenyReason.PATH_NOT_NORMALISED
     if not covering:
         return SandboxDenyReason.FILESYSTEM_NOT_GRANTED
     if write and not any(grant.write for grant in covering):
@@ -222,9 +243,10 @@ def authorise(manifest: CapabilityManifest, request: SandboxRequest) -> SandboxD
     """Return the deny-by-default decision on whether ``manifest`` permits ``request``.
 
     Checks run in order and the first failure returns its reason: the content digest must
-    match; every requested filesystem path must be covered by a grant (and writes only
-    where the grant is writable); every requested host/port must be in the allowlist; and
-    the requested memory, fuel, and wall-clock must each fit within the resource grant.
+    match; every grant and requested guest path must already be normalised; every requested
+    filesystem path must be covered by a grant (and writes only where the grant is
+    writable); every requested host/port must be in the allowlist; and the requested
+    memory, fuel, and wall-clock must each fit within the resource grant.
 
     Returns
     -------
@@ -233,6 +255,8 @@ def authorise(manifest: CapabilityManifest, request: SandboxRequest) -> SandboxD
     """
     if request.content_digest != manifest.content_digest:
         return SandboxDecision(False, manifest.tool_id, SandboxDenyReason.DIGEST_MISMATCH)
+    if any(not _is_normal_guest_path(grant.guest_path) for grant in manifest.filesystem):
+        return SandboxDecision(False, manifest.tool_id, SandboxDenyReason.PATH_NOT_NORMALISED)
     for guest_path, write in request.filesystem:
         reason = _filesystem_reason(guest_path, write, manifest.filesystem)
         if reason is not None:
@@ -282,6 +306,14 @@ def to_acl_rules(manifest: CapabilityManifest) -> list[AclRule]:
     return rules
 
 
+def _require_bool(data: dict[str, Any], key: str) -> bool:
+    """Return a boolean field, defaulting to false when the field is absent."""
+    value = data.get(key, False)
+    if not isinstance(value, bool):
+        raise SandboxManifestError(f"filesystem grant '{key}' must be a boolean")
+    return value
+
+
 def _require_str(data: dict[str, Any], key: str) -> str:
     """Return a stripped non-empty string field, raising on absence or emptiness."""
     value = str(data.get(key, "")).strip()
@@ -305,7 +337,7 @@ def _filesystem_from_dict(raw: object) -> FilesystemGrant:
     return FilesystemGrant(
         host_path=_require_str(raw, "host_path"),
         guest_path=_require_str(raw, "guest_path"),
-        write=bool(raw.get("write", False)),
+        write=_require_bool(raw, "write"),
     )
 
 

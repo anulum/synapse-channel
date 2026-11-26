@@ -232,6 +232,43 @@ def test_manifest_from_dict_rejects_malformed_grants() -> None:
         manifest_from_dict({**base, "network": [{"host": "h", "port": True}]})
 
 
+def test_manifest_from_dict_rejects_a_non_boolean_write() -> None:
+    """A write flag that is not a JSON boolean is malformed, not a writable grant."""
+    base = {"tool_id": "t", "content_digest": _DIGEST}
+    grant = {"host_path": "/h", "guest_path": "/g"}
+    for stored in ("false", "yes", 1, 0):
+        with pytest.raises(SandboxManifestError, match="must be a boolean"):
+            manifest_from_dict({**base, "filesystem": [{**grant, "write": stored}]})
+    omitted = manifest_from_dict({**base, "filesystem": [grant]})
+    assert omitted.filesystem[0].write is False
+    explicit = manifest_from_dict({**base, "filesystem": [{**grant, "write": False}]})
+    assert explicit.filesystem[0].write is False
+
+
+def test_authorise_refuses_a_guest_path_that_is_not_normalised() -> None:
+    """A request path that climbs out or is not in normal form is refused."""
+    for guest in ("/in/../etc", "/in/./secret", "/in//secret", "in/secret", "//in"):
+        decision = authorise(_MANIFEST, _request(filesystem=((guest, False),)))
+        assert decision.allowed is False
+        assert decision.reason == SandboxDenyReason.PATH_NOT_NORMALISED
+        assert decision.granted is None
+
+
+def test_authorise_refuses_a_grant_guest_path_that_is_not_normalised() -> None:
+    """A grant path that climbs out or is not in normal form is refused."""
+    for guest in ("/data/../etc", "/data/./etc", "/data//etc"):
+        manifest = CapabilityManifest(
+            tool_id="t",
+            content_digest=_DIGEST,
+            filesystem=(FilesystemGrant("/host/data", guest, write=False),),
+        )
+        untouched = authorise(manifest, _request())
+        assert untouched.allowed is False
+        assert untouched.reason == SandboxDenyReason.PATH_NOT_NORMALISED
+        asked = authorise(manifest, _request(filesystem=(("/etc", False),)))
+        assert asked.reason == SandboxDenyReason.PATH_NOT_NORMALISED
+
+
 def test_manifest_from_dict_validates_resources() -> None:
     base = {"tool_id": "t", "content_digest": _DIGEST}
     with pytest.raises(SandboxManifestError, match="'resources' must be a mapping"):

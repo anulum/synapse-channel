@@ -46,6 +46,17 @@ execution evidence when carrying a release claim forward.
   hash is refused in Python), and the cockpit checks that the proof the hub returned is for the sequence it asked
   for.
 
+- **A sandbox manifest refuses a write flag that is not a boolean, and refuses a guest
+  path that is not already normalised (`core/sandbox_policy.py`).** Reading `write` with
+  `bool` treated the text `false`, or any non-empty string, as a writable grant, and the
+  sandbox command then preopened that directory. A guest path was compared as a string
+  prefix, so a path that steps through a parent segment still counted as inside its grant.
+  A write flag that is not a JSON boolean is now a malformed manifest and is refused before
+  any directory is preopened. A request or a grant whose guest path contains a parent
+  segment, or is not in normal form, is refused. This refuses some manifests that were
+  accepted before: a grant written with a trailing slash, such as `/data/`, is now refused
+  as `path_not_normalised`, so write it `/data`.
+
 ### Fixed
 
 - **`synapse mcp-tools` lists every page of a server's tools (`core/mcp_outbound.py`).** Discovery read only the
