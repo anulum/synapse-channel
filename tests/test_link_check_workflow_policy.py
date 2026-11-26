@@ -17,6 +17,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "link-check.yml"
 
+_HARDEN_RUNNER_SHA = "1d88384fd173af6ecb012dfd0264a306b711241a"
 _CHECKOUT_SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1"
 _LYCHEE_SHA = "e7477775783ea5526144ba13e8db5eec57747ce8"
 _UPLOAD_SHA = "cf430e030ddbb5b0abf93d22962f4752f3646cd9"
@@ -153,11 +154,12 @@ def test_link_workflow_uses_only_expected_sha_pinned_actions() -> None:
     actions = re.findall(r"uses: ([^\s@]+)@([0-9a-f]{40})(?:\s|$)", text)
 
     assert actions == [
+        ("step-security/harden-runner", _HARDEN_RUNNER_SHA),
         ("actions/checkout", _CHECKOUT_SHA),
         ("lycheeverse/lychee-action", _LYCHEE_SHA),
         ("actions/upload-artifact", _UPLOAD_SHA),
         ("lycheeverse/lychee-action", _LYCHEE_SHA),
         ("actions/upload-artifact", _UPLOAD_SHA),
     ]
-    # Exactly five uses lines: checkout + 2×lychee + 2×upload.
-    assert len(actions) == 5
+    # Exactly six uses lines: the runner monitor, checkout, 2×lychee and 2×upload.
+    assert len(actions) == 6

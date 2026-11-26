@@ -53,6 +53,7 @@ def test_history_workflow_uses_only_expected_sha_pinned_actions() -> None:
     actions = re.findall(r"uses: ([^\s@]+)@([0-9a-f]{40})(?:\s|$)", text)
 
     assert actions == [
+        ("step-security/harden-runner", "1d88384fd173af6ecb012dfd0264a306b711241a"),
         ("actions/checkout", "3d3c42e5aac5ba805825da76410c181273ba90b1"),
         ("actions/setup-python", "6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"),
         ("actions/upload-artifact", "cf430e030ddbb5b0abf93d22962f4752f3646cd9"),

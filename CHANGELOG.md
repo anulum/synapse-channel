@@ -102,6 +102,13 @@ execution evidence when carrying a release claim forward.
   gh's credential helper, so the step that runs Python never holds it.
   `tests/test_workflow_checkout_credentials.py` refuses any checkout that persists its credential.
 
+- **Every CI job now starts under an outbound-connection monitor in audit mode (`.github/workflows/*.yml`).**
+  The first step of all 54 jobs that run steps is Harden-Runner, pinned to the full commit of its v2.22.4 release, with
+  `egress-policy: audit`. It records each job's outbound connections and blocks nothing, so an allowlist for the jobs
+  that hold write permissions, OIDC or secrets can later be built from what they really reach. The five jobs whose
+  runner is not a fixed Ubuntu label run it on Linux only. `tests/test_workflow_runner_hardening.py` pins the step, its
+  position, its mode and the five named jobs, and the workflow contract tests now expect it.
+
 ### Changed
 
 - **The vendor compatibility reviews cover Claude Code 2.1.332, Codex CLI 0.172.0, Gemini CLI 0.71.1 and Pi 1.6.1

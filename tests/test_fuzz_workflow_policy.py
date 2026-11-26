@@ -35,7 +35,8 @@ def test_fuzz_workflow_pins_tools_budget_and_production_targets() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     action_revisions = re.findall(r"uses: [^\s@]+@([0-9a-f]{40})(?:\s|$)", text)
 
-    assert len(action_revisions) == 2
+    assert len(action_revisions) == 3
+    assert action_revisions[0] == "1d88384fd173af6ecb012dfd0264a306b711241a"
     assert "--require-hashes -r .github/requirements/requirements-dev.txt" in text
     assert 'SYNAPSE_FUZZ_EXAMPLES: "1000"' in text
     assert "python tools/fuzz_protocol_decode.py --smoke" in text

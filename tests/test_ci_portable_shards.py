@@ -411,7 +411,8 @@ def test_actual_macos_aggregate_shell_requires_every_job(
     job = workflow["jobs"]["macos-complete"]
     assert job["if"] == "always()"
     assert job["name"] == "cross-os-filesystem (macos-latest)"
-    gate = job["steps"][0]["run"]
+    assert job["steps"][0]["uses"].startswith("step-security/harden-runner@")
+    gate = job["steps"][1]["run"]
     result = subprocess.run(
         ["bash", "-c", gate],
         env=dict(os.environ, TIMING_RESULT=timing_result, SHARD_RESULT=shard_result),

@@ -651,7 +651,9 @@ def test_ci_failed_job_rerun_reuses_this_run_and_states_the_matrix_result() -> N
         if "ci_shard_artifacts.py verify" in step.get("run", "")
     )
     assert "--allow-earlier-attempts" in command
-    gate = workflow["jobs"]["test-complete"]["steps"][0]["run"]
+    complete = workflow["jobs"]["test-complete"]["steps"]
+    assert complete[0]["uses"].startswith("step-security/harden-runner@")
+    gate = complete[1]["run"]
     for shards, windows, code in (
         ("success", "success", 0),
         ("success", "failure", 1),

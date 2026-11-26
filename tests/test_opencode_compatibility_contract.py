@@ -223,6 +223,7 @@ def test_repository_contract_refuses_editor_release_gate_drift(
         shutil.copy2(source_root / relative, destination)
     workflow = root / ".github/workflows/opencode-editor-e2e.yml"
     workflow_text = workflow.read_text(encoding="utf-8")
+    original_text = workflow_text
     if mutation == "advisory-explicit-key":
         workflow_text = workflow_text.replace(
             "    strategy:\n",
@@ -231,8 +232,8 @@ def test_repository_contract_refuses_editor_release_gate_drift(
         )
     elif mutation == "advisory-step":
         workflow_text = workflow_text.replace(
-            "    steps:\n      - uses:",
-            "    steps:\n      - continue-on-error: true\n        uses:",
+            "    steps:\n      - name:",
+            "    steps:\n      - continue-on-error: true\n        name:",
             1,
         )
     elif mutation.startswith("advisory"):
@@ -300,6 +301,7 @@ def test_repository_contract_refuses_editor_release_gate_drift(
         )
     else:
         workflow_text = workflow_text.replace("jobs:\n", "jobs: [\n", 1)
+    assert workflow_text != original_text, f"mutation {mutation!r} changed nothing"
     workflow.write_text(workflow_text, encoding="utf-8")
 
     with pytest.raises(CompatibilityError, match=message):
