@@ -61,6 +61,8 @@ def test_render_hook_config_is_exec_form_scoped_and_token_safe(tmp_path: Path) -
     assert hook["type"] == "command"
     assert hook["command"] == str(Path(sys.executable).resolve())
     assert hook["timeout"] > 4
+    # A hook that cannot start, times out or crashes must refuse, not pass.
+    assert hook["onFailure"] == "block"
     command_args = hook["args"]
     assert command_args[:2] == ["adapters", "claude-claim-hook"]
     assert command_args[command_args.index("--identity") + 1] == "seat/one"

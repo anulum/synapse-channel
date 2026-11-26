@@ -77,8 +77,11 @@ def render_hook_config(
 
     The handler timeout exceeds the complete connect-plus-snapshot deadline, so
     expected hub failures reach the structured deny path instead of being killed
-    by Claude first. Secrets are never embedded; a secured hub is referenced only
-    through ``--token-file``.
+    by Claude first. ``onFailure: "block"`` makes Claude Code refuse the tool call
+    when the hook itself cannot start, times out or exits with an unexpected code;
+    without it a failed hook lets the call through, outside Code Mode and, since
+    Claude Code 2.1.329, inside it too. Secrets are never embedded; a secured hub
+    is referenced only through ``--token-file``.
     """
     bounded_timeout = _normalise_ready_timeout(float(ready_timeout))
     args = [
@@ -105,6 +108,7 @@ def render_hook_config(
                             "command": _resolve_synapse_binary(synapse_bin),
                             "args": args,
                             "timeout": hook_timeout,
+                            "onFailure": "block",
                             "statusMessage": "Verifying Synapse file claim",
                         }
                     ],

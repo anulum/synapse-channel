@@ -85,6 +85,16 @@ execution evidence when carrying a release claim forward.
   before, with a notice on standard error; pins become mandatory with outbound config version 2, in a later
   release.
 
+- **The Claude Code claim hook now refuses a tool call when the hook itself fails
+  (`cli_claude_claim_hook.py`).** Claude Code lets a tool call through when a PreToolUse
+  hook cannot start, times out or exits with an unexpected code, unless the hook sets
+  `"onFailure": "block"`. That was already so outside Code Mode, and Claude Code 2.1.329
+  made Code Mode do the same. A crashed or killed claim hook therefore let an edit or a
+  shell command run unchecked. The rendered recipe, which the packaged plugin shares, now
+  sets `"onFailure": "block"`, which Claude Code honours from 2.1.295. Handled failures
+  still answer with a structured deny on exit 0. Reinstall the plugin or re-merge
+  `synapse adapters claude-claim-hook --print-config` to pick it up.
+
 ### Fixed
 
 - **`synapse mcp-tools` lists every page of a server's tools (`core/mcp_outbound.py`).** Discovery read only the

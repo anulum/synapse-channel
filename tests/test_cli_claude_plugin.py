@@ -20,6 +20,7 @@ import pytest
 
 from cli_e2e_helpers import git_repo, git_run, isolated_hub, run_cli
 from synapse_channel import cli
+from synapse_channel.claude_plugin_install import render_plugin
 
 
 def _invoke(root: Path, action: str, *extra: str) -> int:
@@ -246,3 +247,18 @@ async def test_installed_plugin_reads_real_hub_and_enforces_live_claim(
         assert (repo / "owned.txt").read_text(encoding="utf-8") == "hello"
         released = run_cli("release", "plugin-claim", "--name", "TEST/claude", uri=hub.uri)
         assert released.returncode == 0, released.stderr
+
+
+def test_rendered_plugin_hook_blocks_when_the_hook_itself_fails() -> None:
+    """The packaged plugin's PreToolUse hook carries the recipe's fail-closed setting."""
+    files = render_plugin(
+        identity="proj/seat",
+        uri="ws://127.0.0.1:8876",
+        token_file=None,
+        synapse_bin=sys.executable,
+    )
+    hooks = json.loads(files["hooks/hooks.json"])
+    (group,) = hooks["hooks"]["PreToolUse"]
+    (hook,) = group["hooks"]
+    assert hook["type"] == "command"
+    assert hook["onFailure"] == "block"

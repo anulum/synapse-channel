@@ -244,7 +244,7 @@ or returns non-JSON. That host residual is the fail-open matrix:
 
 | Provider | Synapse handled failure | Host crash / timeout / bad JSON | Residual outside the covered hook path |
 |---|---|---|---|
-| Claude Code | deny on exit 0 for file tools and `Bash` | host-dependent; structured deny preferred | MCP, custom, and future write-capable tools |
+| Claude Code | deny on exit 0 for file tools and `Bash` | the recipe sets `"onFailure": "block"`, so on Claude Code 2.1.295 or newer a hook that cannot start, times out or exits with an unexpected code refuses the call (**fail-closed**); malformed JSON on exit 0 stays host-dependent | MCP, custom, and future write-capable tools |
 | Codex | deny on exit 0 for `apply_patch`, shell, and unified exec matched as `Bash` | host documents PreToolUse as guardrail | later `write_stdin` calls do not repeat `PreToolUse`; MCP and future tools outside this recipe matcher remain outside |
 | Gemini CLI | structured `decision=deny` on exit 0, including `run_shell_command` | plain non-JSON exit 1 is a warning (**fail-open**) | MCP, custom, and future write-capable tools |
 | Grok | structured `decision=deny` on exit 0, including `run_terminal_command` | host fail-open on timeout/crash/malformed | custom and future write-capable tools |
