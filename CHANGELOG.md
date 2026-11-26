@@ -71,6 +71,20 @@ execution evidence when carrying a release claim forward.
   - A `synapse-at-rest-backup.v1` manifest bound no digest and is refused; take a new backup.
   - A restore with the wrong key is now a plain refusal of the seal, not an authentication traceback.
 
+- **Outbound MCP tools can be pinned by descriptor (`core/mcp_tool_pins.py`, `core/mcp_outbound.py`,
+  `core/mcp_config.py`, `synapse mcp-pin`).** An allowlist named tools only, so after a tool was allowlisted the
+  server could change what it said about it (its description, schemas or annotations) and every later call went
+  through. A server entry may now carry `tool_pins`, the SHA-256 of each tool's descriptor:
+  - `mcp-call` lists the tools in the same session and calls only a tool advertised once with its pinned descriptor;
+    a drift is refused with the new code `mcp_tool_descriptor` (exit `3`, HTTP 403);
+  - `mcp-tools` marks each pinned tool `ok`, `changed` or `missing` and withholds a changed description;
+  - `synapse mcp-pin` prints the canonical descriptors and a ready `"tool_pins"` fragment, writing no config.
+
+  The descriptor covers `name`, `title`, `description`, `inputSchema`, `outputSchema`, `annotations` and
+  `execution`. A pin does not bind the server's behaviour or validate arguments. A server without pins works as
+  before, with a notice on standard error; pins become mandatory with outbound config version 2, in a later
+  release.
+
 ### Fixed
 
 - **`synapse mcp-tools` lists every page of a server's tools (`core/mcp_outbound.py`).** Discovery read only the

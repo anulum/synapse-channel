@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.frame_canonical import FrameCanonicalError
 from synapse_channel.core.mcp_config import (
     WILDCARD as WILDCARD,
 )
@@ -50,6 +51,7 @@ from synapse_channel.core.mcp_config_launch import (
     child_environment,
 )
 from synapse_channel.core.mcp_config_trust import load_trusted_mcp_config
+from synapse_channel.core.mcp_tool_pins import tool_descriptor_bytes, tool_descriptor_digest
 
 MCP_EXTRA_HINT = "outbound MCP calls need the optional extra: pip install 'synapse-channel[mcp]'"
 MCP_SDK_VERSION = "2.3.0"
@@ -69,6 +71,20 @@ class McpAccessError(SynapseError, PermissionError):
     """Raised when a server or tool is not permitted by the config allowlist."""
 
     code = "mcp_access"
+
+
+class McpToolDescriptorError(McpAccessError):
+    """Raised when a pinned tool's advertised descriptor no longer matches its pin.
+
+    A drift is a possible rug pull, so it carries its own code for operators and machine
+    readers, while the CLI exit code stays the access-refusal one.
+    """
+
+    code = "mcp_tool_descriptor"
+
+
+CHANGED_DESCRIPTION = "<descriptor changed; not shown>"
+"""What ``mcp-tools`` shows instead of a changed tool's live, now untrusted, description."""
 
 
 class McpToolError(SynapseError, RuntimeError):
@@ -240,6 +256,45 @@ async def _list_all_tools(session: McpSession, server: str) -> list[Any]:
     )
 
 
+def _named(tools: list[Any], tool: str) -> list[Any]:
+    """Return every advertised tool whose name is exactly ``tool``."""
+    return [entry for entry in tools if str(entry.name) == tool]
+
+
+def _live_digest(entry: Any, server: str, tool: str) -> str:
+    """Return one advertised tool's descriptor digest, refusing one that cannot be pinned."""
+    try:
+        return tool_descriptor_digest(entry)
+    except FrameCanonicalError as exc:
+        raise McpToolDescriptorError(
+            f"tool '{tool}' on server '{server}' advertises a descriptor that cannot be pinned"
+        ) from exc
+
+
+def _verify_pinned_tool(spec: McpServerSpec, server: str, tool: str, tools: list[Any]) -> None:
+    """Refuse a call unless the pinned tool is advertised once, with its pinned descriptor.
+
+    The message names the server, the tool and the first 12 hexadecimal characters of both
+    digests. It never echoes the live description, which is untrusted once it has changed.
+    """
+    named = _named(tools, tool)
+    if not named:
+        raise McpToolDescriptorError(
+            f"pinned tool '{tool}' is no longer advertised by server '{server}'"
+        )
+    if len(named) > 1:
+        raise McpToolDescriptorError(
+            f"server '{server}' advertises pinned tool '{tool}' more than once; refusing the call"
+        )
+    pinned = spec.tool_pins[tool]
+    live = _live_digest(named[0], server, tool)
+    if live != pinned:
+        raise McpToolDescriptorError(
+            f"tool '{tool}' on server '{server}' changed its descriptor since it was pinned "
+            f"(pinned {pinned[:12]}, advertised {live[:12]}); refusing the call"
+        )
+
+
 class OutboundMcpClient:
     """A deny-by-default client for calling allowlisted external MCP tools."""
 
@@ -262,16 +317,19 @@ class OutboundMcpClient:
             raise McpAccessError(f"server '{server}' is not in the outbound MCP allowlist")
         return spec
 
-    async def list_tools(self, server: str) -> list[dict[str, str]]:
-        """List the allowlisted tools a server advertises, across every page of its listing."""
-        spec = self._spec(server)
+    def pinned(self, server: str) -> bool:
+        """Return whether ``server``'s tools are pinned by descriptor digest."""
+        return bool(self._spec(server).tool_pins)
+
+    async def _discover(self, spec: McpServerSpec, server: str) -> list[Any]:
+        """Return every tool the server advertises, under the server's deadline."""
 
         async def discover() -> list[Any]:
             async with self._opener(spec) as session:
                 return await _list_all_tools(session, server)
 
         try:
-            listed = await asyncio.wait_for(discover(), timeout=spec.timeout_seconds)
+            return await asyncio.wait_for(discover(), timeout=spec.timeout_seconds)
         except TimeoutError as exc:
             raise McpToolError(
                 f"tool discovery on server '{server}' timed out after "
@@ -283,11 +341,72 @@ class OutboundMcpClient:
             raise
         except Exception as exc:
             raise _transport_error("tool discovery", server) from exc
-        return [
-            {"name": str(tool.name), "description": str(getattr(tool, "description", "") or "")}
-            for tool in listed
-            if tool_allowed(spec, str(tool.name))
-        ]
+
+    async def list_tools(self, server: str) -> list[dict[str, str]]:
+        """List the allowlisted tools a server advertises, across every page of its listing.
+
+        Each entry carries ``pin``: ``"unpinned"`` for a server without pins, otherwise
+        ``"ok"``, ``"changed"`` (its description is then withheld) or ``"missing"`` (pinned but
+        no longer advertised, listed from the pin).
+        """
+        spec = self._spec(server)
+        listed = await self._discover(spec, server)
+        if not spec.tool_pins:
+            return [
+                {"name": str(tool.name), "description": _description(tool), "pin": "unpinned"}
+                for tool in listed
+                if tool_allowed(spec, str(tool.name))
+            ]
+        entries: list[dict[str, str]] = []
+        for name in sorted(spec.tool_pins):
+            named = _named(listed, name)
+            if not named:
+                entries.append({"name": name, "description": "", "pin": "missing"})
+                continue
+            try:
+                _verify_pinned_tool(spec, server, name, listed)
+            except McpToolDescriptorError:
+                entries.append({"name": name, "description": CHANGED_DESCRIPTION, "pin": "changed"})
+                continue
+            entries.append({"name": name, "description": _description(named[0]), "pin": "ok"})
+        return entries
+
+    async def pin_descriptors(
+        self, server: str, tools: tuple[str, ...] = ()
+    ) -> list[tuple[str, bytes, str]]:
+        """Return the canonical descriptor bytes and digest of advertised tools.
+
+        Parameters
+        ----------
+        server : str
+            An allowlisted server.
+        tools : tuple[str, ...], optional
+            The tools to describe; every advertised tool when empty.
+
+        Returns
+        -------
+        list[tuple[str, bytes, str]]
+            ``(name, canonical bytes, digest)`` per tool, in name order.
+
+        Raises
+        ------
+        McpToolDescriptorError
+            When a requested tool is not advertised exactly once, or cannot be pinned.
+        """
+        spec = self._spec(server)
+        listed = await self._discover(spec, server)
+        names = sorted(set(tools)) if tools else sorted({str(entry.name) for entry in listed})
+        described: list[tuple[str, bytes, str]] = []
+        for name in names:
+            named = _named(listed, name)
+            if len(named) != 1:
+                raise McpToolDescriptorError(
+                    f"tool '{name}' is advertised {len(named)} times by server '{server}'; "
+                    "it can be pinned only when advertised exactly once"
+                )
+            digest = _live_digest(named[0], server, name)
+            described.append((name, tool_descriptor_bytes(named[0]), digest))
+        return described
 
     async def call_tool(
         self, server: str, tool: str, arguments: dict[str, Any] | None = None
@@ -307,6 +426,10 @@ class OutboundMcpClient:
 
         async def call() -> Any:
             async with self._opener(spec) as session:
+                if spec.tool_pins:
+                    # List and verify in the same session, so the SDK checks the result
+                    # against the pinned output schema, not a listing made after the call.
+                    _verify_pinned_tool(spec, server, tool, await _list_all_tools(session, server))
                 return await session.call_tool(tool, arguments or {})
 
         try:
@@ -332,6 +455,11 @@ class OutboundMcpClient:
                 f"tool '{tool}' on '{server}' returned an error: {result_text(result)}"
             )
         return result_text(result)
+
+
+def _description(tool: Any) -> str:
+    """Return a tool's advertised description, empty when it has none."""
+    return str(getattr(tool, "description", "") or "")
 
 
 def _transport_error(operation: str, server: str) -> McpToolError:

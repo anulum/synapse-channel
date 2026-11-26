@@ -48,6 +48,7 @@ _SERVER_FIELDS = frozenset(
         "inherit_env",
         "name",
         "timeout_seconds",
+        "tool_pins",
     }
 )
 _DOCUMENT_FIELDS = frozenset({"servers", "signature", "version"})
@@ -87,6 +88,11 @@ class McpServerSpec:
     command_sha256 : str, optional
         Lower-case SHA-256 pin for the executable, or empty for an absolute-path
         pin only.
+    tool_pins : Mapping[str, str], optional
+        Lower-case SHA-256 descriptor pin per tool name
+        (:func:`~synapse_channel.core.mcp_tool_pins.tool_descriptor_digest`). When set, its keys
+        are the allowlist, and a call reaches a tool only while its advertised descriptor still
+        matches. Empty for an unpinned server.
     """
 
     name: str
@@ -98,6 +104,7 @@ class McpServerSpec:
     timeout_seconds: float = 30.0
     inherit_env: tuple[str, ...] = ()
     command_sha256: str = ""
+    tool_pins: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Defensively freeze nested policy values retained from callers."""
@@ -105,6 +112,7 @@ class McpServerSpec:
         object.__setattr__(self, "env", MappingProxyType(dict(self.env)))
         object.__setattr__(self, "allowed_tools", frozenset(self.allowed_tools))
         object.__setattr__(self, "inherit_env", tuple(self.inherit_env))
+        object.__setattr__(self, "tool_pins", MappingProxyType(dict(self.tool_pins)))
 
 
 def tool_allowed(spec: McpServerSpec, tool: str) -> bool:
@@ -165,9 +173,7 @@ def _parse_server(entry: object, index: int) -> McpServerSpec:
     command = _required_text(entry, "command", index)
     args = _text_sequence(entry.get("args", []), field_name="args", index=index)
     inherit_env = _environment_names(entry.get("inherit_env", []), index=index)
-    allowed_tools = frozenset(
-        _text_sequence(entry.get("allowed_tools", []), field_name="allowed_tools", index=index)
-    )
+    allowed_tools, tool_pins = _allowlist(entry, index)
     env_value = entry.get("env", {})
     if not isinstance(env_value, dict):
         raise McpConfigError(f"MCP server entry {index} field 'env' must be an object")
@@ -220,7 +226,56 @@ def _parse_server(entry: object, index: int) -> McpServerSpec:
         allowed_tools=allowed_tools,
         timeout_seconds=timeout_seconds,
         command_sha256=command_sha256,
+        tool_pins=tool_pins,
     )
+
+
+def _allowlist(entry: dict[str, Any], index: int) -> tuple[frozenset[str], dict[str, str]]:
+    """Return one entry's callable tools and its descriptor pins.
+
+    When the entry pins tools, the pinned names are its allowlist.
+    """
+    allowed_tools = frozenset(
+        _text_sequence(entry.get("allowed_tools", []), field_name="allowed_tools", index=index)
+    )
+    tool_pins = _tool_pins(entry, allowed_tools, index)
+    return (frozenset(tool_pins) if tool_pins else allowed_tools), tool_pins
+
+
+def _tool_pins(entry: dict[str, Any], allowed_tools: frozenset[str], index: int) -> dict[str, str]:
+    """Return one entry's descriptor pins, which become its allowlist when present.
+
+    A pinned server names each callable tool with its 64-hex descriptor digest. ``allowed_tools``
+    may be absent, or must then name exactly the pinned tools, so the two never disagree. A
+    wildcard cannot be pinned, and an empty object is refused: a pinned server with no callable
+    tool is a server to remove.
+    """
+    if "tool_pins" not in entry:
+        return {}
+    value = entry["tool_pins"]
+    if not isinstance(value, dict) or not value:
+        raise McpConfigError(
+            f"MCP server entry {index} field 'tool_pins' must be a non-empty object"
+        )
+    if WILDCARD in allowed_tools or WILDCARD in value:
+        raise McpConfigError(f"MCP server entry {index} cannot pin the wildcard tool '{WILDCARD}'")
+    pins: dict[str, str] = {}
+    for tool, digest in value.items():
+        if not isinstance(tool, str) or not tool.strip() or tool != tool.strip():
+            raise McpConfigError(
+                f"MCP server entry {index} has an invalid pinned tool name {tool!r}"
+            )
+        cleaned = digest.strip().lower() if isinstance(digest, str) else ""
+        if _SHA256_HEX.fullmatch(cleaned) is None:
+            raise McpConfigError(
+                f"MCP server entry {index} pin for tool {tool!r} must be 64 hexadecimal characters"
+            )
+        pins[tool] = cleaned
+    if "allowed_tools" in entry and allowed_tools != frozenset(pins):
+        raise McpConfigError(
+            f"MCP server entry {index} field 'allowed_tools' must name exactly the pinned tools"
+        )
+    return pins
 
 
 def _required_text(entry: dict[str, Any], field_name: str, index: int) -> str:

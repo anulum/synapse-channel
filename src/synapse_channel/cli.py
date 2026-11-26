@@ -68,6 +68,7 @@ The ``synapse`` command exposes these subcommands:
 * ``task`` — declare and update the shared task plan from the command line;
 * ``mcp`` — run a Model Context Protocol server over stdio, bridged to the hub;
 * ``mcp-tools`` / ``mcp-call`` — list and call allowlisted external MCP tools (outbound);
+* ``mcp-pin`` — print outbound MCP tool descriptors and their pins for a server's config;
 * ``a2a-card`` — emit an Agent2Agent Agent Card projected from the live manifest;
 * ``a2a-conformance`` — print the local Agent2Agent conformance matrix;
 * ``init`` — print or install local user services for hub, presence, and wake arming;
@@ -194,7 +195,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_codex_tmux:add_parsers", ("codex-tmux",)),
     ("synapse_channel.cli_shell:add_parsers", ("shell-hook", "install-shell-hook")),
     ("synapse_channel.cli_mcp:add_parsers", ("mcp",)),
-    ("synapse_channel.cli_mcp_call:add_parsers", ("mcp-tools", "mcp-call")),
+    ("synapse_channel.cli_mcp_call:add_parsers", ("mcp-tools", "mcp-call", "mcp-pin")),
     ("synapse_channel.cli_mcp_gate:add_parsers", ("mcp-gate",)),
     (
         "synapse_channel.cli_a2a:add_parsers",

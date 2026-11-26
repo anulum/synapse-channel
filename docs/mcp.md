@@ -668,6 +668,42 @@ synapse mcp-call fs read_file --config ~/.config/synapse/mcp-allow.json \
 32 pages. A server that needs more pages, or that returns a cursor it already returned,
 is refused with an error rather than shown in part.
 
+### Pinning tool descriptors
+
+An allowlist names tools; a pin also fixes what each tool says about itself. Add
+`tool_pins` to a server entry, mapping each callable tool to the SHA-256 of its
+descriptor. The pinned tools then are the allowlist: `allowed_tools` may be left out,
+and if it is present it must name exactly the pinned tools. A wildcard cannot be pinned.
+
+```bash
+synapse mcp-pin fs --config ~/.config/synapse/mcp-allow.json --tool read_file
+```
+
+`mcp-pin` lists the server's tools and prints, for each tool, its canonical descriptor and
+its pin, then a ready `"tool_pins"` fragment. It writes no config: the config is
+owner-only and may be signed, so adding the fragment, and re-signing as described below,
+is the owner's act. **The pin is the approval.** Read the printed descriptor before you
+pin it. `--descriptor-out FILE` keeps the descriptors in a new file, so a later change can
+be compared with what was approved.
+
+The descriptor covers the tool's `name`, `title`, `description`, `inputSchema`,
+`outputSchema`, `annotations` and `execution`, as RFC 8785 canonical JSON with a domain
+prefix. `icons` and `_meta` are not covered; SYNAPSE forwards neither. A descriptor that
+holds an integer outside the I-JSON exact range cannot be pinned.
+
+For a pinned server, `mcp-call` lists the tools in the same session, checks the tool's
+descriptor, and calls only when it matches. A changed, missing or repeated tool is refused
+with the code `mcp_tool_descriptor` (exit `3`), and the message never shows the changed
+description. `mcp-tools` marks each pinned tool `ok`, `changed` or `missing`, withholds a
+changed description, and exits `3` after the whole table when any tool drifted. A server
+without pins works as before, and both commands print one notice on standard error.
+
+What a pin does not cover: the server's behaviour (a server may advertise the pinned
+descriptor and do anything; for a stdio server, `command_sha256` bounds the executable),
+the moment between the listing and the call inside one session, and the arguments, which
+are not validated against `inputSchema`. Pins become mandatory with outbound config
+version 2, in a later release, with a migration note.
+
 ### Signed outbound manifests
 
 For centrally managed or distributed policy, add a version-1 Ed25519 `signature`

@@ -271,6 +271,9 @@ def test_mcp_human_output_makes_server_controls_visible(
     hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
 
     class HostileClient:
+        def pinned(self, _server: str) -> bool:
+            return False
+
         async def list_tools(self, _server: str) -> list[dict[str, str]]:
             return [{"name": hostile, "description": hostile}]
 
@@ -316,6 +319,9 @@ def test_mcp_call_reports_a_tool_failure_with_operational_exit_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FailingClient:
+        def pinned(self, _server: str) -> bool:
+            return False
+
         async def call_tool(
             self,
             server: str,

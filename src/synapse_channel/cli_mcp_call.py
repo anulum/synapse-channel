@@ -18,11 +18,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
+from pathlib import Path
 
 from synapse_channel.core.error_boundaries import cli_exit_code_for_error
 from synapse_channel.core.mcp_outbound import (
     McpAccessError,
     McpConfigError,
+    McpToolDescriptorError,
     McpToolError,
     OutboundMcpClient,
     load_outbound_config,
@@ -70,14 +73,27 @@ def _parse_arguments(pairs: list[str], args_json: str) -> dict[str, object]:
     return arguments
 
 
+def _notice_unpinned(client: OutboundMcpClient, server: str) -> None:
+    """Tell the operator once, on standard error, that a server's tools are not pinned."""
+    if not client.pinned(server):
+        notice = "tool descriptors are not pinned; see 'synapse mcp-pin'"
+        print(f"server {terminal_text(server)}: {notice}", file=sys.stderr)
+
+
 def _cmd_mcp_tools(args: argparse.Namespace) -> int:
-    """List the allowlisted tools an MCP server advertises."""
+    """List the allowlisted tools an MCP server advertises.
+
+    For a pinned server each tool shows its pin status. The exit code is the descriptor-refusal
+    one when any pinned tool changed or is missing, after the whole table is printed, so every
+    drift is seen at once.
+    """
     try:
         client = _build_client(
             args.config,
             trust_bundle_path=args.config_trust_bundle,
             allow_repo_config=args.allow_repo_mcp_config,
         )
+        _notice_unpinned(client, args.server)
         tools = asyncio.run(client.list_tools(args.server))
     except (McpConfigError, McpAccessError, McpToolError) as exc:
         print(f"mcp-tools error: {terminal_text(exc)}")
@@ -90,7 +106,13 @@ def _cmd_mcp_tools(args: argparse.Namespace) -> int:
     else:
         print(f"{terminal_text(args.server)}: {len(tools)} allowed tool(s)")
         for tool in tools:
-            print(f"  {terminal_text(tool['name'])}: {terminal_text(tool['description'])}")
+            status = "" if tool.get("pin", "unpinned") == "unpinned" else f" [pin: {tool['pin']}]"
+            print(f"  {terminal_text(tool['name'])}{status}: {terminal_text(tool['description'])}")
+    drifted = [tool["name"] for tool in tools if tool.get("pin") in {"changed", "missing"}]
+    if drifted:
+        drift = McpToolDescriptorError(f"{len(drifted)} pinned tool(s) changed or missing")
+        print(f"mcp-tools error: {terminal_text(drift)}")
+        return cli_exit_code_for_error(drift, default=2)
     return 0
 
 
@@ -103,6 +125,7 @@ def _cmd_mcp_call(args: argparse.Namespace) -> int:
             trust_bundle_path=args.config_trust_bundle,
             allow_repo_config=args.allow_repo_mcp_config,
         )
+        _notice_unpinned(client, args.server)
         result = asyncio.run(client.call_tool(args.server, args.tool, arguments))
     except (McpConfigError, McpAccessError, McpToolError, json.JSONDecodeError) as exc:
         print(f"mcp-call error: {terminal_text(exc)}")
@@ -114,8 +137,41 @@ def _cmd_mcp_call(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_mcp_pin(args: argparse.Namespace) -> int:
+    """Print the canonical descriptor and pin of a server's tools, writing no config.
+
+    The pin is the approval: reading the printed descriptor before pinning is the review the
+    pin records. ``--descriptor-out`` keeps the canonical descriptors in a new file, so a later
+    ``changed`` can be compared with what was approved.
+    """
+    try:
+        client = _build_client(
+            args.config,
+            trust_bundle_path=args.config_trust_bundle,
+            allow_repo_config=args.allow_repo_mcp_config,
+        )
+        described = asyncio.run(client.pin_descriptors(args.server, tuple(args.tool)))
+        if args.descriptor_out:
+            records = {name: json.loads(raw) for name, raw, _digest in described}
+            with Path(args.descriptor_out).open("x", encoding="utf-8") as handle:
+                handle.write(json.dumps(records, indent=2, sort_keys=True) + "\n")
+    except (McpConfigError, McpAccessError, McpToolError, FileExistsError) as exc:
+        print(f"mcp-pin error: {terminal_text(exc)}")
+        return cli_exit_code_for_error(exc, default=2)
+    except RuntimeError as exc:
+        print(f"mcp-pin error: {terminal_text(exc)}")
+        return 2
+    for name, raw, digest in described:
+        print(f"tool {terminal_text(name)}")
+        print(f"  descriptor: {terminal_text(raw.decode('utf-8'))}")
+        print(f"  sha256: {digest}")
+    pins = {name: digest for name, _raw, digest in described}
+    print('"tool_pins": ' + json.dumps(pins, indent=2, sort_keys=True))
+    return 0
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the ``mcp-tools`` and ``mcp-call`` subcommands."""
+    """Register the ``mcp-tools``, ``mcp-call`` and ``mcp-pin`` subcommands."""
     tools = subparsers.add_parser(
         "mcp-tools", help="List the allowlisted tools of an external MCP server."
     )
@@ -135,6 +191,27 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     call.add_argument("--args-json", default="", help="A full JSON object of tool arguments.")
     call.set_defaults(func=_cmd_mcp_call)
+
+    pin = subparsers.add_parser(
+        "mcp-pin",
+        help="Print the descriptor pins of an external MCP server's tools, writing no config.",
+    )
+    pin.add_argument("server", help="Server name from the allowlist config.")
+    _add_config_trust_arguments(pin)
+    pin.add_argument(
+        "--tool",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="A tool to describe; every advertised tool when omitted.",
+    )
+    pin.add_argument(
+        "--descriptor-out",
+        default="",
+        metavar="FILE",
+        help="Also write the canonical descriptors to this new file (never overwritten).",
+    )
+    pin.set_defaults(func=_cmd_mcp_pin)
 
 
 def _add_config_trust_arguments(parser: argparse.ArgumentParser) -> None:

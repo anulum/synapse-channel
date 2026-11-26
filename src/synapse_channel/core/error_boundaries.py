@@ -30,12 +30,14 @@ _HTTP_STATUS_BY_CODE: Final[dict[str, HTTPStatus]] = {
     "a2a_quota": HTTPStatus.TOO_MANY_REQUESTS,
     "a2a_store": HTTPStatus.INTERNAL_SERVER_ERROR,
     "a2a_validation": HTTPStatus.BAD_REQUEST,
+    "mcp_tool_descriptor": HTTPStatus.FORBIDDEN,
 }
 
 _CLI_EXIT_BY_CODE: Final[dict[str, int]] = {
     "mcp_access": CLI_ACCESS_DENIED,
     "mcp_config": CLI_USAGE_ERROR,
     "mcp_tool": CLI_OPERATIONAL_FAILURE,
+    "mcp_tool_descriptor": CLI_ACCESS_DENIED,
 }
 
 
