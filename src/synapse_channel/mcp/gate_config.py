@@ -366,13 +366,22 @@ def bearer_digest(presented: bytes) -> str:
     return hashlib.sha256(presented).hexdigest()
 
 
-def new_bearer(path: Path, *, now: datetime | None = None, replace: bool = False) -> str:
+def new_bearer(
+    path: Path,
+    *,
+    now: datetime | None = None,
+    replace: bool = False,
+    secret: str | None = None,
+) -> str:
     """Create a 256-bit stable bearer, store its record at ``path`` and return the secret once.
 
     The record is written to a new owner-only file. With ``replace`` an existing
-    record is replaced atomically, which revokes the old bearer.
+    record is replaced atomically, which revokes the old bearer. ``secret``,
+    when given, is stored instead of a newly generated one, so a caller can
+    write that secret down before this record exists.
     """
-    secret = secrets.token_urlsafe(32)
+    if secret is None:
+        secret = secrets.token_urlsafe(32)
     issued = (now or datetime.now(UTC)).replace(microsecond=0)
     record = {
         "schema": BEARER_SCHEMA,

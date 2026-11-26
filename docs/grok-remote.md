@@ -25,8 +25,10 @@ stores a credential only once cannot use that rotating hub token as its saved
 secret.
 
 Run [`synapse mcp-gate`](mcp-gate.md) on the loopback host in front of the
-listener. `synapse mcp-gate new-bearer` prints a stable bearer once for the
-client to keep and stores only its digest. The gate checks that bearer on every
+listener. `synapse mcp-gate new-bearer` writes a stable bearer to a new
+owner-only `--secret-out` file and prints only that path, or prints it once
+with `--print-secret`. With neither option it refuses, and the message names
+both options. It stores only the digest. The gate checks that bearer on every
 request and sends the seat's current hub token to the pinned listener. The seat's
 entry in the gate configuration lists the tools the client may use. The stable
 bearer stays out of the repository, the process arguments, the URL, and the

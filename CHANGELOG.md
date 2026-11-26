@@ -109,6 +109,15 @@ execution evidence when carrying a release claim forward.
   runner is not a fixed Ubuntu label run it on Linux only. `tests/test_workflow_runner_hardening.py` pins the step, its
   position, its mode and the five named jobs, and the workflow contract tests now expect it.
 
+- **`synapse mcp-gate new-bearer` no longer prints a generated bearer unless asked.** The old form,
+  with `--config` and `--seat` and no destination flag, printed the secret on stdout. That form now
+  refuses, and the refusal names both options: `--secret-out FILE` writes the secret to a new
+  owner-only file and the command prints only that path, and `--print-secret` prints the secret once
+  on stdout. Exactly one option is required; naming both is refused. An existing `--secret-out` path
+  is refused and left unchanged, and no bearer record is stored. The secret file is written before
+  the record. If the record is not stored, that file is removed, so a rotation whose secret cannot
+  be written leaves the old record unchanged.
+
 ### Changed
 
 - **The vendor compatibility reviews cover Claude Code 2.1.332, Codex CLI 0.172.0, Gemini CLI 0.71.1 and Pi 1.6.1

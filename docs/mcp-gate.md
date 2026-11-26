@@ -22,14 +22,19 @@ The gate holds no issuer key and grants nothing. The listener still verifies the
 token, the seat binding and the grants.
 
 ```bash
-synapse mcp-gate new-bearer --config /private/mcp/gate.json --seat PROJECT/bot
+synapse mcp-gate new-bearer --secret-out /private/mcp/bot.secret \
+  --config /private/mcp/gate.json --seat PROJECT/bot
 synapse mcp-gate serve --config /private/mcp/gate.json
 ```
 
-`new-bearer` prints a 256-bit bearer once, for the operator to give the client,
-and stores only its SHA-256 digest with an issue and an expiry time 90 days
-later. `--replace` rotates it, which revokes the old one. The gate warns from 14
-days before the expiry and refuses the bearer after it.
+`new-bearer` requires exactly one of `--secret-out FILE` and `--print-secret`.
+`--secret-out` writes the 256-bit bearer to a new owner-only file and prints
+only that path. `--print-secret` prints it once, for the operator to give the
+client. The old form, which printed the secret with no flag, now refuses, and
+the message names both options. The command stores only the SHA-256 digest
+with an issue and an expiry time 90 days later. `--replace` rotates it, which
+revokes the old one. The gate warns from 14 days before the expiry and refuses
+the bearer after it.
 
 ## Configuration
 
