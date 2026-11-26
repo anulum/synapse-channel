@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import itertools
 import json
 import os
@@ -23,6 +24,7 @@ from typing import Any
 
 import pytest
 from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from synapse_channel.core import at_rest, secure_path
 from synapse_channel.core.at_rest import (
@@ -41,6 +43,7 @@ from synapse_channel.core.at_rest_format import (
     GCM_MESSAGE_LIMIT,
     GCM_REKEY_WARNING_THRESHOLD,
     KEY_BYTES,
+    LEGACY_BACKUP_MANIFEST_SCHEMAS,
     NONCE_BYTES,
     PASSPHRASE_SCRYPT_BACKEND,
     SCRYPT_SALT_BYTES,
@@ -134,7 +137,8 @@ def test_format_constants_are_byte_identical() -> None:
     assert DEFAULT_SCRYPT_R == 8
     assert DEFAULT_SCRYPT_P == 1
     assert SCRYPT_SALT_BYTES == 16
-    assert BACKUP_MANIFEST_SCHEMA == "synapse-at-rest-backup.v1"
+    assert BACKUP_MANIFEST_SCHEMA == "synapse-at-rest-backup.v2"
+    assert frozenset({"synapse-at-rest-backup.v1"}) == LEGACY_BACKUP_MANIFEST_SCHEMAS
     assert WRAPPED_KEY_SCHEMA == "synapse-at-rest-wrapped-key.v1"
     assert PASSPHRASE_SCRYPT_BACKEND == "passphrase-scrypt"
     assert GCM_MESSAGE_LIMIT == 2**32
@@ -208,26 +212,42 @@ def test_envelope_bytes_and_decrypt_are_byte_identical(
     assert cipher.decrypt(PINNED_ENVELOPE) == FIXED_PLAINTEXT
 
 
-def test_profile_backup_manifest_and_restore_are_byte_identical(tmp_path: Path) -> None:
+def test_profile_backup_manifest_and_restore_are_byte_identical(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     cipher = AtRestCipher(FIXED_DATA_KEY)
     relay = tmp_path / "feed.ndjson"
     relay.write_bytes(PINNED_ENVELOPE)
     surfaces = (AtRestSurface("relay-log", relay),)
 
     bundle_dir = tmp_path / "bundle"
+    _install_deterministic_randomness(monkeypatch, [FIXED_NONCE])
     manifest = backup_profile(surfaces, bundle_dir, cipher)
     expected_backup_path = bundle_dir / "0001-feed.ndjson.encrypted"
+    entry = {
+        "backup_file": expected_backup_path.name,
+        "role": "relay-log",
+        "sha256": hashlib.sha256(PINNED_ENVELOPE).hexdigest(),
+        "source_path": str(relay),
+    }
+    # The seal is derived here from the format, independently of the implementation: AES-GCM
+    # under the profile key, with the envelope header as associated data, over the SHA-256 of
+    # the compact, key-sorted v2 entry list.
+    canonical = json.dumps(
+        {"files": [entry], "schema_version": "synapse-at-rest-backup.v2"},
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+    sealed = AESGCM(FIXED_DATA_KEY).encrypt(
+        FIXED_NONCE, hashlib.sha256(canonical).digest(), ENVELOPE_MAGIC
+    )
     expected_manifest = (
         json.dumps(
             {
-                "files": [
-                    {
-                        "backup_path": str(expected_backup_path),
-                        "role": "relay-log",
-                        "source_path": str(relay),
-                    }
-                ],
+                "files": [entry],
                 "schema_version": BACKUP_MANIFEST_SCHEMA,
+                "seal": base64.b64encode(ENVELOPE_MAGIC + FIXED_NONCE + sealed).decode("ascii"),
             },
             ensure_ascii=True,
             indent=2,
@@ -244,7 +264,7 @@ def test_profile_backup_manifest_and_restore_are_byte_identical(tmp_path: Path) 
         assert stat.S_IMODE(expected_backup_path.stat().st_mode) == 0o600
 
     relay.unlink()
-    restored = restore_profile_backup(manifest, cipher)
+    restored = restore_profile_backup(manifest, cipher, surfaces=surfaces)
     assert restored.changed == 1
     assert restored.skipped == 0
     assert restored.manifest == manifest

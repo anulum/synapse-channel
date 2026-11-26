@@ -37,10 +37,13 @@ algorithm, parameter, format or refusal, and the format tests pin it:
   already encrypted profile files and refuses missed plaintext files so rotation
   cannot hide an incomplete migration.
 - `synapse encrypt-key backup --key <path> --backup-dir <dir> ...` writes an
-  owner-only recovery bundle manifest that copies encrypted bytes exactly as
-  stored. Key material is deliberately excluded.
-- `synapse encrypt-key restore --key <path> --manifest <manifest.json>` restores
-  a bundle after authenticating every encrypted file with the supplied key.
+  owner-only recovery bundle. It holds an exact copy of each encrypted file and a
+  manifest that binds every copy by SHA-256 and is sealed with the key. Key
+  material is deliberately excluded.
+- `synapse encrypt-key restore --key <path> --manifest <manifest.json> ...` takes
+  the same surface flags as `backup` and restores the bundle onto exactly those
+  files. It writes only after the seal, every copy's digest and every envelope
+  have been verified.
 - The AES-GCM primitive comes from the optional `cryptography` dependency
   (`pip install synapse-channel[encryption]`); the package still imports without
   it, and an encryption attempt without it raises a clear install hint.
@@ -270,8 +273,21 @@ Key rotation should create a new encrypted copy, verify it, then swap atomically
 6. Run `synapse encrypt-key profile --key NEW --require-encrypted ...` before
    restarting the runtime.
 
-The current backup manifest records the manifest schema, storage role, original
-source path, and copied encrypted file path without storing raw key material.
+The backup manifest, schema `synapse-at-rest-backup.v2`, records for each file
+its storage role, its original source path, the bare name of its copy inside the
+bundle, and the SHA-256 of that copy. It stores no raw key material.
+
+- **The seal.** It is an at-rest envelope under the profile key over the SHA-256
+  of the compact, key-sorted JSON of the schema and the file list, so editing any
+  entry breaks it.
+- **What this catches.** A copy replaced by another valid envelope under the
+  same key, such as an older backup of the same file or another surface's file,
+  decrypts. Its digest still differs, so restore refuses it, and a manifest
+  edited to match the new copy fails its seal.
+- **Older manifests.** A `synapse-at-rest-backup.v1` manifest bound no copy
+  digest, so restore refuses it; take a new backup. Its copies are ordinary
+  envelope files and stay readable with the key.
+
 Future platform-keyring profiles can add key ids and KDF metadata without
 changing the envelope bytes.
 
@@ -301,8 +317,16 @@ Backup recovery must be boring and documented:
 - A backup bundle includes encrypted store files and `manifest.json`.
 - The key material is backed up separately from the encrypted data; the manifest
   never contains the raw key.
-- `synapse encrypt-key restore --key KEY --manifest manifest.json` authenticates
-  every encrypted file before replacing the recorded source path.
+- `synapse encrypt-key restore --key KEY --manifest manifest.json ...` takes the
+  surface flags of the profile to restore.
+  - It verifies the manifest seal.
+  - It reads each copy only as a regular file inside the bundle directory, not
+    through a link, and checks the copy's SHA-256.
+  - It authenticates every envelope before it writes anything.
+  - A manifest naming a file outside the given profile is refused before any
+    write.
+- Restoring an older bundle as a whole remains the operator's choice. Mixing
+  copies between bundles or between files is refused.
 - Restored files are written owner-only.
 - For SQLite event stores, recovery replay should be checked after restore by
   opening the event store with the normal `synapse hub --db` or read-side CLI
@@ -361,7 +385,9 @@ synapse encrypt-key backup \
 
 synapse encrypt-key restore \
   --key ~/.config/synapse/at-rest.key \
-  --manifest ~/synapse/at-rest-backup/manifest.json
+  --manifest ~/synapse/at-rest-backup/manifest.json \
+  --sqlite-db ~/synapse/hub.db \
+  --relay-log ~/synapse/feed.ndjson
 ```
 
 ## Local-first tradeoff

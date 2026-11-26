@@ -33,6 +33,7 @@ from synapse_channel.core.at_rest import (
     require_encrypted_profile,
     restore_profile_backup,
 )
+from synapse_channel.core.at_rest_bundle import bundle_entry, write_bundle_manifest
 from synapse_channel.core.at_rest_counter import (
     InMemoryMessageCounter,
     PersistentMessageCounter,
@@ -551,7 +552,7 @@ def test_backup_and_restore_profile_preserve_encrypted_surfaces(tmp_path: Path) 
     db.unlink()
     relay.unlink()
 
-    restored = restore_profile_backup(manifest, cipher)
+    restored = restore_profile_backup(manifest, cipher, surfaces=surfaces)
 
     assert restored.changed == 2
     assert decrypt_file(db, cipher) == b"main"
@@ -696,51 +697,60 @@ def test_restore_profile_backup_rejects_bad_manifests_and_plaintext_backups(
     tmp_path: Path,
 ) -> None:
     cipher = _cipher()
+    relay = AtRestSurface("relay-log", tmp_path / "feed.ndjson")
     manifest = tmp_path / "manifest.json"
     manifest.write_text('{"schema_version":"wrong","files":[]}', encoding="utf-8")
     with pytest.raises(ValueError, match="not a Synapse at-rest backup manifest"):
-        restore_profile_backup(manifest, cipher)
+        restore_profile_backup(manifest, cipher, surfaces=(relay,))
 
     manifest.write_text(
-        json.dumps({"schema_version": "synapse-at-rest-backup.v1"}),
+        json.dumps({"schema_version": "synapse-at-rest-backup.v2"}),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="no file list"):
-        restore_profile_backup(manifest, cipher)
+        restore_profile_backup(manifest, cipher, surfaces=(relay,))
 
     manifest.write_text(
-        json.dumps({"schema_version": "synapse-at-rest-backup.v1", "files": ["bad"]}),
+        json.dumps({"schema_version": "synapse-at-rest-backup.v2", "files": ["bad"]}),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="malformed file entry"):
-        restore_profile_backup(manifest, cipher)
+        restore_profile_backup(manifest, cipher, surfaces=(relay,))
 
     manifest.write_text(
-        json.dumps({"schema_version": "synapse-at-rest-backup.v1", "files": [{"role": 1}]}),
+        json.dumps({"schema_version": "synapse-at-rest-backup.v2", "files": [{"role": 1}]}),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="malformed file entry"):
-        restore_profile_backup(manifest, cipher)
+        restore_profile_backup(manifest, cipher, surfaces=(relay,))
 
-    backup = tmp_path / "plain.backup"
-    backup.write_bytes(b"plain")
     manifest.write_text(
-        json.dumps(
-            {
-                "schema_version": "synapse-at-rest-backup.v1",
-                "files": [
-                    {
-                        "role": "relay-log",
-                        "source_path": str(tmp_path / "feed.ndjson"),
-                        "backup_path": str(backup),
-                    }
-                ],
-            }
-        ),
+        json.dumps({"schema_version": "synapse-at-rest-backup.v2", "files": []}),
         encoding="utf-8",
     )
+    with pytest.raises(ValueError, match="not sealed"):
+        restore_profile_backup(manifest, cipher, surfaces=(relay,))
+
+    # A plaintext copy, bound and sealed as backup would, is still refused before it is written.
+    copy = tmp_path / "0001-feed.ndjson.encrypted"
+    copy.write_bytes(b"plain")
+    sealed = write_bundle_manifest(tmp_path, (bundle_entry("relay-log", relay.path, copy),), cipher)
     with pytest.raises(ValueError, match="plaintext or corrupt"):
-        restore_profile_backup(manifest, cipher)
+        restore_profile_backup(sealed, cipher, surfaces=(relay,))
+    assert not relay.path.exists()
+
+
+def test_restore_profile_backup_refuses_an_entry_named_twice(tmp_path: Path) -> None:
+    cipher = _cipher()
+    relay = AtRestSurface("relay-log", tmp_path / "feed.ndjson")
+    copy = tmp_path / "0001-feed.ndjson.encrypted"
+    copy.write_bytes(cipher.encrypt(b"relay"))
+    entry = bundle_entry("relay-log", relay.path, copy)
+    manifest = write_bundle_manifest(tmp_path, (entry, entry), cipher)
+
+    with pytest.raises(ValueError, match="twice"):
+        restore_profile_backup(manifest, cipher, surfaces=(relay,))
+    assert not relay.path.exists()
 
 
 def _block_import(monkeypatch: pytest.MonkeyPatch, module_name: str) -> None:

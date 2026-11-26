@@ -42,8 +42,14 @@ DEFAULT_SCRYPT_P = 1
 SCRYPT_SALT_BYTES = 16
 """Salt length, in bytes, for passphrase key derivation."""
 
-BACKUP_MANIFEST_SCHEMA = "synapse-at-rest-backup.v1"
-"""Schema marker for at-rest encrypted backup manifests."""
+BACKUP_MANIFEST_SCHEMA = "synapse-at-rest-backup.v2"
+"""Schema marker for at-rest encrypted backup manifests.
+
+Version 2 binds every copy in the bundle by SHA-256 and seals the entry list with the profile key.
+"""
+
+LEGACY_BACKUP_MANIFEST_SCHEMAS = frozenset({"synapse-at-rest-backup.v1"})
+"""Earlier backup manifest markers, which bound no copy digest and are refused on restore."""
 
 WRAPPED_KEY_SCHEMA = "synapse-at-rest-wrapped-key.v1"
 """Schema marker for an envelope-encrypted (KEK-wrapped) at-rest key file.

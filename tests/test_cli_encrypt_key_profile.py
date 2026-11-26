@@ -146,6 +146,7 @@ def test_rekey_backup_and_restore_round_trip_from_cli(
 
     restore = parser.parse_args(
         ["encrypt-key", "restore", "--key", str(new_key), "--manifest", manifest]
+        + ["--relay-log", str(relay)]
     )
     assert restore.func(restore) == 0
     assert relay.exists()

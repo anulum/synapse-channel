@@ -119,10 +119,14 @@ def _cmd_backup(args: argparse.Namespace) -> int:
 
 
 def _cmd_restore(args: argparse.Namespace) -> int:
-    """Restore encrypted profile surfaces from a recovery bundle manifest."""
+    """Restore a recovery bundle onto the profile surfaces named by the flags.
+
+    Only the paths those flags select are written; a manifest naming any other
+    path is refused before anything is restored.
+    """
     try:
         cipher = AtRestCipher.from_key_file(args.key)
-        result = restore_profile_backup(args.manifest, cipher)
+        result = restore_profile_backup(args.manifest, cipher, surfaces=_surfaces(args))
     except ValueError as exc:
         print(f"at-rest restore problem: {exc}")
         return 1
@@ -268,12 +272,10 @@ def add_profile_parsers(nested: argparse._SubParsersAction[argparse.ArgumentPars
     _add_surface_args(backup)
     backup.set_defaults(func=_cmd_backup)
 
-    restore = nested.add_parser(
-        "restore",
-        help="Restore encrypted runtime surfaces from a recovery bundle manifest.",
-    )
+    restore = nested.add_parser("restore", help="Restore a backup bundle onto the given surfaces.")
     restore.add_argument("--key", required=True, help="Owner-only raw key file.")
     restore.add_argument("--manifest", required=True, help="Backup manifest written by backup.")
+    _add_surface_args(restore)
     restore.set_defaults(func=_cmd_restore)
 
     migrate_sqlcipher = nested.add_parser(

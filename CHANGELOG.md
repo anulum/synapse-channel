@@ -57,6 +57,20 @@ execution evidence when carrying a release claim forward.
   accepted before: a grant written with a trailing slash, such as `/data/`, is now refused
   as `path_not_normalised`, so write it `/data`.
 
+- **An at-rest backup bundle binds each copy by SHA-256 and a sealed manifest, and restore writes only to the given
+  profile (`core/at_rest.py`, `core/at_rest_bundle.py`, `cli_encrypt_key_profile.py`).**
+  - Restore authenticated each copy only by decrypting it. Another valid envelope under the same key therefore
+    passed: an older backup of the same file, or another surface's file put in its place.
+  - Restore also wrote to whatever source path the manifest named and read whatever copy path it named. An edited
+    manifest, for example in a copied or offsite bundle, could overwrite any file the operator could write.
+  - Backup now writes manifest schema `synapse-at-rest-backup.v2`. It records the SHA-256 of every copy and the copy's
+    bare name inside the bundle, and it seals the whole entry list with the profile key.
+  - Restore takes the profile's surface flags. It verifies the seal, then reads each copy only as a regular file
+    inside the bundle directory and checks its digest. It refuses an entry outside the given profile, and it writes
+    nothing until every copy has passed.
+  - A `synapse-at-rest-backup.v1` manifest bound no digest and is refused; take a new backup.
+  - A restore with the wrong key is now a plain refusal of the seal, not an authentication traceback.
+
 ### Fixed
 
 - **`synapse mcp-tools` lists every page of a server's tools (`core/mcp_outbound.py`).** Discovery read only the

@@ -26,19 +26,24 @@ encryption operation is actually attempted without it installed.
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 import os
 import secrets
 import tempfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
+from synapse_channel.core.at_rest_bundle import (
+    BundleEntry,
+    bundle_entry,
+    read_bundle_copy,
+    read_bundle_manifest,
+    restore_targets,
+    write_bundle_manifest,
+)
 from synapse_channel.core.at_rest_counter import InMemoryMessageCounter, MessageCounter
 from synapse_channel.core.at_rest_format import (
-    BACKUP_MANIFEST_SCHEMA,
     DEFAULT_SCRYPT_N,
     DEFAULT_SCRYPT_P,
     DEFAULT_SCRYPT_R,
@@ -548,90 +553,51 @@ def backup_profile(
     backup_dir: str | Path,
     cipher: AtRestCipher,
 ) -> Path:
-    """Create an encrypted-profile backup manifest and return its path.
+    """Create an encrypted-profile backup bundle and return its manifest path.
 
     The backup copies encrypted bytes exactly as stored and verifies each copied
-    file with ``cipher``. Key material is deliberately not included in the
-    bundle.
+    file with ``cipher``. The manifest binds every copy by SHA-256 and is sealed
+    with ``cipher`` (see :mod:`synapse_channel.core.at_rest_bundle`). Key
+    material is deliberately not included in the bundle.
     """
     profile = tuple(surfaces)
     require_encrypted_profile(profile, cipher)
     destination = _prepare_backup_dir(backup_dir)
-    entries: list[dict[str, str]] = []
+    entries: list[BundleEntry] = []
     for index, surface in enumerate(profile, start=1):
         if not surface.path.exists():
             continue
         backup_path = _copy_to_backup(
             surface, backup_dir=destination, index=index, suffix=".encrypted"
         )
-        entries.append(
-            {
-                "role": surface.role,
-                "source_path": str(surface.path),
-                "backup_path": str(backup_path),
-            }
-        )
-    manifest = destination / "manifest.json"
-    payload = {
-        "schema_version": BACKUP_MANIFEST_SCHEMA,
-        "files": entries,
-    }
-    write_owner_only(
-        manifest,
-        json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True).encode("utf-8") + b"\n",
-    )
-    return manifest
-
-
-def _manifest_entries(manifest_path: Path) -> Sequence[dict[str, str]]:
-    """Read and validate an at-rest backup manifest."""
-    raw: Any = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or raw.get("schema_version") != BACKUP_MANIFEST_SCHEMA:
-        raise ValueError(f"not a Synapse at-rest backup manifest: {manifest_path}")
-    files = raw.get("files")
-    if not isinstance(files, list):
-        raise ValueError(f"at-rest backup manifest has no file list: {manifest_path}")
-    entries: list[dict[str, str]] = []
-    for entry in files:
-        if not isinstance(entry, dict):
-            raise ValueError(
-                f"at-rest backup manifest contains a malformed file entry: {manifest_path}"
-            )
-        role = entry.get("role")
-        source_path = entry.get("source_path")
-        backup_path = entry.get("backup_path")
-        if (
-            not isinstance(role, str)
-            or not isinstance(source_path, str)
-            or not isinstance(backup_path, str)
-        ):
-            raise ValueError(
-                f"at-rest backup manifest contains a malformed file entry: {manifest_path}"
-            )
-        entries.append({"role": role, "source_path": source_path, "backup_path": backup_path})
-    return tuple(entries)
+        entries.append(bundle_entry(surface.role, surface.path, backup_path))
+    return write_bundle_manifest(destination, entries, cipher)
 
 
 def restore_profile_backup(
     manifest_path: str | Path,
     cipher: AtRestCipher,
+    *,
+    surfaces: Iterable[AtRestSurface],
 ) -> AtRestOperationResult:
-    """Restore encrypted files listed in a backup manifest.
+    """Restore the encrypted files of a backup bundle onto the given profile.
 
-    Each backup file is authenticated with ``cipher`` before it is atomically
-    written back to its recorded source path. The function cannot recover lost
-    key material; a wrong or missing key fails before data is restored.
+    The manifest seal is verified with ``cipher`` first. Every copy is then read
+    from inside the bundle directory, checked against its sealed SHA-256 and
+    authenticated with ``cipher``, and only after all of them pass is each one
+    atomically written back, owner-only, to the path of ``surfaces`` it names.
+    A manifest naming a path outside ``surfaces`` is refused before anything is
+    written. The function cannot recover lost key material; a wrong or missing
+    key fails before data is restored.
     """
     manifest = Path(manifest_path)
-    entries = _manifest_entries(manifest)
-    changed = 0
-    for entry in entries:
-        backup_path = Path(entry["backup_path"])
-        source_path = Path(entry["source_path"])
-        blob = backup_path.read_bytes()
+    entries = read_bundle_manifest(manifest, cipher)
+    targets = restore_targets(entries, surfaces, manifest)
+    blobs = tuple(read_bundle_copy(manifest.parent, entry) for entry in entries)
+    for entry, blob in zip(entries, blobs, strict=True):
         if not is_envelope(blob):
-            raise ValueError(f"backup file is plaintext or corrupt: {backup_path}")
+            raise ValueError(f"backup file is plaintext or corrupt: {entry.backup_file}")
         cipher.decrypt(blob)
-        write_owner_only(source_path, blob)
-        changed += 1
-    return AtRestOperationResult(changed=changed, skipped=0, manifest=manifest)
+    for target, blob in zip(targets, blobs, strict=True):
+        write_owner_only(target, blob)
+    return AtRestOperationResult(changed=len(targets), skipped=0, manifest=manifest)
