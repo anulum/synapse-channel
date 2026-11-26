@@ -34,7 +34,7 @@ from synapse_channel.core.mcp_outbound import (
 class _FakeSession:
     """A session that advertises one tool and echoes calls, no subprocess."""
 
-    async def list_tools(self) -> Any:
+    async def list_tools(self, *, params: Any = None) -> Any:
         return SimpleNamespace(tools=[SimpleNamespace(name="echo", description="echoes")])
 
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:

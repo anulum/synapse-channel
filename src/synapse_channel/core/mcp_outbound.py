@@ -58,6 +58,12 @@ MCP_SDK_VERSION = "2.3.0"
 MCP_SDK_TERMINATION_TIMEOUT = 2.0
 """Audited SDK grace window before process-tree force termination."""
 
+MCP_TOOL_LIST_MAX_PAGES = 32
+"""The most ``tools/list`` pages one discovery reads.
+
+A server that needs more pages is refused, never truncated.
+"""
+
 
 class McpAccessError(SynapseError, PermissionError):
     """Raised when a server or tool is not permitted by the config allowlist."""
@@ -114,8 +120,8 @@ def load_outbound_config(
 class McpSession(Protocol):
     """The subset of the MCP client session this client uses."""
 
-    async def list_tools(self) -> Any:
-        """Return the server's advertised tools."""
+    async def list_tools(self, *, params: Any = None) -> Any:
+        """Return one page of the server's advertised tools, after ``params.cursor`` when given."""
 
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
         """Invoke a tool and return its result."""
@@ -179,6 +185,61 @@ def result_text(result: Any) -> str:
     return "\n".join(parts)
 
 
+def _paginated_params(cursor: str) -> Any:
+    """Return the SDK's pagination parameters that ask for the page after ``cursor``."""
+    try:
+        types = importlib.import_module("mcp.types")
+    except ImportError as exc:
+        raise McpDependencyError(MCP_EXTRA_HINT) from exc
+    return types.PaginatedRequestParams(cursor=cursor)
+
+
+async def _list_all_tools(session: McpSession, server: str) -> list[Any]:
+    """Read every page of a server's ``tools/list``, following its cursor.
+
+    Parameters
+    ----------
+    session : McpSession
+        An opened session.
+    server : str
+        The server's configured name, for the error message.
+
+    Returns
+    -------
+    list[Any]
+        Every advertised tool, in page order.
+
+    Raises
+    ------
+    McpToolError
+        When a cursor repeats (a looping listing) or the server needs more than
+        :data:`MCP_TOOL_LIST_MAX_PAGES` pages. The listing is refused, never truncated.
+    """
+    tools: list[Any] = []
+    seen: set[str] = set()
+    cursor: str | None = None
+    for _page in range(MCP_TOOL_LIST_MAX_PAGES):
+        if cursor is None:
+            listed = await session.list_tools()
+        else:
+            listed = await session.list_tools(params=_paginated_params(cursor))
+        tools.extend(listed.tools)
+        following = getattr(listed, "next_cursor", None)
+        if following is None:
+            return tools
+        cursor = str(following)
+        if cursor in seen:
+            raise McpToolError(
+                f"tool discovery on server '{server}' returned a cursor it had already returned; "
+                "refusing a looping listing"
+            )
+        seen.add(cursor)
+    raise McpToolError(
+        f"tool discovery on server '{server}' needs more than {MCP_TOOL_LIST_MAX_PAGES} pages; "
+        "refused rather than truncated"
+    )
+
+
 class OutboundMcpClient:
     """A deny-by-default client for calling allowlisted external MCP tools."""
 
@@ -202,12 +263,12 @@ class OutboundMcpClient:
         return spec
 
     async def list_tools(self, server: str) -> list[dict[str, str]]:
-        """List the allowlisted tools a server advertises."""
+        """List the allowlisted tools a server advertises, across every page of its listing."""
         spec = self._spec(server)
 
-        async def discover() -> Any:
+        async def discover() -> list[Any]:
             async with self._opener(spec) as session:
-                return await session.list_tools()
+                return await _list_all_tools(session, server)
 
         try:
             listed = await asyncio.wait_for(discover(), timeout=spec.timeout_seconds)
@@ -224,7 +285,7 @@ class OutboundMcpClient:
             raise _transport_error("tool discovery", server) from exc
         return [
             {"name": str(tool.name), "description": str(getattr(tool, "description", "") or "")}
-            for tool in listed.tools
+            for tool in listed
             if tool_allowed(spec, str(tool.name))
         ]
 

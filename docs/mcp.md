@@ -664,6 +664,10 @@ synapse mcp-call fs read_file --config ~/.config/synapse/mcp-allow.json \
   --arg path="/data/notes.txt"
 ```
 
+`mcp-tools` reads every page of the server's `tools/list`, following its cursor, up to
+32 pages. A server that needs more pages, or that returns a cursor it already returned,
+is refused with an error rather than shown in part.
+
 ### Signed outbound manifests
 
 For centrally managed or distributed policy, add a version-1 Ed25519 `signature`

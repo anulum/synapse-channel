@@ -38,6 +38,13 @@ execution evidence when carrying a release claim forward.
   `is_withheld` are exported from `synapse_channel.federation_api` (the surface is now 144). Upgrade followers,
   Fleet included, before owners.
 
+### Fixed
+
+- **`synapse mcp-tools` lists every page of a server's tools (`core/mcp_outbound.py`).** Discovery read only the
+  first `tools/list` response and ignored its cursor, so a tool on a later page was never shown. It now follows the
+  cursor for up to 32 pages (`MCP_TOOL_LIST_MAX_PAGES`). A server that needs more pages, or that repeats a cursor,
+  is refused with an error, never shown in part. The session protocol's `list_tools` takes the SDK's `params`.
+
 ## [0.99.66] - 2026-11-26
 
 Core 0.99.66 hardens multi-hub federation. A follower stops on a peer whose journal instance

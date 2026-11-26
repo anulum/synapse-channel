@@ -26,8 +26,10 @@ from synapse_channel.core.mcp_config_launch import MCP_SDK_POSIX_DEFAULT_ENV
 from synapse_channel.core.mcp_outbound import (
     MCP_EXTRA_HINT,
     MCP_SDK_VERSION,
+    MCP_TOOL_LIST_MAX_PAGES,
     McpAccessError,
     McpConfigError,
+    McpDependencyError,
     McpServerSpec,
     McpToolError,
     OutboundMcpClient,
@@ -45,7 +47,7 @@ class FakeSession:
         self._error = error
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    async def list_tools(self) -> Any:
+    async def list_tools(self, *, params: Any = None) -> Any:
         return SimpleNamespace(
             tools=[SimpleNamespace(name=name, description=f"{name} desc") for name in self._tools]
         )
@@ -320,7 +322,7 @@ async def test_call_tool_against_a_real_stdio_mcp_server(tmp_path: Path) -> None
 
 async def test_tool_discovery_timeout_is_enforced() -> None:
     class HangingSession(FakeSession):
-        async def list_tools(self) -> Any:
+        async def list_tools(self, *, params: Any = None) -> Any:
             await asyncio.Event().wait()
 
     spec = McpServerSpec(name="hung", command="/bin/false", timeout_seconds=0.01)
@@ -345,3 +347,89 @@ async def test_tool_call_timeout_is_enforced() -> None:
 
     with pytest.raises(McpToolError, match="tool 'echo'.*timed out after 0.01 seconds"):
         await client.call_tool("hung", "echo")
+
+
+# --- every page of tools/list --------------------------------------------------
+
+
+class PagedSession:
+    """A session whose ``tools/list`` answers in pages, recording every cursor it is asked for."""
+
+    def __init__(self, pages: list[list[str]], *, cursors: list[str | None] | None = None) -> None:
+        self._pages = pages
+        self._cursors = cursors or [f"c{index + 1}" for index in range(len(pages) - 1)] + [None]
+        self.requested: list[Any] = []
+
+    async def list_tools(self, *, params: Any = None) -> Any:
+        self.requested.append(params)
+        index = len(self.requested) - 1
+        return SimpleNamespace(
+            tools=[SimpleNamespace(name=name, description="") for name in self._pages[index]],
+            next_cursor=self._cursors[index],
+        )
+
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
+        raise AssertionError("discovery never calls a tool")
+
+
+def _paged_client(session: PagedSession) -> OutboundMcpClient:
+    @asynccontextmanager
+    async def opener(spec: McpServerSpec) -> AsyncIterator[Any]:
+        yield session
+
+    return OutboundMcpClient({"fs": _spec(allowed_tools=frozenset({"*"}))}, session_opener=opener)
+
+
+async def test_a_tool_on_a_later_page_is_listed() -> None:
+    """The listing follows the cursor; page two asks with the SDK's own pagination parameters."""
+    session = PagedSession([["a"], ["b"], ["deep"]])
+    tools = await _paged_client(session).list_tools("fs")
+    assert [tool["name"] for tool in tools] == ["a", "b", "deep"]
+    assert session.requested[0] is None
+    assert [params.cursor for params in session.requested[1:]] == ["c1", "c2"]
+    assert type(session.requested[1]).__name__ == "PaginatedRequestParams"
+
+
+async def test_exactly_the_page_bound_is_read_whole() -> None:
+    """A listing of exactly the bound's pages is read to its end."""
+    pages = [[f"t{index}"] for index in range(MCP_TOOL_LIST_MAX_PAGES)]
+    session = PagedSession(pages)
+    tools = await _paged_client(session).list_tools("fs")
+    assert MCP_TOOL_LIST_MAX_PAGES == 32
+    assert len(tools) == 32
+    assert len(session.requested) == 32
+
+
+async def test_one_page_beyond_the_bound_is_refused_not_truncated() -> None:
+    """A server with a cursor after the bound is refused, and page 33 is never asked for."""
+    pages = [[f"t{index}"] for index in range(MCP_TOOL_LIST_MAX_PAGES + 1)]
+    session = PagedSession(pages)
+    with pytest.raises(McpToolError, match="more than 32 pages"):
+        await _paged_client(session).list_tools("fs")
+    assert len(session.requested) == 32
+
+
+async def test_a_repeated_cursor_is_refused_as_a_looping_listing() -> None:
+    """A cursor the server already returned ends the discovery with an error."""
+    session = PagedSession([["a"], ["b"], ["c"]], cursors=["loop", "loop", None])
+    with pytest.raises(McpToolError, match="looping listing"):
+        await _paged_client(session).list_tools("fs")
+    assert len(session.requested) == 2
+
+
+async def test_a_later_page_without_the_sdk_is_refused_with_the_install_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Later pages need the SDK's own pagination parameters; without the SDK the listing stops."""
+    real = importlib.import_module
+
+    def without_types(name: str, package: str | None = None) -> Any:
+        if name == "mcp.types":
+            raise ImportError(name)
+        return real(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", without_types)
+    session = PagedSession([["a"], ["b"]])
+    with pytest.raises(McpDependencyError, match="optional extra"):
+        await _paged_client(session).list_tools("fs")
+    assert len(session.requested) == 1
