@@ -54,6 +54,7 @@ from synapse_channel.core.multihub_fold import (
     fold_observed_state,
 )
 from synapse_channel.core.multihub_merge import HubEvent, hub_cursors, merge_event_logs, tag_events
+from synapse_channel.core.multihub_public_view import public_event_view
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.persistence_reader import ReadableEventLog
 from synapse_channel.core.persistence_store_format import JournalInstance
@@ -144,7 +145,9 @@ class MultiHubFollower:
             if quarantine is not None:
                 raise MultiHubPeerQuarantinedError(quarantine)
             cursor = self._cursors.get(peer_id, 0)
-            fetched = await fetch(cursor)
+            # Only the public view is fingerprinted and folded, so a raw event from an older
+            # owner and a projected one from a newer owner are the same event here.
+            fetched = tuple(public_event_view(event) for event in await fetch(cursor))
             instance = _fetcher_journal_instance(fetch)
             known = self._journal_instances.get(peer_id)
             if cursor > 0 and instance is not None and known is not None and instance != known:

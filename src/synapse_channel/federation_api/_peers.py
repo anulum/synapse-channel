@@ -47,6 +47,9 @@ from synapse_channel.core.multihub_merge import (
     merge_event_logs,
     tag_events,
 )
+from synapse_channel.core.multihub_public_view import (
+    public_event_view,
+)
 from synapse_channel.core.multihub_transport import (
     PING_INTERVAL,
     network_fetcher,
@@ -76,6 +79,7 @@ __all__ = [
     "merge_event_logs",
     "network_fetcher",
     "peer_from_dict",
+    "public_event_view",
     "save_store",
     "tag_events",
 ]

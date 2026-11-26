@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.multihub_public_view import public_event_view
 from synapse_channel.core.multihub_wire import (
     LogRequest,
     LogSnapshot,
@@ -145,12 +146,17 @@ def _read_snapshot(hub: MultihubContext, request: LogRequest) -> LogSnapshot:
         The events with ``seq`` above the cursor (capped by ``limit``) and the ``seq`` the
         caller resumes from: the last event's ``seq`` when the batch is non-empty, otherwise
         the request cursor itself, so an empty batch never moves the cursor. A hub without a
-        journal returns an empty snapshot anchored at the request cursor.
+        journal returns an empty snapshot anchored at the request cursor. Each event is served
+        as its :func:`~synapse_channel.core.multihub_public_view.public_event_view`, so a claim's
+        private accounting never leaves this hub.
     """
     if hub.journal is None:
         return LogSnapshot(events=(), next_cursor=request.after_seq)
     log_end_seq = hub.journal.max_seq()
-    events = tuple(hub.journal.read_since(request.after_seq, limit=request.limit))
+    events = tuple(
+        public_event_view(event)
+        for event in hub.journal.read_since(request.after_seq, limit=request.limit)
+    )
     journal_instance = hub.journal.journal_instance()
     next_cursor = events[-1].seq if events else request.after_seq
     return LogSnapshot(

@@ -67,7 +67,11 @@ contested namespace, have shipped:
   board (verified causal heads, then display-only last-write-wins among unresolved heads),
   the grow-only progress ledger, and the
   **observed claim** view — the latest claim each peer reports, tagged with its hub, marked
-  advisory, cleared on release, and **never granted**. The board contract is explicitly
+  advisory, cleared on release, and **never granted**. A claim is observed by its public
+  fields only: a hub serves, and a follower keeps, the public view of each claim,
+  task update, checkpoint and handoff event
+  (`core/multihub_public_view.py`), so the credential-derived quota principal and the
+  forwarding peer stay in the owner's own journal. The board contract is explicitly
   non-authoritative: JSON exposes its policy, complete event fingerprint, and each
   displayed task's winning `(timestamp, hub_id, seq)` provenance. Task writes may name
   one content-bound parent. The fold verifies the parent event identity, complete-event

@@ -80,7 +80,9 @@ class ObservedClaim:
     hub_id : str
         Id of the hub whose log authored this observed claim.
     claim : Mapping[str, Any]
-        The claim payload (a :meth:`~synapse_channel.core.state_models.TaskClaim.as_dict`).
+        The claim payload: the public
+        :meth:`~synapse_channel.core.state_models.TaskClaim.as_dict` fields, which is all the
+        follower keeps (:func:`~synapse_channel.core.multihub_public_view.public_event_view`).
     """
 
     task_id: str

@@ -238,6 +238,9 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
         "merge_event_logs": "callable",
         "tag_events": "callable",
     },
+    "synapse_channel.core.multihub_public_view": {
+        "public_event_view": "callable",
+    },
     "synapse_channel.core.multihub_transport": {
         "PING_INTERVAL": "value",
         "network_fetcher": "callable",
@@ -345,8 +348,8 @@ _FLEET_IMPORTS: dict[str, dict[str, str]] = {
     },
 }
 
-_FLEET_SYMBOLS = 141
-_FLEET_MODULES = 44
+_FLEET_SYMBOLS = 142
+_FLEET_MODULES = 45
 
 
 def _kind(obj: object) -> str:

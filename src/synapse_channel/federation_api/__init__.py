@@ -143,6 +143,7 @@ if TYPE_CHECKING:
         merge_event_logs,
         network_fetcher,
         peer_from_dict,
+        public_event_view,
         save_store,
         tag_events,
     )
@@ -233,6 +234,7 @@ _CAPABILITY_OF: dict[str, str] = {
     "merge_event_logs": "_peers",
     "network_fetcher": "_peers",
     "peer_from_dict": "_peers",
+    "public_event_view": "_peers",
     "save_store": "_peers",
     "tag_events": "_peers",
     # Claim forwarding
@@ -490,6 +492,7 @@ __all__ = [
     "parse_task_causal_parent",
     "peer_from_dict",
     "projection_to_json",
+    "public_event_view",
     "push_projection",
     "render_human",
     "render_retention",

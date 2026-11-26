@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import inspect
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -20,10 +21,18 @@ from hub_e2e_helpers import read_until_type, running_hub, send_json
 from synapse_channel.core import multihub_serving
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import (
+    record_checkpoint,
+    record_claim,
+    record_handoff,
+    record_task_update,
+)
 from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
 from synapse_channel.core.multihub_wire import LogSnapshot, decode_log_snapshot
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.replay import SNAPSHOT_KINDS
+from synapse_channel.core.state_models import TaskClaim
 from synapse_channel.core.tls import (
     MTLSPeerTrustBundle,
     MTLSTrustedPeer,
@@ -301,3 +310,36 @@ async def test_a_sender_without_a_grant_is_refused(tmp_path: Path) -> None:
     assert snapshot.next_cursor == 0
     assert snapshot.log_end_seq is None
     assert snapshot.journal_instance is None
+
+
+async def test_a_served_claim_carries_only_its_public_fields(tmp_path: Path) -> None:
+    """A peer pulls a claim's public fields; the hub's own journal keeps the private accounting."""
+    pin, der = _write_peer_cert(tmp_path)
+    store = EventStore(tmp_path / "events.db")
+    now = time.time()
+    claim = TaskClaim(
+        task_id="t1",
+        owner="SYNAPSE-CHANNEL/alice",
+        note="forwarded work",
+        claimed_at=now,
+        lease_expires_at=now + 3600.0,
+        quota_principal="federation-peer:beta",
+        via_peer="beta",
+    )
+    record_claim(store, claim)
+    record_task_update(store, claim)
+    record_checkpoint(store, claim)
+    record_handoff(store, claim)
+    hub = SynapseHub(
+        hub_id="syn-a", journal=store, multihub_serving_policy=_serving_policy(pin, der)
+    )
+    async with running_hub(hub) as (_, uri):
+        snapshot = await _pull(uri, after_seq=0)
+    journalled = [event for event in store.read_all() if event.kind in SNAPSHOT_KINDS]
+    store.close()
+    served = [event for event in snapshot.events if event.kind in SNAPSHOT_KINDS]
+    private = {"quota_principal", "via_peer"}
+    assert [event.kind for event in served] == ["claim", "task_update", "checkpoint", "handoff"]
+    assert all(event.payload == claim.as_dict() for event in served)
+    assert all(not private & set(event.payload) for event in served)
+    assert all(private <= set(event.payload) for event in journalled)

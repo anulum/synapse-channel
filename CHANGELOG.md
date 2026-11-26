@@ -42,6 +42,18 @@ execution evidence when carrying a release claim forward.
   `holder_online` and `holder_offline_seconds` follow the same rule, and a release names the forwarding peer. A
   claimant that later renews directly on the owner becomes a local holder. Journals written before this change
   replay their claims as local, as before.
+- **A multi-hub follower no longer receives, keeps or shows a claim's private accounting
+  (`core/multihub_public_view.py`, `core/handlers/multihub.py`, `core/multihub_follower.py`).** A hub's journal keeps
+  the credential-derived `quota_principal` and the forwarding `via_peer` on every claim, task update, checkpoint and
+  handoff (the claim-snapshot kinds replay reads), for its own replay, and a handoff may also carry the hub's own
+  notification routing. The multi-hub log served those rows whole, so every authorised follower received them and its
+  observed claim view showed them. The log now serves each claim-snapshot event's public view (the
+  `TaskClaim.as_dict` fields, as an allow-list), and a follower applies the same view to every fetched event before
+  it fingerprints or folds it. The view is idempotent, so a raw row from an older owner and the projected row from an upgraded owner are
+  one event to a follower: re-reading them raises no equivocation. Other event kinds are unchanged, and `ledger_task`
+  events, the only kind a content-bound causal parent references by fingerprint, are never projected. The view is
+  exported as `synapse_channel.federation_api.public_event_view` for out-of-tree followers. Upgrade followers before
+  owners: an older follower that re-reads projected rows after a recovery sees them as changed.
 
 ### Fixed
 
